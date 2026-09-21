@@ -61,6 +61,11 @@ IDENTITY_UNCONFIGURED_DETAIL = (
     "self-service sign-in is not configured for this deployment"
 )
 
+#: Google's issuer identifier, and the second form its ID tokens may carry.
+#: See ``OidcSettings.accepted_issuers`` for why both are named.
+_GOOGLE_ISSUER = "https://accounts.google.com"
+_GOOGLE_BARE_ISSUER = "accounts.google.com"
+
 #: Asymmetric signatures only. See the module docstring: this list is what
 #: stops `alg: none` and the HMAC-with-the-public-key confusion, and it is
 #: passed to every ``jwt.decode`` call rather than defaulted anywhere.
@@ -122,6 +127,39 @@ class OidcSettings:
         allowlist would be empty, and an empty allowlist refuses every sign-in
         anyway. Saying so at the 503 is more useful than a 400 per attempt."""
         return bool(self.issuer and self.client_id and self.client_secret)
+
+    @property
+    def accepted_issuers(self) -> tuple[str, ...]:
+        """Every `iss` value a token from this issuer may legitimately carry.
+
+        Normally one: the issuer identifier, compared exactly. Google is the
+        documented exception, and it is this deployment's provider, so getting
+        it wrong would break the first real sign-in rather than an edge case.
+        Its OpenID Connect documentation says of the `iss` claim:
+
+            "Always ``https://accounts.google.com`` or ``accounts.google.com``
+            for Google ID tokens."
+
+        and of validating it:
+
+            "Verify that the value of the ``iss`` claim in the ID token is
+            equal to ``https://accounts.google.com`` or
+            ``accounts.google.com``."
+
+        while the discovery document's own ``issuer`` field is the first form.
+        So an exact-match check against the discovered issuer refuses a token
+        Google says is valid, and it refuses it *intermittently*, which is the
+        worst way to find out.
+
+        Widened for that provider by name rather than by a rule like "also
+        accept the host without its scheme". Such a rule would silently accept
+        ``accounts.google.com`` from an issuer that never sends it, which is a
+        weakening nobody asked for; this is one documented fact about one
+        provider, written where the fact is.
+        """
+        if self.issuer == _GOOGLE_ISSUER:
+            return (_GOOGLE_ISSUER, _GOOGLE_BARE_ISSUER)
+        return (self.issuer,)
 
     def allows_redirect(self, redirect_uri: str) -> bool:
         """Exact string match against the allowlist, deliberately.
@@ -331,7 +369,7 @@ class OidcProvider:
                 key=key,
                 algorithms=list(ID_TOKEN_ALGORITHMS),
                 audience=self.settings.client_id,
-                issuer=self.settings.issuer,
+                issuer=list(self.settings.accepted_issuers),
                 leeway=self.settings.clock_skew_seconds,
                 options={
                     "require": ["iss", "aud", "exp", "iat", "sub"],
@@ -379,8 +417,14 @@ class OidcProvider:
         if not isinstance(subject, str) or not subject:
             raise IdentityRefused("id_token_missing_claim")
 
+        # The *configured* issuer, not the claim. This is the half of the
+        # Google quirk that would do real damage: `(issuer, subject)` is the
+        # account's identity, so storing whichever spelling the token happened
+        # to carry would give one person two accounts -- and the second one
+        # would be empty, with their saved work apparently gone. One canonical
+        # value per configured provider, decided here, once.
         return IdentityClaims(
-            issuer=str(claims.get("iss")),
+            issuer=self.settings.issuer,
             subject=subject,
             email=storable_email(claims),
         )

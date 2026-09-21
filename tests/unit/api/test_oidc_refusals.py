@@ -579,3 +579,76 @@ def test_a_deployment_with_no_registered_client_refuses_before_any_network_call(
     with pytest.raises(IdentityUnconfigured):
         provider.start(REDIRECT)
     assert provider.fake_client.get_calls == []
+
+
+# -- the provider's own documented quirk -------------------------------------
+
+
+GOOGLE = "https://accounts.google.com"
+GOOGLE_BARE = "accounts.google.com"
+
+
+def _google_provider(client=None) -> OidcProvider:
+    return _provider(_settings(issuer=GOOGLE), client=client)
+
+
+@pytest.mark.parametrize("spelling", [GOOGLE, GOOGLE_BARE])
+def test_both_spellings_google_documents_are_accepted(spelling: str) -> None:
+    """Covers: API-150 -- Google's OpenID Connect documentation says the `iss`
+    claim is "Always ``https://accounts.google.com`` or ``accounts.google.com``
+    for Google ID tokens", while its discovery document's own `issuer` is the
+    first form.
+
+    So an exact-match check against the discovered issuer refuses a token the
+    provider says is valid, and refuses it *intermittently* -- which is the
+    worst way to find out, and would land on a first real sign-in rather than
+    in any test written against a fake.
+    """
+    provider = _google_provider()
+    identity = provider.verify_id_token(_token(iss=spelling), nonce=NONCE)
+    assert identity.subject == SUBJECT
+
+
+@pytest.mark.parametrize("spelling", [GOOGLE, GOOGLE_BARE])
+def test_the_stored_issuer_is_canonical_whichever_spelling_arrived(
+    spelling: str,
+) -> None:
+    """Covers: API-150 -- the half of the quirk that would do real damage.
+
+    `(issuer, subject)` is the account's identity. Storing whichever spelling
+    the token happened to carry would give one person two accounts, and the
+    second would be empty -- their saved work apparently gone, with nothing in
+    any log to say why.
+    """
+    provider = _google_provider()
+    identity = provider.verify_id_token(_token(iss=spelling), nonce=NONCE)
+    assert identity.issuer == GOOGLE
+
+
+def test_widening_for_google_does_not_widen_anything_else() -> None:
+    """Covers: API-150 -- one documented fact about one provider, not a rule.
+
+    A rule like "also accept the host without its scheme" would silently
+    accept a bare-domain `iss` from an issuer that never sends one, which is a
+    weakening nobody asked for.
+    """
+    provider = _provider(_settings(issuer="https://id.example.test"))
+    assert provider.settings.accepted_issuers == ("https://id.example.test",)
+
+    with pytest.raises(IdentityRefused) as refusal:
+        provider.verify_id_token(_token(iss="id.example.test"), nonce=NONCE)
+    assert refusal.value.reason == "id_token_issuer"
+
+
+def test_a_third_issuer_is_still_refused_under_the_widened_check() -> None:
+    """Covers: API-150 -- accepting two spellings must not become accepting
+    anything. This is the assertion that keeps the widening honest."""
+    provider = _google_provider()
+    for impostor in (
+        "https://evil.test",
+        "accounts.google.com.evil.test",
+        "https://accounts.google.com.evil.test",
+        "",
+    ):
+        with pytest.raises(IdentityRefused):
+            provider.verify_id_token(_token(iss=impostor), nonce=NONCE)
