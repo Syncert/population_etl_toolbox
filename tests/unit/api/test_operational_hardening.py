@@ -1343,3 +1343,72 @@ def test_an_operator_can_still_override_the_description(monkeypatch) -> None:
     monkeypatch.delenv("API_DESCRIPTION")
     # And the default is empty, so nothing is typed twice.
     assert Settings().api_description == ""
+
+
+def test_identity_limiting_without_a_declared_proxy_is_warned_about(caplog) -> None:
+    """Covers: API-153 — ADR-0005 s4 singles this combination out.
+
+    The limiter keys on the TCP peer unless a declared proxy forwarded another
+    address, and every topology here fronts the API with one. So with no
+    declared proxy the identity bucket is one budget for the whole internet.
+    For catalog reads that is a tuning error; for the sign-in routes the ADR
+    says it "is the difference between a bound and no bound".
+
+    A warning rather than a refusal: an operator may be running without a proxy
+    deliberately, and refusing to start would be the application deciding a
+    deployment question it cannot see.
+    """
+    import logging as logging_module
+
+    from apps.api.main import create_app
+    from data_ingestion_toolbox.config import Settings
+
+    settings = Settings()
+    settings.api_rate_limit_identity_per_minute = 30
+    settings.api_trusted_proxy_ips = ()
+
+    with caplog.at_level(logging_module.WARNING, logger="apps.api"):
+        create_app(settings)
+
+    assert any(
+        "API_TRUSTED_PROXY_IPS" in record.message for record in caplog.records
+    ), "nothing warned that the identity bucket was unbounded"
+
+
+def test_no_warning_when_a_proxy_is_declared(caplog) -> None:
+    """Covers: API-153 — a warning nobody can act on is noise that trains
+    operators to ignore the next one."""
+    import logging as logging_module
+
+    from apps.api.main import create_app
+    from data_ingestion_toolbox.config import Settings
+
+    settings = Settings()
+    settings.api_rate_limit_identity_per_minute = 30
+    settings.api_trusted_proxy_ips = ("10.0.0.0/8",)
+
+    with caplog.at_level(logging_module.WARNING, logger="apps.api"):
+        create_app(settings)
+
+    assert not [
+        record for record in caplog.records if "API_TRUSTED_PROXY_IPS" in record.message
+    ]
+
+
+def test_no_warning_when_identity_limiting_is_off(caplog) -> None:
+    """Covers: API-153 — a disabled bucket is not an unbounded one."""
+    import logging as logging_module
+
+    from apps.api.main import create_app
+    from data_ingestion_toolbox.config import Settings
+
+    settings = Settings()
+    settings.api_rate_limit_identity_per_minute = 0
+    settings.api_trusted_proxy_ips = ()
+
+    with caplog.at_level(logging_module.WARNING, logger="apps.api"):
+        create_app(settings)
+
+    assert not [
+        record for record in caplog.records if "API_TRUSTED_PROXY_IPS" in record.message
+    ]
