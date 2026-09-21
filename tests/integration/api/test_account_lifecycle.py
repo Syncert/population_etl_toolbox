@@ -40,6 +40,58 @@ def _save_something(harness: SignInHarness, token: str, name: str):
     )
 
 
+def _packet_document(harness: SignInHarness) -> dict:
+    """A complete evidence packet, in the shape ADR-0004's contract accepts."""
+    return {
+        "schema_version": 1,
+        "title": "What the account kept",
+        "purpose": "Why",
+        "blocks": [
+            {
+                "block_id": "summary",
+                "type": "text",
+                "title": "Summary",
+                "content": "The need.",
+            },
+            {
+                "block_id": "evidence",
+                "type": "analysis",
+                "title": "Evidence",
+                "envelope": {
+                    "metric_codes": [harness.metric_code],
+                    "source_codes": ["FRED"],
+                    "geo_id": "US",
+                    "geo_level": "NATIONAL",
+                    "scope": "latest",
+                    "release": "",
+                    "period": "2026-08",
+                    "units": "Percent",
+                    "transformation": "none",
+                    "api_query": (
+                        f"/api/v1/observations?metric_code={harness.metric_code}"
+                    ),
+                    "caveats": ["national series"],
+                },
+                "document": {
+                    "kind": "observations",
+                    "metric_code": harness.metric_code,
+                    "scope": "latest",
+                    "filters": {"geo_level": "NATIONAL"},
+                    "visualization": {},
+                },
+            },
+        ],
+    }
+
+
+def _save_a_packet(harness: SignInHarness, token: str, name: str):
+    return harness.client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(token),
+        json={"name": name, "document": _packet_document(harness)},
+    )
+
+
 # ---------------------------------------------------------------------------
 # The round trip the plan's first acceptance criterion names
 # ---------------------------------------------------------------------------
@@ -56,6 +108,11 @@ def test_a_visitor_saves_work_signs_out_signs_in_again_and_finds_it(
     first = sign_in.sign_in(subject="a-returning-reader").json()["access_token"]
     saved = _save_something(sign_in, first, "my-unemployment-view")
     assert saved.status_code == 201, saved.text
+    # The criterion names an evidence packet as well as an analysis, and they
+    # are different routes over different tables. Inferring one from the other
+    # is what this line replaces.
+    packet = _save_a_packet(sign_in, first, "my-evidence-packet")
+    assert packet.status_code == 201, packet.text
 
     assert (
         sign_in.client.post("/api/v1/auth/sign-out", headers=_auth(first)).status_code
@@ -76,6 +133,10 @@ def test_a_visitor_saves_work_signs_out_signs_in_again_and_finds_it(
     assert [item["name"] for item in listing.json()["items"]] == [
         "my-unemployment-view"
     ]
+
+    packets = sign_in.client.get("/api/v1/evidence-packets", headers=_auth(second))
+    assert packets.status_code == 200
+    assert [item["name"] for item in packets.json()["items"]] == ["my-evidence-packet"]
 
 
 # ---------------------------------------------------------------------------
@@ -597,3 +658,82 @@ def test_no_identity_route_is_publicly_cacheable(sign_in: SignInHarness) -> None
             f"{method} {path} answered {response.headers.get('cache-control')!r} "
             f"with status {response.status_code}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Two more the criteria name by hand
+# ---------------------------------------------------------------------------
+
+
+def test_an_unread_version_is_still_refused_under_a_session_credential(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-152 — the plan's second criterion names `409` explicitly.
+
+    Optimistic concurrency (ADR-0003, API-062) is not new, and that is the
+    point: the criterion asks whether it *still* holds now that the credential
+    reaching it is a stranger's session rather than an operator's token. Every
+    existing test of it presents an operator token, so nothing was answering
+    the question the criterion asks.
+    """
+    token = sign_in.sign_in(subject="concurrent-editor").json()["access_token"]
+    created = _save_something(sign_in, token, "contested")
+    assert created.status_code == 201
+    configuration_id = created.json()["configuration_id"]
+
+    document = created.json()["document"]
+    first = sign_in.client.put(
+        f"/api/v1/analysis-configurations/{configuration_id}",
+        headers=_auth(token),
+        json={"name": "contested", "document": document, "expected_version": 1},
+    )
+    assert first.status_code == 200
+    assert first.json()["version"] == 2
+
+    # The second writer read version 1 and never saw version 2.
+    stale = sign_in.client.put(
+        f"/api/v1/analysis-configurations/{configuration_id}",
+        headers=_auth(token),
+        json={"name": "contested", "document": document, "expected_version": 1},
+    )
+    assert stale.status_code == 409
+
+
+def test_account_creation_stops_at_the_deployment_ceiling(
+    sign_in: SignInHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-152 — ADR-0005 §4's other bound, which nothing was testing.
+
+    The `identity` bucket meters per client and is graded in the unit tier
+    (API-153). This is the deployment-wide one: "a global ceiling on account
+    creation per hour [...] so an attacker with many provider accounts
+    degrades into a queue rather than an unbounded row count."
+
+    It counts *new* accounts, so a visitor who already has one still signs in
+    at the ceiling. That half matters more than the refusal: a bound that
+    locked out existing readers would be an outage rather than a limit.
+    """
+    from data_ingestion_toolbox.config import get_settings
+
+    monkeypatch.setenv("API_ACCOUNT_CREATION_PER_HOUR", "2")
+    get_settings.cache_clear()
+
+    assert sign_in.sign_in(subject="ceiling-one").status_code == 200
+    assert sign_in.sign_in(subject="ceiling-two").status_code == 200
+
+    refused = sign_in.sign_in(subject="ceiling-three")
+    assert refused.status_code == 429
+    assert int(refused.headers["retry-after"]) > 0
+    assert "temporarily limited" in refused.json()["detail"]
+
+    # The account that could not be created was not created.
+    assert (
+        sign_in.query(
+            "SELECT COUNT(*) FROM app_api.user_account WHERE subject = %s",
+            ("ceiling-three",),
+        )[0][0]
+        == 0
+    )
+
+    # And a reader who already has an account is unaffected.
+    assert sign_in.sign_in(subject="ceiling-one").status_code == 200
