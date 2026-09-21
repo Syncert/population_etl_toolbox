@@ -80,9 +80,16 @@ leaves the address bar, on the refusal path as well as the success one.
       additive: five sign-in operations, three account operations, four
       schemas, and a `403` on one route. The existing sweeps pass.
 - [x] No credential, identifier, or account content in logs, cache keys,
-      URLs, or error text -- one stable refusal string, one classification
-      word in the log line, no credential value in the export, and every
-      stored token a 64-character digest.
+      URLs, or error text. Marked satisfied once on weaker evidence than the
+      criterion asks for -- it names "tests in the shape `tests/integration/api`
+      already uses for tokens" (API-059), and there was no equivalent: the
+      suite proved refusals were *indistinguishable* and nothing proved they
+      were *quiet*. There is one now. A whole sign-in and a refused rotation
+      run with logging captured, and the code, state, nonce, both tokens, the
+      email and the provider subject appear in no log line. Bodies and headers
+      carry a narrower rule, because `state` and `nonce` belong in the
+      authorization URL -- writing it as the same rule is how the assertion was
+      wrong on its first run.
 - [x] Registration and sign-in are bounded, and the bound is tested --
       API-153, plus the deployment-wide account-creation ceiling.
 - [x] Deleting an account does what the ADR says, in one transaction, with

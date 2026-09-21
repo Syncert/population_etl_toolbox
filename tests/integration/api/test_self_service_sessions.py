@@ -883,3 +883,94 @@ def test_the_two_tab_race_still_works_after_the_tightening(
     sign_in.client.cookies.set(REFRESH_COOKIE, shared)
     second = sign_in.client.post("/api/v1/auth/refresh")
     assert second.status_code == 200, "the fix broke the race it must tolerate"
+
+
+def test_nothing_from_a_sign_in_reaches_a_log_a_body_or_a_header(
+    sign_in: SignInHarness, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Covers: API-151 — the plan's fourth acceptance criterion, directly.
+
+    It asks for this "proven by tests in the shape `tests/integration/api`
+    already uses for tokens", which is API-059: walk the flow with logging
+    captured and assert the credential is in none of it. Everything else here
+    proves refusals are *indistinguishable*; nothing proved they were *quiet*,
+    and those are different claims.
+
+    Seven secrets, because they leak differently. The authorization code and
+    the state travel in a body, the nonce and the tokens are generated here,
+    and the email and provider subject are the two things the platform stores
+    about a person -- an access log that carried either would be a record of
+    who reads this site.
+    """
+    import logging as logging_module
+
+    responses = []
+    with caplog.at_level(logging_module.DEBUG):
+        started = sign_in.start()
+        query = sign_in.authorization_query(started)
+        state = query["state"][0]
+        nonce = query["nonce"][0]
+        code = "4/a-code-that-must-not-be-logged"
+        sign_in.network.next_id_token = id_token(
+            nonce=nonce,
+            subject="a-subject-that-must-not-be-logged",
+            email="logged@example.test",
+        )
+        completed = sign_in.client.post(
+            "/api/v1/auth/callback", json={"code": code, "state": state}
+        )
+        assert completed.status_code == 200
+        access = completed.json()["access_token"]
+        refresh = sign_in.client.cookies[REFRESH_COOKIE]
+
+        rotated = sign_in.client.post("/api/v1/auth/refresh")
+        # And a refused one, because a failure path logs more than a success.
+        sign_in.client.cookies.set(REFRESH_COOKIE, "a-token-nobody-issued")
+        refused = sign_in.client.post("/api/v1/auth/refresh")
+        responses = [started, completed, rotated, refused]
+
+    secrets_in_play = {
+        "the authorization code": code,
+        "the state": state,
+        "the nonce": nonce,
+        "the access token": access,
+        "the refresh token": refresh,
+        "the email address": "logged@example.test",
+        "the provider subject": "a-subject-that-must-not-be-logged",
+    }
+
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    for description, secret in secrets_in_play.items():
+        assert secret not in logged, f"{description} reached a log line"
+
+    # Bodies and headers are a narrower rule than logs, and writing it as the
+    # same rule is how this assertion was wrong the first time: `state` and
+    # `nonce` *belong* in the authorization URL. They are parameters the
+    # provider requires, the whole point of the start response is to carry
+    # them, and a test that called that a leak would be describing a different
+    # protocol.
+    #
+    # What must never come back out is the code the caller sent, the identity
+    # the platform stored, and the long-lived half of the session.
+    never_returned = {
+        "the authorization code": code,
+        "the email address": "logged@example.test",
+        "the provider subject": "a-subject-that-must-not-be-logged",
+    }
+    for response in responses:
+        headers = " ".join(f"{key}: {value}" for key, value in response.headers.items())
+        for description, secret in never_returned.items():
+            assert secret not in response.text, f"{description} was in a body"
+            assert secret not in headers, f"{description} was in a header"
+        # The refresh token is in exactly one place: a `Set-Cookie`. Never a
+        # body, which is what keeps it out of script's reach.
+        assert refresh not in response.text, "the refresh token was in a body"
+
+    # And the start response carries `state` and `nonce` only inside the
+    # authorization URL it exists to hand over -- not as fields of its own,
+    # which would put them somewhere a caller might store them.
+    assert set(started.json()) == {"authorization_url"}
+
+    # The refusal said one thing, and the log classified it in one word.
+    assert refused.json()["detail"] == "sign-in could not be completed"
+    assert any("sign-in refused:" in record.getMessage() for record in caplog.records)
