@@ -2152,11 +2152,25 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "The current-geography projections expose exactly one current version "
         "per entity.",
         ("silver_ref.dim_geo", "silver_ref.dim_geo_current"),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the current-geography projections select one "
-            "version by construction (DISTINCT ON), and no executor confirms "
-            "the projections agree with that intent after a reload."
+            "Measured by `current_geography_projection`, in both directions. "
+            "The half that earns the rule is loss: `dim_geo_current` reaches "
+            "its attribute choice through an inner join, so an entity with no "
+            "version row leaves the projection with no trace and no count "
+            "anywhere goes red. The duplicate half is a guard rather than a "
+            "live defect -- and not for the reason the earlier note gave. It "
+            "credited `DISTINCT ON`, which covers the attribute and geometry "
+            "choices but not the state lookup on `(geo_type = 'state', "
+            "state_fips)`; what actually prevents that fan-out is "
+            "`dim_geo_entity_check1` forcing `geo_id = 'state:' || "
+            "state_fips` together with `geo_id` being UNIQUE. Relax that "
+            "CHECK and every geography in the affected state is served twice, "
+            "which is what the duplicate count is kept for. The rule also "
+            "holds `dim_geo`'s row count against `dim_geo_current`'s -- equal "
+            "today because one projects the other, which is what makes a "
+            "future divergence between two names consumers use "
+            "interchangeably visible."
         ),
     ),
     _rule(

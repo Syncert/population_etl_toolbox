@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import psycopg2
 import pytest
 from psycopg2.extensions import connection
 
@@ -22,6 +24,7 @@ from data_ingestion_toolbox.quality.reconciliation import (
 from data_ingestion_toolbox.quality.sources import (
     SOURCE_EXECUTORS,
     acs_slice_reconciliation,
+    current_geography_projection,
     bls_chunk_reconciliation,
     cdc_watermark_monotonicity,
     fred_slice_reconciliation,
@@ -505,3 +508,191 @@ def test_every_offender_statement_is_one_postgresql_can_run(
         f"only {sum(explained.values())} offender statements were planned, so "
         f"some rule returned before its own: {explained}"
     )
+
+
+# ---------------------------------------------------------------------------
+# DQ-REF-005 — one current version per entity, and no entity lost
+# ---------------------------------------------------------------------------
+
+
+def _entity(cursor, geo_id: str, geo_type: str, state_fips: str | None) -> int:
+    """One geography entity.
+
+    `geo_id` has to agree with `dim_geo_entity_check1`, which derives it from
+    the type and the fips columns. That constraint is the subject of one of
+    the tests below, so the helper honours it rather than working around it.
+    """
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_geo_entity (
+            geo_id, geo_type, state_fips, first_seen_version, last_seen_version
+        ) VALUES (%s, %s, %s, 2020, 2020)
+        RETURNING geo_sk
+        """,
+        (geo_id, geo_type, state_fips),
+    )
+    return int(cursor.fetchone()[0])
+
+
+def _entity_version(cursor, geo_sk: int, capture_id: str, vintage: int = 2020) -> None:
+    """One attribute version, traced to a real capture.
+
+    `source_snapshot_id` is a foreign key into `raw_capture.response_capture`,
+    which is itself keyed to a payload blob and an ingestion request. That is
+    capture-first discipline holding: a silver row cannot exist without the
+    response it came from, and a fixture does not get an exemption.
+    """
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_geo_entity_version (
+            geo_sk, geography_vintage, source_snapshot_id, name,
+            is_active, attribute_checksum
+        ) VALUES (%s, %s, %s, %s, TRUE, %s)
+        """,
+        (
+            geo_sk,
+            vintage,
+            capture_id,
+            f"probe-{geo_sk}",
+            hashlib.sha256(f"{geo_sk}:{vintage}".encode()).hexdigest(),
+        ),
+    )
+
+
+def test_an_entity_with_no_version_row_is_reported_not_silently_dropped(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, the half that earns the rule.
+
+    `dim_geo_current` reaches its attribute choice through an inner join to
+    `dim_geo_entity_version`, so an entity carrying no version row leaves the
+    projection with no trace: consumers of `dim_geo` never see that geography
+    and no count anywhere goes red. The schema tests check the relations
+    exist; a projection quietly returning fewer rows than it should is exactly
+    what they cannot see.
+
+    The positive half is here too, because a rule that always failed would
+    satisfy the first assertion alone.
+    """
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"REFPROBE{uuid4().hex[:8].upper()}"
+    )
+    with postgres_connection.cursor() as cursor:
+        orphan = _entity(cursor, "state:97", "state", "97")
+
+        [projection, compatibility] = current_geography_projection(cursor, {})
+        assert projection.result == "fail"
+        assert any("dropped:" in entry for entry in projection.evidence)
+        assert str(orphan) in " ".join(projection.evidence)
+        # Both names still agree -- they are equally empty, which is why the
+        # compatibility arm cannot stand in for this one.
+        assert compatibility.result == "pass"
+
+        _entity_version(cursor, orphan, capture_id)
+        [projection, compatibility] = current_geography_projection(cursor, {})
+        assert projection.result == "pass", projection.evidence
+        assert compatibility.result == "pass"
+        assert compatibility.observed_count == compatibility.expected_count >= 1
+    postgres_connection.rollback()
+
+
+def test_the_state_lookup_cannot_fan_out_because_two_constraints_agree(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, why the duplicate half is a guard, not a hunt.
+
+    The rule's original note credited `DISTINCT ON` with making this
+    projection one row per entity. That covers the attribute and geometry
+    choices and **not** the state lookup, which joins
+    `state_entity.geo_type = 'state' AND state_entity.state_fips =
+    entity.state_fips` -- a pair `dim_geo_entity` declares unique on neither
+    column nor jointly.
+
+    What actually prevents the fan-out is two constraints acting together, and
+    pinning them is the point of this test: `dim_geo_entity_check1` forces
+    `geo_id = 'state:' || state_fips` for a state-typed row, and `geo_id` is
+    UNIQUE. So a second state sharing a `state_fips` is refused either as a
+    duplicate id or as a failed CHECK, and there is no third spelling.
+
+    Relax that CHECK -- to admit a geography whose id is not derived from its
+    fips -- and the fan-out becomes reachable, every geography in the affected
+    state is served twice, and the rule's duplicate count is what would catch
+    it. This test is where that consequence is written down.
+    """
+    with postgres_connection.cursor() as cursor:
+        _entity(cursor, "state:96", "state", "96")
+        with pytest.raises(psycopg2.errors.UniqueViolation):
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES ('state:96', 'state', '96', 2020, 2020)
+                """
+            )
+    postgres_connection.rollback()
+
+    with postgres_connection.cursor() as cursor:
+        _entity(cursor, "state:96", "state", "96")
+        with pytest.raises(psycopg2.errors.CheckViolation):
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES ('state:96:reloaded', 'state', '96', 2020, 2020)
+                """
+            )
+    postgres_connection.rollback()
+
+
+def test_the_duplicate_arm_reports_a_geography_that_appears_twice(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, the guard is wired up, shown rather than assumed.
+
+    The constraints above make a real duplicate unreachable through
+    `dim_geo_entity`, so the duplicate arm is driven against a relation that
+    does contain one. A guard nobody has ever seen fire is a guard nobody
+    knows is connected.
+    """
+    from data_ingestion_toolbox.quality.reconciliation import _offenders
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TEMP VIEW dq_ref_005_probe AS
+            SELECT * FROM (VALUES (1::bigint), (1::bigint), (2::bigint))
+                AS probe(geo_sk)
+            """
+        )
+        duplicated, total = _offenders(
+            cursor,
+            """
+            SELECT geo_sk, COUNT(*) AS current_rows
+              FROM dq_ref_005_probe
+             GROUP BY geo_sk
+            HAVING COUNT(*) > 1
+            """,
+            order_by="1",
+        )
+        assert total == 1
+        assert duplicated == ["1|2"]
+    postgres_connection.rollback()
+
+
+def test_an_empty_geography_reference_is_not_applicable_rather_than_passing(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, a rule that read nothing must not certify."""
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM silver_ref.dim_geo_entity")
+        if cursor.fetchone()[0]:
+            pytest.skip("the session's warehouse carries geography rows")
+        outcomes = current_geography_projection(cursor, {})
+        assert [outcome.result for outcome in outcomes] == [
+            "not_applicable",
+            "not_applicable",
+        ]
+    postgres_connection.rollback()

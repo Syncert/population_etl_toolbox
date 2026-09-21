@@ -714,6 +714,99 @@ def reference_resolution_accounting(
     ]
 
 
+def current_geography_projection(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-REF-005 — one current version per entity, and no entity lost.
+
+    Two directions, and they are not equally likely, which is worth stating
+    rather than leaving a reader to assume the rule found something.
+
+    **An entity lost is reachable today.** ``dim_geo_current`` reaches its
+    attribute choice through an inner join to ``dim_geo_entity_version``, so
+    an entity carrying no version row leaves the projection with no trace:
+    every consumer of ``dim_geo`` simply never sees that geography, and no
+    count anywhere goes red. This is the half that earns the rule.
+
+    **A duplicated entity is not reachable today, and the reason is not the
+    one the rule's note gave.** That note credited ``DISTINCT ON`` with making
+    the projection one row per entity. It does that for the attribute and
+    geometry choices; the third join -- the state lookup, on
+    ``state_entity.geo_type = 'state' AND state_entity.state_fips =
+    entity.state_fips`` -- is not covered by it, and ``dim_geo_entity``
+    declares no uniqueness on that pair. What actually prevents the fan-out is
+    two constraints acting together: ``dim_geo_entity_check1`` forces
+    ``geo_id = 'state:' || state_fips`` for a state-typed row, and ``geo_id``
+    is ``UNIQUE``. So ``state_fips`` is unique among states as a consequence,
+    and a second state sharing one cannot be inserted at all.
+
+    That makes the duplicate count a guard on a constraint rather than a live
+    defect hunt, and it is kept deliberately: the day somebody relaxes that
+    CHECK -- to admit a geography whose id is not derived from its fips, say --
+    the fan-out becomes reachable, every geography in the affected state is
+    served twice, and this is what notices.
+
+    ``silver_ref.dim_geo`` is a bare projection of ``dim_geo_current`` today,
+    so its row count cannot differ -- which is the point of checking it. The
+    day someone adds a predicate to one and not the other, two names that
+    consumers use interchangeably stop meaning the same thing, and nothing
+    else in this repository would notice.
+    """
+    del scope
+    entities = _count(cursor, "SELECT COUNT(*) FROM silver_ref.dim_geo_entity")
+    if entities == 0:
+        return [
+            RuleOutcome("silver_ref.dim_geo_current", "not_applicable"),
+            RuleOutcome("silver_ref.dim_geo", "not_applicable"),
+        ]
+
+    duplicated, duplicated_total = _offenders(
+        cursor,
+        """
+        SELECT geo_sk, COUNT(*) AS current_rows
+          FROM silver_ref.dim_geo_current
+         GROUP BY geo_sk
+        HAVING COUNT(*) > 1
+        """,
+        order_by="1",
+    )
+    dropped, dropped_total = _offenders(
+        cursor,
+        """
+        SELECT entity.geo_sk, entity.geo_id, entity.geo_type
+          FROM silver_ref.dim_geo_entity AS entity
+          LEFT JOIN silver_ref.dim_geo_current AS current
+            ON current.geo_sk = entity.geo_sk
+         WHERE current.geo_sk IS NULL
+        """,
+        order_by="1",
+    )
+
+    offenders = ["duplicated:" + str(entry) for entry in duplicated] + [
+        "dropped:" + str(entry) for entry in dropped
+    ]
+    projection = RuleOutcome(
+        "silver_ref.dim_geo_current",
+        "fail" if offenders else "pass",
+        observed_count=duplicated_total + dropped_total,
+        expected_count=0,
+        evidence=offenders[:EVIDENCE_LIMIT],
+    )
+
+    current_rows = _count(cursor, "SELECT COUNT(*) FROM silver_ref.dim_geo_current")
+    legacy_rows = _count(cursor, "SELECT COUNT(*) FROM silver_ref.dim_geo")
+    compatibility = RuleOutcome(
+        "silver_ref.dim_geo",
+        "pass" if legacy_rows == current_rows else "fail",
+        observed_count=legacy_rows,
+        expected_count=current_rows,
+        evidence=()
+        if legacy_rows == current_rows
+        else [f"dim_geo={legacy_rows} dim_geo_current={current_rows}"],
+    )
+    return [projection, compatibility]
+
+
 def publisher_registry_reconciliation(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1165,5 +1258,6 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-REF-003": reference_resolution_accounting,
+    "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,
 }

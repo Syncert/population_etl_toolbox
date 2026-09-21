@@ -203,8 +203,18 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **28 are `unimplemented`** — no executor runs them, and 16 of those are
-  BLOCK severity. `DQ-ACS-007` and `DQ-BLS-007` left this set on the second
+- **27 are `unimplemented`** — no executor runs them, and 15 of those are
+  BLOCK severity. `DQ-REF-005` left this set most recently, and how is worth
+  a sentence: its note said the current-geography projections select one
+  version "by construction (DISTINCT ON)", which covers two of the three
+  joins in `silver_ref.dim_geo_current` and not the state lookup. Writing the
+  executor found that the fan-out is prevented after all — by
+  `dim_geo_entity_check1` deriving `geo_id` from `state_fips` together with
+  `geo_id` being UNIQUE, not by the `DISTINCT ON` the note credited — and
+  that the *other* direction was unguarded: an entity with no version row
+  leaves the projection through an inner join, silently. The rule measures
+  both, and the note now says which half is a live risk and which is a guard
+  on a constraint. `DQ-ACS-007` and `DQ-BLS-007` left this set on the second
   attempt. The first compared served rows to published facts one row at a
   time and timed out — 50 minutes for ACS, 901 seconds for BLS — because it
   matched on a composed metric code no index can serve; it was withdrawn
