@@ -71,14 +71,6 @@ class AccountCeilingReached(Exception):
     """The deployment-wide account-creation ceiling (ADR-0005 §4)."""
 
 
-class PublicNameRefused(Exception):
-    """A public display name that does not meet ADR-0005 §3's bounds."""
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
-
-
 @dataclass(frozen=True)
 class SessionTokens:
     """What a completed sign-in or a rotation hands back. Returned once."""

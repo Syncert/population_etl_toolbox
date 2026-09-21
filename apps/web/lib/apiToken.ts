@@ -119,11 +119,6 @@ export function readSessionCredential(now: number = Date.now()): string {
   return sessionCredential.token;
 }
 
-/** Whether a session token is held at all, expired or not. */
-export function hasSessionCredential(): boolean {
-  return sessionCredential !== null;
-}
-
 /**
  * When the held session token expires, or `null` when none is held.
  *

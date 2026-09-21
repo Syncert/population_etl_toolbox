@@ -446,8 +446,3 @@ def end_every_session(
     result.headers["cache-control"] = _PRIVATE_CACHE
     _clear_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
     return result
-
-
-def presented_refresh_cookie(request: Request) -> Optional[str]:
-    """Exported for tests: what the browser would send to the refresh route."""
-    return request.cookies.get(REFRESH_COOKIE)

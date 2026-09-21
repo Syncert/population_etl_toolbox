@@ -44,11 +44,6 @@ from apps.api.appdb import get_app_session
 
 UNAUTHENTICATED_DETAIL = "a valid bearer token is required"
 
-#: The credential kinds a bearer header may present. A ``refresh`` digest is
-#: excluded by the query rather than by a later branch, so the row never
-#: reaches code that could forget to check.
-BEARER_KINDS = ("operator", "access")
-
 _ACCOUNT_QUERY = text(
     """
     SELECT
@@ -62,6 +57,9 @@ _ACCOUNT_QUERY = text(
     JOIN app_api.user_account AS account
       ON account.user_account_id = credential.user_account_id
     WHERE credential.token_sha256 = :token_sha256
+      -- The kinds a bearer header may present. A `refresh` digest is
+      -- excluded here rather than by a later branch, so the row never
+      -- reaches code that could forget to check it.
       AND credential.kind IN ('operator', 'access')
       AND credential.revoked_at IS NULL
       AND (credential.expires_at IS NULL OR credential.expires_at > NOW())

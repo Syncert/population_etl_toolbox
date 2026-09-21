@@ -170,6 +170,10 @@ export function getAccount(options: Transport = {}): Promise<AccountResponse> {
  *
  * A minute is enough for a rotation to complete on a slow connection and
  * short enough that a session is not being refreshed constantly.
+ *
+ * Exported although only this module uses it: it is the answer to "when
+ * does a session rotate", and that is a question worth answering without
+ * reading the scheduler below.
  */
 export const ROTATE_BEFORE_EXPIRY_MS = 60_000;
 
