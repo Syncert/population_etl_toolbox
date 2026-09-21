@@ -48,6 +48,7 @@ record of it.
 | 4. The web sign-in surface | `apps/web/lib/apiToken.ts`, `lib/session.ts`, `components/SignInControl.tsx`, `components/SignInCallback.tsx`, `app/auth/callback/` | WEB-115, 21 unit tests |
 | 5. Migration | `002_app_api.sql`'s migration block | API-149, against a schema built in the *previous* shape |
 | 6. Contract documentation | `API_CONSUMER_GUIDE.md`, `TESTING_CONTRACT.md`, `CI_EVIDENCE_MAP.md`, `WEB_FIRST_WAVE_HANDOFF.md`, `BETA_RESET_REINGESTION.md` | the gates in `tests/unit` that enforce all of them |
+| Packaging and deployment | `pyproject.toml`, `requirements/api.lock.txt`, both compose files, both env examples | API-150's packaging assertion, DEPLOY-013 |
 
 Beyond the numbered deliverables, and required by the ADR rather than by the
 scope list: account export, hard deletion with a freshness requirement, the
@@ -98,7 +99,17 @@ leaves the address bar, on the refusal path as well as the success one.
 
 - **Nothing in the `verify` block.** Every tier it names ran here and passes,
   including the browser tier, which was added to that block because this plan's
-  work depends on it.
+  work depends on it. Beyond it, and also run: `tests/integration/database`
+  (224 passed, 2 skipped), the Compose deployment tier, the web build, and a
+  real `Dockerfile.api` build used to prove the packaging fix in the artifact
+  rather than in the developer venv.
+- **`tests/unit` reports 56 errors on this machine unless pytest is given a
+  writable temporary directory.** They are `PermissionError: [WinError 5]` at
+  fixture setup on `AppData/Local/Temp/pytest-of-synce`, whose ACLs deny even
+  its owner; `main` at `bce6c61` reports the same 56. With
+  `--basetemp=.tmp/pytest` the whole tier runs: 1973 passed, 0 errors. The
+  directory is stale machine state rather than repository state, so it was left
+  alone rather than have an agent rewrite ACLs under a user's profile.
 - `tests/unit` reports 56 errors on this machine. They are
   `PermissionError: [WinError 5]` on `AppData/Local/Temp/pytest-of-synce` at
   fixture setup, they are not caused by this work, and `main` at `bce6c61`
@@ -130,6 +141,65 @@ The rest of it is ordinary: a sign-in control that calls
 and `state`, posts them, and `history.replaceState`s them away before anything
 else; a refresh-on-401 path that calls `/auth/refresh` once and retries; and
 sign-out. `API_OIDC_REDIRECT_URIS` must name the callback route's URL exactly.
+
+## What reviewing the branch found
+
+Recorded because a reviewer should know these existed, and because every one
+of them was found by reading rather than by a failing test. All are fixed, and
+each carries a test that fails without its fix -- verified by reverting the fix
+and watching it fail, not by assuming.
+
+**Three that would have shipped working software that was wrong.**
+
+1. **A refresh racing a sign-out signed the reader back in.** The grace window
+   treated any recent `revoked_at` as evidence of a rotation. Sign-out revokes
+   a whole family in one statement, so the token a second tab holds gets
+   exactly the stamp a just-rotated token gets, at the same moment -- and the
+   code minted a new pair. Not contrived: `maintainSession`'s timer makes it an
+   ordinary event, and the commit that added proactive rotation made it likelier.
+   Reuse detection revokes a family the same way, so the same hole let an
+   attacker spend the grace window they had just triggered. What tells the two
+   apart is whether anything in the family is still live.
+2. **`same-site` was accepted where the ADR says same-origin.**
+   `SameSite=Strict` keeps a cookie from other *sites*, not from other origins
+   on the same site, so every subdomain the deployment has -- or ever loses
+   control of -- could rotate a reader's session.
+3. **Sign-out could destroy an operator token.** With no session family it
+   revoked whatever was presented, so a public route could unrecoverably cancel
+   a credential only a privileged script can reissue, for a caller who asked to
+   end a session they did not have. ADR-0005 §6 promises the opposite.
+
+**Two that would have shipped software that did not work at all.**
+
+4. **The API image could not have verified a single ID token.** PyJWT was
+   undeclared, resolving into the lock as a transitive dependency of `redis`,
+   and `cryptography` was not in the lock at all -- so the image would have
+   imported cleanly, started cleanly, passed every probe, and refused every
+   sign-in. Proven by building `Dockerfile.api` and removing `cryptography`:
+   `RS256 available: False`. Declared as `PyJWT[crypto]` and relocked; the
+   built image now reports every declared algorithm available.
+5. **Eleven identity settings reached no container.** The `api` service
+   enumerates its environment, and none of the new values was listed --
+   including the client id and secret. An operator would have filled in
+   `stack.env`, restarted, and watched the feature stay off with nothing saying
+   why. DEPLOY-013 is the gate that would have caught it, and it caught a
+   placeholder in its own exemption list while being written.
+
+**Three that were true of the prose rather than the code.**
+
+6. `configured` argued at length that a deployment with no redirect URI should
+   answer 503, and then did not check redirect URIs.
+7. `delete_account` said "one statement", which stopped being true when the
+   deletion-log entry joined it. The promise rests on one *transaction*.
+8. A comment on the grace window asserted the successor was still live. It was
+   describing the case its author had in mind rather than the condition the
+   code checked, which is how (1) survived being written down.
+
+**And one gap nothing was testing.** `resolve_key`'s production branch -- build
+a `PyJWKClient`, fetch the JWKS, pick a key by `kid` -- was exercised by
+nothing, because every other test injects a resolver. Now graded against a real
+JWKS over a real socket, including a token whose `kid` names a key the provider
+publishes and whose signature is from one it does not.
 
 ## The one thing that is still not evidence
 
