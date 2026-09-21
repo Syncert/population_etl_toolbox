@@ -67,14 +67,20 @@ leaves the address bar, on the refusal path as well as the success one.
 **Acceptance criteria.**
 
 - [x] Register, sign in, save, sign out, sign in again, find the work --
-      `test_a_visitor_saves_work_signs_out_signs_in_again_and_finds_it`. Saved
-      an analysis; an evidence packet is the same owner-scoped write through
-      the same credential and the same `require_account`.
+      `test_a_visitor_saves_work_signs_out_signs_in_again_and_finds_it`. It
+      saves **both** an analysis and an evidence packet, because the criterion
+      names both and they are different routes over different tables. It saved
+      an analysis only at first, with a note here inferring the packet from it;
+      inference is not what a tick is for.
 - [x] Every existing denial path holds under the new credential -- cross-user
       access answers 404, a refresh token and a transaction handle are refused
-      as bearer tokens, revoked and expired credentials fail. The existing
-      isolation tests pass unmodified; what changed in them is how a fixture
-      *creates* an account, not what it asserts.
+      as bearer tokens, revoked and expired credentials fail, and `409` still
+      refuses an overwrite of an unread version. That last one is named in the
+      criterion and had no test presenting a *session*: every existing test of
+      optimistic concurrency presents an operator token, so none of them was
+      answering the question the criterion asks. The existing isolation tests
+      pass unmodified; what changed in them is how a fixture *creates* an
+      account, not what it asserts.
 - [x] Anonymous public reads unchanged -- no route moved into or out of
       `CACHEABLE_ROUTERS`, and the reviewed OpenAPI snapshot's diff is
       additive: five sign-in operations, three account operations, four
@@ -90,8 +96,14 @@ leaves the address bar, on the refusal path as well as the success one.
       carry a narrower rule, because `state` and `nonce` belong in the
       authorization URL -- writing it as the same rule is how the assertion was
       wrong on its first run.
-- [x] Registration and sign-in are bounded, and the bound is tested --
-      API-153, plus the deployment-wide account-creation ceiling.
+- [x] Registration and sign-in are bounded, and the bound is tested. Two
+      bounds, each with its own test now: the per-client `identity` bucket
+      (API-153) and the deployment-wide account-creation ceiling, which was
+      implemented, wired to a `429`, and asserted by nothing. The ceiling's
+      test holds the half that matters more than the refusal -- a reader who
+      already has an account still signs in at the ceiling, because a bound
+      that locked out existing readers would be an outage rather than a
+      limit.
 - [x] Deleting an account does what the ADR says, in one transaction, with
       evidence -- API-152, including that a stale session destroys nothing on
       its way to a 403.
