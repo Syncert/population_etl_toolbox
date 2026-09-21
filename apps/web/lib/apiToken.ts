@@ -18,9 +18,11 @@
 // - An **operator token**, pasted by a reader who was given one. WEB-022 keeps
 //   it in `sessionStorage`, and ADR-0005 §6 keeps it working unchanged.
 //
-// So the reconciliation is: one module, one accessor, two backings. Every
-// screen calls `useStoredToken()` and gets whichever credential is held,
-// without knowing or caring which — because what a screen does with it is
+// So the reconciliation is: one module, two backings, and one answer to "what
+// credential does this browser hold". Screens reach it through
+// `useStoredToken()` (the five that render against it) or `readStoredToken()`
+// (the saved-analysis screen, which also writes an operator token), and
+// neither knows nor cares which kind came back — what a screen does with it is
 // identical either way. There is still exactly one place where a browser-held
 // credential lives, which is the property scope item 4 asked for; what there
 // is not is one *mechanism*, which ADR-0005 §2 forbids.

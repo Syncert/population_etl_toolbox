@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.support.sign_in_harness import SignInHarness
+from tests.support.sign_in_harness import REDIRECT, SignInHarness
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 
@@ -543,3 +543,57 @@ def test_an_unset_quota_bounds_nothing(
     token = sign_in.sign_in(subject="unbounded-reader").json()["access_token"]
     for index in range(4):
         assert _save_something(sign_in, token, f"view-{index}").status_code == 201
+
+
+def test_no_identity_route_is_publicly_cacheable(sign_in: SignInHarness) -> None:
+    """Covers: API-152 — swept, rather than asserted route by route.
+
+    `apps/api/routers/identity.py` opens by claiming every route in it answers
+    `private, no-store` and that none is in `CACHEABLE_ROUTERS`. Both halves
+    are checked here against what is actually served: a response carrying a
+    credential that an intermediary was allowed to store would be that
+    credential handed to whoever asked next.
+
+    Swept because the claim is about a set. A route added to either router
+    later is covered because it exists, not because somebody remembered.
+    """
+    from apps.api.main import PUBLIC_CACHE_TARGETS, app
+
+    token = sign_in.sign_in(subject="cache-sweep").json()["access_token"]
+    headers = _auth(token)
+
+    served = [
+        path
+        for path in app.openapi()["paths"]
+        if path.startswith(("/api/v1/auth", "/api/v1/account"))
+    ]
+    assert len(served) >= 8, "the sweep found fewer routes than exist"
+
+    for path in served:
+        # Not a cacheable target, whatever it answers.
+        assert not PUBLIC_CACHE_TARGETS.covers(path), (
+            f"{path} is in the public cache targets"
+        )
+
+    # And every one of them says so on the way out. Deletion is exercised last
+    # because it destroys the credential the others need.
+    checks = [
+        ("GET", "/api/v1/account", None),
+        ("GET", "/api/v1/account/export", None),
+        ("POST", "/api/v1/auth/sign-in", {"redirect_uri": REDIRECT}),
+        ("POST", "/api/v1/auth/refresh", None),
+        (
+            "PUT",
+            "/api/v1/account/public-display-name",
+            {"public_display_name": "Sweep"},
+        ),
+        ("POST", "/api/v1/auth/sign-out", None),
+    ]
+    for method, path, body in checks:
+        response = sign_in.client.request(
+            method, path, headers=headers, json=body if body is not None else None
+        )
+        assert response.headers.get("cache-control") == "private, no-store", (
+            f"{method} {path} answered {response.headers.get('cache-control')!r} "
+            f"with status {response.status_code}"
+        )

@@ -264,9 +264,11 @@ def delete_account(
 
     The cascade is already in the schema -- ``ON DELETE CASCADE`` on the
     credential, saved-analysis, and evidence-packet foreign keys -- so this is
-    the existing mechanism reaching one level up rather than a new one. One
-    statement, so there is no state in which the account is gone and its
-    content is not.
+    the existing mechanism reaching one level up rather than a new one. The
+    account row and everything hanging off it therefore go in one statement,
+    and that statement and the deletion-log entry go in one transaction: there
+    is no state in which the account is gone and its content is not, and none
+    in which it is gone and nothing records that it should stay gone.
 
     Idempotent: a second delete of an account that is already gone is not an
     error, and cannot be, because the credential that would have proved who
