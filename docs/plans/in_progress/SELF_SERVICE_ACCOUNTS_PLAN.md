@@ -10,6 +10,7 @@ verify:
   - python -m pytest -o addopts='' tests/integration/api -m "integration and not external"
   - npm --prefix apps/web run test:unit
   - npm --prefix apps/web run lint ; npm --prefix apps/web run typecheck
+  - npm --prefix apps/web run test:browser
   - ruff format --check . ; ruff check .
 ---
 
@@ -46,13 +47,21 @@ record of it.
 | 3. Bounds on the first unauthenticated write | `apps/api/ratelimit.py`, `identity_service._resolve_account` | API-153 (3 unit) |
 | 4. The web sign-in surface | `apps/web/lib/apiToken.ts`, `lib/session.ts`, `components/SignInControl.tsx`, `components/SignInCallback.tsx`, `app/auth/callback/` | WEB-115, 21 unit tests |
 | 5. Migration | `002_app_api.sql`'s migration block | API-149, against a schema built in the *previous* shape |
-| 6. Contract documentation | `API_CONSUMER_GUIDE.md`, `TESTING_CONTRACT.md` | the gates in `tests/unit` that enforce both |
+| 6. Contract documentation | `API_CONSUMER_GUIDE.md`, `TESTING_CONTRACT.md`, `CI_EVIDENCE_MAP.md`, `WEB_FIRST_WAVE_HANDOFF.md`, `BETA_RESET_REINGESTION.md` | the gates in `tests/unit` that enforce all of them |
 
 Beyond the numbered deliverables, and required by the ADR rather than by the
 scope list: account export, hard deletion with a freshness requirement, the
 public display name, and the operator actions in §4 (`--revoke-sessions-label`,
-`--block-account-label`, `--unblock-account-label`). API-152, 15 integration
-tests.
+`--block-account-label`, `--unblock-account-label`) — API-152. Per-account
+storage quotas — API-154. And the backup-purge mechanism §5 commits to —
+API-155, `app_api.account_deletion_log` and `scripts/apply_deletion_log.py`,
+graded by performing a restore rather than by describing one.
+
+The browser tier ran and passes: WEB-116, seven specs, 164 in the tier
+overall. It covers everything on this side of the redirect, which is all of
+the flow except the provider's own consent screen — including the one line
+that cannot be checked anywhere else, which is that the authorization code
+leaves the address bar, on the refusal path as well as the success one.
 
 **Acceptance criteria.**
 
@@ -87,13 +96,9 @@ tests.
 
 **Not run here, and why.**
 
-- The **browser tier** (`npm --prefix apps/web run test:browser`), which the
-  plan's Validation section names for the sign-in surface. The web unit, lint,
-  typecheck and build tiers all ran and pass; the Playwright tier was not run
-  here. A sign-in cannot complete in it without a provider, so what it can
-  grade is the signed-out control, the callback route's refusal path, and that
-  the code is stripped from the address bar -- worth adding, and the first
-  thing to do alongside the real client registration.
+- **Nothing in the `verify` block.** Every tier it names ran here and passes,
+  including the browser tier, which was added to that block because this plan's
+  work depends on it.
 - `tests/unit` reports 56 errors on this machine. They are
   `PermissionError: [WinError 5]` on `AppData/Local/Temp/pytest-of-synce` at
   fixture setup, they are not caused by this work, and `main` at `bce6c61`
@@ -126,14 +131,49 @@ and `state`, posts them, and `history.replaceState`s them away before anything
 else; a refresh-on-401 path that calls `/auth/refresh` once and retries; and
 sign-out. `API_OIDC_REDIRECT_URIS` must name the callback route's URL exactly.
 
-## What this still cannot finish here, unchanged
+## The one thing that is still not evidence
 
 Implementation needs an **OIDC client registration and secret** from the Google
 Cloud console, which no agent container holds. Everything above was built and
-verified without one: the provider's network is faked and nothing else is, so
-the ID tokens are really signed and really refused. What cannot be done here is
-*shipping* it -- the exact-match redirect allowlist needs a stable origin, and
-`deployment-smoke-target` records that there is not one yet.
+verified without one: the provider's *network* is faked and nothing else is, so
+the ID tokens are really signed, really verified, and really refused.
+
+This is why the plan stays in `in_progress/`. The first acceptance criterion is
+about a visitor signing in, and a faked provider is not a visitor signing in —
+it is proof that this side of the exchange behaves, which is a different claim.
+
+**What was done to shrink that gap, because it is the gap that bites on a first
+sign-in.** Every assumption this implementation makes about the provider was
+checked against Google's published documents rather than against the fake, and
+one of them was wrong:
+
+- **`iss` has two spellings.** Google's OpenID Connect documentation says the
+  claim is "Always `https://accounts.google.com` or `accounts.google.com` for
+  Google ID tokens", while its discovery document's own `issuer` is the first
+  form. The exact-match check refused the second, *intermittently*. Worse, the
+  stored identity is `(issuer, subject)`, so storing whichever spelling arrived
+  would have given one person two accounts and left their saved work in the one
+  they were no longer in. Fixed, and the stored issuer is now canonical
+  whichever spelling arrives (API-150).
+- The live discovery document at `accounts.google.com` was read and agrees with
+  the rest: `token_endpoint_auth_methods_supported` includes
+  `client_secret_post`, which is what the exchange sends;
+  `id_token_signing_alg_values_supported` is `RS256`, which is in the accepted
+  list; `code_challenge_methods_supported` includes `S256`;
+  `scopes_supported` includes `openid` and `email`, and `claims_supported`
+  includes `email_verified`, which is what makes ADR-0005 §1's "stored only
+  when the provider marks it verified" enforceable rather than aspirational.
+
+**What a person has to do to close it.** Register a client, set
+`API_OIDC_CLIENT_ID`, `API_OIDC_CLIENT_SECRET` and `API_OIDC_REDIRECT_URIS`
+(the last must name the callback route's URL exactly), and complete one real
+sign-in. `http://localhost` redirect URIs are permitted, so this needs no
+deployment — set `API_COOKIE_SECURE=0` for a plain-HTTP localhost run, and
+nothing else changes.
+
+Shipping it is a further step and is somebody else's plan: the exact-match
+allowlist needs a stable origin, and `deployment-smoke-target` records that
+there is not one yet and that this is deliberate.
 
 
 
