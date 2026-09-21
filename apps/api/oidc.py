@@ -362,6 +362,7 @@ class OidcProvider:
             raise IdentityRefused("signing_key_unavailable") from exc
 
     def verify_id_token(self, id_token: str, *, nonce: str) -> IdentityClaims:
+        _refuse_if_this_process_cannot_check_signatures()
         key = self.resolve_key(id_token)
         try:
             claims = jwt.decode(
@@ -428,6 +429,38 @@ class OidcProvider:
             subject=subject,
             email=storable_email(claims),
         )
+
+
+def unavailable_algorithms() -> tuple[str, ...]:
+    """Declared algorithms the installed PyJWT cannot actually perform.
+
+    PyJWT implements the asymmetric algorithms only when ``cryptography`` is
+    installed; without it they are simply absent from its registry. That is a
+    packaging fault, not a token fault, and it is invisible at import: the
+    process starts, serves everything else, and refuses every sign-in.
+    """
+    from jwt.algorithms import get_default_algorithms
+
+    available = set(get_default_algorithms())
+    return tuple(name for name in ID_TOKEN_ALGORITHMS if name not in available)
+
+
+def _refuse_if_this_process_cannot_check_signatures() -> None:
+    """Fail as a deployment fault rather than as a bad token.
+
+    Without this the refusal is indistinguishable from a provider sending an
+    algorithm we do not accept -- ``jwt.decode`` raises
+    ``InvalidAlgorithmError`` either way -- so the log line would read
+    ``id_token_algorithm`` and point an operator at the provider. The provider
+    would be blameless, the token would be fine, and the real answer is that
+    this process cannot verify an RS256 signature at all.
+
+    Checked here rather than at import so a deployment that never turns
+    identity on is not refused a startup over a dependency it does not use.
+    """
+    missing = unavailable_algorithms()
+    if missing:
+        raise IdentityRefused("verifier_cannot_check_signatures")
 
 
 def storable_email(claims: Mapping[str, Any]) -> Optional[str]:

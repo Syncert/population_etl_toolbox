@@ -676,3 +676,38 @@ def test_every_declared_algorithm_is_one_the_installed_pyjwt_implements() -> Non
         f"the installed PyJWT cannot verify {missing}; `cryptography` is "
         "probably absent, and every sign-in would fail at verification"
     )
+
+
+def test_a_process_that_cannot_verify_signatures_says_so_rather_than_blaming_the_token() -> (
+    None
+):
+    """Covers: API-150 -- a packaging fault must not read as a provider fault.
+
+    Without `cryptography`, PyJWT has no RS256 and `jwt.decode` raises
+    `InvalidAlgorithmError` -- the same exception a genuinely unacceptable
+    algorithm raises. The log line would then read `id_token_algorithm` and
+    send an operator to look at Google, where they would find nothing wrong,
+    because nothing is: this process simply cannot check the signature.
+
+    Demonstrated in the built image before this existed: removing
+    `cryptography` leaves `RS256 available: False` and every sign-in refused.
+    """
+    import apps.api.oidc as module
+
+    provider = _provider()
+    original = module.unavailable_algorithms
+    module.unavailable_algorithms = lambda: ("RS256",)
+    try:
+        with pytest.raises(IdentityRefused) as refusal:
+            provider.verify_id_token(_token(), nonce=NONCE)
+    finally:
+        module.unavailable_algorithms = original
+
+    assert refusal.value.reason == "verifier_cannot_check_signatures"
+
+
+def test_the_check_costs_nothing_when_the_algorithms_are_there() -> None:
+    """Covers: API-150 -- and it must not become a refusal of its own."""
+    from apps.api.oidc import unavailable_algorithms
+
+    assert unavailable_algorithms() == ()
