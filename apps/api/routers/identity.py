@@ -36,6 +36,15 @@ from sqlalchemy.orm import Session
 from apps.api.auth import Account, get_app_session_dep, require_account
 from apps.api.dependencies import db_service_unavailable
 from apps.api.failures import BODY_LIMIT
+from apps.api.session_cookies import (
+    REFRESH_COOKIE,
+    REFRESH_PATH,
+    TRANSACTION_COOKIE,
+    TRANSACTION_PATH,
+    clear_session_cookie,
+    clearing_header,
+    set_session_cookie,
+)
 from apps.api.oidc import (
     IDENTITY_UNCONFIGURED_DETAIL,
     SIGN_IN_REFUSED_DETAIL,
@@ -62,7 +71,6 @@ from apps.api.services.identity_service import (
     sign_out,
     sign_out_everywhere,
 )
-from apps.api.versioning import VERSIONED_ROOT
 from data_ingestion_toolbox.config import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -70,18 +78,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 #: User content, and a credential. Never publicly cached, never stored by an
 #: intermediary.
 _PRIVATE_CACHE = "private, no-store"
-
-#: The browser's half of a started sign-in.
-TRANSACTION_COOKIE = "sign_in_transaction"
-
-#: The long-lived half of a session. ``HttpOnly``, so script cannot lift it.
-REFRESH_COOKIE = "refresh_token"
-
-#: The one path the refresh cookie is ever attached to.
-REFRESH_PATH = f"{VERSIONED_ROOT}/auth/refresh"
-
-#: The paths the transaction cookie is attached to: the sign-in pair only.
-TRANSACTION_PATH = f"{VERSIONED_ROOT}/auth"
 
 #: The single answer to every refused sign-in or session operation.
 _REFUSED_DETAIL = SIGN_IN_REFUSED_DETAIL
@@ -122,19 +118,6 @@ def _refused(clearing: Optional[dict[str, str]] = None) -> HTTPException:
     )
 
 
-def _clearing(name: str, *, path: str) -> dict[str, str]:
-    """The ``Set-Cookie`` header that expires ``name``, as a raisable header.
-
-    Built by asking Starlette to write one rather than by formatting the
-    string here: an expiry that does not match the attributes the cookie was
-    set with is silently ignored by the browser, and hand-written attributes
-    are how that mismatch happens.
-    """
-    probe = Response()
-    _clear_cookie(probe, name, path=path)
-    return {"set-cookie": probe.headers["set-cookie"]}
-
-
 def _unconfigured() -> HTTPException:
     return HTTPException(status_code=503, detail=IDENTITY_UNCONFIGURED_DETAIL)
 
@@ -160,35 +143,6 @@ def session_policy() -> SessionPolicy:
     )
 
 
-def _cookie_secure() -> bool:
-    return get_settings().api_cookie_secure
-
-
-def _set_cookie(
-    response: Response, name: str, value: str, *, path: str, max_age: int
-) -> None:
-    response.set_cookie(
-        name,
-        value,
-        max_age=max_age,
-        path=path,
-        httponly=True,
-        secure=_cookie_secure(),
-        # `Strict` on both, deliberately. It is available here because the
-        # callback is a same-origin POST from a page the browser has already
-        # loaded, rather than the cross-site redirect target itself -- a
-        # redirect target would have needed `Lax` and would have widened the
-        # CSRF surface to get it.
-        samesite="strict",
-    )
-
-
-def _clear_cookie(response: Response, name: str, *, path: str) -> None:
-    response.delete_cookie(
-        name, path=path, httponly=True, secure=_cookie_secure(), samesite="strict"
-    )
-
-
 def _session_body(response: Response, tokens: SessionTokens) -> SessionResponse:
     """Set the refresh cookie and return the access half.
 
@@ -200,7 +154,7 @@ def _session_body(response: Response, tokens: SessionTokens) -> SessionResponse:
     max_age = max(
         0, int((tokens.refresh_expires_at - datetime.now(timezone.utc)).total_seconds())
     )
-    _set_cookie(
+    set_session_cookie(
         response,
         REFRESH_COOKIE,
         tokens.refresh_token,
@@ -291,7 +245,7 @@ def start_sign_in(
         storage.rollback()
         raise db_service_unavailable(exc) from exc
 
-    _set_cookie(
+    set_session_cookie(
         response,
         TRANSACTION_COOKIE,
         handle,
@@ -322,8 +276,8 @@ def complete_callback(
     # after a refusal invites a retry against a row that has already been
     # deleted, and leaving it set after a success leaves a stale credential in
     # a browser for no reason.
-    _clear_cookie(response, TRANSACTION_COOKIE, path=TRANSACTION_PATH)
-    spent = _clearing(TRANSACTION_COOKIE, path=TRANSACTION_PATH)
+    clear_session_cookie(response, TRANSACTION_COOKIE, path=TRANSACTION_PATH)
+    spent = clearing_header(TRANSACTION_COOKIE, path=TRANSACTION_PATH)
     if not handle:
         raise _refused(spent)
 
@@ -395,7 +349,7 @@ def rotate_session(
         # server has revoked -- especially one whose family was just revoked
         # for reuse -- should stop presenting it rather than retry every time
         # the page loads.
-        raise _refused(_clearing(REFRESH_COOKIE, path=REFRESH_PATH)) from exc
+        raise _refused(clearing_header(REFRESH_COOKIE, path=REFRESH_PATH)) from exc
     except SQLAlchemyError as exc:
         storage.rollback()
         raise db_service_unavailable(exc) from exc
@@ -422,7 +376,7 @@ def end_session(
 
     result = Response(status_code=status.HTTP_204_NO_CONTENT)
     result.headers["cache-control"] = _PRIVATE_CACHE
-    _clear_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
+    clear_session_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
     return result
 
 
@@ -444,5 +398,5 @@ def end_every_session(
 
     result = Response(status_code=status.HTTP_204_NO_CONTENT)
     result.headers["cache-control"] = _PRIVATE_CACHE
-    _clear_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
+    clear_session_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
     return result

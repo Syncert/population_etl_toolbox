@@ -17,7 +17,11 @@ from sqlalchemy.orm import Session
 from apps.api.auth import Account, get_app_session_dep, require_account
 from apps.api.dependencies import db_service_unavailable
 from apps.api.failures import BODY_LIMIT, CONFLICT, FRESH_SIGN_IN, NOT_FOUND
-from apps.api.routers.identity import REFRESH_COOKIE, REFRESH_PATH, _clear_cookie
+from apps.api.session_cookies import (
+    REFRESH_COOKIE,
+    REFRESH_PATH,
+    clear_session_cookie,
+)
 from apps.api.schemas.identity import (
     AccountDeletionResponse,
     AccountExportResponse,
@@ -205,5 +209,5 @@ def destroy_account(
         status_code=status.HTTP_200_OK,
     )
     result.headers["cache-control"] = _PRIVATE_CACHE
-    _clear_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
+    clear_session_cookie(result, REFRESH_COOKIE, path=REFRESH_PATH)
     return result

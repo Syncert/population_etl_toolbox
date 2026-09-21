@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.api.routers.identity import REFRESH_COOKIE, REFRESH_PATH, TRANSACTION_COOKIE
+from apps.api.session_cookies import REFRESH_COOKIE, REFRESH_PATH, TRANSACTION_COOKIE
 from tests.support.sign_in_harness import ISSUER, SignInHarness, id_token
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
