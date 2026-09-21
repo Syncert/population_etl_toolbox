@@ -25,6 +25,11 @@ GENERATED_PROBES = (
     "generated.egg-info/PKG-INFO",
 )
 OPERATIONAL_SCRIPTS = {
+    # Exports, re-applies, and expires the account deletion log (ADR-0005 s5).
+    # It is an operator tool rather than a scheduled job because the step that
+    # matters runs between restoring a database and letting it serve traffic,
+    # which is a moment only a person is standing in.
+    "apply_deletion_log.py",
     # Builds a warehouse from the reviewed manifest and records each asset it
     # applied, so the warehouse can answer which steps it carries (DB-049).
     # It replaces the `jq | psql -f` loop the reset procedure used to carry.

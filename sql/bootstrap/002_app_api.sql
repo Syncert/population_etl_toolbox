@@ -155,6 +155,38 @@ BEGIN
 END
 $$;
 
+-- One row per deleted account (ADR-0005 s5), and nothing about the person.
+--
+-- ADR-0005 s5 promises that deletion "propagates to backups within their
+-- retention window": gone from production immediately, and gone from every
+-- retained backup once the window has passed. A hard DELETE clears the live
+-- database and does nothing at all to a point-in-time snapshot taken an hour
+-- earlier, so a restore inside the window would bring the row back -- and a
+-- deletion promise that quietly expires at the backup boundary is not one.
+--
+-- This table is what a restore re-applies. It holds an account id and a
+-- timestamp, which is the least that can express "this id must not exist" and
+-- carries no identity, no address, and no content: restoring from it tells
+-- nobody anything about who the person was.
+--
+-- Rows are purged once they are older than the declared retention window,
+-- because by then no retained backup contains the account and the log entry
+-- is the only remaining trace.
+--
+-- **The log has to be retained outside this database to do its job.** A
+-- restore brings back the log as it stood at the restore point, which does
+-- not include the deletions that happened after it -- exactly the ones that
+-- need re-applying. `scripts/apply_deletion_log.py --export` writes it out;
+-- the deployment's backup procedure is responsible for keeping that export
+-- somewhere a restore does not overwrite.
+CREATE TABLE IF NOT EXISTS app_api.account_deletion_log (
+    user_account_id BIGINT PRIMARY KEY,
+    deleted_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS account_deletion_log_age_idx
+    ON app_api.account_deletion_log (deleted_at);
+
 -- One row per sign-in that has started and not yet come back (ADR-0005 s1).
 --
 -- This table is what "a `state` parameter bound to the caller's session"

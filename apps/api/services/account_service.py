@@ -120,6 +120,20 @@ _DELETE_ACCOUNT = text(
     "DELETE FROM app_api.user_account WHERE user_account_id = :user_account_id"
 )
 
+#: Written in the same transaction as the delete (ADR-0005 §5). The two have to
+#: commit together: a log entry with no delete would have a restore destroy a
+#: live account, and a delete with no log entry is a deletion a restore inside
+#: the backup window silently undoes -- which is the promise this table exists
+#: to keep. `ON CONFLICT DO NOTHING` because ids are not reused and a second
+#: delete of the same id is the idempotent second call, not a new fact.
+_RECORD_DELETION = text(
+    """
+    INSERT INTO app_api.account_deletion_log (user_account_id)
+    VALUES (:user_account_id)
+    ON CONFLICT (user_account_id) DO NOTHING
+    """
+)
+
 _SET_PUBLIC_NAME = text(
     """
     UPDATE app_api.user_account
@@ -257,6 +271,13 @@ def delete_account(
     Idempotent: a second delete of an account that is already gone is not an
     error, and cannot be, because the credential that would have proved who
     was asking was destroyed by the first one.
+
+    The deletion log is written in the same transaction. ADR-0005 §5 promises
+    deletion "propagates to backups within their retention window", and a hard
+    `DELETE` does nothing whatever to a snapshot taken an hour ago; the log is
+    what a restore re-applies before the database serves traffic. Writing it in
+    a second transaction would leave a window in which the account is gone and
+    nothing records that it should stay gone.
     """
     if not signed_in_recently(
         db,
@@ -266,6 +287,7 @@ def delete_account(
     ):
         raise FreshSignInRequired()
 
+    db.execute(_RECORD_DELETION, {"user_account_id": user_account_id})
     result = db.execute(_DELETE_ACCOUNT, {"user_account_id": user_account_id})
     db.commit()
     return bool(result.rowcount)
