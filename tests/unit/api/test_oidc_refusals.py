@@ -652,3 +652,27 @@ def test_a_third_issuer_is_still_refused_under_the_widened_check() -> None:
     ):
         with pytest.raises(IdentityRefused):
             provider.verify_id_token(_token(iss=impostor), nonce=NONCE)
+
+
+def test_every_declared_algorithm_is_one_the_installed_pyjwt_implements() -> None:
+    """Covers: API-150 -- the packaging half, which no other test here reaches.
+
+    PyJWT implements the asymmetric algorithms only when `cryptography` is
+    installed. Without it `RS256` is simply absent from its registry, and the
+    failure is not an `ImportError` at startup -- it is every sign-in failing
+    at verification, on a deployment that imported everything fine.
+
+    This nearly shipped. `pyjwt` was resolving into `requirements/api.lock.txt`
+    as a transitive dependency of `redis` and `cryptography` was not in that
+    lock at all, so the API image would have refused every ID token it was
+    ever shown. Declaring `PyJWT[crypto]` fixed it; this is what notices if the
+    declaration is ever weakened back to bare `PyJWT`.
+    """
+    from jwt.algorithms import get_default_algorithms
+
+    available = set(get_default_algorithms())
+    missing = sorted(set(ID_TOKEN_ALGORITHMS) - available)
+    assert not missing, (
+        f"the installed PyJWT cannot verify {missing}; `cryptography` is "
+        "probably absent, and every sign-in would fail at verification"
+    )
