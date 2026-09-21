@@ -34,9 +34,29 @@ verify:
 
 ### Checkpoint, 2026-09-20
 
-Branch `claude/plans-iteration-2026-09-20`, four commits. Everything below is
-inspectable in the repository; nothing here is a plan for work rather than a
-record of it.
+Branch **`claude/plans-iteration-2026-09-20`**, 31 commits. Everything
+below is inspectable in the repository; nothing here is a plan for work rather
+than a record of it.
+
+The frontmatter above declares `branch: claude/self-service-accounts`, which is
+what `tools/Invoke-ClaudePlans.ps1` would have used. This work was not
+dispatched, so the branch is named for the session instead. Nothing reads that
+field outside the dispatcher, and it is left as the plan's own declaration
+rather than rewritten to match a branch that also carries work this plan
+caused but does not own -- the API dependency lock, DEPLOY-013, and the
+`api_app_writer` grant check.
+
+**Every command in the `verify` block above passes on this branch.** Run
+directly, in the order they are declared:
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit -q` | 1975 passed |
+| `pytest -o addopts='' tests/integration/api -m "integration and not external"` | 177 passed, 4 skipped |
+| `npm --prefix apps/web run test:unit` | 672 passed |
+| `npm --prefix apps/web run lint ; ... typecheck` | clean |
+| `npm --prefix apps/web run test:browser` | 164 passed |
+| `ruff format --check . ; ruff check .` | 528 files formatted, all checks passed |
 
 **Done, with evidence.**
 
@@ -214,11 +234,23 @@ and watching it fail, not by assuming.
    describing the case its author had in mind rather than the condition the
    code checked, which is how (1) survived being written down.
 
-**And one gap nothing was testing.** `resolve_key`'s production branch -- build
-a `PyJWKClient`, fetch the JWKS, pick a key by `kid` -- was exercised by
-nothing, because every other test injects a resolver. Now graded against a real
-JWKS over a real socket, including a token whose `kid` names a key the provider
-publishes and whose signature is from one it does not.
+**And the gaps nothing was testing.** Two of them, both the same shape: the
+code that talks to the provider was replaced in every test that mentioned it.
+`resolve_key`'s production branch -- build a `PyJWKClient`, fetch the JWKS,
+pick a key by `kid` -- and `exchange_code`'s outbound `POST`. Both are now
+graded against a real discovery document, a real JWKS and a real token endpoint
+over a real socket, including the `kid` selection, the form encoding that
+matches what Google's discovery document advertises, and one path that
+exchanges a code and verifies the token that comes back -- which is the only
+place in the suite where those two are continuous, and is what a sign-in is.
+
+**And four acceptance criteria that had been ticked on reasoning.** Not bugs,
+which is what makes them worth naming: the log-quietness criterion named a test
+shape that did not exist, the round trip saved an analysis where the criterion
+says "an analysis and an evidence packet", the `409` on an unread version had
+no test presenting a session rather than an operator token, and the
+deployment-wide account-creation ceiling was implemented and asserted by
+nothing. All four now have the evidence their tick claimed.
 
 ## The one thing that is still not evidence
 
