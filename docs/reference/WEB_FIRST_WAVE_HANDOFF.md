@@ -84,11 +84,25 @@ the signed-out destination and the evidence packet builder's input.
 `lib/savedAnalysis.planLocalMigration` bridges what it can and names what it
 cannot; the local store is never cleared by importing.
 
-The bearer token has one home, `lib/apiToken.ts`: `sessionStorage` only, at
-the user's explicit choice, guarded on every access because storage throws
-outright in a private window rather than returning null. Any new screen that
-authenticates reads it from there — a second copy of the key would be a
-second place for that discipline to drift out of.
+The bearer credential has one home, `lib/apiToken.ts`. Any new screen that
+authenticates reads it from there through `useStoredToken()` — a second copy
+of the key would be a second place for that discipline to drift out of.
+
+**Amended by ADR-0005 (`self-service-accounts`).** There are now two kinds of
+credential and they cannot share a mechanism: a self-service session's access
+token lives **only in a module-level variable**, because ADR-0005 §2 forbids
+writing it anywhere that survives the page, while a pasted operator token
+stays in `sessionStorage` exactly as below. One module, one accessor, two
+backings — so there is still one place a browser-held credential lives, and a
+screen does not know or care which kind it has. A session wins when both are
+present, because signing in must not appear to do nothing.
+
+The `sessionStorage` half is unchanged: only at the user's explicit choice,
+and guarded on every access because storage throws outright in a private
+window rather than returning null. What survives a reload for a session is not
+storage at all but the `HttpOnly` refresh cookie, which script cannot read;
+`lib/session.refreshSession()` is the only thing that turns it back into a
+usable credential.
 
 ## Privacy boundaries
 
@@ -96,8 +110,11 @@ second place for that discipline to drift out of.
   and profile links carry a query — source, measure, scope, release,
   geography, page — so a shared link reproduces an analysis. They never carry
   a value, and never carry an identity.
-- **Private content never reaches a URL.** The bearer token is sent only as
-  an `Authorization` header. No configuration's name, id, version, or owner
+- **Private content never reaches a URL.** The bearer credential is sent only
+  as an `Authorization` header, and an authorization code is sent only in a
+  request body: `/auth/callback` reads the provider's `code` and `state` from
+  its own address and calls `history.replaceState` before it does anything
+  else, including before the network call. No configuration's name, id, version, or owner
   is written to the address bar, a link, a referrer, or history. The
   saved-analysis screen writes nothing to the address bar at all.
 - **Private responses are never publicly cached.** `/analysis-configurations`
@@ -160,8 +177,13 @@ Out of scope here, and deliberately not stubbed:
 
 - Public publishing approval, moderation, and takedown.
 - Comments, follows, sharing to third parties, and any social graph.
-- Account self-registration, password flows, and session management beyond
-  presenting an operator-provisioned bearer token.
+- ~~Account self-registration, password flows, and session management beyond
+  presenting an operator-provisioned bearer token.~~ **Delivered by
+  `self-service-accounts` against [ADR-0005](../decisions/0005-self-service-accounts.md).**
+  Registration and sign-in are a third-party OIDC flow; there are no password
+  flows and there is still no mail. The local store's role as the signed-out
+  destination is unchanged, and pasting an operator token still works — what
+  changed is that it is no longer the only way to hold a credential.
 - Server-side rendering of user content, and any multi-tenant theming.
 - A quality score, and any cross-source composite measure.
 - Native mobile applications.

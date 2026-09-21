@@ -15,6 +15,7 @@ import { describe, expect, test } from "vitest";
 // graded the application's own literals or its `types.ts`.
 
 import {
+  addressesServedPath,
   servedPathsMatching,
   servedSchemaFields,
   servesPath,
@@ -138,9 +139,13 @@ describe("the transport boundary's literals are graded", () => {
       // A templated resource stands for every served path of its shape: the
       // source-scoped routes are written `/${source.segment}/observations/latest`
       // and there is one per source segment.
+      // Any method, not just `GET`: the sweep reads a resource literal and
+      // cannot see the method beside it in an options object. The sign-in
+      // routes are `POST`-only and are addressed exactly as every other
+      // resource here is.
       const matches = full.includes("${")
         ? servedPathsMatching(full)
-        : servesPath(full)
+        : addressesServedPath(full)
           ? [full]
           : [];
       if (matches.length === 0) {

@@ -17,15 +17,19 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed and **in progress.** The API half is built and verified
-  against a real PostGIS 16 database. The web sign-in surface (deliverable 4)
-  is not started, and one acceptance criterion needs a credential no agent
-  container holds. `self-service-identity` was recorded `approved` by Nick on
+- **Status:** Claimed and **in progress**, with every deliverable and every
+  acceptance criterion carrying evidence. It stays in `in_progress/` rather
+  than moving to `needs_review/` for one reason, which is the blocker this
+  plan was filed with: nothing here has been exercised against a real Google
+  OIDC client, because that needs a registration and secret no agent container
+  holds. `self-service-identity` was recorded `approved` by Nick on
   2026-09-20, against
   [ADR-0005](../../decisions/0005-self-service-accounts.md), which has been
   `Accepted` since 2026-09-16.
 - **Last updated:** 2026-09-20
-- **Current milestone:** deliverable 4, the web sign-in surface.
+- **Current milestone:** every deliverable and every acceptance criterion
+  has evidence. What remains is a credential no agent container holds --
+  see *What this still cannot finish here* below.
 
 ### Checkpoint, 2026-09-20
 
@@ -40,7 +44,7 @@ record of it.
 | 1. Account lifecycle in `app_api` | `sql/bootstrap/002_app_api.sql`, `scripts/provision_app_api.py` | API-149, 6 integration tests |
 | 2. Credential issuance behind the existing boundary | `apps/api/auth.py`, `apps/api/oidc.py`, `apps/api/services/identity_service.py`, `apps/api/routers/identity.py` | API-150 (41 unit), API-151 (29 integration) |
 | 3. Bounds on the first unauthenticated write | `apps/api/ratelimit.py`, `identity_service._resolve_account` | API-153 (3 unit) |
-| 4. The web sign-in surface | -- | **not started** |
+| 4. The web sign-in surface | `apps/web/lib/apiToken.ts`, `lib/session.ts`, `components/SignInControl.tsx`, `components/SignInCallback.tsx`, `app/auth/callback/` | WEB-115, 21 unit tests |
 | 5. Migration | `002_app_api.sql`'s migration block | API-149, against a schema built in the *previous* shape |
 | 6. Contract documentation | `API_CONSUMER_GUIDE.md`, `TESTING_CONTRACT.md` | the gates in `tests/unit` that enforce both |
 
@@ -74,12 +78,22 @@ tests.
 - [x] Deleting an account does what the ADR says, in one transaction, with
       evidence -- API-152, including that a stale session destroys nothing on
       its way to a 403.
-- [ ] The browser holds one credential in one place -- **deliverable 4.**
+- [x] The browser holds one credential in one place -- one module, one
+      accessor, two backings, because ADR-0005 s2 forbids a session token
+      being written anywhere that survives the page and WEB-022 keeps the
+      operator token in `sessionStorage`. The local store's role as the
+      signed-out destination is unchanged rather than retired, and the
+      handoff records that. WEB-115.
 
 **Not run here, and why.**
 
-- The browser tier (`npm --prefix apps/web run test:browser`) and the web unit,
-  lint and build tiers: nothing in `apps/web` changed yet.
+- The **browser tier** (`npm --prefix apps/web run test:browser`), which the
+  plan's Validation section names for the sign-in surface. The web unit, lint,
+  typecheck and build tiers all ran and pass; the Playwright tier was not run
+  here. A sign-in cannot complete in it without a provider, so what it can
+  grade is the signed-out control, the callback route's refusal path, and that
+  the code is stripped from the address bar -- worth adding, and the first
+  thing to do alongside the real client registration.
 - `tests/unit` reports 56 errors on this machine. They are
   `PermissionError: [WinError 5]` on `AppData/Local/Temp/pytest-of-synce` at
   fixture setup, they are not caused by this work, and `main` at `bce6c61`
