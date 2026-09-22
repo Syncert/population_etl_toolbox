@@ -824,11 +824,132 @@ statistics are measured over the whole join, never over the page you asked
 for. `year` works as it does on `/comparison/correlation` — each side's own
 declared year filter — and pins every side.
 
+## Signing in, and your account
+
+Self-service accounts — see [ADR-0005](../decisions/0005-self-service-accounts.md).
+
+You sign in with an existing account at a third-party OpenID Connect provider.
+This platform runs no password, sends no mail to authenticate you, and stores
+no credential that a leak of its database could present anywhere.
+
+### What it stores about you
+
+Three things, exhaustively: the provider's stable identifier for you
+(`issuer` and `subject`), your email address **only if the provider marked it
+verified**, and whatever you create here. No IP log, no device fingerprint, no
+analytics profile, no third-party tracker, and nothing else harvested from the
+provider — not your name there, not your picture.
+
+An unverified address is discarded rather than stored. You still get an
+account; there is simply no contact address on file for it.
+
+### The flow
+
+1. `POST /api/v1/auth/sign-in` with `{"redirect_uri": "..."}`. The URI must
+   match one the deployment registered, **exactly** — not by prefix, not by
+   origin, and not ignoring a trailing slash. The response carries
+   `authorization_url`; send the browser there. A short-lived `HttpOnly`
+   cookie carries your half of the transaction.
+2. The provider returns the browser to your `redirect_uri` with `code` and
+   `state` in the query. Read them, **strip them from your URL**, and
+3. `POST /api/v1/auth/callback` with `{"code": "...", "state": "..."}`.
+
+The code goes in a body rather than a query string deliberately: a code in a
+URL is recorded by browser history and can travel in a `Referer`. The callback
+route is not the redirect target for the same reason.
+
+The response is your session:
+
+```json
+{ "access_token": "...", "token_type": "Bearer", "expires_in": 900,
+  "expires_at": "2026-09-20T22:15:00Z" }
+```
+
+### What to do with it
+
+**Hold the access token in memory only.** Not `localStorage`, not
+`sessionStorage`, not a cookie you set yourself. It expires in fifteen minutes
+and you present it exactly as an operator token is presented:
+`Authorization: Bearer <token>`.
+
+The long-lived half is a refresh token in an `HttpOnly`, `Secure`,
+`SameSite=Strict` cookie scoped to `/api/v1/auth/refresh` and to nothing else.
+You cannot read it, and that is the point: script that compromises your page
+can act as you until the page closes, but cannot lift the credential and reuse
+it later from somewhere else.
+
+- `POST /api/v1/auth/refresh` — no body, no header; the cookie is the
+  credential. Returns a new access token and rotates the cookie.
+- `POST /api/v1/auth/sign-out` — ends this session everywhere it reaches:
+  the access token, the refresh cookie, everything descended from this
+  sign-in.
+- `POST /api/v1/auth/sign-out-everywhere` — every session this account holds,
+  on every device, in one statement.
+
+**Every refresh returns a new refresh token and spends the old one.**
+Presenting a spent one a second time is treated as theft and revokes the whole
+session — you are signed out on that device and on nothing else. Two browser
+tabs refreshing within a few seconds of each other is not theft and does not
+do this.
+
+A session lasts 30 days of inactivity, with a hard ceiling of 90 days since
+you signed in. Past either, you sign in again.
+
+### Your account
+
+- `GET /api/v1/account` — what this account knows about itself.
+- `GET /api/v1/account/export` — **everything** the platform holds about you,
+  in one document: the identity pair, the verified address if there is one,
+  the timestamps on your credentials, and every saved analysis and evidence
+  packet verbatim. Credential *values* are not in it and never were stored.
+- `PUT /api/v1/account/public-display-name` — 3 to 32 characters, letters,
+  digits, spaces and `. _ -`, beginning and ending with a letter or digit.
+  Unique case-insensitively, and surrounding and repeated whitespace is
+  collapsed, so one account cannot dress as another. `409` if it is taken.
+  It is absent until you choose one, and nothing from the provider is ever
+  used as a default.
+- `DELETE /api/v1/account` — a hard delete of the account and everything it
+  owns, in one transaction, immediately, with no soft-delete state and no
+  grace period. It requires a sign-in completed in the last few minutes; a
+  30-day session is not authority to destroy everything from an unattended
+  laptop, so an older session answers `403` and tells you to sign in again.
+
+  What deletion promises: gone from production immediately, and gone from
+  every retained backup once the deployment's declared retention window has
+  passed. The window is reported in the export and in the deletion response,
+  or `null` where the deployment has not declared one. What it cannot promise:
+  copies anybody already exported, cited, or cached elsewhere.
+
+### Refusals
+
+Every refused sign-in or session operation answers the same `401` with the
+same body: `{"detail": "sign-in could not be completed"}`. Which check you
+tripped is not reported, because that would tell an attacker which one to work
+on next — and the callback never reveals whether an account already existed for
+the identity it just authenticated, which would be an oracle for whether a
+given person uses this site.
+
+A deployment that has registered no OIDC client answers `503` on the sign-in
+routes. That is a deployment fact, not something wrong with your request;
+operator-issued tokens keep working there.
+
+The sign-in routes have their own rate-limit bucket, separate from `catalog`
+and `analysis` and far tighter than either, so signing in cannot be throttled
+by your own chart browsing and a callback flood cannot be paid for out of the
+analysis budget. Account creation is additionally bounded per hour across the
+whole deployment; exceeding it answers the same `429` with `Retry-After`.
+
 ## Saved analysis configurations
 
 Authenticated, user-owned storage — see ADR-0003.
 
-- `Authorization: Bearer <token>`, operator-provisioned.
+- `Authorization: Bearer <token>` — either the access token from a
+  self-service sign-in above, or an operator-provisioned token. The
+  boundary, the scoping, and every refusal below are identical for both.
+- **An account holds a bounded number of these.** Past the bound, a create
+  answers `409` and says so; the remedy is deleting one, so there is no
+  `Retry-After` and waiting does not help. The bound is a deployment
+  setting and is separate from the size bound on any single document.
 - `GET|POST /api/v1/analysis-configurations`,
   `GET|PUT|DELETE /api/v1/analysis-configurations/{configuration_id}`.
 - Documents are validated on write against the same capability and
@@ -967,6 +1088,7 @@ any parsing. Public analytical reads carry no body and are unaffected.
 | Status | Meaning |
 | --- | --- |
 | `401` | Missing, malformed, unknown, or revoked bearer token. Identical for every case by design |
+| `403` | Authenticated, and not authorized for this act. Only `DELETE /api/v1/account` answers it: deletion needs a sign-in completed in the last few minutes, and a long-lived session is not that. Sign in again and retry |
 | `404` | Unknown identifier, or a configuration you do not own (indistinguishable on purpose) |
 | `409` | Version conflict, or a name you already use |
 | `413` | The request body is over the accepted size. Refused before parsing |

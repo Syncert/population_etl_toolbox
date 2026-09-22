@@ -24,6 +24,22 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 LOCK = REPOSITORY_ROOT / "requirements/api.lock.txt"
 
+#: The image this lock describes, stated to the resolver.
+#:
+#: `--python-version` was pinned and the platform was not, so the resolution
+#: followed whoever ran it. `uvicorn[standard]` brings `uvloop` only where
+#: `sys_platform != "win32"`, and this project declares `tzdata` only on
+#: Windows -- so a refresh from a Windows checkout produced a lock with
+#: `tzdata` added and `uvloop` silently gone, and the lock carries no
+#: environment markers to say so. `Dockerfile.api` installs it with
+#: `--require-hashes` on `python:3.11-slim`, so that image would have quietly
+#: dropped to uvicorn's asyncio loop, with a green CI run and no diff anybody
+#: would read as a behaviour change.
+#:
+#: Pinning the platform makes the resolution a property of this file rather
+#: than of the machine that ran it (ENV-022).
+_IMAGE_PLATFORM = "linux"
+
 COMPILE = (
     "uv",
     "pip",
@@ -33,6 +49,8 @@ COMPILE = (
     "--generate-hashes",
     "--python-version",
     "3.11",
+    "--python-platform",
+    _IMAGE_PLATFORM,
     "--no-header",
     "pyproject.toml",
 )

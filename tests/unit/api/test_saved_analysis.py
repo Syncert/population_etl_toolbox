@@ -129,7 +129,11 @@ class _StorageSession:
         params = params or {}
         self.statements.append(sql)
 
-        if "app_api.user_account" in sql:
+        if "app_api.account_credential" in sql:
+            # ADR-0005 moved the digest out of `user_account` into its own
+            # credential row, so the authentication lookup joins the two. The
+            # stand-in answers the joined shape; the fixtures still key on the
+            # digest, because that is still the only thing sign-in matches on.
             digest = params.get("token_sha256")
             entry = self._accounts.get(digest)
             if entry is None:
@@ -138,9 +142,12 @@ class _StorageSession:
             return _Result(
                 rows=[
                     {
+                        "credential_id": account_id,
                         "user_account_id": account_id,
                         "display_label": label,
                         "token_sha256": digest,
+                        "session_family": None,
+                        "public_display_name": None,
                     }
                 ]
             )

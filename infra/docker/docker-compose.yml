@@ -118,6 +118,48 @@ services:
       # budgets above one budget for the deployment. Empty by default: a
       # forwarded address read from an undeclared hop is attacker-controlled.
       API_TRUSTED_PROXY_IPS: ${API_TRUSTED_PROXY_IPS:-}
+      # -- Self-service identity (ADR-0005). Every value has a default and the
+      # three that decide whether the feature exists at all default to empty:
+      # a deployment that has registered no OIDC client serves everything else
+      # exactly as before and answers 503 on the sign-in routes.
+      #
+      # These are passed explicitly, like everything above, because this
+      # service enumerates its environment. A value an operator sets in
+      # `stack.env` that is not listed here never reaches the container, and
+      # the symptom is a feature that stays switched off with nothing saying
+      # why (DEPLOY-013).
+      API_OIDC_ISSUER: ${API_OIDC_ISSUER:-https://accounts.google.com}
+      API_OIDC_CLIENT_ID: ${API_OIDC_CLIENT_ID:-}
+      API_OIDC_CLIENT_SECRET: ${API_OIDC_CLIENT_SECRET:-}
+      # Exact-match redirect allowlist. Comma-separated, and every entry must
+      # match byte for byte what the provider was registered with.
+      API_OIDC_REDIRECT_URIS: ${API_OIDC_REDIRECT_URIS:-}
+      API_OIDC_CLOCK_SKEW_SECONDS: ${API_OIDC_CLOCK_SKEW_SECONDS:-60}
+      API_OIDC_TRANSACTION_TTL_SECONDS: ${API_OIDC_TRANSACTION_TTL_SECONDS:-600}
+      # The session bounds ADR-0005 s2 fixed. Tunable because a deployment may
+      # have to be, not because these are knobs worth turning.
+      API_ACCESS_TOKEN_TTL_SECONDS: ${API_ACCESS_TOKEN_TTL_SECONDS:-900}
+      API_SESSION_IDLE_DAYS: ${API_SESSION_IDLE_DAYS:-30}
+      API_SESSION_ABSOLUTE_DAYS: ${API_SESSION_ABSOLUTE_DAYS:-90}
+      API_REFRESH_GRACE_SECONDS: ${API_REFRESH_GRACE_SECONDS:-10}
+      # `Secure` on the session cookies. Off only for a plain-HTTP localhost
+      # run; anywhere else it publishes the refresh token to the network.
+      API_COOKIE_SECURE: ${API_COOKIE_SECURE:-1}
+      # The third rate-limit bucket and the deployment-wide ceiling on account
+      # creation (ADR-0005 s4). The bucket is meaningless without
+      # API_TRUSTED_PROXY_IPS above: unconfigured, it is one budget for the
+      # whole internet.
+      API_RATE_LIMIT_IDENTITY_PER_MINUTE: ${API_RATE_LIMIT_IDENTITY_PER_MINUTE:-30}
+      API_ACCOUNT_CREATION_PER_HOUR: ${API_ACCOUNT_CREATION_PER_HOUR:-60}
+      # How recently an account must have signed in to delete itself.
+      API_DELETION_FRESHNESS_SECONDS: ${API_DELETION_FRESHNESS_SECONDS:-600}
+      # Per-account storage quotas (ADR-0005 s4).
+      API_SAVED_ANALYSIS_QUOTA: ${API_SAVED_ANALYSIS_QUOTA:-200}
+      API_EVIDENCE_PACKET_QUOTA: ${API_EVIDENCE_PACKET_QUOTA:-100}
+      # The backup retention window ADR-0005 s5 requires a deployment to
+      # declare rather than leave to accident. 0 means undeclared, and the API
+      # reports it absent rather than inventing one.
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-0}
     depends_on:
       - analytics_postgres
       - redis

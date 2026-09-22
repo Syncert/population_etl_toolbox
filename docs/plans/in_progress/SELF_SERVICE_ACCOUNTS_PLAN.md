@@ -1,0 +1,403 @@
+---
+id: self-service-accounts
+branch: claude/self-service-accounts
+depends_on:
+  - self-service-identity
+parallel_safe: false
+complexity: high
+verify:
+  - python -m pytest tests/unit -q
+  - python -m pytest -o addopts='' tests/integration/api -m "integration and not external"
+  - npm --prefix apps/web run test:unit
+  - npm --prefix apps/web run lint ; npm --prefix apps/web run typecheck
+  - npm --prefix apps/web run test:browser
+  - ruff format --check . ; ruff check .
+---
+
+# A visitor can hold an account of their own
+
+## Plan status
+
+- **Status:** Claimed and **in progress**, with every deliverable and every
+  acceptance criterion carrying evidence. It stays in `in_progress/` rather
+  than moving to `needs_review/` for one reason, which is the blocker this
+  plan was filed with: nothing here has been exercised against a real Google
+  OIDC client, because that needs a registration and secret no agent container
+  holds. `self-service-identity` was recorded `approved` by Nick on
+  2026-09-20, against
+  [ADR-0005](../../decisions/0005-self-service-accounts.md), which has been
+  `Accepted` since 2026-09-16.
+- **Last updated:** 2026-09-20
+- **Current milestone:** every deliverable and every acceptance criterion
+  has evidence. What remains is a credential no agent container holds --
+  see *What this still cannot finish here* below.
+
+### Checkpoint, 2026-09-20
+
+Branch **`claude/plans-iteration-2026-09-20`**, 31 commits. Everything
+below is inspectable in the repository; nothing here is a plan for work rather
+than a record of it.
+
+The frontmatter above declares `branch: claude/self-service-accounts`, which is
+what `tools/Invoke-ClaudePlans.ps1` would have used. This work was not
+dispatched, so the branch is named for the session instead. Nothing reads that
+field outside the dispatcher, and it is left as the plan's own declaration
+rather than rewritten to match a branch that also carries work this plan
+caused but does not own -- the API dependency lock, DEPLOY-013, and the
+`api_app_writer` grant check.
+
+**Every command in the `verify` block above passes on this branch.** Run
+directly, in the order they are declared:
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit -q` | 1975 passed |
+| `pytest -o addopts='' tests/integration/api -m "integration and not external"` | 177 passed, 4 skipped |
+| `npm --prefix apps/web run test:unit` | 672 passed |
+| `npm --prefix apps/web run lint ; ... typecheck` | clean |
+| `npm --prefix apps/web run test:browser` | 164 passed |
+| `ruff format --check . ; ruff check .` | 528 files formatted, all checks passed |
+
+**Done, with evidence.**
+
+| Deliverable | Where | Evidence |
+| --- | --- | --- |
+| 1. Account lifecycle in `app_api` | `sql/bootstrap/002_app_api.sql`, `scripts/provision_app_api.py` | API-149, 6 integration tests |
+| 2. Credential issuance behind the existing boundary | `apps/api/auth.py`, `apps/api/oidc.py`, `apps/api/services/identity_service.py`, `apps/api/routers/identity.py` | API-150 (41 unit), API-151 (29 integration) |
+| 3. Bounds on the first unauthenticated write | `apps/api/ratelimit.py`, `identity_service._resolve_account` | API-153 (3 unit) |
+| 4. The web sign-in surface | `apps/web/lib/apiToken.ts`, `lib/session.ts`, `components/SignInControl.tsx`, `components/SignInCallback.tsx`, `app/auth/callback/` | WEB-115, 21 unit tests |
+| 5. Migration | `002_app_api.sql`'s migration block | API-149, against a schema built in the *previous* shape |
+| 6. Contract documentation | `API_CONSUMER_GUIDE.md`, `TESTING_CONTRACT.md`, `CI_EVIDENCE_MAP.md`, `WEB_FIRST_WAVE_HANDOFF.md`, `BETA_RESET_REINGESTION.md` | the gates in `tests/unit` that enforce all of them |
+| Packaging and deployment | `pyproject.toml`, `requirements/api.lock.txt`, both compose files, both env examples | API-150's packaging assertion, DEPLOY-013 |
+
+Beyond the numbered deliverables, and required by the ADR rather than by the
+scope list: account export, hard deletion with a freshness requirement, the
+public display name, and the operator actions in §4 (`--revoke-sessions-label`,
+`--block-account-label`, `--unblock-account-label`) — API-152. Per-account
+storage quotas — API-154. And the backup-purge mechanism §5 commits to —
+API-155, `app_api.account_deletion_log` and `scripts/apply_deletion_log.py`,
+graded by performing a restore rather than by describing one.
+
+The browser tier ran and passes: WEB-116, seven specs, 164 in the tier
+overall. It covers everything on this side of the redirect, which is all of
+the flow except the provider's own consent screen — including the one line
+that cannot be checked anywhere else, which is that the authorization code
+leaves the address bar, on the refusal path as well as the success one.
+
+**Acceptance criteria.**
+
+- [x] Register, sign in, save, sign out, sign in again, find the work --
+      `test_a_visitor_saves_work_signs_out_signs_in_again_and_finds_it`. It
+      saves **both** an analysis and an evidence packet, because the criterion
+      names both and they are different routes over different tables. It saved
+      an analysis only at first, with a note here inferring the packet from it;
+      inference is not what a tick is for.
+- [x] Every existing denial path holds under the new credential -- cross-user
+      access answers 404, a refresh token and a transaction handle are refused
+      as bearer tokens, revoked and expired credentials fail, and `409` still
+      refuses an overwrite of an unread version. That last one is named in the
+      criterion and had no test presenting a *session*: every existing test of
+      optimistic concurrency presents an operator token, so none of them was
+      answering the question the criterion asks. The existing isolation tests
+      pass unmodified; what changed in them is how a fixture *creates* an
+      account, not what it asserts.
+- [x] Anonymous public reads unchanged -- no route moved into or out of
+      `CACHEABLE_ROUTERS`, and the reviewed OpenAPI snapshot's diff is
+      additive: five sign-in operations, three account operations, four
+      schemas, and a `403` on one route. The existing sweeps pass.
+- [x] No credential, identifier, or account content in logs, cache keys,
+      URLs, or error text. Marked satisfied once on weaker evidence than the
+      criterion asks for -- it names "tests in the shape `tests/integration/api`
+      already uses for tokens" (API-059), and there was no equivalent: the
+      suite proved refusals were *indistinguishable* and nothing proved they
+      were *quiet*. There is one now. A whole sign-in and a refused rotation
+      run with logging captured, and the code, state, nonce, both tokens, the
+      email and the provider subject appear in no log line. Bodies and headers
+      carry a narrower rule, because `state` and `nonce` belong in the
+      authorization URL -- writing it as the same rule is how the assertion was
+      wrong on its first run.
+- [x] Registration and sign-in are bounded, and the bound is tested. Two
+      bounds, each with its own test now: the per-client `identity` bucket
+      (API-153) and the deployment-wide account-creation ceiling, which was
+      implemented, wired to a `429`, and asserted by nothing. The ceiling's
+      test holds the half that matters more than the refusal -- a reader who
+      already has an account still signs in at the ceiling, because a bound
+      that locked out existing readers would be an outage rather than a
+      limit.
+- [x] Deleting an account does what the ADR says, in one transaction, with
+      evidence -- API-152, including that a stale session destroys nothing on
+      its way to a 403.
+- [x] The browser holds one credential in one place -- one module, one
+      accessor, two backings, because ADR-0005 s2 forbids a session token
+      being written anywhere that survives the page and WEB-022 keeps the
+      operator token in `sessionStorage`. The local store's role as the
+      signed-out destination is unchanged rather than retired, and the
+      handoff records that. WEB-115.
+
+**Not run here, and why.**
+
+- **Nothing in the `verify` block.** Every tier it names ran here and passes,
+  including the browser tier, which was added to that block because this plan's
+  work depends on it. Beyond it, and also run: `tests/integration/database`
+  (224 passed, 2 skipped), the Compose deployment tier, the web build, and a
+  real `Dockerfile.api` build used to prove the packaging fix in the artifact
+  rather than in the developer venv.
+- **`tests/unit` reports 56 errors on this machine unless pytest is given a
+  writable temporary directory.** They are `PermissionError: [WinError 5]` at
+  fixture setup on `AppData/Local/Temp/pytest-of-synce`, whose ACLs deny even
+  its owner; `main` at `bce6c61` reports the same 56. With
+  `--basetemp=.tmp/pytest` the whole tier runs: 1973 passed, 0 errors. The
+  directory is stale machine state rather than repository state, so it was left
+  alone rather than have an agent rewrite ACLs under a user's profile.
+- `tests/unit` reports 56 errors on this machine. They are
+  `PermissionError: [WinError 5]` on `AppData/Local/Temp/pytest-of-synce` at
+  fixture setup, they are not caused by this work, and `main` at `bce6c61`
+  reports the same 56. Counted rather than described: main 1857 passed /
+  56 errors, this branch 1901 passed / 56 errors.
+
+## What deliverable 4 has to decide first
+
+Not a coding task with an obvious shape, which is why it is the checkpoint
+rather than a loose end. Scope item 4 says:
+
+> `lib/apiToken.ts` stays the one home of a browser-held credential; a second
+> storage key is the drift this plan must not introduce.
+
+and ADR-0005 §2 says the access token is held **only in JavaScript memory**,
+never in `sessionStorage`. `apiToken.ts` today *is* `sessionStorage`, by
+WEB-022, for the operator token. So the two credentials cannot share a storage
+mechanism, and the scope item forbids them having two homes. The reconciliation
+is the first thing to decide, and the plausible answer is that `apiToken.ts`
+becomes the one *module* -- one accessor every screen calls -- holding a
+session token in a module-level variable and an operator token in
+`sessionStorage` behind the same interface, with the ADR's retirement question
+("unchanged or deliberately retired") answered explicitly rather than by
+default. That is a WEB- catalog entry and a paragraph in
+`WEB_FIRST_WAVE_HANDOFF.md`, not just a component.
+
+The rest of it is ordinary: a sign-in control that calls
+`POST /api/v1/auth/sign-in` and navigates; a callback route that reads `code`
+and `state`, posts them, and `history.replaceState`s them away before anything
+else; a refresh-on-401 path that calls `/auth/refresh` once and retries; and
+sign-out. `API_OIDC_REDIRECT_URIS` must name the callback route's URL exactly.
+
+## What reviewing the branch found
+
+Recorded because a reviewer should know these existed, and because every one
+of them was found by reading rather than by a failing test. All are fixed, and
+each carries a test that fails without its fix -- verified by reverting the fix
+and watching it fail, not by assuming.
+
+**Three that would have shipped working software that was wrong.**
+
+1. **A refresh racing a sign-out signed the reader back in.** The grace window
+   treated any recent `revoked_at` as evidence of a rotation. Sign-out revokes
+   a whole family in one statement, so the token a second tab holds gets
+   exactly the stamp a just-rotated token gets, at the same moment -- and the
+   code minted a new pair. Not contrived: `maintainSession`'s timer makes it an
+   ordinary event, and the commit that added proactive rotation made it likelier.
+   Reuse detection revokes a family the same way, so the same hole let an
+   attacker spend the grace window they had just triggered. What tells the two
+   apart is whether anything in the family is still live.
+2. **`same-site` was accepted where the ADR says same-origin.**
+   `SameSite=Strict` keeps a cookie from other *sites*, not from other origins
+   on the same site, so every subdomain the deployment has -- or ever loses
+   control of -- could rotate a reader's session.
+3. **Sign-out could destroy an operator token.** With no session family it
+   revoked whatever was presented, so a public route could unrecoverably cancel
+   a credential only a privileged script can reissue, for a caller who asked to
+   end a session they did not have. ADR-0005 §6 promises the opposite.
+
+**Two that would have shipped software that did not work at all.**
+
+4. **The API image could not have verified a single ID token.** PyJWT was
+   undeclared, resolving into the lock as a transitive dependency of `redis`,
+   and `cryptography` was not in the lock at all -- so the image would have
+   imported cleanly, started cleanly, passed every probe, and refused every
+   sign-in. Proven by building `Dockerfile.api` and removing `cryptography`:
+   `RS256 available: False`. Declared as `PyJWT[crypto]` and relocked; the
+   built image now reports every declared algorithm available.
+5. **Eleven identity settings reached no container.** The `api` service
+   enumerates its environment, and none of the new values was listed --
+   including the client id and secret. An operator would have filled in
+   `stack.env`, restarted, and watched the feature stay off with nothing saying
+   why. DEPLOY-013 is the gate that would have caught it, and it caught a
+   placeholder in its own exemption list while being written.
+
+**Three that were true of the prose rather than the code.**
+
+6. `configured` argued at length that a deployment with no redirect URI should
+   answer 503, and then did not check redirect URIs.
+7. `delete_account` said "one statement", which stopped being true when the
+   deletion-log entry joined it. The promise rests on one *transaction*.
+8. A comment on the grace window asserted the successor was still live. It was
+   describing the case its author had in mind rather than the condition the
+   code checked, which is how (1) survived being written down.
+
+**And the gaps nothing was testing.** Two of them, both the same shape: the
+code that talks to the provider was replaced in every test that mentioned it.
+`resolve_key`'s production branch -- build a `PyJWKClient`, fetch the JWKS,
+pick a key by `kid` -- and `exchange_code`'s outbound `POST`. Both are now
+graded against a real discovery document, a real JWKS and a real token endpoint
+over a real socket, including the `kid` selection, the form encoding that
+matches what Google's discovery document advertises, and one path that
+exchanges a code and verifies the token that comes back -- which is the only
+place in the suite where those two are continuous, and is what a sign-in is.
+
+**And four acceptance criteria that had been ticked on reasoning.** Not bugs,
+which is what makes them worth naming: the log-quietness criterion named a test
+shape that did not exist, the round trip saved an analysis where the criterion
+says "an analysis and an evidence packet", the `409` on an unread version had
+no test presenting a session rather than an operator token, and the
+deployment-wide account-creation ceiling was implemented and asserted by
+nothing. All four now have the evidence their tick claimed.
+
+## The one thing that is still not evidence
+
+Implementation needs an **OIDC client registration and secret** from the Google
+Cloud console, which no agent container holds. Everything above was built and
+verified without one: the provider's *network* is faked and nothing else is, so
+the ID tokens are really signed, really verified, and really refused.
+
+This is why the plan stays in `in_progress/`. The first acceptance criterion is
+about a visitor signing in, and a faked provider is not a visitor signing in —
+it is proof that this side of the exchange behaves, which is a different claim.
+
+**What was done to shrink that gap, because it is the gap that bites on a first
+sign-in.** Every assumption this implementation makes about the provider was
+checked against Google's published documents rather than against the fake, and
+one of them was wrong:
+
+- **`iss` has two spellings.** Google's OpenID Connect documentation says the
+  claim is "Always `https://accounts.google.com` or `accounts.google.com` for
+  Google ID tokens", while its discovery document's own `issuer` is the first
+  form. The exact-match check refused the second, *intermittently*. Worse, the
+  stored identity is `(issuer, subject)`, so storing whichever spelling arrived
+  would have given one person two accounts and left their saved work in the one
+  they were no longer in. Fixed, and the stored issuer is now canonical
+  whichever spelling arrives (API-150).
+- The live discovery document at `accounts.google.com` was read and agrees with
+  the rest: `token_endpoint_auth_methods_supported` includes
+  `client_secret_post`, which is what the exchange sends;
+  `id_token_signing_alg_values_supported` is `RS256`, which is in the accepted
+  list; `code_challenge_methods_supported` includes `S256`;
+  `scopes_supported` includes `openid` and `email`, and `claims_supported`
+  includes `email_verified`, which is what makes ADR-0005 §1's "stored only
+  when the provider marks it verified" enforceable rather than aspirational.
+
+**What a person has to do to close it.** Register a client, set
+`API_OIDC_CLIENT_ID`, `API_OIDC_CLIENT_SECRET` and `API_OIDC_REDIRECT_URIS`
+(the last must name the callback route's URL exactly), and complete one real
+sign-in. `http://localhost` redirect URIs are permitted, so this needs no
+deployment — set `API_COOKIE_SECURE=0` for a plain-HTTP localhost run, and
+nothing else changes.
+
+Shipping it is a further step and is somebody else's plan: the exact-match
+allowlist needs a stable origin, and `deployment-smoke-target` records that
+there is not one yet and that this is deliberate.
+
+
+
+### The value the ADR left open is now filled in
+
+ADR-0005 §1 committed to "a single third-party OIDC provider" and deliberately
+named none. It is **Google**, recorded 2026-09-20 in §1, *The provider, named*,
+with GitHub ruled out on protocol grounds and an identity broker deferred.
+
+### What an agent claiming this still cannot finish alone
+
+Implementation needs an **OIDC client registration and secret** from the Google
+Cloud console. That is a credential no agent container holds, and it is the
+same shape of blocker `docs/plans/README.md` describes: build the work, but a
+criterion that needs the real client is not satisfied by an unavailable
+environment.
+
+Google permits `http://localhost` redirect URIs, so the authorization-code
+flow, the `state`/`nonce`/JWKS refusals, and every denial-path test can be
+built and run before any deployment exists. What cannot be done here is
+shipping it: the exact-match redirect allowlist ADR-0005 §1 requires needs a
+stable origin, and `deployment-smoke-target` records that there is not one yet
+and that this is deliberate.
+
+## Why
+
+The platform's write paths work and nobody can reach them. Saved analyses
+(ADR-0003) and evidence packets (ADR-0004) are owner-scoped, validated at
+write, versioned against concurrent edits, and reachable only with a token an
+operator mints by hand and a reader pastes into a form. The web app is honest
+about the consequence — `lib/savedAnalysis.saveDestination` picks the browser's
+local store when no token is held, and says so on the control — but "saved in
+this browser" is where a reader's work currently ends.
+
+`docs/reference/WEB_FIRST_WAVE_HANDOFF.md` lists "account self-registration,
+password flows, and session management beyond presenting an
+operator-provisioned bearer token" among the first wave's explicit non-goals,
+deliberately not stubbed. This plan is that non-goal becoming goal, and the
+handoff's phrasing is the constraint: what ships here is identity, not a social
+graph.
+
+## Scope
+
+The exact shape is the ADR's to decide; this plan implements it. What follows
+is the scope boundary, not a substitute decision.
+
+**In scope**
+
+1. **Account lifecycle in `app_api`.** Registration, credential verification,
+   and the schema additions the ADR calls for, provisioned by the reviewed
+   bootstrap script beside the existing `api_app_writer` grants
+   (`scripts/provision_app_api.py`). The warehouse role stays read-only and
+   gets nothing here.
+2. **Credential issuance behind the existing boundary.** Whatever a visitor
+   presents at sign-in resolves to the same authenticated principal
+   `apps/api/auth.py` already produces, so every owner-scoped route keeps its
+   current authorization code and its current denial paths.
+3. **Bounds on the first unauthenticated write.** Registration and sign-in are
+   rate-limited per the ADR through `apps/api/ratelimit.py`, and neither
+   credential nor account content reaches a log, a cache key, a response, or
+   an error message — the rule `auth.py` already documents for tokens.
+4. **The web sign-in surface.** Registration and sign-in screens, and the
+   session or token they establish, replacing paste-a-token as the primary
+   path. `lib/apiToken.ts` stays the one home of a browser-held credential;
+   a second storage key is the drift this plan must not introduce.
+5. **Migration.** Existing operator-provisioned accounts keep working, or are
+   migrated deliberately, per the ADR.
+6. **Contract documentation.** `docs/reference/API_CONSUMER_GUIDE.md`,
+   `TESTING_CONTRACT.md` (the API and frontend ranges continue from API-139
+   and WEB-104), and `CI_EVIDENCE_MAP.md`.
+
+**Out of scope**
+
+- Publishing, sharing, comments, follows, or any public artifact. That is
+  `publishing-approval-path`, which depends on this plan.
+- Any change to the public analytical surface. Anonymous reading must stay
+  exactly as anonymous, as cacheable, and as unauthenticated as it is now.
+- Roles, teams, or multi-tenant theming.
+- Any warehouse change whatsoever.
+
+## Acceptance criteria
+
+- [x] A visitor can register, sign in, save an analysis and an evidence packet
+      to their own account, sign out, sign in again, and find their work.
+- [x] Every existing denial path still holds under the new credential:
+      cross-user access answers `404`, enumeration is impossible, revoked
+      credentials fail, and `409` still refuses an overwrite of an unread
+      version.
+- [x] Anonymous public reads are unchanged: same routes, same cache headers,
+      same absence of identity, proven by the existing sweeps rather than by
+      assertion.
+- [x] No credential, account identifier, or account content appears in logs,
+      cache keys, telemetry, URLs, referrers, or error text, proven by tests
+      in the shape `tests/integration/api` already uses for tokens.
+- [x] Registration and sign-in are bounded, and the bound is tested.
+- [x] Deleting an account does what the ADR says, in one transaction, with
+      evidence.
+- [ ] The browser holds one credential in one place, and the local store's
+      role as the signed-out destination is unchanged or deliberately retired.
+
+## Validation
+
+The plan's frontmatter commands, plus the browser tier
+(`npm --prefix apps/web run test:browser`) for the sign-in surface. Denial-path
+and isolation tests are the evidence that matters here; a passing happy path
+proves almost nothing about an authentication change.

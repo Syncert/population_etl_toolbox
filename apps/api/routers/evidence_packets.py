@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.auth import Account, get_app_session_dep, require_account
+from data_ingestion_toolbox.config import get_settings
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import BODY_LIMIT, CONFLICT, NOT_FOUND
 from apps.api.schemas.evidence_packet import (
@@ -26,6 +27,7 @@ from apps.api.services.evidence_packet_service import (
     PacketInvalid,
     PacketNameTaken,
     PacketNotFound,
+    StorageQuotaReached,
     create_packet,
     delete_packet,
     get_packet,
@@ -36,6 +38,15 @@ from apps.api.services.evidence_packet_service import (
 router = APIRouter(prefix="/evidence-packets", tags=["evidence-packets"])
 
 NOT_FOUND_DETAIL = "packet not found"
+
+#: The answer when an account already holds as many as it may (ADR-0005 s4).
+#: `409`, not `429`: this is not a rate a caller can wait out. The condition is
+#: about what the account holds, and the remedy is deleting something, so a
+#: `Retry-After` would be a false promise that waiting helps.
+QUOTA_REACHED_DETAIL = (
+    "this account already holds the maximum number of evidence packets; "
+    "delete one before creating another"
+)
 
 _PRIVATE_CACHE = "private, no-store"
 
@@ -93,7 +104,10 @@ def create_evidence_packet(
             owner_user_id=account.user_account_id,
             name=payload.name,
             document=payload.document,
+            quota=get_settings().api_evidence_packet_quota,
         )
+    except StorageQuotaReached as exc:
+        raise HTTPException(status_code=409, detail=QUOTA_REACHED_DETAIL) from exc
     except PacketInvalid as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc
     except PacketNameTaken as exc:

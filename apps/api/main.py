@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
@@ -27,12 +28,14 @@ from apps.api.ratelimit import RateLimitMiddleware
 from apps.api.registry import platform_description
 from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
+    account,
     catalog,
     cdc,
     comparison,
     distribution,
     evidence_packets,
     health,
+    identity,
     observations,
     saved_analysis,
     usda_nass,
@@ -78,6 +81,12 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
 PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     saved_analysis.router,
     evidence_packets.router,
+    # Identity (ADR-0005). It belongs in this group for the reason the group
+    # exists: every route answers `private, no-store`, and a sign-in response
+    # carries a credential. A cached one would be a credential served to
+    # whoever asked next.
+    identity.router,
+    account.router,
 )
 
 #: The content report (API-137). A warehouse read, so it is deliberately not
@@ -204,10 +213,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RequestBodyLimitMiddleware,
         max_bytes=configured.api_max_request_body_bytes,
     )
+    # ADR-0005 §4 singles this combination out, and it is worth a line in the
+    # log rather than only a line in a document. The limiter keys on the TCP
+    # peer unless a declared proxy forwarded another address, and every
+    # topology here fronts the API with one -- so with no declared proxy the
+    # identity bucket is one budget for the whole internet. For catalog reads
+    # that is a tuning error; here it is "the difference between a bound and no
+    # bound, and the deployment should be treated as having none". A warning
+    # rather than a refusal: an operator may be running without a proxy
+    # deliberately, and refusing to start would be this module deciding a
+    # deployment question it cannot see.
+    if (
+        configured.api_rate_limit_identity_per_minute > 0
+        and not configured.api_trusted_proxy_ips
+    ):
+        logging.getLogger("apps.api").warning(
+            "identity rate limiting is configured but API_TRUSTED_PROXY_IPS is "
+            "empty, so every caller shares one budget; treat the sign-in routes "
+            "as unbounded until a proxy is declared"
+        )
+
     application.add_middleware(
         RateLimitMiddleware,
         catalog_per_minute=configured.api_rate_limit_catalog_per_minute,
         analysis_per_minute=configured.api_rate_limit_analysis_per_minute,
+        identity_per_minute=configured.api_rate_limit_identity_per_minute,
         trusted_proxies=configured.api_trusted_proxy_ips,
     )
     application.add_middleware(

@@ -61,6 +61,34 @@ export function servesPath(path) {
   return QUERY_PARAMETERS.has(path);
 }
 
+/** Every path the snapshot declares an operation at, whatever the method. */
+const ADDRESSABLE_PATHS = new Set(
+  Object.keys(snapshot.operations || {}).map((operation) =>
+    operation.slice(operation.indexOf(" ") + 1),
+  ),
+);
+
+/**
+ * True when the snapshot declares *any* operation at `path`.
+ *
+ * Distinct from `servesPath`, which answers only for `GET`, and the
+ * distinction is not pedantry: the query-parameter checks below are
+ * `GET`-shaped by nature -- a `POST` carries a body, not a query -- so
+ * widening that map would make it answer an empty parameter list for routes
+ * that have no query at all, which reads as "this route takes no parameters"
+ * rather than "this question does not apply".
+ *
+ * What needs the wider question is the transport-boundary sweep. It reads the
+ * client's resource literals and cannot see which method sits beside each one
+ * in an options object, so the honest granularity for it is the path. Before
+ * ADR-0005 every route this client addressed was a `GET` or a write beside a
+ * `GET` on the same path, so `servesPath` happened to answer correctly; the
+ * sign-in routes are the first that are `POST`-only.
+ */
+export function addressesServedPath(path) {
+  return ADDRESSABLE_PATHS.has(path);
+}
+
 /**
  * The query parameters the API serves at `path`.
  *
@@ -192,6 +220,16 @@ export function requestComplaint(rawUrl) {
   }
   const operation = servedOperationFor(url.pathname);
   if (operation === null) {
+    // `servedOperationFor` resolves against the `GET` operations, because the
+    // question below -- "did the client send a query parameter this route does
+    // not declare" -- is a `GET` question: a write carries a body, and there is
+    // no parameter list to grade it against. A path the contract serves only
+    // under another method is therefore not undeclared; it is out of scope for
+    // this check, and saying so is different from saying it does not exist.
+    // The sign-in routes are the first `POST`-only ones this client calls.
+    if (addressesServedPath(url.pathname)) {
+      return null;
+    }
     return `${url.pathname} is not a path the reviewed contract serves`;
   }
   const declared = new Set(servedParameters(operation));

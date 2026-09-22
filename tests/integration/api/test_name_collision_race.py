@@ -19,6 +19,7 @@ from collections.abc import Callable
 import psycopg2
 import pytest
 from psycopg2.extensions import connection
+from tests.support.app_accounts import create_account
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -40,15 +41,16 @@ def an_account(postgres_connection_factory: Callable[[], connection]) -> int:
     try:
         with database.cursor() as cursor:
             cursor.execute(APP_API_SQL.read_text(encoding="utf-8"))
+            # The probe is recreated per run rather than upserted: an
+            # account and its credential are two rows now, and "insert the
+            # account unless its credential digest already exists" cannot be
+            # said in one statement without lying about which row conflicted.
             cursor.execute(
                 """
-                INSERT INTO app_api.user_account (display_label, token_sha256)
-                VALUES ('race-probe', repeat('a', 64))
-                ON CONFLICT (token_sha256) DO UPDATE SET display_label = 'race-probe'
-                RETURNING user_account_id
+                DELETE FROM app_api.user_account WHERE display_label = 'race-probe'
                 """
             )
-            owner = int(cursor.fetchone()[0])
+            owner = create_account(cursor, "race-probe", digest="a" * 64)
     finally:
         database.close()
 

@@ -34,6 +34,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import re
+
 import pytest
 import yaml
 
@@ -313,3 +315,94 @@ def test_the_external_stack_refuses_to_run_the_api_as_the_warehouse_owner() -> N
         "Martin reads the warehouse too, and an unguarded tile server is the "
         "same exposure as an unguarded API"
     )
+
+
+#: Settings the application reads that no deployment passes, and why.
+#:
+#: The list is the point of the gate below, not an escape from it: each of
+#: these is a decision that somebody made and can be argued with, rather than
+#: an omission nobody noticed. A new setting is absent from here by default,
+#: so it fails until it is either passed through or added with a reason.
+NOT_DEPLOYMENT_CONFIGURED: dict[str, str] = {
+    # Presentation only, and the registry's own description is the default
+    # (API-144). A deployment that overrode these would be publishing a
+    # different contract under the same name.
+    "API_TITLE": "the served document's title; not a deployment concern",
+    "API_VERSION": "the served contract version; decided by the code, not a host",
+    "API_DESCRIPTION": (
+        "an operator override for a description the registry already composes"
+    ),
+    # Bounds whose defaults have never needed tuning per deployment. They are
+    # readable from the environment because the test tiers set them, not
+    # because a host is expected to.
+    "API_DB_POOL_RECYCLE_SECONDS": "pool hygiene; no deployment has needed a different value",
+    "API_MAX_REQUEST_BODY_BYTES": (
+        "the evidence-packet cap from ADR-0004, which is a contract rather than a knob"
+    ),
+}
+
+
+def _api_service_environment(compose_name: str) -> set[str]:
+    """The variable names the `api` service actually passes to its container."""
+    document = _read(compose_name)
+    service = document.split("\n  api:", 1)[1]
+    service = service.split("\n    depends_on:", 1)[0]
+    return set(re.findall(r"^\s{6}([A-Z0-9_]+):", service, re.MULTILINE))
+
+
+def _settings_read_from_environment() -> set[str]:
+    """Every variable `Settings` reads, from the module that reads them."""
+    source = (ROOT / "src/data_ingestion_toolbox/config.py").read_text(encoding="utf-8")
+    return set(re.findall(r'os\.environ\.get\(\s*"([A-Z0-9_]+)"', source))
+
+
+@pytest.mark.parametrize("compose_name", sorted(STACK_PAIRS))
+def test_a_stack_that_serves_the_api_passes_every_setting_the_api_reads(
+    compose_name: str,
+) -> None:
+    """Covers: DEPLOY-013 — a setting the application reads reaches the container.
+
+    The two gates above check a compose file against its own env example, in
+    both directions. Neither checks either of them against the *application*,
+    so a setting the code reads and no stack passes is invisible to both --
+    and the symptom is the worst kind: an operator sets the value, the
+    container never sees it, and the feature stays switched off with nothing
+    anywhere saying why.
+
+    ADR-0005 is what found it. Eleven identity settings were added to
+    `Settings` and none of them was passed by either stack, including the
+    client id and secret without which the sign-in routes cannot be switched
+    on at all. Every existing test passed throughout.
+
+    The `api` service enumerates its environment rather than inheriting it,
+    which is the right way round -- a container should receive what it was
+    given deliberately. This is the check that makes the enumeration
+    maintainable.
+    """
+    passed = _api_service_environment(compose_name)
+    read = _settings_read_from_environment()
+    # Only the API's own namespace: `Settings` also reads warehouse and ETL
+    # variables that no API container is given.
+    owned = {
+        name
+        for name in read
+        if name.startswith(("API_", "APP_API_", "OIDC_", "BACKUP_"))
+    }
+    missing = sorted(owned - passed - set(NOT_DEPLOYMENT_CONFIGURED))
+    assert not missing, (
+        f"{compose_name} never passes these to the api service, so setting "
+        f"them changes nothing: {missing}. Pass them through, or record in "
+        "NOT_DEPLOYMENT_CONFIGURED why a deployment is not expected to."
+    )
+
+
+def test_the_exemption_list_names_only_settings_that_exist() -> None:
+    """Covers: DEPLOY-013 — a stale exemption hides the next real one.
+
+    An entry for a setting the application no longer reads is a name the gate
+    will never test again, and the next setting that needs the same reasoning
+    gets waved through beside it.
+    """
+    read = _settings_read_from_environment()
+    stale = sorted(name for name in NOT_DEPLOYMENT_CONFIGURED if name not in read)
+    assert not stale, f"NOT_DEPLOYMENT_CONFIGURED names settings nothing reads: {stale}"

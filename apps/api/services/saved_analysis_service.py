@@ -81,6 +81,23 @@ class ConfigurationNameTaken(Exception):
     """The caller already owns a configuration with that name (HTTP 409)."""
 
 
+class StorageQuotaReached(Exception):
+    """The account already holds as many of these as it may (ADR-0005 s4).
+
+    A bound on *how many*, beside ADR-0004's bound on how large one may be.
+    Self-service registration turns "a handful of operator-issued accounts"
+    into "every visitor", and an unbounded row count per account is the one
+    cost that grows with the thing this platform is now inviting.
+
+    Refused at the create rather than trimmed: deciding which of a reader's
+    own saved analyses to destroy is not a decision this code gets to make.
+    """
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"this account may hold at most {limit}")
+        self.limit = limit
+
+
 # ---------------------------------------------------------------------------
 # Validation against live capability and compatibility contracts
 # ---------------------------------------------------------------------------
@@ -502,6 +519,13 @@ _DELETE = text(
     """
 )
 
+_COUNT_OWNED = text(
+    """
+    SELECT COUNT(*) FROM app_api.saved_analysis_configuration
+    WHERE owner_user_id = :owner_user_id
+    """
+)
+
 _NAME_TAKEN = text(
     """
     SELECT 1 FROM app_api.saved_analysis_configuration
@@ -534,8 +558,17 @@ def create_configuration(
     owner_user_id: int,
     name: str,
     document: AnalysisDocument,
+    quota: int = 0,
 ) -> SavedAnalysisConfiguration:
     validate_document(warehouse, document)
+    # Counted before the document is stored and after it is validated: a
+    # refusal for being over quota should not also be the first a caller hears
+    # that their document was invalid, and an invalid document should not
+    # spend a count.
+    if quota > 0:
+        held = storage.execute(_COUNT_OWNED, {"owner_user_id": owner_user_id}).scalar()
+        if int(held or 0) >= quota:
+            raise StorageQuotaReached(quota)
     taken = storage.execute(
         _NAME_TAKEN,
         {"owner_user_id": owner_user_id, "name": name, "configuration_id": -1},

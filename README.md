@@ -53,7 +53,7 @@ deterministic data-derived gold products, and independently owned
 semantic/serving policy. Subsequent decisions are recorded beside it in
 [`docs/decisions/`](docs/decisions/0002-api-versioning-and-deprecation.md).
 
-## Current State (as of 2026-09-16)
+## Current State (as of 2026-09-20)
 
 This section is dated because it goes stale. If the date is old, trust
 `docs/plans/` and `docs/reference/` over this list.
@@ -78,8 +78,15 @@ This section is dated because it goes stale. If the date is old, trust
   per-source explorers, map and chart surfaces, a comparison workspace, a
   multi-series workbench, saved analyses, an evidence-packet builder, and a
   composed-article reader.
-- **Account-owned storage** for saved analyses and evidence packets, behind an
-  operator-provisioned bearer credential (ADR-0003, ADR-0004).
+- **Account-owned storage** for saved analyses and evidence packets, behind a
+  bearer credential (ADR-0003, ADR-0004) -- either a visitor's own session or
+  an operator-provisioned token, which keeps working unchanged.
+- **Self-service accounts** (ADR-0005): sign-in through a third-party OIDC
+  provider, sessions with rotation and reuse detection, account export, and
+  hard deletion that survives a database restore. No password, no mail, and
+  nothing stored about a person beyond the provider's identifier, a verified
+  address if it supplied one, and what they created. **Built and verified
+  against everything except a real provider** -- see the caveat below.
 - **CI across every tier:** units, integration against disposable PostGIS and
   Redis, Martin contracts, DAG parsing, frontend lint/typecheck/unit/browser,
   a live-stack smoke tier, package build, and coverage gates.
@@ -88,11 +95,17 @@ This section is dated because it goes stale. If the date is old, trust
 
 Tracked as plans in [`docs/plans/to_do/`](docs/plans/README.md):
 
-- **Self-service accounts.** Every write path still requires an
-  operator-minted credential, so a visitor cannot own saved work. The identity
-  contract is proposed in
-  [`ADR-0005`](docs/decisions/0005-self-service-accounts.md) and held at a
-  human review gate.
+- **One real sign-in.** The self-service flow above is implemented and
+  covered -- every refusal, the session lifecycle against a real database, the
+  browser half, and the provider-facing HTTP against a local stub -- but it has
+  never completed against Google, because that needs an OIDC client
+  registration no agent or CI job holds. Reading Google's own documents while
+  building it already found one defect that no test could have (its ID tokens
+  spell `iss` two ways), so the first real sign-in is expected to be a finding
+  rather than a formality. It needs no deployment:
+  [`docs/plans/human_testing/A_REAL_SIGN_IN_AGAINST_GOOGLE.md`](docs/plans/human_testing/A_REAL_SIGN_IN_AGAINST_GOOGLE.md)
+  is twenty minutes against localhost. Until it happens,
+  `self-service-accounts` stays in `docs/plans/in_progress/`.
 - **Publishing.** An evidence packet can be composed but not made public;
   there is no approval path from private to published.
 - **The second wave of packaged products.** Twenty use cases are described;
