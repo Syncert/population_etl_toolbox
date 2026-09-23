@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -500,5 +501,163 @@ def test_an_unsupported_aggregate_level_is_kept_but_not_served(
             grains = {row[0] for row in cursor.fetchall()}
             assert grains and grains <= set(GEO_GRAINS), grains
             assert "AGRICULTURAL DISTRICT" not in grains
+    finally:
+        reader.close()
+
+
+MIGRATION_029 = (
+    Path(__file__).resolve().parents[3]
+    / "sql/migrations/029_nass_combined_counties_are_not_counties.sql"
+)
+
+
+def _combined_counties_shape(
+    connection_factory: Callable[[], connection],
+) -> list[tuple]:
+    reader = connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT fact.geo_type, fact.geo_id, fact.geography_status,
+                       fact.geo_source_code, fact.county_fips, revision.asd_code
+                FROM silver_nass.fact_crop_observation AS fact
+                JOIN silver_nass.observation_revision AS revision
+                  USING (capture_id, source_row_index)
+                WHERE fact.geo_source_code LIKE '%%998'
+                   OR fact.county_fips = '998'
+                ORDER BY asd_code
+                """
+            )
+            return cursor.fetchall()
+    finally:
+        reader.close()
+
+
+def test_combined_counties_are_kept_but_never_served_as_a_county(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-035 — county code 998 is a district residual, not a county.
+
+    Live Quick Stats publishes "OTHER (COMBINED) COUNTIES" once per
+    agricultural district under county_code 998, and every district of a
+    state collided on one ``state:SS|county:998`` served at the COUNTY grain
+    (the explorer map sweep found nine Arkansas values for one county-year).
+    The rows are kept with their district and never served; migration 029
+    rewrites rows a warehouse stored before the fix to the same shape, and is
+    safe to run twice.
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    rows = document["slices"]["COUNTY"]["data"]["data"]
+    template = rows[-1]
+    for index, district in enumerate(("10", "20")):
+        combined = dict(template)
+        combined.update(
+            {
+                "county_ansi": "",
+                "county_code": "998",
+                "county_name": "OTHER (COMBINED) COUNTIES",
+                "asd_code": district,
+                "location_desc": f"{template['state_name']}, OTHER (COMBINED) COUNTIES",
+            }
+        )
+        rows[-1 - index] = combined
+
+    _release, transformed, published = _run_to_gold(nass_warehouse, product, document)
+    assert published == transformed - 2
+
+    state = template["state_fips_code"] or template["state_ansi"]
+    kept = [
+        ("unsupported", None, "unsupported", f"{state}998", None, "10"),
+        ("unsupported", None, "unsupported", f"{state}998", None, "20"),
+    ]
+    assert _combined_counties_shape(nass_warehouse) == kept
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_nass.crop_observation WHERE geo_id LIKE %s",
+                ("%county:998",),
+            )
+            assert cursor.fetchone() == (0,)
+    finally:
+        reader.close()
+
+    # A warehouse that stored these rows before the fix holds them as a county.
+    writer = nass_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE silver_nass.observation_revision
+                   SET geo_type = 'county', geo_id = %s, county_fips = '998'
+                 WHERE geo_source_code = %s
+                """,
+                (f"state:{state}|county:998", f"{state}998"),
+            )
+            cursor.execute(
+                """
+                UPDATE silver_nass.fact_crop_observation
+                   SET geo_type = 'county', geo_id = %s, county_fips = '998',
+                       geography_status = 'unmapped'
+                 WHERE geo_source_code = %s
+                """,
+                (f"state:{state}|county:998", f"{state}998"),
+            )
+            cursor.execute(
+                """
+                UPDATE silver_ref.geography_resolution
+                   SET source_geo_type = 'county', status = 'unmapped',
+                       reason_code = 'canonical_geography_absent'
+                 WHERE provider_source = 'USDA_NASS' AND source_code = %s
+                """,
+                (f"{state}998",),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    served = nass_warehouse()
+    try:
+        with served.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_nass.crop_observation WHERE geo_id LIKE %s",
+                ("%county:998",),
+            )
+            assert cursor.fetchone() == (2,), "the old shape is served, as it was"
+    finally:
+        served.close()
+
+    for _ in range(2):
+        migrator = nass_warehouse()
+        try:
+            with migrator.cursor() as cursor:
+                cursor.execute(MIGRATION_029.read_text(encoding="utf-8"))
+            migrator.commit()
+        finally:
+            migrator.close()
+        assert _combined_counties_shape(nass_warehouse) == kept
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_nass.crop_observation WHERE geo_id LIKE %s",
+                ("%county:998",),
+            )
+            assert cursor.fetchone() == (0,)
+            cursor.execute(
+                """
+                SELECT source_geo_type, status, reason_code, geo_sk
+                FROM silver_ref.geography_resolution
+                WHERE provider_source = 'USDA_NASS' AND source_code = %s
+                """,
+                (f"{state}998",),
+            )
+            ledger = set(cursor.fetchall())
+            assert ledger == {
+                ("unsupported", "unsupported", "unsupported_aggregate_level", None)
+            }
     finally:
         reader.close()

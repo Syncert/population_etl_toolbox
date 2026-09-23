@@ -93,8 +93,23 @@ Every other level — `AGRICULTURAL DISTRICT`, `REGION : MULTI-STATE`,
 `WATERSHED`, `ZIP CODE`, congressional districts — is retained in the raw
 capture and in the silver source record with `geo_type = 'unsupported'` and no
 `geo_id`. It is never coerced into a county. A `COUNTY` row without an exact
-three-digit county code (for example `OTHER (COMBINED) COUNTIES`) is
-quarantined rather than mapped by name.
+three-digit county code is quarantined rather than mapped by name.
+
+`OTHER (COMBINED) COUNTIES` (older years: `OTHER COUNTIES`) is the counties
+NASS suppresses for disclosure, combined once per agricultural district. The
+reviewed fixture above carries it with a blank `county_code`, so it is
+quarantined; **live Quick Stats sends `county_code: "998"`** with a blank
+`county_ansi`, which is exact and three digits. Code `998` is therefore
+matched explicitly and resolved to `unsupported`, keeping `geo_source_code =
+SS998`, `asd_code`, and `county_name` as evidence: it is not a Census county,
+and every district of a state would otherwise collide on one
+`state:SS|county:998` (measured 2026-09-23: 64,121 facts across 20 districts
+on the development warehouse; migration 029 rewrote them).
+
+A year's final value (`reference_period_desc = YEAR`) and its forecasts
+(`YEAR - AUG FORECAST`, `YEAR - OCT FORECAST`, ...) share one statistic,
+geography, and year. `reference_period_desc` is a declared `/observations`
+filter (API-156) so a reader can choose which one.
 
 ## Period
 

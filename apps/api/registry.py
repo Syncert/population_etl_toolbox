@@ -863,6 +863,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 _COUNTY_FIPS_FILTER,
                 ("domain_desc", "domain_desc = :domain_desc"),
                 ("domaincat_desc", "domaincat_desc = :domaincat_desc"),
+                # A year's final value and its August/October forecasts share
+                # a geography and a year; this is the only thing that tells
+                # them apart (API-156).
+                (
+                    "reference_period_desc",
+                    "reference_period_desc = :reference_period_desc",
+                ),
                 ("year_from", "year >= :year_from"),
                 ("year_to", "year <= :year_to"),
             ),

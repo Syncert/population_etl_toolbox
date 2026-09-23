@@ -230,8 +230,11 @@ own serving relations, so its semantics survive.
   differently from the warehouse.
 - Per-source filters as declared by `/catalog/capabilities`: `geo_id`,
   `geo_level`, `state_fips`, `county_fips`, `stratum_id`,
-  `adjustment_status`, `domain_desc`, `domaincat_desc`, `subject_type`,
-  `subject_code`, `year_from`, `year_to`.
+  `adjustment_status`, `domain_desc`, `domaincat_desc`,
+  `reference_period_desc`, `subject_type`, `subject_code`, `year_from`,
+  `year_to`. USDA NASS declares `reference_period_desc` because it publishes a
+  year's final value (`YEAR`) beside that year's forecasts (for example
+  `YEAR - AUG FORECAST`) for one geography; filter on it to read one of them.
 
 ### A latest publication can be a series
 

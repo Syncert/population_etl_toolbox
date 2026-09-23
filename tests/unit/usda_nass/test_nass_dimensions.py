@@ -183,6 +183,36 @@ def test_unsupported_levels_keep_their_evidence_without_an_identity() -> None:
     assert watershed.watershed_code == "03150201"
 
 
+@pytest.mark.parametrize("county_name", ["OTHER (COMBINED) COUNTIES", "OTHER COUNTIES"])
+def test_combined_counties_code_is_not_a_county(county_name: str) -> None:
+    """Covers: ETL-024 — county code 998 is a district residual, not a county.
+
+    Live Quick Stats publishes the counties it suppresses for disclosure as
+    one "OTHER (COMBINED) COUNTIES" row per agricultural district, under
+    county_code 998 with a blank county_ansi. The code is exact, so it passed
+    the three-digit check and every district in a state collided on one
+    ``state:SS|county:998`` -- nine different Arkansas values for one year. No
+    Census county carries that code: it keeps its evidence and no identity.
+    """
+    row = dict(_row(CORN, "COUNTY"))
+    row.update(
+        {
+            "county_ansi": "",
+            "county_code": "998",
+            "county_name": county_name,
+            "asd_code": "40",
+        }
+    )
+    identity = geography_identity(row)
+    assert identity.geo_type == "unsupported"
+    assert identity.geo_id is None
+    assert identity.county_fips is None
+    assert identity.geo_source_code == f"{identity.state_fips}998"
+    assert identity.state_fips == "01"
+    assert identity.asd_code == "40"
+    assert identity.county_name == county_name
+
+
 def test_period_normalization_preserves_every_source_field() -> None:
     """Covers: ETL-025 — period normalization preserves every source field."""
     identity = period_identity(_row(CORN, "NATIONAL"))

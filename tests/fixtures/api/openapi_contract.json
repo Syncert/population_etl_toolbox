@@ -1338,6 +1338,15 @@
         },
         {
           "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "reference_period_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
             "maxLength": 100
           },
           "in": "query",

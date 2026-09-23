@@ -16,16 +16,14 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed and **in progress**. The validation (both tiers) is
-  built and running, and the explorer defects it found in the client are
-  fixed. Two defects it found upstream of the client -- in the USDA NASS
-  warehouse and API contract -- are recorded below with evidence and are not
-  fixed here; until they are, the data-path sweep fails on USDA NASS by
-  design. The plan stays in `in_progress/` for that reason.
+- **Status:** **Ready for review.**
+  Both tiers are built; every client defect they found is fixed; the two
+  USDA NASS defects upstream of the client were decided by syncert on
+  2026-09-23 (drop county `998` from the county grain; make the reference
+  period a filter) and are implemented as NASS-1 and NASS-2.
 - **Last updated:** 2026-09-23
 - **Dependencies:** none.
-- **Next pickup:** NASS-1 and NASS-2 below -- a decision on each is needed
-  before the sweep can pass on USDA NASS.
+- **Next pickup:** none -- awaiting human review.
 
 ## Why
 
@@ -65,9 +63,10 @@ warehouse holds -- at the model and at the pixels.
 4. Fixing every client defect the two checks find.
 5. Recording, with evidence, every defect they find upstream of the client.
 
-**Out of scope:** changing the USDA NASS warehouse geography or API contract
-(NASS-1, NASS-2 below). Those are warehouse/API contract changes and, per
-`AGENTS.md`, are planned upstream first rather than patched in the client.
+The two USDA NASS defects the sweep found upstream of the client were first
+recorded without a fix, because they are warehouse and API contract changes
+(`AGENTS.md`: fix the upstream contract, never compensate in the client). They
+were decided on 2026-09-23 and are in scope from then on (NASS-1, NASS-2).
 
 ## Design
 
@@ -153,24 +152,55 @@ SMOKE_BASE_URL=http://localhost:3001 npm --prefix apps/web run test:maps
     geography stay several series whatever periods they cover, so the
     existing as-released contract (`explorer.spec.js`, "as-released
     exploration pins a published release") holds.
-- [ ] **NASS-1 (warehouse, not fixed here): county `998` is not a county.**
-  USDA NASS county code `998` means "other (combined) counties" and repeats
-  once per agricultural district. The warehouse publishes those rows as
-  `state:SS|county:998` without the district, so, for example,
-  `USDA_NASS:soybeans_survey_annual:3e38e231…` has nine different 1990 values
-  for `state:05|county:998` (Arkansas's nine districts), identical in every
-  published dimension. No real county carries that `geo_id`, so the map never
-  paints them, but the rows are published at the COUNTY grain under a
-  colliding identity -- the `AGENTS.md` invariant "use authoritative geography
-  codes". The sweep fails 24 county maps on it. **Decision needed:** publish
-  them at an agricultural-district geography, or withhold them from the
-  county grain; either is a warehouse change with re-ingestion.
-- [ ] **NASS-2 (API contract, not fixed here): no way to choose the final
-  value.** After MAP-5 the NASS forecast maps decline honestly, but a reader
-  cannot select `reference_period_desc`, because the capability does not
-  declare it as a filter. **Decision needed:** declare it as a neutral
-  filter, or make the reference period part of the metric identity so a
-  forecast and a final value are different metrics.
+- [x] **NASS-1: county `998` is withheld from the county grain.**
+  USDA NASS county code `998` is "OTHER (COMBINED) COUNTIES": the counties it
+  suppresses for disclosure, combined once per agricultural district. The
+  warehouse published them as `state:SS|county:998` without the district, so
+  every district in a state collided on one made-up identity. For example,
+  `USDA_NASS:soybeans_survey_annual:3e38e231…` had nine different 1990 values
+  for `state:05|county:998`, identical in every published dimension. They
+  were `unmapped`, and `unmapped` is still served.
+
+  *Decision (syncert, 2026-09-23):* drop it from the county grain. *Assessment
+  recorded with it:* the residual is the only place the suppressed counties'
+  combined value appears at sub-state level, so it matters for anyone summing
+  counties to reconcile against the state. It is not a county, though: it
+  cannot be drawn or joined, and NASS publishes the state total itself. It is
+  therefore **withheld, not deleted**: the row stays in raw capture and silver
+  with its district, so an agricultural-district geography could publish it
+  later without re-ingesting.
+
+  *Implementation:* `geography_identity` resolves code `998` to
+  `unsupported` (`geo_id` NULL, `geo_source_code = SS998`, `asd_code` and
+  `county_name` kept), the path unsupported aggregate levels already take;
+  gold and the publisher exclude it. Silver writes are
+  `ON CONFLICT DO NOTHING`, so stored rows are rewritten by
+  `sql/migrations/029_nass_combined_counties_are_not_counties.sql` (manifest
+  and Docker init registered). Tests: unit
+  `test_combined_counties_code_is_not_a_county` (both labels; failed first);
+  database `test_combined_counties_are_kept_but_never_served_as_a_county`
+  (pipeline with two districts' `998` rows, then the pre-fix shape restored,
+  migration applied twice). Against the pre-fix identity code the database
+  test failed: both rows were served. On the development warehouse, 029 was
+  applied alone through `apply_manifest` (the ledger records it; 027 and 028
+  were already drifted there and were not re-run): before it, 64,121
+  `county:998` facts were in silver and 64,121 in gold; after it (11.2 s),
+  0 in gold and 64,121 kept as `unsupported`.
+- [x] **NASS-2: `reference_period_desc` is a declared filter.** USDA NASS
+  declares it on `/observations` (API-156): bound, never inlined; refused
+  with a 422 for sources that do not declare it; OpenAPI and viz-coverage
+  snapshots regenerated; `API_CONSUMER_GUIDE.md` names it and why. The
+  explorer builds filter controls from declared filters, so the explorer
+  offers it with no web change. Live on the development API:
+  `hay_survey_annual:3bf8ec4d…` at STATE answers 1,707 rows for `YEAR` and
+  898 for `YEAR - AUG FORECAST`.
+- [x] **MAP-7: a declined map must be one a reader can narrow.** Declining
+  honestly is only half an answer. For every declined map, the sweep now
+  re-reads it the way a reader would: it sets each declared filter among the
+  separating dimensions to its most common published value, and the narrowed
+  map must colour ("narrowed"). A map no declared filter can narrow fails.
+  Dimensions that only describe a filter (CDC's `strata` and footnotes, which
+  move with `stratum_id`) narrow with it.
 - [x] **MAP-6: CI placement.** `test:smoke` includes every `*.smoke.test.js`,
   so the sweep also runs in the composed `web-smoke` stack against seeded
   fixtures. Confirm it passes there (see Evidence) or scope it.
@@ -186,13 +216,47 @@ SMOKE_BASE_URL=http://localhost:3001 npm --prefix apps/web run test:maps
 4. Every client defect found is fixed with a test that failed first.
 5. Every upstream defect found is recorded with a reproducible example and
    the decision it needs.
-6. The whole `verify` block passes, except the sweep's USDA NASS failures that
-   NASS-1/NASS-2 own.
+6. Every declined map can be narrowed to a coloured one with declared
+   filters.
+7. The whole `verify` block passes.
 
 ## Evidence record
 
 All runs on 2026-09-23 against the local development stack
 (`http://localhost:3001`) unless noted.
+
+### Final runs (after NASS-1, NASS-2, MAP-7)
+
+| Source / grain | Coloured | Narrowed | Empty | FAIL |
+| --- | --- | --- | --- | --- |
+| BLS COUNTY | 2 | 0 | 0 | 0 |
+| BLS STATE | 4 | 0 | 0 | 0 |
+| CDC COUNTY | 12 | 0 | 0 | 0 |
+| CDC STATE | 3 | 25 | 0 | 0 |
+| CENSUS_ACS COUNTY | 25 | 0 | 15 | 0 |
+| CENSUS_ACS STATE | 25 | 0 | 15 | 0 |
+| CENSUS_PEP COUNTY | 17 | 0 | 0 | 0 |
+| CENSUS_PEP STATE | 17 | 0 | 0 | 0 |
+| FBI_UCR STATE | 40 | 0 | 0 | 0 |
+| USDA_NASS COUNTY | 28 | 0 | 2 | 0 |
+| USDA_NASS STATE | 27 | 10 | 0 | 0 |
+
+**Zero failures.** The 25 CDC state maps colour once `stratum_id` is set; the
+10 NASS state maps colour once `reference_period_desc` is set. The two empty
+NASS county maps are metrics whose only county-grain rows were the
+combined-counties residual, which is now correctly withheld.
+
+| Command | Result |
+| --- | --- |
+| data-path sweep (`map-display.smoke`), all sources | 4 passed, 0 map failures |
+| `npm --prefix apps/web run test:maps` | 11 passed |
+| `./tests/run.ps1 web-smoke` (composed CI stack) | 5 files, 27 passed |
+| `pytest tests/unit -q` | 2137 passed |
+| `RUN_INTEGRATION_TESTS=1 pytest -m "integration and database" tests/integration/database/test_usda_nass_pipeline.py` | 7 passed |
+| `npm --prefix apps/web run test:unit` / lint / typecheck | 686 passed / clean / clean |
+| `ruff check . ; ruff format --check .` | clean |
+
+### Earlier runs (before NASS-1 and NASS-2)
 
 **Tier 1, full sweep (default budget of 40 metrics per source):**
 

@@ -1390,3 +1390,76 @@ def test_a_reduction_still_answers_for_a_source_that_reduces() -> None:
         _clear_overrides()
 
     assert response.status_code == 200, response.text
+
+
+_NASS_METRIC = {
+    "metric_code": "USDA_NASS:hay_survey_annual:3bf8ec4d",
+    "metric_display_name": "HAY - YIELD, MEASURED IN TONS / ACRE",
+    "source_code": "USDA_NASS",
+    "units": "TONS / ACRE",
+    "physical_lineage": {
+        "schema": "gold_nass",
+        "relation": "crop_observation",
+        "product_id": "hay_survey_annual",
+        "statistic_sk": "3bf8ec4d",
+        "statisticcat_desc": "YIELD",
+        "unit_desc": "TONS / ACRE",
+    },
+}
+
+
+def test_nass_reference_period_is_a_declared_bound_filter() -> None:
+    """Covers: API-156 — a final value and its forecasts can be told apart.
+
+    USDA NASS publishes a year's final value beside its August and October
+    forecasts for one geography, separated only by `reference_period_desc`.
+    Without a filter for it, a one-value-per-geography reader -- the explorer
+    map -- could only decline the whole answer.
+    """
+    capabilities = TestClient(app).get("/api/v1/catalog/capabilities").json()
+    nass = next(
+        item for item in capabilities["items"] if item["source_code"] == "USDA_NASS"
+    )
+    assert "reference_period_desc" in nass["observation_filters"]
+
+    session = _DispatchSession(metric_row=dict(_NASS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _NASS_METRIC["metric_code"],
+                "geo_level": "STATE",
+                "reference_period_desc": "YEAR",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    queries = _dispatched(session)
+    assert queries
+    for sql in queries:
+        assert "reference_period_desc = :reference_period_desc" in sql
+        assert "'YEAR'" not in sql, "the filter value must be bound, not inlined"
+    assert session.parameters[-1]["reference_period_desc"] == "YEAR"
+
+
+def test_reference_period_is_refused_where_a_source_does_not_declare_it() -> None:
+    """Covers: API-156 — the filter is the declaring source's, not everyone's."""
+    session = _DispatchSession(metric_row=dict(_FBI_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _FBI_METRIC["metric_code"],
+                "reference_period_desc": "YEAR",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert "reference_period_desc" in response.text
+    assert not _dispatched(session)

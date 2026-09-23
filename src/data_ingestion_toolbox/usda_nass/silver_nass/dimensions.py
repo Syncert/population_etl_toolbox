@@ -32,6 +32,12 @@ GEO_TYPE_BY_AGG_LEVEL: dict[str, str] = {
 
 UNSUPPORTED_GEO_TYPE = "unsupported"
 
+#: Quick Stats county code for "OTHER (COMBINED) COUNTIES": the counties NASS
+#: suppresses for disclosure, combined once per agricultural district. It is
+#: an exact provider code but not a Census county, and it repeats in every
+#: district of a state, so it never resolves to a county identity.
+COMBINED_COUNTIES_CODE = "998"
+
 _STATE_CODE = re.compile(r"^\d{2}$")
 _COUNTY_CODE = re.compile(r"^\d{3}$")
 _WEEK_ENDING = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -256,6 +262,17 @@ def geography_identity(row: Mapping[str, Any]) -> GeographyIdentity:
     county_fips = _county_code(row)
     if county_fips is None:
         raise NassIdentityError("record has no exact county ANSI/FIPS code")
+    if county_fips == COMBINED_COUNTIES_CODE:
+        # Retained with its district evidence (asd_code, county_name) rather
+        # than quarantined: the value is real, it is only not a county's.
+        return GeographyIdentity(
+            UNSUPPORTED_GEO_TYPE,
+            None,
+            geo_source_code=f"{state_fips}{county_fips}",
+            state_fips=state_fips,
+            county_fips=None,
+            **evidence,
+        )
     return GeographyIdentity(
         "county",
         canonical_geo_id("county", state_fips=state_fips, county_fips=county_fips),

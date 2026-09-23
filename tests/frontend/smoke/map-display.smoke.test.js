@@ -16,7 +16,9 @@ import { beforeAll, describe, expect, test } from "vitest";
 //
 //   - rows at the grain with no numeric value: the map is legitimately empty;
 //   - two rows for one geography and one period: the answer really is
-//     stratified, and the page must decline *and* name what varies;
+//     stratified, and the page must decline *and* name what varies -- and
+//     narrowing it with the declared filters, as a reader would, must yield a
+//     map that colours ("narrowed"); a dimension no filter can narrow fails;
 //   - otherwise one series per geography: the page must not decline, and the
 //     model must colour exactly one value per geography whose newest row
 //     carries a number.
@@ -42,6 +44,7 @@ import {
   buildLatestObservationRequest,
   mapRows,
   normalizeObservationRows,
+  observationDimensionValue,
   SCOPE_LATEST,
 } from "../../../apps/web/lib/observationAccess";
 import { DRAWABLE_TILE_GRAINS } from "../../../apps/web/lib/tileGrains";
@@ -87,6 +90,43 @@ export function spread(items, budget) {
   return [...new Set(picked)];
 }
 
+/** The most common published value of one dimension across the rows. */
+function mostCommon(rows, name) {
+  const counts = new Map();
+  for (const row of rows) {
+    const value = observationDimensionValue(row, name);
+    if (value !== "") {
+      counts.set(value, (counts.get(value) || 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "";
+}
+
+/** One explorer map read end to end, exactly as the page reads it. */
+async function readMap(source, metricCode, grain, dimensions) {
+  const { resource, params } = buildLatestObservationRequest(source, {
+    metricCode,
+    geoLevel: grain,
+    stateFips: "",
+    limit: String(PAGE_SIZE),
+    newestPerGeography: true,
+    scope: SCOPE_LATEST,
+    dimensions,
+  });
+  const pages = await fetchCollectionPages(resource, {
+    params,
+    pageSize: PAGE_SIZE,
+    maxPages: PAGE_LIMIT,
+  });
+  const rows = normalizeObservationRows(source, pages.items);
+  const view = mapRows(source, rows, SCOPE_LATEST);
+  const model = buildChoroplethModel(view.mappable, "geo_id");
+  const outcome = pages.complete
+    ? grade(oracle(rows), view, model)
+    : { verdict: "fail", problem: `read stopped at ${rows.length} of ${pages.total} rows` };
+  return { rows, view, model, outcome };
+}
+
 describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live", () => {
   /** @type {Array<{source: string, metric: string, grain: string, verdict: string, rows: number, coloured: number, problem: string|null}>} */
   const results = [];
@@ -110,26 +150,54 @@ describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live"
       for (const metric of spread(ordered, METRIC_BUDGET)) {
         const grains = metricSupportedGeoLevels(metric).filter((grain) => DRAWABLE.includes(grain));
         for (const grain of grains) {
-          const { resource, params } = buildLatestObservationRequest(source, {
-            metricCode: metric.metric_code,
-            geoLevel: grain,
-            stateFips: "",
-            limit: String(PAGE_SIZE),
-            newestPerGeography: true,
-            scope: SCOPE_LATEST,
-            dimensions: {},
-          });
-          const pages = await fetchCollectionPages(resource, {
-            params,
-            pageSize: PAGE_SIZE,
-            maxPages: PAGE_LIMIT,
-          });
-          const rows = normalizeObservationRows(source, pages.items);
-          const view = mapRows(source, rows, SCOPE_LATEST);
-          const model = buildChoroplethModel(view.mappable, "geo_id");
-          const outcome = pages.complete
-            ? grade(oracle(rows), view, model)
-            : { verdict: "fail", problem: `read stopped at ${rows.length} of ${pages.total} rows` };
+          let dimensions = {};
+          let read = await readMap(source, metric.metric_code, grain, dimensions);
+          let outcome = read.outcome;
+          // A declined map is only half an answer: the reader must be able to
+          // narrow it to one series with the filters the source declares, and
+          // the narrowed map must colour. Narrow as a reader would -- each
+          // declared filter among the separating dimensions, set to its most
+          // common published value -- until it colours or cannot be narrowed.
+          for (let attempt = 0; outcome.verdict === "declined" && attempt < 3; attempt += 1) {
+            const varying = read.view.stratification.varyingDimensions.filter(
+              (name) => !(name in dimensions),
+            );
+            // Only the declared filters can be set. A dimension that merely
+            // describes one of them (CDC's `strata` and footnotes move with
+            // `stratum_id`) narrows with it; if it does not, the re-read
+            // below is still declined and fails by name.
+            const filterable = varying.filter((name) => source.dimensionFilters.includes(name));
+            if (filterable.length === 0) {
+              outcome = {
+                verdict: "fail",
+                problem: `declined by ${varying.join(", ") || "nothing named"}, which no declared filter narrows${
+                  Object.keys(dimensions).length ? ` (after narrowing ${JSON.stringify(dimensions)})` : ""
+                }`,
+              };
+              break;
+            }
+            dimensions = { ...dimensions };
+            for (const name of filterable) {
+              dimensions[name] = mostCommon(read.rows, name);
+            }
+            read = await readMap(source, metric.metric_code, grain, dimensions);
+            outcome =
+              read.outcome.verdict === "coloured"
+                ? { verdict: "narrowed", problem: null }
+                : read.outcome.verdict === "declined"
+                  ? read.outcome
+                  : {
+                      verdict: "fail",
+                      problem: `narrowed by ${JSON.stringify(dimensions)}: ${read.outcome.problem || read.outcome.verdict}`,
+                    };
+          }
+          if (outcome.verdict === "declined") {
+            outcome = {
+              verdict: "fail",
+              problem: `still declined after narrowing ${JSON.stringify(dimensions)}`,
+            };
+          }
+          const { rows, model } = read;
           results.push({
             source: source.sourceCode,
             metric: metric.metric_code,
@@ -146,7 +214,7 @@ describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live"
     const tally = new Map();
     for (const result of results) {
       const key = `${result.source} ${result.grain}`;
-      const counts = tally.get(key) || { coloured: 0, declined: 0, empty: 0, fail: 0 };
+      const counts = tally.get(key) || { coloured: 0, narrowed: 0, empty: 0, fail: 0 };
       counts[result.verdict] += 1;
       tally.set(key, counts);
     }
@@ -154,7 +222,7 @@ describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live"
       "map-display sweep\n" +
         [...tally.entries()]
           .map(([key, c]) =>
-            `  ${key.padEnd(24)} coloured ${c.coloured}  declined ${c.declined}  empty ${c.empty}  FAIL ${c.fail}`,
+            `  ${key.padEnd(24)} coloured ${c.coloured}  narrowed ${c.narrowed}  empty ${c.empty}  FAIL ${c.fail}`,
           )
           .join("\n"),
     );
@@ -163,7 +231,9 @@ describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live"
   test("the sweep read maps from every source that publishes a drawable grain", () => {
     expect(results.length).toBeGreaterThan(0);
     const coloured = new Set(
-      results.filter((result) => result.verdict === "coloured").map((result) => result.source),
+      results
+        .filter((result) => ["coloured", "narrowed"].includes(result.verdict))
+        .map((result) => result.source),
     );
     const withValues = new Set(
       results.filter((result) => result.verdict !== "empty").map((result) => result.source),

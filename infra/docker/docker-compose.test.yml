@@ -52,6 +52,7 @@ services:
       - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql:/docker-entrypoint-initdb.d/185_publisher_fbi.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql:/docker-entrypoint-initdb.d/190_publisher_nass.sql:ro
       - ../../sql/migrations/028_serving_publishes_a_withheld_value.sql:/docker-entrypoint-initdb.d/195_migration_028.sql:ro
+      - ../../sql/migrations/029_nass_combined_counties_are_not_counties.sql:/docker-entrypoint-initdb.d/197_migration_029.sql:ro
       - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/200_glossary_schema.sql:ro
       - ../../sql/migrations/016_publisher_harvest_fingerprint.sql:/docker-entrypoint-initdb.d/205_migration_016.sql:ro
       - ../../sql/migrations/017_serving_full_reserve_run.sql:/docker-entrypoint-initdb.d/210_migration_017.sql:ro
