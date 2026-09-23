@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "linux", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-smoke", "web-build", "compose-smoke")]
+    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "linux", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-smoke", "web-maps", "web-build", "compose-smoke")]
     [string]$Tier = "unit",
 
     # Extra pytest arguments for the "linux" tier, e.g.
@@ -177,6 +177,20 @@ switch ($Tier) {
     "web-browser" {
         & npm --prefix apps/web run test:browser
         if ($LASTEXITCODE -ne 0) { throw "web browser tests failed" }
+    }
+    "web-maps" {
+        # The explorer map checks against a running full stack (WEB-118): the
+        # data-path sweep over every source's maps, then the painted-pixel
+        # check in Chromium with software WebGL. Both need the web app as well
+        # as /api/v1 and /tiles on one origin, which the composed web-smoke
+        # stack does not serve, so this points at a stack already up --
+        # `http://localhost:3001` for the local development stack.
+        if (-not $env:SMOKE_BASE_URL) { $env:SMOKE_BASE_URL = "http://localhost:3001" }
+        $env:SMOKE_REQUIRED = "1"
+        & npm --prefix apps/web run test:smoke -- ../../tests/frontend/smoke/map-display.smoke.test.js
+        if ($LASTEXITCODE -ne 0) { throw "map-display sweep failed" }
+        & npm --prefix apps/web run test:maps
+        if ($LASTEXITCODE -ne 0) { throw "map paint check failed" }
     }
     "web-smoke" {
         # The live-stack frontend tier, composed exactly as CI composes it:

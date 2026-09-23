@@ -46,10 +46,11 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**0 plans.**
+**1 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`every-map-proves-it-displays-its-data`](in_progress/EVERY_MAP_PROVES_IT_DISPLAYS_ITS_DATA_PLAN.md) | medium | `browser` | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine

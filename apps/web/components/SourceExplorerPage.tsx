@@ -94,7 +94,9 @@ import {
   countObservationPeriods,
   describeStratification,
   dimensionsCarriedBy,
+  mapRows,
   newestPerGeography,
+  seriesDimensionNames,
   normalizeObservationRows,
   observationDimensionLabel,
   observationDimensionOptions,
@@ -465,21 +467,27 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // published release answers, and colouring the join would show whichever
   // release sorted last as the value.
   const seriesDimensions = useMemo(
-    () => stratificationDimensions(dimensionFilters, observationScope),
-    [dimensionFilters, observationScope],
-  );
-  const stratification = useMemo(
-    () => describeStratification(observations, seriesDimensions),
-    [observations, seriesDimensions],
+    () => seriesDimensionNames(activeSource, observationScope),
+    [activeSource, observationScope],
   );
   // The map colours one value per polygon. A latest publication that is a
   // series (several periods per geography) is reduced to each geography's
   // newest period, the same ranking the API's distribution bins apply, so
   // the legend counts and the coloured polygons describe the same rows.
-  const mappableObservations = useMemo(
-    () => (stratification.stratified ? [] : newestPerGeography(observations)),
-    [observations, stratification.stratified],
+  // `mapRows` is the one definition of that step; the live map sweep grades
+  // it against the rows (WEB-118).
+  const mapView = useMemo(
+    () => mapRows(activeSource, observations, observationScope),
+    [activeSource, observations, observationScope],
   );
+  const stratification = mapView.stratification;
+  // Only a filter the source declares can narrow the answer; naming a
+  // dimension the reader cannot select would send them looking for a control
+  // that does not exist.
+  const narrowableDimensions = stratification.varyingDimensions.filter((name) =>
+    dimensionFilters.includes(name),
+  );
+  const mappableObservations = mapView.mappable;
   // A source that publishes a participation basis is shown it; one that does
   // not grows no empty column. Read from the loaded rows, not from a list of
   // sources (WEB-051).
@@ -2396,9 +2404,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 ? ` (${stratification.varyingDimensions.join(", ")})`
                 : ""}
               . The map and history chart stay blank rather than showing one of them
-              as the value; narrow the{" "}
-              {stratification.varyingDimensions.join(", ") || "source"} filter to chart
-              a single series.
+              as the value;{" "}
+              {narrowableDimensions.length > 0
+                ? `narrow the ${narrowableDimensions.join(", ")} filter to chart a single series.`
+                : stratification.varyingDimensions.length > 0
+                  ? "the source declares no filter that separates them, so every row stays in the table and the export."
+                  : "no published dimension separates them, so every row stays in the table and the export."}
             </p>
           ) : null}
           {!mapSupported ? (

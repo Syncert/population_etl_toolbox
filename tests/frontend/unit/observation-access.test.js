@@ -471,6 +471,51 @@ describe("stratified answers are reported, never collapsed", () => {
     });
   });
 
+  test("a final value beside its forecasts is stratified by a published dimension (WEB-118)", () => {
+    // USDA NASS publishes a year's final value and its August and October
+    // forecasts for one state; only reference_period_desc separates them, and
+    // no filter declares it. The map must not colour whichever arrived last.
+    const rows = ["YEAR", "YEAR - AUG FORECAST", "YEAR - OCT FORECAST"].map((reference) => ({
+      geo_id: "state:01",
+      period_start: "1999",
+      period_end: "1999",
+      value: "2.3",
+      dimensions: { reference_period_desc: reference, domain_desc: "TOTAL" },
+    }));
+    expect(
+      describeStratification(rows, ["domain_desc", "reference_period_desc"]),
+    ).toEqual({ seriesCount: 3, stratified: true, varyingDimensions: ["reference_period_desc"] });
+  });
+
+  test("a dimension that moves with the period is one series, not many", () => {
+    const rows = ["01-2023", "02-2023"].map((period, index) => ({
+      geo_id: "state:55",
+      period_start: `2023-0${index + 1}-01`,
+      period_end: `2023-0${index + 1}-28`,
+      dimensions: { period },
+    }));
+    expect(describeStratification(rows, ["period"])).toEqual({
+      seriesCount: 1,
+      stratified: false,
+      varyingDimensions: [],
+    });
+  });
+
+  test("rows no published dimension tells apart are still not collapsed", () => {
+    const rows = ["20", "22"].map((value) => ({
+      geo_id: "state:05|county:998",
+      period_start: "1990",
+      period_end: "1990",
+      value,
+      dimensions: { domain_desc: "TOTAL" },
+    }));
+    expect(describeStratification(rows, ["domain_desc"])).toEqual({
+      seriesCount: 2,
+      stratified: true,
+      varyingDimensions: [],
+    });
+  });
+
   test("a source with no declared dimensions is never reported as stratified", () => {
     expect(describeStratification([{ geo_id: "a" }], census.dimensionFilters)).toEqual({
       seriesCount: 1,
