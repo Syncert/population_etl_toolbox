@@ -10,6 +10,7 @@ source does not currently exhibit, and every derivation is recorded in
 Usage::
 
     python -m tests.support.build_fbi_fixtures [--offense CODE] <captured-payload-directory> [...]
+    python -m tests.support.build_fbi_fixtures --offense CODE --state XX <captured-payload-directory> [...]
 
 Each directory may hold ``summarized_*``/``agency_byStateAbbr_*`` JSON files.
 Directories are searched in order, so a directory holding responses already
@@ -21,6 +22,9 @@ crime fixtures also carry the agency directory, the derived agency scenarios,
 the revision case, and the provider error body. Every other offense is built
 from captured responses only: its national, state, and six agency responses
 must all be present, and nothing is derived for it.
+
+``--state`` builds only the captured ``summarized_state_<XX>_<CODE>`` fixture:
+the further states that prove state resolution does not depend on Wisconsin.
 """
 
 from __future__ import annotations
@@ -146,19 +150,32 @@ def _captured_offense(code: str, directories: list[Path]) -> int:
     return 0
 
 
+def _captured_state(code: str, state: str, directories: list[Path]) -> int:
+    name = f"summarized_state_{state}_{code}"
+    document = _load(name, directories)
+    if document is None:
+        print(f"missing captured payload: {name}")
+        return 1
+    _write(name, _trim_months(document))
+    return 0
+
+
 def main(argv: list[str]) -> int:
     arguments = list(argv[1:])
-    code = "V"
-    if arguments[:1] == ["--offense"]:
+    options: dict[str, str] = {}
+    while arguments[:1] in (["--offense"], ["--state"]):
         if len(arguments) < 2:
             print(__doc__)
             return 2
-        code = arguments[1]
+        options[arguments[0]] = arguments[1]
         arguments = arguments[2:]
+    code = options.get("--offense", "V")
     directories = [Path(item) for item in arguments]
     if not directories:
         print(__doc__)
         return 2
+    if "--state" in options:
+        return _captured_state(code, options["--state"], directories)
     if code != "V":
         return _captured_offense(code, directories)
 

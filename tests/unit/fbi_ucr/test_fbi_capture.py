@@ -25,11 +25,13 @@ from data_ingestion_toolbox.fbi_ucr.registry import (
 )
 
 from ._doubles import API_KEY
-from .conftest import load_bytes, observation_fixture
+from .conftest import fixture_scoped, load_bytes, observation_fixture
 
 pytestmark = pytest.mark.unit
 
-PRODUCT = SUMMARIZED_VIOLENT_CRIME
+FIXTURE_PRODUCTS = tuple(fixture_scoped(product) for product in ALL_PRODUCTS)
+
+PRODUCT = fixture_scoped(SUMMARIZED_VIOLENT_CRIME)
 
 
 class _Control:
@@ -123,7 +125,7 @@ def _config() -> FbiUcrConfig:
     return FbiUcrConfig(cde_api_key=API_KEY, min_spacing_seconds=0.0)
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
 def test_reference_slices_are_captured_before_agency_observations(
     monkeypatch, product: FbiUcrProduct
 ) -> None:
@@ -162,7 +164,7 @@ def test_reference_slices_are_captured_before_agency_observations(
     assert len(release.directory_capture_ids) == len(product.reference_states)
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
 def test_capture_commits_raw_bytes_before_any_parsing(
     monkeypatch, product: FbiUcrProduct
 ) -> None:

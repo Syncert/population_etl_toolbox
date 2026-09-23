@@ -53,3 +53,15 @@ def test_missing_fbi_key_fails_at_task_runtime_not_import(dagbag, monkeypatch) -
         fetch_agency_directory("WI")
 
     assert caught.value.code == "missing_api_key"
+
+
+def test_every_registered_offense_has_its_own_chain(dagbag) -> None:
+    """Covers: DAG-010 — each of the ten summarized offenses gets one chain."""
+    dag = dagbag.dags["fbi_ucr_ingest"]
+    product_ids = [product.product_id for product in enabled_products()]
+
+    assert len(product_ids) == 10
+    for stage in ("ingest_batch", "replay", "publish"):
+        assert sorted(
+            task.task_id for task in dag.tasks if task.task_id.startswith(f"{stage}_")
+        ) == sorted(f"{stage}_{product_id}" for product_id in product_ids)

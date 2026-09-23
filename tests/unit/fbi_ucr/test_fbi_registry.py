@@ -9,6 +9,7 @@ import pytest
 from data_ingestion_toolbox.fbi_ucr.registry import (
     ALL_PRODUCTS,
     SUMMARIZED_OFFENSES,
+    STATE_CODE_CONTRACT,
     SUMMARIZED_VIOLENT_CRIME,
     UNSUPPORTED_STATE_CODES,
     FbiSubject,
@@ -198,7 +199,7 @@ VIOLENT_CRIME_CONTRACT = {
     "offense_code": "V",
     "period_start": "01-1990",
     "period_end": "06-2023",
-    "state_scope": ("WI",),
+    "state_scope": tuple(STATE_CODE_CONTRACT),
     "agency_scope": (
         "WI0130000",
         "WI0137000",
@@ -237,7 +238,7 @@ EXPECTED_PRODUCT_IDS = {
 
 
 def test_every_documented_summarized_offense_is_one_registered_product() -> None:
-    """Covers: ETL-030 — one frozen product per documented offense code."""
+    """Covers: ETL-052 — one frozen product per documented offense code."""
     assert [product.offense_code for product in ALL_PRODUCTS] == list(
         SUMMARIZED_OFFENSES
     )
@@ -250,7 +251,7 @@ def test_every_documented_summarized_offense_is_one_registered_product() -> None
 
 
 def test_violent_crime_contract_is_unchanged_by_the_new_products() -> None:
-    """Covers: ETL-030 — the first published product keeps every field."""
+    """Covers: ETL-052 — the first published product keeps every field."""
     assert dataclasses.asdict(SUMMARIZED_VIOLENT_CRIME) == VIOLENT_CRIME_CONTRACT
     assert {
         SUMMARIZED_VIOLENT_CRIME.measure_id(basis, form)
@@ -266,7 +267,7 @@ def test_violent_crime_contract_is_unchanged_by_the_new_products() -> None:
 
 @pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
 def test_every_product_shares_one_scope_and_window(product: FbiUcrProduct) -> None:
-    """Covers: ETL-030 — ten products cannot drift apart in scope or window."""
+    """Covers: ETL-052 — ten products cannot drift apart in scope or window."""
     shared = {
         field: value
         for field, value in VIOLENT_CRIME_CONTRACT.items()
@@ -286,3 +287,55 @@ def test_every_product_shares_one_scope_and_window(product: FbiUcrProduct) -> No
     assert product.measure_id("offense", "rate") == (
         f"{product.offense_code}:offense:rate"
     )
+
+
+def test_reference_states_come_from_the_agency_scope_only() -> None:
+    """Covers: ETL-052 — a state subject never requires an agency directory.
+
+    A state observation is labelled from the registry's published state label,
+    not from the Agency directory, so widening the state scope must not add a
+    directory capture per state per product.
+    """
+    widened = dataclasses.replace(
+        SUMMARIZED_VIOLENT_CRIME, state_scope=("MN", "PA", "VI", "WI")
+    )
+    states_only = dataclasses.replace(SUMMARIZED_VIOLENT_CRIME, agency_scope=())
+    cross_state = dataclasses.replace(
+        SUMMARIZED_VIOLENT_CRIME, state_scope=("WI",), agency_scope=("MN0270000",)
+    )
+
+    assert widened.reference_states == ("WI",)
+    assert states_only.reference_states == ()
+    assert cross_state.reference_states == ("MN",)
+
+
+@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+def test_every_product_covers_every_documented_state(product: FbiUcrProduct) -> None:
+    """Covers: ETL-052 — national plus all 52 documented states, six agencies.
+
+    Only two states carry captured fixtures (Wisconsin and Pennsylvania, plus
+    the Virgin Islands territory); every other state is proved here, by its
+    canonical code and its documented endpoint, rather than by 50 fixtures.
+    """
+    subjects = product.subjects
+    states = [
+        subject.subject_code for subject in subjects if subject.subject_type == "state"
+    ]
+
+    assert len(STATE_CODE_CONTRACT) == 52
+    assert states == list(STATE_CODE_CONTRACT)
+    assert not set(states) & UNSUPPORTED_STATE_CODES
+    assert [subject.subject_type for subject in subjects].count("national") == 1
+    assert [
+        subject.subject_code for subject in subjects if subject.subject_type == "agency"
+    ] == list(VIOLENT_CRIME_CONTRACT["agency_scope"])
+    assert product.reference_states == ("WI",)
+    for state in states:
+        fips = canonical_state_fips(state)
+        assert fips is not None and len(fips) == 2 and fips.isdigit()
+        assert published_state_label(state)
+        assert product.observation_endpoint(FbiSubject("state", state)) == (
+            f"/summarized/state/{state}/{product.offense_code}"
+        )
+    assert canonical_state_fips("VI") == "78"
+    assert len({canonical_state_fips(state) for state in states}) == 52

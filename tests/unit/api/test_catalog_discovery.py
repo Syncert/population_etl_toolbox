@@ -343,7 +343,18 @@ def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
         "/api/v1/observations",
         "/api/v1/observations/releases",
     ]
-    assert fbi["datasets"] == ["summarized_violent_crime"]
+    assert fbi["datasets"] == [
+        "summarized_violent_crime",
+        "summarized_assault",
+        "summarized_burglary",
+        "summarized_larceny",
+        "summarized_motor_vehicle_theft",
+        "summarized_homicide",
+        "summarized_rape",
+        "summarized_robbery",
+        "summarized_arson",
+        "summarized_property_crime",
+    ]
     assert "subject_type" in fbi["observation_filters"]
 
     # The analysis routes still read the three-source union views (API-005

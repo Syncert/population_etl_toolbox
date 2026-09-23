@@ -539,7 +539,16 @@
     },
     {
       "datasets": [
-        "summarized_violent_crime"
+        "summarized_violent_crime",
+        "summarized_assault",
+        "summarized_burglary",
+        "summarized_larceny",
+        "summarized_motor_vehicle_theft",
+        "summarized_homicide",
+        "summarized_rape",
+        "summarized_robbery",
+        "summarized_arson",
+        "summarized_property_crime"
       ],
       "display_name": "Federal Bureau of Investigation Uniform Crime Reporting Program",
       "observation_dimensions": [

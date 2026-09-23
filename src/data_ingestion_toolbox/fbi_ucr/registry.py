@@ -232,10 +232,13 @@ class FbiUcrProduct:
         An agency observation cannot publish without the agency reference slice
         that supplies its identity, type, and county associations, so directory
         coverage is derived from the agency scope rather than configured twice.
+
+        The state scope contributes nothing: a state observation is labelled
+        from ``STATE_CODE_CONTRACT``, never from the directory, so requiring a
+        directory per scoped state would only add unused captures and make
+        state observations wait on them.
         """
-        states = {state for state in self.state_scope}
-        states.update(ori[:2] for ori in self.agency_scope)
-        return tuple(sorted(states))
+        return tuple(sorted({ori[:2] for ori in self.agency_scope}))
 
     def observation_endpoint(self, subject: FbiSubject) -> str:
         """Return the documented summarized endpoint for one subject."""
@@ -291,7 +294,12 @@ def published_state_label(state_code: str) -> str | None:
 # plus the ``NOT SPECIFIED`` county label, so every jurisdiction class in the
 # geography contract is exercised by real provider evidence rather than a
 # synthetic case.
-SUMMARIZED_STATE_SCOPE: tuple[str, ...] = ("WI",)
+#
+# The state scope is every documented state code with a canonical Census code,
+# territories included. ``FS`` and ``GM`` stay unsupported. State subjects are
+# labelled from ``STATE_CODE_CONTRACT``, so the scope needs no agency directory
+# beyond the reviewed agencies' own state (see ``reference_states``).
+SUMMARIZED_STATE_SCOPE: tuple[str, ...] = tuple(STATE_CODE_CONTRACT)
 REVIEWED_AGENCY_SCOPE: tuple[str, ...] = (
     "WI0130000",  # Dane County Sheriff's Office - countywide jurisdiction
     "WI0137000",  # Fitchburg Police Department - incorporated place

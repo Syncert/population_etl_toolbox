@@ -22,9 +22,11 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     replay_slices,
 )
 
-from .conftest import load_bytes, load_payload, observation_fixture
+from .conftest import fixture_scoped, load_bytes, load_payload, observation_fixture
 
 pytestmark = pytest.mark.unit
+
+FIXTURE_PRODUCTS = tuple(fixture_scoped(product) for product in ALL_PRODUCTS)
 
 RELEASE = "2026-09-15"
 PRODUCT_IDS = {"ids": lambda item: item.product_id}
@@ -62,11 +64,11 @@ def _published_measures(product: FbiUcrProduct) -> set[str]:
     }
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, **PRODUCT_IDS)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, **PRODUCT_IDS)
 def test_each_product_emits_exactly_the_measures_its_provider_publishes(
     product: FbiUcrProduct,
 ) -> None:
-    """Covers: ETL-023 — each offense emits its own four published measures."""
+    """Covers: ETL-052 — each offense emits its own four published measures."""
     result = replay_slices(product, _slices(product), release_key=RELEASE)
 
     # Every captured offense publishes actuals and rates for offenses and
@@ -83,11 +85,11 @@ def test_each_product_emits_exactly_the_measures_its_provider_publishes(
     assert {item.product_id for item in result.participation} <= {product.product_id}
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, **PRODUCT_IDS)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, **PRODUCT_IDS)
 def test_each_product_publishes_its_own_provider_values(
     product: FbiUcrProduct,
 ) -> None:
-    """Covers: ETL-040 — a product's values come from its own payload only."""
+    """Covers: ETL-052 — a product's values come from its own payload only."""
     national = FbiSubject("national", "US")
     document = load_payload(observation_fixture(product, national))
     expected = document["offenses"]["actuals"]["United States Offenses"]["01-2023"]
@@ -105,10 +107,10 @@ def test_each_product_publishes_its_own_provider_values(
 
 
 def test_no_two_products_share_a_record_or_a_value_series() -> None:
-    """Covers: ETL-023 — one product's series never lands in another's."""
+    """Covers: ETL-052 — one product's series never lands in another's."""
     record_ids: dict[str, str] = {}
     national_series: dict[str, tuple] = {}
-    for product in ALL_PRODUCTS:
+    for product in FIXTURE_PRODUCTS:
         result = replay_slices(product, _slices(product), release_key=RELEASE)
         for item in result.observations:
             assert record_ids.setdefault(item.source_record_id, product.product_id) == (
@@ -121,14 +123,14 @@ def test_no_two_products_share_a_record_or_a_value_series() -> None:
             and item.measure_id == product.measure_id("offense", "absolute_total")
         )
 
-    assert len(set(national_series.values())) == len(ALL_PRODUCTS)
+    assert len(set(national_series.values())) == len(FIXTURE_PRODUCTS)
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, **PRODUCT_IDS)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, **PRODUCT_IDS)
 def test_a_series_the_provider_omits_registers_no_measure_and_no_zero(
     product: FbiUcrProduct,
 ) -> None:
-    """Covers: ETL-023 — an absent series is never published or zero-filled."""
+    """Covers: ETL-052 — an absent series is never published or zero-filled."""
     payloads: dict[str, bytes] = {}
     for subject in product.subjects:
         document = json.loads(load_bytes(observation_fixture(product, subject)))
@@ -151,3 +153,43 @@ def test_a_series_the_provider_omits_registers_no_measure_and_no_zero(
         if item.error_code == "subject_series_absent"
     ]
     assert len(absent) == len(product.subjects) * len(product.expected_periods)
+
+
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, **PRODUCT_IDS)
+def test_states_beyond_wisconsin_resolve_by_their_own_contract(
+    product: FbiUcrProduct,
+) -> None:
+    """Covers: ETL-052 — state subjects resolve without Wisconsin's evidence.
+
+    Pennsylvania reports every month with partial participation; the Virgin
+    Islands territory published no month in the window, so every one of its
+    observations is ``not_reported`` with a null value -- never a zero.
+    """
+    result = replay_slices(product, _slices(product), release_key=RELEASE)
+    state_rows = [item for item in result.observations if item.subject_type == "state"]
+
+    assert {(item.subject_code, item.subject_label) for item in state_rows} == {
+        ("PA", "Pennsylvania"),
+        ("VI", "U.S. Virgin Islands"),
+        ("WI", "Wisconsin"),
+    }
+    pennsylvania = [
+        item
+        for item in state_rows
+        if item.subject_code == "PA"
+        and item.period.endswith("-2023")
+        and item.period <= "06-2023"
+        and item.measure_id == product.measure_id("offense", "absolute_total")
+    ]
+    assert len(pennsylvania) == 6
+    assert all(item.value_status == "reported" for item in pennsylvania)
+    islands = [item for item in state_rows if item.subject_code == "VI"]
+    assert islands
+    assert all(item.value is None for item in islands)
+    assert {item.value_status for item in islands} == {"not_reported"}
+    coverage = {
+        item.subject_code: item
+        for item in result.participation
+        if item.subject_type == "state" and item.period == "01-2023"
+    }
+    assert set(coverage) == {"PA", "VI", "WI"}

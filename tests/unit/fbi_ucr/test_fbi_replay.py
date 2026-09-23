@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from uuid import UUID, uuid4
 
@@ -21,11 +22,13 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     slice_input_count,
 )
 
-from .conftest import load_bytes, load_payload, observation_fixture
+from .conftest import fixture_scoped, load_bytes, load_payload, observation_fixture
 
 pytestmark = pytest.mark.unit
 
-PRODUCT = SUMMARIZED_VIOLENT_CRIME
+FIXTURE_PRODUCTS = tuple(fixture_scoped(product) for product in ALL_PRODUCTS)
+
+PRODUCT = fixture_scoped(SUMMARIZED_VIOLENT_CRIME)
 RELEASE = "2026-08-15"
 
 
@@ -83,7 +86,7 @@ def _slices(product: FbiUcrProduct = PRODUCT) -> dict[str, CapturedSlice]:
     }
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
 def test_complete_release_replays_without_network_access(
     product: FbiUcrProduct,
 ) -> None:
@@ -110,7 +113,7 @@ def test_complete_release_replays_without_network_access(
     )
 
 
-@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
 def test_every_replayed_row_carries_its_capture_lineage(
     product: FbiUcrProduct,
 ) -> None:
@@ -275,3 +278,24 @@ def test_the_newest_capture_wins_while_earlier_bytes_stay_stored() -> None:
     assert slices["/summarized/national/V"].capture_id == newest
     assert "retrieved_at DESC" in cursor.statement
     assert connection.closed
+
+
+def test_state_observations_replay_without_any_agency_directory() -> None:
+    """Covers: ETL-052 — no state-observation path reads the directory."""
+    product = dataclasses.replace(PRODUCT, agency_scope=())
+    slices = {
+        product.observation_endpoint(subject): _slice(
+            product.observation_endpoint(subject),
+            observation_fixture(product, subject),
+        )
+        for subject in product.subjects
+    }
+
+    result = replay_slices(product, slices, release_key=RELEASE)
+
+    assert {item.subject_type for item in result.observations} == {
+        "national",
+        "state",
+    }
+    assert not result.agencies
+    assert not result.quarantined

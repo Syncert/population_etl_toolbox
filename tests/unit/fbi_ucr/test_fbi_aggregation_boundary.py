@@ -125,7 +125,7 @@ def test_national_and_state_totals_are_read_only_from_their_endpoints(
 
 
 def test_no_offense_is_named_outside_the_registry() -> None:
-    """Covers: ETL-042 — no component-offense sum is built or reconciled.
+    """Covers: ETL-042, ETL-052 — no component-offense sum is built or reconciled.
 
     ``V`` and ``P`` are provider-published aggregates that need not equal the
     sum of their components. Computing or checking such a sum would have to

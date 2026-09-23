@@ -18,7 +18,7 @@ verify:
 - **Status:** Unclaimed.
 - **Last updated:** 2026-09-23
 - **Dependencies:** none. The FBI UCR pipeline this extends is accepted
-  ([`completed/FBI_CRIME_PIPELINE_PLAN.md`](../completed/FBI_CRIME_PIPELINE_PLAN.md)).
+  ([`docs/plans/completed/FBI_CRIME_PIPELINE_PLAN.md`](../completed/FBI_CRIME_PIPELINE_PLAN.md)).
 - **External requirement:** a working `FBI_CDE_API_KEY` to capture the new
   provider fixtures (FBI-X01). Without the key, Milestone 1 stops after the
   registry and test scaffolding and the plan stays in `in_progress/`.

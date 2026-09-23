@@ -33,6 +33,7 @@ from apps.api.registry import (
     SOURCE_DISCOVERY,
 )
 from apps.api.versioning import VERSIONED_ROOT
+from data_ingestion_toolbox.fbi_ucr.registry import ALL_PRODUCTS as FBI_PRODUCTS
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
@@ -290,6 +291,48 @@ def test_lineage_registry_disagreement_is_a_sanitized_fault() -> None:
     assert response.json() == {"detail": SERVICE_UNAVAILABLE_DETAIL}
     assert "some_other_relation" not in response.text
     assert not _dispatched(session), "no serving query may run after the fault"
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [product.product_id for product in FBI_PRODUCTS],
+)
+def test_every_fbi_dataset_binds_its_own_product_identity(product_id: str) -> None:
+    """Covers: API-042 — each FBI dataset reads only its own product's rows."""
+    offense = next(
+        product.offense_code
+        for product in FBI_PRODUCTS
+        if product.product_id == product_id
+    )
+    measure_id = f"{offense}:offense:absolute_total"
+    row = dict(_FBI_METRIC)
+    row.update(
+        {
+            "metric_code": f"FBI_UCR:{product_id}:{measure_id}",
+            "physical_lineage": {
+                "schema": "gold_fbi",
+                "relation": "crime_observation",
+                "product_id": product_id,
+                "measure_id": measure_id,
+            },
+        }
+    )
+    session = _DispatchSession(metric_row=row)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations", params={"metric_code": row["metric_code"]}
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    for sql in _dispatched(session):
+        assert "product_id = :identity_product_id" in sql
+        assert product_id not in sql, "identity values must be bound, not inlined"
+    bound = session.parameters[-1]
+    assert bound["identity_product_id"] == product_id
+    assert bound["identity_measure_id"] == measure_id
 
 
 def test_missing_lineage_identity_is_a_sanitized_fault() -> None:

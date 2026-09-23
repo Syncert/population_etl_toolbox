@@ -9,6 +9,7 @@ seeds the geographies the reviewed Wisconsin sample resolves against.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ from data_ingestion_toolbox.fbi_ucr.registry import (
     COUNTED_ENTITY_BASES,
     MEASURE_FORMS,
     SUMMARIZED_VIOLENT_CRIME,
+    FbiUcrProduct,
     agency_directory_endpoint,
 )
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
@@ -49,7 +51,24 @@ from tests.support.warehouse_scope import (
     source_run_ids,
 )
 
-PRODUCT = SUMMARIZED_VIOLENT_CRIME
+
+def fixture_scoped(
+    product: FbiUcrProduct, states: tuple[str, ...] = ("WI",)
+) -> FbiUcrProduct:
+    """Return a registered product narrowed to states with reviewed fixtures.
+
+    Every product registers all 52 documented states, and fixtures exist for
+    Wisconsin, Pennsylvania, and the Virgin Islands only; the other states are
+    proved at the registry level. The database tiers replay Wisconsin unless a
+    test widens the scope on purpose.
+    """
+    return dataclasses.replace(
+        product,
+        state_scope=tuple(state for state in product.state_scope if state in states),
+    )
+
+
+PRODUCT = fixture_scoped(SUMMARIZED_VIOLENT_CRIME)
 SOURCE_CODE = "FBI_UCR"
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "fbi_ucr"
 PERIODS = len(PRODUCT.expected_periods)
@@ -64,6 +83,8 @@ OBSERVATIONS_PER_SUBJECT = len(MEASURE_FORMS) * len(COUNTED_ENTITY_BASES) * PERI
 SEEDED_GEOGRAPHIES: tuple[dict[str, object], ...] = (
     {"geo_type": "nation", "name": "United States"},
     {"geo_type": "state", "state_fips": "55", "name": "Wisconsin"},
+    {"geo_type": "state", "state_fips": "42", "name": "Pennsylvania"},
+    {"geo_type": "state", "state_fips": "78", "name": "U.S. Virgin Islands"},
     {
         "geo_type": "county",
         "state_fips": "55",
@@ -99,6 +120,8 @@ SEEDED_GEOGRAPHIES: tuple[dict[str, object], ...] = (
 SEEDED_GEO_IDS: tuple[str, ...] = (
     "us:1",
     "state:55",
+    "state:42",
+    "state:78",
     "state:55|county:009",
     "state:55|county:025",
     "state:55|county:105",
@@ -150,14 +173,14 @@ def fixture_for(endpoint: str) -> str:
     return f"summarized_{kind}_{value}_{endpoint.split('/')[4]}"
 
 
-def slice_fixtures() -> dict[str, str]:
+def slice_fixtures(product: FbiUcrProduct = PRODUCT) -> dict[str, str]:
     """Return every registered slice endpoint and the fixture that answers it."""
     slices = {
         agency_directory_endpoint(state): f"agency_directory_{state}"
-        for state in PRODUCT.reference_states
+        for state in product.reference_states
     }
-    for subject in PRODUCT.subjects:
-        endpoint = PRODUCT.observation_endpoint(subject)
+    for subject in product.subjects:
+        endpoint = product.observation_endpoint(subject)
         slices[endpoint] = fixture_for(endpoint)
     return slices
 
@@ -171,6 +194,7 @@ def _capture_slice(
     parameters: dict,
     payload: bytes,
     source_revision: str | None,
+    product: FbiUcrProduct = PRODUCT,
 ) -> UUID:
     request = control.start_request(
         run_id=run_id, endpoint=endpoint, parameters=parameters
@@ -187,7 +211,7 @@ def _capture_slice(
         response_headers={"content-type": "application/json"},
         media_type="application/json",
         payload=payload,
-        payload_schema_version=PRODUCT.parser_contract_version,
+        payload_schema_version=product.parser_contract_version,
         source_revision=source_revision,
     )
     persist_response_capture(connection_factory, capture)
@@ -198,14 +222,16 @@ def _capture_slice(
 def persist_fixture_release(
     connection_factory: Callable[[], connection],
     *,
-    national_fixture: str = "summarized_national_V",
+    national_fixture: str | None = None,
     omit: tuple[str, ...] = (),
+    product: FbiUcrProduct = PRODUCT,
 ) -> CapturedFbiRelease:
     """Capture every registered slice from reviewed fixtures, then record it."""
-    slices = slice_fixtures()
-    slices[PRODUCT.observation_endpoint(PRODUCT.subjects[0])] = national_fixture
+    national_fixture = national_fixture or f"summarized_national_{product.offense_code}"
+    slices = slice_fixtures(product)
+    slices[product.observation_endpoint(product.subjects[0])] = national_fixture
     control = CaptureControl(connection_factory, source_code=SOURCE_CODE)
-    run_id = control.start_run(watermark={"product_id": PRODUCT.product_id})
+    run_id = control.start_run(watermark={"product_id": product.product_id})
     release = parse_release((FIXTURE_DIR / f"{national_fixture}.json").read_bytes())
 
     directory_captures = []
@@ -216,7 +242,7 @@ def persist_fixture_release(
             continue
         payload = (FIXTURE_DIR / f"{fixture}.json").read_bytes()
         is_directory = endpoint.startswith("/agency/")
-        parameters = {} if is_directory else observation_parameters(PRODUCT)
+        parameters = {} if is_directory else observation_parameters(product)
         capture_id = _capture_slice(
             connection_factory,
             control,
@@ -225,6 +251,7 @@ def persist_fixture_release(
             parameters=parameters,
             payload=payload,
             source_revision=release.release_key,
+            product=product,
         )
         if is_directory:
             directory_captures.append((endpoint.rsplit("/", 1)[-1], capture_id))
@@ -236,7 +263,7 @@ def persist_fixture_release(
     control.set_run_watermark(
         run_id,
         watermark={
-            "product_id": PRODUCT.product_id,
+            "product_id": product.product_id,
             "refresh_date": release.release_key,
             "max_data_month": release.max_data_month,
         },
@@ -244,7 +271,7 @@ def persist_fixture_release(
     control.finish_run(run_id, status="success")
     captured = CapturedFbiRelease(
         run_id=run_id,
-        product_id=PRODUCT.product_id,
+        product_id=product.product_id,
         release=release,
         decision=ReleaseDecision.INGEST,
         release_capture_id=probe_capture,
@@ -252,38 +279,39 @@ def persist_fixture_release(
         observation_capture_ids=tuple(observation_captures),
         complete=not omit,
     )
-    persist_release_state(connection_factory, captured, PRODUCT)
+    persist_release_state(connection_factory, captured, product)
     return captured
 
 
 def run_pipeline(
     connection_factory: Callable[[], connection],
     captured: CapturedFbiRelease,
+    product: FbiUcrProduct = PRODUCT,
 ) -> tuple[int, int]:
     """Replay durable bytes, reconcile silver, and publish one release."""
     result = replay_captured_run(
         connection_factory,
         run_id=captured.run_id,
-        product=PRODUCT,
+        product=product,
         release_key=captured.release_key,
     )
     persist_replay_result(
         connection_factory,
         run_id=captured.run_id,
-        product=PRODUCT,
+        product=product,
         release_key=captured.release_key,
         result=result,
     )
     transformed = transform_release(
         connection_factory,
         run_id=captured.run_id,
-        product=PRODUCT,
+        product=product,
         release_key=captured.release_key,
     )
     published = publish_release(
         connection_factory,
         run_id=captured.run_id,
-        product_id=PRODUCT.product_id,
+        product_id=product.product_id,
         release_key=captured.release_key,
     )
     return transformed, published
