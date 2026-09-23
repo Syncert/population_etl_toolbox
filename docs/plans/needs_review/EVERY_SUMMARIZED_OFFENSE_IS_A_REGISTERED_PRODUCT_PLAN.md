@@ -15,14 +15,14 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed and **in progress** on branch `claude/plans-iteration-2026-09-20`. FBI-X01 through FBI-X05 are done with evidence; FBI-X06 (the live run) is running.
+- **Status:** **Ready for review.** Implemented on branch `claude/plans-iteration-2026-09-20`; every work item and acceptance criterion has evidence below, including the live run.
 - **Last updated:** 2026-09-23
 - **Dependencies:** none. The FBI UCR pipeline this extends is accepted
   ([`docs/plans/completed/FBI_CRIME_PIPELINE_PLAN.md`](../completed/FBI_CRIME_PIPELINE_PLAN.md)).
 - **External requirement:** a working `FBI_CDE_API_KEY` to capture the new
   provider fixtures (FBI-X01). Without the key, Milestone 1 stops after the
   registry and test scaffolding and the plan stays in `in_progress/`.
-- **Next pickup:** FBI-X06 -- record the live run's rows per product and per state (see *Evidence record*).
+- **Next pickup:** none -- awaiting human review.
 
 ## Why
 
@@ -187,7 +187,7 @@ without its reference slice.
   - The `VI` (FIPS `78`) state subject must resolve to the territory geography.
     Show it has a geography row, or record that it lands in the
     unresolved-geography path by contract.
-- [ ] **FBI-X06: live run.** Run the ingest DAG, or the capture → replay →
+- [x] **FBI-X06: live run.** Run the ingest DAG, or the capture → replay →
   publish chain, against the internal stack with the key. Record rows per
   product and per state, plus any provider error bodies. Make sure no subject
   that did not report is published as zero.
@@ -277,4 +277,70 @@ needed; the live run (FBI-X06) is the measurement.
 | DAG tier in `docker-airflow-scheduler-1` (`pytest -m dag tests/dags`) | 145 passed, 5 skipped (DB-backed DAG tests needing `TEST_POSTGRES_*` in the container; unrelated to FBI) |
 | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and database" tests/integration/database/test_fbi_ucr_pipeline.py` (pinned PostGIS, port 55532) | 16 passed |
 | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e/test_fbi_ucr_pipeline.py` | 1 passed |
+| `pytest tests/unit -q` (after every change) | 2133 passed |
+| `npm --prefix apps/web run test:unit` (templates addressing `summarized_violent_crime`) | 681 passed |
+| `RUN_EXTERNAL_TESTS=1 pytest -m external tests/external/test_fbi_source_contracts.py` (live, with the key) | 26 passed |
+| `test_only_a_published_release_of_the_same_scope_is_the_previous_one` (added after the 16-test file run) | passed |
 | `ruff format --check . ; ruff check .` | clean |
+
+### FBI-X06: live run on the internal stack
+
+`fbi_ucr_ingest` run `manual__fbi_x06_2026-09-23`, 18:49:52–18:58:00 UTC,
+**success**, all 32 tasks. Every product decided `ingest` for refresh date
+2026-09-15 and published, with 59 observation slices and 1 directory slice each
+-- 600 provider requests in about 8 minutes, no `429` and no retry, which is the
+measured confirmation of the FBI-X05 budget. Violent crime's 2026-09-15
+release, stuck unpublished since 2026-09-18, published in the same run.
+
+Rows in `gold_fbi.crime_observation` for release 2026-09-15:
+
+| Product | Rows | Null (`not_reported`) | States | Measures | Quarantined `-1` rates |
+| --- | --- | --- | --- | --- | --- |
+| `summarized_violent_crime` | 92,826 | 1,932 | 52 | 4 | 3,826 |
+| `summarized_assault` | 92,826 | 1,932 | 52 | 4 | 2,046 |
+| `summarized_burglary` | 92,830 | 1,932 | 52 | 4 | 2,042 |
+| `summarized_larceny` | 92,830 | 1,932 | 52 | 4 | 2,042 |
+| `summarized_motor_vehicle_theft` | 92,830 | 1,932 | 52 | 4 | 2,042 |
+| `summarized_homicide` | 92,828 | 1,932 | 52 | 4 | 2,044 |
+| `summarized_rape` | 92,830 | 1,932 | 52 | 4 | 2,042 |
+| `summarized_robbery` | 92,828 | 1,932 | 52 | 4 | 2,044 |
+| `summarized_arson` | 92,828 | 1,932 | 52 | 4 | 2,044 |
+| `summarized_property_crime` | 92,830 | 1,932 | 52 | 4 | 2,042 |
+
+(V's quarantine count includes both of its 2026-09-15 captures: the failed
+2026-09-07 run's and this one's.)
+
+Per state (burglary shown; every product has the same shape): each of the 52
+state subjects publishes 1,608 rows (402 months × 4 measures) with
+`geography_status = provider_geo_exact` on its canonical `state:<FIPS>`,
+except the Virgin Islands, which publishes 1,346 rows on `state:78` -- 1,036 of
+them null -- because 262 of its rates are the `-1` sentinel and were
+quarantined. Kentucky (36) and Montana (92) are the only other states with
+null months. No provider error body was returned.
+
+**No subject that did not report is published as zero.** Every zero in the
+release carries the provider's own source text `0` (0 rows otherwise); months
+the provider left empty are null (`unknown` participation: 11,640 state and
+7,680 agency rows, none zero). Zeros under `no_participation` are
+provider-published zeros -- for example the Wisconsin State Patrol, which has no
+resident population yet reports counts -- and the contract keeps a published
+zero as published.
+
+After `docker restart docker-api-1` and a `glossary_harvest` run,
+`/api/v1/catalog/capabilities` lists the ten datasets in registry order and
+`/api/v1/catalog/metrics?source_code=FBI_UCR` answers 40 metrics, four per
+dataset.
+
+### Acceptance criteria
+
+1. Ten datasets, each with the four measures its responses publish -- live
+   catalog above; `test_each_product_emits_exactly_the_measures_its_provider_publishes`.
+2. Violent crime unchanged -- `test_violent_crime_contract_is_unchanged_by_the_new_products`;
+   web unit tests pass.
+3. No component sum -- `test_no_offense_is_named_outside_the_registry`; no rule,
+   test, or response adds offenses.
+4. National plus 52 states for every product, `FS`/`GM` unsupported, six ORIs --
+   `test_every_product_covers_every_documented_state` and the live run.
+5. Directory behaviour decided and tested (FBI-X04); request volume measured
+   (FBI-X05, FBI-X06).
+6. Every `verify` command passes; live run recorded above.
