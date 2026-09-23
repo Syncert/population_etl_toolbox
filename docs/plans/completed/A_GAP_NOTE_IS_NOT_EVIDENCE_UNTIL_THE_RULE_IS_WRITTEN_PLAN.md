@@ -14,9 +14,9 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Five executors are implemented and every
-  acceptance criterion was run on a machine session on 2026-09-22 against the
-  pinned disposable PostGIS 16 container.
+- **Status:** Accepted 2026-09-22 (Ready for review. Five executors are
+  implemented and every acceptance criterion was run on a machine session on
+  2026-09-22 against the pinned disposable PostGIS 16 container.)
 - **Last updated:** 2026-09-22
 - **Next pickup:** none.
 - **Record note:** this plan was written after the implementation it
