@@ -438,6 +438,39 @@ describe("stratified answers are reported, never collapsed", () => {
     });
   });
 
+  test("a dimension that only names the geography is not a second series", () => {
+    // FBI UCR declares subject_code, and at the state grain a state's
+    // subject_code is that state: 52 states carry 52 codes, each one series.
+    // Counting signatures across geographies read that as 52 series and
+    // emptied the map (WEB-117).
+    const states = ["PA", "WI", "VI"].flatMap((code, index) =>
+      ["2023-05-01", "2023-06-01"].map((period_start) => ({
+        geo_id: `state:${index}`,
+        period_start,
+        dimensions: { subject_type: "state", subject_code: code },
+      })),
+    );
+    expect(describeStratification(states, ["subject_type", "subject_code"])).toEqual({
+      seriesCount: 1,
+      stratified: false,
+      varyingDimensions: [],
+    });
+    expect(newestPerGeography(states)).toHaveLength(3);
+  });
+
+  test("only a dimension that varies inside one geography is named", () => {
+    const rows = [
+      { geo_id: "a", dimensions: { stratum_id: "overall", subject_code: "A" } },
+      { geo_id: "a", dimensions: { stratum_id: "age_18_44", subject_code: "A" } },
+      { geo_id: "b", dimensions: { stratum_id: "overall", subject_code: "B" } },
+    ];
+    expect(describeStratification(rows, ["stratum_id", "subject_code"])).toEqual({
+      seriesCount: 2,
+      stratified: true,
+      varyingDimensions: ["stratum_id"],
+    });
+  });
+
   test("a source with no declared dimensions is never reported as stratified", () => {
     expect(describeStratification([{ geo_id: "a" }], census.dimensionFilters)).toEqual({
       seriesCount: 1,

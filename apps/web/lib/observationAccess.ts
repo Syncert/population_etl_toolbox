@@ -897,22 +897,46 @@ export function describeStratification(
     return { seriesCount: items.length === 0 ? 0 : 1, stratified: false, varyingDimensions: [] };
   }
 
-  const signatures = new Set<string>();
-  const valuesByName = new Map<string, Set<string>>(names.map((name) => [name, new Set()]));
+  // Series are counted inside each geography. A dimension whose value only
+  // names the geography -- FBI UCR's `subject_code` is the state at the state
+  // grain -- differs between polygons and is still one series per polygon;
+  // counting across geographies read 52 states as 52 series (WEB-117).
+  const signaturesByGeography = new Map<string, Set<string>>();
+  const valuesByGeography = new Map<string, Map<string, Set<string>>>();
   for (const row of items) {
+    const geography = String(row?.geo_id ?? "");
     const signature: string[] = [];
+    let values = valuesByGeography.get(geography);
+    if (!values) {
+      values = new Map(names.map((name) => [name, new Set<string>()]));
+      valuesByGeography.set(geography, values);
+    }
     for (const name of names) {
       const value = observationDimensionValue(row, name);
       signature.push(`${name}=${value}`);
-      valuesByName.get(name)!.add(value);
+      values.get(name)!.add(value);
     }
+    const signatures = signaturesByGeography.get(geography) || new Set<string>();
     signatures.add(signature.join("|"));
+    signaturesByGeography.set(geography, signatures);
+  }
+
+  const seriesCount = Math.max(
+    ...[...signaturesByGeography.values()].map((signatures) => signatures.size),
+  );
+  const varying = new Set<string>();
+  for (const values of valuesByGeography.values()) {
+    for (const name of names) {
+      if ((values.get(name)?.size || 0) > 1) {
+        varying.add(name);
+      }
+    }
   }
 
   return {
-    seriesCount: signatures.size,
-    stratified: signatures.size > 1,
-    varyingDimensions: names.filter((name) => (valuesByName.get(name)?.size || 0) > 1),
+    seriesCount,
+    stratified: seriesCount > 1,
+    varyingDimensions: names.filter((name) => varying.has(name)),
   };
 }
 
