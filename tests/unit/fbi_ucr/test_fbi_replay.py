@@ -8,7 +8,9 @@ from uuid import UUID, uuid4
 import pytest
 
 from data_ingestion_toolbox.fbi_ucr.registry import (
+    ALL_PRODUCTS,
     SUMMARIZED_VIOLENT_CRIME,
+    FbiUcrProduct,
     agency_directory_endpoint,
 )
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
@@ -19,23 +21,52 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     slice_input_count,
 )
 
-from .conftest import load_bytes
+from .conftest import load_bytes, load_payload, observation_fixture
 
 pytestmark = pytest.mark.unit
 
 PRODUCT = SUMMARIZED_VIOLENT_CRIME
 RELEASE = "2026-08-15"
 
-#: Reviewed capture fixture per registered endpoint.
-FIXTURE_BY_ENDPOINT = {
-    agency_directory_endpoint("WI"): "agency_directory_WI",
-    "/summarized/national/V": "summarized_national_V",
-    "/summarized/state/WI/V": "summarized_state_WI_V",
-    **{
-        f"/summarized/agency/{ori}/V": f"summarized_agency_{ori}_V"
-        for ori in PRODUCT.agency_scope
-    },
-}
+
+def _fixture_by_endpoint(product: FbiUcrProduct) -> dict[str, str]:
+    """Return the reviewed capture fixture per registered endpoint."""
+    fixtures = {
+        agency_directory_endpoint(state): f"agency_directory_{state}"
+        for state in product.reference_states
+    }
+    fixtures.update(
+        {
+            product.observation_endpoint(subject): observation_fixture(product, subject)
+            for subject in product.subjects
+        }
+    )
+    return fixtures
+
+
+def _published_negative_values(product: FbiUcrProduct) -> int:
+    """Count negative values in each subject's own series inside the window."""
+    periods = set(product.expected_periods)
+    count = 0
+    for subject in product.subjects:
+        document = load_payload(observation_fixture(product, subject))
+        own = {
+            label
+            for label in document["populations"]["population"]
+            if label not in {"United States", "Wisconsin"}
+            or (subject.subject_type == "national" and label == "United States")
+            or (subject.subject_type == "state" and label == "Wisconsin")
+        }
+        for container in document["offenses"].values():
+            for series_label, series in container.items():
+                if series_label.rsplit(" ", 1)[0] not in own:
+                    continue
+                count += sum(
+                    1
+                    for period, value in series.items()
+                    if period in periods and value is not None and value < 0
+                )
+    return count
 
 
 def _slice(endpoint: str, name: str) -> CapturedSlice:
@@ -45,23 +76,32 @@ def _slice(endpoint: str, name: str) -> CapturedSlice:
     )
 
 
-def _slices() -> dict[str, CapturedSlice]:
+def _slices(product: FbiUcrProduct = PRODUCT) -> dict[str, CapturedSlice]:
     return {
         endpoint: _slice(endpoint, name)
-        for endpoint, name in FIXTURE_BY_ENDPOINT.items()
+        for endpoint, name in _fixture_by_endpoint(product).items()
     }
 
 
-def test_complete_release_replays_without_network_access() -> None:
+@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+def test_complete_release_replays_without_network_access(
+    product: FbiUcrProduct,
+) -> None:
     """Covers: ETL-040 — a full release rebuilds from stored bytes alone."""
-    result = replay_slices(PRODUCT, _slices(), release_key=RELEASE)
+    result = replay_slices(product, _slices(product), release_key=RELEASE)
 
-    subjects = len(PRODUCT.subjects)
-    assert len(result.observations) + len(result.participation) == subjects * (
-        slice_input_count(PRODUCT)
-    )
-    assert len(result.agencies) == len(PRODUCT.agency_scope)
-    assert not result.quarantined
+    subjects = len(product.subjects)
+    assert len(result.observations) + len(result.participation) + len(
+        result.quarantined
+    ) == subjects * slice_input_count(product)
+    assert len(result.agencies) == len(product.agency_scope)
+    # The provider publishes a rate of -1 where an agency's covered population
+    # is zero. Those, and only those, are quarantined: never published, never
+    # zeroed.
+    assert [item.error_code for item in result.quarantined] == [
+        "negative_measure_value"
+    ] * _published_negative_values(product)
+    assert all(item.value is None or item.value >= 0 for item in result.observations)
     assert result.input_count == (
         len(result.observations)
         + len(result.participation)
@@ -70,12 +110,15 @@ def test_complete_release_replays_without_network_access() -> None:
     )
 
 
-def test_every_replayed_row_carries_its_capture_lineage() -> None:
+@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+def test_every_replayed_row_carries_its_capture_lineage(
+    product: FbiUcrProduct,
+) -> None:
     """Covers: ETL-040 — each silver row points at the bytes it came from."""
-    slices = _slices()
-    result = replay_slices(PRODUCT, slices, release_key=RELEASE)
+    slices = _slices(product)
+    result = replay_slices(product, slices, release_key=RELEASE)
 
-    national = slices["/summarized/national/V"].capture_id
+    national = slices[f"/summarized/national/{product.offense_code}"].capture_id
     national_rows = [
         item for item in result.observations if item.subject_type == "national"
     ]

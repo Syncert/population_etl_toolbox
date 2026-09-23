@@ -283,43 +283,106 @@ def published_state_label(state_code: str) -> str | None:
     return contract[0] if contract is not None else None
 
 
-# The first summarized-offense slice. Wisconsin's agency directory is the
-# reviewed discovery sample: it contains city, countywide, multi-county,
-# university, tribal, and state-police agencies plus the ``NOT SPECIFIED``
-# county label, so every jurisdiction class in the geography contract is
-# exercised by real provider evidence rather than a synthetic case.
-SUMMARIZED_VIOLENT_CRIME = FbiUcrProduct(
-    product_id="summarized_violent_crime",
-    label="Summarized violent crime offenses and clearances",
-    ucr_program="SRS_AND_SUMMARIZED_NIBRS",
-    offense_code="V",
-    # Historical depth extends to 1990 (warehouse-wide floor). The CDE
-    # summarized API serves the whole window in one documented from/to request
-    # per subject; verified live 2026-08-29 (national/state/agency all 200).
-    period_start="01-1990",
-    period_end="06-2023",
-    state_scope=("WI",),
-    agency_scope=(
-        "WI0130000",  # Dane County Sheriff's Office - countywide jurisdiction
-        "WI0137000",  # Fitchburg Police Department - incorporated place
-        "WI0540300",  # Edgerton Police Department - two county associations
-        "WI0050700",  # University of Wisconsin: Green Bay - campus jurisdiction
-        "WI0400100",  # Menominee Tribal - tribal, county NOT SPECIFIED
-        "WIWSP0000",  # Wisconsin State Patrol - statewide, county NOT SPECIFIED
-    ),
-    parser_contract_version="fbi-cde-summarized-v1",
-    documentation_url="https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi",
-    methodology_url=(
-        "https://www.fbi.gov/how-we-can-help-you/more-fbi-services-and-information/ucr"
-    ),
-    reported_status="reported",
-    counted_entity_note=(
-        "Offense series count reported offenses; clearance series count cleared "
-        "offenses. The two are different counted entities and are never added."
-    ),
+# Every summarized product shares one subject scope and one period window, so
+# ten registered offenses cannot drift apart.
+#
+# Wisconsin's agency directory is the reviewed discovery sample: it contains
+# city, countywide, multi-county, university, tribal, and state-police agencies
+# plus the ``NOT SPECIFIED`` county label, so every jurisdiction class in the
+# geography contract is exercised by real provider evidence rather than a
+# synthetic case.
+SUMMARIZED_STATE_SCOPE: tuple[str, ...] = ("WI",)
+REVIEWED_AGENCY_SCOPE: tuple[str, ...] = (
+    "WI0130000",  # Dane County Sheriff's Office - countywide jurisdiction
+    "WI0137000",  # Fitchburg Police Department - incorporated place
+    "WI0540300",  # Edgerton Police Department - two county associations
+    "WI0050700",  # University of Wisconsin: Green Bay - campus jurisdiction
+    "WI0400100",  # Menominee Tribal - tribal, county NOT SPECIFIED
+    "WIWSP0000",  # Wisconsin State Patrol - statewide, county NOT SPECIFIED
 )
 
-ALL_PRODUCTS: tuple[FbiUcrProduct, ...] = (SUMMARIZED_VIOLENT_CRIME,)
+
+def _summarized_product(
+    product_id: str, label: str, offense_code: str
+) -> FbiUcrProduct:
+    return FbiUcrProduct(
+        product_id=product_id,
+        label=label,
+        ucr_program="SRS_AND_SUMMARIZED_NIBRS",
+        offense_code=offense_code,
+        # Historical depth extends to 1990 (warehouse-wide floor). The CDE
+        # summarized API serves the whole window in one documented from/to
+        # request per subject; verified live 2026-08-29 for ``V`` and
+        # 2026-09-23 for the other nine offenses (every request 200).
+        period_start="01-1990",
+        period_end="06-2023",
+        state_scope=SUMMARIZED_STATE_SCOPE,
+        agency_scope=REVIEWED_AGENCY_SCOPE,
+        parser_contract_version="fbi-cde-summarized-v1",
+        documentation_url="https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi",
+        methodology_url=(
+            "https://www.fbi.gov/how-we-can-help-you/more-fbi-services-and-information/ucr"
+        ),
+        reported_status="reported",
+        counted_entity_note=(
+            "Offense series count reported offenses; clearance series count cleared "
+            "offenses. The two are different counted entities and are never added."
+        ),
+    )
+
+
+# Product ids are frozen once published. ``V`` and ``P`` are provider-published
+# aggregates: they are never computed from, or reconciled against, the sum of
+# their component offenses (reporting is uneven and the rape definition changed
+# in 2013, so the provider aggregate need not equal that sum).
+SUMMARIZED_VIOLENT_CRIME = _summarized_product(
+    "summarized_violent_crime", "Summarized violent crime offenses and clearances", "V"
+)
+SUMMARIZED_ASSAULT = _summarized_product(
+    "summarized_assault", "Summarized assault offenses and clearances", "ASS"
+)
+SUMMARIZED_BURGLARY = _summarized_product(
+    "summarized_burglary", "Summarized burglary offenses and clearances", "BUR"
+)
+SUMMARIZED_LARCENY = _summarized_product(
+    "summarized_larceny", "Summarized larceny offenses and clearances", "LAR"
+)
+SUMMARIZED_MOTOR_VEHICLE_THEFT = _summarized_product(
+    "summarized_motor_vehicle_theft",
+    "Summarized motor vehicle theft offenses and clearances",
+    "MVT",
+)
+SUMMARIZED_HOMICIDE = _summarized_product(
+    "summarized_homicide", "Summarized homicide offenses and clearances", "HOM"
+)
+SUMMARIZED_RAPE = _summarized_product(
+    "summarized_rape", "Summarized rape offenses and clearances", "RPE"
+)
+SUMMARIZED_ROBBERY = _summarized_product(
+    "summarized_robbery", "Summarized robbery offenses and clearances", "ROB"
+)
+SUMMARIZED_ARSON = _summarized_product(
+    "summarized_arson", "Summarized arson offenses and clearances", "ARS"
+)
+SUMMARIZED_PROPERTY_CRIME = _summarized_product(
+    "summarized_property_crime",
+    "Summarized property crime offenses and clearances",
+    "P",
+)
+
+#: Registered products in documented ``SUMMARIZED_OFFENSES`` order.
+ALL_PRODUCTS: tuple[FbiUcrProduct, ...] = (
+    SUMMARIZED_VIOLENT_CRIME,
+    SUMMARIZED_ASSAULT,
+    SUMMARIZED_BURGLARY,
+    SUMMARIZED_LARCENY,
+    SUMMARIZED_MOTOR_VEHICLE_THEFT,
+    SUMMARIZED_HOMICIDE,
+    SUMMARIZED_RAPE,
+    SUMMARIZED_ROBBERY,
+    SUMMARIZED_ARSON,
+    SUMMARIZED_PROPERTY_CRIME,
+)
 
 
 def enabled_products() -> list[FbiUcrProduct]:

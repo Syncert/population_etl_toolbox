@@ -46,3 +46,13 @@ def agency_names() -> dict[str, str]:
         slice_key="agency_directory:WI",
     )
     return {record.ori: record.agency_name for record in result.agencies}
+
+
+def observation_fixture(product: Any, subject: Any) -> str:
+    """Return the reviewed fixture captured for one product subject."""
+    code = product.offense_code
+    if subject.subject_type == "national":
+        return f"summarized_national_{code}"
+    if subject.subject_type == "state":
+        return f"summarized_state_{subject.subject_code}_{code}"
+    return f"summarized_agency_{subject.subject_code}_{code}"

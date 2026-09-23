@@ -9,12 +9,18 @@ source does not currently exhibit, and every derivation is recorded in
 
 Usage::
 
-    python -m tests.support.build_fbi_fixtures <captured-payload-directory> [...]
+    python -m tests.support.build_fbi_fixtures [--offense CODE] <captured-payload-directory> [...]
 
 Each directory may hold ``summarized_*``/``agency_byStateAbbr_*`` JSON files.
 Directories are searched in order, so a directory holding responses already
 captured for the registered window takes precedence over one holding a wider
 window that must be trimmed.
+
+``--offense`` selects the summarized offense code (default ``V``). The violent
+crime fixtures also carry the agency directory, the derived agency scenarios,
+the revision case, and the provider error body. Every other offense is built
+from captured responses only: its national, state, and six agency responses
+must all be present, and nothing is derived for it.
 """
 
 from __future__ import annotations
@@ -127,11 +133,34 @@ def _derived_agency(ori: str, template: dict[str, Any]) -> dict[str, Any]:
     return document
 
 
+def _captured_offense(code: str, directories: list[Path]) -> int:
+    names = [f"summarized_national_{code}", f"summarized_state_WI_{code}"]
+    names.extend(f"summarized_agency_{ori}_{code}" for ori in AGENCIES)
+    documents = {name: _load(name, directories) for name in names}
+    missing = [name for name, document in documents.items() if document is None]
+    if missing:
+        print(f"missing captured payloads: {', '.join(missing)}")
+        return 1
+    for name, document in documents.items():
+        _write(name, _trim_months(document))
+    return 0
+
+
 def main(argv: list[str]) -> int:
-    directories = [Path(item) for item in argv[1:]]
+    arguments = list(argv[1:])
+    code = "V"
+    if arguments[:1] == ["--offense"]:
+        if len(arguments) < 2:
+            print(__doc__)
+            return 2
+        code = arguments[1]
+        arguments = arguments[2:]
+    directories = [Path(item) for item in arguments]
     if not directories:
         print(__doc__)
         return 2
+    if code != "V":
+        return _captured_offense(code, directories)
 
     national = _trim_months(_load("summarized_national_V", directories))
     state = _trim_months(_load("summarized_state_WI_V", directories))

@@ -14,7 +14,14 @@ from data_ingestion_toolbox.fbi_ucr.metadata import (
     decide_release,
     parse_release,
 )
-from data_ingestion_toolbox.fbi_ucr.registry import SUMMARIZED_VIOLENT_CRIME
+from data_ingestion_toolbox.fbi_ucr.registry import (
+    ALL_PRODUCTS,
+    SUMMARIZED_VIOLENT_CRIME,
+    FbiSubject,
+    FbiUcrProduct,
+)
+
+from .conftest import observation_fixture
 
 pytestmark = pytest.mark.unit
 
@@ -37,6 +44,20 @@ def test_release_parses_from_exact_capture_bytes(fbi_bytes) -> None:
     release = parse_release(fbi_bytes("summarized_national_V"))
 
     assert release.release_key == "2026-08-15"
+
+
+@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+def test_every_product_identifies_its_release_from_its_own_capture(
+    fbi_bytes, product: FbiUcrProduct
+) -> None:
+    """Covers: ETL-026 — each product's release comes from its own payload."""
+    release = parse_release(
+        fbi_bytes(observation_fixture(product, FbiSubject("national", "US")))
+    )
+
+    assert release.release_key in {"2026-08-15", "2026-09-15"}
+    assert decide_release(product, release, None) is ReleaseDecision.INGEST
+    assert decide_release(product, release, release) is ReleaseDecision.UNCHANGED
 
 
 @pytest.mark.parametrize(
