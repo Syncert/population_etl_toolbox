@@ -3,7 +3,11 @@
 The `fbi_ucr_ingest` DAG captures and publishes the registered FBI Crime Data
 Explorer (CDE) summarized-offense products, one capture, replay, and publish
 chain per product. It runs weekly at 10:00 UTC Monday and skips a product's
-release when the provider's UCR refresh date is unchanged.
+release when the provider's UCR refresh date is unchanged since that product's
+last **published** release of the same period window and subject scope. A
+release that was captured but never published, or one captured for a different
+window or scope, is not a previous release, so the next run captures it again
+rather than leaving it unpublished.
 
 Ten products are registered, one per documented summarized offense, each its
 own Data Catalog dataset:

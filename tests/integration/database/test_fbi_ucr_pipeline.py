@@ -22,6 +22,7 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from tests.support import fbi_release
 from tests.support.capture_seed import delete_geography, seed_geography
+from data_ingestion_toolbox.fbi_ucr.metadata import load_latest_accepted_release
 from data_ingestion_toolbox.fbi_ucr.registry import ALL_PRODUCTS
 from data_ingestion_toolbox.fbi_ucr.registry import (
     SUMMARIZED_VIOLENT_CRIME as PRODUCT_V,
@@ -848,3 +849,27 @@ def test_states_beyond_wisconsin_resolve_to_their_canonical_geography(
     reported = {row[0]: row[3] for row in rows}
     assert reported["PA"] > 0
     assert reported["VI"] == 0
+
+
+def test_only_a_published_release_of_the_same_scope_is_the_previous_one(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-052 — a scope change or an unpublished capture re-ingests.
+
+    The capture decides ``unchanged`` against the previous release. A release
+    that was captured and never published is not one (its replay failed, and
+    ``unchanged`` would leave it unpublished forever), and a release captured
+    for a narrower subject scope is not one either (``unchanged`` would never
+    capture the states the registry added).
+    """
+    narrow = fbi_release.fixture_scoped(PRODUCT_V, ("WI",))
+    wide = fbi_release.fixture_scoped(PRODUCT_V, ("PA", "VI", "WI"))
+
+    captured = _persist_fixture_release(fbi_warehouse, product=narrow)
+    assert load_latest_accepted_release(fbi_warehouse, narrow) is None
+
+    _run_pipeline(fbi_warehouse, captured, narrow)
+    previous = load_latest_accepted_release(fbi_warehouse, narrow)
+    assert previous is not None
+    assert previous.release_key == captured.release_key
+    assert load_latest_accepted_release(fbi_warehouse, wide) is None

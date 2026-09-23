@@ -119,11 +119,14 @@ def load_latest_accepted_release(
 ) -> FbiRelease | None:
     """Load the latest safe release identity for revision comparison.
 
-    Only an actual ingest of the currently registered period window counts
-    as a previous release: widening the window in the registry is a reviewed
-    contract change, and the next run must re-ingest rather than conclude
-    the provider release is unchanged. An ``unchanged`` decision row is not
-    evidence — it stamps the current window without capturing it.
+    Only a published ingest of the currently registered period window and
+    subject scope counts as a previous release: widening the window or the
+    scope in the registry is a reviewed contract change, and the next run must
+    re-ingest rather than conclude the provider release is unchanged. An
+    ``unchanged`` decision row is not evidence — it stamps the current window
+    without capturing it — and neither is a capture that never published: its
+    replay or publication failed, and comparing against it would leave that
+    release unpublished for as long as the provider's refresh date holds.
     """
     database_connection = connection_factory()
     try:
@@ -135,12 +138,18 @@ def load_latest_accepted_release(
                 WHERE product_id = %s
                   AND period_start = %s
                   AND period_end = %s
+                  AND subject_scope = %s::JSONB
                   AND decision = 'ingest'
-                  AND status IN ('captured', 'silver_ready', 'published')
+                  AND status = 'published'
                 ORDER BY refresh_date DESC, created_at DESC
                 LIMIT 1
                 """,
-                (product.product_id, product.period_start, product.period_end),
+                (
+                    product.product_id,
+                    product.period_start,
+                    product.period_end,
+                    json.dumps([subject.slice_key for subject in product.subjects]),
+                ),
             )
             row = cursor.fetchone()
         if row is None:
