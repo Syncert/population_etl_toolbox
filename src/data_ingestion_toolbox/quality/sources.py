@@ -714,6 +714,536 @@ def reference_resolution_accounting(
     ]
 
 
+#: The character `gold_cdc.metric_publisher` joins a measure's three ids with
+#: to make `source_object_key`. A component containing it makes the key
+#: ambiguous: `a:b` + `c` and `a` + `b:c` compose to the same string, and
+#: nothing downstream can take it apart again.
+_CDC_KEY_DELIMITER = ":"
+
+
+def cdc_publisher_export_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-CDC-007 — the CDC publisher's measure identity and its annual claim.
+
+    Two arms, and neither asks the publisher view to confirm its own literal.
+    ``valid_time_grains`` is written ``ARRAY['ANNUAL']`` directly in that view,
+    so reading it back would be a rule agreeing with a constant. What is worth
+    measuring is whether the **data** supports the claim the contract makes to
+    every consumer, and whether the identity that contract publishes is one
+    identity.
+
+    **Identity.** ``source_object_key`` is
+    ``asset_id || ':' || measure_id || ':' || value_type_id``. A component
+    containing that delimiter makes the key ambiguous -- ``a:b`` + ``c`` and
+    ``a`` + ``b:c`` compose to the same string -- so nothing downstream can
+    take it apart again, and two measures can collide into one. The composed
+    key is also held unique in its own right, because a collision arriving any
+    other way has the same consequence: a product template naming that key
+    gets whichever row the planner reaches first.
+
+    **The annual claim.** ``gold_cdc.health_observation`` carries
+    ``period_start`` and ``period_end`` as integer years, so an annual
+    observation is one where they are equal. A row spanning more than a year
+    contradicts the ``ANNUAL`` the publisher promises, and a reader asking for
+    an annual series gets a multi-year figure with nothing saying so.
+    """
+    del scope
+    # Gated on the export rather than the publisher. `metric_publisher`
+    # additionally requires a measure to have observations, so a warehouse
+    # that has published measure metadata and not yet loaded facts would read
+    # as "nothing to check" while the identity arm has plenty to say.
+    exported = _count(cursor, "SELECT COUNT(*) FROM gold_cdc.measure_export")
+    if exported == 0:
+        return [
+            RuleOutcome("gold_cdc.metric_publisher", "not_applicable"),
+            RuleOutcome("gold_cdc.measure_export", "not_applicable"),
+        ]
+
+    ambiguous, ambiguous_total = _offenders(
+        cursor,
+        """
+        SELECT 'delimiter' AS problem, source_object_key,
+               COUNT(*)::text AS occurrences
+          FROM gold_cdc.measure_export AS export
+          CROSS JOIN LATERAL (
+              SELECT (((export.source_dataset || %s) || export.source_measure_code)
+                       || %s) || export.source_value_type_code
+          ) AS composed(source_object_key)
+         WHERE export.source_dataset LIKE ('%%' || %s || '%%')
+            OR export.source_measure_code LIKE ('%%' || %s || '%%')
+            OR export.source_value_type_code LIKE ('%%' || %s || '%%')
+         GROUP BY 1, 2
+        UNION ALL
+        SELECT 'collision' AS problem, source_object_key,
+               COUNT(*)::text AS occurrences
+          FROM gold_cdc.metric_publisher
+         GROUP BY 1, 2
+        HAVING COUNT(*) > 1
+        """,
+        order_by="1, 2",
+        params=(_CDC_KEY_DELIMITER,) * 5,
+    )
+
+    spanning, spanning_total = _offenders(
+        cursor,
+        """
+        SELECT asset_id, measure_id, value_type_id,
+               period_start::text, period_end::text
+          FROM gold_cdc.health_observation
+         WHERE period_start IS DISTINCT FROM period_end
+        """,
+        order_by="1, 2, 3, 4",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_cdc.measure_export",
+            "fail" if ambiguous else "pass",
+            observed_count=ambiguous_total,
+            expected_count=0,
+            evidence=ambiguous[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_cdc.metric_publisher",
+            "fail" if spanning else "pass",
+            observed_count=spanning_total,
+            expected_count=0,
+            evidence=spanning[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def fred_missing_marker_and_series_ownership(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FRED-003 — a missing FRED value is not a zero, and a series has one owner.
+
+    The first half is an engineering invariant this repository states in
+    ``AGENTS.md``: "Never silently convert suppressed, missing, invalid, or
+    non-numeric values to zero." FRED publishes its missing marker as ``"."``
+    in a numeric field, which is exactly the shape that becomes ``0`` when a
+    parser is careless, and a zero is a *claim* -- unemployment was zero that
+    month -- rather than an absence.
+
+    The schema refuses one direction of that already:
+    ``fact_economic_indicators_published_value_check`` says a row whose
+    ``value_status`` is ``valid`` carries a value. It does not refuse the
+    other: a row marked ``missing`` that carries a number anyway, which is
+    what a zero-filling parser produces. That is what the first arm counts,
+    together with the disagreement between ``is_missing`` and
+    ``value_status`` -- two columns recording one fact, which can only drift
+    apart.
+
+    The second half is about identity. A series appearing under two domains
+    has no single owner, so which domain's dashboard is entitled to it is a
+    question with two answers; and a series in the fact with no
+    ``raw_fred.fred_series`` row is an observation whose units, frequency and
+    title nobody can state.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM silver_fred.fact_economic_indicators")
+    if total == 0:
+        return [
+            RuleOutcome("silver_fred.fact_economic_indicators", "not_applicable"),
+            RuleOutcome("raw_fred.fred_series", "not_applicable"),
+        ]
+
+    zeroed, zeroed_total = _offenders(
+        cursor,
+        """
+        SELECT series_id, observation_date::text,
+               COALESCE(value::text, '<null>') AS value,
+               COALESCE(value_status, '<null>') AS value_status,
+               COALESCE(is_missing::text, '<null>') AS is_missing
+          FROM silver_fred.fact_economic_indicators
+         WHERE (value_status = 'missing' AND value IS NOT NULL)
+            OR (is_missing AND value IS NOT NULL)
+            OR (is_missing AND value_status = 'valid')
+            OR (NOT is_missing AND value_status = 'missing')
+        """,
+        order_by="1, 2",
+    )
+
+    unowned, unowned_total = _offenders(
+        cursor,
+        """
+        SELECT fact.series_id,
+               CASE WHEN series.series_id IS NULL
+                    THEN 'no-metadata'
+                    ELSE 'domains=' || COUNT(DISTINCT fact.domain)::text
+               END AS problem
+          FROM silver_fred.fact_economic_indicators AS fact
+          LEFT JOIN raw_fred.fred_series AS series
+            ON series.series_id = fact.series_id
+         GROUP BY fact.series_id, series.series_id
+        HAVING series.series_id IS NULL
+            OR COUNT(DISTINCT fact.domain) > 1
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "silver_fred.fact_economic_indicators",
+            "fail" if zeroed else "pass",
+            observed_count=zeroed_total,
+            expected_count=0,
+            evidence=zeroed[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "raw_fred.fred_series",
+            "fail" if unowned else "pass",
+            observed_count=unowned_total,
+            expected_count=0,
+            evidence=unowned[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+#: FRED frequency strings whose observation dates land on a period start, and
+#: the month-of-year step that period takes. FRED dates a monthly observation
+#: on the 1st, a quarterly one on the 1st of January, April, July or October,
+#: and so on -- so alignment is checkable for these without inventing a
+#: convention.
+#:
+#: `Daily`, `Weekly` and `Biweekly` are deliberately absent: a weekly series is
+#: dated by its own week-ending day, which varies per series, and a daily one
+#: by whichever days the provider published. Asserting a rule there would
+#: refuse dates FRED legitimately publishes.
+_FRED_PERIOD_START_MONTHS: Mapping[str, int] = {
+    "Monthly": 1,
+    "Quarterly": 3,
+    "Semiannual": 6,
+    "Annual": 12,
+}
+
+#: Frequencies the alignment arm knowingly does not constrain. Listed rather
+#: than defaulted, so a frequency string that is in neither map is reported as
+#: unrecognised instead of quietly skipped -- a check that silently covered
+#: nothing would pass forever.
+_FRED_UNCONSTRAINED_FREQUENCIES: frozenset[str] = frozenset(
+    {
+        "Daily",
+        "Weekly",
+        "Biweekly",
+        "Weekly, Ending Friday",
+        "Weekly, Ending Saturday",
+        "Weekly, Ending Sunday",
+        "Weekly, Ending Monday",
+        "Weekly, Ending Tuesday",
+        "Weekly, Ending Wednesday",
+        "Weekly, Ending Thursday",
+    }
+)
+
+
+def fred_observation_dates_within_the_published_range(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FRED-004 — dates the provider never published, and dates off their grid.
+
+    Two halves, because the rule's summary has two: "observation dates
+    validate against each series' frequency and source observation range".
+
+    **The range.** ``raw_fred.fred_series`` carries ``observation_start`` and
+    ``observation_end`` -- FRED's own statement of the window a series covers.
+    Nothing compared the facts against it, so a date outside that window was
+    served exactly like a date inside it, and a reader charting the series
+    sees a point the provider does not have. Both bounds are nullable, because
+    FRED does not always state them, and a null bound narrows nothing: an
+    unstated start cannot make a date too early. Each side is therefore tested
+    only where the provider said something.
+
+    **The frequency.** A monthly series is dated on the 1st, a quarterly one
+    on the 1st of January, April, July or October, and so on, so alignment is
+    checkable for those without inventing a convention.
+    ``_FRED_UNCONSTRAINED_FREQUENCIES`` says which it deliberately leaves
+    alone and why -- a weekly series is dated by its own week-ending day,
+    which varies per series.
+
+    A frequency in neither map is **reported**, not skipped. That is the
+    difference between a check that covers what it says and one that quietly
+    covers nothing: if FRED renames ``Monthly`` tomorrow, this says so instead
+    of passing forever.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM silver_fred.fact_economic_indicators")
+    if total == 0:
+        return [
+            RuleOutcome("silver_fred.fact_economic_indicators", "not_applicable"),
+            RuleOutcome("gold_fred.dim_fred_series", "not_applicable"),
+        ]
+
+    outside, outside_total = _offenders(
+        cursor,
+        """
+        SELECT fact.series_id, fact.observation_date::text,
+               COALESCE(series.observation_start::text, '<unstated>') AS starts,
+               COALESCE(series.observation_end::text, '<unstated>') AS ends
+          FROM silver_fred.fact_economic_indicators AS fact
+          JOIN raw_fred.fred_series AS series
+            ON series.series_id = fact.series_id
+         WHERE (series.observation_start IS NOT NULL
+                AND fact.observation_date < series.observation_start)
+            OR (series.observation_end IS NOT NULL
+                AND fact.observation_date > series.observation_end)
+        """,
+        order_by="1, 2",
+    )
+
+    aligned_frequencies = sorted(_FRED_PERIOD_START_MONTHS)
+    misaligned, misaligned_total = _offenders(
+        cursor,
+        """
+        SELECT series.frequency, fact.series_id, fact.observation_date::text,
+               CASE
+                   WHEN series.frequency = ANY(%s) THEN 'off-period-start'
+                   ELSE 'unrecognised-frequency'
+               END AS problem
+          FROM silver_fred.fact_economic_indicators AS fact
+          JOIN gold_fred.dim_fred_series AS series
+            ON series.series_id = fact.series_id
+         WHERE (
+                 series.frequency = ANY(%s)
+                 AND (
+                   EXTRACT(DAY FROM fact.observation_date) <> 1
+                   OR MOD(
+                        (EXTRACT(MONTH FROM fact.observation_date)::int - 1),
+                        CASE series.frequency
+                            WHEN 'Monthly' THEN 1
+                            WHEN 'Quarterly' THEN 3
+                            WHEN 'Semiannual' THEN 6
+                            ELSE 12
+                        END
+                      ) <> 0
+                 )
+               )
+            OR (
+                 series.frequency IS NOT NULL
+                 AND NOT (series.frequency = ANY(%s))
+                 AND NOT (series.frequency = ANY(%s))
+               )
+        """,
+        order_by="1, 2, 3",
+        params=(
+            aligned_frequencies,
+            aligned_frequencies,
+            aligned_frequencies,
+            sorted(_FRED_UNCONSTRAINED_FREQUENCIES),
+        ),
+    )
+
+    return [
+        RuleOutcome(
+            "silver_fred.fact_economic_indicators",
+            "fail" if outside else "pass",
+            observed_count=outside_total,
+            expected_count=0,
+            evidence=outside[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_fred.dim_fred_series",
+            "fail" if misaligned else "pass",
+            observed_count=misaligned_total,
+            expected_count=0,
+            evidence=misaligned[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def acs_published_row_resolution(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ACS-004 — every published ACS observation resolves what it names.
+
+    ``gold_census.fact_acs_observation`` is a view:
+    ``silver_census.fact_demographics`` **inner joined** to
+    ``gold_census.dim_acs_variable`` on ``(dataset, estimate_year,
+    variable_code)``. Two consequences follow, and they pull in opposite
+    directions.
+
+    **A published row always resolves its variable, and that is the problem.**
+    The join *is* the resolution, so ``acs_variable_sk`` can never be
+    orphaned -- and a silver row whose variable the dimension does not carry
+    is not published at all. It was captured, parsed, stored, and then
+    silently declined. Nothing counts it.
+
+    ``DQ-ACS-007`` cannot see it either, which is the reason this rule is
+    separate rather than folded into that one. Its *published* side applies
+    the same inner join, so such a row is absent from both sides of its
+    comparison and its groups agree perfectly while the observation is gone.
+
+    **The geography is published unresolved.** ``fact_demographics.geo_sk`` is
+    ``NOT NULL`` with a foreign key into ``silver_ref.dim_geo_entity``, so the
+    database guarantees the row resolved *at silver*. The view then publishes
+    ``s.geo_id`` -- a different, nullable column with no constraint tying it
+    to ``geo_sk``. A published observation can therefore carry no geography,
+    or one that disagrees with the entity it actually resolved to, and reach a
+    reader as a number nobody can place.
+
+    Both arms are bounded work against small dimensions: the first
+    anti-joins silver to the variable dimension, the second reads only rows
+    whose ``geo_id`` fails to match an entity.
+    """
+    del scope
+    silver_rows = _count(cursor, "SELECT COUNT(*) FROM silver_census.fact_demographics")
+    if silver_rows == 0:
+        return [
+            RuleOutcome("silver_census.fact_demographics", "not_applicable"),
+            RuleOutcome("gold_census.fact_acs_observation", "not_applicable"),
+        ]
+
+    # A row the serving view drops: usable variable code, no dimension row.
+    dropped, dropped_total = _offenders(
+        cursor,
+        """
+        SELECT s.dataset, s.estimate_year, s.variable_code, COUNT(*) AS rows
+          FROM silver_census.fact_demographics AS s
+          LEFT JOIN gold_census.dim_acs_variable AS av
+            ON av.dataset_code = s.dataset
+           AND av.vintage_year = s.estimate_year
+           AND av.variable_code = s.variable_code
+         WHERE s.variable_code IS NOT NULL
+           AND s.variable_code <> ''
+           AND av.acs_variable_sk IS NULL
+         GROUP BY 1, 2, 3
+        """,
+        order_by="1, 2, 3",
+    )
+
+    # A row the serving view publishes without a geography anybody can place.
+    unplaceable, unplaceable_total = _offenders(
+        cursor,
+        """
+        SELECT s.dataset, s.estimate_year,
+               COALESCE(s.geo_id, '<null>') AS geo_id, COUNT(*) AS rows
+          FROM silver_census.fact_demographics AS s
+          JOIN gold_census.dim_acs_variable AS av
+            ON av.dataset_code = s.dataset
+           AND av.vintage_year = s.estimate_year
+           AND av.variable_code = s.variable_code
+          LEFT JOIN silver_ref.dim_geo_entity AS entity
+            ON entity.geo_id = s.geo_id
+         WHERE s.variable_code IS NOT NULL
+           AND s.variable_code <> ''
+           AND entity.geo_id IS NULL
+         GROUP BY 1, 2, 3
+        """,
+        order_by="1, 2, 3",
+    )
+
+    return [
+        RuleOutcome(
+            "silver_census.fact_demographics",
+            "fail" if dropped else "pass",
+            observed_count=dropped_total,
+            expected_count=0,
+            evidence=dropped[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_census.fact_acs_observation",
+            "fail" if unplaceable else "pass",
+            observed_count=unplaceable_total,
+            expected_count=0,
+            evidence=unplaceable[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def current_geography_projection(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-REF-005 — one current version per entity, and no entity lost.
+
+    Two directions, and they are not equally likely, which is worth stating
+    rather than leaving a reader to assume the rule found something.
+
+    **An entity lost is reachable today.** ``dim_geo_current`` reaches its
+    attribute choice through an inner join to ``dim_geo_entity_version``, so
+    an entity carrying no version row leaves the projection with no trace:
+    every consumer of ``dim_geo`` simply never sees that geography, and no
+    count anywhere goes red. This is the half that earns the rule.
+
+    **A duplicated entity is not reachable today, and the reason is not the
+    one the rule's note gave.** That note credited ``DISTINCT ON`` with making
+    the projection one row per entity. It does that for the attribute and
+    geometry choices; the third join -- the state lookup, on
+    ``state_entity.geo_type = 'state' AND state_entity.state_fips =
+    entity.state_fips`` -- is not covered by it, and ``dim_geo_entity``
+    declares no uniqueness on that pair. What actually prevents the fan-out is
+    two constraints acting together: ``dim_geo_entity_check1`` forces
+    ``geo_id = 'state:' || state_fips`` for a state-typed row, and ``geo_id``
+    is ``UNIQUE``. So ``state_fips`` is unique among states as a consequence,
+    and a second state sharing one cannot be inserted at all.
+
+    That makes the duplicate count a guard on a constraint rather than a live
+    defect hunt, and it is kept deliberately: the day somebody relaxes that
+    CHECK -- to admit a geography whose id is not derived from its fips, say --
+    the fan-out becomes reachable, every geography in the affected state is
+    served twice, and this is what notices.
+
+    ``silver_ref.dim_geo`` is a bare projection of ``dim_geo_current`` today,
+    so its row count cannot differ -- which is the point of checking it. The
+    day someone adds a predicate to one and not the other, two names that
+    consumers use interchangeably stop meaning the same thing, and nothing
+    else in this repository would notice.
+    """
+    del scope
+    entities = _count(cursor, "SELECT COUNT(*) FROM silver_ref.dim_geo_entity")
+    if entities == 0:
+        return [
+            RuleOutcome("silver_ref.dim_geo_current", "not_applicable"),
+            RuleOutcome("silver_ref.dim_geo", "not_applicable"),
+        ]
+
+    duplicated, duplicated_total = _offenders(
+        cursor,
+        """
+        SELECT geo_sk, COUNT(*) AS current_rows
+          FROM silver_ref.dim_geo_current
+         GROUP BY geo_sk
+        HAVING COUNT(*) > 1
+        """,
+        order_by="1",
+    )
+    dropped, dropped_total = _offenders(
+        cursor,
+        """
+        SELECT entity.geo_sk, entity.geo_id, entity.geo_type
+          FROM silver_ref.dim_geo_entity AS entity
+          LEFT JOIN silver_ref.dim_geo_current AS current
+            ON current.geo_sk = entity.geo_sk
+         WHERE current.geo_sk IS NULL
+        """,
+        order_by="1",
+    )
+
+    offenders = ["duplicated:" + str(entry) for entry in duplicated] + [
+        "dropped:" + str(entry) for entry in dropped
+    ]
+    projection = RuleOutcome(
+        "silver_ref.dim_geo_current",
+        "fail" if offenders else "pass",
+        observed_count=duplicated_total + dropped_total,
+        expected_count=0,
+        evidence=offenders[:EVIDENCE_LIMIT],
+    )
+
+    current_rows = _count(cursor, "SELECT COUNT(*) FROM silver_ref.dim_geo_current")
+    legacy_rows = _count(cursor, "SELECT COUNT(*) FROM silver_ref.dim_geo")
+    compatibility = RuleOutcome(
+        "silver_ref.dim_geo",
+        "pass" if legacy_rows == current_rows else "fail",
+        observed_count=legacy_rows,
+        expected_count=current_rows,
+        evidence=()
+        if legacy_rows == current_rows
+        else [f"dim_geo={legacy_rows} dim_geo_current={current_rows}"],
+    )
+    return [projection, compatibility]
+
+
 def publisher_registry_reconciliation(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1148,22 +1678,27 @@ def bls_contract_conformance(
 
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
+    "DQ-ACS-004": acs_published_row_resolution,
     "DQ-ACS-007": acs_contract_conformance,
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-BLS-004": bls_geography_accountability,
     "DQ-BLS-007": bls_contract_conformance,
     "DQ-FRED-002": fred_slice_reconciliation,
+    "DQ-FRED-003": fred_missing_marker_and_series_ownership,
+    "DQ-FRED-004": fred_observation_dates_within_the_published_range,
     "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,
     "DQ-PEP-003": pep_registry_reconciliation,
     "DQ-PEP-004": pep_sentinel_conformance,
     "DQ-CDC-002": cdc_watermark_monotonicity,
     "DQ-CDC-004": cdc_suppression_conformance,
+    "DQ-CDC-007": cdc_publisher_export_conformance,
     "DQ-FBI-002": fbi_participation_coverage,
     "DQ-FBI-003": fbi_reported_vs_absent,
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-REF-003": reference_resolution_accounting,
+    "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,
 }

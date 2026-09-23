@@ -203,15 +203,52 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **28 are `unimplemented`** — no executor runs them, and 16 of those are
-  BLOCK severity. `DQ-ACS-007` and `DQ-BLS-007` left this set on the second
-  attempt. The first compared served rows to published facts one row at a
-  time and timed out — 50 minutes for ACS, 901 seconds for BLS — because it
+- **23 are `unimplemented`** — no executor runs them, and 11 of those are
+  BLOCK severity. Of those eleven, three are documented below as not wholly
+  implementable rather than merely unwritten (`DQ-PEP-001`, `DQ-SHARED-005`,
+  `DQ-SHARED-006`), so eight are simply waiting.
+
+  Five left the set together, and each is worth a line because in four cases
+  writing the executor corrected the note that described it:
+
+  - **`DQ-REF-005`** — its note credited `DISTINCT ON` with making the
+    current-geography projections one row per entity. That covers two of the
+    three joins in `silver_ref.dim_geo_current` and not the state lookup; what
+    actually prevents that fan-out is `dim_geo_entity_check1` deriving
+    `geo_id` from `state_fips` together with `geo_id` being UNIQUE. The
+    direction nothing was watching was the opposite one: an entity with no
+    version row leaves the projection through an inner join, silently. The
+    rule measures both, and says which half is a live risk and which is a
+    guard on a constraint.
+  - **`DQ-ACS-004`** — measures exactly what its note described and no other
+    rule could see. `gold_census.fact_acs_observation` is an inner join to
+    `dim_acs_variable`, so a silver row whose variable the dimension does not
+    carry is captured, parsed, stored and silently declined. `DQ-ACS-007`
+    cannot report it: its *published* side applies the same join, so the row
+    is absent from both sides of its comparison and its groups agree while the
+    observation is gone.
+  - **`DQ-FRED-003`** — makes an `AGENTS.md` invariant measurable: a missing
+    value is not a zero. The one constraint that touches this refuses only the
+    direction a zero-filling parser does not produce.
+  - **`DQ-FRED-004`** — compares observation dates against the window FRED
+    itself published and against the period grid its frequency implies,
+    reporting a frequency string it does not recognise rather than skipping
+    it, so the arm cannot quietly come to cover nothing.
+  - **`DQ-CDC-007`** — measures what the publisher cannot tell you about
+    itself. Its `valid_time_grains` is a literal `ARRAY['ANNUAL']`, so the
+    rule asks the facts whether that is true, and asks the export whether its
+    composed `source_object_key` means one thing.
+
+  Before those, **`DQ-ACS-007`** and **`DQ-BLS-007`** left this set on the
+  second attempt. The first compared served rows to published facts one row at
+  a time and timed out — 50 minutes for ACS, 901 seconds for BLS — because it
   matched on a composed metric code no index can serve; it was withdrawn
   rather than shipped, because a rule that cannot finish turns this DAG red
   for a reason that is not about the data. The second compares grouped counts
   and value digests, runs in 815 seconds and 60, and caught a real defect on
-  its first run against the warehouse. `DQ-SHARED-004` left this set when
+  its first run against the warehouse.
+
+  `DQ-SHARED-004` left this set when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the
   bootstrap manifest against what a warehouse recorded applying, and until the
   applier wrote those rows the applied side did not exist. A warehouse that
