@@ -15,14 +15,14 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed.
+- **Status:** Claimed and **in progress** on branch `claude/plans-iteration-2026-09-20`. FBI-X01 through FBI-X05 are done with evidence; FBI-X06 (the live run) is running.
 - **Last updated:** 2026-09-23
 - **Dependencies:** none. The FBI UCR pipeline this extends is accepted
   ([`docs/plans/completed/FBI_CRIME_PIPELINE_PLAN.md`](../completed/FBI_CRIME_PIPELINE_PLAN.md)).
 - **External requirement:** a working `FBI_CDE_API_KEY` to capture the new
   provider fixtures (FBI-X01). Without the key, Milestone 1 stops after the
   registry and test scaffolding and the plan stays in `in_progress/`.
-- **Next pickup:** FBI-X01.
+- **Next pickup:** FBI-X06 -- record the live run's rows per product and per state (see *Evidence record*).
 
 ## Why
 
@@ -124,7 +124,7 @@ without its reference slice.
 
 ### Milestone 1: nine offenses
 
-- [ ] **FBI-X01: capture provider evidence.** For each of the nine codes, fetch
+- [x] **FBI-X01: capture provider evidence.** For each of the nine codes, fetch
   the national, `WI`, and six-ORI `summarized` responses live. Trim them to the
   fixture window with `tests/support/build_fbi_fixtures.py` (it currently
   hard-codes the `_V` suffix at line 170 and must take the offense code). Store
@@ -135,13 +135,13 @@ without its reference slice.
   - any series absent at any grain.
 
   Redact the key as the existing notes require.
-- [ ] **FBI-X02: register the products.** Add the nine `FbiUcrProduct` entries
+- [x] **FBI-X02: register the products.** Add the nine `FbiUcrProduct` entries
   and extract the shared scope constants. Extend `ALL_PRODUCTS` in
   `SUMMARIZED_OFFENSES` order. Registry tests assert the following:
   - ten products with unique ids, one per documented offense code;
   - `get_product` round-trips every id;
   - `summarized_violent_crime` is byte-identical in every contract field.
-- [ ] **FBI-X03: prove each product end to end on fixtures.** Parametrize the
+- [x] **FBI-X03: prove each product end to end on fixtures.** Parametrize the
   capture, replay, metadata, and aggregation-boundary unit tests over the
   registered products rather than the `PRODUCT = SUMMARIZED_VIOLENT_CRIME`
   constant, and check that each one:
@@ -149,7 +149,7 @@ without its reference slice.
     series registers no measure and writes no zero);
   - uses the offense code in every `measure_id`;
   - never mixes one product's series into another's.
-- [ ] **FBI-X03a: downstream registers.** Update the following:
+- [x] **FBI-X03a: downstream registers.** Update the following:
   - `tests/unit/api/test_catalog_discovery.py:346`: the dataset list becomes
     the ten ids in registry order;
   - `tests/support/product_coverage.py`: coverage entries or datasets for the
@@ -164,16 +164,16 @@ without its reference slice.
 
   The FBI DAG already builds one capture → replay → publish chain per
   `enabled_products()`. Assert that the DAG structure test sees ten chains.
-- [ ] **FBI-X03b: warehouse proof.** Run the FBI database integration file
+- [x] **FBI-X03b: warehouse proof.** Run the FBI database integration file
   against the pinned PostGIS container. It must publish all ten products and
   keep one release row per product. It must also replay idempotently: a second
   replay writes no new rows.
 
 ### Milestone 2: every state
 
-- [ ] **FBI-X04: settle the directory question** above with a failing-first test
+- [x] **FBI-X04: settle the directory question** above with a failing-first test
   of the chosen behavior.
-- [ ] **FBI-X05: widen the state scope** to every `STATE_CODE_CONTRACT` code.
+- [x] **FBI-X05: widen the state scope** to every `STATE_CODE_CONTRACT` code.
   The request budget is about (1 national + 52 states + 6 agencies) × 10
   offenses, roughly 590 observation requests per run at the 0.25 s minimum
   spacing, plus whatever directory captures FBI-X04 keeps. Confirm this against
@@ -210,4 +210,71 @@ without its reference slice.
 
 ## Evidence record
 
-_Empty until work begins._
+### Decisions taken during implementation
+
+- **FBI-X04: option (a).** `reference_states` derives from the agency scope
+  only. Evidence: `subject_label` labels a state subject from
+  `STATE_CODE_CONTRACT`, never from the directory, and no transform, gold, or
+  quality path reads the directory for a state subject. Failing-first tests:
+  `test_fbi_registry.py::test_reference_states_come_from_the_agency_scope_only`
+  and `test_fbi_replay.py::test_state_observations_replay_without_any_agency_directory`
+  (the latter raised `missing required capture slices: /agency/byStateAbbr/WI`
+  before the change). The agency rule is unchanged:
+  `test_agency_observation_without_its_reference_slice_is_quarantined` and
+  `test_missing_required_slice_blocks_the_release` still hold.
+- **The provider's `-1` rate is a sentinel, and it stays quarantined.** Live
+  agency (and Virgin Islands state) responses publish a rate of `-1` where the
+  covered population is zero. Replay already quarantined it as
+  `negative_measure_value`, and the live violent-crime pipeline had been doing
+  so (1,804 rows in the 2026-08-15 release); the derived V agency fixtures
+  simply never showed it. Tests now count those quarantines exactly instead of
+  assuming none, and assert no published value is negative.
+- **Fixture-driven tests replay a fixture-scoped product.** Every product
+  registers 52 states; fixtures exist for WI, PA, and VI. `fixture_scoped()`
+  (unit `conftest.py`, `tests/support/fbi_release.py`) narrows the state scope
+  for replay; the full scope is proved at registry level
+  (`test_every_product_covers_every_documented_state`).
+- **Defect found and fixed: the previous release.**
+  `load_latest_accepted_release` counted a release that was captured but never
+  published, and ignored the subject scope. On the development warehouse the
+  violent-crime 2026-09-15 release, captured by the failed 2026-09-07 run, had
+  been judged `unchanged` by every later run and never published; and the
+  widened state scope would have been judged `unchanged` and never captured.
+  The previous release must now be `published` and match `subject_scope`
+  (`test_only_a_published_release_of_the_same_scope_is_the_previous_one`,
+  failing first).
+
+### FBI-X01 evidence
+
+72 live requests on 2026-09-23 (nine offenses × national, WI, six ORIs, window
+`01-1990`..`06-2023`), every one `200`; plus 20 for PA and VI across all ten
+offenses. Every offense publishes all four series at every grain for all 402
+months; nothing is absent, arson publishes rates, and rape has one label.
+Recorded in `tests/fixtures/fbi_ucr/SOURCE_NOTES.md`. The key was checked
+absent from every fixture and capture.
+
+### FBI-X05: request budget
+
+A run is 600 requests: per product 1 national + 52 states + 6 agencies + 1
+directory (FBI-X04 removed the 51 other directory captures per product, which
+would have made it 1,110). api.data.gov documents a default of 1,000 requests
+per hour (`https://api.data.gov/docs/developer-manual/`), so 600 fits one run
+per hour with room. The `api.usa.gov` gateway's own headers did not confirm
+the hourly figure: they report `x-ratelimit-limit: 10` with
+`x-ratelimit-remaining: 9` constant across eight requests spread over 70 s,
+after ~110 requests from this key in the preceding half hour -- the behaviour
+of a short-window limit, not an hourly counter. Spacing is 0.25 s per client
+and the `fbi_cde_api` pool is 2, so at most ~8 requests per second leave the
+host, under a 10-per-window limit. No pool, spacing, or schedule change was
+needed; the live run (FBI-X06) is the measurement.
+
+### Validation so far
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit -q` | 2111 passed (before Milestone 2); FBI suite 283 passed after |
+| `pytest tests/unit/fbi_ucr tests/unit/api/test_catalog_discovery.py tests/unit/api/test_neutral_observations.py -q` | passed |
+| DAG tier in `docker-airflow-scheduler-1` (`pytest -m dag tests/dags`) | 145 passed, 5 skipped (DB-backed DAG tests needing `TEST_POSTGRES_*` in the container; unrelated to FBI) |
+| `RUN_INTEGRATION_TESTS=1 pytest -m "integration and database" tests/integration/database/test_fbi_ucr_pipeline.py` (pinned PostGIS, port 55532) | 16 passed |
+| `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e/test_fbi_ucr_pipeline.py` | 1 passed |
+| `ruff format --check . ; ruff check .` | clean |
