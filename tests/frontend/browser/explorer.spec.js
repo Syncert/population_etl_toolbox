@@ -675,6 +675,43 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", county.geo_id);
 });
 
+test("the map's worker loads from this origin and stays alive", async ({ page }) => {
+  // `data-colored-values` counts what the page asked MapLibre to colour, not
+  // what MapLibre drew. With MapLibre 6 bundled, its worker resolved to an
+  // empty URL, loaded the page itself as a module, and died -- every map was
+  // blank on the running stack while the test above stayed green. Every
+  // source is tiled in that worker, so the worker living is the map drawing.
+  const workers = [];
+  page.on("worker", (worker) => {
+    const record = { url: worker.url(), closed: false };
+    worker.on("close", () => {
+      record.closed = true;
+    });
+    workers.push(record);
+  });
+  const workerScript = page.waitForResponse((response) =>
+    response.url().endsWith("/vendor/maplibre-gl/maplibre-gl-worker.mjs"),
+  );
+  await installRoutes(page);
+  await page.goto("/explore");
+
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
+  const response = await workerScript;
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toMatch(/javascript/);
+  // A worker script under the page's nonce policy could not import its
+  // shared module, so the vendored files are served without one.
+  expect(response.headers()["content-security-policy"]).toBeUndefined();
+
+  await expect.poll(() => workers.map((worker) => worker.url)).toContainEqual(
+    expect.stringMatching(/\/vendor\/maplibre-gl\/maplibre-gl-worker\.mjs$/),
+  );
+  // The failure mode is a worker that starts and closes at once; give it the
+  // time it took to die, then require every MapLibre worker still running.
+  await page.waitForTimeout(1_000);
+  expect(workers.filter((worker) => worker.closed)).toEqual([]);
+});
+
 test("source tabs derive from capability discovery and switch the explored source", async ({ page }) => {
   await installRoutes(page);
   await page.goto("/explore");

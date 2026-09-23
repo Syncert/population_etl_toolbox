@@ -127,10 +127,13 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   // Pages only. The API and tile rewrites answer with their own headers and
-  // never render a script; Next's static assets are immutable files.
+  // never render a script; Next's static assets are immutable files. So is
+  // `vendor/`, MapLibre's worker, which must not be served under a page
+  // policy: a worker takes its script policy from its own response, and this
+  // one's nonce would refuse the worker's import of its shared module.
   matcher: [
     {
-      source: "/((?!api|tiles|_next/static|_next/image|favicon.ico).*)",
+      source: "/((?!api|tiles|vendor/|_next/static|_next/image|favicon.ico).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

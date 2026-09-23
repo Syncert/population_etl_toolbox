@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
-import { US_MAP_VIEW, baseMapStyle } from "../lib/mapWiring";
+import { MAPLIBRE_WORKER_URL, US_MAP_VIEW, baseMapStyle } from "../lib/mapWiring";
 
 export interface MapLibreHandle {
   mapRef: RefObject<MapLibreMap | null>;
@@ -69,6 +69,9 @@ export function useMapLibre(
         if (cancelled || !container || mapRef.current) {
           return;
         }
+        // Before the first map: the worker pool is created with it, and a
+        // pool started from MapLibre's own guess never draws (see the URL).
+        maplibregl.setWorkerUrl(MAPLIBRE_WORKER_URL);
         const map = new maplibregl.Map({
           container,
           style: baseMapStyle() as StyleSpecification,

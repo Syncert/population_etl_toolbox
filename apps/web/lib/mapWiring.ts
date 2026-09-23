@@ -28,6 +28,17 @@ export const US_OVERVIEW_VIEW = Object.freeze({
 
 export const MAP_BACKGROUND_COLOR = "#dfe8ed";
 
+/**
+ * Where MapLibre's worker is served from: this origin's copy, written into
+ * `public/` by `scripts/vendor-maplibre-worker.mjs`.
+ *
+ * MapLibre 6 otherwise resolves the worker from `import.meta.url`, which the
+ * build rewrites to a `file://` path. It then starts a worker from an empty
+ * URL -- the page itself -- which dies at once, and every map draws its
+ * background and no geometry, with no error anywhere on the page.
+ */
+export const MAPLIBRE_WORKER_URL = "/vendor/maplibre-gl/maplibre-gl-worker.mjs";
+
 /** A style with no sources: every layer is added once the boundary is known. */
 export function baseMapStyle() {
   return {

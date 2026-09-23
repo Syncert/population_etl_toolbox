@@ -46,6 +46,9 @@ RUN addgroup --system --gid 1001 nodejs \
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# The standalone server serves `public/` but does not copy it. It holds the
+# MapLibre worker the build vendored there; without it every map is blank.
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 USER nextjs
 

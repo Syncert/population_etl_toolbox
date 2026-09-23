@@ -1,3 +1,12 @@
+import { fileURLToPath } from "node:url";
+import { vendorMaplibreWorkerForApp } from "./scripts/vendor-maplibre-worker.mjs";
+
+// MapLibre's worker is served from `public/vendor/maplibre-gl/` rather than
+// found by MapLibre itself, which a bundled build cannot do (see the script).
+// Copied here because this file is read by `next dev`, `next build` and
+// `next start` alike, so no way of starting the application skips it.
+vendorMaplibreWorkerForApp(fileURLToPath(new URL(".", import.meta.url)));
+
 // The Content-Security-Policy is not set here. It carries a per-request nonce
 // so that `script-src` can forbid inline scripts without forbidding Next's
 // own bootstrap, and a per-request value has to be produced per request --
