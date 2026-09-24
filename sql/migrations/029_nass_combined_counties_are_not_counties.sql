@@ -74,10 +74,11 @@ DELETE FROM silver_ref.geography_resolution
 -- Tell the catalog. The rewrite changes what `gold_nass.metric_publisher`
 -- says -- a measure whose only county-grain rows were the residual no longer
 -- lists COUNTY in `valid_geo_grains` -- but moves no publication time, and the
--- scheduled harvest only visits a publisher with a pending ready event. Without
--- this, the catalog kept advertising a county map for seven soybean measures
--- that have no county data (measured on the development warehouse: publisher
--- 66, catalog 73, after a harvest ran).
+-- ten-minute harvest only visits a publisher with a pending ready event. Until
+-- the nightly `glossary_reconciliation` re-harvested every publisher, the
+-- catalog kept advertising a county map for seven soybean measures that have
+-- no county data (measured on the development warehouse: publisher 66,
+-- catalog 73, after a ten-minute harvest ran).
 --
 -- The latest watermark's event already exists and was processed, and the
 -- outbox is unique per watermark, so it is re-queued rather than inserted. The

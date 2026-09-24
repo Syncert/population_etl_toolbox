@@ -1,0 +1,5 @@
+# Warehouse SQL is hashed byte for byte into control.schema_migration_state
+# (scripts/apply_warehouse_manifest.py). A CRLF checkout hashes differently
+# from the LF bytes a Linux deployment applied, and every step then reads as
+# drifted -- or, applied from Windows, records a hash Linux calls drift.
+*.sql text eol=lf

@@ -207,10 +207,11 @@ SMOKE_BASE_URL=http://localhost:3001 npm --prefix apps/web run test:maps
 
 - [x] **MAP-8: the catalog follows a data correction.** After 029 the
   publisher view listed COUNTY for 66 NASS measures, but the catalog still
-  listed it for 73, even after a harvest ran: the rewrite moved no
-  publication time, and the scheduled harvest only visits a publisher with a
-  pending ready event. So seven soybean measures offered a county map with no
-  county data. 029 now re-queues the NASS publisher's latest ready event (the
+  listed it for 73, even after a ten-minute harvest ran: the rewrite moved no
+  publication time, and that harvest only visits a publisher with a pending
+  ready event. So seven soybean measures offered a county map with no county
+  data until the nightly `glossary_reconciliation` (03:00), which re-harvests
+  every publisher through the content fingerprint, would have corrected it. 029 now re-queues the NASS publisher's latest ready event (the
   outbox is unique per watermark, so it is reset to `pending`, not inserted).
   The harvest's content fingerprint then sees the grain change. Test:
   `test_the_catalog_follows_the_combined_counties_rewrite` (old shape
