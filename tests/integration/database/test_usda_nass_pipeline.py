@@ -26,6 +26,12 @@ from data_ingestion_toolbox.usda_nass.silver_nass.transform import (
 )
 from data_ingestion_toolbox.usda_nass.silver_nass.values import NassReplayError
 from apps.api.registry import GEO_GRAINS
+from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+from data_ingestion_toolbox.glossary.harvest import (
+    Publisher,
+    harvest_publisher,
+    process_pending_events,
+)
 from tests.support import usda_nass as nass_support
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -661,3 +667,95 @@ def test_combined_counties_are_kept_but_never_served_as_a_county(
             }
     finally:
         reader.close()
+
+
+def _catalog_county_measures(connection_factory: Callable[[], connection]) -> int:
+    reader = connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM gold_glossary.dim_metric
+                WHERE source_code = 'USDA_NASS'
+                  AND valid_geo_grains @> ARRAY['COUNTY']
+                """
+            )
+            return cursor.fetchone()[0]
+    finally:
+        reader.close()
+
+
+def test_the_catalog_follows_the_combined_counties_rewrite(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-035 — migration 029 re-queues the publisher it changes.
+
+    The rewrite changes what the publisher says -- a measure whose only county
+    rows were the residual stops listing COUNTY -- without moving a
+    publication time, and the scheduled harvest only visits a publisher with a
+    pending ready event. The latest watermark's event already exists, processed,
+    so 029 re-queues it; without that the catalog kept advertising a county map
+    for measures with no county data (publisher 66, catalog 73 on the
+    development warehouse).
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    rows = document["slices"]["COUNTY"]["data"]["data"]
+    for index, row in enumerate(rows):
+        row.update(
+            {
+                "county_ansi": "",
+                "county_code": "998",
+                "county_name": "OTHER (COMBINED) COUNTIES",
+                "asd_code": f"{10 + index}",
+            }
+        )
+    _run_to_gold(nass_warehouse, product, document)
+
+    # The shape a warehouse stored before the fix, harvested as it was then.
+    writer = nass_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            for table, extra in (
+                ("silver_nass.observation_revision", ""),
+                (
+                    "silver_nass.fact_crop_observation",
+                    ", geography_status = 'unmapped'",
+                ),
+            ):
+                cursor.execute(
+                    f"""
+                    UPDATE {table}
+                       SET geo_type = 'county',
+                           geo_id = 'state:' || state_fips || '|county:998',
+                           county_fips = '998'{extra}
+                     WHERE geo_source_code ~ '^[0-9]{{2}}998$'
+                    """
+                )
+        writer.commit()
+    finally:
+        writer.close()
+    # As the warehouse had it: the publisher registered and harvested, and its
+    # latest watermark's ready event processed.
+    assert harvest_publisher(nass_warehouse, Publisher("gold_nass")) > 0
+    emit_latest_publisher_ready(nass_warehouse, publisher_schema="gold_nass")
+    assert process_pending_events(nass_warehouse) == 1
+    assert _catalog_county_measures(nass_warehouse) > 0
+
+    migrator = nass_warehouse()
+    try:
+        with migrator.cursor() as cursor:
+            cursor.execute(MIGRATION_029.read_text(encoding="utf-8"))
+            cursor.execute(
+                """
+                SELECT status FROM control.publisher_ready_event
+                WHERE source_code = 'USDA_NASS'
+                """
+            )
+            assert {row[0] for row in cursor.fetchall()} == {"pending"}
+        migrator.commit()
+    finally:
+        migrator.close()
+
+    assert process_pending_events(nass_warehouse) == 1
+    assert _catalog_county_measures(nass_warehouse) == 0

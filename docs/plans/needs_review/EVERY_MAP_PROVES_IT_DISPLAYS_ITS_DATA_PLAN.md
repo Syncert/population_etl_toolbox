@@ -205,6 +205,28 @@ SMOKE_BASE_URL=http://localhost:3001 npm --prefix apps/web run test:maps
   so the sweep also runs in the composed `web-smoke` stack against seeded
   fixtures. Confirm it passes there (see Evidence) or scope it.
 
+- [x] **MAP-8: the catalog follows a data correction.** After 029 the
+  publisher view listed COUNTY for 66 NASS measures, but the catalog still
+  listed it for 73, even after a harvest ran: the rewrite moved no
+  publication time, and the scheduled harvest only visits a publisher with a
+  pending ready event. So seven soybean measures offered a county map with no
+  county data. 029 now re-queues the NASS publisher's latest ready event (the
+  outbox is unique per watermark, so it is reset to `pending`, not inserted).
+  The harvest's content fingerprint then sees the grain change. Test:
+  `test_the_catalog_follows_the_combined_counties_rewrite` (old shape
+  harvested and its event processed, 029 applied, event pending, harvest
+  drops COUNTY); with the re-queue removed it fails on `{'processed'} ==
+  {'pending'}`. On the development warehouse, after re-applying 029 and one
+  `glossary_harvest` run: catalog 66, publisher 66.
+- [x] **MAP-9: a vacant map fails.** The sweep treated "no rows" as a
+  legitimate empty map, which is how MAP-8 got past it. It now fails when the
+  catalog advertises a grain and the read answers no rows at all. "Rows, but
+  no number" stays a legitimate empty map, and the remaining cases were
+  checked: the 15 empty ACS maps per grain are the detailed-occupation tables
+  (B24114, B24134), which Census publishes only nationally. The API answers
+  `null` for every state (`api.census.gov/data/2023/acs/acs5?get=B24114_026E&for=state:55`),
+  and the warehouse serves them as `absent` rather than zero.
+
 ## Acceptance criteria
 
 1. A map whose rows hold values and that shows none fails a check by name --

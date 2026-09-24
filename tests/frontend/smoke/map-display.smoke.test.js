@@ -14,6 +14,8 @@ import { beforeAll, describe, expect, test } from "vitest";
 // reduction, the same choropleth model -- and grades the result against an
 // oracle computed from the raw rows by this file, not by the application:
 //
+//   - no rows at all at a grain the catalog advertises: a map the reader is
+//     offered and the warehouse cannot fill -- a failure;
 //   - rows at the grain with no numeric value: the map is legitimately empty;
 //   - two rows for one geography and one period: the answer really is
 //     stratified, and the page must decline *and* name what varies -- and

@@ -52,11 +52,21 @@ export function oracle(rows) {
     }
   }
   const numeric = rows.some((row) => isNumber(row.value));
-  return { geographies: byGeography.size, stratified, colourable, numeric };
+  return { rows: rows.length, geographies: byGeography.size, stratified, colourable, numeric };
 }
 
 /** Grade one map: the application's answer against the oracle's. */
 export function grade(expected, view, model) {
+  if (expected.rows === 0) {
+    // The catalog offered this map; the read answered nothing at all. That is
+    // a reader choosing a map the warehouse cannot fill -- the catalog
+    // advertising a grain its publisher no longer serves -- not an honest
+    // "every value withheld".
+    return {
+      verdict: "fail",
+      problem: "the catalog advertises this grain and the read answered no rows",
+    };
+  }
   if (!expected.numeric) {
     return { verdict: "empty", problem: null };
   }

@@ -70,3 +70,32 @@ DELETE FROM silver_ref.geography_resolution
  WHERE provider_source = 'USDA_NASS'
    AND source_geo_type = 'county'
    AND source_code ~ '^[0-9]{2}998$';
+
+-- Tell the catalog. The rewrite changes what `gold_nass.metric_publisher`
+-- says -- a measure whose only county-grain rows were the residual no longer
+-- lists COUNTY in `valid_geo_grains` -- but moves no publication time, and the
+-- scheduled harvest only visits a publisher with a pending ready event. Without
+-- this, the catalog kept advertising a county map for seven soybean measures
+-- that have no county data (measured on the development warehouse: publisher
+-- 66, catalog 73, after a harvest ran).
+--
+-- The latest watermark's event already exists and was processed, and the
+-- outbox is unique per watermark, so it is re-queued rather than inserted. The
+-- harvest's content fingerprint then sees the grain change and upserts it. On
+-- a fresh bootstrap the publisher is empty and this inserts nothing.
+INSERT INTO control.publisher_ready_event (
+    event_id, source_code, publisher_contract_version, source_watermark,
+    source_run_id, publication_time
+)
+SELECT gen_random_uuid(), publisher.source_code,
+       publisher.publisher_contract_version, publisher.source_watermark,
+       publisher.source_run_id, publisher.publication_time
+FROM gold_nass.metric_publisher AS publisher
+ORDER BY publisher.publication_time DESC, publisher.source_watermark DESC
+LIMIT 1
+ON CONFLICT (source_code, publisher_contract_version, source_watermark)
+DO UPDATE SET status = 'pending',
+              available_at = NOW(),
+              claimed_at = NULL,
+              processed_at = NULL,
+              last_error = NULL;
