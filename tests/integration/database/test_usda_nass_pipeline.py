@@ -759,3 +759,44 @@ def test_the_catalog_follows_the_combined_counties_rewrite(
 
     assert process_pending_events(nass_warehouse) == 1
     assert _catalog_county_measures(nass_warehouse) == 0
+
+
+def test_a_grain_where_every_value_is_withheld_is_not_published(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ARC-001 — the catalog offers no map level without a value.
+
+    Every county row withheld for disclosure (`(D)`) is still a published row
+    -- a null value with its reason -- and the publisher used to list COUNTY
+    for it, so the explorer offered a county map that could only say "value
+    not published". A grain is now one a value is published at.
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    for row in document["slices"]["COUNTY"]["data"]["data"]:
+        row["Value"] = "(D)"
+    _run_to_gold(nass_warehouse, product, document)
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM gold_nass.crop_observation
+                WHERE product_id = %s AND geo_type = 'county'
+                """,
+                (product.product_id,),
+            )
+            assert cursor.fetchone()[0] > 0, "the withheld county rows are still served"
+            cursor.execute(
+                """
+                SELECT DISTINCT UNNEST(valid_geo_grains)
+                FROM gold_nass.metric_publisher
+                """
+            )
+            grains = {row[0] for row in cursor.fetchall()}
+    finally:
+        reader.close()
+
+    assert "COUNTY" not in grains
+    assert {"NATIONAL", "STATE"} <= grains

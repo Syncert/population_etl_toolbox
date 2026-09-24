@@ -3517,6 +3517,7 @@
         "datasets": "array<string>",
         "display_name": "string",
         "observation_dimensions": "array<string>",
+        "observation_filter_defaults": "object",
         "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
         "publishes_aligned_reduction": "boolean",

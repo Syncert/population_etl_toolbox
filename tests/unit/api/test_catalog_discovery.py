@@ -528,3 +528,25 @@ def test_a_metric_declares_whether_its_own_rows_can_be_null() -> None:
     declared = {item.source_code: item.publishes_value_status for item in sources.items}
     assert response.json()["publishes_value_status"] == declared[row["source_code"]]
     assert declared[row["source_code"]] is True, "CDC publishes a value state"
+
+
+def test_a_source_declares_the_filter_defaults_a_reader_starts_from() -> None:
+    """Covers: API-157 — USDA NASS starts a reader on the final value.
+
+    NASS publishes a year's final value (`YEAR`) beside its forecasts. A
+    one-value-per-geography reader has to pick one, and the source -- not the
+    client -- says which one to start from. The default is a declaration for
+    clients: `/observations` applies no filter it was not sent, so v1
+    semantics are unchanged.
+    """
+    payload = TestClient(app).get("/api/v1/catalog/capabilities").json()
+    by_code = {item["source_code"]: item for item in payload["items"]}
+
+    assert by_code["USDA_NASS"]["observation_filter_defaults"] == {
+        "reference_period_desc": "YEAR"
+    }
+    for item in payload["items"]:
+        defaults = item["observation_filter_defaults"]
+        assert set(defaults) <= set(item["observation_filters"]), item["source_code"]
+        assert all(isinstance(value, str) and value for value in defaults.values())
+    assert by_code["FBI_UCR"]["observation_filter_defaults"] == {}

@@ -94,6 +94,9 @@ import {
   countObservationPeriods,
   describeStratification,
   dimensionsCarriedBy,
+  dimensionSelectionsForLink,
+  dimensionSelectionsFromLink,
+  effectiveDimensionSelections,
   mapRows,
   newestPerGeography,
   seriesDimensionNames,
@@ -407,6 +410,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => scopedDimensionFilters(activeSource, observationScope),
     [activeSource, observationScope],
   );
+  // What every read uses: the reader's choices, and the source's declared
+  // starting value for each filter they have not touched (API-157) -- USDA
+  // NASS starts on the final `YEAR` value rather than one of its forecasts.
+  const effectiveSelections = useMemo(
+    () => effectiveDimensionSelections(activeSource, dimensionSelections),
+    [activeSource, dimensionSelections],
+  );
   // The file carries every declared dimension, plus any filterable name the
   // declaration does not list, so neither list can drop a column the other
   // would have written.
@@ -432,7 +442,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // Keyed by value so the observation effect re-runs on a real selection
   // change rather than on every render.
   const dimensionKey = JSON.stringify(
-    dimensionFilters.map((name) => [name, dimensionSelections[name] || ""]),
+    dimensionFilters.map((name) => [name, effectiveSelections[name] || ""]),
   );
   const latestQuery = useMemo(
     () => ({
@@ -829,9 +839,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             ...source.dimensionFilters,
             ...source.neutralDimensionFilters,
           ]);
-          const carried = Object.entries(requested.dimensions).filter(
-            ([name, value]) => declared.has(name) && value,
-          );
+          // `*` is a reader's explicit "all" on a filter the source defaults,
+          // carried as an empty selection so the default does not reapply.
+          const carried = Object.entries(
+            dimensionSelectionsFromLink(requested.dimensions),
+          ).filter(([name, value]) => declared.has(name) && typeof value === "string");
           if (carried.length > 0) {
             setDimensionSelections(Object.fromEntries(carried));
           }
@@ -1271,7 +1283,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           limit: String(HISTORY_PAGE_SIZE),
           scope: observationScope,
           release: selectedRelease,
-          dimensions: dimensionSelections,
+          dimensions: effectiveSelections,
         });
         const pages = await fetchCollectionPages<Observation>(resource, {
           params,
@@ -1297,7 +1309,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             metricCode: selectedMetric,
             geoId: selectedGeoId,
             limit: String(HISTORY_PAGE_SIZE),
-            dimensions: dimensionSelections,
+            dimensions: effectiveSelections,
           });
           const released = settled
             ? settled
@@ -1306,7 +1318,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 geoId: selectedGeoId,
                 limit: String(HISTORY_PAGE_SIZE),
                 scope: SCOPE_AS_RELEASED,
-                dimensions: dimensionSelections,
+                dimensions: effectiveSelections,
               });
           const releasedPages = await fetchCollectionPages<Observation>(released.resource, {
             params: released.params,
@@ -1355,7 +1367,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     selectedMetric,
     selectedGeoId,
     activeSource,
-    dimensionSelections,
+    effectiveSelections,
     observationScope,
     selectedRelease,
   ]);
@@ -1876,7 +1888,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         release: selectedRelease,
         // Under the source's own declared filter names, which is what the
         // saved document records too, so the two records of one view agree.
-        dimensions: dimensionSelections,
+        dimensions: dimensionSelectionsForLink(activeSource, dimensionSelections),
         tablePage,
       },
       {
@@ -2317,7 +2329,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     id={`dimension-${name}`}
                     className="select"
                     data-testid={`dimension-select-${name}`}
-                    value={dimensionSelections[name] || ""}
+                    value={effectiveSelections[name] || ""}
                     onChange={(event) =>
                       setDimensionSelections((current) => ({
                         ...current,

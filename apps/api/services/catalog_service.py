@@ -163,6 +163,12 @@ def _observation_filters_for(source_code: str) -> list[str]:
     return list(dispatch.supported_filters()) if dispatch is not None else []
 
 
+def _observation_filter_defaults_for(source_code: str) -> dict[str, str]:
+    """The filter values the source's dispatch entry says a reader starts from."""
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    return dispatch.declared_filter_defaults() if dispatch is not None else {}
+
+
 def _observation_dimensions_for(source_code: str) -> list[str]:
     """The `dimensions` field names the source's dispatch entry declares."""
     dispatch = OBSERVATION_DISPATCH.get(source_code)
@@ -207,6 +213,9 @@ def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListRes
             datasets=list(discovery.registered_datasets()),
             observation_routes=_routes_for(discovery, operations),
             observation_filters=_observation_filters_for(discovery.source_code),
+            observation_filter_defaults=_observation_filter_defaults_for(
+                discovery.source_code
+            ),
             observation_dimensions=_observation_dimensions_for(discovery.source_code),
             publishes_value_status=_publishes_value_status(discovery.source_code),
             publishes_aligned_reduction=_publishes_aligned_reduction(

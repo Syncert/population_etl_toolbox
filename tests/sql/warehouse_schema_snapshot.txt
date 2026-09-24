@@ -1371,7 +1371,7 @@ v gold_bls.measure_export
     body    FROM gold_bls.dim_bls_measure measure
     body      JOIN gold_bls.fact_bls_observation fact ON fact.program_code = measure.program_code AND fact.measure_code::text = measure.measure_code
     body      LEFT JOIN ( SELECT latest.metric_code,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) AS valid_geo_grains,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
     body             max(latest.updated_at) AS publication_time
     body            FROM gold_bls.mv_bls_latest latest
     body           GROUP BY latest.metric_code) served ON served.metric_code = ('BLS:'::text || measure.metric_key)
@@ -1415,7 +1415,7 @@ v gold_bls.metric_publisher
     body    FROM gold_bls.dim_bls_series series
     body      JOIN gold_bls.dim_bls_survey survey USING (bls_survey_sk)
     body      LEFT JOIN ( SELECT latest.series_id,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) AS valid_geo_grains,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
     body             max(latest.updated_at) AS publication_time
     body            FROM gold_bls.mv_bls_latest latest
     body           WHERE latest.metric_code = ('BLS:'::text || latest.series_id)
@@ -1910,7 +1910,7 @@ v gold_cdc.metric_publisher
     body             measure_1.value_type_id,
     body             measure_1.measure_label,
     body             measure_1.unit,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
     body            FROM silver_cdc.dim_measure measure_1
     body              JOIN silver_cdc.fact_health_observation fact ON fact.asset_id = measure_1.asset_id AND fact.measure_id = measure_1.measure_id AND fact.value_type_id = measure_1.value_type_id
     body              JOIN silver_cdc.dim_dataset_release release_1 ON release_1.asset_id = fact.asset_id AND release_1.release_watermark = fact.release_watermark
@@ -2134,7 +2134,7 @@ v gold_census.metric_publisher
     body    FROM gold_census.dim_acs_variable variable
     body      JOIN gold_census.dim_acs_table table_definition USING (acs_table_sk)
     body      LEFT JOIN ( SELECT latest.metric_code,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
     body            FROM gold_census.mv_acs_latest latest
     body           GROUP BY latest.metric_code) served ON served.metric_code = ((('CENSUS_ACS:'::text || variable.dataset_code) || ':'::text) || variable.variable_code)
     body   ORDER BY variable.dataset_code, variable.variable_code, variable.vintage_year DESC, variable.updated_at DESC;
@@ -2788,7 +2788,7 @@ v gold_fbi.metric_publisher
     body             measure_1.counted_entity_basis,
     body             measure_1.measure_form,
     body             measure_1.unit,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(fact.subject_type) ORDER BY (gold_glossary.geo_grain(fact.subject_type))) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.subject_type) ORDER BY (gold_glossary.geo_grain(fact.subject_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
     body            FROM silver_fbi.dim_offense_measure measure_1
     body              JOIN silver_fbi.fact_crime_observation fact ON fact.product_id = measure_1.product_id AND fact.measure_id = measure_1.measure_id
     body              JOIN silver_fbi.dim_ucr_dataset_release release_1 ON release_1.product_id = fact.product_id AND release_1.release_key = fact.release_key
@@ -3042,7 +3042,7 @@ v gold_fred.metric_publisher
     body    FROM gold_fred.dim_fred_series series
     body      LEFT JOIN gold_fred.fact_fred_observation fact ON fact.fred_series_sk = series.fred_series_sk
     body      LEFT JOIN ( SELECT latest.metric_code,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
     body            FROM gold_fred.mv_fred_latest latest
     body           GROUP BY latest.metric_code) served ON served.metric_code = ('FRED:'::text || series.series_id)
     body   GROUP BY series.fred_series_sk, served.valid_geo_grains;
@@ -3837,7 +3837,7 @@ v gold_nass.metric_publisher
     body             statistic_1.unit_desc,
     body             statistic_1.statisticcat_desc,
     body             statistic_1.additive_behavior,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) AS valid_geo_grains,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
     body             array_agg(DISTINCT upper(statistic_1.freq_desc) ORDER BY (upper(statistic_1.freq_desc))) AS valid_time_grains
     body            FROM silver_nass.dim_statistic statistic_1
     body              JOIN silver_nass.fact_crop_observation fact ON fact.statistic_sk = statistic_1.statistic_sk
@@ -3892,7 +3892,7 @@ v gold_pep.measure_export
     body    FROM silver_pep.dim_measure measure
     body      JOIN silver_pep.fact_population_estimate fact USING (metric_code)
     body      LEFT JOIN ( SELECT revision.metric_code,
-    body             array_agg(DISTINCT gold_glossary.geo_grain(revision.geo_type) ORDER BY (gold_glossary.geo_grain(revision.geo_type))) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(revision.geo_type) ORDER BY (gold_glossary.geo_grain(revision.geo_type))) FILTER (WHERE revision.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
     body            FROM gold_pep.population_estimate_revision revision
     body           GROUP BY revision.metric_code) served ON served.metric_code = measure.metric_code
     body   GROUP BY measure.metric_code, served.valid_geo_grains;

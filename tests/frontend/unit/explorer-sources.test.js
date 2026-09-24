@@ -464,3 +464,45 @@ describe("a source carries the dimensions its capability declares", () => {
     expect(source.publishedDimensions).toEqual([]);
   });
 });
+
+describe("declared filter defaults (API-157)", () => {
+  test("a default on a declared dimension filter becomes the source's starting value", () => {
+    const [nass] = buildExplorerSources([
+      {
+        source_code: "USDA_NASS",
+        display_name: "USDA NASS",
+        route_segment: "usda-nass",
+        served_by_neutral_routes: true,
+        observation_routes: [
+          {
+            path: "/api/v1/observations",
+            parameters: ["geo_id", "geo_level", "limit", "metric_code", "reference_period_desc", "scope"],
+          },
+        ],
+        observation_filters: ["geo_id", "geo_level", "reference_period_desc"],
+        observation_filter_defaults: {
+          reference_period_desc: "YEAR",
+          // Not a filter this source declares: a default may never put an
+          // undeclared parameter on a request.
+          stratum_id: "overall",
+          geo_level: "STATE",
+        },
+      },
+    ]);
+    expect(nass.filterDefaults).toEqual({ reference_period_desc: "YEAR" });
+  });
+
+  test("a source without the declaration starts from nothing", () => {
+    const [fbi] = buildExplorerSources([
+      {
+        source_code: "FBI_UCR",
+        display_name: "FBI UCR",
+        route_segment: null,
+        served_by_neutral_routes: true,
+        observation_routes: [{ path: "/api/v1/observations", parameters: ["metric_code", "subject_code"] }],
+        observation_filters: ["subject_code"],
+      },
+    ]);
+    expect(fbi.filterDefaults).toEqual({});
+  });
+});

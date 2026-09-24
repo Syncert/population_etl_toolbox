@@ -1065,3 +1065,60 @@ export function mapRows(
     mappable: stratification.stratified ? [] : newestPerGeography(rows),
   };
 }
+
+/**
+ * The link token for "every published value" on a filter the source gives a
+ * default. An empty selection cannot travel in a link -- the serializer drops
+ * it -- and reopening would then apply the default, so a reader who chose to
+ * see every reference period would get the final value back instead.
+ */
+export const ALL_DIMENSION_VALUES = "*";
+
+/**
+ * The dimension filters a read uses: the reader's own choices, and the
+ * source's declared default (`filterDefaults`, API-157) for every filter the
+ * reader has not touched. A choice of "all" is an empty string held under the
+ * name, which is what keeps it from falling back to the default.
+ */
+export function effectiveDimensionSelections(
+  source: ExplorerSource | null | undefined,
+  selections: Record<string, string> | null | undefined,
+): Record<string, string> {
+  const chosen = selections || {};
+  const effective: Record<string, string> = {};
+  for (const [name, value] of Object.entries(source?.filterDefaults || {})) {
+    if (!Object.prototype.hasOwnProperty.call(chosen, name)) {
+      effective[name] = value;
+    }
+  }
+  return { ...effective, ...chosen };
+}
+
+/** Selections as a link or saved view records them: "all" on a defaulted filter is `*`. */
+export function dimensionSelectionsForLink(
+  source: ExplorerSource | null | undefined,
+  selections: Record<string, string> | null | undefined,
+): Record<string, string> {
+  const defaults = source?.filterDefaults || {};
+  const recorded: Record<string, string> = {};
+  for (const [name, value] of Object.entries(selections || {})) {
+    if (value) {
+      recorded[name] = value;
+    } else if (Object.prototype.hasOwnProperty.call(defaults, name)) {
+      recorded[name] = ALL_DIMENSION_VALUES;
+    }
+  }
+  return recorded;
+}
+
+/** Selections read back from a link: `*` is the reader's explicit "all". */
+export function dimensionSelectionsFromLink(
+  values: Record<string, string> | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(values || {}).map(([name, value]) => [
+      name,
+      value === ALL_DIMENSION_VALUES ? "" : value,
+    ]),
+  );
+}

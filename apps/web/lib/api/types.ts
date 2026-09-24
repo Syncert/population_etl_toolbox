@@ -91,6 +91,12 @@ export interface SourceCapability {
   datasets?: string[] | null;
   observation_filters?: string[] | null;
   /**
+   * Values of declared filters a one-value-per-geography reader starts from
+   * (API-157). USDA NASS declares `reference_period_desc: "YEAR"`. The
+   * resource applies none of them; a client that shows a map does.
+   */
+  observation_filter_defaults?: Record<string, string> | null;
+  /**
    * Field names a neutral row's `dimensions` object carries for this source
    * (API-109). Declared here because an undeclared field is an invisible
    * one — WEB-057's lesson — even where an index signature would let it

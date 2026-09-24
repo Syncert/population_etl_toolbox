@@ -56,8 +56,14 @@ LEFT JOIN (
     -- the dispatch entry names for a `latest` read: a grain published here is
     -- one the API can answer.
     SELECT latest.metric_code,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
-                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                         ORDER BY gold_glossary.geo_grain(latest.geo_level))
+                   FILTER (WHERE latest.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains
     FROM gold_fred.mv_fred_latest AS latest
     GROUP BY latest.metric_code

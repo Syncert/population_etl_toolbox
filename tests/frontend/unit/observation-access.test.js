@@ -30,7 +30,11 @@ import {
   collapseToNewestRelease,
   describeHistoryLoad,
   countObservationPeriods,
+  ALL_DIMENSION_VALUES,
   describeStratification,
+  dimensionSelectionsForLink,
+  dimensionSelectionsFromLink,
+  effectiveDimensionSelections,
   dimensionsCarriedBy,
   newestPerGeography,
   normalizeObservationRows,
@@ -1529,5 +1533,52 @@ describe("what a selected state narrowed", () => {
     expect(
       stateScopeNote({ stateSelected: true, narrowsRows: false, sourceTitle: " " }),
     ).toContain("This source declares no state filter");
+  });
+});
+
+
+describe("declared filter defaults (API-157)", () => {
+  const nass = {
+    key: "usda-nass",
+    dimensionFilters: ["domain_desc", "reference_period_desc"],
+    filterDefaults: { reference_period_desc: "YEAR" },
+  };
+
+  test("an untouched filter reads with the source's declared default", () => {
+    expect(effectiveDimensionSelections(nass, {})).toEqual({ reference_period_desc: "YEAR" });
+    expect(effectiveDimensionSelections(nass, { domain_desc: "TOTAL" })).toEqual({
+      reference_period_desc: "YEAR",
+      domain_desc: "TOTAL",
+    });
+  });
+
+  test("a reader's own choice wins, including a choice of every value", () => {
+    expect(
+      effectiveDimensionSelections(nass, { reference_period_desc: "YEAR - AUG FORECAST" }),
+    ).toEqual({ reference_period_desc: "YEAR - AUG FORECAST" });
+    expect(effectiveDimensionSelections(nass, { reference_period_desc: "" })).toEqual({
+      reference_period_desc: "",
+    });
+  });
+
+  test("a source declaring no default is read exactly as selected", () => {
+    const cdc = { dimensionFilters: ["stratum_id"], filterDefaults: {} };
+    expect(effectiveDimensionSelections(cdc, {})).toEqual({});
+    expect(effectiveDimensionSelections(null, { stratum_id: "x" })).toEqual({ stratum_id: "x" });
+  });
+
+  test("a link carries an explicit 'all' on a defaulted filter and reads it back", () => {
+    const recorded = dimensionSelectionsForLink(nass, {
+      reference_period_desc: "",
+      domain_desc: "",
+    });
+    // "all" on the defaulted filter survives; on an ordinary filter it is
+    // simply absent, as before.
+    expect(recorded).toEqual({ reference_period_desc: ALL_DIMENSION_VALUES });
+    expect(dimensionSelectionsFromLink(recorded)).toEqual({ reference_period_desc: "" });
+    expect(effectiveDimensionSelections(nass, dimensionSelectionsFromLink(recorded))).toEqual({
+      reference_period_desc: "",
+    });
+    expect(dimensionSelectionsForLink(nass, {})).toEqual({});
   });
 });

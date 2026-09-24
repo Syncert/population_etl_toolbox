@@ -305,6 +305,11 @@ class ObservationDispatch:
     #: ``(query parameter, SQL condition)`` pairs. A request using a parameter
     #: absent here is rejected with an explanation, never silently ignored.
     filter_conditions: tuple[tuple[str, str], ...] = ()
+    #: ``(query parameter, value)`` pairs a one-value-per-geography reader
+    #: should start from. A declaration for clients, never applied by the
+    #: resource: ``/observations`` filters on what it is sent and nothing else
+    #: (API-157). Every name must be one of ``filter_conditions``.
+    filter_defaults: tuple[tuple[str, str], ...] = ()
     latest_order: tuple[str, ...] = ()
     released_order: tuple[str, ...] = ()
     # -- aligned analysis (API-005) -----------------------------------------
@@ -329,6 +334,17 @@ class ObservationDispatch:
 
     def supported_filters(self) -> tuple[str, ...]:
         return tuple(sorted(param for param, _ in self.filter_conditions))
+
+    def declared_filter_defaults(self) -> dict[str, str]:
+        """The filter values a reader starts from, each a declared filter."""
+        undeclared = {name for name, _ in self.filter_defaults} - set(
+            self.supported_filters()
+        )
+        if undeclared:
+            raise ValueError(
+                f"{self.source_code} defaults undeclared filters: {sorted(undeclared)}"
+            )
+        return dict(self.filter_defaults)
 
     def analysis_refusal(self) -> str | None:
         """Why an aligned single-value read declines this source, or ``None``.
@@ -873,6 +889,9 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("year_from", "year >= :year_from"),
                 ("year_to", "year <= :year_to"),
             ),
+            # A year's final value, not one of its forecasts, is what a map
+            # starts from; every reference period stays one filter change away.
+            filter_defaults=(("reference_period_desc", "YEAR"),),
             latest_order=("geo_id", "year", "domaincat_desc", "observation_sk"),
             released_order=(
                 "release_watermark DESC",

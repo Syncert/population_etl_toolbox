@@ -44,6 +44,7 @@ import {
 } from "../../../apps/web/lib/explorerViewModel";
 import {
   buildLatestObservationRequest,
+  effectiveDimensionSelections,
   mapRows,
   normalizeObservationRows,
   observationDimensionValue,
@@ -113,7 +114,8 @@ async function readMap(source, metricCode, grain, dimensions) {
     limit: String(PAGE_SIZE),
     newestPerGeography: true,
     scope: SCOPE_LATEST,
-    dimensions,
+    // The page reads with the source's declared defaults applied (API-157).
+    dimensions: effectiveDimensionSelections(source, dimensions),
   });
   const pages = await fetchCollectionPages(resource, {
     params,

@@ -90,6 +90,16 @@ const cdcMetric = {
 // it is reachable only through the neutral resource and its measures declare
 // the AGENCY grain. It is the case the explorer's three-word grain
 // vocabulary could not express (WEB-038).
+const nassMetric = {
+  metric_code: "USDA_NASS:hay_survey_annual:3bf8ec4d",
+  metric_display_name: "HAY - YIELD, MEASURED IN TONS / ACRE",
+  source_code: "USDA_NASS",
+  units: "TONS / ACRE",
+  valid_geo_grains: ["STATE"],
+  valid_time_grains: ["ANNUAL"],
+  freshness_state: "current",
+};
+
 const fbiMetric = {
   metric_code: "FBI_UCR:summarized:VIOLENT_CRIME",
   metric_display_name: "Violent crime offences",
@@ -159,7 +169,9 @@ const capabilities = {
       served_by_neutral_routes: true,
       publishes_aligned_reduction: false,
       datasets: ["nass_crops_county"],
-      observation_filters: ["domain_desc", "geo_id"],
+      observation_filters: ["domain_desc", "geo_id", "geo_level", "reference_period_desc"],
+      // The final value, not one of that year's forecasts (API-157).
+      observation_filter_defaults: { reference_period_desc: "YEAR" },
       observation_routes: [
         ...neutralRoutes,
         { path: "/api/v1/usda-nass/observations", parameters: ["geo_id", "limit"] },
@@ -390,6 +402,30 @@ async function installRoutes(
         headers: { "x-cache": "MISS" },
       });
 
+    if (metric.startsWith("USDA_NASS:")) {
+      // A year's final value beside its August forecast, one state: the
+      // answer is two series per geography unless the reference period is
+      // narrowed, exactly as Quick Stats publishes it.
+      const reference = params.get("reference_period_desc");
+      const nassRow = (referencePeriod, value) => ({
+        metric_code: metric,
+        source_code: "USDA_NASS",
+        geo_id: "state:55",
+        geo_level: "STATE",
+        value,
+        value_status: "valid",
+        unit: "TONS / ACRE",
+        period_start: "2023",
+        period_end: "2023",
+        dimensions: { reference_period_desc: referencePeriod, domain_desc: "TOTAL" },
+      });
+      const rows = [nassRow("YEAR", "2.4"), nassRow("YEAR - AUG FORECAST", "2.6")];
+      return answer(
+        rows.filter((row) => !reference || row.dimensions.reference_period_desc === reference),
+        "USDA_NASS",
+      );
+    }
+
     if (metric.startsWith("FBI_UCR:")) {
       // Agency rows: a grain the tile boundary publishes no geometry for, so
       // the map declines and the table answers.
@@ -506,6 +542,7 @@ async function installRoutes(
       CDC: [cdcMetric],
       BLS: [blsNationalMetric, blsMeasureMetric],
       FBI_UCR: [fbiMetric],
+      USDA_NASS: [nassMetric],
     };
     const items = bySource[sourceCode] || metrics;
     return route.fulfill({
@@ -1837,4 +1874,40 @@ test("a distribution with nothing to caveat shows no note", async ({ page }) => 
 
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
   await expect(page.getByTestId("distribution-caveats")).toHaveCount(0);
+});
+
+
+test("USDA NASS starts on the final value and a reader's 'all' survives the link", async ({ page }) => {
+  // Covers: WEB-119 — the explorer applies the source's declared default
+  // (API-157) and records an explicit "all" so reopening does not reapply it.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto("/explore?source=usda-nass&geo_level=STATE");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", nassMetric.metric_code);
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  const nassReads = () =>
+    neutralRequests.filter(
+      (request) => request.metric_code === nassMetric.metric_code && !request.geo_id,
+    );
+  expect(nassReads().at(-1).reference_period_desc).toBe("YEAR");
+  await expect(page.getByTestId("dimension-select-reference_period_desc")).toHaveValue("YEAR");
+  // The default reproduces itself, so it is not written into the link.
+  await expect(page).not.toHaveURL(/reference_period_desc/);
+
+  // Every reference period: the final value and its forecast compete for the
+  // state, so the map declines and says which filter narrows it.
+  await page.getByTestId("dimension-select-reference_period_desc").selectOption("");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "2");
+  await expect(dashboard).toHaveAttribute("data-stratified", "true");
+  expect(nassReads().at(-1).reference_period_desc).toBeUndefined();
+  await expect(page).toHaveURL(/reference_period_desc=\*/);
+
+  // Reopening that link keeps the reader's choice rather than the default.
+  await page.goto(page.url());
+  await expect(dashboard).toHaveAttribute("data-observation-count", "2");
+  expect(nassReads().at(-1).reference_period_desc).toBeUndefined();
+  await expect(page.getByTestId("dimension-select-reference_period_desc")).toHaveValue("");
 });

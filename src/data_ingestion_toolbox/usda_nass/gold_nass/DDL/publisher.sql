@@ -35,8 +35,14 @@ FROM (
     SELECT fact.product_id, fact.statistic_sk, statistic.short_desc,
            statistic.unit_desc, statistic.statisticcat_desc,
            statistic.additive_behavior,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(fact.geo_type)
-                     ORDER BY gold_glossary.geo_grain(fact.geo_type))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(fact.geo_type)
+                         ORDER BY gold_glossary.geo_grain(fact.geo_type))
+                   FILTER (WHERE fact.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains,
            ARRAY_AGG(DISTINCT UPPER(statistic.freq_desc)
                      ORDER BY UPPER(statistic.freq_desc))::TEXT[]

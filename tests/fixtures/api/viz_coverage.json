@@ -43,6 +43,7 @@
         "seasonal_adjustment_status",
         "series_id"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "county_fips",
         "geo_id",
@@ -204,6 +205,7 @@
         "total_population",
         "value_type_label"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "adjustment_status",
         "geo_id",
@@ -277,6 +279,7 @@
         "dataset_code",
         "variable_code"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "county_fips",
         "geo_id",
@@ -425,6 +428,7 @@
         "summary_level",
         "value_source"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "geo_id",
         "geo_level",
@@ -569,6 +573,7 @@
         "subject_type",
         "ucr_program"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "geo_id",
         "geo_level",
@@ -625,6 +630,7 @@
         "seasonal_adjustment_status",
         "series_id"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "county_fips",
         "geo_id",
@@ -789,6 +795,9 @@
         "util_practice_desc",
         "week_ending"
       ],
+      "observation_filter_defaults": {
+        "reference_period_desc": "YEAR"
+      },
       "observation_filters": [
         "county_fips",
         "domain_desc",

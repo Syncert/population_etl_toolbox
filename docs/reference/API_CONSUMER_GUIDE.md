@@ -235,6 +235,13 @@ own serving relations, so its semantics survive.
   `year_to`. USDA NASS declares `reference_period_desc` because it publishes a
   year's final value (`YEAR`) beside that year's forecasts (for example
   `YEAR - AUG FORECAST`) for one geography; filter on it to read one of them.
+- `/catalog/capabilities` also publishes `observation_filter_defaults`: the
+  value of a declared filter that a one-value-per-geography reader, such as a
+  map, should start from. USDA NASS declares
+  `{"reference_period_desc": "YEAR"}`, the final value rather than a
+  forecast. It is a declaration for clients only: `/observations` filters on
+  what it is sent and nothing else, so a request without the parameter still
+  answers every reference period.
 
 ### A latest publication can be a series
 
