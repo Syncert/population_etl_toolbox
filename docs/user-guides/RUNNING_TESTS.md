@@ -273,9 +273,14 @@ python -m pytest tests/integration/api -m "integration and database and not slow
 python -m pytest tests/unit/api/test_cache_middleware.py -m "unit and api"
 python -m pytest tests/integration/redis -m "integration and api and redis"
 
-# coverage (the same database tier again, for the ratchet)
+# coverage (the database and API tiers again, merged for the ratchet and the changed-line gate)
 python -m pytest tests/integration/database -m "integration and database and not slow"
+python -m pytest tests/integration/api -m "integration and database and not slow"
 ```
+
+The coverage job merges the API tier because the self-service identity and
+account routes are exercised by nothing else: without it, a pull request to
+`main` measured those lines as uncovered and failed the 80% changed-line gate.
 
 `tests/integration/api` had no workflow at all until `api-integration`, and
 the guide documented it under `postgres-integration`, a job whose environment
