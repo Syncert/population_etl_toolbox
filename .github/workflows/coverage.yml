@@ -42,6 +42,16 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # The API integration tier merged below selects one Redis-marked file.
+      redis:
+        image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       RUN_INTEGRATION_TESTS: "1"
@@ -50,6 +60,7 @@ jobs:
       TEST_POSTGRES_USER: population_test
       TEST_POSTGRES_PASSWORD: population_test
       TEST_POSTGRES_DATABASE: population_etl_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
 
     steps:
       - uses: actions/checkout@v6
@@ -86,10 +97,24 @@ jobs:
           -m "integration and database and not slow"
           --tb=short -q
           --cov=apps --cov=data_ingestion_toolbox --cov-append
+          --cov-report=
+          --junitxml=junit-coverage-database.xml
+
+      - name: Merge API integration coverage
+        # The self-service identity and account routes are exercised end to
+        # end by tests/integration/api (the api-integration job) and by no
+        # unit test, so without this step the changed-line gate counted them
+        # as untested: a pull request to main measured 501/810 (61.85%)
+        # changed lines covered, 746/810 (92.10%) with this tier merged.
+        run: >-
+          pytest tests/integration/api
+          -m "integration and database and not slow"
+          --tb=short -q
+          --cov=apps --cov=data_ingestion_toolbox --cov-append
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
           --cov-report=json:coverage.json
-          --junitxml=junit-coverage-database.xml
+          --junitxml=junit-coverage-api.xml
 
       - name: Enforce checked-in overall coverage ratchet
         run: >-
@@ -122,3 +147,4 @@ jobs:
             coverage.json
             junit-coverage.xml
             junit-coverage-database.xml
+            junit-coverage-api.xml

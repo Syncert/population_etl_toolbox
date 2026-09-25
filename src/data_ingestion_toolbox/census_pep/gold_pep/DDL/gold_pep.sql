@@ -158,8 +158,14 @@ LEFT JOIN (
     -- migration 018 exists to hold (DB-037). 021 defines the function ahead
     -- of this phase so the call is legal at bootstrap.
     SELECT revision.metric_code,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(revision.geo_type)
-                     ORDER BY gold_glossary.geo_grain(revision.geo_type))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(revision.geo_type)
+                         ORDER BY gold_glossary.geo_grain(revision.geo_type))
+                   FILTER (WHERE revision.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains
     FROM gold_pep.population_estimate_revision AS revision
     GROUP BY revision.metric_code

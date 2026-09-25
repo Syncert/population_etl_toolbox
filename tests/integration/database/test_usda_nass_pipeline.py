@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,6 +26,12 @@ from data_ingestion_toolbox.usda_nass.silver_nass.transform import (
 )
 from data_ingestion_toolbox.usda_nass.silver_nass.values import NassReplayError
 from apps.api.registry import GEO_GRAINS
+from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+from data_ingestion_toolbox.glossary.harvest import (
+    Publisher,
+    harvest_publisher,
+    process_pending_events,
+)
 from tests.support import usda_nass as nass_support
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -502,3 +509,294 @@ def test_an_unsupported_aggregate_level_is_kept_but_not_served(
             assert "AGRICULTURAL DISTRICT" not in grains
     finally:
         reader.close()
+
+
+MIGRATION_029 = (
+    Path(__file__).resolve().parents[3]
+    / "sql/migrations/029_nass_combined_counties_are_not_counties.sql"
+)
+
+
+def _combined_counties_shape(
+    connection_factory: Callable[[], connection],
+) -> list[tuple]:
+    reader = connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT fact.geo_type, fact.geo_id, fact.geography_status,
+                       fact.geo_source_code, fact.county_fips, revision.asd_code
+                FROM silver_nass.fact_crop_observation AS fact
+                JOIN silver_nass.observation_revision AS revision
+                  USING (capture_id, source_row_index)
+                WHERE fact.geo_source_code LIKE '%%998'
+                   OR fact.county_fips = '998'
+                ORDER BY asd_code
+                """
+            )
+            return cursor.fetchall()
+    finally:
+        reader.close()
+
+
+def test_combined_counties_are_kept_but_never_served_as_a_county(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-035 — county code 998 is a district residual, not a county.
+
+    Live Quick Stats publishes "OTHER (COMBINED) COUNTIES" once per
+    agricultural district under county_code 998, and every district of a
+    state collided on one ``state:SS|county:998`` served at the COUNTY grain
+    (the explorer map sweep found nine Arkansas values for one county-year).
+    The rows are kept with their district and never served; migration 029
+    rewrites rows a warehouse stored before the fix to the same shape, and is
+    safe to run twice.
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    rows = document["slices"]["COUNTY"]["data"]["data"]
+    template = rows[-1]
+    for index, district in enumerate(("10", "20")):
+        combined = dict(template)
+        combined.update(
+            {
+                "county_ansi": "",
+                "county_code": "998",
+                "county_name": "OTHER (COMBINED) COUNTIES",
+                "asd_code": district,
+                "location_desc": f"{template['state_name']}, OTHER (COMBINED) COUNTIES",
+            }
+        )
+        rows[-1 - index] = combined
+
+    _release, transformed, published = _run_to_gold(nass_warehouse, product, document)
+    assert published == transformed - 2
+
+    state = template["state_fips_code"] or template["state_ansi"]
+    kept = [
+        ("unsupported", None, "unsupported", f"{state}998", None, "10"),
+        ("unsupported", None, "unsupported", f"{state}998", None, "20"),
+    ]
+    assert _combined_counties_shape(nass_warehouse) == kept
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_nass.crop_observation WHERE geo_id LIKE %s",
+                ("%county:998",),
+            )
+            assert cursor.fetchone() == (0,)
+    finally:
+        reader.close()
+
+    # A warehouse that stored these rows before the fix holds them as a county.
+    writer = nass_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE silver_nass.observation_revision
+                   SET geo_type = 'county', geo_id = %s, county_fips = '998'
+                 WHERE geo_source_code = %s
+                """,
+                (f"state:{state}|county:998", f"{state}998"),
+            )
+            cursor.execute(
+                """
+                UPDATE silver_nass.fact_crop_observation
+                   SET geo_type = 'county', geo_id = %s, county_fips = '998',
+                       geography_status = 'unmapped'
+                 WHERE geo_source_code = %s
+                """,
+                (f"state:{state}|county:998", f"{state}998"),
+            )
+            cursor.execute(
+                """
+                UPDATE silver_ref.geography_resolution
+                   SET source_geo_type = 'county', status = 'unmapped',
+                       reason_code = 'canonical_geography_absent'
+                 WHERE provider_source = 'USDA_NASS' AND source_code = %s
+                """,
+                (f"{state}998",),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    served = nass_warehouse()
+    try:
+        with served.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_nass.crop_observation WHERE geo_id LIKE %s",
+                ("%county:998",),
+            )
+            assert cursor.fetchone() == (2,), "the old shape is served, as it was"
+    finally:
+        served.close()
+
+    for _ in range(2):
+        migrator = nass_warehouse()
+        try:
+            with migrator.cursor() as cursor:
+                cursor.execute(MIGRATION_029.read_text(encoding="utf-8"))
+            migrator.commit()
+        finally:
+            migrator.close()
+        assert _combined_counties_shape(nass_warehouse) == kept
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_nass.crop_observation WHERE geo_id LIKE %s",
+                ("%county:998",),
+            )
+            assert cursor.fetchone() == (0,)
+            cursor.execute(
+                """
+                SELECT source_geo_type, status, reason_code, geo_sk
+                FROM silver_ref.geography_resolution
+                WHERE provider_source = 'USDA_NASS' AND source_code = %s
+                """,
+                (f"{state}998",),
+            )
+            ledger = set(cursor.fetchall())
+            assert ledger == {
+                ("unsupported", "unsupported", "unsupported_aggregate_level", None)
+            }
+    finally:
+        reader.close()
+
+
+def _catalog_county_measures(connection_factory: Callable[[], connection]) -> int:
+    reader = connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM gold_glossary.dim_metric
+                WHERE source_code = 'USDA_NASS'
+                  AND valid_geo_grains @> ARRAY['COUNTY']
+                """
+            )
+            return cursor.fetchone()[0]
+    finally:
+        reader.close()
+
+
+def test_the_catalog_follows_the_combined_counties_rewrite(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-035 — migration 029 re-queues the publisher it changes.
+
+    The rewrite changes what the publisher says -- a measure whose only county
+    rows were the residual stops listing COUNTY -- without moving a
+    publication time, and the scheduled harvest only visits a publisher with a
+    pending ready event. The latest watermark's event already exists, processed,
+    so 029 re-queues it; without that the catalog kept advertising a county map
+    for measures with no county data (publisher 66, catalog 73 on the
+    development warehouse).
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    rows = document["slices"]["COUNTY"]["data"]["data"]
+    for index, row in enumerate(rows):
+        row.update(
+            {
+                "county_ansi": "",
+                "county_code": "998",
+                "county_name": "OTHER (COMBINED) COUNTIES",
+                "asd_code": f"{10 + index}",
+            }
+        )
+    _run_to_gold(nass_warehouse, product, document)
+
+    # The shape a warehouse stored before the fix, harvested as it was then.
+    writer = nass_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            for table, extra in (
+                ("silver_nass.observation_revision", ""),
+                (
+                    "silver_nass.fact_crop_observation",
+                    ", geography_status = 'unmapped'",
+                ),
+            ):
+                cursor.execute(
+                    f"""
+                    UPDATE {table}
+                       SET geo_type = 'county',
+                           geo_id = 'state:' || state_fips || '|county:998',
+                           county_fips = '998'{extra}
+                     WHERE geo_source_code ~ '^[0-9]{{2}}998$'
+                    """
+                )
+        writer.commit()
+    finally:
+        writer.close()
+    # As the warehouse had it: the publisher registered and harvested, and its
+    # latest watermark's ready event processed.
+    assert harvest_publisher(nass_warehouse, Publisher("gold_nass")) > 0
+    emit_latest_publisher_ready(nass_warehouse, publisher_schema="gold_nass")
+    assert process_pending_events(nass_warehouse) == 1
+    assert _catalog_county_measures(nass_warehouse) > 0
+
+    migrator = nass_warehouse()
+    try:
+        with migrator.cursor() as cursor:
+            cursor.execute(MIGRATION_029.read_text(encoding="utf-8"))
+            cursor.execute(
+                """
+                SELECT status FROM control.publisher_ready_event
+                WHERE source_code = 'USDA_NASS'
+                """
+            )
+            assert {row[0] for row in cursor.fetchall()} == {"pending"}
+        migrator.commit()
+    finally:
+        migrator.close()
+
+    assert process_pending_events(nass_warehouse) == 1
+    assert _catalog_county_measures(nass_warehouse) == 0
+
+
+def test_a_grain_where_every_value_is_withheld_is_not_published(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ARC-001 — the catalog offers no map level without a value.
+
+    Every county row withheld for disclosure (`(D)`) is still a published row
+    -- a null value with its reason -- and the publisher used to list COUNTY
+    for it, so the explorer offered a county map that could only say "value
+    not published". A grain is now one a value is published at.
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    for row in document["slices"]["COUNTY"]["data"]["data"]:
+        row["Value"] = "(D)"
+    _run_to_gold(nass_warehouse, product, document)
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM gold_nass.crop_observation
+                WHERE product_id = %s AND geo_type = 'county'
+                """,
+                (product.product_id,),
+            )
+            assert cursor.fetchone()[0] > 0, "the withheld county rows are still served"
+            cursor.execute(
+                """
+                SELECT DISTINCT UNNEST(valid_geo_grains)
+                FROM gold_nass.metric_publisher
+                """
+            )
+            grains = {row[0] for row in cursor.fetchall()}
+    finally:
+        reader.close()
+
+    assert "COUNTY" not in grains
+    assert {"NATIONAL", "STATE"} <= grains

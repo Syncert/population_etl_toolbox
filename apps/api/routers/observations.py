@@ -64,6 +64,10 @@ def get_neutral_observations(
     domaincat_desc: Optional[str] = Query(
         None, max_length=OBSERVATION_FILTER_BOUNDS["domaincat_desc"].max_length
     ),
+    reference_period_desc: Optional[str] = Query(
+        None,
+        max_length=OBSERVATION_FILTER_BOUNDS["reference_period_desc"].max_length,
+    ),
     subject_type: Optional[str] = Query(
         None, max_length=OBSERVATION_FILTER_BOUNDS["subject_type"].max_length
     ),
@@ -141,6 +145,7 @@ def get_neutral_observations(
                 "adjustment_status": adjustment_status,
                 "domain_desc": domain_desc,
                 "domaincat_desc": domaincat_desc,
+                "reference_period_desc": reference_period_desc,
                 "subject_type": subject_type,
                 "subject_code": subject_code,
                 "year_from": year_from,

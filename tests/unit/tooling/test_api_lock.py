@@ -165,3 +165,49 @@ def test_the_airflow_extra_is_not_in_this_lock() -> None:
     # environments have been merged and the API is running on the ORM the
     # contract says it is not.
     assert locked["sqlalchemy"].startswith("2."), locked["sqlalchemy"]
+
+
+def test_the_resolution_is_pinned_to_the_image_platform() -> None:
+    """Covers: ENV-022 — the lock is a property of this file, not of a machine.
+
+    `--python-version` was pinned and the platform was not, so the resolution
+    followed whoever ran `make lock-api`. That is not a style question:
+    `uvicorn[standard]` brings `uvloop` only where `sys_platform != "win32"`,
+    and this project declares `tzdata` only on Windows, so a refresh from a
+    Windows checkout produced a lock with `tzdata` added and `uvloop` silently
+    gone.
+
+    The lock carries no environment markers, and `Dockerfile.api` installs it
+    with `--require-hashes` on `python:3.11-slim`. So that image would have
+    dropped to uvicorn's asyncio loop, with a green CI run and a diff nobody
+    would read as a behaviour change. It happened while ADR-0005 was adding
+    `PyJWT[crypto]`, which is the only reason anybody looked.
+    """
+    from tools.lock.refresh_api_lock import COMPILE
+
+    assert "--python-platform" in COMPILE, (
+        "the resolution follows the machine that ran it; pin the image's platform"
+    )
+    platform = COMPILE[COMPILE.index("--python-platform") + 1]
+    assert platform == "linux", f"the API image is Linux, not {platform}"
+
+
+def test_the_lock_carries_the_platform_dependent_packages_the_image_needs() -> None:
+    """Covers: ENV-022 — and the pin above is checked by its consequence.
+
+    `uvloop` is the package that proves the resolution was Linux's: it is what
+    `uvicorn[standard]` adds everywhere except Windows, and its absence is the
+    visible half of a lock resolved on the wrong platform. `tzdata` is the
+    other half -- Windows-only here, so its presence would mean the same
+    mistake in the other direction.
+    """
+    locked = _locked()
+
+    assert "uvloop" in locked, (
+        "uvloop is absent; the lock was resolved on Windows, and the Linux "
+        "image will fall back to uvicorn's asyncio loop"
+    )
+    assert "tzdata" not in locked, (
+        "tzdata is Windows-only in pyproject.toml; its presence means this "
+        "lock was resolved on Windows"
+    )

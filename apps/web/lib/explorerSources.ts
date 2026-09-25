@@ -70,6 +70,13 @@ export interface ExplorerSource {
    */
   dimensionFilters: string[];
   /**
+   * The value each declared dimension filter starts from, as the source
+   * declares it (`observation_filter_defaults`, API-157) -- never a rule this
+   * client authored. Only names in `dimensionFilters` are kept, so a default
+   * can never put an undeclared filter on a request.
+   */
+  filterDefaults: Record<string, string>;
+  /**
    * The field names a row's `dimensions` object carries for this source, as
    * `/catalog/capabilities` declares them (`observation_dimensions`).
    *
@@ -254,6 +261,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     // API never declared would be this client inventing a contract.
     neutralFilters: [],
     neutralDimensionFilters: [],
+    filterDefaults: {},
     servesReleases: false,
     supportsAsReleased: false,
     supportsReleasePin: false,
@@ -351,6 +359,12 @@ export function buildExplorerSources(
       accessShape: usesNeutral ? "neutral" : "source-scoped",
       requestFilters,
       dimensionFilters: dimensionFiltersOf(requestFilters),
+      filterDefaults: Object.fromEntries(
+        Object.entries(capability.observation_filter_defaults || {}).filter(
+          ([name, value]) =>
+            typeof value === "string" && value !== "" && dimensionFiltersOf(requestFilters).includes(name),
+        ),
+      ),
       publishedDimensions: [...(capability.observation_dimensions || [])],
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),
       servesComparison: declaredPaths.has(`${API_BASE}${COMPARISON_PREFLIGHT_PATH}`),

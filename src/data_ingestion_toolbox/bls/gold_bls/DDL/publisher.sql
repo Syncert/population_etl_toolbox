@@ -62,8 +62,14 @@ JOIN gold_bls.fact_bls_observation AS fact
  AND fact.measure_code = measure.measure_code
 LEFT JOIN (
     SELECT latest.metric_code,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
-                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                         ORDER BY gold_glossary.geo_grain(latest.geo_level))
+                   FILTER (WHERE latest.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains,
            MAX(latest.updated_at) AS publication_time
     FROM gold_bls.mv_bls_latest AS latest
@@ -97,8 +103,14 @@ FROM gold_bls.dim_bls_series AS series
 JOIN gold_bls.dim_bls_survey AS survey USING (bls_survey_sk)
 LEFT JOIN (
     SELECT latest.series_id,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
-                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                         ORDER BY gold_glossary.geo_grain(latest.geo_level))
+                   FILTER (WHERE latest.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains,
            MAX(latest.updated_at) AS publication_time
     FROM gold_bls.mv_bls_latest AS latest

@@ -43,8 +43,14 @@ LEFT JOIN (
     -- bootstrap; before it, this file upper-cased the served word itself,
     -- which was right for ACS and one more copy of the vocabulary (DB-037).
     SELECT latest.metric_code,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
-                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                         ORDER BY gold_glossary.geo_grain(latest.geo_level))
+                   FILTER (WHERE latest.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains
     FROM gold_census.mv_acs_latest AS latest
     GROUP BY latest.metric_code

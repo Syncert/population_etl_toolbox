@@ -18,16 +18,20 @@ from data_ingestion_toolbox.fbi_ucr.client import CdeResponse, observation_param
 from data_ingestion_toolbox.fbi_ucr.config import API_KEY_PARAMETER, FbiUcrConfig
 from data_ingestion_toolbox.fbi_ucr.metadata import FbiRelease, ReleaseDecision
 from data_ingestion_toolbox.fbi_ucr.registry import (
+    ALL_PRODUCTS,
     SUMMARIZED_VIOLENT_CRIME,
+    FbiUcrProduct,
     agency_directory_endpoint,
 )
 
 from ._doubles import API_KEY
-from .conftest import load_bytes
+from .conftest import fixture_scoped, load_bytes, observation_fixture
 
 pytestmark = pytest.mark.unit
 
-PRODUCT = SUMMARIZED_VIOLENT_CRIME
+FIXTURE_PRODUCTS = tuple(fixture_scoped(product) for product in ALL_PRODUCTS)
+
+PRODUCT = fixture_scoped(SUMMARIZED_VIOLENT_CRIME)
 
 
 class _Control:
@@ -97,17 +101,15 @@ def _response(endpoint: str, parameters: dict, name: str) -> CdeResponse:
     )
 
 
-def _install_provider(monkeypatch, *, national: str = "summarized_national_V") -> None:
+def _install_provider(monkeypatch, *, national: str | None = None) -> None:
     def observations(product, subject, **_kwargs):  # noqa: ANN001, ANN202
-        names = {
-            "national": national,
-            "state": f"summarized_state_{subject.subject_code}_V",
-            "agency": f"summarized_agency_{subject.subject_code}_V",
-        }
+        name = observation_fixture(product, subject)
+        if national is not None and subject.subject_type == "national":
+            name = national
         return _response(
             product.observation_endpoint(subject),
             observation_parameters(product),
-            names[subject.subject_type],
+            name,
         )
 
     def directory(state_code, **_kwargs):  # noqa: ANN001, ANN202
@@ -123,8 +125,9 @@ def _config() -> FbiUcrConfig:
     return FbiUcrConfig(cde_api_key=API_KEY, min_spacing_seconds=0.0)
 
 
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
 def test_reference_slices_are_captured_before_agency_observations(
-    monkeypatch,
+    monkeypatch, product: FbiUcrProduct
 ) -> None:
     """Covers: ETL-024 — the agency reference slice precedes its observations."""
     _install_provider(monkeypatch)
@@ -133,7 +136,7 @@ def test_reference_slices_are_captured_before_agency_observations(
 
     release = capture_product_release(
         lambda: None,
-        PRODUCT,
+        product,
         config=_config(),
         control=control,
         persist_capture=capturer,
@@ -150,32 +153,46 @@ def test_reference_slices_are_captured_before_agency_observations(
     assert release.decision is ReleaseDecision.INGEST
     assert release.complete
     assert agency_indexes
+    # Every observation request addresses this product's own offense only.
+    assert all(
+        endpoint.endswith(f"/{product.offense_code}")
+        for endpoint in endpoints
+        if endpoint.startswith("/summarized/")
+    )
     assert directory_index < min(agency_indexes)
-    assert len(release.observation_capture_ids) == len(PRODUCT.subjects)
-    assert len(release.directory_capture_ids) == len(PRODUCT.reference_states)
+    assert len(release.observation_capture_ids) == len(product.subjects)
+    assert len(release.directory_capture_ids) == len(product.reference_states)
 
 
-def test_capture_commits_raw_bytes_before_any_parsing(monkeypatch) -> None:
+@pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
+def test_capture_commits_raw_bytes_before_any_parsing(
+    monkeypatch, product: FbiUcrProduct
+) -> None:
     """Covers: ARC-002 — every response commits as a lossless capture."""
     _install_provider(monkeypatch)
     capturer = _Capturer()
 
     capture_product_release(
         lambda: None,
-        PRODUCT,
+        product,
         config=_config(),
         control=_Control(),
         persist_capture=capturer,
     )
 
-    assert len(capturer.captures) == len(PRODUCT.subjects) + len(
-        PRODUCT.reference_states
+    assert len(capturer.captures) == len(product.subjects) + len(
+        product.reference_states
     )
     for capture in capturer.captures:
         assert capture.source_code == "FBI_UCR"
         assert capture.media_type == "application/json"
         assert capture.payload
-        assert capture.payload_schema_version == PRODUCT.parser_contract_version
+        assert capture.payload_schema_version == product.parser_contract_version
+    # Each observation capture holds exactly this product's provider bytes.
+    assert {
+        load_bytes(observation_fixture(product, subject))
+        for subject in product.subjects
+    } <= {capture.payload for capture in capturer.captures}
 
 
 def test_captured_request_identity_never_carries_the_provider_key(

@@ -1,0 +1,126 @@
+{
+  "offenses": {
+    "rates": {
+      "United States Offenses": {
+        "01-2023": 112.08,
+        "02-2023": 99.56,
+        "03-2023": 108.49,
+        "04-2023": 107.79,
+        "05-2023": 115.65,
+        "06-2023": 115.1
+      },
+      "United States Clearances": {
+        "01-2023": 16.04,
+        "02-2023": 14.68,
+        "03-2023": 16.09,
+        "04-2023": 15.8,
+        "05-2023": 17.07,
+        "06-2023": 16.92
+      },
+      "U.S. Virgin Islands Offenses": {
+        "01-2023": null,
+        "02-2023": null,
+        "03-2023": null,
+        "04-2023": null,
+        "05-2023": null,
+        "06-2023": null
+      },
+      "U.S. Virgin Islands Clearances": {
+        "01-2023": null,
+        "02-2023": null,
+        "03-2023": null,
+        "04-2023": null,
+        "05-2023": null,
+        "06-2023": null
+      }
+    },
+    "actuals": {
+      "U.S. Virgin Islands Offenses": {
+        "01-2023": null,
+        "02-2023": null,
+        "03-2023": null,
+        "04-2023": null,
+        "05-2023": null,
+        "06-2023": null
+      },
+      "U.S. Virgin Islands Clearances": {
+        "01-2023": null,
+        "02-2023": null,
+        "03-2023": null,
+        "04-2023": null,
+        "05-2023": null,
+        "06-2023": null
+      }
+    }
+  },
+  "tooltips": {
+    "leftYAxisHeaders": {
+      "yAxisHeaderRates": "Offenses per 100,000 people",
+      "yAxisHeaderActual": "Offenses"
+    },
+    "Percent of Population Coverage": {
+      "United States": {
+        "01-2023": 95.55,
+        "02-2023": 95,
+        "03-2023": 95.89,
+        "04-2023": 95.94,
+        "05-2023": 95.83,
+        "06-2023": 95.95
+      },
+      "U.S. Virgin Islands": {
+        "01-2023": null,
+        "02-2023": null,
+        "03-2023": null,
+        "04-2023": null,
+        "05-2023": null,
+        "06-2023": null
+      }
+    }
+  },
+  "populations": {
+    "population": {
+      "United States": {
+        "01-2023": 338357687,
+        "02-2023": 338357687,
+        "03-2023": 338357687,
+        "04-2023": 338357687,
+        "05-2023": 338357687,
+        "06-2023": 338357687
+      },
+      "U.S. Virgin Islands": {
+        "01-2023": 83265,
+        "02-2023": 83265,
+        "03-2023": 83265,
+        "04-2023": 83265,
+        "05-2023": 83265,
+        "06-2023": 83265
+      }
+    },
+    "participated_population": {
+      "United States": {
+        "01-2023": 323289818,
+        "02-2023": 321444080,
+        "03-2023": 324439456,
+        "04-2023": 324614663,
+        "05-2023": 324255129,
+        "06-2023": 324648689
+      },
+      "U.S. Virgin Islands": {
+        "01-2023": null,
+        "02-2023": null,
+        "03-2023": null,
+        "04-2023": null,
+        "05-2023": null,
+        "06-2023": null
+      }
+    }
+  },
+  "cde_properties": {
+    "max_data_date": {
+      "UCR": "09/2026"
+    },
+    "last_refresh_date": {
+      "UCR": "09/15/2026"
+    }
+  }
+}

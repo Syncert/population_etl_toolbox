@@ -114,6 +114,116 @@ class Settings:
         self.api_max_request_body_bytes: int = int(
             os.environ.get("API_MAX_REQUEST_BODY_BYTES", "262144")
         )
+        # -- Self-service identity (ADR-0005). Every value below is optional,
+        # and with the client id and secret unset the sign-in routes answer a
+        # 503 naming an unconfigured feature -- the same shape unconfigured
+        # application storage already answers. A deployment that has not
+        # registered an OIDC client is a deployment fact, not a caller error,
+        # and operator-issued tokens keep working there with nothing changed.
+        #
+        # The issuer defaults to Google because ADR-0005 s1 names Google, and
+        # it stays configurable because the ADR records the substitution to
+        # make if the third-party dependency is judged worse than the mail
+        # one. The value is the issuer's *identifier*, which is also where its
+        # discovery document lives; it is compared against the ID token's
+        # `iss` claim exactly, never by prefix.
+        self.oidc_issuer: str = os.environ.get(
+            "API_OIDC_ISSUER", "https://accounts.google.com"
+        )
+        #: Whether the session cookies carry ``Secure``. True everywhere a
+        #: deployment serves over TLS, which is everywhere it should be served.
+        #: It is configurable only because a browser will not store a
+        #: ``Secure`` cookie sent over plain ``http://localhost``, and
+        #: ADR-0005's flow is meant to be runnable against localhost before a
+        #: deployment exists. Turning it off outside local development
+        #: publishes the refresh token to anything watching the network.
+        self.api_cookie_secure: bool = os.environ.get(
+            "API_COOKIE_SECURE", "1"
+        ).strip().lower() not in {"0", "false", "no", ""}
+        self.oidc_client_id: str = os.environ.get("API_OIDC_CLIENT_ID", "")
+        self.oidc_client_secret: str = os.environ.get("API_OIDC_CLIENT_SECRET", "")
+        #: The exact-match redirect allowlist (ADR-0005 s1). Exact match, not
+        #: prefix match and not origin match: an open redirect on a registered
+        #: origin turns a prefix rule into a way to deliver somebody else's
+        #: authorization code to an attacker. Comma-separated, and a
+        #: deployment declares every origin it is reachable at -- including
+        #: `http://localhost:3000` in development, which Google permits.
+        self.oidc_redirect_uris: tuple[str, ...] = tuple(
+            entry.strip()
+            for entry in os.environ.get("API_OIDC_REDIRECT_URIS", "").split(",")
+            if entry.strip()
+        )
+        #: Seconds of clock skew tolerated when checking `exp`, `iat`, and
+        #: `nbf`. Bounded rather than generous: this is the window in which an
+        #: expired token is still accepted.
+        self.oidc_clock_skew_seconds: int = int(
+            os.environ.get("API_OIDC_CLOCK_SKEW_SECONDS", "60")
+        )
+        #: How long a started sign-in may take to come back. Ten minutes is
+        #: long enough for a person to work through a provider's consent
+        #: screens and short enough that an abandoned transaction is not a
+        #: state value sitting in a table for a day.
+        self.oidc_transaction_ttl_seconds: int = int(
+            os.environ.get("API_OIDC_TRANSACTION_TTL_SECONDS", "600")
+        )
+        #: ADR-0005 s2's three session bounds, in the units the ADR states
+        #: them in. The access token is short because it is the half that
+        #: lives in script's reach; the refresh token is long because it does
+        #: not.
+        self.api_access_token_ttl_seconds: int = int(
+            os.environ.get("API_ACCESS_TOKEN_TTL_SECONDS", "900")
+        )
+        self.api_session_idle_days: int = int(
+            os.environ.get("API_SESSION_IDLE_DAYS", "30")
+        )
+        self.api_session_absolute_days: int = int(
+            os.environ.get("API_SESSION_ABSOLUTE_DAYS", "90")
+        )
+        #: The window in which a rotated refresh token's immediate predecessor
+        #: is still tolerated (ADR-0005 s2). Two tabs refreshing at once is not
+        #: an attack, and treating it as one signs people out for using a
+        #: browser normally. Kept small: it is also the window in which a
+        #: genuinely stolen token can be spent once.
+        self.api_refresh_grace_seconds: int = int(
+            os.environ.get("API_REFRESH_GRACE_SECONDS", "10")
+        )
+        #: The third rate-limit bucket (ADR-0005 s4), far tighter than either
+        #: existing one because a human signs in rarely and a script does not.
+        #: 0 disables it, like the others, so the deterministic suites are
+        #: unthrottled and the deployment turns it on.
+        self.api_rate_limit_identity_per_minute: int = int(
+            os.environ.get("API_RATE_LIMIT_IDENTITY_PER_MINUTE", "0")
+        )
+        #: A ceiling on new accounts per hour across the whole deployment, so
+        #: an attacker holding many provider accounts degrades into a queue
+        #: rather than an unbounded row count. 0 disables it.
+        self.api_account_creation_per_hour: int = int(
+            os.environ.get("API_ACCOUNT_CREATION_PER_HOUR", "0")
+        )
+        #: How recently an account must have signed in to destroy itself
+        #: (ADR-0005 s5). A 30-day session is a convenience for saving charts;
+        #: it is not authority to delete everything from an unattended laptop.
+        self.api_deletion_freshness_seconds: int = int(
+            os.environ.get("API_DELETION_FRESHNESS_SECONDS", "600")
+        )
+        #: Per-account storage quotas (ADR-0005 s4). ADR-0004 already bounds
+        #: one packet's size; these bound how many an account may hold. 0
+        #: disables a quota.
+        self.api_saved_analysis_quota: int = int(
+            os.environ.get("API_SAVED_ANALYSIS_QUOTA", "200")
+        )
+        self.api_evidence_packet_quota: int = int(
+            os.environ.get("API_EVIDENCE_PACKET_QUOTA", "100")
+        )
+        #: The backup retention window ADR-0005 s5 requires a deployment to
+        #: declare, in days. It is reported by the account-deletion response
+        #: and by the consumer guide, so "deleted data is gone from every
+        #: retained backup once that window has passed" is a published number
+        #: rather than an accident of configuration. 0 means the deployment
+        #: has not declared one, and the API says so rather than inventing it.
+        self.backup_retention_days: int = int(
+            os.environ.get("BACKUP_RETENTION_DAYS", "0")
+        )
 
 
 @lru_cache(maxsize=1)

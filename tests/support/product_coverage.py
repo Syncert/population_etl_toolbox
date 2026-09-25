@@ -38,6 +38,10 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     "/api/v1/comparison",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
+    # Identity (ADR-0005). Owned by the API platform and by no data product:
+    # a sign-in reaches no source, no gold schema, and no warehouse row.
+    "/api/v1/auth",
+    "/api/v1/account",
 )
 
 
@@ -235,12 +239,41 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         product_id="fbi_ucr.summarized_violent_crime",
         source="FBI_UCR",
         publisher_schema="gold_fbi",
-        datasets=("summarized_violent_crime",),
+        datasets=(
+            "summarized_violent_crime",
+            "summarized_assault",
+            "summarized_burglary",
+            "summarized_larceny",
+            "summarized_motor_vehicle_theft",
+            "summarized_homicide",
+            "summarized_rape",
+            "summarized_robbery",
+            "summarized_arson",
+            "summarized_property_crime",
+        ),
         fixtures=(
             "tests/fixtures/fbi_ucr/summarized_national_V.json",
             "tests/fixtures/fbi_ucr/summarized_national_V_revised.json",
             "tests/fixtures/fbi_ucr/summarized_state_WI_V.json",
             "tests/fixtures/fbi_ucr/agency_directory_WI.json",
+            "tests/fixtures/fbi_ucr/summarized_national_ASS.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_ASS.json",
+            "tests/fixtures/fbi_ucr/summarized_national_BUR.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_BUR.json",
+            "tests/fixtures/fbi_ucr/summarized_national_LAR.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_LAR.json",
+            "tests/fixtures/fbi_ucr/summarized_national_MVT.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_MVT.json",
+            "tests/fixtures/fbi_ucr/summarized_national_HOM.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_HOM.json",
+            "tests/fixtures/fbi_ucr/summarized_national_RPE.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_RPE.json",
+            "tests/fixtures/fbi_ucr/summarized_national_ROB.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_ROB.json",
+            "tests/fixtures/fbi_ucr/summarized_national_ARS.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_ARS.json",
+            "tests/fixtures/fbi_ucr/summarized_national_P.json",
+            "tests/fixtures/fbi_ucr/summarized_state_WI_P.json",
         ),
         serving_relations=(
             "gold_fbi.crime_observation",

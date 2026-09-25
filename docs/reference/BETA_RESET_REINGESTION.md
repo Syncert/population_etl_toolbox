@@ -158,13 +158,64 @@ If the API uses its restricted database role, apply
 `sql/bootstrap/001_api_readonly.sql` afterward using the documented provisioning
 environment. Do not grant the API write access as a bootstrap shortcut.
 
-API-owned application storage (`app_api`: accounts, saved analysis
-configurations, evidence packets) comes from `sql/bootstrap/002_app_api.sql`.
-Its grants are positional — they cover the tables that exist when the file
-runs — so **re-running the whole file against an already-deployed database is
-the migration** whenever a table is added to it (as `app_api.evidence_packet`
-was under ADR-0004). Every statement in it is idempotent; nothing in it is
-warehouse content and no ETL process touches it.
+API-owned application storage (`app_api`: accounts, their credentials, saved
+analysis configurations, evidence packets) comes from
+`sql/bootstrap/002_app_api.sql`. Its grants are positional — they cover the
+tables that exist when the file runs — so **re-running the whole file against
+an already-deployed database is the migration** whenever a table is added to
+it (as `app_api.evidence_packet` was under ADR-0004, and
+`app_api.account_credential`, `sign_in_transaction` and
+`account_deletion_log` were under ADR-0005). Every statement in it is
+idempotent; nothing in it is warehouse content and no ETL process touches it.
+
+ADR-0005's re-run does one thing the earlier ones did not: it **moves** each
+account's token digest into `app_api.account_credential` and drops the column
+it came from, in one transaction. The tokens in circulation are the same
+tokens — the digest is copied, not regenerated — so nobody has to be told to
+fetch a new one, and re-running the file again afterwards is a no-op.
+
+### Restoring an `app_api` backup, and the deletion log
+
+This is the one part of a restore that can undo a promise rather than just
+lose data. ADR-0005 §5 commits to deletion propagating to backups within the
+declared retention window, and a hard `DELETE` does nothing whatever to a
+point-in-time snapshot taken before it: restoring inside the window brings
+back a person who asked to be forgotten, along with everything they owned.
+
+`app_api.account_deletion_log` is what closes that, and
+`scripts/apply_deletion_log.py` operates it. **The export has to run before
+the restore, not after** — a restored log is the log as it stood at the
+restore point, which by definition excludes the deletions that need
+re-applying. So the export belongs beside the backup schedule, writing
+somewhere a restore does not overwrite:
+
+```bash
+python scripts/apply_deletion_log.py --dsn "$APP_API_DSN"   --export /var/backups/app_api/deletion-log.csv
+```
+
+After restoring, and **before the database serves traffic**:
+
+```bash
+python scripts/apply_deletion_log.py --dsn "$APP_API_DSN"   --apply /var/backups/app_api/deletion-log.csv
+```
+
+It is idempotent — an id already absent is the normal case — so running it
+when unsure whether it has run is safe. It reports how many it deleted and
+how many were already gone; a log of thousands reporting zero deletions is
+how an operator learns they pointed it at the wrong database.
+
+Finally, once entries are older than the declared window no retained backup
+contains the account and the log entry is its last remaining trace, so it goes
+too:
+
+```bash
+python scripts/apply_deletion_log.py --dsn "$APP_API_DSN"   --purge-expired "$BACKUP_RETENTION_DAYS"
+```
+
+`BACKUP_RETENTION_DAYS` is the number ADR-0005 §5 requires the deployment to
+declare rather than leave to accident; the API reports it in an account export
+and in a deletion response, and reports it absent rather than inventing one
+where it is unset.
 
 ## 4. Restore the captures, then validate bootstrap before downloading data
 

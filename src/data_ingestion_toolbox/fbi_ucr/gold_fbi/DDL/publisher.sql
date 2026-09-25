@@ -51,8 +51,14 @@ SELECT 'FBI_UCR'::TEXT AS source_code,
 FROM (
     SELECT measure.product_id, measure.measure_id, measure.offense_label,
            measure.counted_entity_basis, measure.measure_form, measure.unit,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(fact.subject_type)
-                     ORDER BY gold_glossary.geo_grain(fact.subject_type))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(fact.subject_type)
+                         ORDER BY gold_glossary.geo_grain(fact.subject_type))
+                   FILTER (WHERE fact.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains
     FROM silver_fbi.dim_offense_measure AS measure
     JOIN silver_fbi.fact_crime_observation AS fact

@@ -17,6 +17,7 @@
     "test:unit": "vitest run --config vitest.config.mjs",
     "test:smoke": "vitest run --config vitest.smoke.config.mjs",
     "test:browser": "playwright test",
+    "test:maps": "playwright test --config playwright.live.config.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:bundle:update": "node scripts/check-bundle-budget.mjs --update",
     "check:csp": "node scripts/check-csp-nonce.mjs",

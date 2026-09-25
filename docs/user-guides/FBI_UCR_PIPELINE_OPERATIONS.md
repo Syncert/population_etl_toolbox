@@ -1,14 +1,47 @@
 # Operating the FBI UCR pipeline
 
 The `fbi_ucr_ingest` DAG captures and publishes the registered FBI Crime Data
-Explorer (CDE) summarized-offense product. It runs weekly at 10:00 UTC Monday
-and skips the release when the provider's UCR refresh date is unchanged.
+Explorer (CDE) summarized-offense products, one capture, replay, and publish
+chain per product. It runs weekly at 10:00 UTC Monday and skips a product's
+release when the provider's UCR refresh date is unchanged since that product's
+last **published** release of the same period window and subject scope. A
+release that was captured but never published, or one captured for a different
+window or scope, is not a previous release, so the next run captures it again
+rather than leaving it unpublished.
 
-The first registered product is `summarized_violent_crime`: violent-crime
-offenses and clearances for January 2023 through June 2023, at the
-provider-published national level, the provider-published Wisconsin state
-level, and six reviewed Wisconsin agencies covering the countywide, municipal,
-multi-county, campus, tribal, and state-police jurisdiction classes.
+Ten products are registered, one per documented summarized offense, each its
+own Data Catalog dataset:
+
+| Product | Offense code |
+| --- | --- |
+| `summarized_violent_crime` | `V` |
+| `summarized_assault` | `ASS` |
+| `summarized_burglary` | `BUR` |
+| `summarized_larceny` | `LAR` |
+| `summarized_motor_vehicle_theft` | `MVT` |
+| `summarized_homicide` | `HOM` |
+| `summarized_rape` | `RPE` |
+| `summarized_robbery` | `ROB` |
+| `summarized_arson` | `ARS` |
+| `summarized_property_crime` | `P` |
+
+Every product shares one scope: offenses and clearances, as counts and as rates,
+for January 1990 through June 2023, at the provider-published national level,
+the provider-published level of every one of the 52 documented states and
+territories (the 50 states, the District of Columbia, and the U.S. Virgin
+Islands; `FS` and `GM` are documented codes with no Census geography and stay
+unsupported), and six reviewed Wisconsin agencies covering the countywide,
+municipal, multi-county, campus, tribal, and state-police jurisdiction classes.
+
+A run makes 600 requests: per product, 1 national, 52 state, and 6 agency
+observations plus Wisconsin's Agency directory. Only the reviewed agencies'
+state needs a directory, because a state subject is labelled from the registered
+state contract, never from the directory.
+
+`V` (violent crime) and `P` (property crime) are provider-published aggregates.
+They are not the sum of the component offense products and must not be
+reconciled against one: agencies report unevenly, property crime excludes
+arson, and the rape definition changed in 2013.
 
 ## What the published data does and does not say
 
@@ -25,6 +58,10 @@ multi-county, campus, tribal, and state-police jurisdiction classes.
 - Offenses and clearances are different counted entities, and absolute totals
   and rates are different measure forms. None of the four is derived from
   another, and rates are never added.
+- The provider publishes an agency rate of `-1` where the agency's covered
+  population is zero, so no rate exists. Those values are quarantined in
+  `silver_fbi.slice_quarantine` as `negative_measure_value`; they are never
+  published, and never rewritten to zero.
 
 ## Deployment prerequisites
 
@@ -196,4 +233,4 @@ registry derives from the agency scope automatically.
 Arrest, expanded homicide, hate crime, expanded property, NIBRS incident
 microdata, and the estimate endpoints are separate dataset contracts. They
 share the CDE route pattern but not the counted entity, the reporting basis, or
-the completeness rule, so they must not be added to this product.
+the completeness rule, so they must not be added to these products.

@@ -94,7 +94,12 @@ import {
   countObservationPeriods,
   describeStratification,
   dimensionsCarriedBy,
+  dimensionSelectionsForLink,
+  dimensionSelectionsFromLink,
+  effectiveDimensionSelections,
+  mapRows,
   newestPerGeography,
+  seriesDimensionNames,
   normalizeObservationRows,
   observationDimensionLabel,
   observationDimensionOptions,
@@ -405,6 +410,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => scopedDimensionFilters(activeSource, observationScope),
     [activeSource, observationScope],
   );
+  // What every read uses: the reader's choices, and the source's declared
+  // starting value for each filter they have not touched (API-157) -- USDA
+  // NASS starts on the final `YEAR` value rather than one of its forecasts.
+  const effectiveSelections = useMemo(
+    () => effectiveDimensionSelections(activeSource, dimensionSelections),
+    [activeSource, dimensionSelections],
+  );
   // The file carries every declared dimension, plus any filterable name the
   // declaration does not list, so neither list can drop a column the other
   // would have written.
@@ -430,7 +442,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // Keyed by value so the observation effect re-runs on a real selection
   // change rather than on every render.
   const dimensionKey = JSON.stringify(
-    dimensionFilters.map((name) => [name, dimensionSelections[name] || ""]),
+    dimensionFilters.map((name) => [name, effectiveSelections[name] || ""]),
   );
   const latestQuery = useMemo(
     () => ({
@@ -465,21 +477,27 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // published release answers, and colouring the join would show whichever
   // release sorted last as the value.
   const seriesDimensions = useMemo(
-    () => stratificationDimensions(dimensionFilters, observationScope),
-    [dimensionFilters, observationScope],
-  );
-  const stratification = useMemo(
-    () => describeStratification(observations, seriesDimensions),
-    [observations, seriesDimensions],
+    () => seriesDimensionNames(activeSource, observationScope),
+    [activeSource, observationScope],
   );
   // The map colours one value per polygon. A latest publication that is a
   // series (several periods per geography) is reduced to each geography's
   // newest period, the same ranking the API's distribution bins apply, so
   // the legend counts and the coloured polygons describe the same rows.
-  const mappableObservations = useMemo(
-    () => (stratification.stratified ? [] : newestPerGeography(observations)),
-    [observations, stratification.stratified],
+  // `mapRows` is the one definition of that step; the live map sweep grades
+  // it against the rows (WEB-118).
+  const mapView = useMemo(
+    () => mapRows(activeSource, observations, observationScope),
+    [activeSource, observations, observationScope],
   );
+  const stratification = mapView.stratification;
+  // Only a filter the source declares can narrow the answer; naming a
+  // dimension the reader cannot select would send them looking for a control
+  // that does not exist.
+  const narrowableDimensions = stratification.varyingDimensions.filter((name) =>
+    dimensionFilters.includes(name),
+  );
+  const mappableObservations = mapView.mappable;
   // A source that publishes a participation basis is shown it; one that does
   // not grows no empty column. Read from the loaded rows, not from a list of
   // sources (WEB-051).
@@ -821,9 +839,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             ...source.dimensionFilters,
             ...source.neutralDimensionFilters,
           ]);
-          const carried = Object.entries(requested.dimensions).filter(
-            ([name, value]) => declared.has(name) && value,
-          );
+          // `*` is a reader's explicit "all" on a filter the source defaults,
+          // carried as an empty selection so the default does not reapply.
+          const carried = Object.entries(
+            dimensionSelectionsFromLink(requested.dimensions),
+          ).filter(([name, value]) => declared.has(name) && typeof value === "string");
           if (carried.length > 0) {
             setDimensionSelections(Object.fromEntries(carried));
           }
@@ -1263,7 +1283,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           limit: String(HISTORY_PAGE_SIZE),
           scope: observationScope,
           release: selectedRelease,
-          dimensions: dimensionSelections,
+          dimensions: effectiveSelections,
         });
         const pages = await fetchCollectionPages<Observation>(resource, {
           params,
@@ -1289,7 +1309,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             metricCode: selectedMetric,
             geoId: selectedGeoId,
             limit: String(HISTORY_PAGE_SIZE),
-            dimensions: dimensionSelections,
+            dimensions: effectiveSelections,
           });
           const released = settled
             ? settled
@@ -1298,7 +1318,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 geoId: selectedGeoId,
                 limit: String(HISTORY_PAGE_SIZE),
                 scope: SCOPE_AS_RELEASED,
-                dimensions: dimensionSelections,
+                dimensions: effectiveSelections,
               });
           const releasedPages = await fetchCollectionPages<Observation>(released.resource, {
             params: released.params,
@@ -1347,7 +1367,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     selectedMetric,
     selectedGeoId,
     activeSource,
-    dimensionSelections,
+    effectiveSelections,
     observationScope,
     selectedRelease,
   ]);
@@ -1868,7 +1888,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         release: selectedRelease,
         // Under the source's own declared filter names, which is what the
         // saved document records too, so the two records of one view agree.
-        dimensions: dimensionSelections,
+        dimensions: dimensionSelectionsForLink(activeSource, dimensionSelections),
         tablePage,
       },
       {
@@ -2309,7 +2329,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     id={`dimension-${name}`}
                     className="select"
                     data-testid={`dimension-select-${name}`}
-                    value={dimensionSelections[name] || ""}
+                    value={effectiveSelections[name] || ""}
                     onChange={(event) =>
                       setDimensionSelections((current) => ({
                         ...current,
@@ -2396,9 +2416,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 ? ` (${stratification.varyingDimensions.join(", ")})`
                 : ""}
               . The map and history chart stay blank rather than showing one of them
-              as the value; narrow the{" "}
-              {stratification.varyingDimensions.join(", ") || "source"} filter to chart
-              a single series.
+              as the value;{" "}
+              {narrowableDimensions.length > 0
+                ? `narrow the ${narrowableDimensions.join(", ")} filter to chart a single series.`
+                : stratification.varyingDimensions.length > 0
+                  ? "the source declares no filter that separates them, so every row stays in the table and the export."
+                  : "no published dimension separates them, so every row stays in the table and the export."}
             </p>
           ) : null}
           {!mapSupported ? (

@@ -46,10 +46,14 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**0 plans.**
+**4 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`browser-tier-cold-dev-server`](to_do/THE_BROWSER_TIER_HOLDS_UNDER_A_COLD_DEV_SERVER_PLAN.md) | low | `browser` | -- |
+| [`full-map-sweep-scheduled`](to_do/EVERY_METRIC_MAP_IS_SWEPT_ON_A_SCHEDULE_PLAN.md) | low | none | `every-map-proves-it-displays-its-data` |
+| [`no-value-metric-not-mapped`](to_do/A_METRIC_WITH_NO_PUBLISHED_VALUE_IS_NOT_OFFERED_A_MAP_PLAN.md) | medium | `browser` | `maps-offer-only-what-a-source-publishes` |
+| [`selected-geography-shows-painted-period`](to_do/THE_SELECTED_GEOGRAPHY_SHOWS_THE_PERIOD_THE_MAP_PAINTS_PLAN.md) | low | `browser` | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
@@ -73,11 +77,12 @@ claiming it, so it stays in `to_do/` until an operator can answer those three
 questions. The classification derives from the `verify` block and cannot see
 that distinction; this paragraph is where it is recorded.
 
-**1 plans.**
+**2 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
+| [`map-paint-check-in-ci`](to_do/THE_MAP_PAINT_CHECK_RUNS_IN_CI_PLAN.md) | medium | Every push runs the paint tier against a composed stack: the web container, API, Martin and PostGIS on one origin, with a GL-capable Chromium. |
 
 
 ## 3. Needs a machine with the warehouse up
@@ -91,13 +96,15 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**3 plans.**
+**5 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`map-shows-any-published-period`](to_do/A_MAP_CAN_SHOW_ANY_PUBLISHED_PERIOD_PLAN.md) | medium | `browser`, `postgres` | `selected-geography-shows-painted-period` |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
-| [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
+| [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
+| [`time-windows-and-rollups`](to_do/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
 
 
 ## Notes on the cloud container

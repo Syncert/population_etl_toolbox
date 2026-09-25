@@ -48,6 +48,12 @@ BROWSER = "browser"
 #: reader can find it, and the environment it needs. These are declared rather
 #: than derived because they are prose.
 CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
+    "map-paint-check-in-ci": (
+        COMPOSE,
+        "Every push runs the paint tier against a composed stack: the web "
+        "container, API, Martin and PostGIS on one origin, with a GL-capable "
+        "Chromium.",
+    ),
     "deployment-smoke-target": (
         COMPOSE,
         "`DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- "

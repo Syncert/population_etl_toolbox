@@ -1,4 +1,4 @@
-.PHONY: bootstrap bootstrap-python bootstrap-web deploy-init deploy-up deploy-down deploy-plan test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-compose-smoke test-linux test-linux-build
+.PHONY: bootstrap bootstrap-python bootstrap-web deploy-init deploy-up deploy-down deploy-plan test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-web-maps test-compose-smoke test-linux test-linux-build
 
 # The one command that turns a fresh clone into a checkout that can run the
 # checks it is graded by. `pyproject.toml`'s `local` extra is already exactly
@@ -203,6 +203,13 @@ test-web-smoke:
 	  docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.smoke.yml up --detach --wait --build postgres martin api proxy; \
 	  SMOKE_BASE_URL=http://127.0.0.1:33001 SMOKE_REQUIRED=1 \
 	  npm --prefix apps/web run test:smoke
+
+# The explorer map checks (WEB-118) against a stack already running with the
+# web app, API, and tiles on one origin; the local development stack is
+# http://localhost:3001. The composed web-smoke stack serves no web app.
+test-web-maps:
+	SMOKE_BASE_URL=$${SMOKE_BASE_URL:-http://localhost:3001} SMOKE_REQUIRED=1 	  npm --prefix apps/web run test:smoke -- ../../tests/frontend/smoke/map-display.smoke.test.js
+	SMOKE_BASE_URL=$${SMOKE_BASE_URL:-http://localhost:3001} 	  npm --prefix apps/web run test:maps
 
 test-compose-smoke:
 	@set -e; \

@@ -98,6 +98,7 @@ OBSERVATION_FILTER_BOUNDS: dict[str, FilterBound] = {
     "adjustment_status": FilterBound(max_length=50),
     "domain_desc": FilterBound(max_length=200),
     "domaincat_desc": FilterBound(max_length=200),
+    "reference_period_desc": FilterBound(max_length=200),
     "subject_type": FilterBound(max_length=50),
     "subject_code": FilterBound(max_length=50),
     "year_from": FilterBound(minimum=1700, maximum=2200),

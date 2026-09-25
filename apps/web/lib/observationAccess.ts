@@ -889,30 +889,78 @@ export interface ObservationStratification {
  */
 export function describeStratification(
   rows: ObservationRow[] | null | undefined,
-  dimensionFilters: string[] | null | undefined,
+  dimensionNames: string[] | null | undefined,
 ): ObservationStratification {
-  const names = (dimensionFilters || []).filter(Boolean);
+  const names = [...new Set((dimensionNames || []).filter(Boolean))];
   const items = Array.isArray(rows) ? rows : [];
-  if (names.length === 0 || items.length === 0) {
-    return { seriesCount: items.length === 0 ? 0 : 1, stratified: false, varyingDimensions: [] };
+  if (items.length === 0) {
+    return { seriesCount: 0, stratified: false, varyingDimensions: [] };
   }
 
-  const signatures = new Set<string>();
-  const valuesByName = new Map<string, Set<string>>(names.map((name) => [name, new Set()]));
+  // Rows compete for one polygon, or one point on a line, only when they
+  // share a geography *and* a period. Grouping on both is what keeps two
+  // honest cases apart from the stratified one:
+  //   - a dimension whose value only names the geography (FBI UCR's
+  //     `subject_code` is the state at the state grain) differs between
+  //     polygons and is still one series per polygon (WEB-117);
+  //   - a dimension that moves with the period (a published `period` label)
+  //     differs along a series and is still one series.
+  // Every published dimension is a candidate for naming what separates the
+  // competing rows, not only the filterable ones: USDA NASS publishes a
+  // year's final value beside its August and October forecasts, separated by
+  // `reference_period_desc`, which no filter declares -- and a check limited
+  // to filters coloured whichever of the three arrived last (WEB-118).
+  const groups = new Map<string, ObservationRow[]>();
   for (const row of items) {
-    const signature: string[] = [];
-    for (const name of names) {
-      const value = observationDimensionValue(row, name);
-      signature.push(`${name}=${value}`);
-      valuesByName.get(name)!.add(value);
+    const key = [
+      String(row?.geo_id ?? ""),
+      String(row?.period_start ?? ""),
+      String(row?.period_end ?? ""),
+    ].join(" ");
+    const group = groups.get(key) || [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  let seriesCount = 0;
+  const varying = new Set<string>();
+  // An unpinned as-released read is the one axis that is not a period: every
+  // published release answers, each with its own vintage of a geography's
+  // series, and colouring the newest period would silently pick a release.
+  // So several releases inside one geography are several series whatever
+  // periods they cover.
+  if (names.includes(RELEASE_DIMENSION)) {
+    const releasesByGeography = new Map<string, Set<string>>();
+    for (const row of items) {
+      const geography = String(row?.geo_id ?? "");
+      const releases = releasesByGeography.get(geography) || new Set<string>();
+      releases.add(observationDimensionValue(row, RELEASE_DIMENSION));
+      releasesByGeography.set(geography, releases);
     }
-    signatures.add(signature.join("|"));
+    for (const releases of releasesByGeography.values()) {
+      if (releases.size > 1) {
+        seriesCount = Math.max(seriesCount, releases.size);
+        varying.add(RELEASE_DIMENSION);
+      }
+    }
+  }
+  for (const group of groups.values()) {
+    seriesCount = Math.max(seriesCount, group.length);
+    if (group.length < 2) {
+      continue;
+    }
+    for (const name of names) {
+      const values = new Set(group.map((row) => observationDimensionValue(row, name)));
+      if (values.size > 1) {
+        varying.add(name);
+      }
+    }
   }
 
   return {
-    seriesCount: signatures.size,
-    stratified: signatures.size > 1,
-    varyingDimensions: names.filter((name) => (valuesByName.get(name)?.size || 0) > 1),
+    seriesCount,
+    stratified: seriesCount > 1,
+    varyingDimensions: names.filter((name) => varying.has(name)),
   };
 }
 
@@ -969,3 +1017,108 @@ export function stateScopeNote({
  * once here keeps the six pickers from drifting apart on it.
  */
 export const ACTIVE_GEOGRAPHIES_ONLY = { active_only: "true" } as const;
+
+/**
+ * Every dimension that can tell two rows of one geography and period apart:
+ * the scope's filterable dimensions, the source's published ones, and the
+ * release under an as-released read.
+ */
+export function seriesDimensionNames(
+  source: ExplorerSource | null | undefined,
+  scope: ObservationScope,
+): string[] {
+  return stratificationDimensions(
+    [
+      ...new Set([
+        ...scopedDimensionFilters(source, scope),
+        ...(source?.publishedDimensions || []),
+      ]),
+    ],
+    scope,
+  );
+}
+
+export interface MapRows {
+  /** Whether the loaded rows are one series per geography, and why not. */
+  stratification: ObservationStratification;
+  /** One row per geography -- its newest period -- or none when stratified. */
+  mappable: ObservationRow[];
+}
+
+/**
+ * The rows the explorer map colours, from the rows the latest read loaded.
+ *
+ * The one definition of that step, used by the explorer page and by the live
+ * map-display sweep (WEB-118). The sweep grades this function against the
+ * rows themselves, so a map that declines or empties itself has to be right
+ * about why; a copy of the logic in the sweep would agree with the page's
+ * mistake instead of catching it.
+ */
+export function mapRows(
+  source: ExplorerSource | null | undefined,
+  rows: ObservationRow[] | null | undefined,
+  scope: ObservationScope,
+): MapRows {
+  const stratification = describeStratification(rows, seriesDimensionNames(source, scope));
+  return {
+    stratification,
+    mappable: stratification.stratified ? [] : newestPerGeography(rows),
+  };
+}
+
+/**
+ * The link token for "every published value" on a filter the source gives a
+ * default. An empty selection cannot travel in a link -- the serializer drops
+ * it -- and reopening would then apply the default, so a reader who chose to
+ * see every reference period would get the final value back instead.
+ */
+export const ALL_DIMENSION_VALUES = "*";
+
+/**
+ * The dimension filters a read uses: the reader's own choices, and the
+ * source's declared default (`filterDefaults`, API-157) for every filter the
+ * reader has not touched. A choice of "all" is an empty string held under the
+ * name, which is what keeps it from falling back to the default.
+ */
+export function effectiveDimensionSelections(
+  source: ExplorerSource | null | undefined,
+  selections: Record<string, string> | null | undefined,
+): Record<string, string> {
+  const chosen = selections || {};
+  const effective: Record<string, string> = {};
+  for (const [name, value] of Object.entries(source?.filterDefaults || {})) {
+    if (!Object.prototype.hasOwnProperty.call(chosen, name)) {
+      effective[name] = value;
+    }
+  }
+  return { ...effective, ...chosen };
+}
+
+/** Selections as a link or saved view records them: "all" on a defaulted filter is `*`. */
+export function dimensionSelectionsForLink(
+  source: ExplorerSource | null | undefined,
+  selections: Record<string, string> | null | undefined,
+): Record<string, string> {
+  const defaults = source?.filterDefaults || {};
+  const recorded: Record<string, string> = {};
+  for (const [name, value] of Object.entries(selections || {})) {
+    if (value) {
+      recorded[name] = value;
+    } else if (Object.prototype.hasOwnProperty.call(defaults, name)) {
+      recorded[name] = ALL_DIMENSION_VALUES;
+    }
+  }
+  return recorded;
+}
+
+/** Selections read back from a link: `*` is the reader's explicit "all". */
+export function dimensionSelectionsFromLink(
+  values: Record<string, string> | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(values || {}).map(([name, value]) => [
+      name,
+      value === ALL_DIMENSION_VALUES ? "" : value,
+    ]),
+  );
+}

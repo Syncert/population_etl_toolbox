@@ -36,8 +36,14 @@ SELECT 'CDC'::TEXT AS source_code,
 FROM (
     SELECT measure.asset_id, measure.measure_id, measure.value_type_id,
            measure.measure_label, measure.unit,
-           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(fact.geo_type)
-                     ORDER BY gold_glossary.geo_grain(fact.geo_type))::TEXT[]
+           -- A grain is one a value is published at: a grain where every row is
+           -- withheld (Census publishes B24114 nationally only) is no map to offer.
+           COALESCE(
+               ARRAY_AGG(DISTINCT gold_glossary.geo_grain(fact.geo_type)
+                         ORDER BY gold_glossary.geo_grain(fact.geo_type))
+                   FILTER (WHERE fact.value IS NOT NULL),
+               ARRAY[]::TEXT[]
+           )::TEXT[]
                AS valid_geo_grains
     FROM silver_cdc.dim_measure AS measure
     JOIN silver_cdc.fact_health_observation AS fact

@@ -43,6 +43,7 @@
         "seasonal_adjustment_status",
         "series_id"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "county_fips",
         "geo_id",
@@ -134,6 +135,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",
@@ -203,6 +205,7 @@
         "total_population",
         "value_type_label"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "adjustment_status",
         "geo_id",
@@ -242,6 +245,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",
@@ -275,6 +279,7 @@
         "dataset_code",
         "variable_code"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "county_fips",
         "geo_id",
@@ -366,6 +371,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",
@@ -422,6 +428,7 @@
         "summary_level",
         "value_source"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "geo_id",
         "geo_level",
@@ -490,6 +497,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",
@@ -539,7 +547,16 @@
     },
     {
       "datasets": [
-        "summarized_violent_crime"
+        "summarized_violent_crime",
+        "summarized_assault",
+        "summarized_burglary",
+        "summarized_larceny",
+        "summarized_motor_vehicle_theft",
+        "summarized_homicide",
+        "summarized_rape",
+        "summarized_robbery",
+        "summarized_arson",
+        "summarized_property_crime"
       ],
       "display_name": "Federal Bureau of Investigation Uniform Crime Reporting Program",
       "observation_dimensions": [
@@ -556,6 +573,7 @@
         "subject_type",
         "ucr_program"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "geo_id",
         "geo_level",
@@ -578,6 +596,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",
@@ -611,6 +630,7 @@
         "seasonal_adjustment_status",
         "series_id"
       ],
+      "observation_filter_defaults": {},
       "observation_filters": [
         "county_fips",
         "geo_id",
@@ -702,6 +722,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",
@@ -774,12 +795,16 @@
         "util_practice_desc",
         "week_ending"
       ],
+      "observation_filter_defaults": {
+        "reference_period_desc": "YEAR"
+      },
       "observation_filters": [
         "county_fips",
         "domain_desc",
         "domaincat_desc",
         "geo_id",
         "geo_level",
+        "reference_period_desc",
         "state_fips",
         "year_from",
         "year_to"
@@ -798,6 +823,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "reference_period_desc",
             "release",
             "scope",
             "state_fips",

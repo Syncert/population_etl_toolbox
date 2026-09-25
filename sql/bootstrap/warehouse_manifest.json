@@ -202,6 +202,11 @@
       "path": "sql/migrations/028_serving_publishes_a_withheld_value.sql"
     },
     {
+      "id": "migration-029",
+      "phase": "source-fix",
+      "path": "sql/migrations/029_nass_combined_counties_are_not_counties.sql"
+    },
+    {
       "id": "glossary-schema",
       "phase": "glossary",
       "path": "sql/gold_contract/002_gold_glossary_schema.sql"

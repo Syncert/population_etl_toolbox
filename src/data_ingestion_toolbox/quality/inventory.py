@@ -2152,11 +2152,25 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "The current-geography projections expose exactly one current version "
         "per entity.",
         ("silver_ref.dim_geo", "silver_ref.dim_geo_current"),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the current-geography projections select one "
-            "version by construction (DISTINCT ON), and no executor confirms "
-            "the projections agree with that intent after a reload."
+            "Measured by `current_geography_projection`, in both directions. "
+            "The half that earns the rule is loss: `dim_geo_current` reaches "
+            "its attribute choice through an inner join, so an entity with no "
+            "version row leaves the projection with no trace and no count "
+            "anywhere goes red. The duplicate half is a guard rather than a "
+            "live defect -- and not for the reason the earlier note gave. It "
+            "credited `DISTINCT ON`, which covers the attribute and geometry "
+            "choices but not the state lookup on `(geo_type = 'state', "
+            "state_fips)`; what actually prevents that fan-out is "
+            "`dim_geo_entity_check1` forcing `geo_id = 'state:' || "
+            "state_fips` together with `geo_id` being UNIQUE. Relax that "
+            "CHECK and every geography in the affected state is served twice, "
+            "which is what the duplicate count is kept for. The rule also "
+            "holds `dim_geo`'s row count against `dim_geo_current`'s -- equal "
+            "today because one projects the other, which is what makes a "
+            "future divergence between two names consumers use "
+            "interchangeably visible."
         ),
     ),
     _rule(
@@ -2331,15 +2345,31 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "referential_integrity",
         "Every published ACS observation resolves its variable metadata and geography.",
         (
+            "silver_census.fact_demographics",
             "gold_census.fact_acs_observation",
             "gold_census.dim_acs_variable",
             "silver_ref.geography_resolution",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the serving refresh joins variable metadata and "
-            "geography, so an unresolved row is dropped rather than reported; "
-            "nothing counts what was dropped."
+            "Measured by `acs_published_row_resolution`, in the two "
+            "directions the serving view actually admits. "
+            "`gold_census.fact_acs_observation` is "
+            "`silver_census.fact_demographics` inner joined to "
+            "`dim_acs_variable`, so a published row always resolves its "
+            "variable -- the join is the resolution -- and a silver row whose "
+            "variable the dimension does not carry is not published at all. "
+            "It was captured, parsed, stored, and silently declined, and "
+            "nothing counted it. `DQ-ACS-007` cannot: its published side "
+            "applies the same inner join, so such a row is absent from both "
+            "sides of its comparison and its groups agree while the "
+            "observation is gone. "
+            "The geography half is the opposite shape. "
+            "`fact_demographics.geo_sk` is NOT NULL with a foreign key, so "
+            "the database guarantees the row resolved at silver; the view "
+            "then publishes `geo_id`, a different, nullable, unconstrained "
+            "column, so a published observation can carry no geography or one "
+            "disagreeing with the entity it resolved to."
         ),
     ),
     _rule(
@@ -2610,11 +2640,22 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fred.observation_revision",
             "silver_fred.fact_economic_indicators",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the missing marker stays distinct from zero through "
-            "`is_missing`, and no executor confirms every configured series has "
-            "metadata and exactly one domain owner."
+            "Measured by `fred_missing_marker_and_series_ownership`. The zero "
+            "half is an `AGENTS.md` invariant -- never silently convert a "
+            "missing value to zero -- and FRED publishes its missing marker as "
+            '`"."` in a numeric field, the shape that becomes `0` when a '
+            "parser is careless. "
+            "`fact_economic_indicators_published_value_check` already refuses "
+            "one direction (a `valid` row carries a value) and not the other: "
+            "a row marked `missing` carrying a number anyway, which is what a "
+            "zero-filling parser produces. That, and any disagreement between "
+            "`is_missing` and `value_status` -- two columns recording one fact "
+            "-- are counted. The ownership half counts a series appearing "
+            "under more than one domain, and a series in the fact with no "
+            "`raw_fred.fred_series` row, whose units and frequency nobody can "
+            "state."
         ),
     ),
     _rule(
@@ -2623,12 +2664,29 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "temporal_integrity",
         "Observation dates validate against each series' frequency and "
         "source observation range.",
-        ("silver_fred.fact_economic_indicators", "gold_fred.dim_fred_series"),
-        automation="unimplemented",
+        (
+            "silver_fred.fact_economic_indicators",
+            "gold_fred.dim_fred_series",
+            "raw_fred.fred_series",
+        ),
+        automation="automated",
         automation_note=(
-            "Unimplemented: observation dates are not validated against each "
-            "series' frequency and source range, so a date outside the "
-            "provider's range is served as published."
+            "Measured by `fred_observation_dates_within_the_published_range`, "
+            "in the two halves the summary names. The range comes from "
+            "`raw_fred.fred_series`, which is where FRED's own "
+            "`observation_start`/`observation_end` live -- added to this "
+            "rule's objects because it is what the summary's \"source "
+            'observation range" refers to. Both bounds are nullable and a '
+            "null narrows nothing, so each side is tested only where the "
+            "provider stated it. "
+            "The frequency half checks period-start alignment for `Monthly`, "
+            "`Quarterly`, `Semiannual` and `Annual`, and deliberately "
+            "constrains neither daily nor weekly series: a weekly series is "
+            "dated by its own week-ending day, which varies per series, so a "
+            "rule there would refuse dates FRED legitimately publishes. A "
+            "frequency string in neither list is reported as unrecognised "
+            "rather than skipped, so the arm cannot quietly come to cover "
+            "nothing if a label changes."
         ),
     ),
     _rule(
@@ -2910,12 +2968,30 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "conformance",
         "CDC publisher exports preserve measure identity and the annual time grain.",
-        ("gold_cdc.measure_export", "gold_cdc.metric_publisher"),
-        automation="unimplemented",
+        (
+            "gold_cdc.measure_export",
+            "gold_cdc.metric_publisher",
+            "gold_cdc.health_observation",
+        ),
+        automation="automated",
         automation_note=(
-            "Unimplemented: no executor confirms the CDC publisher exports "
-            "preserve measure identity and the annual time grain; migration 014 "
-            "fixed the shape and nothing measures it."
+            "Measured by `cdc_publisher_export_conformance`, and deliberately "
+            "not by reading the publisher's own literal back: "
+            "`valid_time_grains` is written `ARRAY['ANNUAL']` directly in "
+            "`gold_cdc.metric_publisher`, so a rule reading it would be "
+            "agreeing with a constant. "
+            "The identity arm reads the export instead. `source_object_key` "
+            "is `asset_id || ':' || measure_id || ':' || value_type_id`, so a "
+            "component containing that delimiter makes the key ambiguous -- "
+            "`a:b` + `c` and `a` + `b:c` compose to the same string -- and "
+            "nothing downstream can take it apart; the composed key is held "
+            "unique as well, because a collision arriving any other way has "
+            "the same consequence. "
+            "The grain arm asks whether the data supports the claim: "
+            "`gold_cdc.health_observation` carries `period_start` and "
+            "`period_end` as integer years, so an annual observation is one "
+            "where they are equal, and a row spanning more contradicts the "
+            "`ANNUAL` every consumer is promised."
         ),
     ),
     # -- FBI UCR -----------------------------------------------------------

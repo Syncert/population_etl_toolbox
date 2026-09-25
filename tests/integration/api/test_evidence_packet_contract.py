@@ -25,6 +25,7 @@ from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
 from tests.support.postgres import PostgresTestConfig
+from tests.support.app_accounts import create_account
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 
@@ -59,10 +60,8 @@ def packet_api(
                 """,
                 (metric_code, metric_code.split(":", 1)[1]),
             )
-            cursor.executemany(
-                "INSERT INTO app_api.user_account (display_label, token_sha256) VALUES (%s, %s)",
-                [(label, hash_token(token)), (other_label, hash_token(other_token))],
-            )
+            create_account(cursor, label, token)
+            create_account(cursor, other_label, other_token)
         writer.commit()
     finally:
         writer.close()
@@ -321,7 +320,9 @@ def test_account_deletion_cascades_and_names_are_unique_per_owner(
     try:
         with remover.cursor() as cursor:
             cursor.execute(
-                "DELETE FROM app_api.user_account WHERE token_sha256 = %s",
+                "DELETE FROM app_api.user_account WHERE user_account_id IN ("
+                " SELECT user_account_id FROM app_api.account_credential"
+                " WHERE token_sha256 = %s)",
                 (hash_token(other_token),),
             )
             cursor.execute(

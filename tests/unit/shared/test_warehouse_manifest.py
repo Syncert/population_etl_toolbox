@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.utility.warehouse_manifest import manifest_assets
+
 pytestmark = pytest.mark.unit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -359,3 +361,22 @@ def test_the_declared_partition_range_still_has_room() -> None:
         f"vintage past the range lands in the default partition, which the "
         f"year refresh never truncates"
     )
+
+
+def test_every_manifest_asset_is_checked_out_with_lf_line_endings() -> None:
+    """Covers: DB-049 — the ledger hash means the same bytes on every host.
+
+    The applier records each asset's sha256 over its bytes. A Windows checkout
+    with `core.autocrlf` converted the SQL to CRLF, so every step a Linux host
+    applied read as drifted there, and a step applied from Windows recorded a
+    hash Linux would call drift: on the development warehouse `--check`
+    reported 027 and 028 drifted when both were applied and identical.
+    `.gitattributes` pins `*.sql` to LF; this is what fails if it stops.
+    """
+    offenders = [
+        asset.relative_path
+        for asset in manifest_assets()
+        if b"\r\n" in asset.path.read_bytes()
+    ]
+
+    assert offenders == []

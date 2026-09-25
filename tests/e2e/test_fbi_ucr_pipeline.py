@@ -13,12 +13,14 @@ county filter is not a county total, and a rate is not an absolute count.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from decimal import Decimal
 
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.fbi_ucr.registry import ALL_PRODUCTS
 from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from tests.support import fbi_release
@@ -76,6 +78,8 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         FBI UCR's first observation surface: a glossary-discovered metric
         answers with exact values, release identities, participation coverage,
         and byte-identical JSON on repeat.
+    Covers: ETL-052 — every registered offense reaches the neutral catalog and
+        observation resource as its own dataset with its own provider values.
     """
     factory = fbi_warehouse
 
@@ -412,3 +416,57 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         """,
         (revised.release_key,),
     ) == [(PERIODS,)]
+
+    # Every other registered offense reaches the same neutral surface as its
+    # own dataset: its own four measures, its own provider values, and no
+    # series borrowed from another offense.
+    for product in ALL_PRODUCTS:
+        if product.product_id == PRODUCT.product_id:
+            continue
+        product = fbi_release.fixture_scoped(product)
+        release = fbi_release.persist_fixture_release(factory, product=product)
+        transformed, published = fbi_release.run_pipeline(factory, release, product)
+        assert published == transformed > 0
+    emit_latest_publisher_ready(factory, publisher_schema=PUBLISHER_SCHEMA)
+    with real_api_client() as client:
+        harvested_all = harvest_publisher(factory, Publisher(PUBLISHER_SCHEMA))
+        assert harvested_all == 4 * len(ALL_PRODUCTS)
+        catalog_all = client.get(
+            "/api/v1/catalog/metrics",
+            params={"source_code": SOURCE_CODE, "limit": 100},
+        ).json()
+        assert catalog_all["total"] == harvested_all
+        fbi_entry = next(
+            item
+            for item in client.get("/api/v1/catalog/capabilities").json()["items"]
+            if item["source_code"] == SOURCE_CODE
+        )
+        assert fbi_entry["datasets"] == [product.product_id for product in ALL_PRODUCTS]
+        for product in ALL_PRODUCTS:
+            if product.product_id == PRODUCT.product_id:
+                continue
+            code = (
+                f"{SOURCE_CODE}:{product.product_id}:"
+                f"{product.measure_id('offense', 'absolute_total')}"
+            )
+            response = client.get(
+                "/api/v1/observations",
+                params={
+                    "metric_code": code,
+                    "subject_type": "national",
+                    "year_from": 2023,
+                    "year_to": 2023,
+                },
+            )
+            assert response.status_code == 200
+            january = {
+                item["dimensions"]["period"]: item for item in response.json()["items"]
+            }["01-2023"]
+            published_value = json.loads(
+                (
+                    fbi_release.FIXTURE_DIR
+                    / f"summarized_national_{product.offense_code}.json"
+                ).read_text(encoding="utf-8")
+            )["offenses"]["actuals"]["United States Offenses"]["01-2023"]
+            assert Decimal(january["value"]) == Decimal(str(published_value))
+            assert january["dimensions"]["offense_code"] == product.offense_code

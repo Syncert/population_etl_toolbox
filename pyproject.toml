@@ -28,6 +28,14 @@ airflow = [
 ]
 api = [
   "fastapi>=0.111,<1.0",
+  # The `crypto` extra, not bare PyJWT (ADR-0005). Verifying a provider's ID
+  # token means RS256, and PyJWT implements the asymmetric algorithms only
+  # when `cryptography` is installed -- without it `RS256` is simply absent
+  # from its algorithm registry and every sign-in fails at verification, not
+  # at import. PyJWT was already resolving into this lock as a transitive
+  # dependency of `redis`, which is not a dependency anybody declared and
+  # could vanish in one of its minor releases.
+  "PyJWT[crypto]>=2.8,<3.0",
   "redis>=5.0,<6.0",
   "uvicorn[standard]>=0.30,<1.0",
   "sqlalchemy>=2.0.48,<3.0",

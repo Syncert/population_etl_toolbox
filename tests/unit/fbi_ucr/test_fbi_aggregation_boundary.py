@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from data_ingestion_toolbox.fbi_ucr.registry import (
+    ALL_PRODUCTS,
+    SUMMARIZED_OFFENSES,
     FbiSubject,
-    SUMMARIZED_VIOLENT_CRIME,
+    FbiUcrProduct,
 )
 
 pytestmark = pytest.mark.unit
@@ -104,17 +106,49 @@ def test_no_forbidden_area_total_label_is_published() -> None:
     assert offenders == []
 
 
-def test_national_and_state_totals_are_read_only_from_their_endpoints() -> None:
+@pytest.mark.parametrize("product", ALL_PRODUCTS, ids=lambda item: item.product_id)
+def test_national_and_state_totals_are_read_only_from_their_endpoints(
+    product: FbiUcrProduct,
+) -> None:
     """Covers: ETL-042 — provider totals are never reconstructed locally."""
     transform = (PACKAGE / "silver_fbi/transform.py").read_text(encoding="utf-8")
+    code = product.offense_code
 
-    assert (
-        SUMMARIZED_VIOLENT_CRIME.observation_endpoint(FbiSubject("national", "US"))
-        == "/summarized/national/V"
+    assert product.observation_endpoint(FbiSubject("national", "US")) == (
+        f"/summarized/national/{code}"
     )
-    assert (
-        SUMMARIZED_VIOLENT_CRIME.observation_endpoint(FbiSubject("state", "WI"))
-        == "/summarized/state/WI/V"
+    assert product.observation_endpoint(FbiSubject("state", "WI")) == (
+        f"/summarized/state/WI/{code}"
     )
     # Conformance never derives one subject's value from another's rows.
     assert "SUM(" not in transform.upper()
+
+
+def test_no_offense_is_named_outside_the_registry() -> None:
+    """Covers: ETL-042, ETL-052 — no component-offense sum is built or reconciled.
+
+    ``V`` and ``P`` are provider-published aggregates that need not equal the
+    sum of their components. Computing or checking such a sum would have to
+    name the component offenses, so outside the registry no pipeline, gold,
+    quality, or API source may name a summarized offense code at all.
+    """
+    pattern = re.compile(
+        r"""['"](%s)[':"]""" % "|".join(sorted(SUMMARIZED_OFFENSES, key=len)[::-1])
+    )
+    roots = [
+        PACKAGE,
+        REPOSITORY_ROOT / "src/data_ingestion_toolbox/quality",
+        REPOSITORY_ROOT / "apps/api",
+    ]
+    sources = [DAG]
+    for root in roots:
+        sources.extend(sorted(root.rglob("*.py")))
+        sources.extend(sorted(root.rglob("*.sql")))
+    offenders = [
+        f"{path.relative_to(REPOSITORY_ROOT).as_posix()}:{match.group(1)}"
+        for path in sources
+        if path.name != "registry.py"
+        for match in pattern.finditer(path.read_text(encoding="utf-8"))
+    ]
+
+    assert offenders == []

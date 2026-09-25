@@ -125,6 +125,26 @@ def _seed_fred_series(
     either side of a certification boundary; the gold view projects it as
     ``updated_at``, which is what the certified-baseline filter reads.
     """
+    # The provider's own series record comes first, as it does in the
+    # pipeline: `raw_fred.fred_series` is written from the metadata call
+    # before any observation is stored. Seeding only the gold dimension and
+    # the silver fact modelled a warehouse state ingestion cannot produce --
+    # an observation whose units and frequency nobody can state -- which
+    # DQ-FRED-003 now reports, correctly, as a blocking failure.
+    #
+    # `frequency` and the observation window are left unstated because FRED
+    # does not always state them, and DQ-FRED-004 treats an absent bound as
+    # narrowing nothing. A frequency here would also have to agree with the
+    # thirty-day spacing these probes use, which is not a real FRED grid.
+    cursor.execute(
+        """
+        INSERT INTO raw_fred.fred_series (
+            series_id, title, first_seen_at, last_checked_at
+        ) VALUES (%s, %s, NOW(), NOW())
+        ON CONFLICT (series_id) DO NOTHING
+        """,
+        (series_id, f"Probe series {series_id}"),
+    )
     cursor.execute(
         """
         INSERT INTO gold_fred.dim_fred_series (series_id, series_title)

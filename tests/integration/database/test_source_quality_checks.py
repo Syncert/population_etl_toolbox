@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import psycopg2
 import pytest
 from psycopg2.extensions import connection
 
@@ -21,9 +23,14 @@ from data_ingestion_toolbox.quality.reconciliation import (
 )
 from data_ingestion_toolbox.quality.sources import (
     SOURCE_EXECUTORS,
+    acs_published_row_resolution,
     acs_slice_reconciliation,
+    current_geography_projection,
     bls_chunk_reconciliation,
+    cdc_publisher_export_conformance,
     cdc_watermark_monotonicity,
+    fred_missing_marker_and_series_ownership,
+    fred_observation_dates_within_the_published_range,
     fred_slice_reconciliation,
     nass_slice_ledger,
     pep_sentinel_conformance,
@@ -505,3 +512,838 @@ def test_every_offender_statement_is_one_postgresql_can_run(
         f"only {sum(explained.values())} offender statements were planned, so "
         f"some rule returned before its own: {explained}"
     )
+
+
+# ---------------------------------------------------------------------------
+# DQ-REF-005 — one current version per entity, and no entity lost
+# ---------------------------------------------------------------------------
+
+
+def _entity(cursor, geo_id: str, geo_type: str, state_fips: str | None) -> int:
+    """One geography entity.
+
+    `geo_id` has to agree with `dim_geo_entity_check1`, which derives it from
+    the type and the fips columns. That constraint is the subject of one of
+    the tests below, so the helper honours it rather than working around it.
+    """
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_geo_entity (
+            geo_id, geo_type, state_fips, first_seen_version, last_seen_version
+        ) VALUES (%s, %s, %s, 2020, 2020)
+        RETURNING geo_sk
+        """,
+        (geo_id, geo_type, state_fips),
+    )
+    return int(cursor.fetchone()[0])
+
+
+def _entity_version(cursor, geo_sk: int, capture_id: str, vintage: int = 2020) -> None:
+    """One attribute version, traced to a real capture.
+
+    `source_snapshot_id` is a foreign key into `raw_capture.response_capture`,
+    which is itself keyed to a payload blob and an ingestion request. That is
+    capture-first discipline holding: a silver row cannot exist without the
+    response it came from, and a fixture does not get an exemption.
+    """
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_geo_entity_version (
+            geo_sk, geography_vintage, source_snapshot_id, name,
+            is_active, attribute_checksum
+        ) VALUES (%s, %s, %s, %s, TRUE, %s)
+        """,
+        (
+            geo_sk,
+            vintage,
+            capture_id,
+            f"probe-{geo_sk}",
+            hashlib.sha256(f"{geo_sk}:{vintage}".encode()).hexdigest(),
+        ),
+    )
+
+
+def test_an_entity_with_no_version_row_is_reported_not_silently_dropped(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, the half that earns the rule.
+
+    `dim_geo_current` reaches its attribute choice through an inner join to
+    `dim_geo_entity_version`, so an entity carrying no version row leaves the
+    projection with no trace: consumers of `dim_geo` never see that geography
+    and no count anywhere goes red. The schema tests check the relations
+    exist; a projection quietly returning fewer rows than it should is exactly
+    what they cannot see.
+
+    The positive half is here too, because a rule that always failed would
+    satisfy the first assertion alone.
+    """
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"REFPROBE{uuid4().hex[:8].upper()}"
+    )
+    with postgres_connection.cursor() as cursor:
+        orphan = _entity(cursor, "state:97", "state", "97")
+
+        [projection, compatibility] = current_geography_projection(cursor, {})
+        assert projection.result == "fail"
+        assert any("dropped:" in entry for entry in projection.evidence)
+        assert str(orphan) in " ".join(projection.evidence)
+        # Both names still agree -- they are equally empty, which is why the
+        # compatibility arm cannot stand in for this one.
+        assert compatibility.result == "pass"
+
+        _entity_version(cursor, orphan, capture_id)
+        [projection, compatibility] = current_geography_projection(cursor, {})
+        assert projection.result == "pass", projection.evidence
+        assert compatibility.result == "pass"
+        assert compatibility.observed_count == compatibility.expected_count >= 1
+    postgres_connection.rollback()
+
+
+def test_the_state_lookup_cannot_fan_out_because_two_constraints_agree(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, why the duplicate half is a guard, not a hunt.
+
+    The rule's original note credited `DISTINCT ON` with making this
+    projection one row per entity. That covers the attribute and geometry
+    choices and **not** the state lookup, which joins
+    `state_entity.geo_type = 'state' AND state_entity.state_fips =
+    entity.state_fips` -- a pair `dim_geo_entity` declares unique on neither
+    column nor jointly.
+
+    What actually prevents the fan-out is two constraints acting together, and
+    pinning them is the point of this test: `dim_geo_entity_check1` forces
+    `geo_id = 'state:' || state_fips` for a state-typed row, and `geo_id` is
+    UNIQUE. So a second state sharing a `state_fips` is refused either as a
+    duplicate id or as a failed CHECK, and there is no third spelling.
+
+    Relax that CHECK -- to admit a geography whose id is not derived from its
+    fips -- and the fan-out becomes reachable, every geography in the affected
+    state is served twice, and the rule's duplicate count is what would catch
+    it. This test is where that consequence is written down.
+    """
+    with postgres_connection.cursor() as cursor:
+        _entity(cursor, "state:96", "state", "96")
+        with pytest.raises(psycopg2.errors.UniqueViolation):
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES ('state:96', 'state', '96', 2020, 2020)
+                """
+            )
+    postgres_connection.rollback()
+
+    with postgres_connection.cursor() as cursor:
+        _entity(cursor, "state:96", "state", "96")
+        with pytest.raises(psycopg2.errors.CheckViolation):
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES ('state:96:reloaded', 'state', '96', 2020, 2020)
+                """
+            )
+    postgres_connection.rollback()
+
+
+def test_the_duplicate_arm_reports_a_geography_that_appears_twice(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, the guard is wired up, shown rather than assumed.
+
+    The constraints above make a real duplicate unreachable through
+    `dim_geo_entity`, so the duplicate arm is driven against a relation that
+    does contain one. A guard nobody has ever seen fire is a guard nobody
+    knows is connected.
+    """
+    from data_ingestion_toolbox.quality.reconciliation import _offenders
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TEMP VIEW dq_ref_005_probe AS
+            SELECT * FROM (VALUES (1::bigint), (1::bigint), (2::bigint))
+                AS probe(geo_sk)
+            """
+        )
+        duplicated, total = _offenders(
+            cursor,
+            """
+            SELECT geo_sk, COUNT(*) AS current_rows
+              FROM dq_ref_005_probe
+             GROUP BY geo_sk
+            HAVING COUNT(*) > 1
+            """,
+            order_by="1",
+        )
+        assert total == 1
+        assert duplicated == ["1|2"]
+    postgres_connection.rollback()
+
+
+def test_an_empty_geography_reference_is_not_applicable_rather_than_passing(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-018 — DQ-REF-005, a rule that read nothing must not certify."""
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM silver_ref.dim_geo_entity")
+        if cursor.fetchone()[0]:
+            pytest.skip("the session's warehouse carries geography rows")
+        outcomes = current_geography_projection(cursor, {})
+        assert [outcome.result for outcome in outcomes] == [
+            "not_applicable",
+            "not_applicable",
+        ]
+    postgres_connection.rollback()
+
+
+# ---------------------------------------------------------------------------
+# DQ-ACS-004 — a published ACS observation resolves what it names
+# ---------------------------------------------------------------------------
+
+
+def _time_row(cursor, day: str) -> int:
+    """One `silver_ref.dim_time` row for `day`, returning its surrogate.
+
+    Every column below is NOT NULL and every one is derivable from the date,
+    so the row is computed rather than typed out: a fixture that hand-wrote
+    `day_name` would be asserting nothing and could disagree with the date
+    beside it.
+    """
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_time (
+            time_sk, date_key, year, quarter, month, day, day_of_week,
+            day_name, month_name, week_of_year, is_weekend,
+            is_month_start, is_month_end, is_quarter_start, is_quarter_end,
+            is_year_start, is_year_end, ingested_at
+        )
+        SELECT
+            (TO_CHAR(d, 'YYYYMMDD'))::int, d::date, EXTRACT(YEAR FROM d)::int,
+            EXTRACT(QUARTER FROM d)::int, EXTRACT(MONTH FROM d)::int,
+            EXTRACT(DAY FROM d)::int, EXTRACT(ISODOW FROM d)::int,
+            TRIM(TO_CHAR(d, 'Day')), TRIM(TO_CHAR(d, 'Month')),
+            EXTRACT(WEEK FROM d)::int, EXTRACT(ISODOW FROM d) > 5,
+            d = DATE_TRUNC('month', d), d = (DATE_TRUNC('month', d)
+                + INTERVAL '1 month - 1 day')::date,
+            d = DATE_TRUNC('quarter', d), d = (DATE_TRUNC('quarter', d)
+                + INTERVAL '3 months - 1 day')::date,
+            d = DATE_TRUNC('year', d), d = (DATE_TRUNC('year', d)
+                + INTERVAL '1 year - 1 day')::date, NOW()
+        FROM (SELECT %s::date AS d) AS s
+        ON CONFLICT (time_sk) DO NOTHING
+        """,
+        (day,),
+    )
+    return int(day.replace("-", ""))
+
+
+def _agency_entity(cursor, code: str) -> tuple[int, str]:
+    """A geography entity with an id of our choosing.
+
+    State and county ids are derived from their fips by
+    `dim_geo_entity_check1`, and a two-digit fips leaves a hundred possible
+    state rows for every test in the suite to collide over. The `agency`
+    branch of that CHECK takes any id, so a probe can be unique.
+    """
+    geo_id = f"agency:{code}"
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_geo_entity (
+            geo_id, geo_type, provider_agency_code,
+            first_seen_version, last_seen_version
+        ) VALUES (%s, 'agency', %s, 2020, 2020)
+        RETURNING geo_sk
+        """,
+        (geo_id, code),
+    )
+    return int(cursor.fetchone()[0]), geo_id
+
+
+def test_a_silver_acs_row_whose_variable_is_unknown_is_counted_not_dropped(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-019 — DQ-ACS-004, the half nothing could see.
+
+    `gold_census.fact_acs_observation` is `silver_census.fact_demographics`
+    inner joined to `dim_acs_variable`. A silver row whose variable the
+    dimension does not carry is therefore not published: captured, parsed,
+    stored, and silently declined.
+
+    `DQ-ACS-007` cannot report it, and that is why this rule is separate
+    rather than folded in. Its *published* side applies the same inner join,
+    so the row is absent from both sides of its comparison and its groups
+    agree perfectly while the observation is gone. Asserted here, not argued:
+    the conformance rule is run over the same warehouse and stays green.
+    """
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"ACSPROBE{uuid4().hex[:8].upper()}"
+    )
+    with postgres_connection.cursor() as cursor:
+        geo_sk, geo_id = _agency_entity(cursor, f"acs-drop-{uuid4().hex[:8]}")
+        _entity_version(cursor, geo_sk, capture_id)
+        time_sk = _time_row(cursor, "2993-01-01")
+        cursor.execute(
+            """
+            INSERT INTO silver_census.fact_demographics (
+                geo_sk, geo_id, time_sk, dataset, estimate_year,
+                duration_start, duration_end, table_id, load_batch_id,
+                variable_code, estimate_value, capture_id, ingested_at
+            ) VALUES (%s, %s, %s, 'acs5', 2993,
+                      DATE '2989-01-01', DATE '2993-12-31', 'B00000',
+                      gen_random_uuid(),
+                      'B00000_000E', 1, %s, NOW())
+            """,
+            (geo_sk, geo_id, time_sk, capture_id),
+        )
+
+        [dropped, unplaceable] = acs_published_row_resolution(cursor, {})
+        assert dropped.result == "fail"
+        assert dropped.observed_count == 1
+        assert dropped.evidence == ["acs5|2993|B00000_000E|1"]
+        # It never reached gold, so the geography arm has nothing to say.
+        assert unplaceable.result == "pass"
+
+        # The row is invisible to the conformance rule, by construction.
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM gold_census.fact_acs_observation
+             WHERE vintage_year = 2993
+            """
+        )
+        assert cursor.fetchone()[0] == 0
+    postgres_connection.rollback()
+
+
+def test_a_published_acs_row_with_an_unplaceable_geography_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-019 — DQ-ACS-004, the other direction.
+
+    `fact_demographics.geo_sk` is NOT NULL with a foreign key, so the database
+    guarantees the row resolved at silver. The serving view then publishes
+    `geo_id` -- a different, nullable column with nothing tying it to
+    `geo_sk` -- so a published observation can carry a geography nobody can
+    place while its silver row was perfectly well resolved.
+    """
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"ACSPROBE{uuid4().hex[:8].upper()}"
+    )
+    with postgres_connection.cursor() as cursor:
+        geo_sk, _ = _agency_entity(cursor, f"acs-geo-{uuid4().hex[:8]}")
+        _entity_version(cursor, geo_sk, capture_id)
+        time_sk = _time_row(cursor, "2992-01-01")
+        cursor.execute(
+            """
+            INSERT INTO gold_census.dim_acs_table (
+                dataset_code, vintage_year, table_id, survey_span_years
+            ) VALUES ('acs5', 2992, 'B00000', 5)
+            RETURNING acs_table_sk
+            """
+        )
+        acs_table_sk = cursor.fetchone()[0]
+        cursor.execute(
+            """
+            INSERT INTO gold_census.dim_acs_variable (
+                acs_table_sk, dataset_code, vintage_year, variable_code,
+                variable_label, value_role
+            ) VALUES (%s, 'acs5', 2992, 'B00000_001E', 'probe variable',
+                      'ESTIMATE')
+            """,
+            (acs_table_sk,),
+        )
+        cursor.execute(
+            """
+            INSERT INTO silver_census.fact_demographics (
+                geo_sk, geo_id, time_sk, dataset, estimate_year,
+                duration_start, duration_end, table_id, load_batch_id,
+                variable_code, estimate_value, capture_id, ingested_at
+            ) VALUES (%s, 'state:92|county:999', %s, 'acs5', 2992,
+                      DATE '2988-01-01', DATE '2992-12-31', 'B00000',
+                      gen_random_uuid(),
+                      'B00000_001E', 1, %s, NOW())
+            """,
+            (geo_sk, time_sk, capture_id),
+        )
+
+        [dropped, unplaceable] = acs_published_row_resolution(cursor, {})
+        assert dropped.result == "pass", dropped.evidence
+        assert unplaceable.result == "fail"
+        assert unplaceable.observed_count == 1
+        assert unplaceable.evidence == ["acs5|2992|state:92|county:999|1"]
+    postgres_connection.rollback()
+
+
+def test_an_empty_acs_silver_fact_is_not_applicable(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-019 — a rule that read nothing must not certify."""
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM silver_census.fact_demographics")
+        if cursor.fetchone()[0]:
+            pytest.skip("the session's warehouse carries ACS rows")
+        outcomes = acs_published_row_resolution(cursor, {})
+        assert [outcome.result for outcome in outcomes] == [
+            "not_applicable",
+            "not_applicable",
+        ]
+    postgres_connection.rollback()
+
+
+# ---------------------------------------------------------------------------
+# DQ-FRED-003 / DQ-FRED-004 — a missing value is not a zero, and a date the
+# provider actually published
+# ---------------------------------------------------------------------------
+
+
+def _fred_series(cursor, series_id: str, **columns) -> None:
+    cursor.execute(
+        """
+        INSERT INTO raw_fred.fred_series (
+            series_id, frequency, observation_start, observation_end,
+            first_seen_at, last_checked_at
+        ) VALUES (%s, %s, %s, %s, NOW(), NOW())
+        """,
+        (
+            series_id,
+            columns.get("frequency"),
+            columns.get("observation_start"),
+            columns.get("observation_end"),
+        ),
+    )
+
+
+def _gold_fred_series(cursor, series_id: str, frequency: str) -> None:
+    cursor.execute(
+        "INSERT INTO gold_fred.dim_fred_series (series_id, frequency) VALUES (%s, %s)",
+        (series_id, frequency),
+    )
+
+
+def _fred_observation(cursor, series_id: str, day: str, capture_id: str, **columns):
+    time_sk = _time_row(cursor, day)
+    cursor.execute(
+        """
+        INSERT INTO silver_fred.fact_economic_indicators (
+            time_sk, duration_start, duration_end, observation_date,
+            series_id, domain, value, is_missing, source_value, value_status,
+            capture_id, load_batch_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, gen_random_uuid())
+        """,
+        (
+            time_sk,
+            day,
+            day,
+            day,
+            series_id,
+            columns.get("domain", "labor"),
+            columns.get("value"),
+            columns.get("is_missing", False),
+            columns.get("source_value", "1.0"),
+            columns.get("value_status", "valid"),
+            capture_id,
+        ),
+    )
+
+
+def test_a_fred_missing_observation_carrying_a_number_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — DQ-FRED-003, an `AGENTS.md` invariant made measurable.
+
+    "Never silently convert suppressed, missing, invalid, or non-numeric
+    values to zero." FRED publishes its missing marker as `"."` in a numeric
+    field, which is exactly the shape a careless parser turns into `0` -- and
+    a zero is a claim, not an absence.
+
+    The schema already refuses the opposite direction: a `valid` row must
+    carry a value. It does not refuse a `missing` row that carries one, which
+    is what zero-filling produces, so nothing caught it.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id)
+        _fred_observation(
+            cursor,
+            series_id,
+            "2991-01-01",
+            capture_id,
+            value=0,
+            is_missing=True,
+            source_value=".",
+            value_status="missing",
+        )
+
+        values, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert values.result == "fail"
+        assert values.observed_count == 1
+        assert series_id in " ".join(values.evidence)
+        assert ownership.result == "pass"
+    postgres_connection.rollback()
+
+
+def test_a_fred_missing_observation_with_no_value_passes(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — the invariant honoured, so the rule is not always red."""
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id)
+        _fred_observation(
+            cursor,
+            series_id,
+            "2991-02-01",
+            capture_id,
+            value=None,
+            is_missing=True,
+            source_value=".",
+            value_status="missing",
+        )
+
+        values, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert values.result == "pass", values.evidence
+        assert ownership.result == "pass"
+    postgres_connection.rollback()
+
+
+def test_a_fred_series_under_two_domains_has_no_owner(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — DQ-FRED-003's ownership half.
+
+    A series appearing under two domains has no single owner, so which
+    domain's dashboard is entitled to it is a question with two answers.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id)
+        _fred_observation(
+            cursor, series_id, "2991-03-01", capture_id, domain="labor", value=1
+        )
+        _fred_observation(
+            cursor, series_id, "2991-04-01", capture_id, domain="prices", value=1
+        )
+
+        _, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert ownership.result == "fail"
+        assert ownership.evidence == [series_id + "|domains=2"]
+    postgres_connection.rollback()
+
+
+def test_a_fred_observation_with_no_series_metadata_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — an observation whose units and frequency nobody can state."""
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_observation(cursor, series_id, "2991-05-01", capture_id, value=1)
+
+        _, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert ownership.result == "fail"
+        assert ownership.evidence == [series_id + "|no-metadata"]
+    postgres_connection.rollback()
+
+
+def test_a_fred_date_outside_the_published_range_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-021 — DQ-FRED-004's range half.
+
+    `raw_fred.fred_series` carries FRED's own statement of the window a series
+    covers, and nothing compared the facts against it, so a date outside it
+    was served exactly like a date inside it.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(
+            cursor,
+            series_id,
+            frequency="Monthly",
+            observation_start="2991-06-01",
+            observation_end="2991-08-01",
+        )
+        _gold_fred_series(cursor, series_id, "Monthly")
+        _fred_observation(cursor, series_id, "2991-07-01", capture_id, value=1)
+
+        ranged, aligned = fred_observation_dates_within_the_published_range(cursor, {})
+        assert ranged.result == "pass", ranged.evidence
+        assert aligned.result == "pass", aligned.evidence
+
+        # A month before the series begins.
+        _fred_observation(cursor, series_id, "2991-05-01", capture_id, value=1)
+        ranged, _ = fred_observation_dates_within_the_published_range(cursor, {})
+        assert ranged.result == "fail"
+        assert ranged.evidence == [series_id + "|2991-05-01|2991-06-01|2991-08-01"]
+    postgres_connection.rollback()
+
+
+def test_a_monthly_fred_observation_off_the_period_start_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-021 — DQ-FRED-004's frequency half.
+
+    FRED dates a monthly observation on the 1st. A date mid-month means the
+    series and the fact disagree about what a period is, and a chart drawn
+    from it spaces its points wrongly.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id, frequency="Monthly")
+        _gold_fred_series(cursor, series_id, "Monthly")
+        _fred_observation(cursor, series_id, "2991-09-15", capture_id, value=1)
+
+        _, aligned = fred_observation_dates_within_the_published_range(cursor, {})
+        assert aligned.result == "fail"
+        assert aligned.evidence == [
+            "Monthly|" + series_id + "|2991-09-15|off-period-start"
+        ]
+    postgres_connection.rollback()
+
+
+def test_a_weekly_fred_series_is_left_alone_and_an_unknown_one_is_reported(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-021 — the arm says what it does not cover.
+
+    A weekly series is dated by its own week-ending day, so constraining it
+    would refuse dates FRED legitimately publishes. A frequency string in
+    neither list is reported instead of skipped -- the difference between a
+    check that covers what it claims and one that quietly comes to cover
+    nothing when a label changes.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    weekly = "PROBEW" + uuid4().hex[:8].upper()
+    odd = "PROBEX" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        for series_id, frequency in ((weekly, "Weekly"), (odd, "Fortnightly")):
+            _fred_series(cursor, series_id, frequency=frequency)
+            _gold_fred_series(cursor, series_id, frequency)
+        _fred_observation(cursor, weekly, "2991-10-17", capture_id, value=1)
+        _fred_observation(cursor, odd, "2991-10-18", capture_id, value=1)
+
+        _, aligned = fred_observation_dates_within_the_published_range(cursor, {})
+        assert aligned.result == "fail"
+        assert aligned.evidence == [
+            "Fortnightly|" + odd + "|2991-10-18|unrecognised-frequency"
+        ]
+    postgres_connection.rollback()
+
+
+# -------------------------------------------------------------------------
+# DQ-CDC-007 — the CDC publisher's measure identity and its annual claim
+# -------------------------------------------------------------------------
+
+
+def _seed_cdc_release(
+    cursor, capture_id: str, run_id: str, asset_id: str, watermark: str
+) -> None:
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.dim_dataset_release (
+            asset_id, release_watermark, socrata_id, title, methodology_url,
+            geography_basis, parser_contract_version, estimate_method,
+            population_basis, metadata_capture_id, source_run_id,
+            source_record_count, quarantine_count, status,
+            reconciled_at, published_at
+        ) VALUES (%s, %s, 'probe-socrata', 'Probe dataset',
+                  'https://example.test/methodology', 'state',
+                  '1.0', 'probe-method', 'probe-basis', %s,
+                  %s, 1, 0, 'published', NOW(), NOW())
+        ON CONFLICT DO NOTHING
+        """,
+        (asset_id, watermark, capture_id, run_id),
+    )
+
+
+def _seed_cdc_measure(
+    cursor,
+    capture_id: str,
+    run_id: str,
+    *,
+    asset_id: str = "cdi",
+    measure_id: str = "probe_measure",
+    value_type_id: str = "crude",
+    watermark: str = "20200101",
+) -> None:
+    """One published CDC measure, with the release its export reads."""
+    _seed_cdc_release(cursor, capture_id, run_id, asset_id, watermark)
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.dim_measure (
+            asset_id, measure_id, value_type_id, measure_label, topic,
+            value_type_label, adjustment_status, estimate_method,
+            population_basis
+        ) VALUES (%s, %s, %s, 'Probe measure', 'probe topic',
+                  'Crude', 'unadjusted', 'probe-method', 'probe-basis')
+        ON CONFLICT DO NOTHING
+        """,
+        (asset_id, measure_id, value_type_id),
+    )
+
+
+def _seed_cdc_observation(
+    cursor,
+    capture_id: str,
+    run_id: str,
+    geo_sk: int,
+    *,
+    asset_id: str = "cdi",
+    measure_id: str = "probe_measure",
+    value_type_id: str = "crude",
+    watermark: str = "20200101",
+    period_start: int = 2020,
+    period_end: int = 2020,
+) -> None:
+    # `stratum_id` is constrained to a 64-character hex digest, so it is
+    # derived from the strata it identifies rather than named -- which is what
+    # the real writer does, and why an empty stratum has one stable id.
+    stratum_id = hashlib.sha256(b"[]").hexdigest()
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.dim_stratum (stratum_id, strata)
+        VALUES (%s, '[]'::jsonb)
+        ON CONFLICT DO NOTHING
+        """,
+        (stratum_id,),
+    )
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.fact_health_observation (
+            asset_id, release_watermark, source_record_id, source_run_id,
+            capture_id, source_row_index, measure_id, value_type_id,
+            stratum_id, period_start, period_end, geo_sk, geo_type,
+            geography_status, value, value_status, adjustment_status,
+            estimate_method, population_basis, transformation_version
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, 'state',
+                  'resolved', 1.0, 'valid', 'unadjusted',
+                  'probe-method', 'probe-basis', '1.0')
+        """,
+        (
+            asset_id,
+            watermark,
+            # A 64-character hex digest, like every other record id in
+            # this schema: the source row's identity, not a label.
+            hashlib.sha256(
+                f"{period_start}:{period_end}:{uuid4().hex}".encode()
+            ).hexdigest(),
+            run_id,
+            capture_id,
+            abs(hash((period_start, period_end, uuid4().hex))) % 1_000_000,
+            measure_id,
+            value_type_id,
+            stratum_id,
+            period_start,
+            period_end,
+            geo_sk,
+        ),
+    )
+
+
+def test_a_cdc_measure_id_containing_the_key_delimiter_is_ambiguous(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-022 — a composed key that cannot be taken apart again.
+
+    `gold_cdc.metric_publisher` builds `source_object_key` as
+    `asset_id || ':' || measure_id || ':' || value_type_id`. A component
+    carrying that delimiter makes the result ambiguous: `a:b` + `c` and `a` +
+    `b:c` compose to the same string, so two measures can collide into one
+    identity and nothing downstream can decompose it.
+
+    Nothing refused it. The publisher view puts no constraint on its inputs,
+    and every other guard checks that the key *exists* rather than that it
+    means one thing.
+    """
+    source = "CDCPROBE" + uuid4().hex[:8].upper()
+    run_id, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    with postgres_connection.cursor() as cursor:
+        _seed_cdc_measure(cursor, capture_id, run_id, measure_id="ordinary_measure")
+
+        export, _ = cdc_publisher_export_conformance(cursor, {})
+        assert export.result == "pass", export.evidence
+
+        _seed_cdc_measure(cursor, capture_id, run_id, measure_id="colon:inside")
+        export, _ = cdc_publisher_export_conformance(cursor, {})
+        assert export.result == "fail"
+        assert any(entry.startswith("delimiter|") for entry in export.evidence)
+    postgres_connection.rollback()
+
+
+def test_a_cdc_observation_spanning_more_than_a_year_contradicts_the_contract(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-022 — the data has to support the claim the contract makes.
+
+    `gold_cdc.metric_publisher` writes `valid_time_grains` as a literal
+    `ARRAY['ANNUAL']`, so reading it back would be a rule agreeing with a
+    constant. `gold_cdc.health_observation` carries `period_start` and
+    `period_end` as integer years, so an annual observation is one where they
+    are equal -- and a row spanning more is a multi-year figure served to a
+    reader who asked for an annual series, with nothing saying so.
+    """
+    source = "CDCPROBE" + uuid4().hex[:8].upper()
+    run_id, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    with postgres_connection.cursor() as cursor:
+        geo_sk, _ = _agency_entity(cursor, "cdc-" + uuid4().hex[:8])
+        _entity_version(cursor, geo_sk, capture_id)
+        _seed_cdc_measure(cursor, capture_id, run_id)
+        _seed_cdc_observation(
+            cursor, capture_id, run_id, geo_sk, period_start=2020, period_end=2020
+        )
+
+        _, grain = cdc_publisher_export_conformance(cursor, {})
+        assert grain.result == "pass", grain.evidence
+
+        _seed_cdc_observation(
+            cursor, capture_id, run_id, geo_sk, period_start=2021, period_end=2023
+        )
+        _, grain = cdc_publisher_export_conformance(cursor, {})
+        assert grain.result == "fail"
+        assert any("2021|2023" in entry for entry in grain.evidence)
+    postgres_connection.rollback()
+
+
+def test_an_empty_cdc_publisher_is_not_applicable(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-022 — a rule that read nothing must not certify."""
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM gold_cdc.metric_publisher")
+        if cursor.fetchone()[0]:
+            pytest.skip("the session's warehouse publishes CDC measures")
+        outcomes = cdc_publisher_export_conformance(cursor, {})
+        assert [outcome.result for outcome in outcomes] == [
+            "not_applicable",
+            "not_applicable",
+        ]
+    postgres_connection.rollback()

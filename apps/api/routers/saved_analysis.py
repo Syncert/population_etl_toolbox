@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.auth import Account, get_app_session_dep, require_account
+from data_ingestion_toolbox.config import get_settings
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import BODY_LIMIT, CONFLICT, NOT_FOUND
 from apps.api.schemas import (
@@ -26,6 +27,7 @@ from apps.api.services.saved_analysis_service import (
     ConfigurationInvalid,
     ConfigurationNameTaken,
     ConfigurationNotFound,
+    StorageQuotaReached,
     create_configuration,
     delete_configuration,
     get_configuration,
@@ -36,6 +38,16 @@ from apps.api.services.saved_analysis_service import (
 router = APIRouter(prefix="/analysis-configurations", tags=["analysis-configurations"])
 
 NOT_FOUND_DETAIL = "configuration not found"
+
+#: The answer when an account already holds as many as it may (ADR-0005 s4).
+#: `409`, not `429`: this is not a rate a caller can wait out. The condition is
+#: about what the account holds, and the remedy is deleting something, so a
+#: `Retry-After` would be a false promise that waiting helps.
+QUOTA_REACHED_DETAIL = (
+    "this account already holds the maximum number of saved analyses; "
+    "delete one before creating another"
+)
+
 
 #: User content is never publicly cached, and never stored by an intermediary.
 _PRIVATE_CACHE = "private, no-store"
@@ -93,7 +105,10 @@ def create_saved_analysis(
             owner_user_id=account.user_account_id,
             name=payload.name,
             document=payload.document,
+            quota=get_settings().api_saved_analysis_quota,
         )
+    except StorageQuotaReached as exc:
+        raise HTTPException(status_code=409, detail=QUOTA_REACHED_DETAIL) from exc
     except ConfigurationInvalid as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc
     except ConfigurationNameTaken as exc:

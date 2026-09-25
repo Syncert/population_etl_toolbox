@@ -22,6 +22,11 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from tests.support import fbi_release
 from tests.support.capture_seed import delete_geography, seed_geography
+from data_ingestion_toolbox.fbi_ucr.metadata import load_latest_accepted_release
+from data_ingestion_toolbox.fbi_ucr.registry import ALL_PRODUCTS
+from data_ingestion_toolbox.fbi_ucr.registry import (
+    SUMMARIZED_VIOLENT_CRIME as PRODUCT_V,
+)
 from tests.support.fbi_release import (
     OBSERVATIONS_PER_SUBJECT,
     PERIODS,
@@ -703,3 +708,168 @@ def test_publisher_contract_exposes_measure_identity(
             )
     finally:
         reader.close()
+
+
+def _counts(connection_factory: Callable[[], connection]) -> dict[str, list[tuple]]:
+    reader = connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            counts: dict[str, list[tuple]] = {}
+            for name, sql in {
+                "releases": """
+                    SELECT product_id, COUNT(*) FROM silver_fbi.dim_ucr_dataset_release
+                    GROUP BY product_id ORDER BY product_id
+                """,
+                "facts": """
+                    SELECT product_id, COUNT(*) FROM silver_fbi.fact_crime_observation
+                    GROUP BY product_id ORDER BY product_id
+                """,
+                "revisions": """
+                    SELECT product_id, COUNT(*) FROM silver_fbi.observation_revision
+                    GROUP BY product_id ORDER BY product_id
+                """,
+                "measures": """
+                    SELECT product_id, offense_code, array_agg(DISTINCT measure_id
+                           ORDER BY measure_id)
+                    FROM gold_fbi.crime_observation
+                    GROUP BY product_id, offense_code ORDER BY product_id
+                """,
+            }.items():
+                cursor.execute(sql)
+                counts[name] = cursor.fetchall()
+            return counts
+    finally:
+        reader.close()
+
+
+def test_every_registered_offense_publishes_as_its_own_product(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-003, DB-006, ETL-052 — ten offenses publish once, idempotently."""
+    products = [fbi_release.fixture_scoped(product) for product in ALL_PRODUCTS]
+    captured = {
+        product.product_id: _persist_fixture_release(fbi_warehouse, product=product)
+        for product in products
+    }
+    for product in products:
+        transformed, published = _run_pipeline(
+            fbi_warehouse, captured[product.product_id], product
+        )
+        assert transformed > 0
+        assert published == transformed
+    first = _counts(fbi_warehouse)
+
+    # A second replay of every stored release writes no new row anywhere.
+    for product in products:
+        _run_pipeline(fbi_warehouse, captured[product.product_id], product)
+    assert _counts(fbi_warehouse) == first
+
+    product_ids = sorted(product.product_id for product in ALL_PRODUCTS)
+    assert first["releases"] == [(product_id, 1) for product_id in product_ids]
+    assert [row[0] for row in first["facts"]] == product_ids
+    assert sorted(
+        (row[0], row[1], list(row[2])) for row in first["measures"]
+    ) == sorted(
+        (
+            product.product_id,
+            product.offense_code,
+            sorted(
+                product.measure_id(basis, form)
+                for basis in ("offense", "clearance")
+                for form in ("absolute_total", "rate")
+            ),
+        )
+        for product in ALL_PRODUCTS
+    )
+
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            # The provider's -1 rate sentinel is quarantined, never published
+            # as a negative value or rewritten to zero.
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_fbi.crime_observation WHERE value < 0"
+            )
+            assert cursor.fetchone() == (0,)
+            cursor.execute(
+                """
+                SELECT DISTINCT error_code FROM silver_fbi.slice_quarantine
+                """
+            )
+            assert set(cursor.fetchall()) <= {("negative_measure_value",)}
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT source_dataset), COUNT(*)
+                FROM gold_fbi.measure_export
+                """
+            )
+            assert cursor.fetchone() == (len(ALL_PRODUCTS), 4 * len(ALL_PRODUCTS))
+    finally:
+        reader.close()
+
+    assert harvest_publisher(fbi_warehouse, Publisher("gold_fbi")) == 4 * len(
+        ALL_PRODUCTS
+    )
+
+
+def test_states_beyond_wisconsin_resolve_to_their_canonical_geography(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-052 — a state or territory resolves by its FIPS contract.
+
+    Pennsylvania and the U.S. Virgin Islands carry no agency directory and no
+    Wisconsin evidence; each resolves to its own canonical geography row, and
+    the territory's months, none of which it reported, stay null.
+    """
+    product = fbi_release.fixture_scoped(PRODUCT_V, ("PA", "VI", "WI"))
+    captured = _persist_fixture_release(fbi_warehouse, product=product)
+    _run_pipeline(fbi_warehouse, captured, product)
+
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT subject_code, geo_id, geography_status,
+                       COUNT(*) FILTER (WHERE value IS NOT NULL)
+                FROM gold_fbi.crime_observation
+                WHERE subject_type = 'state'
+                GROUP BY 1, 2, 3 ORDER BY 1
+                """
+            )
+            rows = cursor.fetchall()
+    finally:
+        reader.close()
+
+    assert [row[:3] for row in rows] == [
+        ("PA", "state:42", "provider_geo_exact"),
+        ("VI", "state:78", "provider_geo_exact"),
+        ("WI", "state:55", "provider_geo_exact"),
+    ]
+    reported = {row[0]: row[3] for row in rows}
+    assert reported["PA"] > 0
+    assert reported["VI"] == 0
+
+
+def test_only_a_published_release_of_the_same_scope_is_the_previous_one(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-052 — a scope change or an unpublished capture re-ingests.
+
+    The capture decides ``unchanged`` against the previous release. A release
+    that was captured and never published is not one (its replay failed, and
+    ``unchanged`` would leave it unpublished forever), and a release captured
+    for a narrower subject scope is not one either (``unchanged`` would never
+    capture the states the registry added).
+    """
+    narrow = fbi_release.fixture_scoped(PRODUCT_V, ("WI",))
+    wide = fbi_release.fixture_scoped(PRODUCT_V, ("PA", "VI", "WI"))
+
+    captured = _persist_fixture_release(fbi_warehouse, product=narrow)
+    assert load_latest_accepted_release(fbi_warehouse, narrow) is None
+
+    _run_pipeline(fbi_warehouse, captured, narrow)
+    previous = load_latest_accepted_release(fbi_warehouse, narrow)
+    assert previous is not None
+    assert previous.release_key == captured.release_key
+    assert load_latest_accepted_release(fbi_warehouse, wide) is None

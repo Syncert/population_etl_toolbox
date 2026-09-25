@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -46,3 +47,31 @@ def agency_names() -> dict[str, str]:
         slice_key="agency_directory:WI",
     )
     return {record.ori: record.agency_name for record in result.agencies}
+
+
+def observation_fixture(product: Any, subject: Any) -> str:
+    """Return the reviewed fixture captured for one product subject."""
+    code = product.offense_code
+    if subject.subject_type == "national":
+        return f"summarized_national_{code}"
+    if subject.subject_type == "state":
+        return f"summarized_state_{subject.subject_code}_{code}"
+    return f"summarized_agency_{subject.subject_code}_{code}"
+
+
+#: States with captured summarized fixtures for every registered offense.
+#: Wisconsin carries the reviewed agency sample, Pennsylvania's participation
+#: moves from 76% to 99% inside the fixture window, and the Virgin Islands is
+#: the territory subject. Every other documented state is proved at the
+#: registry level rather than by a fixture.
+FIXTURE_STATES: tuple[str, ...] = ("PA", "VI", "WI")
+
+
+def fixture_scoped(product: Any) -> Any:
+    """Return a registered product narrowed to the states with fixtures."""
+    return dataclasses.replace(
+        product,
+        state_scope=tuple(
+            state for state in product.state_scope if state in FIXTURE_STATES
+        ),
+    )

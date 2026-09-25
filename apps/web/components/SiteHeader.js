@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+import SignInControl from "./SignInControl";
 import { BarChart3, BookOpen, Bookmark, Columns3, Database, FilePenLine, LineChart, MapPinned, ShieldCheck } from "lucide-react";
 
 const navigation = [
@@ -46,6 +48,10 @@ export default function SiteHeader() {
           );
         })}
       </nav>
+      {/* Last in the header and outside the nav: signing in is not a place on
+          this site, and putting it in the primary navigation would make it
+          one. */}
+      <SignInControl />
     </header>
   );
 }

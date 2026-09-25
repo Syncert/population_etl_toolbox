@@ -30,7 +30,11 @@ import {
   collapseToNewestRelease,
   describeHistoryLoad,
   countObservationPeriods,
+  ALL_DIMENSION_VALUES,
   describeStratification,
+  dimensionSelectionsForLink,
+  dimensionSelectionsFromLink,
+  effectiveDimensionSelections,
   dimensionsCarriedBy,
   newestPerGeography,
   normalizeObservationRows,
@@ -434,6 +438,84 @@ describe("stratified answers are reported, never collapsed", () => {
     expect(describeStratification(narrowed, cdc.dimensionFilters)).toEqual({
       seriesCount: 1,
       stratified: false,
+      varyingDimensions: [],
+    });
+  });
+
+  test("a dimension that only names the geography is not a second series", () => {
+    // FBI UCR declares subject_code, and at the state grain a state's
+    // subject_code is that state: 52 states carry 52 codes, each one series.
+    // Counting signatures across geographies read that as 52 series and
+    // emptied the map (WEB-117).
+    const states = ["PA", "WI", "VI"].flatMap((code, index) =>
+      ["2023-05-01", "2023-06-01"].map((period_start) => ({
+        geo_id: `state:${index}`,
+        period_start,
+        dimensions: { subject_type: "state", subject_code: code },
+      })),
+    );
+    expect(describeStratification(states, ["subject_type", "subject_code"])).toEqual({
+      seriesCount: 1,
+      stratified: false,
+      varyingDimensions: [],
+    });
+    expect(newestPerGeography(states)).toHaveLength(3);
+  });
+
+  test("only a dimension that varies inside one geography is named", () => {
+    const rows = [
+      { geo_id: "a", dimensions: { stratum_id: "overall", subject_code: "A" } },
+      { geo_id: "a", dimensions: { stratum_id: "age_18_44", subject_code: "A" } },
+      { geo_id: "b", dimensions: { stratum_id: "overall", subject_code: "B" } },
+    ];
+    expect(describeStratification(rows, ["stratum_id", "subject_code"])).toEqual({
+      seriesCount: 2,
+      stratified: true,
+      varyingDimensions: ["stratum_id"],
+    });
+  });
+
+  test("a final value beside its forecasts is stratified by a published dimension (WEB-118)", () => {
+    // USDA NASS publishes a year's final value and its August and October
+    // forecasts for one state; only reference_period_desc separates them, and
+    // no filter declares it. The map must not colour whichever arrived last.
+    const rows = ["YEAR", "YEAR - AUG FORECAST", "YEAR - OCT FORECAST"].map((reference) => ({
+      geo_id: "state:01",
+      period_start: "1999",
+      period_end: "1999",
+      value: "2.3",
+      dimensions: { reference_period_desc: reference, domain_desc: "TOTAL" },
+    }));
+    expect(
+      describeStratification(rows, ["domain_desc", "reference_period_desc"]),
+    ).toEqual({ seriesCount: 3, stratified: true, varyingDimensions: ["reference_period_desc"] });
+  });
+
+  test("a dimension that moves with the period is one series, not many", () => {
+    const rows = ["01-2023", "02-2023"].map((period, index) => ({
+      geo_id: "state:55",
+      period_start: `2023-0${index + 1}-01`,
+      period_end: `2023-0${index + 1}-28`,
+      dimensions: { period },
+    }));
+    expect(describeStratification(rows, ["period"])).toEqual({
+      seriesCount: 1,
+      stratified: false,
+      varyingDimensions: [],
+    });
+  });
+
+  test("rows no published dimension tells apart are still not collapsed", () => {
+    const rows = ["20", "22"].map((value) => ({
+      geo_id: "state:05|county:998",
+      period_start: "1990",
+      period_end: "1990",
+      value,
+      dimensions: { domain_desc: "TOTAL" },
+    }));
+    expect(describeStratification(rows, ["domain_desc"])).toEqual({
+      seriesCount: 2,
+      stratified: true,
       varyingDimensions: [],
     });
   });
@@ -1451,5 +1533,52 @@ describe("what a selected state narrowed", () => {
     expect(
       stateScopeNote({ stateSelected: true, narrowsRows: false, sourceTitle: " " }),
     ).toContain("This source declares no state filter");
+  });
+});
+
+
+describe("declared filter defaults (API-157)", () => {
+  const nass = {
+    key: "usda-nass",
+    dimensionFilters: ["domain_desc", "reference_period_desc"],
+    filterDefaults: { reference_period_desc: "YEAR" },
+  };
+
+  test("an untouched filter reads with the source's declared default", () => {
+    expect(effectiveDimensionSelections(nass, {})).toEqual({ reference_period_desc: "YEAR" });
+    expect(effectiveDimensionSelections(nass, { domain_desc: "TOTAL" })).toEqual({
+      reference_period_desc: "YEAR",
+      domain_desc: "TOTAL",
+    });
+  });
+
+  test("a reader's own choice wins, including a choice of every value", () => {
+    expect(
+      effectiveDimensionSelections(nass, { reference_period_desc: "YEAR - AUG FORECAST" }),
+    ).toEqual({ reference_period_desc: "YEAR - AUG FORECAST" });
+    expect(effectiveDimensionSelections(nass, { reference_period_desc: "" })).toEqual({
+      reference_period_desc: "",
+    });
+  });
+
+  test("a source declaring no default is read exactly as selected", () => {
+    const cdc = { dimensionFilters: ["stratum_id"], filterDefaults: {} };
+    expect(effectiveDimensionSelections(cdc, {})).toEqual({});
+    expect(effectiveDimensionSelections(null, { stratum_id: "x" })).toEqual({ stratum_id: "x" });
+  });
+
+  test("a link carries an explicit 'all' on a defaulted filter and reads it back", () => {
+    const recorded = dimensionSelectionsForLink(nass, {
+      reference_period_desc: "",
+      domain_desc: "",
+    });
+    // "all" on the defaulted filter survives; on an ordinary filter it is
+    // simply absent, as before.
+    expect(recorded).toEqual({ reference_period_desc: ALL_DIMENSION_VALUES });
+    expect(dimensionSelectionsFromLink(recorded)).toEqual({ reference_period_desc: "" });
+    expect(effectiveDimensionSelections(nass, dimensionSelectionsFromLink(recorded))).toEqual({
+      reference_period_desc: "",
+    });
+    expect(dimensionSelectionsForLink(nass, {})).toEqual({});
   });
 });

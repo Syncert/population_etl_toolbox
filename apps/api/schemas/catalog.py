@@ -114,6 +114,13 @@ class SourceCapability(BaseModel):
     #: (``metric_code``, ``scope``, ``release``, ``limit``, ``offset``). A
     #: filter absent here is rejected with an explanation, never ignored.
     observation_filters: list[str] = []
+    #: Values of declared ``observation_filters`` that a one-value-per-
+    #: geography reader (a map) should start from, keyed by filter name. A
+    #: declaration for clients, never applied by ``/observations``, which
+    #: filters on what it is sent and nothing else. USDA NASS declares
+    #: ``reference_period_desc: YEAR``: the final value rather than one of
+    #: that year's forecasts (API-157).
+    observation_filter_defaults: dict[str, str] = {}
     #: Field names a neutral observation row's ``dimensions`` object carries
     #: for this source, under the source's own published names. The set is a
     #: review of what belongs beside a value, not the serving relation's

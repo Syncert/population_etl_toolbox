@@ -388,11 +388,21 @@ def run_dag(dagbag: Any, dag_id: str, *, logical_date: datetime | None = None) -
 
 
 def assert_dag_run_succeeded(dag_run: Any, dag_id: str) -> dict[str, str]:
-    """Fail with every unsuccessful task named, not just the first one."""
+    """Fail with every unsuccessful task named, not just the first one.
+
+    A mapped task has one instance per map index, all sharing its task id;
+    keyed by task id alone, the last index hid every earlier one's state, so a
+    failed expansion surfaced only as its downstream tasks' ``upstream_failed``.
+    """
     states = {
-        instance.task_id: instance.state
+        (
+            f"{instance.task_id}[{instance.map_index}]"
+            if instance.map_index >= 0
+            else instance.task_id
+        ): instance.state
         for instance in sorted(
-            dag_run.get_task_instances(), key=lambda item: item.task_id
+            dag_run.get_task_instances(),
+            key=lambda item: (item.task_id, item.map_index),
         )
     }
     unsuccessful = {
@@ -541,11 +551,24 @@ def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:
     any agency observation, and replay refuses to publish an agency slice whose
     reference slice does not identify it. Both boundaries therefore need
     fixtures, and each answers the actual request rather than one flat payload.
+
+    Every product registers all documented states, but reviewed fixtures exist
+    for a few only, so the registry the DAG resolves at task runtime is narrowed
+    to Wisconsin exactly as the database tiers narrow it (``fixture_scoped``).
+    Without it the first unfixtured state (``AL``) fails every capture.
     """
     from data_ingestion_toolbox.fbi_ucr import capture as fbi_capture
+    from data_ingestion_toolbox.fbi_ucr import registry as fbi_registry
     from data_ingestion_toolbox.fbi_ucr.client import (
         CdeResponse,
         observation_parameters,
+    )
+    from tests.support.fbi_release import fixture_scoped
+
+    monkeypatch.setattr(
+        fbi_registry,
+        "ALL_PRODUCTS",
+        tuple(fixture_scoped(product) for product in fbi_registry.ALL_PRODUCTS),
     )
 
     def response(endpoint: str, parameters: dict, name: str) -> CdeResponse:
