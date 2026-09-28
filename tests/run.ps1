@@ -182,9 +182,9 @@ switch ($Tier) {
         # The explorer map checks against a running full stack (WEB-118): the
         # data-path sweep over every source's maps, then the painted-pixel
         # check in Chromium with software WebGL. Both need the web app as well
-        # as /api/v1 and /tiles on one origin, which the composed web-smoke
-        # stack does not serve, so this points at a stack already up --
-        # `http://localhost:3001` for the local development stack.
+        # as /api/v1 and /tiles on one origin. Point this at a stack already
+        # up -- `http://localhost:3001` for the local development stack, or
+        # the composed smoke web origin at `http://127.0.0.1:33100`.
         if (-not $env:SMOKE_BASE_URL) { $env:SMOKE_BASE_URL = "http://localhost:3001" }
         $env:SMOKE_REQUIRED = "1"
         & npm --prefix apps/web run test:smoke -- ../../tests/frontend/smoke/map-display.smoke.test.js
@@ -232,10 +232,13 @@ switch ($Tier) {
             # identity, and two WEB-027 tests failed against code that had been
             # correct for days. A tier that can grade a stale image is not a
             # live-stack tier.
-            & docker @compose up --detach --wait --build postgres martin api proxy
+            & docker @compose up --detach --wait --build postgres martin api proxy web
             if ($LASTEXITCODE -ne 0) { throw "Smoke stack failed to start" }
             & npm --prefix apps/web run test:smoke
             if ($LASTEXITCODE -ne 0) { throw "web smoke tests failed" }
+            $env:SMOKE_BASE_URL = "http://127.0.0.1:33100"
+            & npm --prefix apps/web run test:maps
+            if ($LASTEXITCODE -ne 0) { throw "web map paint tests failed" }
         }
         finally {
             # Windows PowerShell wraps a native command's stderr in an

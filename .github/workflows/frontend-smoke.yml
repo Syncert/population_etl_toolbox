@@ -13,6 +13,9 @@ on:
       - "infra/web/**"
       - "sql/**"
       - "tests/frontend/smoke/**"
+      - "tests/frontend/live/**"
+      - "tests/frontend/support/mapPaintSubjects.js"
+      - "tests/fixtures/api/viz_coverage.json"
       - "tests/sql/**"
       - ".github/workflows/frontend-smoke.yml"
   push:
@@ -143,6 +146,11 @@ jobs:
           logs="$(docker compose -f infra/docker/docker-compose.test.yml             -f infra/docker/docker-compose.smoke.yml logs --no-color web)"
           echo "${logs}" | tail -20
           echo "${logs}" | grep -F "client_report kind=vital"
+      - name: Every deployed map paints its values
+        working-directory: apps/web
+        env:
+          SMOKE_BASE_URL: ${{ env.WEB_SMOKE_URL }}
+        run: npm run test:maps
       - name: Capture service logs
         if: failure()
         run: >-

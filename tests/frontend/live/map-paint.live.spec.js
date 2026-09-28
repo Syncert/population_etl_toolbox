@@ -20,7 +20,7 @@
 //      a real share of its area, so "coloured" means painted, not modelled;
 //   3. a map with nothing to colour says why, rather than drawing grey.
 //
-// One subject per source and drawable grain: of the first metrics in catalog
+// One subject per reviewed spatial source and deployed drawable grain: of the first metrics in catalog
 // order, the one whose latest answer at that grain has one series per
 // geography and colours the most geographies. Run it with the stack up:
 //
@@ -33,12 +33,12 @@ import { expect, test } from "../../../apps/web/node_modules/@playwright/test/in
 import sharp from "../../../apps/web/node_modules/sharp/dist/index.cjs";
 
 import { oracle } from "../support/mapOracle.js";
+import { deploymentPaintGrains, reviewedPaintSources } from "../support/mapPaintSubjects.js";
 
 const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
-// The subjects are the reviewed matrix's own (source, grain) pairs, read at
-// definition time: every source the checkout says advertises a drawable
-// grain gets a test, so a deployment that stops serving one fails by name
-// rather than quietly grading fewer maps.
+// The reviewed matrix names the sources this checkout promises. The
+// deployment's active catalog chooses the grains: the smoke seed legitimately
+// publishes counties only, while a larger deployment may publish states too.
 const REVIEWED = JSON.parse(
   readFileSync(
     // Playwright runs from the config's directory, apps/web.
@@ -57,15 +57,25 @@ const CANDIDATES = Number(process.env.MAP_PAINT_CANDIDATES || 12);
  * A floor, not a coverage expectation: a broken map paints essentially no
  * value colour at all (the grey FBI map painted none), while a correct map of
  * a sparse measure can colour a few dozen counties -- USDA NASS traditional
- * corn colours ~26 counties and 0.7% of the canvas. 0.05% is a few small
- * polygons at the test viewport.
+ * corn colours ~26 counties and 0.7% of the canvas. The CI seed carries one
+ * small Dane County polygon, so the test selects its published state to fit
+ * the camera before grading. A 0.01% floor rejects an empty WebGL canvas
+ * without grading the fixture's geography density instead of the renderer.
  */
-const MIN_PAINTED_SHARE = 0.0005;
+const MIN_PAINTED_SHARE = 0.0001;
 /** Per-channel distance a 0.95-opacity fill may sit from its swatch. */
 const CHANNEL_TOLERANCE = 20;
 const FALLBACK_COLORS = new Set(["#9fb0ba", "#c8b7a6"]);
 
-test.skip(!BASE_URL, "SMOKE_BASE_URL is unset; the live map tier needs a running stack");
+test.skip(
+  !BASE_URL && process.env.SMOKE_REQUIRED !== "1",
+  "SMOKE_BASE_URL is unset; the live map tier needs a running stack",
+);
+test.beforeAll(() => {
+  if (process.env.SMOKE_REQUIRED === "1") {
+    expect(BASE_URL, "SMOKE_REQUIRED=1 but SMOKE_BASE_URL is unset").not.toBe("");
+  }
+});
 
 async function getJson(path, params = {}) {
   const url = new URL(`${BASE_URL}/api/v1${path}`);
@@ -126,99 +136,117 @@ async function paintedShare(png, colors) {
   return painted / pixels;
 }
 
-for (const [sourceCode, grains] of Object.entries(REVIEWED.advertised_geo_grains)) {
-  for (const grain of grains.filter((value) => DRAWABLE.includes(value))) {
-    const capability = { source_code: sourceCode };
-    test(`${sourceCode} ${grain}: the map paints its values`, async ({ page }) => {
-      test.setTimeout(240_000);
-      const metrics = (await metricsOf(capability.source_code)).filter((metric) =>
-        (metric.valid_geo_grains || []).map((value) => String(value).toUpperCase()).includes(grain),
-      );
-      expect(
-        metrics.length,
-        `${capability.source_code} advertises ${grain} and the catalog lists no ${grain} metric`,
-      ).toBeGreaterThan(0);
+// FRED's reviewed declaration is national only, so it has no polygon map.
+for (const sourceCode of reviewedPaintSources(REVIEWED.advertised_geo_grains, DRAWABLE)) {
+  test(`${sourceCode}: every deployed map paints its values`, async ({ page }) => {
+    const allMetrics = await metricsOf(sourceCode);
+    const grains = deploymentPaintGrains(allMetrics, DRAWABLE);
+    expect(
+      grains.length,
+      `${sourceCode} is named by the reviewed matrix but its active catalog publishes no drawable grain`,
+    ).toBeGreaterThan(0);
+    test.setTimeout(240_000 * grains.length);
 
-      // Of the first CANDIDATES metrics, the one colouring the most
-      // geographies: a broad map makes the paint check a strong one.
-      let subject = null;
-      let best = 0;
-      for (const metric of metrics.slice(0, CANDIDATES)) {
-        const answer = await getJson("/observations", {
-          metric_code: metric.metric_code,
-          scope: "latest",
-          geo_level: grain,
-          limit: 5000,
-        });
-        const expected = oracle(answer.items || []);
-        if (expected.numeric && !expected.stratified && expected.colourable > best) {
-          subject = metric;
-          best = expected.colourable;
-        }
-      }
-      expect(
-        subject,
-        `none of the first ${CANDIDATES} ${capability.source_code} ${grain} metrics has one numeric series per geography`,
-      ).not.toBeNull();
+    for (const grain of grains) {
+      await test.step(`${sourceCode} ${grain} paints the served values`, async () => {
+        const metrics = allMetrics.filter((metric) =>
+          (metric.valid_geo_grains || []).map((value) => String(value).toUpperCase()).includes(grain),
+        );
 
-      // The rows the page itself received, read off the wire.
-      const received = [];
-      page.on("response", async (response) => {
-        const url = new URL(response.url());
-        if (
-          /\/observations(\/latest)?$/.test(url.pathname) &&
-          url.searchParams.get("metric_code") === subject.metric_code &&
-          !url.searchParams.get("geo_id") &&
-          response.ok()
-        ) {
-          try {
-            const body = await response.json();
-            received.push(...(body.items || []));
-          } catch {
-            // A body the page could not read either; the grade below says so.
+        // Of the first CANDIDATES metrics, the one colouring the most
+        // geographies: a broad map makes the paint check a strong one.
+        let subject = null;
+        let subjectState = "";
+        let best = 0;
+        for (const metric of metrics.slice(0, CANDIDATES)) {
+          const answer = await getJson("/observations", {
+            metric_code: metric.metric_code,
+            scope: "latest",
+            geo_level: grain,
+            limit: 5000,
+          });
+          const expected = oracle(answer.items || []);
+          if (expected.numeric && !expected.stratified && expected.colourable > best) {
+            subject = metric;
+            subjectState = answer.items
+              .map((row) => /^state:(\d{2})\b/.exec(String(row.geo_id))?.[1] || "")
+              .find(Boolean) || "";
+            best = expected.colourable;
           }
         }
+        expect(
+          subject,
+          `none of the first ${CANDIDATES} ${sourceCode} ${grain} metrics has one numeric series per geography`,
+        ).not.toBeNull();
+
+        // The rows the page itself received, read off the wire.
+        const received = [];
+        page.on("response", async (response) => {
+          const url = new URL(response.url());
+          if (
+            /\/observations(\/latest)?$/.test(url.pathname) &&
+            url.searchParams.get("metric_code") === subject.metric_code &&
+            !url.searchParams.get("geo_id") &&
+            response.ok()
+          ) {
+            try {
+              const body = await response.json();
+              received.push(...(body.items || []));
+            } catch {
+              // A body the page could not read either; the grade below says so.
+            }
+          }
+        });
+
+        const errors = [];
+        page.on("pageerror", (error) => errors.push(String(error)));
+
+        const url =
+          `${BASE_URL}/explore?source=${encodeURIComponent(sourceCode)}` +
+          `&metric=${encodeURIComponent(subject.metric_code)}&geo_level=${grain}` +
+          (subjectState ? `&state=${subjectState}` : "");
+        await page.goto(url, { waitUntil: "networkidle", timeout: 120_000 });
+        const canvas = page.getByTestId("map-canvas");
+        await canvas.scrollIntoViewIfNeeded();
+        await expect(canvas).toHaveAttribute("data-map-ready", "true", { timeout: 60_000 });
+        await expect
+          .poll(async () => Number(await canvas.getAttribute("data-colored-values")), {
+            timeout: 60_000,
+          })
+          .toBeGreaterThan(0);
+        // Let MapLibre fetch tiles and paint the settled expression.
+        await page.waitForLoadState("networkidle");
+        await page.waitForTimeout(3_000);
+
+        const expected = oracle(received);
+        const colored = Number(await canvas.getAttribute("data-colored-values"));
+        expect(colored, `${url}: the page coloured ${colored} of ${expected.colourable}`).toBe(
+          expected.colourable,
+        );
+
+        const swatches = await page
+          .locator(".map-legend .legend-swatch")
+          .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
+        const binColors = swatches
+          .map(hexToRgb)
+          .filter((rgb) => rgb && !FALLBACK_COLORS.has(rgbToHex(rgb)));
+        expect(binColors.length, `${url}: the legend shows no value bin`).toBeGreaterThan(0);
+
+        const mapCanvas = canvas.locator("canvas").first();
+        // Playwright screenshots the canvas rectangle with overlapping DOM
+        // controls, including the legend's own swatches. Mask those overlays
+        // so a blank WebGL canvas cannot pass on the legend's pixels.
+        const png = await mapCanvas.screenshot({
+          mask: [page.locator(".map-legend"), page.locator(".maplibregl-ctrl")],
+          maskColor: "#ff00ff",
+        });
+        const share = await paintedShare(png, binColors);
+        expect(
+          share,
+          `${url}: ${(share * 100).toFixed(2)}% of the map is painted in value colours`,
+        ).toBeGreaterThanOrEqual(MIN_PAINTED_SHARE);
+        expect(errors, `${url}: the page threw`).toEqual([]);
       });
-
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(String(error)));
-
-      const url =
-        `${BASE_URL}/explore?source=${encodeURIComponent(capability.source_code)}` +
-        `&metric=${encodeURIComponent(subject.metric_code)}&geo_level=${grain}`;
-      await page.goto(url, { waitUntil: "networkidle", timeout: 120_000 });
-      const canvas = page.getByTestId("map-canvas");
-      await canvas.scrollIntoViewIfNeeded();
-      await expect(canvas).toHaveAttribute("data-map-ready", "true", { timeout: 60_000 });
-      await expect
-        .poll(async () => Number(await canvas.getAttribute("data-colored-values")), {
-          timeout: 60_000,
-        })
-        .toBeGreaterThan(0);
-      // Let MapLibre fetch tiles and paint the settled expression.
-      await page.waitForLoadState("networkidle");
-      await page.waitForTimeout(3_000);
-
-      const expected = oracle(received);
-      const colored = Number(await canvas.getAttribute("data-colored-values"));
-      expect(colored, `${url}: the page coloured ${colored} of ${expected.colourable}`).toBe(
-        expected.colourable,
-      );
-
-      const swatches = await page
-        .locator(".map-legend .legend-swatch")
-        .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
-      const binColors = swatches
-        .map(hexToRgb)
-        .filter((rgb) => rgb && !FALLBACK_COLORS.has(rgbToHex(rgb)));
-      expect(binColors.length, `${url}: the legend shows no value bin`).toBeGreaterThan(0);
-
-      const share = await paintedShare(await canvas.locator("canvas").first().screenshot(), binColors);
-      expect(
-        share,
-        `${url}: ${(share * 100).toFixed(2)}% of the map is painted in value colours`,
-      ).toBeGreaterThanOrEqual(MIN_PAINTED_SHARE);
-      expect(errors, `${url}: the page threw`).toEqual([]);
-    });
-  }
+    }
+  });
 }

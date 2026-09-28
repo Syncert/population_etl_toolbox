@@ -74,12 +74,11 @@ claiming it, so it stays in `to_do/` until an operator can answer those three
 questions. The classification derives from the `verify` block and cannot see
 that distinction; this paragraph is where it is recorded.
 
-**2 plans.**
+**1 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
-| [`map-paint-check-in-ci`](to_do/THE_MAP_PAINT_CHECK_RUNS_IN_CI_PLAN.md) | medium | Every push runs the paint tier against a composed stack: the web container, API, Martin and PostGIS on one origin, with a GL-capable Chromium. |
 
 
 ## 3. Needs a machine with the warehouse up

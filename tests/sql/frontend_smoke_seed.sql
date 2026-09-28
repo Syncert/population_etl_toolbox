@@ -473,7 +473,7 @@ INSERT INTO silver_nass.fact_crop_observation (
     product_id, release_watermark, source_record_id, source_run_id,
     capture_id, source_row_index, slice_key, commodity_sk, statistic_sk,
     domain_sk, geo_id, geo_sk, geo_type, geography_status, geo_source_code,
-    agg_level_desc, location_desc, year, freq_desc, begin_code, end_code,
+    agg_level_desc, location_desc, state_fips, county_fips, year, freq_desc, begin_code, end_code,
     reference_period_desc, value_source, value, value_status, unit_desc,
     cv_source, cv_status, source_desc, transformation_version
 )
@@ -481,7 +481,7 @@ SELECT 'crops', '2098', 'f65bd325f32b0a4b12726509ce34ce28cdaeb93e0c92d57bba9318c
        '00000000-0000-4000-8000-000000000a55',
        '00000000-0000-4000-a000-000000000a55', 0, '2098', 'c5084f7c89d9d1128b54fd91f0d8ac2b0aca74ff2cb2c41c56e4fc7609a15cc4',
        'f41a8794e3844f67adf4c587312401ece4d8538b8f791fba5bdfc2b7fbf0ebeb', 'f2912ead6f4ce0d029af5662376d793d691cdf6906a4161a103e4a4a983cfd26', 'state:55|county:025', geo_sk, 'county',
-       'resolved', '55025', 'COUNTY', 'DANE', 2098, 'ANNUAL', '00', '00',
+       'resolved', '55025', 'COUNTY', 'DANE', '55', '025', 2098, 'ANNUAL', '00', '00',
        'YEAR', '185.4', 185.4, 'valid', 'BU / ACRE', '', 'not_available',
        'SURVEY', '1'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
