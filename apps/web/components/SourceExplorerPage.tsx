@@ -99,6 +99,7 @@ import {
   effectiveDimensionSelections,
   mapRows,
   newestPerGeography,
+  selectedMappedObservation,
   seriesDimensionNames,
   normalizeObservationRows,
   observationDimensionLabel,
@@ -573,8 +574,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     [mappableObservations, tileMetadata],
   );
   const selectedObservation = useMemo(
-    () => observations.find((item) => item.geo_id === selectedGeoId) || null,
-    [observations, selectedGeoId],
+    () => selectedMappedObservation(mappableObservations, selectedGeoId),
+    [mappableObservations, selectedGeoId],
   );
   const selectedCountyGeography = useMemo(
     () => allGeographies.find((item) => item.geo_id === selectedGeoId) || null,

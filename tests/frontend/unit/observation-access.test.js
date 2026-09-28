@@ -37,6 +37,8 @@ import {
   effectiveDimensionSelections,
   dimensionsCarriedBy,
   newestPerGeography,
+  mapRows,
+  selectedMappedObservation,
   normalizeObservationRows,
   OBSERVATION_COVERAGE_FIELDS,
   OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
@@ -830,6 +832,43 @@ describe("newestPerGeography", () => {
   test("counts the distinct periods a publication spans", () => {
     expect(countObservationPeriods(rows)).toBe(5);
     expect(countObservationPeriods([])).toBe(0);
+  });
+});
+
+// Covers: WEB-120 — selecting a geography reads the exact row the map paints.
+describe("selectedMappedObservation", () => {
+  const oldestFirst = [
+    { geo_id: "state:55", period_start: "2021-01-01", period_end: "2021-12-31", value: "11", value_status: "valid" },
+    { geo_id: "state:55", period_start: "2023-01-01", period_end: "2023-12-31", value: "19", value_status: "valid" },
+    { geo_id: "state:01", period_start: "2022-01-01", period_end: "2022-12-31", value: "7", value_status: "valid" },
+  ];
+
+  test.each([
+    ["FBI UCR", fbi, { subject_code: "55" }],
+    ["CDC", cdc, { stratum_id: "overall" }],
+    ["USDA NASS", nass, { reference_period_desc: "YEAR" }],
+  ])("uses the newest painted %s row when the publication is oldest first", (_name, source, dimensions) => {
+    const rows = oldestFirst.map((row) => ({ ...row, dimensions }));
+    const painted = mapRows(source, rows, SCOPE_LATEST).mappable;
+    expect(selectedMappedObservation(painted, "state:55")).toBe(painted.find((row) => row.geo_id === "state:55"));
+    expect(selectedMappedObservation(painted, "state:55")).toMatchObject({ value: "19", period_end: "2023-12-31" });
+    expect(selectedMappedObservation(painted, "state:99")).toBeNull();
+  });
+
+  test("preserves a one-row-per-geography publication", () => {
+    const row = { ...oldestFirst[1], dimensions: {} };
+    expect(selectedMappedObservation(mapRows(census, [row], SCOPE_LATEST).mappable, "state:55")).toBe(row);
+  });
+
+  test("keeps a withheld newest row instead of falling back to an older value", () => {
+    const rows = [oldestFirst[0], { ...oldestFirst[1], value: null, value_status: "not_reported" }];
+    const painted = mapRows(null, rows, SCOPE_LATEST).mappable;
+    expect(selectedMappedObservation(painted, "state:55")).toBe(painted[0]);
+    expect(selectedMappedObservation(painted, "state:55")).toMatchObject({
+      value: null,
+      value_status: "not_reported",
+      period_end: "2023-12-31",
+    });
   });
 });
 

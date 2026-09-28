@@ -1066,6 +1066,17 @@ export function mapRows(
   };
 }
 
+/** The selected geography's row from the same reduced set the map paints. */
+export function selectedMappedObservation(
+  mappable: ObservationRow[] | null | undefined,
+  geoId: string | null | undefined,
+): ObservationRow | null {
+  if (!geoId) {
+    return null;
+  }
+  return (mappable || []).find((row) => row.geo_id === geoId) || null;
+}
+
 /**
  * The link token for "every published value" on a filter the source gives a
  * default. An empty selection cannot travel in a link -- the serializer drops

@@ -1,6 +1,6 @@
 ---
 id: selected-geography-shows-painted-period
-branch: claude/selected-geography-shows-painted-period
+branch: codex/analytics-backlog-2026-09-28
 depends_on: []
 parallel_safe: true
 complexity: low
@@ -13,10 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed.
-- **Last updated:** 2026-09-25
+- **Status:** Ready for human review on `codex/analytics-backlog-2026-09-28`.
+- **Last updated:** 2026-09-28
 - **Dependencies:** none.
-- **Next pickup:** SG-1.
+- **Next pickup:** None.
 
 ## Why
 
@@ -58,22 +58,22 @@ the map painted for that geography — for every source, reducing or not.
 
 ## Work items
 
-- [ ] **SG-1: failing-first unit test.** Extract the selection into a pure
+- [x] **SG-1: failing-first unit test.** Extract the selection into a pure
   helper (or test through the existing `observationAccess` seam) and prove
   that, for a multi-period unreduced row set delivered oldest-first, the
   selected row is the newest period for that geography and equals what
   `newestPerGeography` yields. Include a geography whose newest period is
   withheld (`not_reported`): the panel shows the withheld newest row, never an
   older reported value, matching what the map paints.
-- [ ] **SG-2: fix.** Read the selection from `observationIndex` /
+- [x] **SG-2: fix.** Read the selection from `observationIndex` /
   `mappableObservations` (the same source as `SourceExplorerPage.tsx` lines
   1562 and 1753), not from raw `observations`. Keep the observation table on
   raw rows — it lists everything as published by design.
-- [ ] **SG-3: browser evidence.** Extend `tests/frontend/browser/explorer.spec.js`
+- [x] **SG-3: browser evidence.** Extend `tests/frontend/browser/explorer.spec.js`
   selection flow (currently asserts only heading and history count) to assert
   that the panel's Period equals the painted/tooltip period for a
   non-reducing source fixture with more than one period.
-- [ ] **SG-4: catalog.** Add the behaviour to `docs/reference/TESTING_CONTRACT.md`
+- [x] **SG-4: catalog.** Add the behaviour to `docs/reference/TESTING_CONTRACT.md`
   web catalog and map it in `docs/reference/CI_EVIDENCE_MAP.md`.
 
 ## Acceptance criteria
@@ -88,3 +88,23 @@ the map painted for that geography — for every source, reducing or not.
 
 Choosing a period other than the newest, and any time rollup — see
 `TIME_WINDOWS_AND_ROLLUPS_PLAN.md`.
+
+## Implementation and validation, 2026-09-28
+
+- `selectedMappedObservation` now selects from `mapRows(...).mappable`, and
+  the panel uses it. The raw observation table still receives every row.
+- The focused unit test failed first because the selection helper was absent.
+  The browser test failed first with `32.4 percent` and the 2021–2022 period
+  while the map coloured the 2023–2024 row. Both pass after the fix.
+- Unit fixtures cover oldest-first FBI UCR, CDC and USDA NASS publications,
+  a newest `not_reported` row, and an already reduced Census ACS row. Browser
+  fixtures cover both a numeric and a withheld newest CDC row.
+- `npm --prefix apps/web run test:unit`: 697 passed.
+- `npm --prefix apps/web run lint` and `run typecheck`: passed.
+- `npm --prefix apps/web run build`: passed.
+- `CI=1 npm --prefix apps/web run test:browser`: 167 passed on the production
+  build. After adding the withheld case, a focused browser run passed 2/2.
+- `python -m pytest tests/unit/shared/test_repository_hygiene.py
+  tests/unit/tooling/test_plan_environments.py --basetemp=.tmp/pytest-sg -q`:
+  21 passed. No warehouse or external service check is required by this web
+  selection contract.

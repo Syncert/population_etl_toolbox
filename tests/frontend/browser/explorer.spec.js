@@ -323,6 +323,7 @@ async function installRoutes(
     releaseRequests = [],
     truncateReleases = false,
     settledHistory = false,
+    cdcRows = null,
   } = {},
 ) {
   let tileRequests = 0;
@@ -526,7 +527,7 @@ async function installRoutes(
     }
 
     const stratum = params.get("stratum_id");
-    const rows = [cdcRow("overall", "32.4"), cdcRow("age_18_44", null)];
+    const rows = cdcRows || [cdcRow("overall", "32.4"), cdcRow("age_18_44", null)];
     const items = stratum ? rows.filter((row) => row.dimensions.stratum_id === stratum) : rows;
     return answer(items, "CDC");
   });
@@ -710,6 +711,53 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", "");
   await page.keyboard.press("Enter");
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", county.geo_id);
+});
+
+test("selected geography shows the same newest period the map paints", async ({ page }) => {
+  // Covers: WEB-120 — CDC serves an oldest-first multi-period publication
+  // without the API's aligned reduction. The map reduces it; the panel must
+  // read that same reduced row, including its period and value.
+  await installRoutes(page, {
+    cdcRows: [
+      cdcRow("overall", "32.4"),
+      cdcRow("overall", "39.4", {
+        period_start: "2023-01-01",
+        period_end: "2024-12-31",
+      }),
+    ],
+  });
+  await page.goto(`/explore?source=cdc&metric=${encodeURIComponent(cdcMetric.metric_code)}&geo_level=COUNTY`);
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "2");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
+  await page.getByTestId("state-select").selectOption("55");
+  await page.getByTestId("county-select").selectOption("state:55|county:025");
+  const details = page.locator(".county-panel .county-details");
+  await expect(details).toContainText("39.4 percent");
+  await expect(details).toContainText("2023-01-01 – 2024-12-31");
+});
+
+test("a withheld newest period does not make the selected panel show an older value", async ({ page }) => {
+  // Covers: WEB-120 — absence at the newest period is itself the published
+  // answer for the map and for the selected geography.
+  await installRoutes(page, {
+    cdcRows: [
+      cdcRow("overall", "32.4"),
+      cdcRow("overall", null, {
+        value_status: "not_reported",
+        period_start: "2023-01-01",
+        period_end: "2024-12-31",
+      }),
+    ],
+  });
+  await page.goto(`/explore?source=cdc&metric=${encodeURIComponent(cdcMetric.metric_code)}&geo_level=COUNTY`);
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "2");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "0");
+  await page.getByTestId("state-select").selectOption("55");
+  await page.getByTestId("county-select").selectOption("state:55|county:025");
+  const details = page.locator(".county-panel .county-details");
+  await expect(details).toContainText("2023-01-01 – 2024-12-31");
+  await expect(details).not.toContainText("32.4 percent");
 });
 
 test("the map's worker loads from this origin and stays alive", async ({ page }) => {
