@@ -164,6 +164,12 @@ export interface MetricRelease {
   [key: string]: unknown;
 }
 
+export interface MetricPeriod {
+  period_start: string;
+  period_end?: string | null;
+  observation_count: number;
+}
+
 export interface DistributionBin {
   bin_index: number;
   count: number;

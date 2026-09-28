@@ -294,3 +294,22 @@ class MetricReleaseListResponse(BaseModel):
     limit: int
     offset: int
     items: list[MetricRelease]
+
+
+class MetricPeriod(BaseModel):
+    """One exact served period pair in a metric's latest publication."""
+
+    period_start: str
+    period_end: Optional[str] = None
+    observation_count: int
+
+
+class MetricPeriodListResponse(BaseModel):
+    """Published period pairs for one metric, newest first."""
+
+    metric_code: str
+    source_code: str
+    total: int
+    limit: int
+    offset: int
+    items: list[MetricPeriod]

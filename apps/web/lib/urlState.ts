@@ -71,6 +71,8 @@ export interface ExplorerState {
   geoId?: string;
   /** `latest` (the source's own latest publication) or `as_released`. */
   scope?: ObservationScope;
+  /** Exact period_start string from the latest publication. */
+  periodStart?: string;
   /**
    * A release identity from `/observations/releases`. Only meaningful with
    * `scope=as_released`: the API rejects `release` without it with a 422, so
@@ -106,6 +108,7 @@ const RESERVED_EXPLORER_PARAMS: ReadonlySet<string> = new Set([
   "geo",
   "scope",
   "release",
+  "period_start",
 ]);
 // The API's own filter-name shape, and a bound on what a link may carry.
 const DIMENSION_NAME_PATTERN = /^[a-z][a-z0-9_]{0,49}$/;
@@ -128,6 +131,14 @@ export type ExplorerStateDefaults = Pick<
 >;
 
 const STATE_FIPS_PATTERN = /^\d{2}$/;
+const PUBLISHED_PERIOD_PATTERN = /^(?:\d{4}|\d{4}-\d{2}-\d{2})$/;
+
+function isPublishedPeriod(value: string | null | undefined): value is string {
+  if (!value || !PUBLISHED_PERIOD_PATTERN.test(value)) return false;
+  if (value.length === 4) return Number(value) > 0;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
 
 /**
  * The table's page, as a link carries it.
@@ -221,6 +232,10 @@ export function parseExplorerState(search: string | null | undefined): ExplorerS
   if (isScope(scope)) {
     state.scope = scope;
   }
+  const periodStart = params.get("period_start");
+  if (state.scope !== "as_released" && isPublishedPeriod(periodStart)) {
+    state.periodStart = periodStart;
+  }
 
   // Anything else shaped like a filter name is carried as a dimension. The
   // parser does not know which names a source declares -- the capability
@@ -291,6 +306,9 @@ export function serializeExplorerState(
   }
   if (state.scope && isScope(state.scope) && state.scope !== defaults.scope) {
     params.set("scope", state.scope);
+  }
+  if (state.scope !== "as_released" && isPublishedPeriod(state.periodStart)) {
+    params.set("period_start", state.periodStart);
   }
   if (state.release && state.scope === "as_released") {
     params.set("release", state.release);

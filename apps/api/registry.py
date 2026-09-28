@@ -994,9 +994,10 @@ def registered_route_segments() -> tuple[str, ...]:
 
 #: Version-relative paths of the neutral routes that answer for every source
 #: with a dispatch entry: the registry-dispatched observation resource and its
-#: release listing (API-004).
+#: release and period listings (API-004, API-160).
 DISPATCH_NEUTRAL_PATHS: tuple[str, ...] = (
     "/observations",
+    "/observations/periods",
     "/observations/releases",
 )
 
@@ -1052,7 +1053,7 @@ class SourceDiscovery:
     the provider dataset/product identities its routes accept.
 
     API-004 closed the gap with registry dispatch: every source's metrics are
-    servable through ``/observations`` and ``/observations/releases``, so
+    servable through ``/observations`` and its period/release listings, so
     ``served_by_neutral_routes`` is true for all seven. API-005 added the
     aligned analysis paths for every ``analysis_ready`` dispatch entry. The
     paths are declared exactly -- not by prefix -- because the legacy

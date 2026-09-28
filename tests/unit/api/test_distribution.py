@@ -583,6 +583,37 @@ def test_a_distribution_with_nothing_published_reports_no_period() -> None:
     assert payload["periods_differ"] is False
 
 
+def test_distribution_bins_the_exact_painted_period() -> None:
+    """Covers: API-161 — binning narrows before the geography reduction."""
+    session = _DistributionSession(metric_row=dict(_FRED_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "period_start": "2023-01-01"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert "COALESCE(duration_start, observation_date)::TEXT = :period_start" in _dispatched(session)[-1]
+    assert session.parameters[-1]["period_start"] == "2023-01-01"
+
+
+def test_distribution_refuses_a_malformed_period() -> None:
+    """Covers: API-161 — a malformed period is not an empty histogram."""
+    session = _DistributionSession(metric_row=dict(_FRED_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "period_start": "2023-02-30"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert "period_start" in str(response.json())
+
+
 def test_a_distribution_says_what_uncertainty_it_could_not_carry() -> None:
     """Covers: API-098 — the same note the comparison publishes, here too.
 

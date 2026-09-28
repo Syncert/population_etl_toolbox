@@ -38,6 +38,7 @@ import type {
   DistributionResponse,
   GeographySummary,
   MetricRelease,
+  MetricPeriod,
   MetricSummary,
   Observation,
   SourceSummary,
@@ -89,6 +90,7 @@ import {
   describeHistoryLoad,
   buildLatestObservationRequest,
   buildReleaseListRequest,
+  buildPeriodListRequest,
   buildSettledHistoryRequest,
   collapseToNewestRelease,
   countObservationPeriods,
@@ -204,11 +206,13 @@ const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
 // published releases than this is reported as such rather than truncated
 // into a silently partial option list.
 const RELEASE_PAGE_SIZE = 200;
+const PERIOD_PAGE_SIZE = 200;
 // The release control is a picker: selecting a release is the only way this
 // screen sends `scope=as_released&release=…` or builds the link that
 // reproduces it, so a release it did not list is unreachable and
 // unshareable. Paged like every other collection read (WEB-045).
 const RELEASE_PAGE_LIMIT = 10;
+const PERIOD_PAGE_LIMIT = 10;
 // One geography's history. Paged like every other collection read, so a
 // publication longer than a single page is loaded rather than truncated --
 // and when the bound is reached the panel says so instead of labelling a
@@ -273,11 +277,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const distributionTracker = useRef(createRequestTracker()).current;
   const timeseriesTracker = useRef(createRequestTracker()).current;
   const releasesTracker = useRef(createRequestTracker()).current;
+  const periodsTracker = useRef(createRequestTracker()).current;
   const grainGeographyTracker = useRef(createRequestTracker()).current;
   // The metric a pinned release was chosen for. A release identity belongs
   // to one metric, so the pin is dropped when the metric changes — but not
   // when a shared link selects the metric and its pin together.
   const releaseMetricRef = useRef("");
+  const periodMetricRef = useRef("");
   // The initially requested URL state, applied once when the first metric
   // catalog for the resolved source arrives.
   const initialStateRef = useRef<ExplorerState | null>(null);
@@ -328,6 +334,21 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // API's declared vocabulary, never from a client-authored list.
   const [observationScope, setObservationScope] = useState<ObservationScope>(DEFAULT_SCOPE);
   const [selectedRelease, setSelectedRelease] = useState("");
+  const [selectedPeriod, setSelectedPeriod] = useState("");
+  const [periods, setPeriods] = useState<MetricPeriod[]>([]);
+  const [periodsStatus, setPeriodsStatus] = useState<RequestStatus>({
+    state: "idle",
+    message: "waiting for metric",
+  });
+  // The API lists period pairs. Several pairs can share one start, while
+  // the exact-period parameter selects all rows with that start.
+  const periodOptions = useMemo(() => {
+    const byStart = new Map<string, number>();
+    for (const period of periods) {
+      byStart.set(period.period_start, (byStart.get(period.period_start) || 0) + period.observation_count);
+    }
+    return [...byStart].map(([start, count]) => ({ start, count }));
+  }, [periods]);
   const [releases, setReleases] = useState<MetricRelease[]>([]);
   const [releasesStatus, setReleasesStatus] = useState<RequestStatus>({
     state: "idle",
@@ -457,6 +478,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       newestPerGeography: true,
       scope: observationScope,
       release: selectedRelease,
+      periodStart: selectedPeriod,
       dimensions: Object.fromEntries(
         JSON.parse(dimensionKey) as [string, string][],
       ) as Record<string, string>,
@@ -468,6 +490,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       dimensionKey,
       observationScope,
       selectedRelease,
+      selectedPeriod,
     ],
   );
 
@@ -582,8 +605,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     [allGeographies, selectedGeoId],
   );
   const selectedCounty: ObservationRow | null =
-    selectedObservation || timeseries[timeseries.length - 1] || selectedCountyGeography || null;
-  const selectedCountyHasObservation = Boolean(selectedObservation || timeseries.length > 0);
+    selectedObservation || (!selectedPeriod ? timeseries[timeseries.length - 1] : null) || selectedCountyGeography || null;
+  const selectedCountyHasObservation = Boolean(selectedObservation || (!selectedPeriod && timeseries.length > 0));
   const geographyIndex = useMemo(
     () => buildObservationIndex(allGeographies, tileMetadata?.joinKey || "geo_id"),
     [allGeographies, tileMetadata],
@@ -815,6 +838,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         if (wanted.metricCode) {
           setSelectedDataset(metricDataset(wanted.metricCode));
           setSelectedMetric(wanted.metricCode);
+          if (requested?.periodStart && source.servesPeriods) {
+            periodMetricRef.current = wanted.metricCode;
+            setSelectedPeriod(requested.periodStart);
+          }
         } else if (wanted.chooseDefault && items.length > 0) {
           const facet = preferredDatasetFacet(items);
           setSelectedDataset(facet);
@@ -974,6 +1001,49 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     };
   }, [releasesTracker, selectedMetric, activeSource, releasesDeclared]);
 
+  useEffect(() => {
+    if (!selectedMetric || !activeSource) return;
+    const listRequest = buildPeriodListRequest(activeSource, {
+      metricCode: selectedMetric,
+      limit: String(PERIOD_PAGE_SIZE),
+    });
+    setPeriods([]);
+    if (!listRequest) {
+      setPeriodsStatus({ state: "warn", message: "period discovery is not declared for this source" });
+      return;
+    }
+    const request = periodsTracker.begin();
+    setPeriodsStatus({ state: "loading", message: "loading published periods" });
+    async function loadPeriods() {
+      try {
+        const pages = await fetchCollectionPages<MetricPeriod>(listRequest!.resource, {
+          params: listRequest!.params,
+          pageSize: PERIOD_PAGE_SIZE,
+          maxPages: PERIOD_PAGE_LIMIT,
+        });
+        if (!request.isCurrent()) return;
+        setPeriods(pages.items);
+        setPeriodsStatus({
+          state: pages.complete ? "ok" : "bad",
+          message: describeLibraryLoad(
+            pages.items.length,
+            pages.total,
+            pages.complete,
+            "published period",
+            "published periods",
+          ),
+        });
+      } catch (error) {
+        if (request.isCurrent()) {
+          setPeriods([]);
+          setPeriodsStatus({ state: "bad", message: apiErrorMessage(error) });
+        }
+      }
+    }
+    loadPeriods();
+    return () => periodsTracker.invalidate();
+  }, [periodsTracker, selectedMetric, activeSource]);
+
   // A release identity belongs to one metric; carrying a pin across a metric
   // change would send an identity that metric never published.
   useEffect(() => {
@@ -982,6 +1052,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
     setSelectedRelease("");
   }, [selectedMetric, selectedRelease]);
+
+  useEffect(() => {
+    if (!selectedPeriod || periodMetricRef.current === selectedMetric) return;
+    setSelectedPeriod("");
+  }, [selectedMetric, selectedPeriod]);
 
   useEffect(() => {
     if (!selectedMetric || !activeSource) {
@@ -1101,6 +1176,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           bin_count: String(CHOROPLETH_PALETTE.length),
           state_fips:
             selectedStateFips && selectedGeoLevel !== "NATIONAL" ? selectedStateFips : undefined,
+          period_start: selectedPeriod || undefined,
         });
         if (Number(payload.total) === 0) {
           if (request.isCurrent()) {
@@ -1190,6 +1266,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     selectedGeoLevel,
     activeSource,
     asReleased,
+    selectedPeriod,
   ]);
 
   // Geographies for a grain the eager state/county read does not cover.
@@ -1840,7 +1917,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // what makes "the page survives a reload" true for exactly the links that
   // carry a page. The model clamps an out-of-range page anyway, so this is
   // about where a reader lands, not about safety.
-  const selectionForTable = `${selectedMetric}|${selectedGeoLevel}|${selectedStateFips}|${observationScope}|${dimensionKey}`;
+  const selectionForTable = `${selectedMetric}|${selectedGeoLevel}|${selectedStateFips}|${observationScope}|${selectedPeriod}|${dimensionKey}`;
   const lastTableSelection = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedMetric) {
@@ -1887,6 +1964,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         geoId: selectedGeoId,
         scope: observationScope,
         release: selectedRelease,
+        periodStart: selectedPeriod,
         // Under the source's own declared filter names, which is what the
         // saved document records too, so the two records of one view agree.
         dimensions: dimensionSelectionsForLink(activeSource, dimensionSelections),
@@ -1917,6 +1995,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     sourceKey,
     observationScope,
     selectedRelease,
+    selectedPeriod,
     // Keyed by value, like the observation effect above: the link has to
     // change when the narrowing does, or it reproduces a different view.
     dimensionKey,
@@ -1933,6 +2012,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     setDimensionSelections({});
     setObservationScope(DEFAULT_SCOPE);
     setSelectedRelease("");
+    setSelectedPeriod("");
     setReleases([]);
     setObservations([]);
     setDistribution(null);
@@ -2268,6 +2348,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   // The reader has answered the notice; it is no longer true.
                   setRequestedMetricNotice("");
                   setSelectedMetric(event.target.value);
+                  setSelectedPeriod("");
                 }}
                 disabled={options.length === 0}
               >
@@ -2295,11 +2376,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     const choice = event.target.value;
                     if (choice.startsWith("release:")) {
                       setObservationScope(SCOPE_AS_RELEASED);
+                      setSelectedPeriod("");
                       releaseMetricRef.current = selectedMetric;
                       setSelectedRelease(choice.slice("release:".length));
                       return;
                     }
                     setObservationScope(choice as ObservationScope);
+                    if (choice === SCOPE_AS_RELEASED) setSelectedPeriod("");
                     setSelectedRelease("");
                   }}
                 >
@@ -2320,6 +2403,35 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                       ))
                     : null}
                 </select>
+              </div>
+            ) : null}
+
+            {activeSource?.servesPeriods && observationScope === SCOPE_LATEST ? (
+              <div className="control-group">
+                <label htmlFor="period-select">Period</label>
+                <select
+                  id="period-select"
+                  className="select"
+                  data-testid="period-select"
+                  value={selectedPeriod}
+                  onChange={(event) => {
+                    periodMetricRef.current = selectedMetric;
+                    setSelectedPeriod(event.target.value);
+                  }}
+                >
+                  <option value="">Newest published (per geography)</option>
+                  {selectedPeriod && !periods.some((period) => period.period_start === selectedPeriod) ? (
+                    <option value={selectedPeriod}>{`${selectedPeriod} (not in loaded period list)`}</option>
+                  ) : null}
+                  {periodOptions.map((period) => (
+                    <option value={period.start} key={period.start}>
+                      {`${period.start} — ${formatNumber(period.count)} observations`}
+                    </option>
+                  ))}
+                </select>
+                {periodsStatus.state === "bad" || periodsStatus.state === "warn" ? (
+                  <p className="coverage-note partial" data-testid="periods-status">{periodsStatus.message}</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -2522,7 +2634,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               <>
                 <dl className="county-details">
                   <div>
-                    <dt>Latest value</dt>
+                    <dt>{selectedPeriod ? "Selected period value" : "Latest value"}</dt>
                     <dd>
                       {selectedCountyHasObservation
                         ? `${formatObservationValue(selectedCounty.value)} ${observationUnit(selectedCounty)}`
@@ -2605,8 +2717,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         <article className="card workspace-panel" data-active={effectiveTab === "map"}>
           <h2>{selectedMetricMeta ? displayMetricName(selectedMetricMeta) : `${selectedGeoLevel.toLowerCase()} map`}</h2>
           <p className="subtle">
-            Latest {selectedGeoLevel.toLowerCase()} estimates, joined to Martin vector geometry by the discovered geography key.
-            {countObservationPeriods(observations) > 1
+            {selectedPeriod
+              ? `Published period ${selectedPeriod} for ${selectedGeoLevel.toLowerCase()} geographies, joined to Martin vector geometry by the discovered geography key.`
+              : `Latest ${selectedGeoLevel.toLowerCase()} estimates, joined to Martin vector geometry by the discovered geography key.`}
+            {!selectedPeriod && countObservationPeriods(observations) > 1
               ? ` The publication spans ${countObservationPeriods(observations)} periods; each geography is coloured by its newest one.`
               : ""}
           </p>
@@ -2805,7 +2919,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           ) : null}
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
+          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={selectedPeriod || observations[0]?.period_start || observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
         </article>
         {viewModes.quality.supported ? (
           <article className="card workspace-panel" data-active={effectiveTab === "quality"}>

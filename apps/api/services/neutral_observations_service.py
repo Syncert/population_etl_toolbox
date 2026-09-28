@@ -26,6 +26,8 @@ Identity discipline:
 
 from __future__ import annotations
 
+from datetime import date
+import re
 from typing import Any, Mapping, Optional, Sequence
 
 from sqlalchemy import text
@@ -40,6 +42,8 @@ from apps.api.registry import (
 from apps.api.schemas import (
     MetricRelease,
     MetricReleaseListResponse,
+    MetricPeriod,
+    MetricPeriodListResponse,
     NeutralObservation,
     NeutralObservationListResponse,
     ObservationCoverage,
@@ -63,7 +67,7 @@ SCOPE_AS_RELEASED = "as_released"
 
 #: Query parameters every source accepts; anything else must be declared in
 #: the source's ``filter_conditions`` to be usable for that source.
-UNIVERSAL_PARAMETERS = ("metric_code", "scope", "release", "limit", "offset")
+UNIVERSAL_PARAMETERS = ("metric_code", "scope", "release", "period_start", "limit", "offset")
 
 #: The two query parameters that reduce a read to one row per geography (and,
 #: for the second, per period within a geography).
@@ -81,6 +85,25 @@ class NeutralQueryError(ValueError):
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
         self.detail = detail
+
+
+def validated_period_start(value: Optional[str]) -> Optional[str]:
+    """Accept exactly the source's served year or calendar date, without coercion."""
+    if value is None:
+        return None
+    if re.fullmatch(r"[0-9]{4}", value) and int(value) > 0:
+        return value
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            pass
+        else:
+            return value
+    raise NeutralQueryError(
+        "period_start must be a published year (YYYY) or a real calendar "
+        "date (YYYY-MM-DD)"
+    )
 
 
 def reduction_refusal(dispatch: ObservationDispatch, reduction: str) -> Optional[str]:
@@ -461,11 +484,15 @@ def list_neutral_observations(
     offset: int,
     newest_per_geography: bool = False,
     newest_release_per_period: bool = False,
+    period_start: Optional[str] = None,
 ) -> Optional[NeutralObservationListResponse]:
     """One metric's observations from its owning source's serving contract.
 
     Returns ``None`` for an unknown metric code; the router owns the 404.
     """
+    period_start = validated_period_start(period_start)
+    if period_start is not None and scope != SCOPE_LATEST:
+        raise NeutralQueryError("period_start can only be combined with scope=latest")
     if release and scope != SCOPE_AS_RELEASED:
         raise NeutralQueryError(
             "release can only be combined with scope=as_released; scope=latest "
@@ -522,6 +549,9 @@ def list_neutral_observations(
     )
     conditions.extend(filter_conditions)
     params.update(filter_params)
+    if period_start is not None:
+        conditions.append(f"{dispatch.period_start_expression} = :period_start")
+        params["period_start"] = period_start
     # Falsy, not `is not None`: an empty value is absent everywhere else in
     # this API, and `release` alone declared `min_length=1`, so a client that
     # serialises its whole parameter set -- or replays a stored document, which
@@ -652,6 +682,63 @@ def list_metric_releases(
             MetricRelease(
                 release=str(row["release"]),
                 as_of=_text_or_none(row.get("as_of")),
+                observation_count=int(row["observation_count"]),
+            )
+            for row in rows
+        ],
+    )
+
+
+def list_metric_periods(
+    db: Session,
+    metric_code: str,
+    limit: int,
+    offset: int,
+) -> Optional[MetricPeriodListResponse]:
+    """Distinct served periods in the latest publication, newest first."""
+    metric = resolve_metric(db, metric_code)
+    if metric is None:
+        return None
+    dispatch = dispatch_for_metric(metric)
+    conditions, params = _metric_conditions(dispatch, metric_code, metric)
+    start = dispatch.period_start_expression
+    end = dispatch.period_end_expression
+    conditions.append(f"{start} IS NOT NULL")
+    where_sql = " AND ".join(conditions)
+    relation = dispatch.latest_relation
+    require_relation(db, relation)
+
+    count_query = text(
+        f"SELECT COUNT(*) FROM ("
+        f"SELECT {start}, {end} FROM {relation} WHERE {where_sql} "
+        "GROUP BY 1, 2) AS published_periods"
+    )
+    list_query = text(
+        f"""
+        SELECT {start} AS period_start,
+               {end} AS period_end,
+               COUNT(*)::INT AS observation_count
+        FROM {relation}
+        WHERE {where_sql}
+        GROUP BY 1, 2
+        ORDER BY period_start DESC, period_end DESC NULLS LAST
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    total = int(db.execute(count_query, params).scalar() or 0)
+    rows = db.execute(
+        list_query, {**params, "limit": limit, "offset": offset}
+    ).mappings().all()
+    return MetricPeriodListResponse(
+        metric_code=metric_code,
+        source_code=dispatch.source_code,
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=[
+            MetricPeriod(
+                period_start=str(row["period_start"]),
+                period_end=_text_or_none(row.get("period_end")),
                 observation_count=int(row["observation_count"]),
             )
             for row in rows

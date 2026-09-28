@@ -1,6 +1,6 @@
 ---
 id: map-shows-any-published-period
-branch: claude/map-shows-any-published-period
+branch: codex/analytics-backlog-2026-09-28
 depends_on:
   - selected-geography-shows-painted-period
 parallel_safe: false
@@ -20,15 +20,15 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed.
-- **Last updated:** 2026-09-25
+- **Status:** Ready for human review on `codex/analytics-backlog-2026-09-28`.
+- **Last updated:** 2026-09-28
 - **Dependencies:** `selected-geography-shows-painted-period` (the panel must
   already agree with the painted row before the painted row can move).
-- **Next pickup:** PP-1.
+- **Next pickup:** Review the exact-period API and explorer control against the evidence below.
 - **Origin:** time-granularity planning session, 2026-09-25. The user chose
   this as the **first wave** of time work: select a published period, no
   derivation. Rollups are the later wave in
-  [`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
+  [`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](../to_do/TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
 
 ## Why
 
@@ -83,31 +83,86 @@ untouched.
 3. **Default.** No `period_start` keeps today's behaviour exactly (newest per
    geography), so existing links and clients are unchanged.
 
+### PP-1 decision (2026-09-28)
+
+The existing neutral row publishes `period_start` as text. CDC and USDA NASS
+can publish a bare year (`2021`), while the other sources publish an ISO date.
+The parameter therefore matches that **served string exactly**, accepting
+`YYYY` or a real calendar `YYYY-MM-DD`; a malformed value is a 422. Requiring
+only a full date would silently make the year-only sources unselectable, which
+contradicts this plan's every-source acceptance criterion. No date is
+invented for a year-only publication. A period pin applies to `scope=latest`,
+with or without `newest_per_geography`; `scope=as_released`, including a pinned
+release, refuses the pin because the periods selector describes the latest
+publication only. The additive periods route lists distinct non-null served
+`(period_start, period_end)` pairs from that latest relation, newest first,
+with counts, bounded paging, and the same public caching policy. Omission of
+the new parameter leaves the existing query path untouched.
+
 ## Work items
 
-- [ ] **PP-1: decisions above,** recorded in `docs/reference/API_CONSUMER_GUIDE.md`
+- [x] **PP-1: decisions above,** recorded in `docs/reference/API_CONSUMER_GUIDE.md`
   (observations and ordering sections) before code.
-- [ ] **PP-2: API period filter.** Failing-first unit tests in
+- [x] **PP-2: API period filter.** Failing-first unit tests in
   `tests/unit/api/test_neutral_observations.py` for each source family
   (reducing and non-reducing): exact filter, unknown period → empty page not
   error, malformed date → 422, combination with `newest_per_geography` /
   `as_released` / pinned `release` per the recorded decision, and deterministic
   order. Capability declared in `/catalog/capabilities`.
-- [ ] **PP-3: periods route.** Unit + integration tests; bounded paging;
+- [x] **PP-3: periods route.** Unit + integration tests; bounded paging;
   cache headers per the existing policy.
-- [ ] **PP-4: distribution for a period.** `/distribution/bins` accepts the
+- [x] **PP-4: distribution for a period.** `/distribution/bins` accepts the
   same parameter so the legend measures the painted period.
-- [ ] **PP-5: explorer period control.** A "Period" select (newest by default,
+- [x] **PP-5: explorer period control.** A "Period" select (newest by default,
   labelled "Newest published (per geography)"), populated from PP-3; map,
   tooltip, legend, selected-geography card and caption all read the chosen
   period; the caption states the chosen period instead of "coloured by its
   newest". Shared explorer links carry the period and reopen it
   (`A_SHARED_EXPLORER_LINK_REOPENS_ITS_VIEW_PLAN.md` contract).
-- [ ] **PP-6: browser evidence.** Selecting an older period repaints the map
+- [x] **PP-6: browser evidence.** Selecting an older period repaints the map
   from that period's rows (map oracle), legend and panel agree, and a
   geography missing that period reads "No observation".
-- [ ] **PP-7: contracts.** TESTING_CONTRACT catalog entries (API, WEB),
+- [x] **PP-7: contracts.** TESTING_CONTRACT catalog entries (API, WEB),
   CI_EVIDENCE_MAP, and the explorer notes.
+
+## Implementation and validation (2026-09-28)
+
+- `/observations` accepts a bound exact `period_start` over the latest
+  publication before any geography reduction. `/observations/periods`
+  discovers the source's non-null served start/end pairs with counts, paging,
+  and the public cache policy. `scope=as_released` is refused for a period
+  pin and for the latest-only period listing. `/distribution/bins` applies
+  the same pin before binning. The served OpenAPI and visualization coverage
+  snapshots and API consumer guide carry the additive contracts.
+- The explorer offers provider-published period starts, preserves the pin in
+  a shared URL, and filters map rows, the local/API legend, caption and
+  selected panel. Several end dates for one start become one selectable
+  start with a combined count, matching the API filter. A missing geography
+  says "No observation" even when its history contains a value for a
+  different period. The default sends no period pin.
+- Focused tests covered all seven dispatch sources, year-only
+  CDC/NASS, malformed dates, unknown periods, release-scope refusal, periods
+  paging/order/cache, and distribution filtering. Real seeded FRED SQL
+  exercised the three routes: `test_real_latest_period_list_filter_and_bins`
+  passed on disposable PostGIS 16.
+- `python -m pytest tests/unit -q --basetemp=.pytest_tmp_period`: 2,158
+  passed before the final additive scope-refusal case; its focused API run
+  then passed 80 tests. `npm --prefix apps/web run test:unit`: 701 passed.
+  `npm --prefix apps/web run lint`, `ruff check .`, Next production build,
+  OpenAPI snapshot tests, and `git -c core.whitespace=cr-at-eol diff --check`
+  passed. `npm --prefix apps/web run test:browser`: 170 passed; the focused
+  period browser case passed again after the final control and fixture edits.
+  `tests/integration/api -m 'integration and not external'`: 178 passed,
+  four unrelated skips. The database tier excluding `legacy/`: 250 passed,
+  one skip. Skipped cases are not counted as evidence.
+- The all-inclusive `tests/integration/database` command was attempted on a
+  disposable PostGIS database but stalled in the unrelated legacy BLS
+  metadata case. It was interrupted once; an interrupted run polluted its
+  test database, so the container was recreated. The isolated FBI test then
+  passed and the complete nonlegacy database tier passed from a fresh
+  instance. The legacy BLS case remains unverified by this branch's local
+  run. No external-source, live deployment, or browser-against-live-warehouse
+  check was run for this change.
 
 ## Acceptance criteria
 
@@ -122,5 +177,5 @@ untouched.
 ## Out of scope
 
 Rollups, trailing windows, YTD, and change-over-period — all derived; see
-[`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
+[`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](../to_do/TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
 A time slider/animation is a later presentation of the same control.

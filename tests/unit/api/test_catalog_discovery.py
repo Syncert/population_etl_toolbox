@@ -209,6 +209,7 @@ def test_metric_detail_returns_published_semantics_and_routes() -> None:
     assert [route["path"] for route in payload["observation_routes"]] == [
         "/api/v1/cdc/observations",
         "/api/v1/observations",
+        "/api/v1/observations/periods",
         "/api/v1/observations/releases",
     ]
     cdc_route = payload["observation_routes"][0]
@@ -249,6 +250,7 @@ def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None
     paths = {route["path"] for route in payload["observation_routes"]}
     assert {
         "/api/v1/observations",
+        "/api/v1/observations/periods",
         "/api/v1/observations/releases",
         "/api/v1/observations/latest",
         "/api/v1/observations/timeseries",
@@ -354,6 +356,7 @@ def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
     assert fbi["route_segment"] is None
     assert [route["path"] for route in fbi["observation_routes"]] == [
         "/api/v1/observations",
+        "/api/v1/observations/periods",
         "/api/v1/observations/releases",
     ]
     assert fbi["datasets"] == [

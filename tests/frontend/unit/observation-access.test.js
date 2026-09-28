@@ -27,6 +27,7 @@ import {
   buildSettledHistoryRequest,
   buildSettledSurfaceRequest,
   buildReleaseListRequest,
+  buildPeriodListRequest,
   collapseToNewestRelease,
   describeHistoryLoad,
   countObservationPeriods,
@@ -68,8 +69,31 @@ const NEUTRAL_PARAMETERS = servedParameters("/api/v1/observations");
 
 const neutralRoutes = [
   { path: "/api/v1/observations", parameters: NEUTRAL_PARAMETERS },
+  { path: "/api/v1/observations/periods", parameters: ["limit", "metric_code", "offset"] },
   { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
+
+test("a published period is listed and sent only on the latest neutral read", () => {
+  // Covers: WEB-122 — a chosen period reaches the painted rows without a
+  // source-scoped route silently dropping the new parameter.
+  const source = findExplorerSource(buildExplorerSources(capabilities), "census");
+  expect(buildPeriodListRequest(source, { metricCode: "CENSUS_ACS:acs5:B01003_001" })).toEqual({
+    resource: "/observations/periods",
+    params: { metric_code: "CENSUS_ACS:acs5:B01003_001", scope: "latest", limit: undefined },
+  });
+  const latest = buildLatestObservationRequest(source, {
+    metricCode: "CENSUS_ACS:acs5:B01003_001",
+    periodStart: "2021-01-01",
+  });
+  expect(latest.resource).toBe("/observations");
+  expect(latest.params.period_start).toBe("2021-01-01");
+  const released = buildLatestObservationRequest(source, {
+    metricCode: "CENSUS_ACS:acs5:B01003_001",
+    scope: SCOPE_AS_RELEASED,
+    periodStart: "2021-01-01",
+  });
+  expect(released.params.period_start).toBeUndefined();
+});
 
 const sourceScopedRoutes = (segment) => [
   {

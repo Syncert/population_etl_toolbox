@@ -103,6 +103,18 @@ _FBI_METRIC = {
     },
 }
 
+_FRED_METRIC = {
+    "metric_code": "FRED:UNRATE",
+    "metric_display_name": "Unemployment rate",
+    "source_code": "FRED",
+    "units": "Percent",
+    "physical_lineage": {
+        "schema": "gold_fred",
+        "relation": "fact_fred_observation",
+        "key": "UNRATE",
+    },
+}
+
 
 class _FakeResult:
     def __init__(self, rows=None, scalar_value=None):
@@ -166,6 +178,129 @@ def _dispatched(session: _DispatchSession) -> list[str]:
         if "gold_glossary.dim_metric" not in statement
         and "to_regclass" not in statement
     ]
+
+
+@pytest.mark.parametrize(
+    ("metric", "period"),
+    [
+        (_BLS_METRIC, "2023-01-01"),
+        (_ACS_METRIC, "2023-01-01"),
+        (_PEP_METRIC, "2023-07-01"),
+        (_CDC_METRIC, "2021"),
+        (_FBI_METRIC, "2020-01-01"),
+        (_FRED_METRIC, "2023-01-01"),
+    ],
+)
+def test_exact_published_period_is_bound_before_latest_reduction(
+    metric: dict[str, Any], period: str
+) -> None:
+    """Covers: API-159 — exact served periods select rows for every source shape."""
+    session = _DispatchSession(metric_row=dict(metric))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": metric["metric_code"],
+                "period_start": period,
+                "newest_per_geography": "true"
+                if OBSERVATION_DISPATCH[metric["source_code"]].analysis_ready
+                else "false",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0  # unknown but well-formed: empty page
+    for sql in _dispatched(session):
+        assert f"{OBSERVATION_DISPATCH[metric['source_code']].period_start_expression} = :period_start" in sql
+    assert session.parameters[-1]["period_start"] == period
+
+
+@pytest.mark.parametrize("period", ["2023-02-29", "2023-1-01", "bad", "2023-13-01"])
+def test_malformed_published_period_is_refused(period: str) -> None:
+    """Covers: API-159 — malformed periods are requests, not empty evidence."""
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _BLS_METRIC["metric_code"], "period_start": period},
+        )
+    finally:
+        _clear_overrides()
+    assert response.status_code == 422
+    assert "period_start" in str(response.json())
+
+
+@pytest.mark.parametrize("release", [None, "2023"])
+def test_latest_period_pin_refuses_as_released_scope(release: str | None) -> None:
+    """Covers: API-159 — latest-publication selector cannot imply a release."""
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "scope": "as_released",
+                "period_start": "2023-01-01",
+                "release": release,
+            },
+        )
+    finally:
+        _clear_overrides()
+    assert response.status_code == 422
+    assert "period_start" in str(response.json())
+
+
+def test_published_periods_are_paged_from_the_latest_relation() -> None:
+    """Covers: API-160 — discover exact served period pairs before painting."""
+    session = _DispatchSession(
+        metric_row=dict(_CDC_METRIC),
+        rows=[{"period_start": "2021", "period_end": "2021", "observation_count": 3}],
+        total=2,
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations/periods",
+            params={"metric_code": _CDC_METRIC["metric_code"], "scope": "latest", "limit": 1, "offset": 1},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "metric_code": _CDC_METRIC["metric_code"],
+        "source_code": "CDC",
+        "total": 2,
+        "limit": 1,
+        "offset": 1,
+        "items": [
+            {"period_start": "2021", "period_end": "2021", "observation_count": 3}
+        ],
+    }
+    assert response.headers["cache-control"].startswith("public")
+    for sql in _dispatched(session):
+        assert "FROM gold_cdc.latest_release_observation" in sql
+        assert "period_start::TEXT" in sql
+        assert "GROUP BY" in sql
+    assert "ORDER BY period_start DESC, period_end DESC NULLS LAST" in _dispatched(session)[-1]
+
+
+def test_period_listing_refuses_as_released_scope() -> None:
+    """Covers: API-160 — a latest-only selector cannot label released history."""
+    client = _client_with(_DispatchSession(metric_row=dict(_CDC_METRIC)))
+    try:
+        response = client.get(
+            "/api/v1/observations/periods",
+            params={"metric_code": _CDC_METRIC["metric_code"], "scope": "as_released"},
+        )
+    finally:
+        _clear_overrides()
+    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -1406,6 +1541,23 @@ _NASS_METRIC = {
         "unit_desc": "TONS / ACRE",
     },
 }
+
+
+def test_nass_exact_year_period_is_bound_without_a_derived_date() -> None:
+    """Covers: API-159 — NASS's year-only period remains its served string."""
+    session = _DispatchSession(metric_row=dict(_NASS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _NASS_METRIC["metric_code"], "period_start": "2023"},
+        )
+    finally:
+        _clear_overrides()
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == []
+    assert session.parameters[-1]["period_start"] == "2023"
+    assert f"{OBSERVATION_DISPATCH['USDA_NASS'].period_start_expression} = :period_start" in _dispatched(session)[-1]
 
 
 def test_nass_reference_period_is_a_declared_bound_filter() -> None:

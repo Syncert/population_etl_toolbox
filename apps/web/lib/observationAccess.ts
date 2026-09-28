@@ -23,7 +23,7 @@
 
 import type { QueryParams } from "./api/client";
 import type { ExplorerSource } from "./explorerSources";
-import { NEUTRAL_OBSERVATIONS_PATH, RELEASES_PATH } from "./explorerSources";
+import { NEUTRAL_OBSERVATIONS_PATH, PERIODS_PATH, RELEASES_PATH } from "./explorerSources";
 import type { ObservationRow } from "./explorerViewModel";
 
 export interface ObservationRequest {
@@ -55,6 +55,8 @@ interface ScopedQuery {
 
 export interface LatestObservationQuery extends ScopedQuery {
   metricCode: string;
+  /** Exact served period, only for the latest neutral publication. */
+  periodStart?: string;
   geoLevel?: string;
   stateFips?: string;
   limit?: string | number;
@@ -78,6 +80,17 @@ export interface HistoryObservationQuery extends ScopedQuery {
 export interface ReleaseListQuery {
   metricCode: string;
   limit?: string | number;
+}
+
+export function buildPeriodListRequest(
+  source: ExplorerSource | null | undefined,
+  query: ReleaseListQuery,
+): ObservationRequest | null {
+  if (!source?.servesPeriods) return null;
+  return {
+    resource: PERIODS_PATH,
+    params: { metric_code: query.metricCode, scope: SCOPE_LATEST, limit: query.limit },
+  };
 }
 
 function declaredOnly(
@@ -269,8 +282,9 @@ export function buildLatestObservationRequest(
     state_fips: query.stateFips,
   };
   const released = asReleased(source, query);
+  const pinnedPeriod = Boolean(query.periodStart && source.servesPeriods && !released);
 
-  if (source.accessShape === "source-scoped" && !released) {
+  if (source.accessShape === "source-scoped" && !released && !pinnedPeriod) {
     return {
       resource: `/${source.segment}/observations/latest`,
       params: {
@@ -284,13 +298,14 @@ export function buildLatestObservationRequest(
   // Both the neutral shape and every as-released read answer here; the
   // filters a source-scoped source may carry across are its declared
   // neutral ones, not the parameters of the route it left behind.
-  const allowed = released ? source.neutralFilters : source.requestFilters;
+  const allowed = released || pinnedPeriod ? source.neutralFilters : source.requestFilters;
   return {
     resource: NEUTRAL_OBSERVATIONS_PATH,
     params: {
       metric_code: query.metricCode,
       ...scopeParams(source, query),
       limit: query.limit,
+      period_start: pinnedPeriod ? query.periodStart : undefined,
       ...newestPerGeographyParams(source, query),
       ...declaredOnly(source, shared, allowed),
       ...dimensionParams(scopedDimensionFilters(source, query.scope || SCOPE_LATEST), query.dimensions),

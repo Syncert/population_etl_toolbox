@@ -120,6 +120,7 @@ const neutralRoutes = [
   // ships, and the client then goes untested for the parameter it is
   // missing (WEB-043).
   { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
+  { path: "/api/v1/observations/periods", parameters: servedParameters("/api/v1/observations/periods") },
   {
     path: "/api/v1/observations/releases",
     parameters: servedParameters("/api/v1/observations/releases"),
@@ -324,6 +325,7 @@ async function installRoutes(
     truncateReleases = false,
     settledHistory = false,
     cdcRows = null,
+    extraCounty = false,
   } = {},
 ) {
   let tileRequests = 0;
@@ -355,6 +357,26 @@ async function installRoutes(
         offset: 0,
         items,
       },
+      headers: { "x-cache": "MISS" },
+    });
+  });
+  await page.route("**/api/v1/observations/periods?*", (route) => {
+    const metric = new URL(route.request().url()).searchParams.get("metric_code");
+    const rows = metric === cdcMetric.metric_code && cdcRows
+      ? cdcRows
+      : metric?.startsWith("CENSUS_ACS:")
+        ? [acsReleasedRow("2023", "561504"), acsReleasedRow("2022", "555000")]
+        : [];
+    const counts = new Map();
+    for (const row of rows) {
+      const key = `${row.period_start}|${row.period_end}`;
+      const current = counts.get(key) || { period_start: row.period_start, period_end: row.period_end, observation_count: 0 };
+      current.observation_count += 1;
+      counts.set(key, current);
+    }
+    const items = [...counts.values()].sort((left, right) => right.period_start.localeCompare(left.period_start));
+    return route.fulfill({
+      json: { metric_code: metric, source_code: metric?.split(":")[0], total: items.length, limit: 200, offset: 0, items },
       headers: { "x-cache": "MISS" },
     });
   });
@@ -528,7 +550,9 @@ async function installRoutes(
 
     const stratum = params.get("stratum_id");
     const rows = cdcRows || [cdcRow("overall", "32.4"), cdcRow("age_18_44", null)];
-    const items = stratum ? rows.filter((row) => row.dimensions.stratum_id === stratum) : rows;
+    const items = rows.filter((row) =>
+      (!stratum || row.dimensions.stratum_id === stratum)
+      && (!params.get("period_start") || row.period_start === params.get("period_start")));
     return answer(items, "CDC");
   });
   await page.route("**/api/v1/health", (route) => route.fulfill({ json: { status: "ok" } }));
@@ -560,7 +584,10 @@ async function installRoutes(
     const level = new URL(route.request().url()).searchParams.get("geo_level");
     const byGrain = {
       STATE: [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin", latitude: 44.5, longitude: -89.5 }],
-      COUNTY: [{ geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 }],
+      COUNTY: [
+        { geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 },
+        ...(extraCounty ? [{ geo_id: "state:55|county:027", geo_level: "COUNTY", state_fips: "55", county_fips: "027", state_name: "Wisconsin", county_name: "Dodge County", latitude: 43.4, longitude: -88.7 }] : []),
+      ],
       PLACE: [{ geo_id: "state:55|place:48000", geo_level: "PLACE", state_fips: "55", state_name: "Wisconsin", place_fips: "48000", place_name: "Madison city", latitude: 43.07, longitude: -89.4 }],
       AGENCY: [],
     };
@@ -735,6 +762,49 @@ test("selected geography shows the same newest period the map paints", async ({ 
   const details = page.locator(".county-panel .county-details");
   await expect(details).toContainText("39.4 percent");
   await expect(details).toContainText("2023-01-01 – 2024-12-31");
+});
+
+test("choosing a published period repaints the map, legend, panel, and shared link", async ({ page }) => {
+  // Covers: WEB-122 — only rows for the exact period may paint the map.
+  const neutralRequests = [];
+  await installRoutes(page, {
+    neutralRequests,
+    extraCounty: true,
+    cdcRows: [
+      cdcRow("overall", "32.4"),
+      cdcRow("overall", "39.4", { period_start: "2023-01-01", period_end: "2024-12-31" }),
+      cdcRow("overall", "29.1", { geo_id: "state:55|county:027", period_start: "2023-01-01", period_end: "2024-12-31" }),
+    ],
+  });
+  await page.goto(`/explore?source=cdc&metric=${encodeURIComponent(cdcMetric.metric_code)}&geo_level=COUNTY`);
+  const periodSelect = page.getByTestId("period-select");
+  await expect(periodSelect.locator("option")).toHaveCount(3);
+  await periodSelect.selectOption("2021-01-01");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
+  await expect(page.getByTestId("distribution-status")).toContainText("local fallback bins");
+  await expect(page.getByLabel("Choropleth value legend")).toContainText("32");
+  await expect(page.getByLabel("Choropleth value legend")).not.toContainText("39");
+  await expect(page).toHaveURL(/period_start=2021-01-01/);
+  expect(neutralRequests.some((request) => request.period_start === "2021-01-01")).toBe(true);
+  await page.getByTestId("state-select").selectOption("55");
+  await page.getByTestId("county-select").selectOption("state:55|county:025");
+  const details = page.locator(".county-panel .county-details");
+  await expect(details).toContainText("32.4 percent");
+  await expect(details).toContainText("2021-01-01 – 2022-12-31");
+  await page.getByTestId("county-select").selectOption("state:55|county:027");
+  await expect(details).toContainText("No observation");
+  await expect(details).not.toContainText("29.1 percent");
+  await page.reload();
+  await expect(periodSelect).toHaveValue("2021-01-01");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await page.goto(`/explore?source=cdc&metric=${encodeURIComponent(cdcMetric.metric_code)}&geo_level=COUNTY&period_start=2022-01-01`);
+  await expect(periodSelect).toHaveValue("2022-01-01");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "0");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "0");
+  await page.getByTestId("state-select").selectOption("55");
+  await page.getByTestId("county-select").selectOption("state:55|county:025");
+  await expect(page.locator(".county-panel .county-details")).toContainText("No observation");
 });
 
 test("a withheld newest period does not make the selected panel show an older value", async ({ page }) => {

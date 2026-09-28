@@ -35,6 +35,7 @@ from apps.api.services.neutral_observations_service import (
     _metric_conditions,
     dispatch_for_metric,
     resolve_metric,
+    validated_period_start,
 )
 
 
@@ -44,7 +45,9 @@ def list_distribution_bins(
     geo_level: Optional[str],
     state_fips: Optional[str],
     bin_count: int,
+    period_start: Optional[str] = None,
 ) -> DistributionBinsResponse:
+    period_start = validated_period_start(period_start)
     metric = resolve_metric(db, metric_code)
     if metric is None:
         raise UnknownAnalysisMetric("metric_code")
@@ -66,6 +69,9 @@ def list_distribution_bins(
     )
     conditions.extend(filter_conditions)
     params.update(filter_params)
+    if period_start is not None:
+        conditions.append(f"{dispatch.period_start_expression} = :period_start")
+        params["period_start"] = period_start
     require_relation(db, dispatch.latest_relation)
 
     # One statement, one snapshot, one evaluation of the reduction.

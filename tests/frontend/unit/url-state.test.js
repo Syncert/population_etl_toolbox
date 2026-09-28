@@ -25,6 +25,17 @@ import {
 } from "../../../apps/web/lib/urlState";
 
 describe("explorer URL state", () => {
+  test("an exact published period survives a link and malformed pins are dropped", () => {
+    // Covers: WEB-122 — shared map links must repaint the chosen period.
+    expect(parseExplorerState("?period_start=2021").periodStart).toBe("2021");
+    expect(serializeExplorerState({ periodStart: "2021-01-01" })).toBe(
+      "period_start=2021-01-01",
+    );
+    expect(parseExplorerState("?period_start=bad").periodStart).toBeUndefined();
+    expect(serializeExplorerState({ periodStart: "2021", scope: "as_released" })).not.toContain(
+      "period_start",
+    );
+  });
   test("parses every currently supported link parameter", () => {
     const parsed = parseExplorerState(
       "?source=pep&metric=CENSUS_ACS%3Aacs5%3AB01003_001&state=55&geo=state%3A55%7Ccounty%3A025&geo_level=COUNTY&map_mode=extrusion&value_scale=log",

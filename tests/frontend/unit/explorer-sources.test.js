@@ -29,6 +29,7 @@ import { servedParameters } from "../support/servedContract.js";
 // tests/fixtures/api/openapi_contract.json).
 const neutralRoutes = [
   { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
+  { path: "/api/v1/observations/periods", parameters: servedParameters("/api/v1/observations/periods") },
   {
     path: "/api/v1/observations/releases",
     parameters: servedParameters("/api/v1/observations/releases"),
@@ -254,11 +255,13 @@ describe("capability-derived explorer sources", () => {
       "limit",
       "metric_code",
       "offset",
+      "period_start",
       "release",
       "scope",
       "state_fips",
     ]);
     expect(census.neutralDimensionFilters).toEqual([]);
+    expect(census.servesPeriods).toBe(true);
 
     // The neutral shape's dimension filters are the same list it already
     // uses, so a stratified source keeps its controls under either scope.

@@ -230,6 +230,15 @@ own serving relations, so its semantics survive.
   `scope=as_released` is a 422, because an as-released read is one series
   per release and reducing it per geography would present whichever release
   sorted last as the value.
+- `period_start=<served period>` — an exact period in the source's latest
+  publication, optionally with `newest_per_geography=true`. It accepts an
+  actual calendar date (`YYYY-MM-DD`) or a bare year (`YYYY`), because CDC and
+  USDA NASS can publish year-only periods. Compare it with the row's served
+  `period_start` string; do not invent January 1 for a year-only value. An
+  absent period leaves the existing newest-per-geography/default behavior
+  unchanged, and a well-formed period with no row answers an empty page.
+  Malformed periods answer 422. It is refused with `scope=as_released` or a
+  pinned release: this selector is over the latest publication.
 - `newest_release_per_period=true` — a **settled history**: one row per
   geography and period, from the newest release that published it. Valid
   only with `scope=as_released`, and not with a pinned `release`; both
@@ -291,6 +300,15 @@ resource too, for the reason `publishes_value_status` is.
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what
 `release=` accepts.
+
+`GET /api/v1/observations/periods?metric_code=...` lists the distinct
+non-null `(period_start, period_end)` pairs in that metric's latest
+publication, newest first, with observation counts and bounded `limit` /
+`offset` paging. `scope=latest` is accepted explicitly; `as_released` is
+refused with 422. Send an item's `period_start` back to `/observations` or
+`/distribution/bins` to describe that exact published period. Period pairs
+remain distinct when they share a start; counts include withheld rows, while
+distribution bins count only numeric values.
 
 **A source whose latest publication is one row per geography has its history
 across releases.** Census ACS serves only its newest vintage, so
@@ -619,6 +637,7 @@ neither repeat a row nor skip one:
 | --- | --- |
 | `/observations` | the source's own declared key for the scope you asked: its latest order for `scope=latest`, its as-released order for `scope=as_released`. Both end in a column no two rows of one metric share, which is why a reduction (`newest_per_geography`, `newest_release_per_period`) picks the same row every time |
 | `/observations/releases` | the release ordering the source declares, descending, then the release identity itself — the group key, so no two rows can tie |
+| `/observations/periods` | the served `period_start` descending, then `period_end` descending with null last — the pair is the group key, so paging is deterministic |
 | `/observations/latest` | `geo_id` — the three union sources publish one latest row per geography |
 | `/observations/timeseries` | `observation_date`, then the release identity the union carries: `as_of_date`, `dataset_code`, `vintage_year` |
 | `/{source}/observations/latest` | `geo_id`, then the source's own remaining key — for Census PEP that is `observation_date`, `vintage_year`, `capture_id`, because its latest publication is a series |
@@ -695,6 +714,12 @@ rather than assuming the pair is contemporaneous.
 metric's latest values, labelled `derived: true` with its `source_code` and
 `units`. Counts are exact counts of provider-published numeric values; null,
 suppressed, and missing values are excluded rather than binned.
+
+`period_start` optionally narrows the latest publication to an exact served
+period **before** each geography is reduced and binned. It accepts the same
+`YYYY` or `YYYY-MM-DD` values as `/observations`; no pin preserves the current
+latest-per-geography bins. A period absent from the publication yields the
+empty-bin answer rather than borrowing values from another period.
 
 `items` holds exactly `bin_count` entries, `bin_index` 1..`bin_count`, with
 contiguous bounds running from `min_value` to `max_value` — a bin no

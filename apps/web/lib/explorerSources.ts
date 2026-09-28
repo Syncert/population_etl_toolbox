@@ -128,6 +128,8 @@ export interface ExplorerSource {
   neutralDimensionFilters: string[];
   /** True when `/observations/releases` is declared: releases are listable. */
   servesReleases: boolean;
+  /** True when the API lists exact served periods for this source. */
+  servesPeriods: boolean;
   /**
    * True when the neutral resource declares `scope` for this source, so
    * `scope=as_released` is a request the API accepts rather than one this
@@ -186,6 +188,7 @@ const TIMESERIES_SUFFIX = "/observations/timeseries";
 export const NEUTRAL_OBSERVATIONS_PATH = "/observations";
 /** The release listing that says what `release=` accepts for a metric. */
 export const RELEASES_PATH = "/observations/releases";
+export const PERIODS_PATH = "/observations/periods";
 const DISTRIBUTION_PATH = "/distribution/bins";
 const COMPARISON_PREFLIGHT_PATH = "/comparison/preflight";
 const COMPARISON_CORRELATION_PATH = "/comparison/correlation";
@@ -200,6 +203,7 @@ export const UNIVERSAL_OBSERVATION_PARAMETERS = Object.freeze([
   "metric_code",
   "scope",
   "release",
+  "period_start",
   "limit",
   "offset",
 ] as const);
@@ -263,6 +267,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     neutralDimensionFilters: [],
     filterDefaults: {},
     servesReleases: false,
+    servesPeriods: false,
     supportsAsReleased: false,
     supportsReleasePin: false,
     supportsNewestPerGeography: false,
@@ -375,6 +380,9 @@ export function buildExplorerSources(
       neutralFilters,
       neutralDimensionFilters: dimensionFiltersOf(neutralFilters),
       servesReleases: declaredPaths.has(`${API_BASE}${RELEASES_PATH}`),
+      servesPeriods:
+        declaredPaths.has(`${API_BASE}${PERIODS_PATH}`) &&
+        neutralParameters.includes("period_start"),
       supportsAsReleased: neutralParameters.includes("scope"),
       supportsReleasePin: neutralParameters.includes("release"),
       supportsNewestPerGeography:

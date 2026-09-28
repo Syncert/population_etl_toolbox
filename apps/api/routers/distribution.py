@@ -19,6 +19,7 @@ def get_distribution_bins(
     metric_code: str = Query(..., min_length=1, max_length=200),
     geo_level: Optional[str] = Query(None, max_length=50),
     state_fips: Optional[str] = Query(None, max_length=2),
+    period_start: Optional[str] = Query(None, max_length=10),
     bin_count: int = Query(7, ge=1, le=20),
     db: Session = Depends(get_db_session_dep),
 ) -> DistributionBinsResponse:
@@ -33,6 +34,7 @@ def get_distribution_bins(
             metric_code=metric_code,
             geo_level=geo_level,
             state_fips=state_fips,
+            period_start=period_start,
             bin_count=bin_count,
         )
     except UnknownAnalysisMetric as exc:

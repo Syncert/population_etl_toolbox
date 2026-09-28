@@ -10,6 +10,7 @@ from apps.api.failures import NOT_FOUND
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     list_metric_releases,
+    list_metric_periods,
     list_neutral_observations,
 )
 from apps.api.services.observations_service import (
@@ -19,6 +20,7 @@ from apps.api.services.observations_service import (
 from apps.api.schemas import (
     OBSERVATION_FILTER_BOUNDS,
     MetricReleaseListResponse,
+    MetricPeriodListResponse,
     NeutralObservationListResponse,
     ObservationListResponse,
 )
@@ -40,6 +42,7 @@ def get_neutral_observations(
     metric_code: str = Query(..., min_length=1, max_length=200),
     scope: Literal["latest", "as_released"] = Query("latest"),
     release: Optional[str] = Query(None, max_length=100),
+    period_start: Optional[str] = Query(None, max_length=10),
     geo_id: Optional[str] = Query(
         None, max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length
     ),
@@ -136,6 +139,7 @@ def get_neutral_observations(
             metric_code=metric_code,
             scope=scope,
             release=release,
+            period_start=period_start,
             filters={
                 "geo_id": geo_id,
                 "geo_level": geo_level,
@@ -181,6 +185,34 @@ def get_metric_releases(
     """Release identities a client can pin with ``scope=as_released``."""
     try:
         response = list_metric_releases(
+            db, metric_code=metric_code, limit=limit, offset=offset
+        )
+    except NeutralQueryError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    if response is None:
+        raise HTTPException(status_code=404, detail=METRIC_NOT_FOUND_DETAIL)
+    return response
+
+
+@router.get(
+    "/periods",
+    response_model=MetricPeriodListResponse,
+    name="get_metric_periods",
+    summary="Published periods in a metric's latest publication",
+    responses=NOT_FOUND,
+)
+def get_metric_periods(
+    metric_code: str = Query(..., min_length=1, max_length=200),
+    scope: Literal["latest"] = Query("latest"),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0, le=100000),
+    db: Session = Depends(get_db_session_dep),
+) -> MetricPeriodListResponse:
+    """Distinct exact periods in latest; the scope type refuses as_released."""
+    try:
+        response = list_metric_periods(
             db, metric_code=metric_code, limit=limit, offset=offset
         )
     except NeutralQueryError as exc:

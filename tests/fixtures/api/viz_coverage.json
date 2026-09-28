@@ -118,6 +118,7 @@
             "bin_count",
             "geo_level",
             "metric_code",
+            "period_start",
             "state_fips"
           ],
           "path": "/api/v1/distribution/bins"
@@ -135,6 +136,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -156,6 +158,15 @@
             "state_fips"
           ],
           "path": "/api/v1/observations/latest"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [
@@ -245,6 +256,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -256,6 +268,15 @@
             "year_to"
           ],
           "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [
@@ -354,6 +375,7 @@
             "bin_count",
             "geo_level",
             "metric_code",
+            "period_start",
             "state_fips"
           ],
           "path": "/api/v1/distribution/bins"
@@ -371,6 +393,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -392,6 +415,15 @@
             "state_fips"
           ],
           "path": "/api/v1/observations/latest"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [
@@ -480,6 +512,7 @@
             "bin_count",
             "geo_level",
             "metric_code",
+            "period_start",
             "state_fips"
           ],
           "path": "/api/v1/distribution/bins"
@@ -497,6 +530,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -508,6 +542,15 @@
             "year_to"
           ],
           "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [
@@ -596,6 +639,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -607,6 +651,15 @@
             "year_to"
           ],
           "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [
@@ -684,6 +737,7 @@
             "bin_count",
             "geo_level",
             "metric_code",
+            "period_start",
             "state_fips"
           ],
           "path": "/api/v1/distribution/bins"
@@ -722,6 +776,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -743,6 +798,15 @@
             "state_fips"
           ],
           "path": "/api/v1/observations/latest"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [
@@ -823,6 +887,7 @@
             "newest_per_geography",
             "newest_release_per_period",
             "offset",
+            "period_start",
             "reference_period_desc",
             "release",
             "scope",
@@ -834,6 +899,15 @@
             "year_to"
           ],
           "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
         },
         {
           "parameters": [

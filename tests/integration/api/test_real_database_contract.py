@@ -121,6 +121,47 @@ def real_api_fixture(
             cleanup.close()
 
 
+def test_real_latest_period_list_filter_and_bins(
+    real_api_fixture: tuple[TestClient, str, str],
+) -> None:
+    """Covers: API-159, API-160, API-161 — exact periods agree on real SQL."""
+    client, metric_a, _ = real_api_fixture
+    listed = client.get(
+        "/api/v1/observations/periods", params={"metric_code": metric_a}
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["items"] == [
+        {
+            "period_start": "2097-02-01",
+            "period_end": "2097-02-28",
+            "observation_count": 1,
+        }
+    ]
+
+    selected = client.get(
+        "/api/v1/observations",
+        params={"metric_code": metric_a, "period_start": "2097-02-01"},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["total"] == 1
+    assert selected.json()["items"][0]["value"] == "20"
+
+    missing = client.get(
+        "/api/v1/observations",
+        params={"metric_code": metric_a, "period_start": "2097-01-01"},
+    )
+    assert missing.status_code == 200, missing.text
+    assert missing.json()["items"] == []
+
+    bins = client.get(
+        "/api/v1/distribution/bins",
+        params={"metric_code": metric_a, "period_start": "2097-02-01"},
+    )
+    assert bins.status_code == 200, bins.text
+    assert bins.json()["period"] == "2097-02-01"
+    assert bins.json()["total"] == 1
+
+
 def test_real_catalog_latest_timeseries_distribution_and_comparison(
     real_api_fixture: tuple[TestClient, str, str],
 ) -> None:
