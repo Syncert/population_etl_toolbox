@@ -218,6 +218,19 @@ def test_metric_detail_returns_published_semantics_and_routes() -> None:
     assert "domain_desc" not in payload["observation_filters"]
 
 
+def test_metric_detail_preserves_an_explicitly_empty_grain_list() -> None:
+    """Covers: API-158 — a client can distinguish none from unknown."""
+    row = {**_METRIC_ROW, "valid_geo_grains": []}
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get("/api/v1/catalog/metrics/CDC:cdi:ALC1_1:crude")
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["valid_geo_grains"] == []
+
+
 def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None:
     """Covers: API-038 — union-served sources advertise the neutral routes."""
     row = dict(_METRIC_ROW)

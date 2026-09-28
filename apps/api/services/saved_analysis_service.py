@@ -336,10 +336,9 @@ def _validate_workbench(
         without_it = [
             str(metric.get("metric_code") or "")
             for metric in metrics
-            # A measure declaring no grains does not narrow the offer --
-            # unknown is not none, the rule the composing screen applies --
-            # so it is not named here either.
-            if metric.get("valid_geo_grains")
+            # An absent declaration is unknown; [] explicitly says no
+            # geography has a published numeric value.
+            if metric.get("valid_geo_grains") is not None
             and wanted
             not in {
                 normalize_geo_level(str(grain))

@@ -46,13 +46,12 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**3 plans.**
+**2 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`browser-tier-cold-dev-server`](to_do/THE_BROWSER_TIER_HOLDS_UNDER_A_COLD_DEV_SERVER_PLAN.md) | low | `browser` | -- |
 | [`full-map-sweep-scheduled`](to_do/EVERY_METRIC_MAP_IS_SWEPT_ON_A_SCHEDULE_PLAN.md) | low | none | `every-map-proves-it-displays-its-data` |
-| [`no-value-metric-not-mapped`](to_do/A_METRIC_WITH_NO_PUBLISHED_VALUE_IS_NOT_OFFERED_A_MAP_PLAN.md) | medium | `browser` | `maps-offer-only-what-a-source-publishes` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine

@@ -15,6 +15,7 @@ import { metricProvenance, metricQualityState } from "./catalog";
 import { DRAWABLE_TILE_GRAINS } from "./tileGrains";
 import type { ExplorerSource } from "./explorerSources";
 import type { MetricSummary } from "./api/types";
+import { metricHasNoPublishedValue } from "./explorerViewModel";
 
 export const EXPLORER_VIEW_MODES = [
   "map",
@@ -104,7 +105,9 @@ export function describeViewModes({
   const grains = spatialGrains(tileFields);
 
   let map: ViewModeState;
-  if (grains.length === 0) {
+  if (metricHasNoPublishedValue(metric)) {
+    map = unsupported("this measure has no published numeric value at any geography grain");
+  } else if (grains.length === 0) {
     map = unsupported(
       "no vector tile layer with published geography fields was discovered",
     );

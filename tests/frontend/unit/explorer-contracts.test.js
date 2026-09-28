@@ -63,9 +63,11 @@ describe("explorer metric, selection, and legend contracts", () => {
     ).toBe("STATE");
   });
 
-  test("a measure declaring no grains keeps the caller's fallback", () => {
-    // Unknown grains are not the same fact as no grains.
+  test("an absent declaration keeps the fallback, and an empty one can still read a table", () => {
+    // The fallback is a table-reading grain; view modes independently decline
+    // the map when [] explicitly says no numeric value was published.
     expect(preferredGeoLevelForMetric({ valid_geo_grains: [] }, "COUNTY")).toBe("COUNTY");
+    expect(preferredGeoLevelForMetric({ metric_code: "UNKNOWN" }, "COUNTY")).toBe("COUNTY");
     expect(preferredGeoLevelForMetric(null, "STATE")).toBe("STATE");
   });
 

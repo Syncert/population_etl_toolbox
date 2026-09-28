@@ -65,15 +65,24 @@ describe("the grains a set of measures can be read at", () => {
     expect(national.withoutIt).toEqual(["A", "B"]);
   });
 
-  test("a measure declaring no grains does not narrow the offer", () => {
+  test("an absent grain declaration does not narrow the offer", () => {
     const offer = sharedGrainOffer({
-      metrics: [metric("A", ["STATE", "COUNTY"]), metric("B", [])],
+      metrics: [metric("A", ["STATE", "COUNTY"]), { metric_code: "B" }],
     });
     expect(offer.levels).toEqual(["STATE", "COUNTY"]);
     // Unknown is not none, so B is not reported as having removed anything.
     for (const entry of offer.absent) {
       expect(entry.withoutIt).not.toContain("B");
     }
+  });
+
+  test("an explicit empty grain list removes every cross-sectional offer", () => {
+    // Covers: WEB-121 — the workbench and the comparison share this verdict.
+    const offer = sharedGrainOffer({
+      metrics: [metric("A", ["STATE", "COUNTY"]), metric("WITHHELD", [])],
+    });
+    expect(offer.levels).toEqual([]);
+    expect(offer.absent.every((entry) => entry.withoutIt.includes("WITHHELD"))).toBe(true);
   });
 
   test("no shared grain is a stated verdict, not an empty control", () => {

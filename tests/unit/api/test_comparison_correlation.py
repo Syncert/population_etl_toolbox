@@ -30,7 +30,25 @@ from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS, OBSERVATION_DISPATC
 from apps.api.services.compatibility import (
     CORRELATION_CAUSATION_CAVEAT,
     CORRELATION_DERIVATIONS,
+    RULE_GEO_GRAINS,
+    STATUS_FAIL,
+    evaluate_comparison,
 )
+
+
+def test_a_metric_with_no_published_value_cannot_be_compared() -> None:
+    """Covers: API-158 — an explicit empty grain list is none, not unknown."""
+    unavailable = _metric("FRED:WITHHELD", "FRED", valid_geo_grains=[])
+    available = _metric("FRED:UNRATE", "FRED")
+    decision = evaluate_comparison(unavailable, available)
+    assert not decision.comparable
+    assert any(
+        finding.rule == RULE_GEO_GRAINS
+        and finding.status == STATUS_FAIL
+        and "no published numeric value" in finding.reason
+        for finding in decision.findings
+    )
+
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 

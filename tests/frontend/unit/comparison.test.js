@@ -635,6 +635,12 @@ describe("the grains a pair can be compared at", () => {
     const offer = comparisonGrainOffer({ metricA: { metric_code: "X" }, metricB: pep });
     expect(offer.levels).toEqual(["NATIONAL", "STATE", "COUNTY", "PLACE"]);
     expect(comparisonGrainOffer({ metricA: null, metricB: null }).note).toBe("");
+    const none = comparisonGrainOffer({
+      metricA: { metric_code: "WITHHELD", valid_geo_grains: [] },
+      metricB: pep,
+    });
+    expect(none.levels).toEqual([]);
+    expect(none.note).toContain("no geography grain in common");
   });
 });
 

@@ -198,7 +198,12 @@ describe("published provenance and quality context", () => {
   test("an unpublished field is omitted rather than shown as a placeholder", () => {
     const sparse = metricProvenance({ metric_code: "X:Y:Z", units: "percent" });
     expect(sparse).toEqual([{ label: "Units", value: "percent" }]);
-    expect(metricProvenance({ metric_code: "X:Y:Z", valid_geo_grains: [] })).toEqual([]);
+    // Covers: WEB-121 — an explicit empty list is a publication fact,
+    // distinct from a missing declaration.
+    expect(metricProvenance({ metric_code: "X:Y:Z", valid_geo_grains: [] })).toContainEqual({
+      label: "Geographies",
+      value: "No published numeric value",
+    });
     expect(metricProvenance(null)).toEqual([]);
   });
 

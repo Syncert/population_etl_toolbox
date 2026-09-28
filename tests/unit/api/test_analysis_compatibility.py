@@ -417,7 +417,10 @@ def test_an_unpublished_grain_says_which_measure_did_not_publish_it(
     were "incomplete", leaving a caller to guess which of two measures to
     check.
     """
-    decision = evaluate_comparison(_metric(**{field: []}), _metric())
+    # An explicit [] for geography now means no numeric value anywhere;
+    # None is the unknown declaration this test exercises.
+    unknown = None if field == "valid_geo_grains" else []
+    decision = evaluate_comparison(_metric(**{field: unknown}), _metric())
     finding = _finding(decision, rule)
     assert finding.status == STATUS_UNKNOWN
     assert finding.reason == (
@@ -427,5 +430,5 @@ def test_an_unpublished_grain_says_which_measure_did_not_publish_it(
     assert finding.reason in decision.caveats
     assert decision.comparable is True, "an unknown is served with a caveat"
 
-    both = evaluate_comparison(_metric(**{field: []}), _metric(**{field: None}))
+    both = evaluate_comparison(_metric(**{field: unknown}), _metric(**{field: None}))
     assert _finding(both, rule).reason.startswith("metric_code_a and metric_code_b")

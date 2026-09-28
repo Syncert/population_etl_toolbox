@@ -1103,6 +1103,33 @@ test("a national series gets the explicit non-spatial experience, not an empty m
   await expect(page.getByTestId("explorer-provenance")).toContainText("people");
 });
 
+test("a fully withheld metric remains discoverable without offering a map", async ({ page }) => {
+  // Covers: WEB-121 — [] is an explicit catalog answer, not an unknown grain.
+  await installRoutes(page);
+  await page.route("**/api/v1/catalog/metrics?*", (route) => route.fulfill({
+    json: {
+      total: 1, limit: 1000, offset: 0,
+      items: [{ ...metrics[0], valid_geo_grains: [] }],
+    },
+  }));
+  await page.route("**/api/v1/observations?*", (route) => route.fulfill({
+    json: {
+      total: 1, limit: 1000, offset: 0, scope: "latest",
+      metric_code: metrics[0].metric_code, source_code: "CENSUS_ACS",
+      items: [{ ...county, value: null, value_status: "not_reported" }],
+    },
+  }));
+  await page.goto("/explore?source=census");
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", metrics[0].metric_code);
+  await expect(dashboard).toHaveAttribute("data-map-supported", "false");
+  await expect(page.getByRole("tab", { name: "map" })).toHaveCount(0);
+  await expect(page.getByTestId("map-canvas")).toHaveCount(0);
+  await expect(page.getByTestId("map-mode-select")).toHaveCount(0);
+  await expect(page.getByTestId("non-spatial-note")).toContainText("no published numeric value");
+  await expect(page.getByRole("tab", { name: "table" })).toBeVisible();
+});
+
 test("a measure-identified source draws its map through the shared paths", async ({ page }) => {
   // Covers: WEB-029 — BLS LAUS publishes per measure, so a BLS metric spans
   // geographies and the map, bins, and state filter answer for it through the

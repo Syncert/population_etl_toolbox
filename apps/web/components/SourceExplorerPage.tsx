@@ -609,9 +609,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // was offered, accepted, and silently discarded, which reads as the app
   // losing the click rather than as the measure not being published there.
   //
-  // A metric that declares no grains is a metric whose grains are unknown,
-  // which is not the same as a metric published at none; that case keeps the
-  // full set rather than narrowing to nothing.
+  // An absent grain declaration is unknown. Even when the catalog explicitly
+  // declares [], keep the table's geography selector usable for withheld rows;
+  // describeViewModes removes the map and states why it cannot colour one.
   const offeredGeoLevels = useMemo(() => {
     const declared = metricSupportedGeoLevels(selectedMetricMeta);
     return declared.length > 0
@@ -2203,7 +2203,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               </select>
             </div>
 
-            <div className="control-group">
+            {mapSupported ? (
+              <div className="control-group">
               <label htmlFor="map-mode-select">Map mode</label>
               <select
                 id="map-mode-select"
@@ -2215,9 +2216,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 <option value="choropleth">Choropleth</option>
                 <option value="extrusion">Extruded polygons</option>
               </select>
-            </div>
+              </div>
+            ) : null}
 
-            <div className="control-group">
+            {mapSupported ? (
+              <div className="control-group">
               <label htmlFor="value-scale-select">Value scale</label>
               <select
                 id="value-scale-select"
@@ -2229,7 +2232,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 <option value="linear">Linear (API bins)</option>
                 <option value="log">Logarithmic</option>
               </select>
-            </div>
+              </div>
+            ) : null}
 
             {showDatasetSelector ? (
               <div className="control-group">

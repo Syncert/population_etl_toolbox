@@ -148,6 +148,22 @@ describe("history support comes from the declared routes", () => {
 });
 
 describe("view-mode support", () => {
+  test("an explicitly empty geography list offers no map but keeps the table", () => {
+    // Covers: WEB-121 — [] is no published numeric value; an absent field
+    // remains an unknown declaration and cannot prove the map unavailable.
+    const unavailable = describeViewModes({
+      ...complete,
+      metric: { ...metric, valid_geo_grains: [] },
+    });
+    expect(unavailable.map.supported).toBe(false);
+    expect(unavailable.map.reason).toContain("no published numeric value");
+    expect(unavailable.table.supported).toBe(true);
+    expect(describeViewModes({
+      ...complete,
+      metric: { metric_code: "UNKNOWN" },
+    }).map.supported).toBe(true);
+  });
+
   test("a fully answerable selection supports every mode", () => {
     const support = describeViewModes(complete);
     expect(supportedViewModes(support)).toEqual([...EXPLORER_VIEW_MODES]);

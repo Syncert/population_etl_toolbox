@@ -21,6 +21,7 @@ on:
     # (ENV-012). Guarded by tests/unit/shared/test_ci_evidence_manifest.py.
     branches:
       - main
+      - "codex/**"
       - "claude/**"
       - "copilot/**"
       - "docs/**"

@@ -223,7 +223,9 @@ export function metricProvenance(metric: MetricSummary | null | undefined): Prov
     ["Units", metric.units],
     ["Measure kind", metric.measure_kind],
     ["Aggregation", metric.aggregation_characteristic],
-    ["Geographies", joinGrains(metric.valid_geo_grains)],
+    ["Geographies", Array.isArray(metric.valid_geo_grains) && metric.valid_geo_grains.length === 0
+      ? "No published numeric value"
+      : joinGrains(metric.valid_geo_grains)],
     ["Time grain", joinGrains(metric.valid_time_grains)],
     ["Source object", metric.source_object_type],
     ["Publisher contract", metric.publisher_contract_version],

@@ -198,13 +198,19 @@ export function metricSupportedGeoLevels(metric: MetricSummary | null | undefine
     .filter(Boolean);
 }
 
+/** An explicit empty catalog declaration means every published value is non-numeric. */
+export function metricHasNoPublishedValue(metric: MetricSummary | null | undefined): boolean {
+  return Array.isArray(metric?.valid_geo_grains) && metric.valid_geo_grains.length === 0;
+}
+
 export function preferredGeoLevelForMetric(
   metric: MetricSummary | null | undefined,
   fallbackGeoLevel: string = "COUNTY",
 ): string {
   const supported = metricSupportedGeoLevels(metric);
   if (supported.length === 0) {
-    // Unknown grains, not none: the caller's fallback still applies.
+    // The fallback is a table-reading choice. describeViewModes separately
+    // refuses a map for an explicit empty catalog declaration.
     return fallbackGeoLevel;
   }
 

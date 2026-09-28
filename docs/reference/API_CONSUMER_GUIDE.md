@@ -122,6 +122,15 @@ list.
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
 
+`valid_geo_grains` on a metric distinguishes an explicit empty list from an
+absent or null field. `[]` means the metric is discoverable but has no
+provider-published numeric value at any geography grain; all of its current
+rows may be withheld or otherwise non-numeric. A client must not offer a map
+or an aligned cross-sectional analysis for it. A missing or null field means
+the grain declaration is unknown and is not evidence of no values. This keeps
+the metric discoverable, including its publication and withholding context,
+without drawing a map that cannot colour a value.
+
 **A value outside a closed set is refused, not answered empty.** `geo_level`
 names a grain, and the vocabulary is closed: `NATIONAL`, `STATE`, `COUNTY`,
 `PLACE`, `AGENCY`. A word outside it is a `422` naming the five, on every
@@ -991,8 +1000,9 @@ Authenticated, user-owned storage — see ADR-0003.
   `alignment` is `{geo_level, state_fips?, year?}` and describes a
   cross-sectional reading: it is refused unless every series' measure
   publishes that grain, because such a reading is answered at one grain and
-  nothing is rolled up to reach it. A measure that declares no grains does not
-  narrow the check — unknown is not none. Leave `alignment` out for a
+  nothing is rolled up to reach it. A measure whose grain declaration is
+  absent or null does not narrow the check; an explicit `[]` refuses it.
+  Leave `alignment` out for a
   longitudinal composition, which has no shared grain.
 
   `presentation.type` is one of `line`, `bar`, `scatter`, `ranking`,

@@ -1717,8 +1717,12 @@ def test_an_alignment_grain_alias_resolves_to_the_vocabulary_word() -> None:
 
 
 def test_a_measure_declaring_no_grains_does_not_block_an_alignment() -> None:
-    """Covers: API-135 — unknown is not none, as everywhere else."""
-    unknown = {**_PEP_STATE_METRIC, "valid_geo_grains": []}
+    """Covers: API-135 — an absent grain declaration is unknown, not none."""
+    unknown = {
+        key: value
+        for key, value in _PEP_STATE_METRIC.items()
+        if key != "valid_geo_grains"
+    }
     saved_analysis_service.validate_document(
         _WarehouseSession(
             {
@@ -1732,6 +1736,21 @@ def test_a_measure_declaring_no_grains_does_not_block_an_alignment() -> None:
             alignment={"geo_level": "COUNTY"},
         ),
     )
+
+
+def test_a_metric_with_no_published_value_refuses_an_alignment() -> None:
+    """Covers: API-158 — stored work cannot revive an unavailable geography."""
+    unavailable = {**_PEP_STATE_METRIC, "valid_geo_grains": []}
+    with pytest.raises(Exception) as refused:
+        saved_analysis_service.validate_document(
+            _WarehouseSession({_PEP_STATE_METRIC["metric_code"]: unavailable}),
+            _workbench(
+                series=[{"metric_code": _PEP_STATE_METRIC["metric_code"]}],
+                presentation={"type": "scatter"},
+                alignment={"geo_level": "COUNTY"},
+            ),
+        )
+    assert "alignment geo_level" in str(refused.value)
 
 
 def test_a_presentation_outside_the_vocabulary_is_refused() -> None:

@@ -233,7 +233,24 @@ def evaluate_comparison(
     ):
         grains_a = _grains_of(metric_a, field, normalize)
         grains_b = _grains_of(metric_b, field, normalize)
-        if grains_a and grains_b:
+        no_value = [
+            side
+            for side, metric in (
+                ("metric_code_a", metric_a),
+                ("metric_code_b", metric_b),
+            )
+            if field == "valid_geo_grains" and metric.get(field) == []
+        ]
+        if no_value:
+            findings.append(
+                RuleFinding(
+                    rule,
+                    STATUS_FAIL,
+                    f"{' and '.join(no_value)} has no published numeric value "
+                    "at any geography grain",
+                )
+            )
+        elif grains_a and grains_b:
             shared = grains_a & grains_b
             if shared:
                 findings.append(

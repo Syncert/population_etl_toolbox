@@ -40,8 +40,10 @@ import { apiFetch, fetchCollectionPages } from "../../../apps/web/lib/api/client
 import { buildExplorerSources } from "../../../apps/web/lib/explorerSources";
 import {
   buildChoroplethModel,
+  metricHasNoPublishedValue,
   metricSupportedGeoLevels,
 } from "../../../apps/web/lib/explorerViewModel";
+import { describeViewModes } from "../../../apps/web/lib/viewModes";
 import {
   buildLatestObservationRequest,
   effectiveDimensionSelections,
@@ -151,6 +153,27 @@ describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live"
       const ordered = [...metrics.items].sort((a, b) =>
         String(a.metric_code).localeCompare(String(b.metric_code)),
       );
+      // Inspect every empty-grain metric, even when the expensive row sweep
+      // samples this source. [] is an explicit no-value declaration; if the
+      // explorer still offers its map, name the metric in the red report.
+      for (const metric of ordered.filter(metricHasNoPublishedValue)) {
+        const map = describeViewModes({
+          metric,
+          geoLevel: "COUNTY",
+          tileFields: DRAWABLE_TILE_GRAINS.map((entry) => entry.attributionField),
+        }).map;
+        if (map.supported) {
+          results.push({
+            source: source.sourceCode,
+            metric: metric.metric_code,
+            grain: "none",
+            verdict: "fail",
+            rows: 0,
+            coloured: 0,
+            problem: "valid_geo_grains is [] but the explorer offers a map",
+          });
+        }
+      }
       for (const metric of spread(ordered, METRIC_BUDGET)) {
         const grains = metricSupportedGeoLevels(metric).filter((grain) => DRAWABLE.includes(grain));
         for (const grain of grains) {

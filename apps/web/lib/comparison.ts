@@ -20,7 +20,7 @@ import type {
   ComparisonRule,
   MetricSummary,
 } from "./api/types";
-import { metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
+import { metricHasNoPublishedValue, metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
 import { formatNumber } from "./format";
@@ -772,9 +772,11 @@ export interface ComparisonGrainOffer {
 
 function publishedGrains(metric: MetricSummary | null | undefined): string[] {
   const declared = metricSupportedGeoLevels(metric);
-  // A measure that declares no grains is a measure whose grains are unknown,
-  // which is not the same as one published at none — the explorer's own rule
-  // (WEB-038), so the whole vocabulary stays offered for it.
+  // Only an absent or null declaration is unknown. [] explicitly says no
+  // geography has a published numeric value, and offers no aligned grain.
+  if (metricHasNoPublishedValue(metric)) {
+    return [];
+  }
   return declared.length > 0 ? declared : [...GEO_GRAIN_ORDER];
 }
 
@@ -787,8 +789,8 @@ function grainWords(levels: readonly string[]): string {
  *
  * The offer is the *intersection*: a cross-sectional reading is answered at
  * one grain, so a grain only some of the measures publish is a grain the set
- * cannot be read at. A measure declaring no grains does not narrow the offer,
- * because unknown is not none — the explorer's own rule (WEB-038).
+ * cannot be read at. An absent declaration does not narrow the offer;
+ * an explicit empty list does.
  *
  * Written for any number of measures because the comparison workspace asks it
  * of two and the workbench asks it of two to eight. One implementation rather

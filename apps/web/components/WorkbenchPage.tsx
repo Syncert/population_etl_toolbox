@@ -72,6 +72,7 @@ import { GEO_GRAIN_LABELS, geographyPickerState } from "../lib/geographyPicker";
 import { GEO_GRAIN_ORDER } from "../lib/geographyPicker";
 import {
   metricSupportedGeoLevels,
+  metricHasNoPublishedValue,
   publishedNumber,
 } from "../lib/explorerViewModel";
 import type { ObservationRow } from "../lib/explorerViewModel";
@@ -492,11 +493,13 @@ export default function WorkbenchPage() {
   /**
    * The grains this measure publishes, in the vocabulary's order.
    *
-   * A measure declaring none publishes at unknown grains, not at none — the
-   * explorer's own rule (WEB-038) — so the whole vocabulary stays offered
-   * rather than the control going empty.
+   * An absent declaration is unknown and keeps the whole vocabulary. An
+   * explicit [] means no grain has a published numeric value.
    */
   const draftGrains = useMemo(() => {
+    if (metricHasNoPublishedValue(draftMetric)) {
+      return [];
+    }
     const declared = metricSupportedGeoLevels(draftMetric);
     return declared.length > 0
       ? GEO_GRAIN_ORDER.filter((grain) => declared.includes(grain))
@@ -1694,6 +1697,7 @@ export default function WorkbenchPage() {
                 id="workbench-grain"
                 className="select"
                 value={draftGeoLevel}
+                disabled={draftGrains.length === 0}
                 onChange={(event) => {
                   setDraftGeoLevel(event.target.value);
                   setDraftGeoId("");
@@ -1707,6 +1711,9 @@ export default function WorkbenchPage() {
                   </option>
                 ))}
               </select>
+              {draftGrains.length === 0 ? (
+                <span className="subtle">This measure has no published numeric value at any geography grain.</span>
+              ) : null}
             </div>
 
             {draftGeoLevel === "COUNTY" || draftGeoLevel === "PLACE" ? (
