@@ -36,12 +36,12 @@ export default defineConfig({
     // build`, `check:bundle` and `check:csp`; testing a dev server after
     // that grades a build nobody deploys (WEB-068).
     //
-    // Locally the dev server stays, so an edit is visible without a build.
-    command: process.env.CI
-      ? "node ./node_modules/next/dist/bin/next start -p 3100"
-      : "node ./node_modules/next/dist/bin/next dev -p 3100",
+    // The npm pretest:browser hook builds locally too. The browser tier now
+    // exercises the same production server in CI and on developer machines;
+    // cold route compilation in next dev caused intermittent navigation aborts.
+    command: "node ./node_modules/next/dist/bin/next start -p 3100",
     url: "http://localhost:3100/",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

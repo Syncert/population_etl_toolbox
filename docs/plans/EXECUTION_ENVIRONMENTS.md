@@ -46,11 +46,10 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**2 plans.**
+**1 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`browser-tier-cold-dev-server`](to_do/THE_BROWSER_TIER_HOLDS_UNDER_A_COLD_DEV_SERVER_PLAN.md) | low | `browser` | -- |
 | [`full-map-sweep-scheduled`](to_do/EVERY_METRIC_MAP_IS_SWEPT_ON_A_SCHEDULE_PLAN.md) | low | none | `every-map-proves-it-displays-its-data` |
 
 
