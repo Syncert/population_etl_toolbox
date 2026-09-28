@@ -1,6 +1,6 @@
 ---
 id: time-windows-and-rollups
-branch: claude/time-windows-and-rollups
+branch: codex/analytics-backlog-2026-09-28
 depends_on:
   - map-shows-any-published-period
 parallel_safe: false
@@ -19,13 +19,34 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Second wave of time work; design decisions below
-  were taken by the user on 2026-09-25 and are not open for an agent to
-  revise. RU-1 (the ADR) must be accepted by a person before RU-3.
-- **Last updated:** 2026-09-25
+- **Status:** In progress on `codex/analytics-backlog-2026-09-28`. The
+  2026-09-25 design decisions below remain authoritative. RU-1 must be
+  accepted by a person before RU-3.
+- **Last updated:** 2026-09-28
 - **Dependencies:** `map-shows-any-published-period` (the period parameter and
   periods route this plan extends).
-- **Next pickup:** RU-1.
+- **Next pickup:** RU-1's proposed ADR awaits human acceptance before RU-3.
+  RU-2 can proceed independently once per-metric method evidence and review
+  ownership are established; no draft method may authorize a rollup.
+
+### Checkpoint (2026-09-28)
+
+- Drafted [ADR-0007](../../decisions/0007-derived-time-aggregates.md) with
+  the user-selected hybrid placement, complete-window refusal, provider
+  precedence, method governance, component lineage and geography boundary.
+  The completed workbench plan's historical time-rollup non-goal now points
+  to the *proposed* amendment and remains in force until acceptance.
+- The plan's statement that WEB-095 asserts a blanket time-rollup refusal
+  conflicts with the current `docs/reference/TESTING_CONTRACT.md`: WEB-095
+  actually tests per-series saved-document shape and refusal of geographic
+  alignment for longitudinal charts. Its pass metric does not forbid a
+  separately served time product. Preserve that executable contract; if
+  ADR-0007 is accepted, add new behavioral IDs for derived time values and
+  revise WEB-095 only if RU-7 changes its saved-document shape.
+- RU-2 is not yet complete: `docs/semantics/` has no reviewed per-metric
+  definitions, and this branch has not assigned aggregation methods by
+  inference from source or units. RU-3 remains gated by human acceptance
+  of ADR-0007, as this plan explicitly requires.
 
 ## Why
 

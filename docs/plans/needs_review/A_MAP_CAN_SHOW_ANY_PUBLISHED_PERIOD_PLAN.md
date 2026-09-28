@@ -28,7 +28,7 @@ verify:
 - **Origin:** time-granularity planning session, 2026-09-25. The user chose
   this as the **first wave** of time work: select a published period, no
   derivation. Rollups are the later wave in
-  [`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](../to_do/TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
+  [`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](../in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
 
 ## Why
 
@@ -177,5 +177,5 @@ the new parameter leaves the existing query path untouched.
 ## Out of scope
 
 Rollups, trailing windows, YTD, and change-over-period — all derived; see
-[`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](../to_do/TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
+[`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](../in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md).
 A time slider/animation is a later presentation of the same control.

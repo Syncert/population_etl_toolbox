@@ -511,6 +511,11 @@ Acceptance criteria:
   as an API-derived analysis with its own caveats.
 - Any roll-up of finer-grain rows to a coarser grain, in the API or the
   client.
+
+  [Proposed ADR-0007](../../decisions/0007-derived-time-aggregates.md) would
+  narrow this historical non-goal to **geographic** rollups and unreviewed
+  time rollups. It permits only reviewed, explicitly labelled time products
+  after human acceptance; until then this non-goal remains in force.
 - Publishing or sharing a saved workbench beyond the existing link and
   packet mechanisms.
 
