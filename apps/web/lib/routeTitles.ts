@@ -27,6 +27,7 @@ import {
 export const STATIC_ROUTE_TITLES: Readonly<Record<string, string>> = {
   "/": "Economic Data Studio",
   "/catalog": "Data catalog",
+  "/use-cases": "Analytics use cases",
   "/quality": "Data quality",
   "/saved": "Saved analyses",
   "/builder": "Evidence packet builder",

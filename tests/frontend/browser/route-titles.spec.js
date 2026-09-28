@@ -87,6 +87,7 @@ test("robots and the sitemap agree on what is published", async ({ page }) => {
   expect(rules).toContain("Disallow: /saved");
   expect(rules).toContain("Disallow: /builder");
   expect(rules).toContain("Allow: /explore");
+  expect(rules).toContain("Allow: /use-cases/community-conditions");
 
   const sitemap = await page.request.get("/sitemap.xml");
   expect(sitemap.status()).toBe(200);
@@ -94,6 +95,7 @@ test("robots and the sitemap agree on what is published", async ({ page }) => {
   expect(urls).toContain("<loc>");
   expect(urls).toContain("/explore");
   expect(urls).toContain("/catalog");
+  expect(urls).toContain("/use-cases/community-conditions");
   // A sitemap naming a route robots.txt disallows is a contradiction a
   // crawler resolves for itself, so neither private route appears.
   expect(urls).not.toContain("/saved");

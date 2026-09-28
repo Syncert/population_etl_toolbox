@@ -21,5 +21,7 @@
   "/robots.txt/route": 403456,
   "/saved/page": 440320,
   "/sitemap.xml/route": 403456,
+  "/use-cases/[id]/page": 507904,
+  "/use-cases/page": 413696,
   "/workbench/page": 559104
 }

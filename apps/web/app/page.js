@@ -112,6 +112,7 @@ export default function HomePage() {
         <Link href="/catalog"><Database /><strong>Catalog</strong><span>Find metrics and inspect provenance.</span></Link>
         <Link href="/explore"><BarChart3 /><strong>Explore</strong><span>Map, compare, and save a view.</span></Link>
         <Link href="/builder"><BookOpen /><strong>Compose</strong><span>Build a page from reusable analysis.</span></Link>
+        <Link href="/use-cases"><Map /><strong>Use cases</strong><span>Start with a reviewed question and choose a place.</span></Link>
       </section>
 
       <section className="source-band">

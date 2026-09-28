@@ -4,6 +4,7 @@ This register assigns each delivery contract to one authoritative GitHub Actions
 
 | Contract | Authoritative workflow / job | Trigger tier | Owning paths |
 | --- | --- | --- | --- |
+| Dedicated reviewed use-case pages (WEB-123) | `frontend` / `Frontend lint, typecheck, unit, build, and browser` | Required PR/push | `apps/web/app/use-cases/`, `apps/web/lib/useCasePages.ts`, `apps/web/components/ProfileProduct.tsx`, `apps/web/lib/siteMap.ts`, `apps/web/scripts/bundle-budgets.json`, `tests/frontend/unit/use-case-pages.test.js`, `tests/frontend/browser/profiles.spec.js` and `route-titles.spec.js`. The job also runs `check:csp` and `check:bundle`; the former rejects prerendered nonce-less pages and the latter requires explicit budgets for both new routes |
 | Formatting and repository evidence | `lint` / `Lint (ruff)` | Required PR/push | Python, tests, SQL manifests, docs contracts |
 | ETL pure behavior and layer boundaries | `etl-unit` / `ETL unit tests (Python 3.11)` | Required PR/push | `src`, ETL tests, migrations |
 | API contract, models, and query behavior | `api-unit` / `API unit tests (Python 3.11)` | Required PR/push | `apps/api` (routers, schemas, serving/discovery/observation-dispatch registries, the neutral observation resource, the analysis compatibility policy, authentication and API-owned saved-analysis storage, versioning), SQL query builders, and the reviewed OpenAPI contract snapshot |

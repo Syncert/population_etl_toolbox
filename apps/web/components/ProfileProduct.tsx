@@ -62,14 +62,15 @@ interface RequestStatus {
   message: string;
 }
 
-export default function ProfileProduct() {
+export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: string }) {
   const capabilitiesTracker = useRef(createRequestTracker()).current;
   const catalogTracker = useRef(createRequestTracker()).current;
   const geographyTracker = useRef(createRequestTracker()).current;
   const observationTracker = useRef(createRequestTracker()).current;
   const requestedRef = useRef<ReturnType<typeof parseProfileState> | null>(null);
 
-  const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE_ID);
+  const [templateId, setTemplateId] = useState(fixedTemplateId || DEFAULT_TEMPLATE_ID);
+  const activeTemplateId = fixedTemplateId || templateId;
   const [sources, setSources] = useState<ExplorerSource[]>([]);
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [counties, setCounties] = useState<GeographySummary[]>([]);
@@ -87,7 +88,7 @@ export default function ProfileProduct() {
   });
   const [saveStatus, setSaveStatus] = useState("");
 
-  const template = useMemo(() => findTemplate(templateId) || PRODUCT_TEMPLATES[0]!, [templateId]);
+  const template = useMemo(() => findTemplate(activeTemplateId) || PRODUCT_TEMPLATES[0]!, [activeTemplateId]);
   const resolved = useMemo(
     () => resolveTemplate(template, metricsByCode),
     [template, metricsByCode],
@@ -107,7 +108,7 @@ export default function ProfileProduct() {
   useEffect(() => {
     const request = capabilitiesTracker.begin();
     requestedRef.current = parseProfileState(window.location.search);
-    if (requestedRef.current.template) {
+    if (!fixedTemplateId && requestedRef.current.template) {
       setTemplateId(requestedRef.current.template);
     }
     if (requestedRef.current.geoId) {
@@ -128,7 +129,7 @@ export default function ProfileProduct() {
     return () => {
       capabilitiesTracker.invalidate();
     };
-  }, [capabilitiesTracker]);
+  }, [capabilitiesTracker, fixedTemplateId]);
 
   useEffect(() => {
     const request = geographyTracker.begin();
@@ -321,14 +322,14 @@ export default function ProfileProduct() {
 
   useEffect(() => {
     const query = serializeProfileState(
-      { template: templateId, geoId },
-      { template: DEFAULT_TEMPLATE_ID },
+      { template: activeTemplateId, geoId },
+      { template: fixedTemplateId || DEFAULT_TEMPLATE_ID },
     );
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
       window.history.replaceState(null, "", nextUrl);
     }
-  }, [templateId, geoId]);
+  }, [activeTemplateId, fixedTemplateId, geoId]);
 
   function exportCsv() {
     const { headings, rows } = profileExport(template, resolved, answers, {
@@ -388,23 +389,26 @@ export default function ProfileProduct() {
         <p className="subtle" data-testid="template-limits">
           {template.limits}
         </p>
+        <Link className="text-link" href="/use-cases">Browse use cases</Link>
       </header>
 
       <section className="profile-controls">
-        <label>
-          Product
-          <select
-            value={templateId}
-            onChange={(event) => setTemplateId(event.target.value)}
-            data-testid="template-select"
-          >
-            {PRODUCT_TEMPLATES.map((item) => (
-              <option value={item.id} key={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!fixedTemplateId ? (
+          <label>
+            Product
+            <select
+              value={templateId}
+              onChange={(event) => setTemplateId(event.target.value)}
+              data-testid="template-select"
+            >
+              {PRODUCT_TEMPLATES.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
           State
           <select

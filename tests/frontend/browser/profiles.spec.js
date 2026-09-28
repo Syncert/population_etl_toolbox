@@ -624,3 +624,33 @@ test("every product the array holds is offered, with no per-product screen", asy
     "Housing affordability",
   );
 });
+
+test("dedicated use-case pages keep one reviewed product and its place link", async ({ page }) => {
+  await installRoutes(page);
+  await page.goto("/use-cases");
+  await expect(page.getByTestId("use-case-link")).toHaveCount(8);
+  await expect(page.getByRole("link", { name: /community disease and illness burden/i }))
+    .toHaveAttribute("href", "/use-cases/disease-illness-burden");
+
+  await page.goto(
+    "/use-cases/disease-illness-burden?template=workforce&place=state%3A55%7Ccounty%3A025",
+  );
+  await expect(page).toHaveTitle(/Community disease and illness burden/);
+  const product = page.getByTestId("profile-product");
+  await expect(product).toHaveAttribute("data-template", "disease-illness-burden");
+  await expect(product).toHaveAttribute("data-geo-id", GEO_ID);
+  await expect(page.getByTestId("template-select")).toHaveCount(0);
+  await expect(page.getByTestId("template-limits")).toContainText("Suppressed");
+  await expect(page.getByTestId("measure-cdc-chronic-indicator"))
+    .toHaveAttribute("data-available", "false");
+  await expect(page.getByTestId("measure-explore-total-population"))
+    .toHaveAttribute("href", /metric=CENSUS_ACS%3Aacs5%3AB01003_001/);
+  await expect(page).toHaveURL(
+    /\/use-cases\/disease-illness-burden\?place=state%3A55%7Ccounty%3A025$/,
+  );
+});
+
+test("an unknown dedicated use-case page returns 404", async ({ page }) => {
+  const response = await page.goto("/use-cases/unreviewed-idea");
+  expect(response?.status()).toBe(404);
+});

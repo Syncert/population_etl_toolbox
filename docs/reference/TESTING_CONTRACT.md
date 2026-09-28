@@ -295,7 +295,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-122 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-123 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
 | **Total** | **545 of 545** | **0 of 545** |
 
@@ -805,6 +805,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-120 | P0 | Unit + browser / `web-unit`, `web-browser` | The selected geography shows the row the map paints | For oldest-first, multi-period FBI UCR, CDC, and USDA NASS rows, the selected panel reads the same newest row as `mapRows`, including its period, value, uncertainty, and dataset. A newest `not_reported` row stays withheld instead of falling back to an older numeric row. One-row-per-geography publications keep their row. A CDC browser fixture proves the panel's period and value on the painted map | The map's `newestPerGeography` reduction coloured a later period while the panel's raw `.find` showed the first, oldest, provider row as "Latest value" |
 | WEB-121 | P0 | Unit + browser + smoke / `web-unit`, `web-browser`, `web-smoke` | A fully withheld metric is discoverable but has no map | An explicit `valid_geo_grains: []` removes the explorer map with a visible reason while preserving catalog metadata and table access; comparison and workbench offer no aligned grain, and the map sweep checks every empty-grain metric even when it samples row reads. Missing or null declarations remain unknown. Browser evidence shows the metric remains selectable and its map is absent | The explorer treated `[]` as unknown and offered a map whose only possible answer was value not published |
 | WEB-122 | P0 | Unit + browser / `web-unit`, `web-browser` | An explorer period pin repaints the published answer and reopens | The period control derives from the capability and period route, defaults to each geography's newest, and sends an exact period only for latest scope. Observation rows, map, bins or local legend, selected panel, caption and shared URL agree; reload retains the pin, and a missing period leaves no painted value | A map could imply an older period while retaining newer values or silently fill a missing geography from another period |
+| WEB-123 | P0 | Unit + browser + build / `web-unit`, `web-browser`, `check:csp`, `check:bundle` | Reviewed use cases have dedicated answer pages | Every reviewed product template has one discoverable `/use-cases/<id>` URL with its own title and limits; it uses the same catalog-resolved profile answers and states unavailable measures as gaps. A place remains shareable on that use case even when a conflicting template query is supplied, unknown IDs return 404, and `/profiles` still works. Sitemap and robots include the public pages, production routes render per request for the CSP nonce, and both new routes have bundle budgets | A generic selector with no stable product URL, a query overriding the named page, an unpublished value presented as an answer, a missing page in discovery, or a prerendered page blocked by CSP |
 
 ### Frontend Tests
 
