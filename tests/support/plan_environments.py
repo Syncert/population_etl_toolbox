@@ -48,6 +48,11 @@ BROWSER = "browser"
 #: reader can find it, and the environment it needs. These are declared rather
 #: than derived because they are prose.
 CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
+    "full-map-sweep-scheduled": (
+        COMPOSE,
+        "Every published metric's map is graded at least once a week against a "
+        "reachable deployment or populated internal stack.",
+    ),
     "deployment-smoke-target": (
         COMPOSE,
         "`DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- "

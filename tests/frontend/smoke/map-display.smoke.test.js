@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
 import { beforeAll, describe, expect, test } from "vitest";
 
 // Covers: WEB-118 — every explorer map that has values to show colours them,
@@ -33,7 +36,10 @@ import { beforeAll, describe, expect, test } from "vitest";
 // Scope: every source, every drawable grain a metric declares. Sources with
 // at most MAP_SWEEP_METRICS metrics are read whole; larger ones (BLS, ACS) are
 // read at an even deterministic spread of that many. MAP_SWEEP_ALL=1 reads
-// every metric; MAP_SWEEP_SOURCES=FBI_UCR,CDC narrows it. Opt-in like the rest of the smoke tier: without SMOKE_BASE_URL
+// every metric; MAP_SWEEP_OFFSET and MAP_SWEEP_LIMIT take a contiguous shard
+// per source. MAP_SWEEP_SOURCES=FBI_UCR,CDC narrows it. An optional
+// MAP_SWEEP_REPORT_PATH keeps per-metric verdicts for a scheduled run. Opt-in
+// like the rest of the smoke tier: without SMOKE_BASE_URL
 // it skips, and SMOKE_REQUIRED=1 forbids that.
 
 import { apiFetch, fetchCollectionPages } from "../../../apps/web/lib/api/client";
@@ -54,11 +60,12 @@ import {
 } from "../../../apps/web/lib/observationAccess";
 import { DRAWABLE_TILE_GRAINS } from "../../../apps/web/lib/tileGrains";
 import { grade, oracle } from "../support/mapOracle";
+import { makeSweepReport, parseSweepSelection, selectSweepMetrics } from "../support/mapSweep";
 import { reportUnhandledErrors } from "./unhandledErrors";
 
 const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
-const SWEEP_ALL = process.env.MAP_SWEEP_ALL === "1";
-const METRIC_BUDGET = Number(process.env.MAP_SWEEP_METRICS || 40);
+const SELECTION = parseSweepSelection(process.env);
+const REPORT_PATH = process.env.MAP_SWEEP_REPORT_PATH || "";
 /** Optional comma-separated source codes, to re-run one source's maps. */
 const ONLY_SOURCES = (process.env.MAP_SWEEP_SOURCES || "")
   .split(",")
@@ -81,18 +88,6 @@ function installOriginResolvingFetch() {
     const target = typeof input === "string" ? input : input.url;
     return realFetch(target.startsWith("/") ? `${BASE_URL}${target}` : target, init);
   };
-}
-
-/** An even, deterministic spread of `budget` items: first, last, and between. */
-export function spread(items, budget) {
-  if (SWEEP_ALL || items.length <= budget) {
-    return items;
-  }
-  const picked = [];
-  for (let index = 0; index < budget; index += 1) {
-    picked.push(items[Math.round((index * (items.length - 1)) / (budget - 1))]);
-  }
-  return [...new Set(picked)];
 }
 
 /** The most common published value of one dimension across the rows. */
@@ -136,123 +131,143 @@ async function readMap(source, metricCode, grain, dimensions) {
 describe.skipIf(!BASE_URL)("every explorer map colours what the rows hold, live", () => {
   /** @type {Array<{source: string, metric: string, grain: string, verdict: string, rows: number, coloured: number, problem: string|null}>} */
   const results = [];
+  const sourceCatalogs = [];
 
   beforeAll(async () => {
-    installOriginResolvingFetch();
-    const capabilities = await apiFetch("/catalog/capabilities");
-    const sources = buildExplorerSources(capabilities.items || []);
-    for (const source of sources) {
-      if (ONLY_SOURCES.length > 0 && !ONLY_SOURCES.includes(source.sourceCode)) {
-        continue;
-      }
-      const metrics = await fetchCollectionPages("/catalog/metrics", {
-        params: { source_code: source.sourceCode, active_only: "true" },
-        pageSize: 1000,
-        maxPages: 100,
-      });
-      const ordered = [...metrics.items].sort((a, b) =>
-        String(a.metric_code).localeCompare(String(b.metric_code)),
-      );
-      // Inspect every empty-grain metric, even when the expensive row sweep
-      // samples this source. [] is an explicit no-value declaration; if the
-      // explorer still offers its map, name the metric in the red report.
-      for (const metric of ordered.filter(metricHasNoPublishedValue)) {
-        const map = describeViewModes({
-          metric,
-          geoLevel: "COUNTY",
-          tileFields: DRAWABLE_TILE_GRAINS.map((entry) => entry.attributionField),
-        }).map;
-        if (map.supported) {
-          results.push({
-            source: source.sourceCode,
-            metric: metric.metric_code,
-            grain: "none",
-            verdict: "fail",
-            rows: 0,
-            coloured: 0,
-            problem: "valid_geo_grains is [] but the explorer offers a map",
-          });
+    let complete = false;
+    try {
+      installOriginResolvingFetch();
+      const capabilities = await apiFetch("/catalog/capabilities");
+      const sources = buildExplorerSources(capabilities.items || []);
+      for (const source of sources) {
+        if (ONLY_SOURCES.length > 0 && !ONLY_SOURCES.includes(source.sourceCode)) {
+          continue;
         }
-      }
-      for (const metric of spread(ordered, METRIC_BUDGET)) {
-        const grains = metricSupportedGeoLevels(metric).filter((grain) => DRAWABLE.includes(grain));
-        for (const grain of grains) {
-          let dimensions = {};
-          let read = await readMap(source, metric.metric_code, grain, dimensions);
-          let outcome = read.outcome;
-          // A declined map is only half an answer: the reader must be able to
-          // narrow it to one series with the filters the source declares, and
-          // the narrowed map must colour. Narrow as a reader would -- each
-          // declared filter among the separating dimensions, set to its most
-          // common published value -- until it colours or cannot be narrowed.
-          for (let attempt = 0; outcome.verdict === "declined" && attempt < 3; attempt += 1) {
-            const varying = read.view.stratification.varyingDimensions.filter(
-              (name) => !(name in dimensions),
-            );
-            // Only the declared filters can be set. A dimension that merely
-            // describes one of them (CDC's `strata` and footnotes move with
-            // `stratum_id`) narrows with it; if it does not, the re-read
-            // below is still declined and fails by name.
-            const filterable = varying.filter((name) => source.dimensionFilters.includes(name));
-            if (filterable.length === 0) {
+        const metrics = await fetchCollectionPages("/catalog/metrics", {
+          params: { source_code: source.sourceCode, active_only: "true" },
+          pageSize: 1000,
+          maxPages: 100,
+        });
+        const ordered = [...metrics.items].sort((a, b) =>
+          String(a.metric_code).localeCompare(String(b.metric_code)),
+        );
+        // Inspect every empty-grain metric, even when the expensive row sweep
+        // samples this source. [] is an explicit no-value declaration; if the
+        // explorer still offers its map, name the metric in the red report.
+        for (const metric of ordered.filter(metricHasNoPublishedValue)) {
+          const map = describeViewModes({
+            metric,
+            geoLevel: "COUNTY",
+            tileFields: DRAWABLE_TILE_GRAINS.map((entry) => entry.attributionField),
+          }).map;
+          if (map.supported) {
+            results.push({
+              source: source.sourceCode,
+              metric: metric.metric_code,
+              grain: "none",
+              verdict: "fail",
+              rows: 0,
+              coloured: 0,
+              problem: "valid_geo_grains is [] but the explorer offers a map",
+            });
+          }
+        }
+        const selected = selectSweepMetrics(ordered, SELECTION);
+        sourceCatalogs.push({
+          source: source.sourceCode,
+          catalog_total: ordered.length,
+          selected_metric_codes: selected.map((metric) => metric.metric_code),
+        });
+        for (const metric of selected) {
+          const grains = metricSupportedGeoLevels(metric).filter((grain) => DRAWABLE.includes(grain));
+          for (const grain of grains) {
+            let dimensions = {};
+            let read = await readMap(source, metric.metric_code, grain, dimensions);
+            let outcome = read.outcome;
+            // A declined map is only half an answer: the reader must be able to
+            // narrow it to one series with the filters the source declares, and
+            // the narrowed map must colour. Narrow as a reader would -- each
+            // declared filter among the separating dimensions, set to its most
+            // common published value -- until it colours or cannot be narrowed.
+            for (let attempt = 0; outcome.verdict === "declined" && attempt < 3; attempt += 1) {
+              const varying = read.view.stratification.varyingDimensions.filter(
+                (name) => !(name in dimensions),
+              );
+              // Only the declared filters can be set. A dimension that merely
+              // describes one of them (CDC's `strata` and footnotes move with
+              // `stratum_id`) narrows with it; if it does not, the re-read
+              // below is still declined and fails by name.
+              const filterable = varying.filter((name) => source.dimensionFilters.includes(name));
+              if (filterable.length === 0) {
+                outcome = {
+                  verdict: "fail",
+                  problem: `declined by ${varying.join(", ") || "nothing named"}, which no declared filter narrows${
+                    Object.keys(dimensions).length ? ` (after narrowing ${JSON.stringify(dimensions)})` : ""
+                  }`,
+                };
+                break;
+              }
+              dimensions = { ...dimensions };
+              for (const name of filterable) {
+                dimensions[name] = mostCommon(read.rows, name);
+              }
+              read = await readMap(source, metric.metric_code, grain, dimensions);
+              outcome =
+                read.outcome.verdict === "coloured"
+                  ? { verdict: "narrowed", problem: null }
+                  : read.outcome.verdict === "declined"
+                    ? read.outcome
+                    : {
+                        verdict: "fail",
+                        problem: `narrowed by ${JSON.stringify(dimensions)}: ${read.outcome.problem || read.outcome.verdict}`,
+                      };
+            }
+            if (outcome.verdict === "declined") {
               outcome = {
                 verdict: "fail",
-                problem: `declined by ${varying.join(", ") || "nothing named"}, which no declared filter narrows${
-                  Object.keys(dimensions).length ? ` (after narrowing ${JSON.stringify(dimensions)})` : ""
-                }`,
+                problem: `still declined after narrowing ${JSON.stringify(dimensions)}`,
               };
-              break;
             }
-            dimensions = { ...dimensions };
-            for (const name of filterable) {
-              dimensions[name] = mostCommon(read.rows, name);
-            }
-            read = await readMap(source, metric.metric_code, grain, dimensions);
-            outcome =
-              read.outcome.verdict === "coloured"
-                ? { verdict: "narrowed", problem: null }
-                : read.outcome.verdict === "declined"
-                  ? read.outcome
-                  : {
-                      verdict: "fail",
-                      problem: `narrowed by ${JSON.stringify(dimensions)}: ${read.outcome.problem || read.outcome.verdict}`,
-                    };
+            const { rows, model } = read;
+            results.push({
+              source: source.sourceCode,
+              metric: metric.metric_code,
+              grain,
+              verdict: outcome.verdict,
+              rows: rows.length,
+              coloured: model.valueCount,
+              problem: outcome.problem,
+            });
           }
-          if (outcome.verdict === "declined") {
-            outcome = {
-              verdict: "fail",
-              problem: `still declined after narrowing ${JSON.stringify(dimensions)}`,
-            };
-          }
-          const { rows, model } = read;
-          results.push({
-            source: source.sourceCode,
-            metric: metric.metric_code,
-            grain,
-            verdict: outcome.verdict,
-            rows: rows.length,
-            coloured: model.valueCount,
-            problem: outcome.problem,
-          });
         }
       }
-    }
 
-    const tally = new Map();
-    for (const result of results) {
-      const key = `${result.source} ${result.grain}`;
-      const counts = tally.get(key) || { coloured: 0, narrowed: 0, empty: 0, fail: 0 };
-      counts[result.verdict] += 1;
-      tally.set(key, counts);
+      const tally = new Map();
+      for (const result of results) {
+        const key = `${result.source} ${result.grain}`;
+        const counts = tally.get(key) || { coloured: 0, narrowed: 0, empty: 0, fail: 0 };
+        counts[result.verdict] += 1;
+        tally.set(key, counts);
+      }
+      console.info(
+        "map-display sweep\n" +
+          [...tally.entries()]
+            .map(([key, c]) =>
+              `  ${key.padEnd(24)} coloured ${c.coloured}  narrowed ${c.narrowed}  empty ${c.empty}  FAIL ${c.fail}`,
+            )
+            .join("\n"),
+      );
+      complete = true;
+    } finally {
+      if (REPORT_PATH) {
+        const path = resolve(REPORT_PATH);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(
+          path,
+          `${JSON.stringify(makeSweepReport({ selection: SELECTION, sources: sourceCatalogs, results, complete }), null, 2)}\n`,
+        );
+      }
     }
-    console.info(
-      "map-display sweep\n" +
-        [...tally.entries()]
-          .map(([key, c]) =>
-            `  ${key.padEnd(24)} coloured ${c.coloured}  narrowed ${c.narrowed}  empty ${c.empty}  FAIL ${c.fail}`,
-          )
-          .join("\n"),
-    );
   }, 1_800_000);
 
   test("the sweep read maps from every source that publishes a drawable grain", () => {
