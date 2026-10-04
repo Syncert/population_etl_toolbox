@@ -476,3 +476,7 @@ build/
 .claude/plan-runner-state.json
 .claude/plan-runs/
 .worktrees/
+
+# Local agent evidence artifacts and pytest --basetemp scratch directories
+.codex/
+.pytest_tmp_period*/
