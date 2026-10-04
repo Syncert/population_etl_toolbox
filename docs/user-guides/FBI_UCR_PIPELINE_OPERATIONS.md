@@ -52,7 +52,18 @@ arson, and the rape definition changed in 2013.
 - A county or place filter selects agency rows through an evidence-backed
   relationship. `gold_fbi.agency_observation_area_filter` keeps the agency
   observation identity so a multi-county agency deduplicates instead of being
-  counted once per county. There is no county or city total in this contract.
+  counted once per county. No provider-faithful view publishes a county or
+  city total.
+- `gold_fbi.county_rollup` (with `gold_fbi.latest_county_rollup`) is the one
+  **declared-derived** aggregate (ETL-053): it sums reported agency absolute
+  offense/clearance totals per county, measure, and month through the
+  resolved county relationships, served by `/api/v1/crime/county-rollup`.
+  Every row carries `derived`, its contributing ORIs, reporting-versus-
+  mapped coverage, and a multi-county flag. An agency resolved to more than
+  one county counts in full in each, so county values are **not additive to
+  state totals**; a county period with no reporting agency publishes no row
+  rather than a zero; and no rate is derived — the state program rate stays
+  the only published rate.
 - A month the provider did not publish for a subject is `not_reported` with a
   null value. It is never zero, and a published zero stays a published zero.
 - Offenses and clearances are different counted entities, and absolute totals

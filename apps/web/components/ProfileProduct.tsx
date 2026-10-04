@@ -67,6 +67,7 @@ const CATALOG_PAGE_SIZE = 1000;
 const UseCaseVisualizations = dynamic(() => import("./UseCaseVisualizations"));
 const UseCaseSourceReport = dynamic(() => import("./UseCaseSourceReport"));
 const PopulationScenario = dynamic(() => import("./PopulationScenario"));
+const CountyCrimeRollup = dynamic(() => import("./CountyCrimeRollup"));
 
 interface RequestStatus {
   state: string;
@@ -108,6 +109,17 @@ export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCas
     [template, metricsByCode],
   );
   const coverage = useMemo(() => templateCoverage(resolved), [resolved]);
+  // The one section per template that offers the derived county roll-up:
+  // the first safety section a resolved FBI measure appears in. One panel,
+  // however many sections carry FBI measures, so the page never renders two
+  // identical derived offers (and never duplicates the panel's heading id).
+  const crimeRollupSectionId = useMemo(
+    () =>
+      resolved.find((entry) =>
+        entry.measures.some((measure) => measure.metricCode.startsWith("FBI_UCR:")),
+      )?.section.id ?? null,
+    [resolved],
+  );
   const availableMeasures = useMemo(
     () => resolved.flatMap((entry) => entry.measures).filter((measure) => measure.available),
     [resolved],
@@ -550,6 +562,13 @@ export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCas
             ))}
           </div>
           {useCase && entry.measures.some((measure) => ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || "")) ? <UseCaseSourceReport sectionId={entry.section.id} measures={entry.measures.filter((measure) => measure.available && ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || ""))} sources={sources} geoId={geoId} geoLevel={geoLevel} placeName={placeName} state={states.find((item) => item.state_fips === place?.state_fips)} /> : null}
+          {/* A county selection in a safety section offers the warehouse's
+              declared-derived roll-up (ETL-053) beside — never inside — the
+              provider-published cards above. The FBI publishes no county
+              figure, so the panel carries its own derivation labeling. */}
+          {geoLevel === "COUNTY" && geoId && entry.section.id === crimeRollupSectionId ? (
+            <CountyCrimeRollup geoId={geoId} placeName={placeName} />
+          ) : null}
         </section>
       ))}
       {useCase ? <section className="use-case-related" aria-label="Related use cases"><h2>Continue exploring</h2><div className="use-case-related-grid">{relatedUseCases.map((entry) => <Link key={entry.id} href={entry.href}><span>{String(entry.rank).padStart(2, "0")}</span><strong>{entry.title}</strong><ArrowRight size={16} /></Link>)}</div><Link className="text-link" href="/use-cases">All 20 use cases <ArrowRight size={14} /></Link></section> : null}

@@ -204,6 +204,55 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         """,
     ) == [(0,)]
 
+    # ETL-053: the derived county roll-up is the one declared aggregate.
+    # Dane sums its three reporting agencies; Edgerton's whole count repeats
+    # in Rock, so the two county figures deliberately exceed any additive
+    # reading; every row says it is derived and names its contributors.
+    offense_measure_id = PRODUCT.measure_id("offense", "absolute_total")
+    rollup_january = {
+        row[0]: row[1:]
+        for row in _query(
+            factory,
+            """
+            SELECT geo_id, value, contributing_oris, reporting_agency_count,
+                   mapped_agency_count, includes_multi_county_agency, derived
+            FROM gold_fbi.county_rollup
+            WHERE measure_id = %s AND period = '01-2023'
+              AND geo_id IN ('state:55|county:025', 'state:55|county:105')
+            """,
+            (offense_measure_id,),
+        )
+    }
+    assert rollup_january["state:55|county:025"] == (
+        Decimal(6 + 7 + 7),
+        ["WI0130000", "WI0137000", "WI0540300"],
+        3,
+        3,
+        True,
+        True,
+    )
+    assert rollup_january["state:55|county:105"] == (
+        Decimal(7),
+        [TWO_COUNTY_AGENCY],
+        1,
+        1,
+        True,
+        True,
+    )
+    # No rate is ever derived, no row publishes without a reporting agency,
+    # and the non-additivity consequence travels on every row.
+    assert _query(
+        factory,
+        """
+        SELECT COUNT(*) FROM gold_fbi.county_rollup
+        WHERE measure_form <> 'absolute_total'
+           OR counted_entity_basis NOT IN ('offense', 'clearance')
+           OR reporting_agency_count < 1 OR value IS NULL
+           OR NOT derived
+           OR methodology_note NOT LIKE '%%not additive to state totals%%'
+        """,
+    ) == [(0,)]
+
     published_before = _query(
         factory, "SELECT COUNT(*) FROM gold_fbi.crime_observation"
     )
@@ -393,6 +442,58 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
             [captured.release_key, revised.release_key], reverse=True
         )
         assert all(item["observation_count"] > 0 for item in release_listing["items"])
+
+        # API-163: the derived roll-up route serves the same warehouse rows
+        # with their derivation intact, following the latest release.
+        rollup_response = client.get(
+            "/api/v1/crime/county-rollup",
+            params={
+                "product_id": PRODUCT.product_id,
+                "measure_id": measure_id,
+                "geo_id": "state:55|county:025",
+            },
+        )
+        assert rollup_response.status_code == 200
+        rollup_payload = rollup_response.json()
+        assert rollup_payload["derived"] is True
+        assert rollup_payload["release_selection"] == "latest_release"
+        assert "not additive to state totals" in " ".join(rollup_payload["caveats"])
+        # The reviewed fixture reports six months. Every other registered
+        # period is `not_reported` on every mapped agency, so the roll-up
+        # publishes no row for it -- 402 registered periods, six rows, and
+        # not one zero invented for the difference.
+        assert rollup_payload["total"] == 6 < PERIODS
+        rollup_by_period = {
+            item["period"]: item for item in rollup_payload["items"]
+        }
+        dane_january = rollup_by_period["01-2023"]
+        assert Decimal(dane_january["value"]) == Decimal(6 + 7 + 7)
+        assert dane_january["contributing_oris"] == [
+            "WI0130000",
+            "WI0137000",
+            TWO_COUNTY_AGENCY,
+        ]
+        assert dane_january["reporting_agency_count"] == 3
+        assert dane_january["mapped_agency_count"] == 3
+        assert dane_january["includes_multi_county_agency"] is True
+        assert dane_january["derived"] is True
+        assert dane_january["release"] == revised.release_key
+        assert dane_january["county_name"] == "Dane County"
+
+        # A county no resolved mapping covers is an explicit refusal, not an
+        # empty page, and a non-county geography is not served here at all.
+        unmapped = client.get(
+            "/api/v1/crime/county-rollup",
+            params={"geo_id": "state:55|county:078"},
+        )
+        assert unmapped.status_code == 404
+        assert "No law-enforcement agency is mapped" in unmapped.json()["detail"]
+        assert (
+            client.get(
+                "/api/v1/crime/county-rollup", params={"geo_id": "state:55"}
+            ).status_code
+            == 422
+        )
 
         # An unchanged publication serializes byte-identically on repeat.
         repeat = client.get(

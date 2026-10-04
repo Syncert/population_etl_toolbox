@@ -15,7 +15,10 @@ verify:
 
 ## Status
 
-In progress (claimed 2026-10-04, branch `feature/county-crime-rollup`).
+Ready for review (2026-10-04, branch `feature/county-crime-rollup`).
+Every acceptance criterion has executable evidence; the validation
+record is in the checkpoints below and the final validation summary at
+the end of this document.
 
 Gap analysis against the repository (2026-10-04):
 
@@ -78,21 +81,70 @@ clean):
   `docs/plans/EXECUTION_ENVIRONMENTS.md` regenerated after this plan
   moved to in_progress.
 
-Remaining work:
+### Checkpoint 2026-10-04 (second): DB evidence + web layer
 
-1. **DB-backed evidence:** regenerate
-   `tests/sql/warehouse_schema_snapshot.txt`
-   (`python -m tests.support.schema_snapshot --write`) and run the FBI
-   integration suite against the compose stack; extend the e2e owner
-   (`tests/e2e/test_fbi_ucr_pipeline.py`) to exercise the roll-up views
-   and the new route, including a multi-county agency fixture
-   (`agency_directory_WI.json` already carries one).
-2. **Web (last):** county selections in safety sections offer the
-   derived roll-up, labeled derived, with contributing-agency table and
-   coverage statement; browser evidence with a multi-county fixture;
-   web unit + browser suites.
-3. Docs sync pass: FBI_UCR_PIPELINE_OPERATIONS.md (roll-up semantics),
-   CI_EVIDENCE_MAP if route/relation evidence is enumerated there.
+- **DB-backed evidence (compose test stack, fresh bootstrap):** FBI
+  integration suite 19/19 passed with the new DDL applied by the
+  manifest; `tests/sql/warehouse_schema_snapshot.txt` regenerated (diff
+  adds exactly `gold_fbi.county_rollup` and
+  `gold_fbi.latest_county_rollup`); snapshot test green. E2E owner
+  `test_fbi_ucr_pipeline.py` extended and passed (104s): Dane January
+  sums 6+7+7=20 across its three agencies, the multi-county Edgerton PD
+  contributes its whole 7 to Rock as well, no rate/zero/underivation row
+  exists, the route serves the rows with derivation and coverage intact
+  (`total == 6 < 402` registered periods — no zero invented), and an
+  unmapped county is an explicit 404 while a non-county geography is a
+  422.
+- **Web:** `apps/web/components/CountyCrimeRollup.tsx` — explicit-run
+  derived panel mounted once per template on the first FBI safety
+  section at county grain (`ProfileProduct.tsx`), rendering derived
+  labeling, contributing-ORI table, reporting-vs-mapped coverage, the
+  multi-county non-additivity statement, API caveats, the 404 refusal
+  verbatim, and never a zero for a non-reporting county; client-side
+  guard refuses an answer that lost `derived`. WEB-124 added to the
+  catalog (total 550); unit tests
+  `tests/frontend/unit/county-crime-rollup.test.jsx` (4 passed; full
+  web unit tier 723 passed); browser fixture + rank-1 assertions added
+  to `tests/frontend/support/useCaseScenarios.js` and
+  `tests/frontend/browser/use-cases.spec.js`;
+  `public-safety-trend` limits text updated to name the derived panel.
+  Web lint and typecheck clean.
+- **Docs:** FBI_UCR_PIPELINE_OPERATIONS.md roll-up section added;
+  CI_EVIDENCE_MAP is job-granular and needed no change.
+
+### Final validation (2026-10-04)
+
+| Check | Result |
+|---|---|
+| `pytest tests/unit` (full tier, host, `--basetemp` workaround) | 2193 passed |
+| `pytest tests/unit/fbi_ucr` | 24 + suite passed (included above) |
+| `pytest tests/unit/api` | 751 passed (included above) |
+| `ruff check .` | clean |
+| FBI integration suite + schema snapshot (compose test stack, fresh bootstrap) | 19 passed; snapshot regenerated, then 3 passed |
+| E2E owner `tests/e2e/test_fbi_ucr_pipeline.py` (compose test stack) | 1 passed (104s) with roll-up warehouse + API assertions |
+| `npm --prefix apps/web run test:unit` | 723 passed (50 files) |
+| `npm --prefix apps/web run lint` / `typecheck` | clean |
+| `npm --prefix apps/web run test:browser` (includes `next build`) | 201 passed |
+| DAG tier (`pytest -m dag tests/dags` inside the running scheduler container; venv cannot import Airflow DAGs on this host) | 145 passed, 5 skipped (the DB-backed DAG tests that skip outside CI, per CI_EVIDENCE_MAP) |
+
+Notes for the reviewer:
+
+- The multi-county rule, no-zero rule, counts-only rule, and
+  non-additivity statement are each pinned three times: statically
+  (ETL-053 unit guards), against a bootstrapped warehouse (e2e sums
+  6+7+7=20 for Dane while Edgerton's whole 7 also lands in Rock), and
+  in the UI (WEB-124 unit + browser evidence on the multi-county
+  fixture).
+- DQ-FBI-008 is declared `unimplemented` and added to the reviewed
+  ratchet in `tests/unit/quality/test_rule_automation.py`, with the
+  reasoning in its automation note (non-materialized views recompute
+  per read; semantics pinned by ETL-053 static tests). An independent
+  recomputation executor is possible follow-up work, not a gap this
+  plan hid.
+- Pre-existing repair carried in this branch:
+  `TOP_20_USE_CASE_WEB_PAGES_PLAN.md` had `complexity: large`, outside
+  the dispatcher vocabulary, failing five tooling tests on the
+  unmodified tree; set to `high`.
 
 ## Motivation
 

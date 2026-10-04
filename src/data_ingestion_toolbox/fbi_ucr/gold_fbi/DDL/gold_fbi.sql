@@ -173,7 +173,7 @@ WITH county_link AS (
            contribution.period_end,
            SUM(contribution.value)
                FILTER (WHERE contribution.value_status = 'reported') AS value,
-           ARRAY_AGG(DISTINCT contribution.ori)
+           ARRAY_AGG(DISTINCT contribution.ori ORDER BY contribution.ori)
                FILTER (WHERE contribution.value_status = 'reported')
                AS contributing_oris,
            COUNT(DISTINCT contribution.ori)

@@ -47,6 +47,18 @@ for (const example of scenarios) {
       await safety.getByRole("button", { name: "Load Wisconsin state report" }).click();
       await expect(safety.locator("tbody tr")).toHaveCount(6);
       await expect(safety).toContainText("these are not Dane County, Wisconsin figures");
+      // Covers: WEB-124 — the county selection offers the derived roll-up,
+      // explicitly run, labeled derived, with the multi-county agency
+      // counted in full and the non-additivity consequence stated.
+      const rollup = page.getByTestId("county-crime-rollup");
+      await expect(rollup.locator("table")).toHaveCount(0);
+      await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+      await expect(rollup.locator("tbody tr")).toHaveCount(6);
+      await expect(rollup).toContainText("derived sum");
+      await expect(rollup).toContainText("WI0130000, WI0137000, WI0540300");
+      await expect(page.getByTestId("county-rollup-coverage")).toContainText("3 of 3 mapped agencies reported");
+      await expect(page.getByTestId("county-rollup-multi-county")).toContainText("not additive to state totals");
+      await expect(page.getByTestId("county-rollup-caveats")).toContainText("not a provider-published county figure");
     }
     if ([1, 2].includes(example.rank)) {
       await page.getByRole("button", { name: "Run population scenario" }).click();
