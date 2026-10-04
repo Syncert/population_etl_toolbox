@@ -920,10 +920,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     };
   }, [metricsTracker, activeSource]);
 
-  useEffect(() => {
-    setSelectedGeoId("");
-  }, [selectedGeoLevel]);
-
+  // A grain change clears the selected geography at each explicit transition
+  // (the view-level control, the metric narrowing below, a source change)
+  // rather than in an effect on `selectedGeoLevel`: a link carries its
+  // geography and its grain together, and the effect ran after both applied,
+  // wiping the geography the link had just selected.
   useEffect(() => {
     if (selectedGeoLevel === "NATIONAL" && selectedStateFips) {
       setSelectedStateFips("");
@@ -1853,11 +1854,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
     if (supported.length > 0 && !supported.includes(currentLevel)) {
       setSelectedGeoLevel(preferredGeoLevel);
+      // The selected geography belongs to the grain being left behind.
+      setSelectedGeoId("");
       return;
     }
 
     if (!currentLevel) {
       setSelectedGeoLevel(preferredGeoLevel);
+      setSelectedGeoId("");
     }
   }, [selectedMetricMeta, selectedGeoLevel]);
 
@@ -2272,7 +2276,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 className="select"
                 data-testid="geo-level-select"
                 value={selectedGeoLevel}
-                onChange={(event) => setSelectedGeoLevel(event.target.value)}
+                onChange={(event) => {
+                  setSelectedGeoLevel(event.target.value);
+                  setSelectedGeoId("");
+                }}
                 disabled={!supportsGeoLevelFilter}
               >
                 {offeredGeoLevels.map((level) => (

@@ -389,13 +389,20 @@ test("the community profile reads a place through published identities", async (
   // the source publishing the measure as well as the measure itself
   // (WEB-072): the metric alone lands on whichever catalog `/explore`
   // mounts, which silently substitutes when that catalog does not publish
-  // the code.
+  // the code. It also carries the place's grain and state: the explorer's
+  // county picker offers counties only within a selected state, so a link
+  // without them arrived with the place visibly unselected.
   const explore = page.getByTestId("measure-explore-total-population");
   await expect(explore).toHaveAttribute(
     "href",
     /metric=CENSUS_ACS%3Aacs5%3AB01003_001/,
   );
   await expect(explore).toHaveAttribute("href", /source=CENSUS_ACS/);
+  await expect(explore).toHaveAttribute("href", /geo_level=COUNTY/);
+  await expect(explore).toHaveAttribute("href", /state=55/);
+  await expect(explore).toHaveAttribute("href", /geo=state%3A55%7Ccounty%3A025/);
+  // The profile stays open while the explorer answers in its own tab.
+  await expect(explore).toHaveAttribute("target", "_blank");
 
   // The link reproduces the product and the place.
   await expect(page).toHaveURL(/place=state%3A55%7Ccounty%3A025/);

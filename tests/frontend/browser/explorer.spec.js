@@ -1715,6 +1715,30 @@ test("a geography's history is the settled one the resource answers", async ({ p
   }
 });
 
+test("a measure link reopens with its place selected, not just its data", async ({ page }) => {
+  // Covers: the profile's "Explore for <place>" link. The county picker
+  // offers counties only within a selected state, so a link carrying the
+  // geography without its state arrived with both pickers empty and the
+  // place visibly unselected; and the grain-change effect cleared the
+  // geography a link had applied together with its grain.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=CENSUS_ACS&metric=CENSUS_ACS%3Aacs5%3AB01003_001&geo_level=COUNTY&state=55&geo=state%3A55%7Ccounty%3A025",
+  );
+
+  await expect(page.getByTestId("state-select")).toHaveValue("55");
+  await expect(page.getByTestId("county-select")).toHaveValue(
+    "state:55|county:025",
+  );
+
+  // Changing the view level by hand still clears a selection that belongs
+  // to the grain being left.
+  await page.getByTestId("geo-level-select").selectOption("STATE");
+  await expect(page.getByTestId("county-select")).not.toHaveValue(
+    "state:55|county:025",
+  );
+});
+
 test("a copied link reopens at the grain it names", async ({ page }) => {
   // Covers: WEB-073 — WEB-038 widened the grain vocabulary, the control and
   // the serializer to all five published words, and left the apply step at

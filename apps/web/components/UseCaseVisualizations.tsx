@@ -73,7 +73,7 @@ export default function UseCaseVisualizations({ entry, measures, sources, geoId,
     link.href = url; link.download = `${entry.id}-history.csv`; link.click(); URL.revokeObjectURL(url);
   }
 
-  const explore = explorerHref({ source: source?.key, metric: metric?.metric_code, geoId: geoId || undefined, geoLevel });
+  const explore = explorerHref({ source: source?.key, metric: metric?.metric_code, geoId: geoId || undefined, geoLevel, stateFips: stateFips || undefined });
   const compose = workbenchHref({ series: metric && source && geoId ? [{ sourceKey: source.key, metricCode: metric.metric_code || "", geoId, geoLevel, scope: "latest" }] : [] });
   const secondMetric = measures.find((item) => item.metricCode !== metric?.metric_code);
   const compare = comparisonHref({ metricA: metric?.metric_code, metricB: secondMetric?.metricCode, geoLevel, stateFips: stateFips || undefined });
@@ -110,7 +110,7 @@ export default function UseCaseVisualizations({ entry, measures, sources, geoId,
         </tr>)}</tbody>
       </table>{!rows.length ? <p className="empty-state">{status.state === "bad" ? "The source could not be read. See the error above." : reading.reason || "No observations loaded for this selection."}</p> : null}</div> : null}
       <div className="use-case-tool-row">
-        <Link className="button secondary" href={explore}>Open map & source explorer <ExternalLink size={14} /></Link>
+        <Link className="button secondary" href={explore} target="_blank" rel="noopener noreferrer">Open map & source explorer <ExternalLink size={14} /></Link>
         <Link className="button secondary" href={compose}>Compose & save chart</Link>
         {entry.tool === "comparison" ? <Link className="button secondary" href={compare}>Compare measures & peers</Link> : null}
       </div>

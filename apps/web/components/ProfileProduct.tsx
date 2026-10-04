@@ -543,6 +543,8 @@ export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCas
                 measure={measure}
                 answer={answers[measure.slot.id]}
                 geoId={geoId}
+                geoLevel={geoLevel}
+                stateFips={place?.state_fips || stateFips}
                 placeName={placeName}
               />
             ))}
@@ -559,11 +561,15 @@ function MeasureCard({
   measure,
   answer,
   geoId,
+  geoLevel,
+  stateFips,
   placeName,
 }: {
   measure: ResolvedMeasure;
   answer: MeasureAnswer | undefined;
   geoId: string;
+  geoLevel: GeoLevel;
+  stateFips: string | null | undefined;
   placeName: string;
 }) {
   if (!measure.available) {
@@ -647,8 +653,15 @@ function MeasureCard({
             // catalog row this card already read (WEB-072).
             source: metric?.source_code || undefined,
             geoId: geoId || undefined,
+            // The explorer's geography picker offers counties only within a
+            // selected state, so a link carrying the place without its grain
+            // and state arrives with the pickers empty and the place unset.
+            geoLevel,
+            stateFips: stateFips || undefined,
           })}
           data-testid={`measure-explore-${measure.slot.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
         >
           Explore {placeName ? `for ${placeName}` : "this measure"} <ArrowRight size={13} />
         </Link>
