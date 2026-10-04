@@ -1532,14 +1532,16 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "silver_fbi.agency_geography_relationship",
         "silver",
         "FBI_UCR",
-        grain="ori, relationship_type, source_label, geography_vintage, effective_start",
+        grain="product_id, ori, relationship_type, source_label, "
+        "geography_vintage, effective_start",
         lineage="silver_fbi.dim_agency, silver_ref.geography_resolution",
         scope_method=(
-            "exact state codes, reviewed crosswalks, and county label matches "
-            "published as derived"
+            "product-scoped directory evidence: exact state codes, reviewed "
+            "crosswalks, and county label matches published as derived"
         ),
         cadence="per FBI ingestion run",
-        empty_behavior="unresolved agencies carry no relationship rows",
+        empty_behavior="unresolved county labels remain as rows without "
+        "a resolved geography",
     ),
     _obj(
         "silver_fbi.dim_state_code",
@@ -1606,11 +1608,12 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold_fbi.agency_geography",
         "gold",
         "FBI_UCR",
-        grain="ori, relationship_type, geography_vintage (published projection)",
+        grain="relationship_sk (published product-scoped mapping projection)",
         lineage="silver_fbi.agency_geography_relationship",
-        scope_method="resolved and reviewed relationships only",
+        scope_method="published directory relationships retain resolved, "
+        "unresolved, and ambiguous outcomes",
         cadence="per publication",
-        empty_behavior="unresolved agencies are absent by design",
+        empty_behavior="empty before published agency directory evidence",
     ),
     _obj(
         "gold_fbi.agency_observation_area_filter",
@@ -1628,8 +1631,7 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "FBI_UCR",
         grain="product_id, release_key, measure_id, county geo_id, period "
         "(declared-derived aggregate; ETL-053)",
-        lineage="gold_fbi.crime_observation, "
-        "silver_fbi.agency_geography_relationship",
+        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
         scope_method="derived sum of reported agency absolute totals through "
         "resolved effective-dated county relationships; a multi-county "
         "agency counts in full in each of its counties",
@@ -3176,7 +3178,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "reported-only summation, the no-zero rule, the multi-county "
             "whole-count rule, and the derived labeling -- are pinned by "
             "the ETL-053 static contract tests in "
-            "tests/unit/fbi_ucr/test_fbi_county_rollup.py; no executor "
+            "tests/unit/fbi_ucr/test_fbi_county_rollup.py and real "
+            "warehouse/API tests in tests/integration/database/"
+            "test_fbi_ucr_pipeline.py and tests/e2e/test_fbi_ucr_pipeline.py; no executor "
             "reads the published roll-up back against an independent "
             "recomputation."
         ),

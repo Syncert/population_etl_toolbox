@@ -380,7 +380,8 @@ def _load_agency_entities(cursor: Any, *, scope: dict) -> None:
 
 _RELATIONSHIP_CONFLICT = """
     ON CONFLICT (
-        ori, relationship_type, source_label, geography_vintage, effective_start
+        product_id, ori, relationship_type, source_label,
+        geography_vintage, effective_start
     ) DO UPDATE SET
         geo_id = EXCLUDED.geo_id,
         geo_sk = EXCLUDED.geo_sk,
@@ -698,7 +699,9 @@ def _load_participation_facts(cursor: Any, *, scope: dict) -> None:
                       ELSE 'agency:' || revision.subject_code END
         WHERE revision.run_id = %(run_id)s
         ON CONFLICT (product_id, release_key, subject_type, subject_code, period)
-        DO NOTHING
+        DO UPDATE SET geography_status = EXCLUDED.geography_status
+        WHERE fact_reporting_participation.geography_status
+              IS DISTINCT FROM EXCLUDED.geography_status
         """,
         scope,
     )
@@ -750,7 +753,12 @@ def _load_observation_facts(cursor: Any, *, scope: dict) -> None:
                       WHEN 'state' THEN 'state:' || state.state_fips
                       ELSE 'agency:' || revision.subject_code END
         WHERE revision.run_id = %(run_id)s
-        ON CONFLICT (product_id, release_key, source_record_id) DO NOTHING
+        -- Replay may repair mapping classifications after a schema upgrade;
+        -- provider values, capture lineage, and release history stay intact.
+        ON CONFLICT (product_id, release_key, source_record_id)
+        DO UPDATE SET geography_status = EXCLUDED.geography_status
+        WHERE fact_crime_observation.geography_status
+              IS DISTINCT FROM EXCLUDED.geography_status
         """,
         scope,
     )

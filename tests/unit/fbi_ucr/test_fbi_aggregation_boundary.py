@@ -82,9 +82,7 @@ def test_no_provider_faithful_view_aggregates_observation_values() -> None:
 def test_the_derived_rollup_sums_only_the_observation_value() -> None:
     """Covers: ETL-053 — the roll-up sums counts, never a rate or denominator."""
     body = _gold_view_bodies()["county_rollup"]
-    aggregate = re.compile(
-        r"\b(?:SUM|AVG|MIN|MAX)\s*\(\s*([\w.]+)", re.IGNORECASE
-    )
+    aggregate = re.compile(r"\b(?:SUM|AVG|MIN|MAX)\s*\(\s*([\w.]+)", re.IGNORECASE)
 
     assert {match.upper() for match in aggregate.findall(body)} == {
         "CONTRIBUTION.VALUE"

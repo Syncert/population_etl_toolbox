@@ -141,7 +141,11 @@ describe("the derived county crime roll-up panel", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
-  test("an answer that lost its derivation labeling is refused", async () => {
+  test.each([
+    { derived: false },
+    { geo_id: "state:55|county:105" },
+    { product_id: "summarized_assault" },
+  ])("an answer that lost its labeling or changed its requested identity is refused: %j", async (overrides) => {
     answerWith(200, {
       derived: true,
       release_selection: "latest_release",
@@ -149,7 +153,7 @@ describe("the derived county crime roll-up panel", () => {
       total: 1,
       limit: 200,
       offset: 0,
-      items: [rollupRow({ derived: false })],
+      items: [rollupRow(overrides)],
     });
     render(<CountyCrimeRollup geoId={DANE} placeName="Dane County" />);
     fireEvent.click(screen.getByRole("button", { name: /Load derived county roll-up/ }));
@@ -159,6 +163,52 @@ describe("the derived county crime roll-up panel", () => {
         "the answer was refused",
       ),
     );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("pages to later periods with the first page's release pinned", async () => {
+    const firstPage = Array.from({ length: 200 }, (_, index) =>
+      rollupRow({ period: `fixture-month-${index}`, value: String(index + 1) }),
+    );
+    const fetchMock = vi.fn(async (url) => {
+      const offset = Number(new URL(String(url), "http://localhost").searchParams.get("offset") || 0);
+      return new Response(JSON.stringify({
+        derived: true, release_selection: offset ? "single_release" : "latest_release",
+        caveats: CAVEATS, total: 201, limit: 200, offset,
+        items: offset ? [rollupRow({ period: "06-2023", value: "777" })] : firstPage,
+      }), { headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CountyCrimeRollup geoId={DANE} placeName="Dane County" />);
+    fireEvent.click(screen.getByRole("button", { name: /Load derived county roll-up/ }));
+    const next = await screen.findByRole("button", { name: /Next page/ });
+    fireEvent.click(next);
+    await screen.findByText("777 count");
+    const request = new URL(String(fetchMock.mock.calls[1][0]), "http://localhost");
+    expect(request.searchParams.get("offset")).toBe("200");
+    expect(request.searchParams.get("release")).toBe("2026-08-15");
+    expect(screen.getByRole("button", { name: /Next page/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Previous page/ }));
+    await screen.findByText("fixture-month-0");
+    expect(new URL(String(fetchMock.mock.calls[2][0]), "http://localhost").searchParams.get("release")).toBe("2026-08-15");
+  });
+
+  test("a later page from a different release is refused", async () => {
+    const firstPage = Array.from({ length: 200 }, (_, index) =>
+      rollupRow({ period: `fixture-month-${index}` }),
+    );
+    vi.stubGlobal("fetch", vi.fn(async (url) => {
+      const offset = Number(new URL(String(url), "http://localhost").searchParams.get("offset") || 0);
+      return new Response(JSON.stringify({
+        derived: true, release_selection: "latest_release", caveats: CAVEATS,
+        total: 201, limit: 200, offset,
+        items: offset ? [rollupRow({ release: "2026-09-15" })] : firstPage,
+      }), { headers: { "content-type": "application/json" } });
+    }));
+    render(<CountyCrimeRollup geoId={DANE} placeName="Dane County" />);
+    fireEvent.click(screen.getByRole("button", { name: /Load derived county roll-up/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Next page/ }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("the answer was refused"));
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });

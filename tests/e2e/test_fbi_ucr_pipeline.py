@@ -463,9 +463,7 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         # publishes no row for it -- 402 registered periods, six rows, and
         # not one zero invented for the difference.
         assert rollup_payload["total"] == 6 < PERIODS
-        rollup_by_period = {
-            item["period"]: item for item in rollup_payload["items"]
-        }
+        rollup_by_period = {item["period"]: item for item in rollup_payload["items"]}
         dane_january = rollup_by_period["01-2023"]
         assert Decimal(dane_january["value"]) == Decimal(6 + 7 + 7)
         assert dane_january["contributing_oris"] == [
@@ -571,3 +569,19 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
             )["offenses"]["actuals"]["United States Offenses"]["01-2023"]
             assert Decimal(january["value"]) == Decimal(str(published_value))
             assert january["dimensions"]["offense_code"] == product.offense_code
+            rollup = client.get(
+                "/api/v1/crime/county-rollup",
+                params={
+                    "product_id": product.product_id,
+                    "geo_id": "state:55|county:025",
+                    "measure_id": product.measure_id("offense", "absolute_total"),
+                    "year_from": 2023,
+                    "year_to": 2023,
+                },
+            )
+            assert rollup.status_code == 200
+            assert rollup.json()["total"] == 6
+            for item in rollup.json()["items"]:
+                assert item["product_id"] == product.product_id
+                assert item["derived"] is True
+                assert item["release"] == january["release"]

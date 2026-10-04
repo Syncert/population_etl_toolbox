@@ -2586,7 +2586,7 @@ v gold_fbi.county_rollup
     body             contribution.period_start,
     body             contribution.period_end,
     body             sum(contribution.value) FILTER (WHERE contribution.value_status = 'reported'::text) AS value,
-    body             array_agg(DISTINCT contribution.ori) FILTER (WHERE contribution.value_status = 'reported'::text) AS contributing_oris,
+    body             array_agg(DISTINCT contribution.ori ORDER BY contribution.ori) FILTER (WHERE contribution.value_status = 'reported'::text) AS contributing_oris,
     body             count(DISTINCT contribution.ori) FILTER (WHERE contribution.value_status = 'reported'::text) AS reporting_agency_count,
     body             bool_or(contribution.is_multi_county) FILTER (WHERE contribution.value_status = 'reported'::text) AS includes_multi_county_agency
     body            FROM contribution
@@ -4902,14 +4902,14 @@ r silver_fbi.agency_geography_relationship
     constraint agency_geography_relationship_evidence_capture_id_fkey FOREIGN KEY (evidence_capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint agency_geography_relationship_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
     constraint agency_geography_relationship_ori_fkey FOREIGN KEY (ori) REFERENCES silver_fbi.dim_agency(ori)
-    constraint agency_geography_relationship_ori_relationship_type_source__key UNIQUE (ori, relationship_type, source_label, geography_vintage, effective_start)
     constraint agency_geography_relationship_pkey PRIMARY KEY (relationship_sk)
     constraint agency_geography_relationship_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['state'::text, 'county'::text, 'place'::text])))
     constraint agency_geography_relationship_resolution_method_check CHECK (((resolution_method IS NULL) OR (resolution_method = ANY (ARRAY['exact_state_code'::text, 'county_label_match'::text, 'reviewed_place_crosswalk'::text]))))
     constraint agency_geography_relationship_resolution_status_check CHECK ((resolution_status = ANY (ARRAY['resolved'::text, 'unresolved'::text, 'ambiguous'::text, 'unsupported'::text])))
-    index agency_geography_relationship_ori_relationship_type_source__key CREATE UNIQUE INDEX agency_geography_relationship_ori_relationship_type_source__key ON silver_fbi.agency_geography_relationship USING btree (ori, relationship_type, source_label, geography_vintage, effective_start)
+    constraint fbi_agency_relationship_product_key UNIQUE (product_id, ori, relationship_type, source_label, geography_vintage, effective_start)
     index agency_geography_relationship_pkey CREATE UNIQUE INDEX agency_geography_relationship_pkey ON silver_fbi.agency_geography_relationship USING btree (relationship_sk)
     index fbi_agency_relationship_geo_idx CREATE INDEX fbi_agency_relationship_geo_idx ON silver_fbi.agency_geography_relationship USING btree (relationship_type, geo_id) WHERE (resolution_status = 'resolved'::text)
+    index fbi_agency_relationship_product_key CREATE UNIQUE INDEX fbi_agency_relationship_product_key ON silver_fbi.agency_geography_relationship USING btree (product_id, ori, relationship_type, source_label, geography_vintage, effective_start)
 
 r silver_fbi.agency_revision
     column capture_id uuid NOT NULL

@@ -279,12 +279,17 @@ carries `release_selection`, the plan-mandated `caveats`, an exact `total`,
 and `value` rendered as text so summed provider precision survives JSON.
 
 A county no resolved agency mapping covers answers **404 with an explicit
-refusal**, including how many provider county labels in that state remain
+refusal**, including how many distinct (ORI, provider county label) pairs in that state remain
 unresolved or ambiguous — those are recorded facts, never guessed into a
 county — so an unmapped county is distinguishable from a mapped county
 whose agencies did not report (an empty 200 page). An unavailable
 warehouse answers 503. The route uses the public read's rate limits and
 publication-aware cache policy.
+
+The county safety panel pages this resource explicitly. After loading the
+latest release, it pins that release for subsequent pages and includes the
+release and page offset in its reproduction link, so a new publication
+cannot mix two releases into the displayed series.
 
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
 BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS). The metric resolves to its

@@ -129,12 +129,12 @@ def build_county_mapping_evidence_query() -> TextClause:
     return text(
         f"""
         SELECT
-            (SELECT COUNT(*)
+            (SELECT COUNT(DISTINCT ori)
              FROM {MAPPED_AGENCY_RELATION}
              WHERE relationship_type = 'county'
                AND resolution_status = 'resolved'
                AND geo_id = :geo_id) AS resolved_count,
-            (SELECT COUNT(*)
+            (SELECT COUNT(DISTINCT (county_label.ori, county_label.source_label))
              FROM {MAPPED_AGENCY_RELATION} AS county_label
              WHERE county_label.relationship_type = 'county'
                AND county_label.resolution_status IN ('unresolved', 'ambiguous')

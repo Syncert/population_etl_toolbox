@@ -17,8 +17,8 @@ verify:
 
 Ready for review (2026-10-04, branch `feature/county-crime-rollup`).
 Every acceptance criterion has executable evidence; the validation
-record is in the checkpoints below and the final validation summary at
-the end of this document.
+record is in the checkpoints below. The milestone audit supersedes the
+original validation summary where checks were rerun.
 
 Gap analysis against the repository (2026-10-04):
 
@@ -146,6 +146,118 @@ Notes for the reviewer:
   the dispatcher vocabulary, failing five tooling tests on the
   unmodified tree; set to `high`.
 
+
+### Milestone audit and passoff (2026-10-04)
+
+Continued on `feature/county-crime-rollup`, starting at `310fea1` (warehouse/API
+commit `48f750d`, web commit `310fea1`). No new branch, push, or deployment.
+The plan remains in `needs_review`; it has not been human-accepted.
+
+Assessment: the warehouse/API/web boundaries and declared derivation are
+sound, but the original passing single-product example missed a serious
+cross-product defect. The following findings were reproduced and repaired:
+
+- **Product isolation:** the relationship writer and gold joins used
+  `product_id`, but the unique relationship key omitted it. Ingesting violent
+  crime followed by assault published no assault county rows. The new key
+  includes product identity; migration 030 widens the populated warehouse's
+  key without changing or deleting stored evidence. Bootstrap manifest and
+  disposable Compose initialization include it. Database tests now require
+  county rows for all ten products and compare two products' sums to their
+  own agency inputs.
+- **Replay recovery:** the old conflict left later products' facts classified
+  `agency_only`. Replay previously kept that classification through
+  `ON CONFLICT DO NOTHING`. It now updates only a changed geography status
+  on observation and participation facts. Tests deliberately introduce the
+  old classification, replay stored bytes, and require repaired classification
+  with identical provider values, source-record IDs, and capture IDs.
+- **Refusal evidence:** directory labels repeated across product captures
+  inflated the API's unresolved-label count. It now counts each (ORI, label)
+  once; the executable regression inserts the same unresolved label into two
+  products and requires one additional label in the refusal evidence.
+- **Reachable history:** the web panel previously stopped at 200 rows. It now
+  provides explicit previous/next paging, pins the first page's release,
+  retains release and offset in the reproduction link, refuses mismatched
+  county/product/release responses, and resets when the county changes.
+  Unit and browser regressions reach row 201 and return to the first page.
+- **Persistent test isolation:** E2E assertions passed but its reconciliation
+  guard found nine extra geography capture graphs. The FBI fixture re-seeded
+  existing shared geographies while teardown correctly preserved them. It
+  now seeds only missing identities; a database regression proved the old
+  nine-capture leak and now requires unchanged capture/run/request counts.
+  The reconciliation guard remains intact.
+
+Additional database evidence distinguishes an absent county period from a
+true reported zero, checks partial reporting coverage and contributing ORIs,
+and excludes a report outside its county relationship's effective window.
+The schema snapshot was rendered from the bootstrapped database and reviewed:
+only the widened relationship constraint/index and the previously omitted
+`ORDER BY` in the contributing-ORI array changed. This restores the snapshot's
+agreement with the existing deterministic gold definition.
+
+Six pre-existing Ruff formatting failures were corrected to satisfy the CI
+formatter gate. The five solely formatting-related files have identical
+Python ASTs before and after; the quality inventory additionally now states
+the product-scoped mapping grain and preserves unresolved evidence. The production build's generated
+`next-env.d.ts` change was reverted. No unrelated user edits existed at start.
+
+#### Deployment and resumption
+
+1. Apply the complete warehouse manifest before enabling this revision's
+   FBI writer. Migration 030 belongs to the populated-warehouse upgrade
+   path; fresh silver DDL declares the new key directly.
+2. Replay each captured published FBI product release, oldest first, matching
+   its captured parser contract and scope. A normal ingestion trigger can
+   skip an unchanged refresh and is not sufficient. The operations guide's
+   new **Upgrading the agency relationship key** section gives the offline
+   production-function procedure. Replay restores product mappings and
+   classifications without inventing links or rewriting provider values.
+3. Verify each loaded product's county rows, then resume ingestion.
+
+No production database was migrated or replayed during this audit. Local
+validation used the named disposable PostGIS 16/PostGIS 3.5 test services.
+A separate `population_county_milestone_20261004_test` database proved the
+fresh-bootstrap path; its tests are isolated from the persistent test DB.
+The initial E2E run failed teardown and is not counted as passing evidence.
+
+#### Milestone validation
+
+| Command / scope | Result |
+|---|---|
+| `python -u -m pytest tests/unit -q --tb=short --maxfail=1 --show-capture=no --basetemp=<absolute local temp directory>` | 2,193 passed; final full run 40.37s |
+| `pytest tests/unit/quality` after synchronizing inventory grains and unresolved-evidence metadata | 60 passed |
+| `ruff format --check .` / `ruff check .` | 541 files formatted; lint clean |
+| `pytest tests/integration/database/test_fbi_ucr_pipeline.py tests/integration/database/test_schema_snapshot.py -m "integration and database"` | 24 passed on separately bootstrapped disposable DB, 246.87s; includes populated-key upgrade/rerun, replay recovery, all products, no-zero and effective-date boundaries, fixture reuse, schema snapshot |
+| Fresh DB creation + manifest bootstrap + schema checks + two-product regression | 4 passed, 38.32s |
+| FBI quality-rule injections (`test_fact_quality_injections.py -k "crime or agency or relationship"`) | 4 passed, 9 unrelated nodes deselected; coverage absence, absent/reporting values, mapping confidence, relationship fanout |
+| `pytest tests/e2e/test_fbi_ucr_pipeline.py -m e2e` after fixture repair | 1 passed, 102.43s; all product county API reads and session cleanup reconciliation pass |
+| `npm --prefix apps/web run test:unit` | 727 passed in 50 files |
+| Web lint / typecheck | clean |
+| `npm --prefix apps/web run test:browser` (production build first) | 202 passed, 48.8s; new paging/reset browser regression included |
+| Web `check:bundle` / `check:csp` | all existing budgets pass; CSP check passes |
+| `docker exec ... docker-airflow-scheduler-1 python -u -m pytest tests/dags -m dag ...` | 145 passed, 5 skipped, 11.77s; four database-dependent nodes lack `TEST_POSTGRES_*` in the scheduler, and the image lacks CI workflow metadata for one node. Skips are not passing evidence |
+| Repository hygiene, manifest and tooling checks after the final handoff edits | 127 passed |
+| `git diff --check` | clean |
+
+Database runs set `RUN_INTEGRATION_TESTS=1` or `RUN_E2E_TESTS=1` and the
+standard test-only `TEST_POSTGRES_*` configuration for loopback port 55432.
+Host tests use a unique `--basetemp`; the full unit tier requires an absolute
+path outside the repository because a relative path failed during fixture
+setup after 1,119 passes. That failed run is not the full-tier pass above.
+The fresh DB name is recorded in the preceding paragraph. No live-provider,
+remote deployment, or GitHub Actions checks were run in this milestone.
+
+- Python host: 3.13.5 supplementary local runner; scheduler: supported
+  Python 3.11/Airflow 2.9.3. No GitHub Actions execution is claimed.
+- DQ-FBI-008 remains a reviewed, unimplemented runtime quality executor;
+  this audit adds executable database/E2E evidence for the derivation, not
+  an independent production quality-rule executor.
+- Other backlog work was not selected: three plans remain in `in_progress`
+  (`TIME_WINDOWS_AND_ROLLUPS`, `SELF_SERVICE_ACCOUNTS`,
+  `EVERY_METRIC_MAP_IS_SWEPT_ON_A_SCHEDULE`) and three in `to_do`
+  (`THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK`,
+  `THE_PUBLISHING_APPROVAL_PATH`, `POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT`).
+
 ## Motivation
 
 The user wants a county (or state) selection to offer the available roll-up
@@ -161,7 +273,8 @@ explicitly including agencies that serve two counties at once.
   `AGENCY, NATIONAL, STATE` grains only. No COUNTY grain exists.
 - `/api/v1/catalog/geographies?geo_level=AGENCY` serves 464 agencies
   (Wisconsin deployment) with `state_fips` populated and `county_fips`
-  **null** on every row: the warehouse has no agency-to-county mapping.
+  **null** on every row: this catalog projection does not expose county
+  relationships. The gap analysis above confirmed the mapping already exists.
 - The frontend already refuses to present state FBI data as county data
   (TOP_20 plan, WEB evidence); nothing downstream can be built until the
   warehouse owns a county aggregate.
@@ -226,13 +339,15 @@ the repository dependency order it is built warehouse-first:
   browser evidence covers a multi-county agency fixture.
 - Unit/ETL/API/DAG suites and `ruff` pass; evidence recorded here.
 
-## Open items to resolve during implementation
+## Implementation decisions (resolved)
 
-- Exact CDE endpoint/fields for agency county identity and whether an API
-  key is required (research rules: official FBI CDE documentation first).
-- Whether the roll-up lives as a gold relation served by neutral routes or
-  an API-owned derived route like the population scenario; follow whichever
-  the warehouse contract supports without weakening neutral-route semantics.
-- NIBRS vs SRS summarized coverage: the roll-up aggregates the same
-  summarized program the 40 existing metrics come from; mixing programs in
-  one sum is out of scope.
+- County identity uses the existing captured CDE state agency directory and
+  provider county labels, resolved uniquely against the Census vocabulary.
+  The adapter's endpoint and required API-key contract remain unchanged;
+  no provider county identifier was invented. County matches remain
+  `derived`, while unresolved/ambiguous labels are recorded explicitly.
+- The roll-up is a gold relation served by its dedicated derived resource,
+  separate from neutral provider observations and the metric catalog.
+- Coverage follows the same summarized program as the existing 40 metrics.
+  Products and releases stay distinct; no component offense, program mix,
+  or population-normalized rate is introduced.

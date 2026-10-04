@@ -195,6 +195,29 @@ test("a housing response for a different metric is refused in both the card and 
   await expect(page.getByRole("img", { name: /time-series/ })).toHaveCount(0);
 });
 
+test("county crime pages retain their release and reset when the county changes", async ({ page }) => {
+  // Covers: WEB-124 — all county rows remain reachable and reproducible.
+  await installUseCaseFixtures(page, { rollupRows: 201 });
+  await page.goto("/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025");
+  const rollup = page.getByTestId("county-crime-rollup");
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(200);
+  await expect(rollup.getByRole("button", { name: "Previous page" })).toBeDisabled();
+  await rollup.getByRole("button", { name: "Next page" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(1);
+  await expect(rollup.getByRole("status")).toContainText("201–201 of 201");
+  const reproduce = new URL(await rollup.getByRole("link", { name: "Reproduce this roll-up in the API" }).getAttribute("href"), "http://localhost");
+  expect(reproduce.searchParams.get("offset")).toBe("200");
+  expect(reproduce.searchParams.get("release")).toBe("fixture-release-2025");
+  await expect(rollup.getByRole("button", { name: "Next page" })).toBeDisabled();
+  await rollup.getByRole("button", { name: "Previous page" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(200);
+  await page.getByTestId("profile-place").selectOption("state:55|county:105");
+  await expect(rollup.locator("table")).toHaveCount(0);
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.getByRole("status")).toContainText("No law-enforcement agency is mapped");
+});
+
 test("population scenario assumptions reach the API, export, and changing place clears the answer", async ({ page }) => {
   await installUseCaseFixtures(page);
   await page.goto("/use-cases/population-growth?place=state%3A55%7Ccounty%3A025");

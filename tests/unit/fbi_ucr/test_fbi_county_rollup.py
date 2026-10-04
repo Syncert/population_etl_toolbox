@@ -38,9 +38,7 @@ def test_the_rollup_declares_itself_derived() -> None:
 
     assert "TRUE AS derived" in body
     assert "'sum_of_agency_reported_totals'::TEXT AS derivation_method" in body
-    assert (
-        "'derived county roll-up of agency-reported totals'::TEXT" in body
-    )
+    assert "'derived county roll-up of agency-reported totals'::TEXT" in body
     assert "not additive to state totals" in body
 
 
@@ -64,9 +62,7 @@ def test_the_rollup_sums_only_absolute_offense_and_clearance_totals() -> None:
 
     assert "observation.subject_type = 'agency'" in body
     assert "observation.measure_form = 'absolute_total'" in body
-    assert (
-        "observation.counted_entity_basis IN ('offense', 'clearance')" in body
-    )
+    assert "observation.counted_entity_basis IN ('offense', 'clearance')" in body
     assert "population_denominator" not in body
     assert "rate" not in body.lower().replace("derivation_method", "")
 
@@ -111,6 +107,6 @@ def test_the_rollup_flags_multi_county_contributors() -> None:
     body = _rollup_body()
 
     assert "AS includes_multi_county_agency" in body
-    assert re.search(
-        r"COUNT\(DISTINCT sibling\.geo_id\) > 1", body
-    ), "multi-county detection must count distinct resolved counties"
+    assert re.search(r"COUNT\(DISTINCT sibling\.geo_id\) > 1", body), (
+        "multi-county detection must count distinct resolved counties"
+    )

@@ -75,9 +75,13 @@ export default function CountyCrimeRollup({
   }, [geoId]);
 
   const params = { product_id: PRODUCT_ID, geo_id: geoId, limit: PAGE_LIMIT };
-  const query = buildApiPath("/crime/county-rollup", params);
+  const query = buildApiPath("/crime/county-rollup", {
+    ...params,
+    offset: result?.offset,
+    release: result?.items[0]?.release,
+  });
 
-  async function run() {
+  async function run(offset = 0, release?: string) {
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
@@ -86,25 +90,30 @@ export default function CountyCrimeRollup({
     setStatus("Summing this county's published agency reports…");
     try {
       const response = await apiFetch<RollupResponse>("/crime/county-rollup", {
-        params,
+        params: { ...params, offset, release },
         signal: request.signal,
       });
       if (request.signal.aborted) return;
       if (
         response.derived !== true ||
         response.items.some(
-          (row) => row.geo_id !== geoId || row.derived !== true,
+          (row) =>
+            row.geo_id !== geoId || row.derived !== true ||
+            row.product_id !== PRODUCT_ID ||
+            (release !== undefined && row.release !== release),
         )
       ) {
         throw new Error(
-          "The roll-up does not match the requested county or lost its derivation labeling; the answer was refused.",
+          "The roll-up does not match the requested county, product, or release, or lost its derivation labeling; the answer was refused.",
         );
       }
       setResult(response);
       setStatus(
         response.items.length === 0
-          ? "The mapped agencies published no reports for this county yet; nothing is shown as zero."
-          : `${response.items.length} derived county-month rows${response.total > response.items.length ? ` of ${response.total}` : ""}. Every value is a sum of agency reports, not a provider-published county figure.`,
+          ? response.total === 0
+            ? "The mapped agencies published no reports for this county yet; nothing is shown as zero."
+            : "No rows are available on this page."
+          : `Derived county-month rows ${response.offset + 1}–${response.offset + response.items.length} of ${response.total}. Every value is a sum of agency reports, not a provider-published county figure.`,
       );
     } catch (error) {
       // A county nothing maps to answers an explicit 404 refusal; its
@@ -139,7 +148,7 @@ export default function CountyCrimeRollup({
         <button
           type="button"
           className="button primary"
-          onClick={run}
+          onClick={() => run()}
           disabled={busy || !geoId}
         >
           Load derived county roll-up
@@ -185,7 +194,7 @@ export default function CountyCrimeRollup({
               </thead>
               <tbody>
                 {result.items.map((row) => (
-                  <tr key={`${row.measure_id}-${row.period}`}>
+                  <tr key={`${row.product_id}-${row.release}-${row.measure_id}-${row.period}`}>
                     <td>{row.period}</td>
                     <td>
                       {row.offense_label} {row.counted_entity_basis} (derived
@@ -204,6 +213,26 @@ export default function CountyCrimeRollup({
               </tbody>
             </table>
           </div>
+          {result.total > result.limit || result.offset > 0 ? (
+            <nav aria-label="County crime roll-up pages" className="use-case-viz-controls">
+              <button
+                type="button"
+                className="button"
+                disabled={busy || result.offset === 0}
+                onClick={() => run(Math.max(0, result.offset - result.limit), result.items[0]!.release)}
+              >
+                Previous page
+              </button>
+              <button
+                type="button"
+                className="button"
+                disabled={busy || result.offset + result.limit >= result.total}
+                onClick={() => run(result.offset + result.limit, result.items[0]!.release)}
+              >
+                Next page
+              </button>
+            </nav>
+          ) : null}
           <ul data-testid="county-rollup-caveats">
             {result.caveats.map((caveat) => (
               <li key={caveat}>{caveat}</li>

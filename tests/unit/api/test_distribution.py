@@ -595,7 +595,10 @@ def test_distribution_bins_the_exact_painted_period() -> None:
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 200
-    assert "COALESCE(duration_start, observation_date)::TEXT = :period_start" in _dispatched(session)[-1]
+    assert (
+        "COALESCE(duration_start, observation_date)::TEXT = :period_start"
+        in _dispatched(session)[-1]
+    )
     assert session.parameters[-1]["period_start"] == "2023-01-01"
 
 

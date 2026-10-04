@@ -79,7 +79,7 @@ function exampleBase(code) {
   return undefined;
 }
 
-export async function installUseCaseFixtures(page, { failHistory = false, stratified = false, withheld = false } = {}) {
+export async function installUseCaseFixtures(page, { failHistory = false, stratified = false, withheld = false, rollupRows = 6 } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -135,12 +135,14 @@ export async function installUseCaseFixtures(page, { failHistory = false, strati
         "An agency serving more than one county contributes its whole published count to each of its counties, so county values are not additive to state totals.",
         "Only reported agency months are summed; non-reporting mapped agencies stay visible through the coverage counts and are never counted as zero.",
       ];
-      const rows = Array.from({ length: 6 }, (_, index) => ({
+      const rows = Array.from({ length: rollupRows }, (_, index) => ({
         product_id: "summarized_violent_crime", release: "fixture-release-2025", refresh_date: "2025-09-01",
         ucr_program: "SRS_AND_SUMMARIZED_NIBRS", offense_code: "V", offense_label: "Violent Crime",
         measure_id: "V:offense:absolute_total", measure_form: "absolute_total", counted_entity_basis: "offense", unit: "count",
         geo_id: geo, county_name: "Dane County", state_fips: "55", county_fips: "025",
-        period: `0${index + 1}-2023`, period_start: `2023-0${index + 1}-01`, period_end: `2023-0${index + 1}-28`,
+        period: `${String(index % 12 + 1).padStart(2, "0")}-${2023 + Math.floor(index / 12)}`,
+        period_start: `${2023 + Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}-01`,
+        period_end: `${2023 + Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}-28`,
         value: String(18 + index), contributing_oris: ["WI0130000", "WI0137000", "WI0540300"],
         reporting_agency_count: 3, mapped_agency_count: 3, includes_multi_county_agency: true,
         derived: true, derivation_method: "sum_of_agency_reported_totals",
@@ -148,7 +150,9 @@ export async function installUseCaseFixtures(page, { failHistory = false, strati
         methodology_note: "Each mapped agency's whole published count is summed; county values are not additive to state totals.",
         counted_entity_note: "Illustrative fixture", methodology_url: "https://example.invalid/methodology", documentation_url: "https://example.invalid/docs",
       }));
-      return route.fulfill({ json: { derived: true, release_selection: "latest_release", caveats, total: rows.length, limit: Number(params.get("limit") || 100), offset: 0, items: rows } });
+      const limit = Number(params.get("limit") || 100);
+      const offset = Number(params.get("offset") || 0);
+      return route.fulfill({ json: { derived: true, release_selection: params.get("release") ? "single_release" : "latest_release", caveats, total: rows.length, limit, offset, items: rows.slice(offset, offset + limit) } });
     }
     if (path === "/api/v1/observations") {
       const code = params.get("metric_code");

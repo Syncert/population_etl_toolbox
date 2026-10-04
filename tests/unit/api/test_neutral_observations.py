@@ -214,7 +214,10 @@ def test_exact_published_period_is_bound_before_latest_reduction(
     assert response.status_code == 200
     assert response.json()["total"] == 0  # unknown but well-formed: empty page
     for sql in _dispatched(session):
-        assert f"{OBSERVATION_DISPATCH[metric['source_code']].period_start_expression} = :period_start" in sql
+        assert (
+            f"{OBSERVATION_DISPATCH[metric['source_code']].period_start_expression} = :period_start"
+            in sql
+        )
     assert session.parameters[-1]["period_start"] == period
 
 
@@ -266,7 +269,12 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
     try:
         response = client.get(
             "/api/v1/observations/periods",
-            params={"metric_code": _CDC_METRIC["metric_code"], "scope": "latest", "limit": 1, "offset": 1},
+            params={
+                "metric_code": _CDC_METRIC["metric_code"],
+                "scope": "latest",
+                "limit": 1,
+                "offset": 1,
+            },
         )
     finally:
         _clear_overrides()
@@ -287,7 +295,10 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
         assert "FROM gold_cdc.latest_release_observation" in sql
         assert "period_start::TEXT" in sql
         assert "GROUP BY" in sql
-    assert "ORDER BY period_start DESC, period_end DESC NULLS LAST" in _dispatched(session)[-1]
+    assert (
+        "ORDER BY period_start DESC, period_end DESC NULLS LAST"
+        in _dispatched(session)[-1]
+    )
 
 
 def test_period_listing_refuses_as_released_scope() -> None:
@@ -1557,7 +1568,10 @@ def test_nass_exact_year_period_is_bound_without_a_derived_date() -> None:
     assert response.status_code == 200, response.text
     assert response.json()["items"] == []
     assert session.parameters[-1]["period_start"] == "2023"
-    assert f"{OBSERVATION_DISPATCH['USDA_NASS'].period_start_expression} = :period_start" in _dispatched(session)[-1]
+    assert (
+        f"{OBSERVATION_DISPATCH['USDA_NASS'].period_start_expression} = :period_start"
+        in _dispatched(session)[-1]
+    )
 
 
 def test_nass_reference_period_is_a_declared_bound_filter() -> None:
