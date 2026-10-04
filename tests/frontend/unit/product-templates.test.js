@@ -48,6 +48,37 @@ test("community conditions include an independently identified county health rep
   expect(health.measures.some((slot) => slot.candidates.includes("CDC:places_county:ARTHRITIS:AgeAdjPrv"))).toBe(true);
 });
 
+test("the disease product offers every published county PLACES measure", () => {
+  // Enumerated from the live catalog on 2026-10-04: gold_cdc publishes the
+  // PLACES 2025 county release as forty measures, each with an age-adjusted
+  // and a crude identity. The product names every age-adjusted one, so a
+  // reader selecting a county is offered the full published roll-up rather
+  // than the single measure the first wave verified.
+  const disease = findTemplate("disease-illness-burden");
+  const placesCodes = new Set(
+    disease.sections
+      .flatMap((section) => section.measures)
+      .flatMap((measure) => measure.candidates)
+      .filter((code) => code.startsWith("CDC:places_county:")),
+  );
+  expect(placesCodes.size).toBe(40);
+  for (const code of placesCodes) {
+    expect(code).toMatch(/:AgeAdjPrv$/);
+  }
+
+  // The community and aging profiles offer curated subsets of the same
+  // published identities, never a different spelling of them.
+  for (const id of ["community-conditions", "aging-population"]) {
+    const subset = templateMetricCodes(findTemplate(id)).filter((code) =>
+      code.startsWith("CDC:places_county:"),
+    );
+    expect(subset.length, id).toBeGreaterThanOrEqual(8);
+    for (const code of subset) {
+      expect(placesCodes.has(code), `${id}: ${code}`).toBe(true);
+    }
+  }
+});
+
 describe("the first-wave products are configuration", () => {
   test("all eight products exist and declare their own limits", () => {
     expect(PRODUCT_TEMPLATES.map((template) => template.id)).toEqual([

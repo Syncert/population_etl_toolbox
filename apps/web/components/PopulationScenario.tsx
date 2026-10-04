@@ -41,7 +41,10 @@ export default function PopulationScenario({ measures, geoId }: { measures: Reso
     const rows = [["year", "derived_population", "unit", "metric_code", "geo_id", "baseline_period", "baseline_release", "annual_change_percent", "horizon_years", "model", "api_query"], ...result.items.map((item) => [item.year, item.value, result.base.unit, result.base.metric_code, result.base.geo_id, result.base.period_end || result.base.period_start, result.base.release, result.annual_change_percent, result.horizon_years, result.model, query])];
     const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a"); link.href = url; link.download = "derived-population-scenario.csv"; link.click(); URL.revokeObjectURL(url);
+    const link = document.createElement("a"); link.href = url; link.download = "derived-population-scenario.csv"; link.click();
+    // Revoked later, not synchronously: the download reads the blob after
+    // click() returns, and an immediate revoke races it into an empty file.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
   const drawable = result?.items.map((item) => ({ metric_code: metricCode, geo_id: geoId, value: String(item.value), unit: String(result.base.unit || "people"), period_start: String(item.year), period_end: String(item.year), value_status: "derived", release: result.model })) || [];
   return <section className="analysis-panel population-scenario" data-testid="population-scenario" aria-labelledby="population-scenario-title">

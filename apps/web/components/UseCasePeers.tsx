@@ -59,7 +59,10 @@ export default function UseCasePeers({ source, metric, places, geoId, unavailabl
     const exported = observationExport(answers.map((answer) => answer.row || { geo_id: answer.geoId, metric_code: metric?.metric_code }), { scope: "latest", dimensions: source?.publishedDimensions || [] });
     const csv = [ [...exported.headings, "peer_criteria", "availability", "api_query"], ...exported.rows.map((row, index) => [...row, rationale || "Criteria not yet recorded", answers[index]?.message || "Published row", answers[index]?.query || ""]) ].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a"); link.href = url; link.download = "selected-peer-evidence.csv"; link.click(); URL.revokeObjectURL(url);
+    const link = document.createElement("a"); link.href = url; link.download = "selected-peer-evidence.csv"; link.click();
+    // Revoked later, not synchronously: the download reads the blob after
+    // click() returns, and an immediate revoke races it into an empty file.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   if (reason) return <p className="coverage-note partial">{reason}</p>;

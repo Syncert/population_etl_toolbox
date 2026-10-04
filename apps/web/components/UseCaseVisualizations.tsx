@@ -70,7 +70,10 @@ export default function UseCaseVisualizations({ entry, measures, sources, geoId,
       .map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
-    link.href = url; link.download = `${entry.id}-history.csv`; link.click(); URL.revokeObjectURL(url);
+    link.href = url; link.download = `${entry.id}-history.csv`; link.click();
+    // Revoked later, not synchronously: the download reads the blob after
+    // click() returns, and an immediate revoke races it into an empty file.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   const explore = explorerHref({ source: source?.key, metric: metric?.metric_code, geoId: geoId || undefined, geoLevel, stateFips: stateFips || undefined });

@@ -70,6 +70,80 @@ const COUNTY_ARTHRITIS: TemplateMeasure = {
   note: "CDC PLACES modeled adult prevalence, with its published interval. It is distinct from state CDI surveillance and from a clinical count.",
 };
 
+// The other thirty-nine county PLACES measures, enumerated from the live
+// catalog on 2026-10-04: gold_cdc publishes every measure of the PLACES 2025
+// county release, each as an age-adjusted and a crude prevalence. These slots
+// name the age-adjusted measure and say so in the label; the crude companion
+// remains its own published measure in the catalog, reachable through the
+// explorer, and is never converted into the other here.
+const placesCounty = (
+  id: string,
+  label: string,
+  candidate: string,
+): TemplateMeasure => ({
+  id,
+  label: `${label} (age-adjusted)`,
+  candidates: [candidate],
+});
+
+const PLACES_CONDITIONS: TemplateMeasure[] = [
+  placesCounty("places-bphigh", "High blood pressure", "CDC:places_county:BPHIGH:AgeAdjPrv"),
+  placesCounty("places-cancer", "Cancer (non-skin) or melanoma", "CDC:places_county:CANCER:AgeAdjPrv"),
+  placesCounty("places-casthma", "Current asthma", "CDC:places_county:CASTHMA:AgeAdjPrv"),
+  placesCounty("places-chd", "Coronary heart disease", "CDC:places_county:CHD:AgeAdjPrv"),
+  placesCounty("places-copd", "Chronic obstructive pulmonary disease", "CDC:places_county:COPD:AgeAdjPrv"),
+  placesCounty("places-depression", "Depression", "CDC:places_county:DEPRESSION:AgeAdjPrv"),
+  placesCounty("places-diabetes", "Diagnosed diabetes", "CDC:places_county:DIABETES:AgeAdjPrv"),
+  placesCounty("places-highchol", "High cholesterol (screened adults)", "CDC:places_county:HIGHCHOL:AgeAdjPrv"),
+  placesCounty("places-obesity", "Obesity", "CDC:places_county:OBESITY:AgeAdjPrv"),
+  placesCounty("places-stroke", "Stroke", "CDC:places_county:STROKE:AgeAdjPrv"),
+  placesCounty("places-teethlost", "All teeth lost (adults 65+)", "CDC:places_county:TEETHLOST:AgeAdjPrv"),
+];
+
+const PLACES_STATUS_BEHAVIORS: TemplateMeasure[] = [
+  placesCounty("places-ghlth", "Fair or poor self-rated health", "CDC:places_county:GHLTH:AgeAdjPrv"),
+  placesCounty("places-mhlth", "Frequent mental distress", "CDC:places_county:MHLTH:AgeAdjPrv"),
+  placesCounty("places-phlth", "Frequent physical distress", "CDC:places_county:PHLTH:AgeAdjPrv"),
+  placesCounty("places-sleep", "Short sleep duration", "CDC:places_county:SLEEP:AgeAdjPrv"),
+  placesCounty("places-binge", "Binge drinking", "CDC:places_county:BINGE:AgeAdjPrv"),
+  placesCounty("places-csmoking", "Current cigarette smoking", "CDC:places_county:CSMOKING:AgeAdjPrv"),
+  placesCounty("places-lpa", "No leisure-time physical activity", "CDC:places_county:LPA:AgeAdjPrv"),
+];
+
+const PLACES_PREVENTION: TemplateMeasure[] = [
+  placesCounty("places-access2", "No health insurance (adults 18-64)", "CDC:places_county:ACCESS2:AgeAdjPrv"),
+  placesCounty("places-bpmed", "Blood pressure medicine use", "CDC:places_county:BPMED:AgeAdjPrv"),
+  placesCounty("places-checkup", "Routine checkup in the past year", "CDC:places_county:CHECKUP:AgeAdjPrv"),
+  placesCounty("places-cholscreen", "Cholesterol screening", "CDC:places_county:CHOLSCREEN:AgeAdjPrv"),
+  placesCounty("places-colon-screen", "Colorectal cancer screening (ages 45-75)", "CDC:places_county:COLON_SCREEN:AgeAdjPrv"),
+  placesCounty("places-dental", "Dental visit in the past year", "CDC:places_county:DENTAL:AgeAdjPrv"),
+  placesCounty("places-mammouse", "Mammography use (women 50-74)", "CDC:places_county:MAMMOUSE:AgeAdjPrv"),
+];
+
+const PLACES_DISABILITY: TemplateMeasure[] = [
+  placesCounty("places-cognition", "Cognitive disability", "CDC:places_county:COGNITION:AgeAdjPrv"),
+  placesCounty("places-disability", "Any disability", "CDC:places_county:DISABILITY:AgeAdjPrv"),
+  placesCounty("places-hearing", "Hearing disability", "CDC:places_county:HEARING:AgeAdjPrv"),
+  placesCounty("places-indeplive", "Independent living disability", "CDC:places_county:INDEPLIVE:AgeAdjPrv"),
+  placesCounty("places-mobility", "Mobility disability", "CDC:places_county:MOBILITY:AgeAdjPrv"),
+  placesCounty("places-selfcare", "Self-care disability", "CDC:places_county:SELFCARE:AgeAdjPrv"),
+  placesCounty("places-vision", "Vision disability", "CDC:places_county:VISION:AgeAdjPrv"),
+];
+
+const PLACES_SOCIAL_NEEDS: TemplateMeasure[] = [
+  placesCounty("places-emotionspt", "Lacks social and emotional support", "CDC:places_county:EMOTIONSPT:AgeAdjPrv"),
+  placesCounty("places-foodinsecu", "Food insecurity (past 12 months)", "CDC:places_county:FOODINSECU:AgeAdjPrv"),
+  placesCounty("places-foodstamp", "Received food stamps (past 12 months)", "CDC:places_county:FOODSTAMP:AgeAdjPrv"),
+  placesCounty("places-housinsecu", "Housing insecurity (past 12 months)", "CDC:places_county:HOUSINSECU:AgeAdjPrv"),
+  placesCounty("places-lacktrpt", "Lacks reliable transportation", "CDC:places_county:LACKTRPT:AgeAdjPrv"),
+  placesCounty("places-loneliness", "Loneliness", "CDC:places_county:LONELINESS:AgeAdjPrv"),
+  placesCounty("places-shututility", "Utility shut-off threat (past 12 months)", "CDC:places_county:SHUTUTILITY:AgeAdjPrv"),
+];
+
+// The shared caveat each PLACES section states beside its measures.
+const PLACES_SECTION_NOTE =
+  "CDC PLACES model-based county estimates among adults, each with its published confidence interval. These are not clinical counts, and the crude-prevalence companion of each measure stays a separate published measure.";
+
 /**
  * The eight packaged products, first wave then second. Each is configuration:
  * adding a measure or a section is an edit here, not a new component, and
@@ -139,7 +213,9 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         id: "health",
         title: "Health and illness",
         description:
-          "Health context from the Centers for Disease Control and Prevention.",
+          "Health context from the Centers for Disease Control and Prevention. " +
+          PLACES_SECTION_NOTE +
+          " The dedicated disease and illness page carries every published county measure.",
         measures: [
           COUNTY_ARTHRITIS,
           {
@@ -148,6 +224,13 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             candidates: ["CDC:cdi:ALC06:AGEADJPREV", "CDC:cdi:ALC06:CRDPREV"],
             note: "CDC publishes stratified measures; the explorer shows every published stratum.",
           },
+          placesCounty("places-obesity", "Obesity", "CDC:places_county:OBESITY:AgeAdjPrv"),
+          placesCounty("places-diabetes", "Diagnosed diabetes", "CDC:places_county:DIABETES:AgeAdjPrv"),
+          placesCounty("places-depression", "Depression", "CDC:places_county:DEPRESSION:AgeAdjPrv"),
+          placesCounty("places-bphigh", "High blood pressure", "CDC:places_county:BPHIGH:AgeAdjPrv"),
+          placesCounty("places-csmoking", "Current cigarette smoking", "CDC:places_county:CSMOKING:AgeAdjPrv"),
+          placesCounty("places-mhlth", "Frequent mental distress", "CDC:places_county:MHLTH:AgeAdjPrv"),
+          placesCounty("places-access2", "No health insurance (adults 18-64)", "CDC:places_county:ACCESS2:AgeAdjPrv"),
         ],
       },
       {
@@ -523,7 +606,8 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         id: "health-measures",
         title: "Published health measures",
         description:
-          "Chronic-condition indicators as the CDC publishes them, with their own stratification.",
+          "Chronic-condition indicators as the CDC publishes them, with their own stratification. " +
+          PLACES_SECTION_NOTE,
         measures: [
           COUNTY_ARTHRITIS,
           {
@@ -532,6 +616,13 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             candidates: ["CDC:cdi:ALC06:AGEADJPREV", "CDC:cdi:ALC06:CRDPREV"],
             note: "Crude and age-adjusted are different measures; the published stratum is shown and is never converted to the other.",
           },
+          placesCounty("places-teethlost", "All teeth lost (adults 65+)", "CDC:places_county:TEETHLOST:AgeAdjPrv"),
+          placesCounty("places-mobility", "Mobility disability", "CDC:places_county:MOBILITY:AgeAdjPrv"),
+          placesCounty("places-indeplive", "Independent living disability", "CDC:places_county:INDEPLIVE:AgeAdjPrv"),
+          placesCounty("places-selfcare", "Self-care disability", "CDC:places_county:SELFCARE:AgeAdjPrv"),
+          placesCounty("places-hearing", "Hearing disability", "CDC:places_county:HEARING:AgeAdjPrv"),
+          placesCounty("places-vision", "Vision disability", "CDC:places_county:VISION:AgeAdjPrv"),
+          placesCounty("places-cognition", "Cognitive disability", "CDC:places_county:COGNITION:AgeAdjPrv"),
         ],
       },
     ],
@@ -558,6 +649,36 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             note: "A crude rate and an age-adjusted rate answer different questions; both are published separately and neither is derived from the other here.",
           },
         ],
+      },
+      {
+        id: "conditions",
+        title: "Chronic conditions",
+        description: `Every remaining condition the PLACES county release publishes. ${PLACES_SECTION_NOTE}`,
+        measures: PLACES_CONDITIONS,
+      },
+      {
+        id: "health-status",
+        title: "Health status and risk behaviors",
+        description: `Self-rated health, distress, sleep, and behaviors, as published. ${PLACES_SECTION_NOTE}`,
+        measures: PLACES_STATUS_BEHAVIORS,
+      },
+      {
+        id: "prevention",
+        title: "Prevention and access to care",
+        description: `Screening, checkups, and insurance coverage, as published. ${PLACES_SECTION_NOTE}`,
+        measures: PLACES_PREVENTION,
+      },
+      {
+        id: "disability",
+        title: "Disability",
+        description: `Each published disability measure, shown separately. ${PLACES_SECTION_NOTE}`,
+        measures: PLACES_DISABILITY,
+      },
+      {
+        id: "social-needs",
+        title: "Health-related social needs",
+        description: `Social and material circumstances the PLACES release publishes beside its health measures. ${PLACES_SECTION_NOTE}`,
+        measures: PLACES_SOCIAL_NEEDS,
       },
       {
         id: "denominator",

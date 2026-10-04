@@ -158,7 +158,7 @@ const definitions: Definition[] = [
       "Inspect its strata, denominator, uncertainty, and surveillance coverage.",
       "Save the evidence alongside independently published community context."
     ],
-    "sections": sections("disease-illness-burden/indicators", "disease-illness-burden/denominator", "disease-illness-burden/community")
+    "sections": sections("disease-illness-burden/indicators", "disease-illness-burden/conditions", "disease-illness-burden/health-status", "disease-illness-burden/prevention", "disease-illness-burden/disability", "disease-illness-burden/social-needs", "disease-illness-burden/denominator", "disease-illness-burden/community")
   },
   {
     "id": "disease-capacity-watch",
@@ -177,7 +177,7 @@ const definitions: Definition[] = [
       "Inspect published trends without collapsing strata or estimating missing periods.",
       "Check freshness and provisional status before exporting a watch briefing."
     ],
-    "sections": sections("disease-illness-burden/indicators", "population-growth/estimates")
+    "sections": sections("disease-illness-burden/indicators", "disease-illness-burden/conditions", "disease-illness-burden/health-status", "population-growth/estimates")
   },
   {
     "id": "public-safety-trend",
