@@ -152,6 +152,12 @@ Replay rebuilds each product's relationships from its own captured directory
 and repairs stale geography classifications. Provider values, capture IDs,
 and release history stay intact. Match older runs to their captured parser
 contract and scope before replay; do not substitute a new period window.
+Use `dataclasses.replace` on the registered product to restore the stored
+`period_start`/`period_end` and the national, state, and agency subjects
+present in that run's captured endpoints. Validate summarized request
+parameters against that window and reject unsupported parser versions.
+Reconciliation checks those captured identities rather than every fact
+under the refresh date, because a later capture may have widened the scope.
 Verify each loaded product appears in `gold_fbi.latest_county_rollup` for
 counties with reported agency totals, then resume ingestion. The disposable
 database tests cover the legacy constraint swap twice, replay repair, all ten

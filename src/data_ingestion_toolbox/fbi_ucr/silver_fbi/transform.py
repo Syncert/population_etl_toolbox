@@ -791,6 +791,9 @@ def _load_observation_facts(cursor: Any, *, scope: dict) -> None:
 
 
 def _reconcile(cursor: Any, *, scope: dict) -> int:
+    # A refresh can be captured again with a wider period or subject scope.
+    # Replaying the earlier run must reconcile its exact identities, while
+    # preserving the other facts already published for the same release.
     cursor.execute(
         """
         SELECT
@@ -798,10 +801,26 @@ def _reconcile(cursor: Any, *, scope: dict) -> int:
             WHERE run_id = %(run_id)s),
           (SELECT COUNT(*) FROM silver_fbi.participation_revision
             WHERE run_id = %(run_id)s),
-          (SELECT COUNT(*) FROM silver_fbi.fact_crime_observation
-            WHERE product_id = %(product_id)s AND release_key = %(release_key)s),
-          (SELECT COUNT(*) FROM silver_fbi.fact_reporting_participation
-            WHERE product_id = %(product_id)s AND release_key = %(release_key)s),
+          (SELECT COUNT(*) FROM silver_fbi.fact_crime_observation AS fact
+            WHERE fact.product_id = %(product_id)s
+              AND fact.release_key = %(release_key)s
+              AND EXISTS (
+                  SELECT 1 FROM silver_fbi.observation_revision AS revision
+                  WHERE revision.run_id = %(run_id)s
+                    AND revision.product_id = fact.product_id
+                    AND revision.release_key = fact.release_key
+                    AND revision.source_record_id = fact.source_record_id)),
+          (SELECT COUNT(*) FROM silver_fbi.fact_reporting_participation AS fact
+            WHERE fact.product_id = %(product_id)s
+              AND fact.release_key = %(release_key)s
+              AND EXISTS (
+                  SELECT 1 FROM silver_fbi.participation_revision AS revision
+                  WHERE revision.run_id = %(run_id)s
+                    AND revision.product_id = fact.product_id
+                    AND revision.release_key = fact.release_key
+                    AND revision.subject_type = fact.subject_type
+                    AND revision.subject_code = fact.subject_code
+                    AND revision.period = fact.period)),
           (SELECT COUNT(*) FROM silver_fbi.slice_quarantine
             WHERE run_id = %(run_id)s
               AND error_code = 'coverage_interpretation_missing')

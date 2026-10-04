@@ -258,6 +258,87 @@ remote deployment, or GitHub Actions checks were run in this milestone.
   (`THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK`,
   `THE_PUBLISHING_APPROVAL_PATH`, `POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT`).
 
+### Authorized warehouse upgrade and replay (2026-10-04)
+
+The user explicitly requested migration and captured-release replay after the
+milestone commit `4c1d389`. Target verified through Airflow's `public_data`
+connection: the internal `analytics_postgres:5432/population_etl` warehouse.
+No remote warehouse was changed. The existing branch was retained.
+
+FBI ingestion was initially unpaused with no queued/running runs. It was paused
+for the upgrade and restored to unpaused after independent verification.
+The manifest ledger was missing only `migration-030` and had changed hashes
+only for `silver-fbi` and `gold-fbi`; those three assets were applied through
+`apply_manifest` in manifest order, with one transaction per asset. The entire
+manifest comparison is now current, and the sole relationship uniqueness key
+is `fbi_agency_relationship_product_key`, including product identity.
+
+Replay exposed one additional production boundary: an earlier six-month
+capture and a later wider capture share the same refresh. The old reconciliation
+compared the earlier run's revision count against every fact in the expanded
+release, so its transform safely rolled back. A deterministic database test
+reproduced that failure. Reconciliation now counts only observation identities
+and participation subject/period identities represented by the captured run;
+additional published facts remain intact. The regression publishes a narrow
+capture, expands both period and agency scope, replays the narrow capture,
+and requires identical complete fact evidence. It passes after the repair.
+The operations guide and ETL-053 testing contract are synchronized.
+
+All 12 previously published, complete, ingest-decision captures were replayed
+oldest first through `replay_captured_run`, `persist_replay_result`,
+`transform_release`, and `publish_release`. Original parser versions, stored
+windows, and endpoint-derived subject scopes were validated and restored with
+`dataclasses.replace`; all payload checksums were verified. Probe-only
+unchanged runs and unpublished runs were preserved rather than promoted.
+No provider network calls or new raw captures were used.
+
+| Product | Captured run | Refresh | Original window | Reconciled observations |
+|---|---|---|---|---|
+| `summarized_violent_crime` | `d3fa7ca7-ed82-4813-987f-99566096cee4` | 2026-08-15 | 01-2023?06-2023 | 168 |
+| `summarized_violent_crime` | `bf5af14b-bfc8-4957-818b-b2494f5c41a2` | 2026-08-15 | 01-1990?06-2023 | 11,084 |
+| `summarized_burglary` | `d04be538-ab2c-4c92-b45f-565d3aacb2ff` | 2026-09-15 | 01-1990?06-2023 | 92,830 |
+| `summarized_larceny` | `041e9a0a-92ea-4edd-9b4f-328e346b9d1d` | 2026-09-15 | 01-1990?06-2023 | 92,830 |
+| `summarized_assault` | `119aa967-a24e-4aa7-b6db-9c5709303c01` | 2026-09-15 | 01-1990?06-2023 | 92,826 |
+| `summarized_violent_crime` | `c8d7279d-2031-47e8-a3d4-d32918fc7985` | 2026-09-15 | 01-1990?06-2023 | 92,826 |
+| `summarized_motor_vehicle_theft` | `53b5b2b9-2bbb-4c36-ad74-e1febca13c1f` | 2026-09-15 | 01-1990?06-2023 | 92,830 |
+| `summarized_homicide` | `4513cade-02fe-478e-8c5b-435eb553be06` | 2026-09-15 | 01-1990?06-2023 | 92,828 |
+| `summarized_rape` | `19fe0edb-2547-48bc-8660-565ac70664ab` | 2026-09-15 | 01-1990?06-2023 | 92,830 |
+| `summarized_robbery` | `2e4ba297-2636-4976-bd62-acae001253aa` | 2026-09-15 | 01-1990?06-2023 | 92,828 |
+| `summarized_arson` | `8bdaf62a-c587-44a1-bee3-d278a6a8a5e8` | 2026-09-15 | 01-1990?06-2023 | 92,828 |
+| `summarized_property_crime` | `3d5d80d4-809e-4333-a213-79a86e2e448d` | 2026-09-15 | 01-1990?06-2023 | 92,830 |
+
+Before/after `EXCEPT ALL` comparisons found **zero evidence differences** in
+939,370 observation facts and 240,396 participation facts, excluding only the
+intended geography classification, and in all 642 FBI raw captures. The 28
+control release records also retain their evidence, excluding publication/status
+audit fields. Replay repaired 51,084 observation geography classifications.
+Mappings grew from 956 rows belonging to two products to 9,542 rows across
+all ten products (954 per product, with two additional effective-dated violent
+crime relationships retained).
+
+Independent SQL recomputation verified all **25,014 historical county rows**:
+exact agency sums, contributing ORIs, reporting counts, mapped coverage, and
+multi-county flags agree; no non-derived, rate, or empty-reporting roll-up row
+exists. The latest projection contains **22,740 rows**, 2,274 for each of ten
+products, across Brown, Dane, and Rock counties. Current captured Dane January
+2023 offense examples are assault 13, burglary 15, property crime 102, and
+violent crime 19; the three contributing agencies represent 3 of 25 mapped
+agencies. These are stored-capture values, not the separate E2E fixture's 20.
+
+Validation after the reconciliation repair: focused red/green regression;
+290 FBI unit tests passed; the full FBI database/schema suite passed **25 tests
+in 300.94s** on the disposable milestone DB; repository hygiene/manifest
+checks passed 26 tests, then the final handoff/hygiene/manifest/tooling suite
+passed 127 tests; Ruff lint and global formatting passed (541 files).
+The real warehouse replay and independent evidence/derivation checks above
+also passed. The initial failed replay is not counted as a passing check.
+
+The running internal API is still an older build: its OpenAPI has no crime
+routes, and the county-roll-up endpoint returns HTTP 404. Warehouse repair is
+complete, but API deployment remains required before the new resource can be
+used through that service. No API/web deployment, push, remote check, or live
+provider call was performed. Plan remains in `needs_review`.
+
 ## Motivation
 
 The user wants a county (or state) selection to offer the available roll-up

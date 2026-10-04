@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -94,6 +95,41 @@ def test_fbi_release_replays_reconciles_and_publishes_idempotently(
                 "WHERE source_code = 'FBI_UCR'"
             )
             assert cursor.fetchone()[0] >= 1
+    finally:
+        reader.close()
+
+
+def test_same_release_replays_original_scope_after_scope_expansion(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-006, ETL-053 — older captures reconcile their own identities."""
+    narrow = replace(PRODUCT, period_start="01-2023", agency_scope=())
+    older = _persist_fixture_release(fbi_warehouse, product=narrow)
+    _run_pipeline(fbi_warehouse, older, narrow)
+    wider = _persist_fixture_release(fbi_warehouse)
+    full_count = len(PRODUCT.subjects) * OBSERVATIONS_PER_SUBJECT
+    assert _run_pipeline(fbi_warehouse, wider) == (full_count, full_count)
+
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT to_jsonb(f) FROM silver_fbi.fact_crime_observation f "
+                "ORDER BY observation_sk"
+            )
+            before = cursor.fetchall()
+        reader.commit()
+        scoped_count = len(narrow.subjects) * 4 * len(narrow.expected_periods)
+        assert _run_pipeline(fbi_warehouse, older, narrow) == (
+            scoped_count,
+            full_count,
+        )
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT to_jsonb(f) FROM silver_fbi.fact_crime_observation f "
+                "ORDER BY observation_sk"
+            )
+            assert cursor.fetchall() == before
     finally:
         reader.close()
 
