@@ -283,17 +283,13 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_fbi.latest_release_observation",
             "gold_fbi.reporting_coverage",
             "gold_fbi.agency_observation_area_filter",
+            # The declared-derived county roll-up (ETL-053) and its
+            # latest-release projection, served by /api/v1/crime/county-rollup.
+            "gold_fbi.county_rollup",
+            "gold_fbi.latest_county_rollup",
         ),
-        source_api_routes=(),
+        source_api_routes=("/api/v1/crime/county-rollup",),
         neutral_api_routes=("/api/v1/catalog/metrics", "/api/v1/catalog/sources"),
-        api_absence_reason=(
-            "FBI UCR publishes no source-specific HTTP route: the accepted FBI "
-            "plan delivered the agency-grain contract as the gold_fbi views and "
-            "the glossary publisher, and a crime router is API-platform work "
-            "owned by API_DEVELOPMENT_PLAN.md. The owner therefore proves the "
-            "published boundary at the gold views and the provider-neutral "
-            "catalog the glossary harvest feeds."
-        ),
         owner=(
             "tests/e2e/test_fbi_ucr_pipeline.py::"
             "test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals"

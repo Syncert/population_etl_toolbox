@@ -2,7 +2,7 @@
 id: county-crime-rollup-from-agency-reports
 depends_on: []
 parallel_safe: false
-complexity: large
+complexity: high
 verify:
   - python -u -m pytest tests/unit/fbi_ucr -vv --tb=short
   - python -u -m pytest tests/unit/api -vv --tb=short
@@ -15,7 +15,84 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-04 from live-stack evidence; no implementation yet.
+In progress (claimed 2026-10-04, branch `feature/county-crime-rollup`).
+
+Gap analysis against the repository (2026-10-04):
+
+- **Step 1 (agency-to-county mapping) already exists.** The CDE agency
+  directory is captured per state (`fbi_ucr/capture.py`, `client.py`),
+  county labels are preserved per ORI with multi-county splitting
+  (`silver_fbi/agency.py`), and
+  `silver_fbi.agency_geography_relationship` holds one row per
+  (ORI, county), resolved by exact uniqueness-checked label match against
+  the Census county vocabulary (`silver_fbi/transform.py`,
+  `_load_county_relationships`), with `unresolved`/`ambiguous` recorded
+  rather than guessed (ETL-050). The plan's live-stack evidence
+  (`county_fips` null on catalog agency rows) reflects the catalog
+  geography projection, not a missing mapping. Step 1 therefore reduces
+  to: verify the mapping satisfies the acceptance criteria as evidence,
+  no new ingestion.
+- **The real gap starts at gold.** `gold_fbi.agency_observation_area_filter`
+  deliberately filters without summing (ETL-042); no roll-up relation
+  exists. Work: a derived `gold_fbi.county_rollup` view + amended
+  ETL-042 boundary tests + TESTING_CONTRACT update, then the API derived
+  resource, then web.
+- **Derived-resource precedent:** `population/scenario` is API-owned and
+  not in the metric catalog. Decision: the roll-up aggregate lives in
+  gold (warehouse-first), served by a dedicated derived API route; it is
+  not added to `gold_fbi.metric_publisher`, so the catalog continues to
+  publish provider facts only.
+
+### Checkpoint 2026-10-04: warehouse + API layers implemented
+
+Implemented and validated (full unit tier 2193 passed; `ruff check .`
+clean):
+
+- **Gold:** `gold_fbi.county_rollup` (declared-derived sum of reported
+  agency absolute offense/clearance totals through resolved
+  effective-dated county relationships; contributing ORIs, multi-county
+  flag, reporting-vs-mapped coverage, no-zero rule, no rate) and
+  `gold_fbi.latest_county_rollup`, both in
+  `src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql`;
+  registered in `fbi_ucr/schema.py` REQUIRED_RELATIONS and the quality
+  inventory (new DQ-FBI-008, reviewed-unimplemented like DQ-FBI-005..007,
+  ratchet updated deliberately in
+  `tests/unit/quality/test_rule_automation.py`).
+- **Contract change recorded:** ETL-042 amended, ETL-053 added
+  (TESTING_CONTRACT catalog, area table, totals 547→549). Boundary tests
+  carve out the one declared-derived aggregate; new static guards in
+  `tests/unit/fbi_ucr/test_fbi_county_rollup.py`.
+- **API:** `GET /api/v1/crime/county-rollup` (router `crime.py`, service
+  `crime_rollup_service.py`, builders `sql/fbi_queries.py`, schema
+  `crime_rollup.py`), cacheable public read; latest-release default,
+  `release` pin reads history; 422 non-county geo/unknown product/empty
+  filter = absent; 404 explicit refusal for an unmapped county with
+  unresolved-label evidence; 503 sanitized. API-163 added to the catalog;
+  consumer guide section + ordering-table row added; OpenAPI snapshot
+  regenerated (only the new operation); FBI product in
+  `tests/support/product_coverage.py` now claims the route and the two
+  new relations (api_absence_reason removed).
+- **Pre-existing repair:** `TOP_20_USE_CASE_WEB_PAGES_PLAN.md` carried
+  `complexity: large`, which the dispatcher metadata contract rejects and
+  which failed five tooling tests on the unmodified tree; set to `high`.
+  `docs/plans/EXECUTION_ENVIRONMENTS.md` regenerated after this plan
+  moved to in_progress.
+
+Remaining work:
+
+1. **DB-backed evidence:** regenerate
+   `tests/sql/warehouse_schema_snapshot.txt`
+   (`python -m tests.support.schema_snapshot --write`) and run the FBI
+   integration suite against the compose stack; extend the e2e owner
+   (`tests/e2e/test_fbi_ucr_pipeline.py`) to exercise the roll-up views
+   and the new route, including a multi-county agency fixture
+   (`agency_directory_WI.json` already carries one).
+2. **Web (last):** county selections in safety sections offer the
+   derived roll-up, labeled derived, with contributing-agency table and
+   coverage statement; browser evidence with a multi-county fixture;
+   web unit + browser suites.
+3. Docs sync pass: FBI_UCR_PIPELINE_OPERATIONS.md (roll-up semantics),
+   CI_EVIDENCE_MAP if route/relation evidence is enumerated there.
 
 ## Motivation
 

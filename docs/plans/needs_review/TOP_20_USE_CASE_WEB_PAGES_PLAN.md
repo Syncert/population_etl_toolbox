@@ -2,7 +2,7 @@
 id: top-20-use-case-web-pages
 depends_on: []
 parallel_safe: false
-complexity: large
+complexity: high
 verify:
   - npm --prefix apps/web run test:unit
   - npm --prefix apps/web run lint

@@ -1623,6 +1623,32 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty when no agency resolves to the filtered area",
     ),
     _obj(
+        "gold_fbi.county_rollup",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period "
+        "(declared-derived aggregate; ETL-053)",
+        lineage="gold_fbi.crime_observation, "
+        "silver_fbi.agency_geography_relationship",
+        scope_method="derived sum of reported agency absolute totals through "
+        "resolved effective-dated county relationships; a multi-county "
+        "agency counts in full in each of its counties",
+        cadence="per publication",
+        empty_behavior="a county period with no reporting agency publishes "
+        "no row and is never a zero",
+    ),
+    _obj(
+        "gold_fbi.latest_county_rollup",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, measure_id, county geo_id, period "
+        "(latest refresh per product)",
+        lineage="gold_fbi.county_rollup",
+        scope_method="latest-refresh projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
         "gold_fbi.latest_release_observation",
         "gold",
         "FBI_UCR",
@@ -3124,6 +3150,35 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "registry's measure definitions, and no executor reads the "
             "published measures back to confirm counted-entity bases never "
             "share one."
+        ),
+    ),
+    _rule(
+        "DQ-FBI-008",
+        "BLOCK",
+        "reconciliation",
+        "The derived county roll-up (ETL-053) sums only reported agency "
+        "absolute totals through resolved effective-dated county "
+        "relationships, states reporting-versus-mapped coverage and its "
+        "contributing ORIs, flags multi-county contributors, publishes no "
+        "row for a county period with no reporting agency, and derives no "
+        "rate.",
+        (
+            "gold_fbi.county_rollup",
+            "gold_fbi.latest_county_rollup",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measured rule: both relations are "
+            "non-materialized views, so every read recomputes the "
+            "derivation from `gold_fbi.crime_observation` and the resolved "
+            "county relationships, and no drift between the sum and its "
+            "inputs can persist between reads. The derivation semantics -- "
+            "reported-only summation, the no-zero rule, the multi-county "
+            "whole-count rule, and the derived labeling -- are pinned by "
+            "the ETL-053 static contract tests in "
+            "tests/unit/fbi_ucr/test_fbi_county_rollup.py; no executor "
+            "reads the published roll-up back against an independent "
+            "recomputation."
         ),
     ),
     # -- USDA NASS ---------------------------------------------------------

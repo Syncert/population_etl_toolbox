@@ -244,6 +244,48 @@ history and require an explicit run. Export and the reproducible API request
 retain the model and assumptions. Official projection datasets, cohort models,
 and service-capacity forecasts require separate reviewed upstream contracts.
 
+### Derived county crime roll-up
+
+`GET /api/v1/crime/county-rollup` serves `gold_fbi.county_rollup`: a
+warehouse-published, **declared-derived** sum of FBI agency-reported
+absolute offense and clearance totals per county, offense measure, and
+month. The FBI publishes no county figures for these products; this
+resource is a derivation over its agency reports, and every row says so
+(`derived: true`, `derivation_method`, a result label, and a methodology
+note). It never appears beside provider-published values without that
+distinction, and it is not in the metric catalog.
+
+Semantics a client must not paper over:
+
+- **Not additive to state totals.** An agency the provider associates with
+  more than one county contributes its **whole** published count to each of
+  its counties, because the provider publishes no allocation between them
+  and any split would be an invented number. Rows carrying such a
+  contribution set `includes_multi_county_agency: true`, and every row
+  enumerates its `contributing_oris`.
+- **Coverage, never zero.** Only months an agency actually reported are
+  summed. `reporting_agency_count` and `mapped_agency_count` state the
+  coverage; a county period where no mapped agency reported publishes no
+  row rather than a zero.
+- **Counts only.** No population-normalized rate is served or derivable
+  here; the state program rate remains the only published crime rate.
+
+Parameters: `product_id` (a registered FBI product; anything else is 422),
+`measure_id`, `geo_id` (a county, `state:SS|county:CCC`; any other
+geography shape is 422), `state_fips`, `year_from`/`year_to`
+(`year_from > year_to` is 422), `release` to pin one published release
+(the default reads each product's latest), `limit`, `offset`. The response
+carries `release_selection`, the plan-mandated `caveats`, an exact `total`,
+and `value` rendered as text so summed provider precision survives JSON.
+
+A county no resolved agency mapping covers answers **404 with an explicit
+refusal**, including how many provider county labels in that state remain
+unresolved or ambiguous — those are recorded facts, never guessed into a
+county — so an unmapped county is distinguishable from a mapped county
+whose agencies did not report (an empty 200 page). An unavailable
+warehouse answers 503. The route uses the public read's rate limits and
+publication-aware cache policy.
+
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
 BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS). The metric resolves to its
 owning source through the published glossary and is read from that source's
@@ -1269,6 +1311,7 @@ status code on the one class of error the API can explain.
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
+| `/crime/county-rollup` | `product_id`, `measure_id`, `geo_id`, `period_start`, then `release_key` — the roll-up's own grain, so no two rows can tie |
 | `/analysis-configurations` | `name`, then `configuration_id`. Names are unique per owner, and the id closes the order regardless |
 | `/evidence-packets` | `name`, then `packet_id`, on the same basis |
 
