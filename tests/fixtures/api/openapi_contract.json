@@ -1812,6 +1812,61 @@
         "census-pep"
       ]
     },
+    "GET /api/v1/population/scenario": {
+      "parameters": [
+        {
+          "constraints": {
+            "maximum": 10,
+            "minimum": -10
+          },
+          "in": "query",
+          "name": "annual_change_percent",
+          "required": true,
+          "type": "number"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 10,
+            "maximum": 30,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "horizon_years",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:PopulationScenarioResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "population"
+      ]
+    },
     "GET /api/v1/usda-nass/measures": {
       "parameters": [],
       "responses": {
@@ -3439,6 +3494,35 @@
       },
       "required": [
         "valid"
+      ]
+    },
+    "PopulationScenarioPoint": {
+      "properties": {
+        "value": "number",
+        "year": "integer"
+      },
+      "required": [
+        "value",
+        "year"
+      ]
+    },
+    "PopulationScenarioResponse": {
+      "properties": {
+        "annual_change_percent": "number",
+        "base": "NeutralObservation",
+        "caveats": "array<string>",
+        "derived": "boolean",
+        "formula": "string",
+        "horizon_years": "integer",
+        "items": "array<PopulationScenarioPoint>",
+        "model": "string"
+      },
+      "required": [
+        "annual_change_percent",
+        "base",
+        "caveats",
+        "horizon_years",
+        "items"
       ]
     },
     "PresentationDocument": {

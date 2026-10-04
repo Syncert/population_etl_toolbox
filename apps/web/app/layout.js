@@ -1,6 +1,7 @@
 import "./globals.css";
 import ClientReporters from "../components/ClientReporters";
 import SiteHeader from "../components/SiteHeader";
+import { useCaseGroups } from "../lib/useCasePages";
 
 // Every route renders per request. The Content-Security-Policy carries a
 // per-request nonce (see middleware.ts), and a nonce cannot be baked into a
@@ -35,7 +36,7 @@ export default function RootLayout({ children }) {
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
-        <SiteHeader />
+        <SiteHeader useCaseGroups={useCaseGroups.map((group) => ({ id: group.id, title: group.title, pages: group.pages.map(({ id, title, href, rank }) => ({ id, title, href, rank })) }))} />
         {/* The skip link's target lives here rather than on each route's own
             `<main>`: there are fifteen of those across thirteen files, and
             "someone adds a route and forgets the id" is the failure this

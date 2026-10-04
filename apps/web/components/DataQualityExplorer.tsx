@@ -42,7 +42,7 @@ interface RequestStatus {
   message: string;
 }
 
-export default function DataQualityExplorer() {
+export default function DataQualityExplorer({ embedded = false }: { embedded?: boolean }) {
   const freshnessTracker = useRef(createRequestTracker()).current;
   const metricsTracker = useRef(createRequestTracker()).current;
 
@@ -127,14 +127,15 @@ export default function DataQualityExplorer() {
   const metricRows = useMemo(() => metricQualityRows(metrics), [metrics]);
   const shown = metricRows.slice(0, METRIC_SAMPLE);
 
+  const Container = embedded ? "div" : "main";
   return (
-    <main
-      className="page-shell"
+    <Container
+      className={embedded ? "use-case-quality" : "page-shell"}
       data-testid="quality-explorer"
       data-source-count={rows.length}
       data-selected-source={selectedSource}
     >
-      <header className="page-heading">
+      {!embedded ? <header className="page-heading">
         <div className="section-kicker">Source coverage</div>
         <h1>Data quality</h1>
         <p>
@@ -143,7 +144,7 @@ export default function DataQualityExplorer() {
           measures would be a judgement this application invented, not a fact any source
           published.
         </p>
-      </header>
+      </header> : null}
 
       <section className="status-row" role="status">
         <StatusPill
@@ -370,6 +371,6 @@ export default function DataQualityExplorer() {
           ))}
         </ul>
       </section>
-    </main>
+    </Container>
   );
 }

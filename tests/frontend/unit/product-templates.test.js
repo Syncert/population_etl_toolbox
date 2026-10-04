@@ -35,6 +35,19 @@ const catalogIndex = (codes) =>
     ]),
   );
 
+test("housing costs use a dollar median rather than the housing-count universe", () => {
+  const housing = findTemplate("housing-affordability");
+  const slots = housing.sections.flatMap((section) => section.measures);
+  expect(slots.find((slot) => slot.id === "median-monthly-housing-cost").candidates).toEqual(["CENSUS_ACS:acs5:B25105_001", "CENSUS_ACS:acs1:B25105_001"]);
+  expect(slots.find((slot) => slot.id === "rent-share-of-income").label).toContain("households");
+  expect(slots.find((slot) => slot.id === "owner-cost-share-of-income").label).toContain("housing units");
+});
+
+test("community conditions include an independently identified county health report", () => {
+  const health = findTemplate("community-conditions").sections.find((section) => section.id === "health");
+  expect(health.measures.some((slot) => slot.candidates.includes("CDC:places_county:ARTHRITIS:AgeAdjPrv"))).toBe(true);
+});
+
 describe("the first-wave products are configuration", () => {
   test("all eight products exist and declare their own limits", () => {
     expect(PRODUCT_TEMPLATES.map((template) => template.id)).toEqual([
@@ -108,7 +121,7 @@ describe("slots resolve only to identities the catalog published", () => {
       catalogIndex(["CENSUS_ACS:acs5:B01003_001"]),
     );
     const health = resolved.find((entry) => entry.section.id === "health")
-      .measures[0];
+      .measures.find((measure) => measure.slot.id === "cdc-indicator");
     expect(health.available).toBe(false);
     expect(health.metric).toBeNull();
     expect(health.metricCode).toBe("");

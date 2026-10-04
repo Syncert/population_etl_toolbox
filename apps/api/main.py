@@ -37,6 +37,7 @@ from apps.api.routers import (
     health,
     identity,
     observations,
+    population,
     saved_analysis,
     usda_nass,
 )
@@ -66,6 +67,7 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     observations.router,
     distribution.router,
     comparison.router,
+    population.router,
     # Per-source gold schema routers. The observation pairs are generated from
     # the serving registry; CDC and USDA NASS keep hand-written routers because
     # their source-explorer contracts are not the shared observation shape.

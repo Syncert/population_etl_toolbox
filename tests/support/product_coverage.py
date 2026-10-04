@@ -36,6 +36,9 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     "/api/v1/observations",
     "/api/v1/distribution",
     "/api/v1/comparison",
+    # Derived across either PEP or ACS baselines, owned by the API platform;
+    # the scenario is not a new provider data product or warehouse publisher.
+    "/api/v1/population/scenario",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:

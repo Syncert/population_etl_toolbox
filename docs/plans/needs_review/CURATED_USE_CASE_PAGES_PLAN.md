@@ -81,3 +81,10 @@ product claim; this plan does not create those pages or invent candidate codes.
   route-titles.spec.js`: 21 passed afterward. The production build passed,
   including both dynamic use-case routes. `check:csp` passed with zero
   prerendered documents, and `check:bundle` passed with both new route budgets.
+
+## Follow-on scope
+
+The user's subsequent all-twenty request is implemented and validated in
+[TOP_20_USE_CASE_WEB_PAGES_PLAN.md](TOP_20_USE_CASE_WEB_PAGES_PLAN.md). This
+plan's eight-template implementation and historical evidence remain recorded
+above; the follow-on adds the other twelve pages and shared evidence tools.

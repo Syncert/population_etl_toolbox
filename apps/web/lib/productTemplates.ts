@@ -61,6 +61,15 @@ export interface ProductTemplate {
   sections: TemplateSection[];
 }
 
+// Identity is published by gold_cdc.metric_publisher; the county PLACES
+// parser and replay fixtures verify this measure and its age-adjustment type.
+const COUNTY_ARTHRITIS: TemplateMeasure = {
+  id: "county-arthritis",
+  label: "County arthritis prevalence (age-adjusted)",
+  candidates: ["CDC:places_county:ARTHRITIS:AgeAdjPrv"],
+  note: "CDC PLACES modeled adult prevalence, with its published interval. It is distinct from state CDI surveillance and from a clinical count.",
+};
+
 /**
  * The eight packaged products, first wave then second. Each is configuration:
  * adding a measure or a section is an edit here, not a new component, and
@@ -132,9 +141,10 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         description:
           "Health context from the Centers for Disease Control and Prevention.",
         measures: [
+          COUNTY_ARTHRITIS,
           {
             id: "cdc-indicator",
-            label: "Chronic disease indicator",
+            label: "State chronic disease indicator",
             candidates: ["CDC:cdi:ALC06:AGEADJPREV", "CDC:cdi:ALC06:CRDPREV"],
             note: "CDC publishes stratified measures; the explorer shows every published stratum.",
           },
@@ -262,7 +272,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "educational-attainment",
-            label: "Educational attainment",
+            label: "Adults aged 25+ (education table total)",
             candidates: ["CENSUS_ACS:acs5:B15003_001"],
           },
         ],
@@ -305,8 +315,8 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "median-monthly-housing-cost",
             label: "Median monthly housing cost",
             candidates: [
-              "CENSUS_ACS:acs5:B25104_001",
-              "CENSUS_ACS:acs1:B25104_001",
+              "CENSUS_ACS:acs5:B25105_001",
+              "CENSUS_ACS:acs1:B25105_001",
             ],
           },
         ],
@@ -319,21 +329,21 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         measures: [
           {
             id: "rent-share-of-income",
-            label: "Rent as a share of household income",
+            label: "Renter households in the rent-burden table",
             candidates: [
               "CENSUS_ACS:acs5:B25070_001",
               "CENSUS_ACS:acs1:B25070_001",
             ],
-            note: "Published as a distribution across burden bands, not as a single ratio. The explorer shows every band.",
+            note: "This is the table's total renter-household count, not a rent-to-income ratio or the number with high burden. Open the source table for its published bands.",
           },
           {
             id: "owner-cost-share-of-income",
-            label: "Owner costs as a share of household income",
+            label: "Owner-occupied housing units in the cost-burden table",
             candidates: [
               "CENSUS_ACS:acs5:B25091_001",
               "CENSUS_ACS:acs1:B25091_001",
             ],
-            note: "Owners with a mortgage face different costs from owners without one; the bands keep them apart.",
+            note: "This is the total owner-occupied housing-unit universe, not a cost-to-income ratio. Mortgage status and burden bands are separate published variables.",
           },
           {
             id: "median-household-income",
@@ -352,7 +362,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         measures: [
           {
             id: "tenure",
-            label: "Owner and renter occupied",
+            label: "Occupied housing units (tenure table total)",
             candidates: [
               "CENSUS_ACS:acs5:B25003_001",
               "CENSUS_ACS:acs1:B25003_001",
@@ -360,7 +370,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "occupancy",
-            label: "Occupied and vacant units",
+            label: "Housing units (occupancy table total)",
             candidates: [
               "CENSUS_ACS:acs5:B25002_001",
               "CENSUS_ACS:acs1:B25002_001",
@@ -369,7 +379,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "year-built",
-            label: "Year the structure was built",
+            label: "Housing units (year-built table total)",
             candidates: [
               "CENSUS_ACS:acs5:B25034_001",
               "CENSUS_ACS:acs1:B25034_001",
@@ -435,7 +445,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "age-distribution",
-            label: "Population by age and sex",
+            label: "Population (age-and-sex table total)",
             candidates: [
               "CENSUS_ACS:acs5:B01001_001",
               "CENSUS_ACS:acs1:B01001_001",
@@ -467,7 +477,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "disability-by-age",
-            label: "Disability by age",
+            label: "Population (disability table total)",
             candidates: [
               "CENSUS_ACS:acs5:C18108_001",
               "CENSUS_ACS:acs1:C18108_001",
@@ -476,7 +486,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "health-insurance-by-age",
-            label: "Health insurance coverage by age",
+            label: "Population (health-insurance table total)",
             candidates: [
               "CENSUS_ACS:acs5:B27010_001",
               "CENSUS_ACS:acs1:B27010_001",
@@ -515,6 +525,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         description:
           "Chronic-condition indicators as the CDC publishes them, with their own stratification.",
         measures: [
+          COUNTY_ARTHRITIS,
           {
             id: "cdc-chronic-indicator",
             label: "Chronic disease indicator",
@@ -539,6 +550,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         description:
           "CDC chronic disease indicators. Each carries its own case definition, stratification, and provisional status.",
         measures: [
+          COUNTY_ARTHRITIS,
           {
             id: "cdc-chronic-indicator",
             label: "Chronic disease indicator",
@@ -564,7 +576,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "age-distribution",
-            label: "Population by age and sex",
+            label: "Population (age-and-sex table total)",
             candidates: [
               "CENSUS_ACS:acs5:B01001_001",
               "CENSUS_ACS:acs1:B01001_001",
@@ -586,7 +598,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
         measures: [
           {
             id: "health-insurance",
-            label: "Health insurance coverage",
+            label: "Population (health-insurance table total)",
             candidates: [
               "CENSUS_ACS:acs5:B27010_001",
               "CENSUS_ACS:acs1:B27010_001",
@@ -594,7 +606,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "poverty",
-            label: "Income below the poverty level",
+            label: "Population (poverty-status table total)",
             candidates: [
               "CENSUS_ACS:acs5:B17001_001",
               "CENSUS_ACS:acs1:B17001_001",
@@ -602,7 +614,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "disability-by-age",
-            label: "Disability by age",
+            label: "Population (disability table total)",
             candidates: [
               "CENSUS_ACS:acs5:C18108_001",
               "CENSUS_ACS:acs1:C18108_001",
@@ -733,7 +745,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "industry",
-            label: "Employment by industry",
+            label: "Civilian employed residents (industry table total)",
             candidates: [
               "CENSUS_ACS:acs5:C24050_001",
               "CENSUS_ACS:acs1:C24050_001",
@@ -757,7 +769,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           },
           {
             id: "poverty",
-            label: "Income below the poverty level",
+            label: "Population (poverty-status table total)",
             candidates: [
               "CENSUS_ACS:acs5:B17001_001",
               "CENSUS_ACS:acs1:B17001_001",

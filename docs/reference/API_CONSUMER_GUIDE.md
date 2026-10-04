@@ -214,6 +214,36 @@ two responses.
 
 ## Observations
 
+### Derived population planning scenario
+
+`GET /api/v1/population/scenario` is an API-derived planning calculation over
+the stable published observation contract. It does not publish a new warehouse
+fact or an official population forecast. Required parameters are `metric_code`,
+`geo_id`, and `annual_change_percent` (finite, -10 through 10); `horizon_years`
+defaults to 10 and accepts 1 through 30. Only `CENSUS_PEP:POPESTIMATE` and the
+ACS one/five-year `B01003_001` total-population identities are accepted.
+
+The API reads the exact place's newest published population, using the source's
+own aligned reduction, then applies
+`base_population * (1 + annual_change_percent / 100) ** years_after_base`.
+The baseline year is the published period's ending year. Every later year is
+modeled, including elapsed years after an older baseline; none is an observed
+value. The rate is the reader's assumption, not a fitted demographic model.
+
+The response carries `derived: true`, model `compound-growth-v1`, the complete
+neutral `base` observation (source, metric, place, period, release, uncertainty,
+coverage, and lineage), assumptions, formula, caveats, and year/value points.
+There is no prediction interval: baseline uncertainty is retained on the input
+and is not presented as forecast confidence. Unknown metrics answer 404; an
+empty, mismatched, suppressed, nonnumeric, negative, or undated baseline and
+invalid assumptions answer 422. An unavailable warehouse answers 503. The route
+uses the public read's rate limits and publication-aware cache policy.
+
+The community and growth pages keep this scenario separate from their published
+history and require an explicit run. Export and the reproducible API request
+retain the model and assumptions. Official projection datasets, cohort models,
+and service-capacity forecasts require separate reviewed upstream contracts.
+
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
 BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS). The metric resolves to its
 owning source through the published glossary and is read from that source's

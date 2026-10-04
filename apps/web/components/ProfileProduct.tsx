@@ -14,8 +14,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ArrowRight, Download, Save } from "lucide-react";
 import StatusPill from "./StatusPill";
+import UseCaseIntro from "./UseCaseIntro";
+import type { UseCasePage } from "../lib/useCasePages";
+import { verifyUseCaseRows } from "../lib/useCaseAnalysis";
 import {
   ApiError,
   apiErrorMessage,
@@ -37,6 +41,8 @@ import {
   sharedObservationPeriod,
   observationPeriodLabel,
   observationUncertaintyLabel,
+  describeStratification, seriesDimensionNames, observationDimensionLabel,
+  OBSERVATION_COVERAGE_FIELDS, observationCoverageValue,
 } from "../lib/observationAccess";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
@@ -54,15 +60,20 @@ import type { MeasureAnswer, ResolvedMeasure } from "../lib/productTemplates";
 import { describeLocalSave } from "../lib/savedAnalysis";
 import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { explorerHref, parseProfileState, serializeProfileState } from "../lib/urlState";
+import { GEO_LEVELS } from "../lib/urlState";
+import type { GeoLevel } from "../lib/urlState";
 
 const CATALOG_PAGE_SIZE = 1000;
+const UseCaseVisualizations = dynamic(() => import("./UseCaseVisualizations"));
+const UseCaseSourceReport = dynamic(() => import("./UseCaseSourceReport"));
+const PopulationScenario = dynamic(() => import("./PopulationScenario"));
 
 interface RequestStatus {
   state: string;
   message: string;
 }
 
-export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: string }) {
+export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCases = [] }: { fixedTemplateId?: string; useCase?: UseCasePage; relatedUseCases?: Pick<UseCasePage, "id" | "title" | "href" | "rank">[] }) {
   const capabilitiesTracker = useRef(createRequestTracker()).current;
   const catalogTracker = useRef(createRequestTracker()).current;
   const geographyTracker = useRef(createRequestTracker()).current;
@@ -76,6 +87,9 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
   const [counties, setCounties] = useState<GeographySummary[]>([]);
   const [stateFips, setStateFips] = useState("");
   const [geoId, setGeoId] = useState("");
+  const [geoLevel, setGeoLevel] = useState<GeoLevel>("COUNTY");
+  const [extraPlaces, setExtraPlaces] = useState<GeographySummary[]>([]);
+  const [geographyMessage, setGeographyMessage] = useState("");
   const [metricsByCode, setMetricsByCode] = useState<Map<string, MetricSummary>>(new Map());
   const [catalogStatus, setCatalogStatus] = useState<RequestStatus>({
     state: "loading",
@@ -88,7 +102,7 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
   });
   const [saveStatus, setSaveStatus] = useState("");
 
-  const template = useMemo(() => findTemplate(activeTemplateId) || PRODUCT_TEMPLATES[0]!, [activeTemplateId]);
+  const template = useMemo(() => useCase || findTemplate(activeTemplateId) || PRODUCT_TEMPLATES[0]!, [activeTemplateId, useCase]);
   const resolved = useMemo(
     () => resolveTemplate(template, metricsByCode),
     [template, metricsByCode],
@@ -114,6 +128,8 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
     if (requestedRef.current.geoId) {
       setGeoId(requestedRef.current.geoId);
     }
+    const requestedGrain = new URLSearchParams(window.location.search).get("grain");
+    if (useCase && GEO_LEVELS.includes(requestedGrain as GeoLevel)) setGeoLevel(requestedGrain as GeoLevel);
 
     (async () => {
       try {
@@ -129,7 +145,23 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
     return () => {
       capabilitiesTracker.invalidate();
     };
-  }, [capabilitiesTracker, fixedTemplateId]);
+  }, [capabilitiesTracker, fixedTemplateId, useCase]);
+
+  useEffect(() => {
+    if (!useCase || geoLevel === "COUNTY" || geoLevel === "STATE") return;
+    const controller = new AbortController();
+    setExtraPlaces([]);
+    setGeographyMessage("Loading published geographies…");
+    fetchAllPages<GeographySummary>("/catalog/geographies", {
+      params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: geoLevel },
+      pageSize: CATALOG_PAGE_SIZE, signal: controller.signal,
+    }).then((items) => {
+      if (controller.signal.aborted) return;
+      setExtraPlaces(items);
+      setGeographyMessage(items.length ? "" : `No ${geoLevel} geographies are projected in this catalog.`);
+    }).catch((error) => { if (!controller.signal.aborted) setGeographyMessage(apiErrorMessage(error)); });
+    return () => controller.abort();
+  }, [useCase, geoLevel]);
 
   useEffect(() => {
     const request = geographyTracker.begin();
@@ -158,8 +190,8 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
             String(left.county_name).localeCompare(String(right.county_name)),
           ),
         );
-      } catch {
-        // The place picker stays empty; the profile says it has no place.
+      } catch (error) {
+        setGeographyMessage(apiErrorMessage(error));
       }
     })();
     return () => {
@@ -227,6 +259,7 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
     }
 
     const request = observationTracker.begin();
+    setAnswers({});
     setObservationStatus({ state: "loading", message: `asking ${availableMeasures.length} measures` });
 
     (async () => {
@@ -240,6 +273,14 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
               state: "warn",
               message: `no declared access shape for source ${measure.metric?.source_code || "unknown"}`,
             };
+            return;
+          }
+          if (useCase && Array.isArray(measure.metric?.valid_geo_grains) && !measure.metric.valid_geo_grains.includes(geoLevel)) {
+            next[measure.slot.id] = { row: null, state: "warn", message: `Not published at ${geoLevel}; published grains: ${measure.metric.valid_geo_grains.join(", ") || "none"}.` };
+            return;
+          }
+          if (useCase && !source.neutralFilters.includes("geo_id")) {
+            next[measure.slot.id] = { row: null, state: "warn", message: "This source does not declare a geo_id filter. Open its source explorer to select the supported scope." };
             return;
           }
           try {
@@ -260,6 +301,11 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
               Array.isArray(payload.items) ? payload.items : [],
             );
             const total = typeof payload.total === "number" ? payload.total : null;
+            if (useCase) verifyUseCaseRows(rows, measure.metricCode, geoId);
+            if (useCase && describeStratification(rows, seriesDimensionNames(source, "latest")).stratified) {
+              next[measure.slot.id] = { row: null, state: "warn", message: "Several published strata or subjects describe this place. Open the source explorer to select a series; no single value is chosen here." };
+              return;
+            }
             // Bounded page: the newest row this client can identify is the
             // last one, and whether that is the publication's newest is
             // exactly what the bound decides.
@@ -303,17 +349,18 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
     return () => {
       observationTracker.invalidate();
     };
-  }, [observationTracker, geoId, availableMeasures, sourceForMetric]);
+  }, [observationTracker, geoId, geoLevel, availableMeasures, sourceForMetric, useCase]);
 
   const place = useMemo(
     () =>
       counties.find((item) => item.geo_id === geoId) ||
       states.find((item) => item.geo_id === geoId) ||
+      extraPlaces.find((item) => item.geo_id === geoId) ||
       null,
-    [counties, states, geoId],
+    [counties, states, extraPlaces, geoId],
   );
   const placeName = place
-    ? [place.county_name, place.state_name].filter(Boolean).join(", ") || String(place.geo_id)
+    ? String(place.geo_name || [place.county_name, place.state_name].filter(Boolean).join(", ") || place.geo_id)
     : "";
   const scopedCounties = useMemo(
     () => (stateFips ? counties.filter((item) => item.state_fips === stateFips) : counties),
@@ -325,11 +372,13 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
       { template: activeTemplateId, geoId },
       { template: fixedTemplateId || DEFAULT_TEMPLATE_ID },
     );
-    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    const params = new URLSearchParams(query);
+    if (useCase && geoLevel !== "COUNTY") params.set("grain", geoLevel);
+    const nextUrl = params.size ? `${window.location.pathname}?${params}` : window.location.pathname;
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
       window.history.replaceState(null, "", nextUrl);
     }
-  }, [activeTemplateId, fixedTemplateId, geoId]);
+  }, [activeTemplateId, fixedTemplateId, geoId, geoLevel, useCase]);
 
   function exportCsv() {
     const { headings, rows } = profileExport(template, resolved, answers, {
@@ -375,14 +424,14 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
 
   return (
     <main
-      className="page-shell"
+      className={useCase ? `page-shell use-case-page use-case-${useCase.group}` : "page-shell"}
       data-testid="profile-product"
       data-template={template.id}
       data-geo-id={geoId}
       data-available-measures={coverage.available}
       data-unavailable-measures={coverage.unavailable}
     >
-      <header className="page-heading">
+      {useCase ? <UseCaseIntro entry={useCase} /> : <header className="page-heading">
         <div className="section-kicker">Product</div>
         <h1>{template.title}</h1>
         <p>{template.summary}</p>
@@ -390,9 +439,10 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
           {template.limits}
         </p>
         <Link className="text-link" href="/use-cases">Browse use cases</Link>
-      </header>
+      </header>}
 
       <section className="profile-controls">
+        {useCase ? <label>Geography grain<select value={geoLevel} data-testid="use-case-grain" onChange={(event) => { setGeoLevel(event.target.value as GeoLevel); setGeoId(""); setGeographyMessage(""); }}>{GEO_LEVELS.map((grain) => <option key={grain} value={grain}>{grain}</option>)}</select></label> : null}
         {!fixedTemplateId ? (
           <label>
             Product
@@ -435,10 +485,9 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
             data-testid="profile-place"
           >
             <option value="">Select a place</option>
-            {scopedCounties.map((county) => (
+            {(geoLevel === "COUNTY" ? scopedCounties : geoLevel === "STATE" ? states : extraPlaces).map((county) => (
               <option value={county.geo_id} key={county.geo_id}>
-                {county.county_name}
-                {county.state_name ? `, ${county.state_name}` : ""}
+                {String(county.geo_name || [county.county_name, county.state_name].filter(Boolean).join(", ") || county.geo_id)}
               </option>
             ))}
           </select>
@@ -446,10 +495,11 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
         <button className="button secondary" type="button" onClick={exportCsv} data-testid="profile-export">
           <Download size={15} /> Export CSV
         </button>
-        <button className="button primary" type="button" onClick={handleSave} data-testid="profile-save">
+        <button className="button primary" type="button" onClick={handleSave} disabled={Boolean(useCase && !geoId)} data-testid="profile-save">
           <Save size={15} /> Save profile
         </button>
       </section>
+      {geographyMessage ? <p className="notice" role="status">{geographyMessage}</p> : null}
       {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
 
       <section className="status-row" role="status">
@@ -475,11 +525,14 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
         </p>
       ) : null}
 
+      {useCase ? <UseCaseVisualizations entry={useCase} measures={availableMeasures} sources={sources} geoId={geoId} geoLevel={geoLevel} stateFips={stateFips} places={geoLevel === "COUNTY" ? scopedCounties : geoLevel === "STATE" ? states : extraPlaces} /> : null}
+      {useCase && ["community-conditions", "population-growth"].includes(useCase.id) ? <PopulationScenario measures={availableMeasures} geoId={geoId} /> : null}
+
       {resolved.map((entry) => (
         <section className="analysis-panel" key={entry.section.id} data-testid={`section-${entry.section.id}`}>
           <div className="panel-heading">
             <div>
-              <div className="section-kicker">{entry.section.title}</div>
+              <h2>{entry.section.title}</h2>
               <p className="subtle">{entry.section.description}</p>
             </div>
           </div>
@@ -494,8 +547,10 @@ export default function ProfileProduct({ fixedTemplateId }: { fixedTemplateId?: 
               />
             ))}
           </div>
+          {useCase && entry.measures.some((measure) => ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || "")) ? <UseCaseSourceReport sectionId={entry.section.id} measures={entry.measures.filter((measure) => measure.available && ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || ""))} sources={sources} geoId={geoId} geoLevel={geoLevel} placeName={placeName} state={states.find((item) => item.state_fips === place?.state_fips)} /> : null}
         </section>
       ))}
+      {useCase ? <section className="use-case-related" aria-label="Related use cases"><h2>Continue exploring</h2><div className="use-case-related-grid">{relatedUseCases.map((entry) => <Link key={entry.id} href={entry.href}><span>{String(entry.rank).padStart(2, "0")}</span><strong>{entry.title}</strong><ArrowRight size={16} /></Link>)}</div><Link className="text-link" href="/use-cases">All 20 use cases <ArrowRight size={14} /></Link></section> : null}
     </main>
   );
 }
@@ -522,7 +577,7 @@ function MeasureCard({
   }
 
   const metric = measure.metric;
-  const row = answer?.row || null;
+  const row = answer?.row?.metric_code === measure.metricCode && answer.row.geo_id === geoId ? answer.row : null;
   const quality = metricQualityState(metric);
   const uncertaintyBeyondMargin = observationUncertaintyLabel(
     row,
@@ -562,6 +617,8 @@ function MeasureCard({
           Published uncertainty: {uncertaintyBeyondMargin}
         </small>
       ) : null}
+      {row ? <small>{OBSERVATION_COVERAGE_FIELDS.map((field) => { const value = observationCoverageValue(row, field); return value ? `${field}: ${value}` : ""; }).filter(Boolean).join(" · ") || "Reporting coverage: not published"}</small> : null}
+      {row ? <small>{observationDimensionLabel(row, Object.keys(row.dimensions || {}))}</small> : null}
       <small>
         <StatusPill
           state={quality.state}

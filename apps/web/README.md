@@ -8,12 +8,63 @@ App Router-based public frontend for the API and Martin tiles services. Both Com
 - `/catalog`: search, deterministic paging over the API's published total, provenance, and direct metric-to-explorer links
 - `/explore`: the capability-driven explorer — every completed source, latest and as-released scopes, and only the presentation modes the selection can answer
 - `/compare`: the preflight-first comparison workspace
-- `/profiles`: the first-wave products (community conditions, population growth, workforce) over published catalog identities
+- `/workbench`: compose, save, and reopen charts over published measures
+- `/profiles`: the eight existing reviewed profile templates over published catalog identities
+- `/use-cases`: searchable directory of all twenty opportunities in the [top-20 product guide](../../docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md), grouped into six collections
+- `/use-cases/<id>`: dedicated question, audience, interpretation guardrail, suggested workflow, catalog-backed indicators, and reusable history/table/peer views; the quality case embeds the existing source-quality explorer
 - `/quality`: the source coverage and data-quality explorer
 - `/saved`: account-stored analysis configurations
 - `/builder`: the evidence packet composer, with a reproducibility envelope on every analytical block; saves to the account when signed in (`/api/v1/evidence-packets`) and to this browser otherwise, and says which before the click
 - `/articles`: the reading surface for a composed evidence packet — every block is presented as the composer recorded it, with its reproducibility envelope, and any block without one is named rather than rendered as evidence; signed in it reads the account's packets (selected in page state, never in the URL) with the API's per-block verdict beside the client's own; nothing on the page is written by hand and nothing on it is computed here
 - `/bls`, `/census`, `/fred`: retired demonstration dashboards; these redirect into `/explore` for the same source
+
+## Use case pages
+
+The top menu offers a nested **Use cases → collection → page** disclosure.
+It supports keyboard activation, Escape dismissal with focus return, outside
+click dismissal, and mobile layouts. The directory can be searched by question,
+audience, and packaged product. All twenty pages have distinct metadata and
+public sitemap addresses; the original eight URLs and `/profiles` links remain.
+
+`lib/useCasePages.ts` composes the already verified sections from
+`lib/productTemplates.ts`. These are navigation and presentation bundles,
+not new metric definitions or approved derived products. Specialized measures
+can be selected through the catalog/source explorer. Each page shows the
+catalog identity that answered, source-native limitations, and missing candidates.
+Unknown sources, unpublished grains, and ambiguous strata remain explicit gaps.
+No client computes a rate, projection, composite score, or causal claim.
+Community and growth pages additionally call the reviewed API population-scenario
+contract: an explicit annual-change assumption produces labeled derived future
+values, separate from the provider's historical estimates. The complete baseline,
+model, assumptions, reproducible request, and export remain available.
+
+Health and safety sections expose published report tables, keeping strata and
+reporting subjects separate. County CDC PLACES arthritis prevalence is a distinct
+measure from state CDI surveillance. A county reader explicitly loads a state
+safety report when FBI data are unavailable at county grain; state context is
+labeled beside its rows. Responses for another metric or place are refused.
+Housing medians use the exact Census variables; table totals are labeled as
+household, housing-unit, or population universes rather than as rates or bands.
+
+The shared evidence panel reads one measure at one published geography. Its
+trend and table share the same observations, with exact requests and bounded-read
+warnings. History export preserves dimensions, coverage, uncertainty, and query
+context. For compatible sources, the peer view lets readers select up to six
+places explicitly and record their selection criteria; it shows each peer's own
+period and uncertainty and exports missing peers as gaps. Maps, chart saving,
+release pinning, and publishing use the established explorer, workbench, saved,
+Builder, and article workflows. Menu and directory metadata are prepared on the
+server, and chart components load separately to preserve existing bundle budgets.
+
+The deterministic browser scenarios cover every page at desktop and 390px,
+including WCAG AA checks. To capture all twenty example screenshots in PowerShell:
+
+```powershell
+$env:USE_CASE_SCREENSHOT_DIR = 'G:\population_etl_toolbox\.codex\artifacts\use-case-examples'
+npm --prefix apps/web run test:browser -- use-cases.spec.js --workers=2
+```
+
+Screenshot examples are labeled illustrative UI fixtures, never live statistics.
 
 ## Supported browsers
 

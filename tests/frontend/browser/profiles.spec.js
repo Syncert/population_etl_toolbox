@@ -628,7 +628,7 @@ test("every product the array holds is offered, with no per-product screen", asy
 test("dedicated use-case pages keep one reviewed product and its place link", async ({ page }) => {
   await installRoutes(page);
   await page.goto("/use-cases");
-  await expect(page.getByTestId("use-case-link")).toHaveCount(8);
+  await expect(page.getByTestId("use-case-link")).toHaveCount(20);
   await expect(page.getByRole("link", { name: /community disease and illness burden/i }))
     .toHaveAttribute("href", "/use-cases/disease-illness-burden");
 
@@ -640,7 +640,7 @@ test("dedicated use-case pages keep one reviewed product and its place link", as
   await expect(product).toHaveAttribute("data-template", "disease-illness-burden");
   await expect(product).toHaveAttribute("data-geo-id", GEO_ID);
   await expect(page.getByTestId("template-select")).toHaveCount(0);
-  await expect(page.getByTestId("template-limits")).toContainText("Suppressed");
+  await expect(page.getByTestId("template-limits")).toContainText("suppression");
   await expect(page.getByTestId("measure-cdc-chronic-indicator"))
     .toHaveAttribute("data-available", "false");
   await expect(page.getByTestId("measure-explore-total-population"))
