@@ -163,6 +163,28 @@ counties with reported agency totals, then resume ingestion. The disposable
 database tests cover the legacy constraint swap twice, replay repair, all ten
 products, and sums against their actual agency inputs.
 
+## Reviewing the county roll-up in the deployed web app
+
+Deploy the API and web images from the same application revision after the
+warehouse migration and offline replay. On the internal stack, the review
+page is `http://127.0.0.1:3001/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025`.
+Scroll to **Sum this county?s agency reports** and select **Load derived county
+roll-up**. The derived table carries the release, contributing ORIs, reporting
+coverage, and the multi-county caveat; previous/next pages retain that release.
+
+Run the dedicated live deployment checks from PowerShell:
+
+```powershell
+$env:SMOKE_BASE_URL = "http://127.0.0.1:3001"
+npm --prefix apps/web run test:county-rollup:live
+```
+
+This command starts no services and installs no fixtures. It requires the
+replayed Wisconsin FBI captures and their historical depth, and checks the
+Dane County rendering/paging and the explicit refusal for unmapped Los Angeles
+County. It fails when its deployment origin is absent. Its screenshot is
+written under `apps/web/test-results/`; the existing map CI tier is separate.
+
 ## First deployment test
 
 1. Apply the warehouse manifest and confirm migration 011 is present.

@@ -333,11 +333,73 @@ passed 127 tests; Ruff lint and global formatting passed (541 files).
 The real warehouse replay and independent evidence/derivation checks above
 also passed. The initial failed replay is not counted as a passing check.
 
-The running internal API is still an older build: its OpenAPI has no crime
-routes, and the county-roll-up endpoint returns HTTP 404. Warehouse repair is
-complete, but API deployment remains required before the new resource can be
-used through that service. No API/web deployment, push, remote check, or live
+At the end of this replay checkpoint, the internal API was still an older
+build: its OpenAPI had no crime routes, and the county-roll-up endpoint
+returned HTTP 404. The deployment checkpoint below resolves that remaining
+review prerequisite. No API/web deployment, push, remote check, or live
 provider call was performed. Plan remains in `needs_review`.
+
+### Internal API/web deployment for human review (2026-10-04)
+
+The user explicitly authorized deployment so the completed change is visible
+in the Web UI. Built the internal `api` and `web` images from application
+revision `98c8f85eff6c43a45c473c2a2365cbc1f8895ef1`, with that revision passed
+as `WEB_BUILD_ID`. Used `resolve_compose_context("internal")`, preserving both
+`infra/docker/.env` and `infra/docker/stack.env`, then targeted only:
+
+```text
+docker compose --env-file infra/docker/.env --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml build api web
+docker compose --env-file infra/docker/.env --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d --no-deps --no-build api web
+```
+
+The analytics database, Redis, Martin, and Airflow containers were preserved;
+no warehouse reset, new ingestion, external deployment, or push occurred.
+The new web production build passed compilation, lint, and type checking.
+Running image identities:
+
+| Service | Image digest |
+|---|---|
+| API | `sha256:da256286d5c6160a3705b4950a69b6593b7960e797b43850574e06a94934946a` |
+| Web | `sha256:5ea020e65b0160a95f23837d6011f9839ebb653cec6b6789994aca40a0ce9248` |
+
+The API readiness endpoint returns 200, OpenAPI now includes
+`/api/v1/crime/county-rollup`, and the web's same-origin proxy serves the
+real warehouse values. All ten product filters return derived Dane County
+rows (12 offense/clearance rows per product in January?June 2023). A pinned
+January 2023 violent-crime offense read returns **19**, with three contributing
+ORIs and 3/25 mapped-agency coverage. No mock responses were installed.
+
+Added a separate opt-in deployment regression command,
+`test:county-rollup:live`, reusing the existing Chromium live-test settings.
+It requires `SMOKE_BASE_URL` and the captured Wisconsin warehouse scope;
+it starts no services and cannot skip silently when that origin is absent.
+Its separate test directory avoids adding requirements to map CI's smaller
+seed. The two real-browser tests verify explicit loading, values and lineage,
+derivation/coverage/caveats, page 201, release pinning and reproduction,
+returning to page one, and the verbatim unmapped Los Angeles County refusal
+with the shared HTTP-status prefix. **2 passed, 2.3s** against the deployed
+internal stack. The first test run exposed a test expectation missing the
+shared `status 404:` prefix; that assertion was corrected to require the
+complete displayed refusal, and the initial run is not counted as passing.
+A separate raw-HTML probe incorrectly expected client-hydrated panel text
+in the server response; it is not counted as UI evidence. The Chromium tests
+and inspected screenshot are the rendered UI evidence.
+
+The screenshot was inspected at
+`apps/web/test-results/county-crime-rollup.live-d-66139-e-and-release-pinned-paging-chromium-gl/county-crime-rollup-review.png`:
+the derived heading, coverage/non-additivity explanation, release, and
+contributing-agency table are visible and legible. Screenshot output is an
+untracked test artifact, not application source. Web lint and typecheck passed
+after adding the dedicated test configuration. Final repository hygiene,
+manifest, and tooling validation passed 127 tests; API readiness and the web
+review route both return 200.
+
+Review URL:
+`http://127.0.0.1:3001/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025`.
+Scroll to **Sum this county?s agency reports**, then choose **Load derived
+county roll-up**. The current live Dane answer contains 780 historical
+county/measure rows and supports previous/next paging. The plan remains in
+`needs_review`; deployment does not imply human acceptance.
 
 ## Motivation
 
