@@ -15,9 +15,9 @@ verify:
 
 ## Status
 
-Reopened for the user-reported county safety UI defect (2026-10-04, branch
-`feature/county-crime-rollup`). Corrective web validation and redeployment
-are in progress; the prior deployment did not cover the rate selector path.
+Ready for human review after the county safety UI correction (2026-10-04,
+branch `feature/county-crime-rollup`). The corrected web controls are deployed
+and the previously missed rate selector path has live browser evidence.
 Every acceptance criterion has executable evidence; the validation
 record is in the checkpoints below. The milestone audit supersedes the
 original validation summary where checks were rerun.
@@ -434,9 +434,36 @@ execution-environment inventory change caused by reopening this plan.
 Neither is counted as passing. Regenerating `EXECUTION_ENVIRONMENTS.md`
 restored the inventory contract before the successful run.
 
-Deployment and the three live checks are pending for this corrective commit.
-The plan remains in `in_progress` until the corrected UI has been deployed
-and the screenshot path verified through real services.
+Deployed corrective source commit
+`49c3eadb49e0ff731f1a47441fdee0c7baf32605` to the existing internal web
+container with `WEB_BUILD_ID` pinned to that commit. The Compose resolver
+retained both environment files for warehouse tuning and service settings.
+`build web` passed, then `up -d --no-deps --no-build web` replaced only the
+web service. Running image:
+`sha256:a4e13225e9a47b3265e968cea20d0fda7ba245e8a9020ebc1b7e4c7f6133a550`.
+
+`SMOKE_BASE_URL=http://127.0.0.1:3001 npm --prefix apps/web run
+test:county-rollup:live`: **3 passed, 26.2s**. Real services prove county
+values/lineage and pinned paging, the complete unmapped-county refusal,
+and the actual published-rate panel's explicit choices. The latter loads
+reported county rows through the count link, then requests the chosen FBI
+rate for `state:55`, verifies every returned geography/metric, retains the
+rate selector, and renders the state attribution.
+
+Inspected the captured rate-controls screenshot at
+`apps/web/test-results/county-crime-rollup.live-t-1a40e--rate-only-as-state-context-chromium-gl/county-rate-controls-review.png`:
+the former selected-place dead end is replaced by **Use derived county
+counts**, **Load Wisconsin state report** remains explicit, and the prompt
+explains the supported paths. The county table screenshot was also
+inspected. These are ignored test artifacts. No mocks were installed for
+the deployment checks. The plan returns to `needs_review`; human acceptance
+is still pending. The prior migration/replay remains the deployed warehouse
+foundation and was not rerun for this frontend-only correction.
+
+Final handoff inventory regeneration and repository hygiene/manifest/tooling
+validation: **134 passed, 2.77s** after returning the plan to `needs_review`.
+`git diff --check` passes. All corrective source and deployment evidence
+remain on the existing branch; no push or new branch was performed.
 
 ## Motivation
 
