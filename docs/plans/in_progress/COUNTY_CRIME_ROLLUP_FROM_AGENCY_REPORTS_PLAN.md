@@ -15,7 +15,9 @@ verify:
 
 ## Status
 
-Ready for review (2026-10-04, branch `feature/county-crime-rollup`).
+Reopened for the user-reported county safety UI defect (2026-10-04, branch
+`feature/county-crime-rollup`). Corrective web validation and redeployment
+are in progress; the prior deployment did not cover the rate selector path.
 Every acceptance criterion has executable evidence; the validation
 record is in the checkpoints below. The milestone audit supersedes the
 original validation summary where checks were rerun.
@@ -400,6 +402,41 @@ Scroll to **Sum this county?s agency reports**, then choose **Load derived
 county roll-up**. The current live Dane answer contains 780 historical
 county/measure rows and supports previous/next paging. The plan remains in
 `needs_review`; deployment does not imply human acceptance.
+
+### Checkpoint 2026-10-04: county rate control correction
+
+The user's screenshot exposed a missed UI path: the derived panel worked,
+but the published FBI report still offered a county selected-place read
+for a measure with no county publication. The prior two live checks did
+not cover that selector. This correction places derived county counts
+before the published report controls, replaces the unsupported selected-place
+button with a direct link to those counts, and hides the unsupported
+county source-explorer link. An explicit state-report action preserves the
+chosen rate and identifies the answer as state context. No county rate is
+invented and no report is silently widened to state geography.
+
+A new unit regression failed on the missing derived-counts link before the
+change, then passed. It verifies no automatic county/state read, exact
+state geography and selected rate after the explicit choice, reset on
+county change, and the unchanged supported CDC county path. Full web units:
+**729 passed**. The initial browser attempt targeted the community conditions
+count-only section and could not select a rate; that run is not passing
+evidence. The regression now targets the actual public safety trend
+`published-rate` section and passes. Full browser tier: **203 passed, 59.6s**
+against the production build. Web lint, typecheck, production build, bundle
+budgets, and CSP checks pass. WEB-124 and the internal-stack review guide
+were updated with the supported choices.
+
+Repository hygiene, warehouse/CI manifests, and tooling: **134 passed,
+2.52s** with an isolated absolute `--basetemp`. The first host run hit the
+known inaccessible default pytest temp directory; the next exposed the
+execution-environment inventory change caused by reopening this plan.
+Neither is counted as passing. Regenerating `EXECUTION_ENVIRONMENTS.md`
+restored the inventory contract before the successful run.
+
+Deployment and the three live checks are pending for this corrective commit.
+The plan remains in `in_progress` until the corrected UI has been deployed
+and the screenshot path verified through real services.
 
 ## Motivation
 

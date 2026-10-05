@@ -195,6 +195,34 @@ test("a housing response for a different metric is refused in both the card and 
   await expect(page.getByRole("img", { name: /time-series/ })).toHaveCount(0);
 });
 
+test("county safety rate selection leads to derived counts or the explicitly chosen state rate", async ({ page }) => {
+  // Covers: WEB-123, WEB-124 — reproduce the unsupported county-rate screenshot.
+  await installUseCaseFixtures(page);
+  await page.goto("/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025");
+  const safety = page.getByTestId("source-report-published-rate");
+  const rollup = page.getByTestId("county-crime-rollup");
+  const rate = "FBI_UCR:summarized_violent_crime:V:offense:rate";
+  await safety.getByRole("combobox", { name: "Report measure for published-rate" }).selectOption(rate);
+  await expect(safety.getByRole("status")).toContainText("County rates are not published");
+  await expect(safety.getByRole("status")).not.toContainText("not published at COUNTY");
+  await expect(safety.getByRole("button", { name: "Selected place" })).toHaveCount(0);
+  await expect(safety.getByRole("link", { name: "Open report in source explorer" })).toHaveCount(0);
+  expect(await rollup.evaluate((node) => Boolean(node.compareDocumentPosition(document.querySelector('[data-testid="source-report-published-rate"]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await safety.getByRole("link", { name: "Use derived county counts" }).click();
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(6);
+
+  const stateResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/observations" && url.searchParams.get("geo_id") === "state:55" && url.searchParams.get("metric_code") === rate;
+  });
+  await safety.getByRole("button", { name: "Load Wisconsin state report" }).click();
+  expect((await stateResponsePromise).status()).toBe(200);
+  await expect(safety.getByRole("combobox", { name: "Report measure for published-rate" })).toHaveValue(rate);
+  await expect(safety.locator("tbody tr")).toHaveCount(6);
+  await expect(safety).toContainText("these are not Dane County, Wisconsin figures");
+});
+
 test("county crime pages retain their release and reset when the county changes", async ({ page }) => {
   // Covers: WEB-124 — all county rows remain reachable and reproducible.
   await installUseCaseFixtures(page, { rollupRows: 201 });

@@ -88,3 +88,36 @@ test("deployed UI shows the real refusal for a county without an agency mapping"
   await expect(rollup.getByRole("status")).toHaveText(`status 404: ${error.detail}`);
   await expect(rollup.locator("table")).toHaveCount(0);
 });
+
+test("the deployed county safety rate control offers counts and loads the selected rate only as state context", async ({ page }, testInfo) => {
+  // Covers: WEB-124 — verify the user's screenshot path against real services.
+  await page.goto(`${BASE_URL}/use-cases/public-safety-trend?place=${encodeURIComponent(COUNTY)}`);
+  const report = page.getByTestId("source-report-published-rate");
+  const rollup = page.getByTestId("county-crime-rollup");
+  const rate = "FBI_UCR:summarized_violent_crime:V:offense:rate";
+  await report.getByRole("combobox", { name: "Report measure for published-rate" }).selectOption(rate);
+  await expect(report.getByRole("status")).toContainText("County rates are not published");
+  await expect(report.getByRole("button", { name: "Selected place" })).toHaveCount(0);
+  await expect(report.getByRole("link", { name: "Open report in source explorer" })).toHaveCount(0);
+  expect(await rollup.evaluate((node) => Boolean(node.compareDocumentPosition(document.querySelector('[data-testid="source-report-published-rate"]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await report.evaluate((node) => window.scrollTo(0, window.scrollY + node.getBoundingClientRect().top - 90));
+  const screenshot = testInfo.outputPath("county-rate-controls-review.png");
+  await page.screenshot({ path: screenshot });
+  await testInfo.attach("County rate controls with explicit supported paths", { path: screenshot, contentType: "image/png" });
+  await report.getByRole("link", { name: "Use derived county counts" }).click();
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(200);
+  const responsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/observations" && url.searchParams.get("metric_code") === rate && url.searchParams.get("geo_id") === "state:55";
+  });
+  await report.getByRole("button", { name: "Load Wisconsin state report" }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(200);
+  const result = await response.json();
+  expect(result.items.length).toBeGreaterThan(0);
+  expect(result.items.every((row) => row.geo_id === "state:55" && row.metric_code === rate)).toBe(true);
+  await expect(report.getByRole("combobox", { name: "Report measure for published-rate" })).toHaveValue(rate);
+  await expect(report.locator("tbody tr")).toHaveCount(Math.min(30, result.items.length));
+  await expect(report).toContainText("these are not Dane County figures");
+});

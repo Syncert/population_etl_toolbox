@@ -561,7 +561,6 @@ export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCas
               />
             ))}
           </div>
-          {useCase && entry.measures.some((measure) => ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || "")) ? <UseCaseSourceReport sectionId={entry.section.id} measures={entry.measures.filter((measure) => measure.available && ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || ""))} sources={sources} geoId={geoId} geoLevel={geoLevel} placeName={placeName} state={states.find((item) => item.state_fips === place?.state_fips)} /> : null}
           {/* A county selection in a safety section offers the warehouse's
               declared-derived roll-up (ETL-053) beside — never inside — the
               provider-published cards above. The FBI publishes no county
@@ -569,6 +568,7 @@ export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCas
           {geoLevel === "COUNTY" && geoId && entry.section.id === crimeRollupSectionId ? (
             <CountyCrimeRollup geoId={geoId} placeName={placeName} />
           ) : null}
+          {useCase && entry.measures.some((measure) => ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || "")) ? <UseCaseSourceReport sectionId={entry.section.id} measures={entry.measures.filter((measure) => measure.available && ["CDC", "FBI_UCR"].includes(measure.metric?.source_code || ""))} sources={sources} geoId={geoId} geoLevel={geoLevel} placeName={placeName} state={states.find((item) => item.state_fips === place?.state_fips)} /> : null}
         </section>
       ))}
       {useCase ? <section className="use-case-related" aria-label="Related use cases"><h2>Continue exploring</h2><div className="use-case-related-grid">{relatedUseCases.map((entry) => <Link key={entry.id} href={entry.href}><span>{String(entry.rank).padStart(2, "0")}</span><strong>{entry.title}</strong><ArrowRight size={16} /></Link>)}</div><Link className="text-link" href="/use-cases">All 20 use cases <ArrowRight size={14} /></Link></section> : null}
