@@ -292,6 +292,36 @@ and the new county sources.
    plan under `docs/plans/to_do/`.
 6. **Sub-county geography.** Tracts and ZCTAs, after place grain.
 
+## Implementation plans
+
+Each piece of this plan is an approved, unclaimed plan under
+`docs/plans/to_do/`, with dispatcher frontmatter and acceptance criteria.
+Dependencies are declared in the plans themselves; the groupings below are
+the build order above.
+
+Web, over the published API:
+
+- [`docs/plans/to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md`](../plans/to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) — the product; every other web plan depends on its route and chapter contract.
+- [`docs/plans/to_do/NEARBY_AND_RELATED_PLACES_PLAN.md`](../plans/to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) — geography relationships served and shown.
+- [`docs/plans/to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md`](../plans/to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) — per-measure percentile rank among peers, API-derived, never summed.
+- [`docs/plans/to_do/EXPLAINER_PAGES_PLAN.md`](../plans/to_do/EXPLAINER_PAGES_PLAN.md) — the first twelve explainers and their linking contract.
+- [`docs/plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md`](../plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) — operator-only frame renderer and script notes.
+- [`docs/plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md`](../plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) — the home page and the public data page.
+- [`docs/plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md`](../plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) — the measure map and ranked table.
+- [`docs/plans/to_do/COMPARE_TWO_PLACES_PLAN.md`](../plans/to_do/COMPARE_TWO_PLACES_PLAN.md) — the place page folded in half.
+- [`docs/plans/to_do/MONTHLY_BRIEFINGS_PLAN.md`](../plans/to_do/MONTHLY_BRIEFINGS_PLAN.md) — first consumer of the publishing approval path.
+
+Warehouse, county and place depth:
+
+- [`docs/plans/to_do/ACS_AT_PLACE_GRAIN_PLAN.md`](../plans/to_do/ACS_AT_PLACE_GRAIN_PLAN.md) — unlocks city and town pages.
+- [`docs/plans/to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
+- [`docs/plans/to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
+- [`docs/plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
+- [`docs/plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
+- [`docs/plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
+- [`docs/plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+- [`docs/plans/to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md`](../plans/to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) — tracts and ZCTAs, after place grain.
+
 ## Decisions only the owner can make
 
 - **A name.** The almanac framing wants a name a neighbour would say out loud.
