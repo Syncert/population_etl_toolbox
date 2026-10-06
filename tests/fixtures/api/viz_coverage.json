@@ -13,6 +13,7 @@
     "CENSUS_ACS": [
       "COUNTY",
       "NATIONAL",
+      "PLACE",
       "STATE"
     ],
     "CENSUS_PEP": [

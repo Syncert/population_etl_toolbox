@@ -124,6 +124,20 @@ ACS_GRAIN_ROWS: tuple[dict[str, object], ...] = (
         "county_fips": "001",
         "estimate_value": 567,
     },
+    # acs-place-grain: a place is a state sibling of a county, not its child.
+    {
+        "geo_id": "state:93|place:01400",
+        "geo_level": "place",
+        "geography": {
+            "geo_type": "place",
+            "state_fips": "93",
+            "place_fips": "01400",
+            "name": "Catalog agreement grain place",
+        },
+        "state_fips": "93",
+        "county_fips": None,
+        "estimate_value": 89,
+    },
 )
 
 FRED_VINTAGE = 2094
