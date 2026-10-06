@@ -64,6 +64,12 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
         : grain === "COUNTY" ? COUNTIES.filter((county) => !params.get("state_fips") || county.state_fips === params.get("state_fips")) : [];
       return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
     }
+    if (path === "/api/v1/comparison/preflight") {
+      const code = params.get("metric_code_a");
+      const refused = code?.startsWith("FBI_UCR");
+      return route.fulfill({ json: { metric_code_a: code, metric_code_b: params.get("metric_code_b"), comparable: !refused, derivations: [], caveats: [],
+        rules: refused ? [{ rule: "source_analysis_ready", status: "fail", reason: "FBI UCR subjects are not canonical geographies (UI fixture)" }] : [{ rule: "units", status: "pass", reason: "same measure" }] } });
+    }
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
       return metrics[code] ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
