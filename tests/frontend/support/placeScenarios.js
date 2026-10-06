@@ -4,7 +4,7 @@
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
 import { servedParameters } from "./servedContract.js";
 
-const sources = ["CENSUS_ACS", "CENSUS_PEP", "BLS", "CDC", "FBI_UCR", "USDA_NASS"];
+const sources = ["CENSUS_ACS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "CDC", "FBI_UCR", "USDA_NASS"];
 
 export const NATION = { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "us:1" };
 export const STATES = [
@@ -29,6 +29,9 @@ function unitFor(code) {
   if (code.startsWith("CENSUS_PEP:")) return "persons";
   if (code.startsWith("BLS:")) return "Percent";
   if (code.startsWith("CDC:")) return "%";
+  if (/SAEPOVRT|PCTUI/.test(code)) return "percent";
+  if (code.endsWith(":SAEMHI")) return "dollars";
+  if (code.startsWith("CENSUS_SAIPE_SAHIE:")) return "people";
   if (code.startsWith("FBI_UCR:")) return "per_100000_population";
   if (code.startsWith("USDA_NASS:")) return "ACRES";
   if (/B19013|B19301|B25064|B25077/.test(code)) return "dollars";
@@ -44,9 +47,9 @@ const metrics = Object.fromEntries(codes.map((code) => [code, {
 }]));
 
 const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2 };
-const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R/;
+const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R|SAEPOVRT|SAEMHI|PCTUI/;
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true } = {}) {
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -66,7 +69,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     }
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
-      return metrics[code] ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
+      const withheld = withoutSource && code.startsWith(`${withoutSource}:`);
+      return metrics[code] && !withheld ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
     }
     if (path === "/api/v1/observations") {
       const code = params.get("metric_code");
@@ -85,7 +89,11 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
         return { metric_code: code, source_code: metric.source_code, geo_id: geo, geo_level: place.geo_level, geo_name: place.geo_name,
           value: String(Math.round(base * (1 + index * 0.02) * 100) / 100), value_status: "valid", unit: metric.units,
           period_start: `${year}-01-01`, period_end: `${year}-12-31`, release: "fixture-release-2025", as_of: "2025-09-01", dimensions: {},
-          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" } : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" } : null,
+          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
+            : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
+            : code.startsWith("CENSUS_SAIPE_SAHIE") ? { margin_of_error: "1.4", confidence_lower: "39.6", confidence_upper: "42.4" }
+            : null,
+          ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
           coverage: null };
       });
       if (newest) items = items.slice(-1);

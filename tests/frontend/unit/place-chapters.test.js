@@ -6,6 +6,7 @@ import {
   buildTrend,
   chapterHasValues,
   countySegment,
+  measureBasis,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
@@ -37,6 +38,27 @@ const counties = [
 
 const metric = (code, grains) => [code, { metric_code: code, source_code: code.split(":")[0], valid_geo_grains: grains }];
 
+// Covers: WEB-133 — census-saipe-sahie: a survey estimate and a model-based
+// estimate are labelled apart, and neither is the other's fallback.
+describe("how a figure was made", () => {
+  it("labels the ACS as a survey and SAIPE and SAHIE as model-based", () => {
+    expect(measureBasis("CENSUS_ACS:acs5:B19013_001")).toBe("Survey estimate (American Community Survey)");
+    expect(measureBasis("CENSUS_SAIPE_SAHIE:saipe:SAEMHI")).toBe("Model-based annual estimate (SAIPE)");
+    expect(measureBasis("CENSUS_SAIPE_SAHIE:sahie:PCTUI")).toBe("Model-based annual estimate (SAHIE)");
+    expect(measureBasis("BLS:LAU:UNEMP_RATE")).toBeNull();
+    expect(measureBasis(null)).toBeNull();
+  });
+
+  it("never lists an ACS identity and a SAIPE/SAHIE identity in one slot", () => {
+    for (const chapter of PLACE_CHAPTERS) {
+      for (const measure of [...chapter.headline, ...chapter.depth]) {
+        const sources = new Set(measure.candidates.map((code) => code.split(":")[0]));
+        expect(sources.has("CENSUS_ACS") && sources.has("CENSUS_SAIPE_SAHIE"), measure.id).toBe(false);
+      }
+    }
+  });
+});
+
 describe("the chapter contract", () => {
   it("pins the chapter order every place page reads in", () => {
     expect(PLACE_CHAPTERS.map((chapter) => chapter.title)).toEqual([
@@ -57,8 +79,13 @@ describe("the chapter contract", () => {
         trend: { measureId: "population-estimate", scale: "index" },
       },
       "work-money": {
-        headline: ["CENSUS_ACS:acs5:B19013_001", "BLS:LAU:UNEMP_RATE"],
-        depth: ["B19301_001", "B19083_001", "B17001_002", "B19001_002", "B19001_017", "B23025_002", "B23025_005", "C24050_001", "B08301_021", "B08301_010", "B08303_013"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+        headline: ["CENSUS_ACS:acs5:B19013_001", "CENSUS_SAIPE_SAHIE:saipe:SAEMHI", "BLS:LAU:UNEMP_RATE", "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRTALL"],
+        depth: [
+          ...["B19301_001", "B19083_001", "B17001_002"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+          "CENSUS_SAIPE_SAHIE:saipe:SAEPOVALL",
+          "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRT0_17",
+          ...["B19001_002", "B19001_017", "B23025_002", "B23025_005", "C24050_001", "B08301_021", "B08301_010", "B08303_013"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+        ],
         trend: { measureId: "unemployment-rate", scale: "level" },
       },
       housing: {
@@ -67,8 +94,11 @@ describe("the chapter contract", () => {
         trend: { measureId: "median-gross-rent", scale: "level" },
       },
       health: {
-        headline: ["CDC:places_county:OBESITY:AgeAdjPrv", "CDC:places_county:DIABETES:AgeAdjPrv"],
-        depth: ["B27010_017", "B27010_033", "B27010_050", "B27010_066"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+        headline: ["CDC:places_county:OBESITY:AgeAdjPrv", "CDC:places_county:DIABETES:AgeAdjPrv", "CENSUS_SAIPE_SAHIE:sahie:PCTUI"],
+        depth: [
+          ...["B27010_017", "B27010_033", "B27010_050", "B27010_066"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+          "CENSUS_SAIPE_SAHIE:sahie:NUI",
+        ],
         trend: { measureId: "obesity", scale: "level" },
       },
       safety: {

@@ -47,6 +47,7 @@ import {
   chapterHasValues,
   countyName,
   countySegment,
+  measureBasis,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
@@ -662,6 +663,9 @@ function HeadlineCard({
           ))}
         </tbody>
       </table>
+      {measureBasis(measure.metricCode) ? (
+        <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measureBasis(measure.metricCode)}</p>
+      ) : null}
       {measure.measure.note ? <p className="subtle">{measure.measure.note}</p> : null}
     </div>
   );
@@ -689,6 +693,9 @@ function DepthRow({
       <dt>
         {measure.measure.label}
         {measure.measure.universe ? <span className="place-universe"> · Universe: {measure.measure.universe}</span> : null}
+        {measure.metric && measureBasis(measure.metricCode) ? (
+          <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measureBasis(measure.metricCode)}</span>
+        ) : null}
       </dt>
       <dd>
         {!measure.metric
