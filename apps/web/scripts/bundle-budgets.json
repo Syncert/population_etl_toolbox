@@ -14,6 +14,7 @@
   "/fred/page": 403456,
   "/global-error": 404480,
   "/layout": 519168,
+  "/map/[metric]/page": 517120,
   "/not-found": 413696,
   "/page": 430080,
   "/profiles/page": 460800,

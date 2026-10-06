@@ -22,6 +22,7 @@ import ChoroplethLegend from "./ChoroplethLegend";
 import { useMapLibre } from "./useMapLibre";
 import { buildChoroplethModel, tileFilterForGeoLevel } from "../lib/explorerViewModel";
 import type { ObservationRow } from "../lib/explorerViewModel";
+import type { DistributionResponse } from "../lib/api/types";
 import {
   COMPARISON_LAYER,
   COMPARISON_SOURCE,
@@ -40,6 +41,7 @@ export default function ChoroplethMap({
   legendTitle,
   missingLabel = "Not published on both sides",
   testId = "comparison-map",
+  distribution = null,
 }: {
   rows: ObservationRow[];
   tileMetadata: TileMetadata | null;
@@ -47,13 +49,15 @@ export default function ChoroplethMap({
   legendTitle: string;
   missingLabel?: string;
   testId?: string;
+  /** Bins to colour by, in the distribution resource's shape; their counts reach the legend. */
+  distribution?: DistributionResponse | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { mapRef, ready, loadFailed } = useMapLibre(containerRef, true);
 
   const model = useMemo(
-    () => buildChoroplethModel(rows, tileMetadata?.joinKey || "geo_id", null, missingLabel),
-    [rows, tileMetadata, missingLabel],
+    () => buildChoroplethModel(rows, tileMetadata?.joinKey || "geo_id", distribution, missingLabel),
+    [rows, tileMetadata, missingLabel, distribution],
   );
 
   useEffect(() => {

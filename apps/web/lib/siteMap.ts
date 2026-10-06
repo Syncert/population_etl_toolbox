@@ -4,6 +4,7 @@
 // sitemap naming a route `robots.txt` disallows is a contradiction a crawler
 // resolves for itself.
 
+import { PLACE_CHAPTERS } from "./placeChapters";
 import { useCasePages } from "./useCasePages";
 
 /** Routes a crawler may index. */
@@ -19,6 +20,9 @@ export const PUBLIC_ROUTES: readonly string[] = [
   ...useCasePages.map((entry) => entry.href),
   "/quality",
   "/articles",
+  // The one-measure map of each place-page headline measure (one-measure-map).
+  ...PLACE_CHAPTERS.flatMap((chapter) => chapter.headline)
+    .map((measure) => `/map/${encodeURIComponent(measure.candidates[0]!)}`),
 ];
 
 /**
