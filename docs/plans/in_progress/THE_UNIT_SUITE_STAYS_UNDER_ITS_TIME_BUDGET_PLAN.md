@@ -13,8 +13,52 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from CI evidence gathered while driving PR #73.
-No implementation yet.
+In progress on `test/unit-suite-time-budget` (2026-10-06). Deliverables 1, 2
+and 4 are implemented; the budget is unchanged (deliverable 3). What remains is
+recording three consecutive green hosted runs of the coverage job's unit step.
+
+## Findings (2026-10-06)
+
+The stalls are not a connection timeout. Mapping the hosted log's progress
+marks onto collection order (2174 tests) puts 56-59 % on
+`tests/unit/fbi_ucr/test_fbi_every_product.py` and 62-66 % on
+`tests/unit/fbi_ucr/test_fbi_replay.py`. Run locally under the coverage job's
+own flags (`--cov=apps --cov=data_ingestion_toolbox`) and environment
+variables, with PostgreSQL and Redis listening, per-file totals from
+`--durations=0` were:
+
+| File | Before | After |
+| --- | --- | --- |
+| `fbi_ucr/test_fbi_every_product.py` | 27.3 s | 12.5 s |
+| `fbi_ucr/test_fbi_replay.py` | 12.7 s | 7.5 s |
+| whole tier, wall clock | 81.7 s | 57.9 s |
+
+Both modules replayed each of the ten products' complete release once for
+every test that read it (about 0.2 s per replay without coverage, roughly
+2.5 times that with it). Each now replays an unmodified release once per
+product, through a `functools.cache` helper whose result the tests only
+read; the tests that modify payloads still replay their own.
+
+The leading hypothesis was still worth closing: `tests/conftest.py` allowed
+every loopback connection (for Windows' private socketpair), and the coverage
+job runs PostgreSQL and Redis on loopback, so a unit test could have reached
+them. The guard now also refuses loopback connections to the ports named by
+`TEST_POSTGRES_PORT` and `TEST_REDIS_URL`, and
+`tests/unit/shared/test_unit_network_isolation.py` proves it (ENV-003),
+including a run of the env-reading unit file against a live loopback listener
+named by those variables that accepts no connection. The whole tier passes
+under the coverage job's variables with the services up, so no unit test
+depended on that access.
+
+Decision: keep PERF-001 at 120 seconds. Coverage instrumentation is a uniform
+cost; the stalls were the duplicated replays.
+
+## Validation (local, Windows, Python 3.13)
+
+- `python -m pytest tests/unit -q --durations=25` (with the coverage job's
+  variables, services up, and `--cov`): 2178 passed in 57.9 s.
+- `python -m pytest tests/unit/tooling tests/unit/shared -q`: 397 passed.
+- `ruff check .`: passed.
 
 ## Why
 
@@ -106,7 +150,6 @@ cause once that evidence exists.
 
 ## Checkpoint
 
-Next pickup: add `--durations=25` to the coverage step, then reproduce
-locally with the coverage job's environment variables set and no services
-listening, and compare the slowest-test list to the stalls in run
-37481938804.
+Next pickup: record three consecutive green hosted runs of the coverage
+job's unit step on this branch, with their links and the unit step's
+runtime, then move this plan to `needs_review/`.

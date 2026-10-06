@@ -61,7 +61,7 @@ grep was looking for.
 | [`place-pages`](to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) | high | `browser` | -- |
 | [`second-tier-county-source-scouting`](to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) | medium | none | -- |
 | [`studio-video-frames`](to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) | high | `browser` | `place-pages` |
-| [`unit-suite-time-budget`](to_do/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
+| [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 | [`what-makes-this-place-distinctive`](to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) | high | `browser` | `place-pages` |
 
 
