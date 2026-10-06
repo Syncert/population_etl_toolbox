@@ -30,6 +30,9 @@ from __future__ import annotations
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
+#: * ``CENSUS_SAIPE_SAHIE`` -- ``census_saipe_sahie/registry.py`` requests
+#:   ``us``, ``state`` and ``county`` only, and ``silver_census_sae`` closes
+#:   ``geo_type`` to ``nation``, ``state`` and ``county``.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -41,6 +44,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
+    "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),

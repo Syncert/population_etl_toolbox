@@ -292,7 +292,7 @@ airflow dags trigger silver_ref
 ```
 
 Wait for `silver_ref` to succeed before running observation DAGs. **Every
-source DAG now refuses to start until it has**: the first task of all six
+source DAG now refuses to start until it has**: the first task of every
 ingestion DAGs calls
 `data_ingestion_toolbox.silver_ref.geography_guard.require_shared_geography_loaded`,
 which counts active rows in `silver_ref.dim_geo_current` and raises with the
@@ -325,7 +325,10 @@ WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography
-reference succeeds. A USDA NASS run whose logical date falls on the first of
+reference succeeds. Trigger `census_saipe_sahie_ingest` with
+`--conf '{"history": true}'` so the first run captures every registered year
+rather than the two newest
+([operations](../user-guides/CENSUS_SAIPE_SAHIE_PIPELINE_OPERATIONS.md)). A USDA NASS run whose logical date falls on the first of
 the month sweeps the whole registered year range, so a bootstrap should be
 triggered on that date, or with that logical date, to reproduce the reviewed
 history in one run. The schedule reaches that date whatever day of the week

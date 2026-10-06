@@ -392,6 +392,30 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### SAIPE and SAHIE are model-based estimates, not survey estimates
+
+`CENSUS_SAIPE_SAHIE` serves the Census Bureau's Small Area Income and Poverty
+Estimates (`saipe`) and Small Area Health Insurance Estimates (`sahie`):
+poverty rates and counts, median household income, and the uninsured share
+and count of people under 65, for the nation, every state and every county,
+every year. A metric code is `CENSUS_SAIPE_SAHIE:<dataset>:<measure>` -- for
+example `CENSUS_SAIPE_SAHIE:saipe:SAEMHI` for median household income.
+
+They resemble ACS figures and are not ACS figures. Each is a model-based
+annual estimate that combines survey data with administrative records, and
+`dimensions.estimate_method` says so on every row
+(`model-based annual estimate (SAIPE)`). An ACS 5-year estimate describes a
+five-year period; a SAIPE estimate describes one year. Show them side by side
+with their own labels rather than substituting one for the other.
+
+Every row carries the Bureau's 90 percent interval and margin of error under
+`uncertainty` (`confidence_lower`, `confidence_upper`, `margin_of_error`).
+SAHIE rows are the all-incomes, both-sexes, all-races figure for people under
+65; no other SAHIE category is served yet. A row's `release` is the time the
+warehouse read the Bureau's response, because the API names no release; a
+changed response is a new release beside the old one, readable with
+`scope=as_released`.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -513,6 +537,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 

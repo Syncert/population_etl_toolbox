@@ -907,6 +907,51 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "query /observations with domain and geography filters instead"
             ),
         ),
+        ObservationDispatch(
+            source_code="CENSUS_SAIPE_SAHIE",
+            latest_relation="gold_census_sae.estimate_latest",
+            released_relation="gold_census_sae.estimate_revision",
+            lineage_schema="gold_census_sae",
+            lineage_relation="estimate_revision",
+            # The publisher's lineage key is `<dataset>:<measure>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("universe", "universe"),
+                # "model-based annual estimate": what separates these rows
+                # from the ACS survey estimates they resemble.
+                ("estimate_method", "estimate_method"),
+                ("value_source", "value_source"),
+            ),
+            uncertainty_expressions=(
+                ("confidence_lower", "confidence_lower::TEXT"),
+                ("confidence_upper", "confidence_upper::TEXT"),
+                ("margin_of_error", "margin_of_error::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "estimate_year >= :year_from"),
+                ("year_to", "estimate_year <= :year_to"),
+            ),
+            # One row per (metric, geography, year) in the latest view, and
+            # the metric is pinned by every query.
+            latest_order=("geo_id", "estimate_year"),
+            released_order=("estimate_year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1104,6 +1149,12 @@ def _nass_datasets() -> tuple[str, ...]:
     return tuple(product.product_id for product in enabled_products())
 
 
+def _sae_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_saipe_sahie.registry import DATASETS
+
+    return tuple(dataset.dataset_id for dataset in DATASETS)
+
+
 def _fbi_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
 
@@ -1155,6 +1206,16 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_SAIPE_SAHIE",
+            display_name=(
+                "Census Bureau Small Area Income and Poverty Estimates and "
+                "Small Area Health Insurance Estimates"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_sae_datasets,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",
