@@ -110,3 +110,24 @@ test("an unknown place is a not-found page with search and no chart", async ({ p
   expect(response.status()).toBe(404);
   await expect(page.getByTestId("route-not-found")).toBeVisible();
 });
+
+test("what stands out lists the highest and lowest measures apart, with withheld siblings named", async ({ page }) => {
+  // Covers: WEB-131 — one measure per row; a withheld sibling is counted, not zero.
+  await ready(page, "/us/wisconsin/dane-county");
+  const section = page.getByTestId("place-standout");
+  await expect(section.getByTestId("place-standout-count")).toContainText("6 measures could be ranked among Wisconsin counties, each on its own");
+  await expect(section.getByTestId("place-standout-highest").locator("li")).toHaveCount(3);
+  await expect(section.getByTestId("place-standout-lowest").locator("li")).toHaveCount(3);
+  const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
+  await expect(income).toContainText("Higher than 68 of 70 Wisconsin counties with a published value (1 withheld a value)");
+  await expect(income.getByRole("link", { name: "See every county on a map" })).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
+  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age (UI fixture)");
+  await expect(section).not.toContainText(/score|overall/i);
+});
+
+test("a place with no ranked measure omits What stands out and says why", async ({ page }) => {
+  // Covers: WEB-131 — an empty answer is stated in the footer.
+  await ready(page, "/us/wisconsin/rock-county");
+  await expect(page.getByTestId("place-standout")).toHaveCount(0);
+  await expect(page.getByTestId("place-omissions")).toContainText("What stands out: no measure could be ranked for this place");
+});
