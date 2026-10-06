@@ -58,6 +58,8 @@ import {
 } from "../lib/productTemplates";
 import type { MeasureAnswer, ResolvedMeasure } from "../lib/productTemplates";
 import { describeLocalSave } from "../lib/savedAnalysis";
+import { explainerForCaveat, explainerHref } from "../lib/explainerIndex";
+import { rememberLastPlace } from "../lib/lastPlace";
 import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { explorerHref, parseProfileState, serializeProfileState } from "../lib/urlState";
 import { GEO_LEVELS } from "../lib/urlState";
@@ -367,6 +369,13 @@ export default function ProfileProduct({ fixedTemplateId, useCase, relatedUseCas
     [counties, stateFips],
   );
 
+  // The explainers' worked examples read the place last looked at here.
+  useEffect(() => {
+    if (place && placeName) {
+      rememberLastPlace(window.sessionStorage, { geoId: place.geo_id, name: placeName, level: String(place.geo_level || geoLevel) });
+    }
+  }, [place, placeName, geoLevel]);
+
   useEffect(() => {
     const query = serializeProfileState(
       { template: activeTemplateId, geoId },
@@ -644,6 +653,7 @@ function MeasureCard({
         <small data-testid={`measure-answer-${measure.slot.id}`}>{answer.message}</small>
       ) : null}
       {measure.slot.note ? <small>{measure.slot.note}</small> : null}
+      <CaveatLink caveat={measure.slot.caveat} slotId={measure.slot.id} />
       <small>
         <Link
           className="text-link"
@@ -667,5 +677,18 @@ function MeasureCard({
         </Link>
       </small>
     </div>
+  );
+}
+
+/** The explainer for a slot's caveat, or nothing: never a dead link. */
+function CaveatLink({ caveat, slotId }: { caveat?: string; slotId: string }) {
+  const explainer = explainerForCaveat(caveat);
+  if (!explainer) return null;
+  return (
+    <small>
+      <Link className="text-link" href={explainerHref(explainer.slug)} data-testid={`measure-explainer-${slotId}`}>
+        {explainer.title}
+      </Link>
+    </small>
   );
 }
