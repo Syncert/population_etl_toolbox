@@ -19,6 +19,7 @@
     "pretest:browser": "next build",
     "test:browser": "playwright test",
     "test:maps": "playwright test --config playwright.live.config.mjs",
+    "check:audit": "node scripts/check-audit.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:bundle:update": "node scripts/check-bundle-budget.mjs --update",
     "check:csp": "node scripts/check-csp-nonce.mjs",
