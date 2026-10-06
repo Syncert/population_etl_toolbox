@@ -7,10 +7,14 @@ CREATE TABLE IF NOT EXISTS silver_census.observation_revision (
     source_header       TEXT NOT NULL,
     dataset             TEXT NOT NULL,
     year                INTEGER NOT NULL,
-    geo_level           TEXT NOT NULL CHECK (geo_level IN ('us', 'state', 'county')),
+    geo_level           TEXT NOT NULL
+        CONSTRAINT observation_revision_geo_level_place_check
+        CHECK (geo_level IN ('us', 'state', 'county', 'place')),
     us_source           TEXT,
     state_fips_source   TEXT,
     county_fips_source  TEXT,
+    -- Census place FIPS; set only for `place` slices (acs-place-grain).
+    place_fips_source   TEXT,
     variable_name       TEXT NOT NULL,
     table_id            TEXT NOT NULL,
     measure_type        TEXT,

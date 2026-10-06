@@ -324,7 +324,16 @@ def _count_unpadded_state_geo_ids(hook: PostgresHook) -> int:
 
 
 def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
-    """Fail before transformation when captured ACS geography IDs are not loaded."""
+    """Fail before transformation when captured ACS geography IDs are not loaded.
+
+    Places are not part of this gate (acs-place-grain). The nation, the states
+    and the counties are a closed set the shared reference must carry before
+    anything is published; places are incorporated, dissolved and renumbered
+    between vintages, so one place the reference does not carry is a fact
+    about that place, not a reference that was never loaded. It is recorded
+    `unmapped` in `silver_ref.geography_resolution` with the vintage it was
+    requested under and left out of the fact, never matched by name.
+    """
     sql = """
         WITH source_geographies AS (
             SELECT DISTINCT
@@ -339,6 +348,7 @@ def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
                     ELSE NULL
                 END AS geo_id
             FROM silver_census.observation_revision AS observation
+            WHERE observation.geo_level <> 'place'
         ), missing AS (
             SELECT source.geo_level, source.geo_id
             FROM source_geographies AS source
@@ -433,6 +443,7 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
                 observation.geo_level,
                 observation.state_fips_source AS state_fips,
                 observation.county_fips_source AS county_fips,
+                observation.place_fips_source AS place_fips,
                 observation.table_id,
                 observation.variable_name,
                 observation.measure_type,
@@ -449,6 +460,7 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
                                  observation.geo_level,
                                  observation.state_fips_source,
                                  observation.county_fips_source,
+                                 observation.place_fips_source,
                                  observation.variable_name
                     ORDER BY capture.retrieved_at DESC,
                              observation.capture_id DESC
@@ -457,7 +469,7 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
             JOIN raw_capture.response_capture AS capture USING (capture_id)
         ),
         observations AS (
-            SELECT dataset, year, geo_level, state_fips, county_fips,
+            SELECT dataset, year, geo_level, state_fips, county_fips, place_fips,
                    table_id, variable_name, measure_type, value,
                    capture_id, value_status, value_source
             FROM captured_ranked
@@ -469,6 +481,7 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
             geo_level,
             state_fips,
             county_fips,
+            place_fips,
             table_id,
             variable_name,
             measure_type,
@@ -516,6 +529,7 @@ def _transform_rows_to_silver_df(
             "geo_level": pl.Utf8,
             "state_fips": pl.Utf8,
             "county_fips": pl.Utf8,
+            "place_fips": pl.Utf8,
             "table_id": pl.Utf8,
             "variable_name": pl.Utf8,
             "measure_type": pl.Utf8,
@@ -539,6 +553,7 @@ def _transform_rows_to_silver_df(
             "geo_level",
             "state_fips",
             "county_fips",
+            "place_fips",
             "table_id",
             "variable_code",
         ]
@@ -592,6 +607,13 @@ def _transform_rows_to_silver_df(
                 + pl.col("state_fips")
                 + pl.lit("|county:")
                 + pl.col("county_fips")
+            )
+            .when(pl.col("geo_level") == "place")
+            .then(
+                pl.lit("state:")
+                + pl.col("state_fips")
+                + pl.lit("|place:")
+                + pl.col("place_fips")
             )
             .otherwise(pl.lit(None))
             .alias("geo_id"),

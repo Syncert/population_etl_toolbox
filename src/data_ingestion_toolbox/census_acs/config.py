@@ -66,6 +66,26 @@ ACS_COUNTY_PARENT_FIPS: tuple[str, ...] = (
 )
 
 
+#: States whose places the Bureau publishes, per dataset (acs-place-grain).
+#:
+#: The 5-year estimates publish every incorporated place and census-designated
+#: place in every county parent. The 1-year estimates publish only places of
+#: 65,000 people or more, and two parents have none: Vermont (50) and West
+#: Virginia (54). Read from the API on 2026-10-06 (`acs/acs1`, 2023,
+#: `for=place:*&in=state:*` answered 649 places in the other 50 parents).
+#: Declared rather than inferred from empty responses, so a 1-year place
+#: request for Vermont is never formed at all.
+ACS_PLACE_PARENT_FIPS: dict[str, tuple[str, ...]] = {
+    "acs5": ACS_COUNTY_PARENT_FIPS,
+    "acs1": tuple(code for code in ACS_COUNTY_PARENT_FIPS if code not in {"50", "54"}),
+}
+
+
+def place_parent_fips(dataset: str) -> tuple[str, ...]:
+    """The states whose places ``dataset`` publishes; empty for an unknown one."""
+    return ACS_PLACE_PARENT_FIPS.get(dataset, ())
+
+
 class AcsConfig(BaseModel):
     census_api_key: str = Field(
         default_factory=lambda: os.environ.get("CENSUS_API_KEY", "")
@@ -136,7 +156,13 @@ class AcsConfig(BaseModel):
         "C24050",  # Industry by occupation for the civilian employed population age 16+
     ]
     # geo levels we ingest
-    geo_levels: List[str] = ["us", "state", "county"]
+    geo_levels: List[str] = ["us", "state", "county", "place"]
+    # How many of each dataset's newest available years are requested at
+    # place grain. Places are ten times the counties' volume -- about 62
+    # million 5-year facts for one year against the counties' 6.2 million --
+    # so the default is the newest year, which is what a place page reads;
+    # raise it to backfill place history.
+    place_recent_years: int = 1
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
@@ -174,6 +200,20 @@ class AcsConfig(BaseModel):
         if not value:
             raise ValueError("configured ingestion scope must not be empty")
         return value
+
+    @field_validator("place_recent_years")
+    @classmethod
+    def validate_place_recent_years(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("place_recent_years must not be negative")
+        return value
+
+    def place_years(self, dataset: str, years: List[int]) -> set[int]:
+        """The years of ``dataset`` requested at place grain: the newest ones."""
+        if "place" not in self.geo_levels or not place_parent_fips(dataset):
+            return set()
+        newest = sorted(set(years), reverse=True)
+        return set(newest[: self.place_recent_years])
 
     @field_validator("census_api_global_concurrency", "raw_load_max_rows")
     @classmethod

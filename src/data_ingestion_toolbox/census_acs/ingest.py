@@ -33,7 +33,7 @@ from data_ingestion_toolbox.capture import (
 from data_ingestion_toolbox.census_acs.silver_census.replay import (
     replay_census_capture,
 )
-from .config import CONFIG
+from .config import CONFIG, place_parent_fips
 
 CENSUS_NULL_SENTINELS = {
     "-222222222",
@@ -130,10 +130,16 @@ def chunked(iterable: List[str], n: int) -> Iterable[List[str]]:
 
 
 def build_geo_params(
-    geo_level: str, state_fips: Optional[str] = None
+    geo_level: str,
+    state_fips: Optional[str] = None,
+    dataset: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Build the 'for' and 'in' query params for the ACS API, given geo_level.
+
+    A place request is sliced by state, as counties are, and is refused for a
+    state outside the dataset's declared place scope (``ACS_PLACE_PARENT_FIPS``)
+    rather than sent and answered empty.
     """
     if geo_level == "us":
         return {"for": "us:1"}
@@ -143,6 +149,14 @@ def build_geo_params(
         if not state_fips:
             raise ValueError("state_fips required for county-level requests")
         return {"for": "county:*", "in": f"state:{state_fips}"}
+    elif geo_level == "place":
+        if not state_fips:
+            raise ValueError("state_fips required for place-level requests")
+        if dataset is None or state_fips not in place_parent_fips(dataset):
+            raise ValueError(
+                f"{dataset or 'unknown dataset'} publishes no places for state {state_fips}"
+            )
+        return {"for": "place:*", "in": f"state:{state_fips}"}
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
 
@@ -176,7 +190,7 @@ def fetch_acs_api(
         "get": ",".join(variables),
         "key": CONFIG.require_api_key(),
     }
-    params.update(build_geo_params(geo_level, state_fips))
+    params.update(build_geo_params(geo_level, state_fips, dataset))
 
     # Small jitter even under lock to avoid rhythmic bursts on retries
     time.sleep(0.2 + random.random() * 0.4)
@@ -259,6 +273,7 @@ def rows_to_polars(
         "us": {"us"},
         "state": {"state"},
         "county": {"state", "county"},
+        "place": {"state", "place"},
     }
     if geo_level not in expected_geo_columns:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -271,7 +286,7 @@ def rows_to_polars(
     df = pl.DataFrame(records, schema=[str(h) for h in header], orient="row")
 
     # Determine which columns are variables and which are geos
-    geo_cols = [c for c in df.columns if c in ("us", "state", "county")]
+    geo_cols = [c for c in df.columns if c in ("us", "state", "county", "place")]
     var_cols = [c for c in df.columns if c not in geo_cols]
 
     # For US-level, there will be 'us' as the geo; for state/county, there will be 'state', 'county'
@@ -299,6 +314,14 @@ def rows_to_polars(
             ),
             state_fips=pl.col("state"),
             county_fips=pl.col("county"),
+        )
+    elif geo_level == "place":
+        df = df.with_columns(
+            geo_id=pl.concat_str(
+                [pl.lit("state:"), pl.col("state"), pl.lit("|place:"), pl.col("place")]
+            ),
+            state_fips=pl.col("state"),
+            county_fips=pl.lit(None, dtype=pl.Utf8),
         )
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -433,7 +456,7 @@ def _ingest_capture_chunks(
                 "year": year,
                 "geo_level": geo_level,
             }
-            parameters.update(build_geo_params(geo_level, state_fips))
+            parameters.update(build_geo_params(geo_level, state_fips, dataset))
             request = control.start_request(
                 run_id=run_id,
                 endpoint=endpoint,

@@ -585,7 +585,7 @@ between them.
 ### The geography vocabulary served rows carry
 
 `geo_level` on a served row is always one of `NATIONAL`, `STATE`, `COUNTY`,
-`PLACE` (Census PEP), or `AGENCY` (FBI UCR), and a metric's
+`PLACE` (Census PEP and Census ACS), or `AGENCY` (FBI UCR), and a metric's
 `valid_geo_grains` in the catalog uses the same five words — so a grain read
 from the catalog can be sent straight back as the `geo_level` filter and
 will answer. A national row answers `geo_level=NATIONAL`. The filter is
@@ -602,6 +602,16 @@ vocabulary words case-insensitively with the same `NATION`/`US` aliases, and
 both refuse an unknown grain by naming the words they publish. The parameter
 names stay as they are — they are the providers' own — but you never have to
 learn a second vocabulary to use them.
+
+**An ACS place is a city, town, village, borough or census-designated
+place,** identified as `state:SS|place:PPPPP` by its Census FIPS codes. A
+place is a sibling of the counties in its state, not one of their children,
+and some places cross county lines. The 5-year estimates publish every place;
+the 1-year estimates publish only places of 65,000 people or more, so a
+1-year metric's `valid_geo_grains` can include `PLACE` while most places have
+no 1-year row. The warehouse loads each dataset's newest year at place grain,
+so an ACS place history starts there rather than where the county history
+does.
 
 The vocabulary is one warehouse function, `gold_glossary.geo_grain(text)`,
 which the publisher views and the serving routes both go through; a grain
