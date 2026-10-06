@@ -46,13 +46,12 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**13 plans.**
+**12 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`audit-gate-fails-on-main-first`](to_do/THE_AUDIT_GATE_FAILS_ON_MAIN_FIRST_PLAN.md) | medium | none | -- |
 | [`compare-two-places`](to_do/COMPARE_TWO_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
-| [`county-crime-rollup-from-agency-reports`](to_do/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md) | high | `browser` | -- |
 | [`explainer-pages`](to_do/EXPLAINER_PAGES_PLAN.md) | medium | `browser` | -- |
 | [`find-your-place-home`](to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
