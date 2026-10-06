@@ -15,12 +15,13 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-Deliverables 1 to 5 are implemented on branch `feat/census-saipe-sahie`
-(warehouse, API, quality, operations). Deliverable 6, the web cards, needs
-the county page from `feat/place-pages` (WEB-125), which is not on `main`
-yet; it lands on a branch stacked on both.
+Deliverables 1 to 5 (warehouse, API, quality, operations) are on branch
+`feat/census-saipe-sahie`, cut from `main`. Deliverable 6, the county-page
+cards, needs the place pages from `feat/place-pages` (WEB-125), so it is on
+`feat/census-saipe-sahie-cards`, which merges both; review and merge
+`feat/place-pages` and `feat/census-saipe-sahie` first.
 
 ## Why
 
@@ -144,15 +145,28 @@ every-county figures for the Work and Money and Health chapters.
 - `ruff check .` and `ruff format --check .` clean. OpenAPI snapshot
   regenerated with no change (no new route); schema snapshot regenerated.
 
-## Remaining
+### Web cards (WEB-133, `feat/census-saipe-sahie-cards`)
 
-- Deliverable 6: Work and Money and Health chapter cards with interval and
-  "model-based annual estimate" label beside the ACS cards, a browser
-  scenario asserting the labels, and the explainer link. Stacked on
-  `feat/place-pages`.
+- Work and Money: SAIPE median household income beside the ACS one, and the
+  SAIPE poverty rate, as headline cards; SAIPE poverty count and child
+  poverty rate in depth. Health: the SAHIE uninsured rate as a headline card
+  and the count in depth. Each is its own slot: no slot lists an ACS and a
+  SAIPE/SAHIE identity together, so neither stands in for the other.
+- `measureBasis` labels every ACS card and depth row "Survey estimate
+  (American Community Survey)" and every SAIPE/SAHIE one "Model-based annual
+  estimate (SAIPE)" or "(SAHIE)"; the card's uncertainty column shows the
+  margin of error and the 90 percent bounds.
+- Evidence: `npm --prefix apps/web run test:unit` -- 739 passed; `lint`
+  clean; `build` succeeds and `check:bundle` keeps every route within its
+  budget; `test:browser` -- 209 passed, including the seven in `places.spec.js` and the two new
+  scenarios (labels and intervals beside the survey cards; a catalog without
+  SAIPE leaves its card "Not published by this warehouse" while the ACS card
+  still answers).
+- The explainer link waits for `feat/explainer-pages` (WEB-126), which is not
+  on this branch's base; adding one link from the Work and Money footer is
+  the follow-up once both merge.
 
 ## Checkpoint
 
-Next pickup: branch from `feat/place-pages`, merge `feat/census-saipe-sahie`,
-add the SAIPE/SAHIE candidates to `apps/web/lib/placeChapters.ts`, and write
-the browser scenario.
+Implementation complete; awaiting human review of `feat/census-saipe-sahie`
+and then `feat/census-saipe-sahie-cards`.

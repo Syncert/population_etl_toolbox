@@ -159,6 +159,33 @@ const acs = (variable: string): string[] => [
   `CENSUS_ACS:acs1:${variable}`,
 ];
 
+/**
+ * Census SAIPE and SAHIE: model-based annual estimates for every county
+ * (census-saipe-sahie). They resemble ACS figures and are a different method,
+ * so they are their own slots with their own candidates -- never an ACS
+ * slot's fallback, and never replaced by one.
+ */
+const saipe = (measure: string): string[] => [`CENSUS_SAIPE_SAHIE:saipe:${measure}`];
+const sahie = (measure: string): string[] => [`CENSUS_SAIPE_SAHIE:sahie:${measure}`];
+
+/**
+ * How a published figure was made, in the reader's terms, from the identity
+ * that answered. A survey estimate and a model-based estimate of the same
+ * quantity sit side by side on a place page; this label is what keeps a
+ * reader from taking one for the other. `null` for a source whose method the
+ * card's own note already states.
+ */
+export function measureBasis(metricCode: string | null | undefined): string | null {
+  if (!metricCode) return null;
+  if (metricCode.startsWith("CENSUS_ACS:")) return "Survey estimate (American Community Survey)";
+  if (metricCode.startsWith("CENSUS_SAIPE_SAHIE:saipe:")) return "Model-based annual estimate (SAIPE)";
+  if (metricCode.startsWith("CENSUS_SAIPE_SAHIE:sahie:")) return "Model-based annual estimate (SAHIE)";
+  return null;
+}
+
+const SAE_CAVEAT =
+  "SAIPE and SAHIE figures are the Census Bureau's model-based estimates for a single year, shown with their 90 percent interval; they are not the survey estimates beside them and are never substituted for them.";
+
 const ACS_CAVEAT =
   "American Community Survey estimates carry a margin of error, shown beside each value. A value labelled with its universe counts that universe only; no share is computed here.";
 
@@ -242,16 +269,30 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         basis: ESTABLISHMENT_BASIS,
       },
       {
+        id: "saipe-median-household-income",
+        label: "Median household income, single year",
+        candidates: saipe("SAEMHI"),
+        note: "The Bureau's one-year model-based figure, beside the survey estimate.",
+      },
+      {
         id: "qcew-weekly-wage",
         label: "Average weekly wage of jobs located here",
         candidates: qcew("avg_weekly_wage", "10", "0"),
         basis: ESTABLISHMENT_BASIS,
+      },
+      {
+        id: "saipe-poverty-rate",
+        label: "People in poverty, all ages",
+        candidates: saipe("SAEPOVRTALL"),
+        universe: "people whose poverty status is determined",
       },
     ],
     depth: [
       { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), basis: SURVEY_BASIS },
       { id: "gini", label: "Gini index of income inequality", candidates: acs("B19083_001"), note: "0 is perfect equality and 1 is one household holding all income." },
       { id: "below-poverty", label: "People with income below the poverty level", candidates: acs("B17001_002"), universe: "people whose poverty status is determined" },
+      { id: "saipe-poverty-count", label: "People in poverty, all ages, single year", candidates: saipe("SAEPOVALL"), universe: "people whose poverty status is determined" },
+      { id: "saipe-child-poverty-rate", label: "Children under 18 in poverty", candidates: saipe("SAEPOVRT0_17"), universe: "related children and others under 18" },
       { id: "households-under-10k", label: "Households with income under $10,000", candidates: acs("B19001_002"), universe: "households" },
       { id: "households-200k-plus", label: "Households with income of $200,000 or more", candidates: acs("B19001_017"), universe: "households" },
       { id: "labor-force", label: "People in the labor force", candidates: acs("B23025_002"), universe: "people 16 and over" },
@@ -278,7 +319,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       })),
     ],
     trend: { measureId: "unemployment-rate", scale: "level" },
-    caveat: `The unemployment rate is BLS's count of residents; the jobs and the industry mix are QCEW's count of jobs located here, by employer, and the two are never added or subtracted. The survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT}`,
+    caveat: `The unemployment rate is BLS's count of residents; the jobs and the industry mix are QCEW's count of jobs located here, by employer, and the two are never added or subtracted. The survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT} ${SAE_CAVEAT}`,
   },
   {
     id: "housing",
@@ -349,16 +390,23 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         label: "Diagnosed diabetes among adults (age-adjusted)",
         candidates: ["CDC:places_county:DIABETES:AgeAdjPrv"],
       },
+      {
+        id: "sahie-uninsured-rate",
+        label: "Uninsured people under 65",
+        candidates: sahie("PCTUI"),
+        universe: "people under 65, all incomes",
+      },
     ],
     depth: [
       { id: "uninsured-under-19", label: "People under 19 with no health insurance", candidates: acs("B27010_017"), universe: "civilian noninstitutionalized people" },
       { id: "uninsured-19-34", label: "People 19 to 34 with no health insurance", candidates: acs("B27010_033"), universe: "civilian noninstitutionalized people" },
       { id: "uninsured-35-64", label: "People 35 to 64 with no health insurance", candidates: acs("B27010_050"), universe: "civilian noninstitutionalized people" },
       { id: "uninsured-65-plus", label: "People 65 and over with no health insurance", candidates: acs("B27010_066"), universe: "civilian noninstitutionalized people" },
+      { id: "sahie-uninsured-count", label: "Uninsured people under 65, single year", candidates: sahie("NUI"), universe: "people under 65, all incomes" },
     ],
     trend: { measureId: "obesity", scale: "level" },
     caveat:
-      "CDC PLACES values are model-based estimates among adults with a published confidence interval, not clinical counts. Insurance counts are ACS estimates with a margin of error.",
+      `CDC PLACES values are model-based estimates among adults with a published confidence interval, not clinical counts. Insurance counts are ACS estimates with a margin of error. ${SAE_CAVEAT}`,
   },
   {
     id: "safety",

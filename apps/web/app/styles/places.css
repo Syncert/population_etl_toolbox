@@ -132,6 +132,16 @@
   overflow-wrap: anywhere;
 }
 
+/* How a figure was made: a survey estimate and a model-based estimate of the
+   same quantity sit side by side, and this line is what tells them apart. */
+.place-basis {
+  margin: 6px 0 0;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .place-card .subtle,
 .place-depth .subtle,
 .place-universe,

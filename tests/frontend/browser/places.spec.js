@@ -190,6 +190,44 @@ test("homes authorized are labelled as authorizations, with what was reported an
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-133 — census-saipe-sahie: the county page shows the SAIPE and
+// SAHIE cards beside the ACS cards, each labelled with how it was made, with
+// its interval, and neither one standing in for the other.
+test("model-based SAIPE and SAHIE cards sit beside the survey cards with their own labels", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+
+  const survey = page.getByTestId("card-median-household-income");
+  const model = page.getByTestId("card-saipe-median-household-income");
+  await expect(survey).toHaveAttribute("data-available", "true");
+  await expect(model).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("card-saipe-median-household-income-basis")).toHaveText("Model-based annual estimate (SAIPE)");
+  await expect(model).toContainText("CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
+  await expect(survey).not.toContainText("CENSUS_SAIPE_SAHIE");
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("margin of error");
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("confidence lower");
+  await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
+  await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
+  await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");
+
+  await expect(page.getByTestId("card-sahie-uninsured-rate-basis")).toHaveText("Model-based annual estimate (SAHIE)");
+  await expect(page.getByTestId("card-sahie-uninsured-rate-county")).toContainText("confidence upper");
+  await expect(page.getByTestId("depth-uninsured-35-64-basis")).toContainText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("chapter-work-money-footer")).toContainText("CENSUS_SAIPE_SAHIE");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a SAIPE slot the catalog does not publish says so and borrows no ACS figure", async ({ page }) => {
+  await installPlaceFixtures(page, { withoutSource: "CENSUS_SAIPE_SAHIE" });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("card-saipe-median-household-income")).toHaveAttribute("data-available", "false");
+  await expect(page.getByTestId("card-saipe-median-household-income")).toContainText("Not published by this warehouse");
+  await expect(page.getByTestId("card-median-household-income")).toHaveAttribute("data-available", "true");
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);

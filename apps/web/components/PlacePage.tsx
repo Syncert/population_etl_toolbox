@@ -49,6 +49,7 @@ import {
   countySegment,
   cityName,
   citySegment,
+  measureBasis,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
@@ -855,8 +856,8 @@ function HeadlineCard({
           ))}
         </tbody>
       </table>
-      {measure.measure.basis ? (
-        <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measure.measure.basis}</p>
+      {measure.measure.basis || measureBasis(measure.metricCode) ? (
+        <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measure.measure.basis || measureBasis(measure.metricCode)}</p>
       ) : null}
       {measure.measure.showReported ? <ReportedLine measure={measure} row={card.rows[0]?.row ?? null} /> : null}
       {measure.measure.note ? <p className="subtle">{measure.measure.note}</p> : null}
@@ -1023,7 +1024,7 @@ function DepthRow({
       <dt>
         {measure.measure.label}
         {measure.measure.universe ? <span className="place-universe"> · Universe: {measure.measure.universe}</span> : null}
-        {measure.measure.basis ? <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measure.measure.basis}</span> : null}
+        {measure.measure.basis || (measure.metric && measureBasis(measure.metricCode)) ? <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measure.measure.basis || measureBasis(measure.metricCode)}</span> : null}
       </dt>
       <dd>
         {!measure.metric

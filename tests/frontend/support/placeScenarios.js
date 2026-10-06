@@ -4,7 +4,7 @@
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
 import { servedParameters } from "./servedContract.js";
 
-const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
+const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
 
 export const NATION = { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "us:1" };
 export const STATES = [
@@ -49,6 +49,9 @@ function unitFor(code) {
   if (code.startsWith("CENSUS_BPS:")) return "housing units";
   if (code.startsWith("BLS:")) return "Percent";
   if (code.startsWith("CDC:")) return "%";
+  if (/SAEPOVRT|PCTUI/.test(code)) return "percent";
+  if (code.endsWith(":SAEMHI")) return "dollars";
+  if (code.startsWith("CENSUS_SAIPE_SAHIE:")) return "people";
   if (code.startsWith("FBI_UCR:")) return "per_100000_population";
   if (code.startsWith("USDA_NASS:")) return "ACRES";
   if (/B19013|B19301|B25064|B25077/.test(code)) return "dollars";
@@ -64,7 +67,7 @@ const metrics = Object.fromEntries(codes.map((code) => [code, {
 }]));
 
 const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5 };
-const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R/;
+const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R|SAEPOVRT|SAEMHI|PCTUI/;
 
 // Relationships as the reference would record them. "Crossing city" spans
 // Dane and Rock counties: 60% of its area in Dane, 40% in Rock.
@@ -98,7 +101,7 @@ export const RELATED = {
   ],
 };
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true } = {}) {
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -159,7 +162,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     if (path === "/api/v1/catalog/metrics") return route.fulfill({ json: { total: 0, limit: 6, offset: 0, items: [] } });
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
-      return metrics[code] ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
+      const withheld = withoutSource && code.startsWith(`${withoutSource}:`);
+      return metrics[code] && !withheld ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
     }
     if (path === "/api/v1/observations" && params.get("geo_level") === "TRACT") {
       // Two of Dane County's three fixture tracts publish a value; the third
@@ -202,7 +206,11 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
           dimensions: code.startsWith("BEA:")
             ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "" }
             : code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
-          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" } : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" } : null,
+          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
+            : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
+            : code.startsWith("CENSUS_SAIPE_SAHIE") ? { margin_of_error: "1.4", confidence_lower: "39.6", confidence_upper: "42.4" }
+            : null,
+          ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
           coverage: null };
       });
       if (newest) items = items.slice(-1);
