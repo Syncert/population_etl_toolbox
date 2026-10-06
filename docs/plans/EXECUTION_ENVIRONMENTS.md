@@ -46,10 +46,23 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**0 plans.**
+**13 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`audit-gate-fails-on-main-first`](to_do/THE_AUDIT_GATE_FAILS_ON_MAIN_FIRST_PLAN.md) | medium | none | -- |
+| [`compare-two-places`](to_do/COMPARE_TWO_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
+| [`county-crime-rollup-from-agency-reports`](to_do/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md) | high | `browser` | -- |
+| [`explainer-pages`](to_do/EXPLAINER_PAGES_PLAN.md) | medium | `browser` | -- |
+| [`find-your-place-home`](to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) | medium | `browser` | `place-pages` |
+| [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
+| [`nearby-and-related-places`](to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
+| [`one-measure-every-county-map`](to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) | medium | `browser` | -- |
+| [`place-pages`](to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) | high | `browser` | -- |
+| [`second-tier-county-source-scouting`](to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) | medium | none | -- |
+| [`studio-video-frames`](to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) | high | `browser` | `place-pages` |
+| [`unit-suite-time-budget`](to_do/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
+| [`what-makes-this-place-distinctive`](to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) | high | `browser` | `place-pages` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
@@ -92,13 +105,20 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**4 plans.**
+**11 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`acs-place-grain`](to_do/ACS_AT_PLACE_GRAIN_PLAN.md) | high | `postgres` | -- |
+| [`bea-regional-accounts`](to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) | high | `postgres` | -- |
+| [`bls-qcew-county-wages`](to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) | high | `postgres` | -- |
+| [`census-building-permits`](to_do/CENSUS_BUILDING_PERMITS_PLAN.md) | medium | `postgres` | -- |
+| [`census-saipe-sahie`](to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) | medium | `postgres` | -- |
+| [`irs-county-migration`](to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
+| [`sub-county-geography`](to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
 | [`time-windows-and-rollups`](in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
 
 

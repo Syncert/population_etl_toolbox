@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Place Almanac Plan</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column (~68ch) for prose; wireframes break out to a wider measure. Almanac register: ink on cool paper, three fixed hues for County / State / Nation. */
+:root {
+  --bg: #f5f7f9;
+  --paper: #ffffff;
+  --fg: #1b2330;
+  --muted: #5d6877;
+  --line: #d3dae3;
+  --accent: #1d6a86;       /* County */
+  --state: #9a6b00;        /* State */
+  --nation: #7b8794;       /* Nation */
+  --wf-fill: #eef1f5;
+  --wf-nav: #e2e7ee;
+  --tint: #e6f1f5;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161d; --paper: #171e27; --fg: #e4e9ef; --muted: #9aa6b4; --line: #2b3542;
+    --accent: #5fb4d0; --state: #d9a644; --nation: #8b98a7;
+    --wf-fill: #1d2531; --wf-nav: #242e3b; --tint: #15303a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161d; --paper: #171e27; --fg: #e4e9ef; --muted: #9aa6b4; --line: #2b3542;
+  --accent: #5fb4d0; --state: #d9a644; --nation: #8b98a7;
+  --wf-fill: #1d2531; --wf-nav: #242e3b; --tint: #15303a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.55; margin: 0; padding-block: 0 64px; padding-inline: 16px; }
+.wrap { max-width: 1040px; margin: 0 auto; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 500; line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+h3 { font-size: 1.35rem; margin-top: 2rem; }
+p { margin: 0.9rem 0; }
+a { color: var(--accent); }
+.eyebrow { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+header { padding-block: 48px 8px; }
+header .lede { font-size: 1.2rem; color: var(--muted); max-width: 62ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.9rem; color: var(--muted); margin-top: 14px; }
+.callout { background: var(--tint); border-left: 3px solid var(--accent); padding: 14px 18px; margin: 1.4rem 0; border-radius: 0 4px 4px 0; }
+.callout p { margin: 0.4rem 0; }
+ul, ol { padding-left: 1.3rem; }
+li { margin: 0.35rem 0; }
+li::marker { color: var(--muted); }
+
+/* legend chips for the three levels */
+.levels { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 1rem 0; font-size: 0.95rem; }
+.levels span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 7px; vertical-align: -1px; }
+.lv-c::before { background: var(--accent); } .lv-s::before { background: var(--state); } .lv-n::before { background: var(--nation); }
+
+/* tables */
+.tbl { overflow-x: auto; margin: 1.2rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; min-width: 640px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+.mono { font-family: var(--font-mono); font-size: 0.85em; }
+
+/* sitemap */
+.sitemap { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 1.4rem 0; }
+.node { background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; min-width: 0; }
+.node .path { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); }
+.node .name { font-weight: 600; margin-top: 2px; }
+.node .sub { font-size: 0.88rem; color: var(--muted); margin-top: 4px; }
+.node.core { border-color: var(--accent); border-width: 2px; }
+
+/* page sections */
+.page { margin-top: 3rem; }
+.page .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.page .path { font-family: var(--font-mono); color: var(--muted); font-size: 0.9rem; }
+.wf { display: block; width: 100%; max-width: 100%; height: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; margin: 1rem 0; }
+.wf rect { fill: var(--wf-fill); stroke: var(--line); stroke-width: 1; }
+.wf text { font-family: var(--font-body); font-size: 13px; fill: var(--muted); }
+.wf .wf-nav rect { fill: var(--wf-nav); }
+.wf .wf-cta rect { fill: var(--accent); stroke: none; }
+.wf .wf-cta text { fill: var(--paper); font-weight: 600; }
+.wf .wf-hl rect { stroke: var(--accent); stroke-width: 1.5; }
+.wf .bar-c { fill: var(--accent); stroke: none; } .wf .bar-s { fill: var(--state); stroke: none; } .wf .bar-n { fill: var(--nation); stroke: none; }
+.wf .ln { fill: none; stroke: var(--accent); stroke-width: 2; }
+.wf .ln2 { fill: none; stroke: var(--state); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.wf .ln3 { fill: none; stroke: var(--nation); stroke-width: 1.5; }
+.wf .txt { stroke: var(--line); stroke-width: 2; }
+.wf .m1 { fill: var(--tint); stroke: var(--line); } .wf .m2 { fill: var(--accent); fill-opacity: 0.45; stroke: var(--line); } .wf .m3 { fill: var(--accent); fill-opacity: 0.8; stroke: var(--line); }
+.wf .wf-note rect { fill: none; stroke-dasharray: 3 3; }
+.wf .wf-note text { font-style: italic; }
+.why { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px 28px; margin-top: 0.6rem; }
+.why > div { min-width: 0; }
+.why .eyebrow { display: block; margin-bottom: 4px; }
+.why p { margin: 0.3rem 0; font-size: 0.98rem; }
+
+.phase { display: grid; grid-template-columns: 110px 1fr; gap: 6px 18px; margin: 1rem 0; align-items: baseline; }
+.phase .eyebrow { padding-top: 4px; }
+@media (max-width: 560px) { .phase { grid-template-columns: 1fr; } }
+.small { font-size: 0.9rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Brainstorm for population_etl_toolbox</div>
+  <h1>Place Almanac Plan</h1>
+  <p class="lede">A website that tells an individual about their county, their state, and the nation, drawn from the seven public sources already in the warehouse, and shaped so every page is also a YouTube segment.</p>
+  <div class="meta"><span>Drafted 2026-10-06</span><span>Grounded in the repo's current sources, grains, and web routes</span><span>Numbers in wireframes are placeholders, never data</span></div>
+</header>
+
+<div class="col">
+<h2>Where you are, and why the website feels stuck</h2>
+<p>The warehouse is further along than the website framing. Seven sources are captured, conformed, and published with provenance. A versioned API serves them. The Next.js app has catalog, explorer, compare, workbench, quality, builder, article, and twenty use-case pages.</p>
+<p>What exists is organized the way an analyst thinks: by tool (explore, compare, workbench) and by professional use case (grant needs assessment, workforce briefing). That is the right design for the people in the top-20 document. It is the wrong front door for an individual. A resident does not arrive with a use case. They arrive with a place and a question: "What is going on in my county, and is that normal?"</p>
+<div class="callout">
+  <p><strong>The pivot.</strong> Organize the public site by <em>place</em>, not by tool or use case. Give every county, state, and the nation one page with the same chapters in the same order. Draw every number three times, county beside state beside nation, so "is that normal" is answered by the picture itself.</p>
+  <p>The existing tools do not go away. They become the "dig deeper" layer one click below every chart.</p>
+</div>
+
+<h2>What kind of website</h2>
+<p>Three patterns were on the table. A <strong>dashboard portal</strong> (filters, dropdowns, a map) is what the app already is and what residents bounce off. A <strong>news site</strong> (articles first) depends on a publishing cadence you have not built yet and buries the evergreen value. An <strong>almanac</strong> wins: a reference page per place that is always true as of its stated periods, with an editorial layer on top for what changed.</p>
+<p>Think of it as a Wikipedia article for every county, written entirely from numbers you can trace, with a monthly briefing attached. That shape has three properties the data supports and a YouTube channel needs:</p>
+<ul>
+  <li><strong>Nested levels on every chart.</strong> County, state, and nation are the three grains every source except FRED publishes, and the geography master data already holds the containment. One visual grammar serves all 3,200 counties.</li>
+  <li><strong>Same chapters everywhere.</strong> People, Work and Money, Housing, Health, Safety, Land and Farms, Change. Each chapter maps to a source bundle you already publish. A fixed chapter order is also a fixed episode rundown.</li>
+  <li><strong>Every number carries its period, source, and caveat.</strong> The repo's guardrails (no composite scores, suppressed is not zero, association is not causation) become the site's voice rather than fine print. That voice is the channel's credibility.</li>
+</ul>
+<div class="levels"><span class="lv-c">County</span><span class="lv-s">State</span><span class="lv-n">United States</span><span class="small">The three colours used for the three levels on every chart, card, and video frame.</span></div>
+
+<h2>What the data can say about a place</h2>
+<p>This is the inventory the site can honestly draw from today, read from the source configs and registries. Rows with a county grain are what make the almanac possible at all.</p>
+</div>
+
+<div class="tbl"><table>
+<thead><tr><th>Source</th><th>What it lets you say about a place</th><th>Grains published</th><th>Cadence</th><th>Caveat the page must show</th></tr></thead>
+<tbody>
+<tr><td>Census ACS</td><td>Age, households, race and ethnicity, nativity, mobility, commute, education, veterans, poverty, employment status, income distribution and medians, Gini, earnings, industry and occupation, housing stock, vacancy, tenure, rent and rent burden, home values and owner cost burden, health insurance, broadband</td><td>Nation, state, county (5-year for all counties; 1-year for populous ones)</td><td>Annual</td><td>Survey estimate with a margin of error; 5-year is a period, not a year</td></tr>
+<tr><td>Census PEP</td><td>Population each July, births, deaths, natural change, international and domestic migration, net migration; vintages back to 2000</td><td>Nation, state, county (places in some releases)</td><td>Annual, by vintage</td><td>Estimates are revised by vintage; the decennial count is April, not July</td></tr>
+<tr><td>BLS LAUS</td><td>Unemployment rate and level, employment, labor force, participation, employment-to-population</td><td>State, county (national from CPS)</td><td>Monthly</td><td>Household concept; counties are not seasonally adjusted</td></tr>
+<tr><td>BLS CES, CPI, JOLTS</td><td>Payroll jobs by industry, hours and earnings, consumer prices overall and for food, energy, shelter, rent, medical care; openings and turnover</td><td>Nation only</td><td>Monthly</td><td>National context; a national price index is not a local cost of living</td></tr>
+<tr><td>FRED</td><td>Mortgage rate, housing starts and permits, median sale price, inflation measures, policy rate and yields, GDP, saving rate, retail sales, jobless claims</td><td>Nation only</td><td>Daily to quarterly</td><td>Macro backdrop; never implies a local cause</td></tr>
+<tr><td>CDC PLACES</td><td>Model-based prevalence of chronic conditions, risk behaviors, prevention, and health status (obesity, diabetes, depression, smoking, no insurance, routine checkups, and the rest of the released measures)</td><td>Nation, county</td><td>Annual release</td><td>Modeled small-area estimates, not surveillance counts; confidence intervals</td></tr>
+<tr><td>CDC CDI</td><td>Chronic disease indicators from state surveillance</td><td>Nation, state</td><td>Irregular</td><td>Indicator-specific populations and age adjustment</td></tr>
+<tr><td>FBI UCR</td><td>Reported violent crime, property crime, homicide, rape, robbery, assault, burglary, larceny, motor vehicle theft, arson</td><td>Nation, state, reviewed agencies (county roll-up is a to-do plan)</td><td>Monthly summarized, annual</td><td>Missing agency reports are not zero crime; participation and definition breaks</td></tr>
+<tr><td>USDA NASS</td><td>Corn, soybeans, wheat, hay acreage, yield, and production; census-of-agriculture county corn</td><td>Nation, state, county</td><td>Annual and in-season</td><td>Suppressed cells stay suppressed; combined counties are not counties</td></tr>
+</tbody></table></div>
+
+<div class="col">
+<p>Two gaps shape the plan. <strong>Safety at county grain</strong> depends on the county crime roll-up plan in the backlog; until then the Safety chapter on a county page shows the state with a label saying so, which the use-case pages already do. <strong>Cities and towns</strong> have identities in the geography master data but ACS is ingested at county and above, so places are a later phase, not a launch promise.</p>
+
+<h2>Sitemap</h2>
+<p>Eight public page types, one operator page, and the existing tools kept under a "dig deeper" prefix. The place page is the product. Everything else either feeds it or is a view of it.</p>
+</div>
+
+<div class="sitemap">
+  <div class="node"><div class="path">/</div><div class="name">Find your place</div><div class="sub">Search, map, "use my location", three featured places</div></div>
+  <div class="node core"><div class="path">/us/wi/dane</div><div class="name">Place page</div><div class="sub">One per nation, state, county. Seven chapters, fixed order</div></div>
+  <div class="node"><div class="path">/us/wi/dane/vs/us/wi/brown</div><div class="name">Compare two places</div><div class="sub">Same chapters, side by side, state and nation as reference lines</div></div>
+  <div class="node"><div class="path">/explain/unemployment-rate</div><div class="name">Explainer</div><div class="sub">One concept per page, shared by every place page</div></div>
+  <div class="node"><div class="path">/map/median-gross-rent</div><div class="name">One measure, every county</div><div class="sub">Map plus ranked table, one measure at a time, coverage shown</div></div>
+  <div class="node"><div class="path">/briefing/2026-10</div><div class="name">Monthly briefing</div><div class="sub">What changed, published from an approved evidence packet</div></div>
+  <div class="node"><div class="path">/data</div><div class="name">Where the numbers come from</div><div class="sub">Public face of the quality explorer: freshness, coverage, revisions</div></div>
+  <div class="node"><div class="path">/studio</div><div class="name">Studio (operator only)</div><div class="sub">Render any card or chart as a 16:9 or 9:16 frame with its caveat and script notes</div></div>
+  <div class="node"><div class="path">/tools/explore, /tools/compare, /tools/workbench, /tools/builder</div><div class="name">Dig deeper</div><div class="sub">The existing analyst surfaces, unchanged, reached from every chart</div></div>
+</div>
+
+<div class="col">
+<h2>The pages, with wireframes and why each exists</h2>
+<p>Each wireframe is desktop width. Every page stacks to one column at phone width, and every chart keeps a table alternative, which the app already guarantees.</p>
+</div>
+
+<!-- 1. Home -->
+<section class="page">
+  <div class="head"><h3>1. Find your place</h3><span class="path">/</span></div>
+  <svg class="wf" id="wf-home" viewBox="0 0 960 560" role="img" aria-label="Wireframe of the home page: a search box over a national county map, three featured place cards, and a latest briefing strip"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>An individual's first question is "where is mine". The home page does exactly one thing: get them to their county page in one action. The map is navigation, not analysis.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>Geography master data for search and the county map tiles already served by Martin. Three featured places rotate from the briefing.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>The channel trailer and every episode's call to action: "find yours at the link". The national map with one measure painted is a recurring cold-open frame.</p></div>
+  </div>
+</section>
+
+<!-- 2. Place page -->
+<section class="page">
+  <div class="head"><h3>2. Place page</h3><span class="path">/us/&lt;state&gt;/&lt;county&gt;, /us/&lt;state&gt;, /us</span></div>
+  <svg class="wf" id="wf-place" viewBox="0 0 960 760" role="img" aria-label="Wireframe of a county page: a title with parent links, a chapter rail, a headline strip of three-bar cards, then the People chapter with a trend chart, three-bar cards, and a source footnote, followed by the start of the Work and Money chapter"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>This is the product. One permanent, linkable page per place that reads top to bottom like an almanac entry. Seven chapters in a fixed order: People, Work and Money, Housing, Health, Safety, Land and Farms, Change over time. Each chapter opens with two or three headline cards drawn three times (county, state, nation), then one trend chart with the state and nation as reference lines, then a footnote naming period, source, and caveat, and a "dig deeper" link into the explorer with the exact query.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The eight reviewed profile templates and the use-case sections already compose these measures; this page re-arranges them by place instead of by use case. ACS and PEP fill People, Housing, and Change. LAUS and ACS fill Work and Money, with CPI and FRED shown as a clearly labeled national backdrop. PLACES fills Health at county grain and CDI at state. FBI fills Safety at state until the county roll-up lands. NASS fills Land and Farms where the county has published cells, and the chapter is omitted rather than shown empty where it has none.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>The page is the episode. The chapter order is the rundown, each headline card is a scene, and the trend chart is the b-roll. A series like "Your county in seven charts" can be produced for any county with the same template, which is what makes a channel sustainable.</p></div>
+  </div>
+</section>
+
+<!-- 3. Compare -->
+<section class="page">
+  <div class="head"><h3>3. Compare two places</h3><span class="path">/us/wi/dane/vs/us/wi/brown</span></div>
+  <svg class="wf" id="wf-compare" viewBox="0 0 960 560" role="img" aria-label="Wireframe of a compare page: two place names at the top, then chapter rows where each measure shows paired bars for the two places with state and nation ticks, and a shared trend chart"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>"Is that normal" has a second answer: "compared to where". Residents compare their county to the one they moved from, the one next door, or the one in the news. The page keeps the same chapter order as the place page, so it is the place page folded in half.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The existing comparison workspace's preflight rules decide which measures are comparable (same source, same period, same grain). The page only offers pairs that pass, and says why a measure is missing rather than hiding it.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>A "two counties" format: pick two places with a story between them and walk the chapters. Easy to script, naturally visual, and it drives traffic to both place pages.</p></div>
+  </div>
+</section>
+
+<!-- 4. Explainer -->
+<section class="page">
+  <div class="head"><h3>4. Explainer</h3><span class="path">/explain/&lt;concept&gt;</span></div>
+  <svg class="wf" id="wf-explain" viewBox="0 0 960 520" role="img" aria-label="Wireframe of an explainer page: a question headline, a two-column body with a short answer and a diagram, a 'what it is not' box, a worked example using the reader's place, and links to every chapter that uses the concept"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>Every caveat the warehouse preserves needs one plain-language home, written once and linked from everywhere. The first dozen write themselves from the guardrails: what the unemployment rate counts, why a margin of error exists, PEP estimates versus ACS surveys, why missing crime reports are not zero, why the CPI is not your local cost of living, what a suppressed cell means, why modeled health prevalence is not a case count.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The reviewed semantic definitions directory, which already requires intended use, limitations, and citations per metric. The worked example pulls the reader's last-viewed place so the concept lands on their own number.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>Evergreen "one number explained" videos, three to four minutes each. The explainer's short answer is the script, the diagram is the key frame, and the worked example is the payoff.</p></div>
+  </div>
+</section>
+
+<!-- 5. Map -->
+<section class="page">
+  <div class="head"><h3>5. One measure, every county</h3><span class="path">/map/&lt;measure&gt;</span></div>
+  <svg class="wf" id="wf-map" viewBox="0 0 960 560" role="img" aria-label="Wireframe of a measure map page: a measure title with its period, a national choropleth on the left, a ranked county table on the right with a coverage note, and a legend stating bins and how many counties have no value"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>People love rankings, and rankings are where public-data sites lose their integrity. This page allows exactly one measure at a time, states its period and denominator, shows uncertainty where the source has it, and counts the counties with no published value instead of painting them. No composite index, ever, which the top-20 guardrails already demand.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The explorer's map wiring and the rule that a geography without a value is left uncoloured. The ranked table is the same observations as the map, which the accessibility commitments already require.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>"Where is it highest, where is it lowest" episodes, one measure each. The map animates as the cold open; the top and bottom ten are the body; the coverage note is the honest close.</p></div>
+  </div>
+</section>
+
+<!-- 6. Briefing -->
+<section class="page">
+  <div class="head"><h3>6. Monthly briefing</h3><span class="path">/briefing/&lt;yyyy-mm&gt;</span></div>
+  <svg class="wf" id="wf-brief" viewBox="0 0 960 560" role="img" aria-label="Wireframe of a briefing page: a dated headline, a 'what was released this month' list, three evidence blocks each with a chart, its reproducibility envelope, and a one-paragraph note, then links to affected place pages"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>The almanac is evergreen; the briefing is the reason to come back. Each month, which releases landed (LAUS, CPI, PEP vintage, ACS release, PLACES release), what moved, and which places it touched. It is written from evidence blocks, never from prose alone, so every claim is reproducible.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The evidence packet builder and the article reader already exist. What is missing is the approval path from private to published, which is the publishing plan in the backlog. The briefing is the first consumer of that path and the reason to build it.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>The monthly episode. The briefing's blocks are the segments, in order. Publish the page and the video the same day; each links to the other.</p></div>
+  </div>
+</section>
+
+<!-- 7. Data -->
+<section class="page">
+  <div class="head"><h3>7. Where the numbers come from</h3><span class="path">/data</span></div>
+  <svg class="wf" id="wf-data" viewBox="0 0 960 460" role="img" aria-label="Wireframe of the data page: a row of seven source cards each showing last refresh and coverage, a freshness timeline, and a short list of the site's rules"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>Trust is the product's only moat. A public, plain-language version of the quality explorer: when each source last refreshed, what geography it covers, what has been revised, and the five rules the site follows. This is the page a skeptical commenter gets linked to.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The quality explorer and the content-aware health resource. The rules are the top-20 guardrails, reworded for a reader.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>A "how this channel works" video and the standing pinned comment. It also pre-empts the most common objections in comments.</p></div>
+  </div>
+</section>
+
+<!-- 8. Studio -->
+<section class="page">
+  <div class="head"><h3>8. Studio (operator only)</h3><span class="path">/studio</span></div>
+  <svg class="wf" id="wf-studio" viewBox="0 0 960 540" role="img" aria-label="Wireframe of the studio page: a left panel to pick a place, chapter, and card, a large 16:9 preview with large type and the caveat line baked in, a 9:16 variant, and a script notes panel generated from the definition and caveats"></svg>
+  <div class="why">
+    <div><span class="eyebrow">Why it exists</span><p>This is what makes "easy to prepare YouTube materials" true rather than aspirational. Pick any place, chapter, and card. The studio renders it at 1920 by 1080 and 1080 by 1920 with large type, the three level colours, and the period, source, and caveat line baked into the frame so a clipped screenshot still carries its provenance. A script notes panel assembles the reviewed definition, the caveat, and the exact request so you read it rather than write it.</p></div>
+    <div><span class="eyebrow">What it draws from</span><p>The same chart components as the place page, in a print-sized layout. Export uses the app's existing CSV and chart export paths plus a frame renderer. Behind the existing bearer credential, since it is not a public surface.</p></div>
+    <div><span class="eyebrow">YouTube use</span><p>Every frame in every format above comes out of this page. A consistent frame design is what makes a channel recognizable in a feed.</p></div>
+  </div>
+</section>
+
+<div class="col">
+<h2>The YouTube production kit</h2>
+<p>The site and the channel share one structure, so preparing a video is choosing a page, not building a deck. Five formats cover the page types.</p>
+</div>
+
+<div class="tbl"><table>
+<thead><tr><th>Format</th><th>Source page</th><th>Rundown</th><th>Length</th><th>Cadence</th></tr></thead>
+<tbody>
+<tr><td>Your county in seven charts</td><td>Place page</td><td>Cold open on the map, then the seven chapters in page order, one headline card and one trend each, close on the data page rules</td><td>6 to 9 min</td><td>Weekly, any county</td></tr>
+<tr><td>One number explained</td><td>Explainer</td><td>The question, the short answer, the diagram, "what it is not", a worked example on a real county</td><td>3 to 4 min</td><td>Evergreen, a dozen to start</td></tr>
+<tr><td>Where is it highest</td><td>Measure map</td><td>Map reveal, top ten, bottom ten, the coverage and uncertainty note, "find yours"</td><td>4 to 6 min</td><td>Biweekly, one measure</td></tr>
+<tr><td>Two counties</td><td>Compare</td><td>Why these two, then the chapters side by side, then what the data cannot tell you about why</td><td>6 to 8 min</td><td>Monthly</td></tr>
+<tr><td>Monthly briefing</td><td>Briefing</td><td>What was released, three evidence blocks, which places moved most</td><td>5 to 7 min</td><td>Monthly, same day as the page</td></tr>
+</tbody></table></div>
+
+<div class="col">
+<p>Three production rules keep it cheap and consistent. <strong>Scene order equals chapter order</strong>, so a template edit project can be reused. <strong>Every frame comes from the studio</strong>, with the caveat line baked in, so no frame can be clipped into a misleading screenshot. <strong>Script notes come from the definitions</strong>, so the voice-over says what the semantic documentation says and nothing more, which protects the channel from the causal claims the guardrails forbid.</p>
+
+<h2>Build order against the repo</h2>
+<p>Most of the plan is rearrangement of what exists. The genuinely new work is place routing, explainer content, the measure-map page, and the studio renderer. Two backlog plans are upstream dependencies and should be sequenced, not bypassed.</p>
+
+<div class="phase"><span class="eyebrow">Phase 1</span><div><strong>Place pages for counties, states, and the nation.</strong> Route by geography identifier, compose chapters from the existing profile and use-case sections, add the three-level card and the reference-line trend. Safety shows the state with a label until the county crime roll-up plan is done. Land and Farms is omitted where NASS has no county cells.</div></div>
+<div class="phase"><span class="eyebrow">Phase 2</span><div><strong>Explainers and the studio.</strong> Write the first twelve explainers from the guardrails and the semantic definitions. Build the studio as an authenticated page over the same chart components with 16:9 and 9:16 frame layouts. This is when the channel can start.</div></div>
+<div class="phase"><span class="eyebrow">Phase 3</span><div><strong>Briefings.</strong> Implement the publishing approval path plan, then the briefing page as its first consumer. Monthly episodes begin.</div></div>
+<div class="phase"><span class="eyebrow">Phase 4</span><div><strong>Measure maps and compare.</strong> The map page over the explorer's wiring with the uncoloured-is-not-zero rule, and the two-place compare over the preflight rules. Cities and towns follow once ACS is ingested at place grain.</div></div>
+
+<h2>Making county and place pages deeper than state and nation</h2>
+<p>Readers will spend most of their time at county and place grain, so those pages should be the richest, not the thinnest. There are four ways to get there, in rising order of cost. The first two need no new source at all.</p>
+
+<h3>1. Use what is already ingested and not yet shown</h3>
+<p>The ACS configuration pulls roughly fifty tables at county grain, and the current profile templates use a handful. The unused tables are exactly the ones residents ask about: how people get to work and how long it takes, who has broadband, who has health insurance, veterans, who moved in during the last year, where people were born, how old the housing stock is and what kind it is, how many vehicles a household has, which industries and occupations employ people, the full income distribution, inequality, and marital and living-alone status. PEP's components of change (births, deaths, domestic and international migration) answer "why is the population changing" rather than just "is it". All of the released PLACES measures are already offered for counties. This is a chapter-depth change, not a pipeline change.</p>
+
+<h3>2. Use the geography master data as content</h3>
+<p>The versioned geography layer already holds nation, state, county, and place identities, boundaries, and the relationship bridge between them. That is page content waiting to be rendered: the cities and towns that overlap a county, with the note that a place can cross county lines (the contract models places as siblings of counties, not children); the neighbouring counties; the metro or micro area the county belongs to; land area; and the county's rural-urban classification once the USDA ERS codes are added as a small reference table. "Nearby and related places" is the section that turns a page into a browsable almanac, and it also gives the Compare page a sensible default pair.</p>
+
+<h3>3. Add county and place sources that fit the existing adapter contract</h3>
+<p>Each new source follows the adapter checklist (raw capture, silver, gold, quality rules, operator docs), so the list below is ranked by how much it adds for a resident per adapter built. All are government-published, county grain or finer, and openly licensed.</p>
+</div>
+
+<div class="tbl"><table>
+<thead><tr><th>Source</th><th>What it adds to a county or place page</th><th>Grain</th><th>Chapter</th><th>Why it ranks here</th></tr></thead>
+<tbody>
+<tr><td>ACS at place grain</td><td>Everything the county page shows, for cities and towns; subject and data-profile tables give provider-computed percentages with margins, which avoids deriving rates in the app</td><td>Place (5-year for all, 1-year for 65,000+)</td><td>All</td><td>Unlocks the place page outright; same API, same adapter, one new geography level</td></tr>
+<tr><td>BLS QCEW</td><td>Jobs and average weekly wages by industry, counted where the job is rather than where the worker lives</td><td>County, quarterly</td><td>Work and Money</td><td>"What do people do here and what does it pay" is the most asked question the site cannot yet answer; the BLS config already anticipates it</td></tr>
+<tr><td>BEA regional accounts</td><td>Personal income, per-capita income, earnings by industry, transfer receipts, and county GDP</td><td>County, annual</td><td>Work and Money</td><td>The economy of the county as an economy, not a survey of its residents</td></tr>
+<tr><td>Census SAIPE and SAHIE</td><td>Annual county poverty, median income, and uninsured estimates for every county, with intervals</td><td>County, annual</td><td>Work and Money, Health</td><td>Fresher than the 5-year ACS and published for every county every year</td></tr>
+<tr><td>Census Building Permits Survey</td><td>Housing units authorized, by structure type</td><td>County and permit-issuing place, monthly</td><td>Housing</td><td>The one forward-looking local housing signal; pairs with FRED's national starts</td></tr>
+<tr><td>IRS county-to-county migration</td><td>Where in-movers came from and out-movers went, with returns and income</td><td>County pairs, annual</td><td>People, Change</td><td>Turns PEP's net migration number into a story with named origins; a natural video</td></tr>
+<tr><td>Census LEHD LODES</td><td>Where residents work and where workers live, as county-to-county commuting flows</td><td>County and finer, annual</td><td>Work and Money</td><td>Explains the gap between a county's residents and its jobs</td></tr>
+<tr><td>Census County Business Patterns</td><td>Establishments, employment, and payroll by detailed industry</td><td>County and place, annual</td><td>Work and Money</td><td>The business mix of a town, down to the number of restaurants or clinics</td></tr>
+<tr><td>CDC WONDER mortality and natality</td><td>Deaths by cause and births, with provider suppression below ten</td><td>County, annual</td><td>Health, People</td><td>The source behind every life-expectancy headline; suppression must stay visible</td></tr>
+<tr><td>NCES Common Core of Data</td><td>Schools, districts, enrollment, staffing, free and reduced lunch eligibility</td><td>District and school, mapped to county and place</td><td>New chapter: Schools</td><td>Families moving to a place ask about schools before anything else</td></tr>
+<tr><td>FHFA House Price Index</td><td>Repeat-sales house price index</td><td>County and ZIP, annual</td><td>Housing</td><td>Local price change to set beside ACS values and the national FRED series</td></tr>
+<tr><td>HUD Fair Market Rents and income limits</td><td>What HUD considers a fair rent and low income here</td><td>County and metro, annual</td><td>Housing</td><td>Gives rent numbers a reference point a reader recognizes</td></tr>
+<tr><td>FEMA National Risk Index and disaster declarations</td><td>Expected annual loss by hazard, social vulnerability, and the history of declared disasters</td><td>County and tract</td><td>New chapter: Land and Environment</td><td>Floods, tornadoes, and wildfire are place facts residents feel</td></tr>
+<tr><td>EPA AQS and NOAA climate normals</td><td>Air quality monitor summaries; thirty-year temperature and precipitation normals</td><td>Monitor and station, mapped to county</td><td>Land and Environment</td><td>Weather is the most-searched local fact; normals are stable and uncontroversial</td></tr>
+<tr><td>FCC Broadband Data Collection</td><td>Availability of broadband by speed tier</td><td>Location, aggregated to county and place</td><td>Housing or People</td><td>Pairs ACS "has a subscription" with "could get one"</td></tr>
+<tr><td>USDA ERS county codes and atlases</td><td>Rural-urban continuum, county typology, food environment, SNAP participation</td><td>County</td><td>Land and Farms; peer grouping</td><td>Small reference tables that make honest peer groups possible</td></tr>
+</tbody></table></div>
+
+<div class="col">
+<p>Two things to keep off the ingest list. Third-party composite rankings (county health rankings, livability indexes, commercial home-value estimates) can be linked as context but not ingested as facts, because they are the unexplained scores the guardrails forbid. And any derived number the site wants, population density from land area, a rate from a count and a denominator, a deviation from the state, belongs in a reviewed derived product like the existing time aggregates, labeled as derived, never computed in the page.</p>
+
+<h3>4. Go below the county</h3>
+<p>The largest step is sub-county geography. ACS publishes its 5-year tables for every tract and block group, and the Census ZIP Code Tabulation Areas sit beside them. With tracts in the geography master data, a county page gains a "within the county" map for any measure, and a place page can show its own neighbourhoods. The volume is roughly twenty-five times the county row count per table, so this is a phase of its own, after place grain, and it is where the versioned boundary design in the geography layer earns its keep.</p>
+
+<h3>What this does to the page</h3>
+<p>Two chapters are added where the sources exist, Schools and Land and Environment, and the chapter list for a county page becomes People, Work and Money, Housing, Schools, Health, Safety, Land and Environment (absorbing Land and Farms), and Change. A county page also gains a Nearby section from the geography data and a "What makes this place distinctive" section listing the handful of measures where the county differs most from its state, each shown separately with its period and uncertainty, never summed. State and national pages keep the same chapters with fewer cards, which is the right asymmetry: the higher levels exist mostly as the reference lines on the county's charts.</p>
+
+<h2>Decisions only you can make</h2>
+<ul>
+  <li><strong>A name.</strong> The almanac framing wants a name a neighbour would say out loud. The repository name is not it.</li>
+  <li><strong>Tone.</strong> Reference-grade and calm, or curious and conversational. The data page rules read the same either way; the chapter intros and voice-over do not.</li>
+  <li><strong>Which county first.</strong> The first episode and the first polished place page should be a county you know and can talk about. Wisconsin is already the reviewed FBI agency sample, which makes a Wisconsin county a practical start.</li>
+  <li><strong>Whether to promise cities.</strong> Places exist in the geography master data and in some PEP releases, but ACS is not ingested below county. Launch with counties and say so, or add place-grain ACS to the backlog first.</li>
+</ul>
+</div>
+</div>
+
+<script>
+(function () {
+  var ns = 'http://www.w3.org/2000/svg';
+  function el(t, a, txt) { var e = document.createElementNS(ns, t); for (var k in a) e.setAttribute(k, a[k]); if (txt != null) e.textContent = txt; return e; }
+  function bars3(g, x, y, w, h) {
+    var lw = 44, bw = w - lw - 16, rows = [['County', 0.72, 'bar-c'], ['State', 0.56, 'bar-s'], ['USA', 0.47, 'bar-n']];
+    var rh = Math.min(12, (h - 8) / 3 - 4), gap = (h - 3 * rh) / 4;
+    rows.forEach(function (r, i) {
+      var yy = y + gap + i * (rh + gap);
+      var t = el('text', { x: x, y: yy + rh - 1, 'font-size': 11 }, r[0]); g.appendChild(t);
+      g.appendChild(el('rect', { x: x + lw, y: yy, width: bw * r[1], height: rh, 'class': r[2], rx: 1 }));
+    });
+  }
+  function trend(g, x, y, w, h) {
+    var pts = [0.62, 0.58, 0.66, 0.52, 0.47, 0.5, 0.41, 0.36, 0.38, 0.3];
+    function path(arr, off, cls) {
+      var d = arr.map(function (v, i) { return (x + i * (w / (arr.length - 1))).toFixed(1) + ',' + (y + h * (v + off)).toFixed(1); }).join(' ');
+      g.appendChild(el('polyline', { points: d, 'class': cls }));
+    }
+    path(pts, 0, 'ln'); path(pts.map(function (v) { return v * 0.9 + 0.12; }), 0, 'ln2'); path(pts.map(function (v) { return v * 0.7 + 0.22; }), 0, 'ln3');
+    g.appendChild(el('line', { x1: x, y1: y + h, x2: x + w, y2: y + h, 'class': 'txt' }));
+  }
+  function textlines(g, x, y, w, n) {
+    for (var i = 0; i < n; i++) g.appendChild(el('line', { x1: x, y1: y + i * 11, x2: x + w * (i === n - 1 ? 0.6 : 1), y2: y + i * 11, 'class': 'txt' }));
+  }
+  function map(g, x, y, w, h) {
+    var cols = 8, rows = 5, cw = w / cols, ch = h / rows, cls = ['m1', 'm2', 'm3', 'm1', 'm2', 'm1', 'm3', 'm2'];
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+      if ((r === 0 && (c < 2 || c > 5)) || (r === 4 && c > 4) || (r === 3 && c === 7)) continue;
+      g.appendChild(el('rect', { x: x + c * cw + 1, y: y + r * ch + 1, width: cw - 2, height: ch - 2, 'class': cls[(r * 3 + c) % cls.length], rx: 2 }));
+    }
+    g.appendChild(el('rect', { x: x + 3 * cw + 1, y: y + 2 * ch + 1, width: cw - 2, height: ch - 2, fill: 'none', stroke: 'var(--line)', 'stroke-dasharray': '2 2' }));
+  }
+  function wire(id, items) {
+    var svg = document.getElementById(id); if (!svg) return;
+    items.forEach(function (it) {
+      var k = it[0], x = it[1], y = it[2], w = it[3], h = it[4], l = it[5];
+      var g = el('g', { 'class': 'wf-' + k });
+      if (k !== 'free') g.appendChild(el('rect', { x: x, y: y, width: w, height: h, rx: 3 }));
+      if (l) g.appendChild(el('text', { x: x + 8, y: y + 17 }, l));
+      var pad = l ? 26 : 8;
+      if (k === 'bars3') bars3(g, x + 8, y + pad, w - 16, h - pad - 6);
+      if (k === 'trend') trend(g, x + 10, y + pad + 4, w - 20, h - pad - 14);
+      if (k === 'text') textlines(g, x + 8, y + pad + 4, w - 16, Math.max(1, Math.floor((h - pad) / 11)));
+      if (k === 'map') map(g, x + 8, y + pad, w - 16, h - pad - 6);
+      svg.appendChild(g);
+    });
+  }
+
+  wire('wf-home', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['box', 40, 70, 880, 56, ''],
+    ['free', 56, 85, 0, 0, ''],
+    ['hl', 56, 80, 640, 36, 'Search a county, state, or ZIP…'],
+    ['cta', 710, 80, 196, 36, 'Use my location'],
+    ['map', 40, 146, 560, 270, 'Every county. Click to open its page. Painted with one measure from this month\'s briefing.'],
+    ['card', 620, 146, 300, 80, 'Featured: Dane County, WI'],
+    ['card', 620, 240, 300, 80, 'Featured: Wisconsin'],
+    ['card', 620, 334, 300, 82, 'Featured: United States'],
+    ['box', 40, 436, 880, 60, 'Latest briefing: October 2026 — what was released and which places moved'],
+    ['note', 40, 512, 880, 32, 'Footer: the five rules this site follows · sources · last refresh'],
+  ]);
+
+  wire('wf-place', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['free', 0, 0, 0, 0, ''],
+    ['box', 40, 62, 660, 70, 'United States › Wisconsin › Dane County     ← parent pages are the state and nation pages'],
+    ['cta', 720, 62, 200, 32, 'Compare with…'],
+    ['box', 720, 102, 200, 30, 'Share · Open in explorer'],
+    ['nav', 40, 146, 880, 34, 'People · Work and Money · Housing · Health · Safety · Land and Farms · Change        (sticky chapter rail)'],
+    ['bars3', 40, 196, 206, 96, 'Population (PEP, July 2025)'],
+    ['bars3', 265, 196, 206, 96, 'Median household income (ACS 5-yr)'],
+    ['bars3', 490, 196, 206, 96, 'Unemployment rate (LAUS, Aug 2026)'],
+    ['bars3', 715, 196, 205, 96, 'Median gross rent (ACS 5-yr)'],
+    ['box', 40, 310, 880, 36, 'PEOPLE  —  who lives here, and how that is changing'],
+    ['trend', 40, 356, 560, 190, 'Population since 2000, indexed to 2000 = 100. County solid, state dashed, nation grey.'],
+    ['bars3', 620, 356, 300, 90, 'Median age'],
+    ['bars3', 620, 456, 300, 90, 'Share born outside the US'],
+    ['text', 40, 556, 560, 60, 'Period · Source · Caveat: PEP vintage 2025 estimates; ACS 2020–2024 5-year, margin of error shown on hover'],
+    ['cta', 620, 556, 300, 30, 'Dig deeper in the explorer (exact query)'],
+    ['box', 620, 594, 300, 22, 'Explain: PEP estimates vs ACS surveys'],
+    ['box', 40, 640, 880, 36, 'WORK AND MONEY  —  jobs, pay, and prices'],
+    ['bars3', 40, 686, 206, 60, 'Labor force participation'],
+    ['bars3', 265, 686, 206, 60, 'Poverty rate'],
+    ['note', 490, 686, 430, 60, 'National backdrop, labeled as such: CPI shelter, mortgage rate (FRED). Not a local cost of living. … chapters continue'],
+  ]);
+
+  wire('wf-compare', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['box', 40, 62, 420, 50, 'Dane County, WI'],
+    ['box', 500, 62, 420, 50, 'Brown County, WI                                   swap ⇄'],
+    ['nav', 40, 124, 880, 30, 'People · Work and Money · Housing · Health · Safety · Land and Farms · Change'],
+    ['box', 40, 166, 880, 30, 'PEOPLE'],
+    ['bars3', 40, 204, 280, 90, 'Population'],
+    ['bars3', 340, 204, 280, 90, 'Median age'],
+    ['bars3', 640, 204, 280, 90, 'Households with children'],
+    ['trend', 40, 310, 580, 170, 'Population since 2000, both counties, state and nation as reference lines'],
+    ['text', 640, 310, 280, 110, 'Only measures with the same source, period, and grain are offered. Missing pairs are listed, not hidden.'],
+    ['cta', 640, 432, 280, 30, 'Open in comparison workspace'],
+    ['note', 40, 496, 880, 44, 'Footnote: what this comparison cannot say — no causal reading, no ranking, periods named on every row'],
+  ]);
+
+  wire('wf-explain', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['box', 40, 62, 880, 56, 'What does the unemployment rate actually count?           Explainer · reviewed definition v3 · last reviewed 2026-07'],
+    ['text', 40, 134, 480, 120, 'Short answer, four sentences, plain language'],
+    ['box', 540, 134, 380, 200, 'Diagram: population 16+ → labor force → employed / unemployed; who is left out'],
+    ['box', 40, 268, 480, 66, 'What it is not: not people without jobs, not benefit claims, not payroll jobs'],
+    ['hl', 40, 350, 880, 80, 'Worked example on your place: Dane County, WI — the county, state, and nation figure for the latest month, with its caveat'],
+    ['box', 40, 446, 430, 50, 'Used in chapters: Work and Money (every place page)'],
+    ['cta', 490, 446, 430, 50, 'Watch the 3-minute version'],
+  ]);
+
+  wire('wf-map', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['box', 40, 62, 880, 54, 'Median gross rent, every county — ACS 2020–2024 5-year, dollars per month      (one measure; change measure ▾)'],
+    ['map', 40, 130, 560, 330, 'Counties with no published value are left blank, never painted as zero'],
+    ['box', 40, 470, 560, 36, 'Legend: 5 bins, counts per bin, and the number of counties without a value'],
+    ['text', 620, 130, 300, 230, 'Ranked table: highest ten, lowest ten, with margin of error column; same observations as the map'],
+    ['note', 620, 374, 300, 70, 'Coverage note: period, denominator, who is excluded, what changed in the source this year'],
+    ['cta', 620, 456, 300, 30, 'Find your county in the full table'],
+    ['box', 620, 494, 300, 24, 'Explain: why there is no overall score'],
+  ]);
+
+  wire('wf-brief', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['box', 40, 62, 880, 54, 'Briefing · October 2026                      Published from an approved evidence packet · every block reproducible'],
+    ['text', 40, 130, 280, 150, 'Released this month: LAUS August, CPI September, PLACES 2025 release…'],
+    ['trend', 340, 130, 580, 150, 'Block 1: county unemployment, 12 months, with the request envelope beneath'],
+    ['bars3', 40, 296, 280, 110, 'Block 2: a three-level card'],
+    ['text', 340, 296, 580, 110, 'One paragraph per block: what moved, what the source says about it, what it does not say'],
+    ['map', 40, 422, 280, 100, 'Block 3: a measure map'],
+    ['box', 340, 422, 580, 46, 'Places this touched: Dane, Brown, Milwaukee… (links to place pages)'],
+    ['cta', 340, 478, 280, 44, 'Watch the episode'],
+    ['box', 640, 478, 280, 44, 'Previous briefings'],
+  ]);
+
+  wire('wf-data', [
+    ['nav', 0, 0, 960, 44, 'Site name     Find your place   Explain   Maps   Briefings   Where the numbers come from'],
+    ['box', 40, 62, 880, 44, 'Where the numbers come from'],
+    ['card', 40, 120, 118, 90, 'ACS'], ['card', 167, 120, 118, 90, 'PEP'], ['card', 294, 120, 118, 90, 'BLS'], ['card', 421, 120, 118, 90, 'FRED'],
+    ['card', 548, 120, 118, 90, 'CDC'], ['card', 675, 120, 118, 90, 'FBI'], ['card', 802, 120, 118, 90, 'USDA'],
+    ['note', 40, 216, 880, 20, 'each card: last refresh · grains covered · what was revised'],
+    ['trend', 40, 250, 560, 120, 'Freshness timeline: when each source last landed and when it is next expected'],
+    ['text', 620, 250, 300, 120, 'The five rules: suppressed is not zero · no composite score · association is not causation · every number names its period and source · revisions are shown, not overwritten'],
+    ['cta', 40, 386, 300, 36, 'Open the full quality explorer'],
+    ['box', 360, 386, 560, 36, 'Methods and definitions index (links to every explainer)'],
+  ]);
+
+  wire('wf-studio', [
+    ['nav', 0, 0, 960, 44, 'Studio · operator only · signed in'],
+    ['box', 40, 62, 220, 420, ''],
+    ['free', 0, 0, 0, 0, ''],
+    ['box', 52, 72, 196, 30, 'Place: Dane County, WI'],
+    ['box', 52, 110, 196, 30, 'Chapter: Housing'],
+    ['box', 52, 148, 196, 30, 'Card: Median gross rent'],
+    ['box', 52, 186, 196, 30, 'Frame: 16:9 · 9:16 · square'],
+    ['box', 52, 224, 196, 30, 'Theme: light · dark'],
+    ['cta', 52, 262, 196, 30, 'Export PNG'],
+    ['box', 52, 300, 196, 30, 'Export CSV of the frame'],
+    ['text', 52, 338, 196, 134, 'Script notes: reviewed definition, caveat, period, exact request. Read, do not write.'],
+    ['hl', 280, 62, 640, 300, '16:9 preview — large type, three level colours'],
+    ['bars3', 300, 100, 600, 180, ''],
+    ['note', 280, 318, 640, 36, 'Baked-in footer: ACS 2020–2024 5-year · margin of error ± · source · site name'],
+    ['box', 280, 374, 160, 108, '9:16 variant'],
+    ['box', 460, 374, 460, 108, 'Frame history: every exported frame, with its request, so a video can be re-rendered when a source revises'],
+  ]);
+})();
+</script>
+
+</body>
+</html>
