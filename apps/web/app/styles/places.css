@@ -1,0 +1,215 @@
+/* Place pages (place-pages): the nation, a state, a county. */
+.place-breadcrumbs ol,
+.chapter-rail ol,
+.place-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place-breadcrumbs li + li::before {
+  content: "›";
+  margin-right: 8px;
+  color: var(--muted);
+}
+
+.chapter-rail {
+  margin: 18px 0;
+  border-block: 1px solid var(--line);
+  background: var(--bg-0);
+  padding: 8px 0;
+}
+
+.chapter-rail a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.place-chapter {
+  scroll-margin-top: 56px;
+}
+
+.place-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.place-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px;
+  min-width: 0;
+}
+
+.place-card h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.place-card .subtle,
+.place-depth .subtle,
+.place-universe,
+.place-role {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.place-card-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.place-card-table th,
+.place-card-table td {
+  white-space: normal;
+  border-top: 1px solid var(--line);
+  padding: 6px 4px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.place-card-table td:first-of-type {
+  font-weight: 700;
+}
+
+.place-depth {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px 18px;
+  margin: 16px 0;
+}
+
+.place-depth > div {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  min-width: 0;
+}
+
+.place-depth dt {
+  font-size: 0.85rem;
+}
+
+.place-depth dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.place-trend {
+  margin: 16px 0;
+  min-width: 0;
+}
+
+.place-trend svg[role="img"] {
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
+
+.place-trend-axis {
+  stroke: var(--line);
+}
+
+.place-trend-tick {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.place-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.place-trend-legend svg {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.place-trend-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.place-trend-table th,
+.place-trend-table td {
+  border-top: 1px solid var(--line);
+  padding: 4px 10px 4px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.place-chapter-footer {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.place-footer {
+  margin: 24px 0;
+  color: var(--muted);
+}
+
+.place-footer h2 {
+  font-size: 1rem;
+}
+
+.place-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+  font-weight: 700;
+}
+
+.place-search input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+.place-index {
+  margin: 12px 0;
+}
+
+@media (max-width: 520px) {
+  .place-cards,
+  .place-depth {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .place-card-table tr,
+  .place-card-table th,
+  .place-card-table td {
+    display: block;
+    white-space: normal;
+  }
+
+  .place-card-table td {
+    border-top: 0;
+    padding-top: 0;
+  }
+}
