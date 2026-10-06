@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
 from apps.api.services.catalog_service import (
+    get_geography_related,
     get_metric_capability,
     list_geographies,
     list_metrics,
@@ -18,6 +19,7 @@ from apps.api.schemas import (
     CapabilityListResponse,
     FreshnessListResponse,
     GeographyListResponse,
+    GeographyRelatedResponse,
     MetricCapability,
     MetricListResponse,
     SourceSystem,
@@ -120,3 +122,23 @@ def get_metric(
     if capability is None:
         raise HTTPException(status_code=404, detail="metric_code not found")
     return capability
+
+
+@router.get(
+    "/geographies/{geo_id}/related",
+    response_model=GeographyRelatedResponse,
+    responses=NOT_FOUND,
+)
+def get_geography_relationships(
+    geo_id: str = Path(..., min_length=1, max_length=100),
+    db: Session = Depends(get_db_session_dep),
+) -> GeographyRelatedResponse:
+    """The geographies one served geography contains, is part of, intersects,
+    and borders, each with the vintage and evidence the reference recorded."""
+    try:
+        related = get_geography_related(db, geo_id)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    if related is None:
+        raise HTTPException(status_code=404, detail="geo_id not found")
+    return related

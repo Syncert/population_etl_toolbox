@@ -51,3 +51,14 @@ test("a county and a state are not compared; the county's state is offered", asy
   await expect(page.getByTestId("compare-places-parent-offer")).toHaveAttribute("href", "/us/wisconsin/vs/us/minnesota");
   await expect(page.locator(".paired-row")).toHaveCount(0);
 });
+
+test("the compare picker offers neighbouring counties first", async ({ page }) => {
+  // Covers: WEB-130 — the compare default is a neighbour.
+  await installPlaceFixtures(page);
+  await page.goto("/us/wisconsin/rock-county/vs/us/minnesota/hennepin-county");
+  await expect(page.getByTestId("compare-places-picker-results")).toContainText("Dane County, Wisconsin · neighbouring county");
+  await page.getByTestId("compare-places-picker-results").getByRole("button", { name: "Dane County, Wisconsin" }).click();
+  // The neighbour is addressed by its FIPS, which the route resolves.
+  await expect(page).toHaveURL(/\/us\/wisconsin\/rock-county\/vs\/us\/wisconsin\/55025$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Rock County, Wisconsin and Dane County, Wisconsin");
+});

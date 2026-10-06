@@ -30,6 +30,9 @@ _GLOSSARY_CONTRACTS = frozenset(
         "gold_glossary.dim_source_system",
         "gold_glossary.dim_metric",
         "gold_glossary.dim_geography",
+        # The relationship projection beside the geography it relates
+        # (nearby-and-related-places).
+        "gold_glossary.geo_relationship",
     }
 )
 
@@ -123,7 +126,7 @@ def _relations_in(sql: str) -> set[str]:
 
 
 def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
-    """Covers: API-037 — the reviewed allowlist is exactly the glossary trio."""
+    """Covers: API-037 — the reviewed allowlist is exactly the glossary contracts."""
     assert catalog_queries.CATALOG_RELATIONS == _GLOSSARY_CONTRACTS
 
     metrics_list, metrics_count, _ = catalog_queries.build_metrics_queries(
@@ -143,6 +146,8 @@ def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
             geo_list,
             geo_count,
             detail,
+            catalog_queries.GEOGRAPHY_RELATED_QUERY,
+            catalog_queries.GEOGRAPHY_EXISTS_QUERY,
         )
     ]
     for sql in rendered:

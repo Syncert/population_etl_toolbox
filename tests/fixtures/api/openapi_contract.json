@@ -371,6 +371,30 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/geographies/{geo_id}/related": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "path",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographyRelatedResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/metrics": {
       "parameters": [
         {
@@ -2902,6 +2926,38 @@
         "limit",
         "offset",
         "total"
+      ]
+    },
+    "GeographyRelatedResponse": {
+      "properties": {
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "items": "array<GeographyRelationship>",
+        "total": "integer"
+      },
+      "required": [
+        "geo_id",
+        "items",
+        "total"
+      ]
+    },
+    "GeographyRelationship": {
+      "properties": {
+        "evidence_source": "string",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "geography_vintage": "integer",
+        "overlap_area_m2": "number | null",
+        "overlap_weight": "number | null",
+        "relationship": "string",
+        "state_fips": "string | null"
+      },
+      "required": [
+        "evidence_source",
+        "geo_id",
+        "geography_vintage",
+        "relationship"
       ]
     },
     "HTTPValidationError": {

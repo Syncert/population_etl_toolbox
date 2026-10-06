@@ -72,6 +72,36 @@ class GeographyLatest(BaseModel):
     is_active: Optional[bool] = None
 
 
+class GeographyRelationship(BaseModel):
+    """One geography related to the requested one, from its point of view.
+
+    ``relationship`` is ``contains`` (the other is inside this one),
+    ``part_of`` (this one is inside the other), ``intersects`` (a county and a
+    place whose boundaries overlap) or ``adjacent`` (two counties sharing a
+    boundary). ``overlap_weight`` is the overlap's share of the place's area
+    and ``overlap_area_m2`` the overlap itself, both only for ``intersects``.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    relationship: str
+    geo_id: str
+    geo_level: Optional[str] = None
+    geo_name: Optional[str] = None
+    state_fips: Optional[str] = None
+    geography_vintage: int
+    evidence_source: str
+    overlap_area_m2: Optional[float] = None
+    overlap_weight: Optional[float] = None
+
+
+class GeographyRelatedResponse(BaseModel):
+    geo_id: str
+    geo_level: Optional[str] = None
+    total: int
+    items: list[GeographyRelationship]
+
+
 class GeographyListResponse(BaseModel):
     total: int
     limit: int

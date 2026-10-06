@@ -108,3 +108,26 @@ test("an unknown place is a not-found page with search and no chart", async ({ p
   expect(response.status()).toBe(404);
   await expect(page.getByTestId("route-not-found")).toBeVisible();
 });
+
+test("nearby and related: a place crossing two counties is noted on both pages", async ({ page }) => {
+  // Covers: WEB-130 — the Nearby section from the relationship resource.
+  await ready(page, "/us/wisconsin/dane-county");
+  const nearby = page.getByTestId("place-nearby");
+  await expect(nearby.getByTestId("place-nearby-within")).toContainText("Crossing city");
+  await expect(nearby.getByTestId("place-nearby-within")).toContainText("60% of it lies in this county; the rest is in another county");
+  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Rock County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/rock-county");
+  // A neighbour in another state is addressed by its FIPS, which settles on its name.
+  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Hennepin County, Minnesota" })).toHaveAttribute("href", "/us/minnesota/27053");
+  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link")).toHaveText(["Wisconsin", "United States"]);
+  await expect(nearby).toContainText("vintage 2025");
+
+  await ready(page, "/us/wisconsin/rock-county");
+  await expect(page.getByTestId("place-nearby-within")).toContainText("40% of it lies in this county; the rest is in another county");
+});
+
+test("a place with no recorded relationships omits the section and says why", async ({ page }) => {
+  // Covers: WEB-130 — an empty answer is stated, not an empty section.
+  await ready(page, "/us/minnesota/hennepin-county");
+  await expect(page.getByTestId("place-nearby")).toHaveCount(0);
+  await expect(page.getByTestId("place-omissions")).toContainText("Nearby and related: the geography reference records no relationships for this place");
+});

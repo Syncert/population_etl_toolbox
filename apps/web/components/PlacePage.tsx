@@ -64,6 +64,8 @@ import type {
   ResolvedChapter,
   ResolvedPlaceMeasure,
 } from "../lib/placeChapters";
+import { groupNearby, isEmpty, relatedPath, shareText } from "../lib/placeRelationships";
+import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
 import { explorerHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 
@@ -136,6 +138,8 @@ export default function PlacePage({
   const [histories, setHistories] = useState<Map<string, ObservationRow[]>>(new Map());
   const [observationStatus, setObservationStatus] = useState({ state: "idle", message: "waiting for the place" });
   const [search, setSearch] = useState("");
+  const [nearby, setNearby] = useState<NearbyGroups | null>(null);
+  const [nearbyNote, setNearbyNote] = useState("");
   const settled = useRef(false);
 
   // Resolve the address through the catalog.
@@ -250,6 +254,24 @@ export default function PlacePage({
 
   const place = level === "COUNTY" ? county : level === "STATE" ? state : nation;
   const title = placeTitle(place, level, state);
+
+  // What this place contains, borders and is part of, as the reference
+  // recorded it (nearby-and-related-places).
+  useEffect(() => {
+    if (resolution.state !== "found" || !place) return;
+    const controller = new AbortController();
+    apiFetch<RelatedResponse>(relatedPath(place.geo_id), { signal: controller.signal })
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        const groups = groupNearby(payload, states, counties);
+        setNearby(groups);
+        setNearbyNote(isEmpty(groups) ? "Nearby and related: the geography reference records no relationships for this place" : "");
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setNearbyNote(`Nearby and related: ${apiErrorMessage(error)}`);
+      });
+    return () => controller.abort();
+  }, [resolution.state, place, states, counties]);
 
   const levels = useMemo((): LevelPlace[] => {
     const chain: LevelPlace[] = [];
@@ -409,6 +431,7 @@ export default function PlacePage({
   );
   const emptied = settled.current ? shown.filter((resolved) => !visible.includes(resolved)) : [];
   const omissions = [
+    ...(nearbyNote ? [nearbyNote] : []),
     ...omitted.map(omissionLine),
     ...emptied.map((resolved) => `${resolved.chapter.title}: no published values for this place`),
   ].sort((left, right) => chapterOrder(left) - chapterOrder(right));
@@ -465,6 +488,49 @@ export default function PlacePage({
           sourceFor={sourceFor}
         />
       ))}
+
+      {nearby && !isEmpty(nearby) ? (
+        <section className="analysis-panel place-nearby" aria-labelledby="place-nearby-heading" data-testid="place-nearby">
+          <h2 id="place-nearby-heading">Nearby and related</h2>
+          {nearby.within.length ? (
+            <div data-testid="place-nearby-within">
+              <h3>Within this county</h3>
+              <p className="subtle">Places whose boundaries overlap this county. A place can extend into another county.</p>
+              <ul className="place-index">
+                {nearby.within.map((entry) => (
+                  <li key={entry.geoId} data-geo-id={entry.geoId}>
+                    <Link href={explorerHref({ geoId: entry.geoId, geoLevel: "PLACE", stateFips: county?.state_fips || undefined })}>{entry.name}</Link>
+                    {entry.share !== null ? <span className="subtle"> · {shareText(entry)}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {nearby.neighbours.length ? (
+            <div data-testid="place-nearby-neighbours">
+              <h3>Neighbouring counties</h3>
+              <ul className="place-index">
+                {nearby.neighbours.map((entry) => (
+                  <li key={entry.geoId}>{entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {nearby.partOf.length ? (
+            <div data-testid="place-nearby-part-of">
+              <h3>Part of</h3>
+              <ul className="place-index">
+                {nearby.partOf.map((entry) => (
+                  <li key={entry.geoId}>{entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <p className="subtle">
+            From the Census geography reference, vintage {[...new Set([...nearby.within, ...nearby.neighbours, ...nearby.partOf].map((entry) => entry.vintage))].join(", ")}.
+          </p>
+        </section>
+      ) : null}
 
       {level !== "COUNTY" && resolution.state === "found" ? (
         <section className="analysis-panel place-children" aria-labelledby="place-children-heading">

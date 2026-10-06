@@ -650,6 +650,18 @@ _GLOSSARY_OBJECTS: tuple[WarehouseObject, ...] = (
         cadence="per geography vintage",
         empty_behavior="empty only before the first reference load",
     ),
+    _obj(
+        "gold_glossary.geo_relationship",
+        "glossary",
+        "SHARED",
+        grain="geo_id, related_geo_id, relationship_type (newest vintage per "
+        "parent and type)",
+        lineage="silver_ref.bridge_geo_relationship_version, "
+        "gold_glossary.dim_geo_latest",
+        scope_method="view over the relationship bridge, current geographies only",
+        cadence="per geography vintage",
+        empty_behavior="empty only before the first reference load",
+    ),
 )
 
 _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
