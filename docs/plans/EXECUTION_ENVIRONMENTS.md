@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**13 plans.**
+**12 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -59,7 +59,6 @@ grep was looking for.
 | [`nearby-and-related-places`](to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`one-measure-every-county-map`](to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) | medium | `browser` | -- |
 | [`place-pages`](to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) | high | `browser` | -- |
-| [`second-tier-county-source-scouting`](to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) | medium | none | -- |
 | [`studio-video-frames`](to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) | high | `browser` | `place-pages` |
 | [`unit-suite-time-budget`](to_do/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 | [`what-makes-this-place-distinctive`](to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) | high | `browser` | `place-pages` |
@@ -105,7 +104,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**11 plans.**
+**20 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -113,13 +112,22 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`bea-regional-accounts`](to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) | high | `postgres` | -- |
 | [`bls-qcew-county-wages`](to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) | high | `postgres` | -- |
 | [`census-building-permits`](to_do/CENSUS_BUILDING_PERMITS_PLAN.md) | medium | `postgres` | -- |
+| [`census-county-business-patterns`](to_do/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) | medium | `postgres` | -- |
+| [`census-lehd-lodes`](to_do/CENSUS_LEHD_LODES_PLAN.md) | high | `postgres` | -- |
 | [`census-saipe-sahie`](to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) | medium | `postgres` | -- |
+| [`epa-aqs-noaa-climate-normals`](to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) | high | `postgres` | -- |
+| [`fcc-broadband-data-collection`](to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) | medium | `postgres` | -- |
+| [`fema-nri-declarations`](to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) | medium | `postgres` | -- |
+| [`fhfa-house-price-index`](to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) | medium | `postgres` | -- |
+| [`hud-fair-market-rents-and-income-limits`](to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
 | [`irs-county-migration`](to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) | high | `postgres` | -- |
+| [`nces-common-core-of-data`](to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
 | [`sub-county-geography`](to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
 | [`time-windows-and-rollups`](in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
+| [`usda-ers-county-codes-and-atlases`](to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) | medium | `postgres` | -- |
 
 
 ## Notes on the cloud container

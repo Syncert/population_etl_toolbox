@@ -319,7 +319,17 @@ Warehouse, county and place depth:
 - [`docs/plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
 - [`docs/plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
 - [`docs/plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
-- [`docs/plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+- [`docs/plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+  - [`docs/plans/to_do/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/to_do/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
+  - [`docs/plans/to_do/CENSUS_LEHD_LODES_PLAN.md`](../plans/to_do/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+  - [`docs/plans/to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md`](../plans/to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) — NCES Common Core of Data (a Schools chapter).
+  - [`docs/plans/to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
+  - [`docs/plans/to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
+  - [`docs/plans/to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+  - [`docs/plans/to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+  - [`docs/plans/to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+  - Declined: [CDC WONDER mortality and natality](declined_sources/cdc-wonder.md) — the API answers vital statistics nationally only, and county files need an NCHS data use agreement.
 - [`docs/plans/to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md`](../plans/to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) — tracts and ZCTAs, after place grain.
 
 ## Decisions only the owner can make
