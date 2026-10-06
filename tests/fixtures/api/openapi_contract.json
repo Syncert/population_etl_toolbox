@@ -3746,6 +3746,7 @@
     "SourceFreshness": {
       "properties": {
         "current_count": "integer",
+        "geo_grains": "array<string>",
         "latest_harvested_at": "string(date-time) | null",
         "latest_publication_time": "string(date-time) | null",
         "metric_count": "integer",

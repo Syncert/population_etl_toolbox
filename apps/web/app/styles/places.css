@@ -213,3 +213,19 @@
     padding-top: 0;
   }
 }
+
+/* Home finder and public data page (find-your-place-home) */
+.place-finder { margin-top: 18px; max-width: 640px; }
+.place-finder-label { display: block; margin-bottom: 6px; font-weight: 700; }
+.place-finder-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.place-finder-row input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; }
+.place-finder-results { margin: 6px 0 0; padding: 0; list-style: none; border-radius: 6px; background: white; }
+.place-finder-results li { padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.place-finder-results li.active { background: var(--accent-soft); }
+.home-map, .home-featured, .home-tools { margin: 28px 0; }
+.source-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.source-card { border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 14px; min-width: 0; overflow-wrap: anywhere; }
+.source-card dl { display: grid; gap: 6px; margin: 8px 0; }
+.source-card dt { color: var(--muted); font-size: 0.78rem; }
+.source-card dd { margin: 0; font-weight: 700; }
+.site-rules li, .refresh-timeline li { margin: 6px 0; }

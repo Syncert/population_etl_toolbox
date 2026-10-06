@@ -10,6 +10,7 @@ import { useCasePages } from "./useCasePages";
 export const PUBLIC_ROUTES: readonly string[] = [
   "/",
   "/us",
+  "/data",
   "/catalog",
   "/explore",
   "/compare",

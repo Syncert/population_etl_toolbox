@@ -34,6 +34,7 @@ export const STATIC_ROUTE_TITLES: Readonly<Record<string, string>> = {
   "/builder": "Evidence packet builder",
   "/articles": "Composed article",
   "/us": "United States",
+  "/data": "Where the numbers come from",
 };
 
 /**

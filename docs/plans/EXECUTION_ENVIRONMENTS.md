@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**12 plans.**
+**11 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -54,7 +54,6 @@ grep was looking for.
 | [`compare-two-places`](to_do/COMPARE_TWO_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`county-crime-rollup-from-agency-reports`](to_do/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md) | high | `browser` | -- |
 | [`explainer-pages`](to_do/EXPLAINER_PAGES_PLAN.md) | medium | `browser` | -- |
-| [`find-your-place-home`](to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`nearby-and-related-places`](to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`one-measure-every-county-map`](to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) | medium | `browser` | -- |

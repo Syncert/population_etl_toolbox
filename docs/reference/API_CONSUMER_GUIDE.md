@@ -120,7 +120,7 @@ list.
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `q`, `active_only`) — see below |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
-| `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
+| `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
 `valid_geo_grains` on a metric distinguishes an explicit empty list from an
 absent or null field. `[]` means the metric is discoverable but has no

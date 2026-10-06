@@ -1,17 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, BarChart3, BookOpen, Database, Map } from "lucide-react";
+import PlaceSearch, { usePlaceCatalog } from "../components/PlaceSearch";
 import { getSources, searchMetrics } from "../lib/api/client";
 import { displayMetricName, formatNumber } from "../lib/format";
 import { connectedSourcesBand } from "../lib/catalog";
+import { FEATURED_PLACE } from "../lib/featuredPlace";
+import { featurePlaceHref } from "../lib/placeDirectory";
+import { discoverTileMetadata } from "../lib/tiles";
 import { explorerHref } from "../lib/urlState";
+
+const ChoroplethMap = dynamic(() => import("../components/ChoroplethMap"), { ssr: false });
 
 export default function HomePage() {
   const [sources, setSources] = useState([]);
   const [metrics, setMetrics] = useState({ total: 0, items: [] });
   const [status, setStatus] = useState("loading");
+  const router = useRouter();
+  const { catalog, error: placeError } = usePlaceCatalog();
+  const [tileMetadata, setTileMetadata] = useState(null);
+  const [tileStatus, setTileStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    discoverTileMetadata()
+      .then((metadata) => { if (!cancelled) { setTileMetadata(metadata); setTileStatus("ready"); } })
+      .catch(() => { if (!cancelled) setTileStatus("unavailable"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const openFeature = useCallback((properties) => {
+    if (!catalog || !tileMetadata) return;
+    const href = featurePlaceHref(properties, tileMetadata.joinKey || "geo_id", catalog.counties, catalog.entries);
+    if (href) router.push(href);
+  }, [catalog, tileMetadata, router]);
+
+  const featured = useMemo(() => {
+    if (!catalog) return [];
+    const county = catalog.entries.find((entry) => entry.geoId === FEATURED_PLACE.countyGeoId);
+    const state = catalog.entries.find((entry) => entry.geoId === FEATURED_PLACE.stateGeoId);
+    const nation = catalog.entries.find((entry) => entry.level === "NATIONAL");
+    return [county, state, nation].filter(Boolean);
+  }, [catalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,16 +74,50 @@ export default function HomePage() {
 
   return (
     <main className="page-shell home-page">
-      <section className="home-intro">
-        <div className="section-kicker">Public economic intelligence</div>
-        <h1>Economic Data Studio</h1>
-        {/* Not an enumeration: the published list is the band below,
-            and this sentence named three sources while the API served
-            seven (WEB-080). */}
+      <section className="home-intro home-finder">
+        <div className="section-kicker">Economic Data Studio</div>
+        <h1>What is going on in your place?</h1>
+        <p>One page for every county, every state, and the nation: the same chapters in the same order, each number beside its state&apos;s and the nation&apos;s, with its period and source.</p>
+        <PlaceSearch catalog={catalog} error={placeError} />
+      </section>
+
+      <section className="home-map" aria-labelledby="home-map-heading">
+        <h2 id="home-map-heading">Or choose a county on the map</h2>
+        {tileStatus === "ready" ? (
+          <ChoroplethMap
+            rows={[]}
+            tileMetadata={tileMetadata}
+            geoLevel="COUNTY"
+            legendTitle="Counties, unpainted: no briefing measure is published yet"
+            missingLabel="Not painted"
+            testId="home-map"
+            ariaLabel="County map. Select a county to open its page; the search above reaches every county too."
+            onFeatureClick={openFeature}
+          />
+        ) : (
+          <p className="subtle" role="status" data-testid="home-map-status">
+            {tileStatus === "loading" ? "Loading the county map…" : "The county map is not available here. The search above reaches every county."}
+          </p>
+        )}
+      </section>
+
+      {featured.length ? (
+        <section className="home-featured" aria-labelledby="home-featured-heading">
+          <h2 id="home-featured-heading">Start with an example</h2>
+          <ul className="place-index" data-testid="home-featured-places">
+            {featured.map((entry) => <li key={entry.geoId}><Link href={entry.href}>{entry.name}</Link></li>)}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="home-tools" aria-labelledby="home-tools-heading">
+        <div className="section-kicker">Tools</div>
+        <h2 id="home-tools-heading">For analysts</h2>
         <p>Explore published federal statistics with every metric, map, and chart tied back to its source.</p>
         <div className="command-row">
           <Link className="button primary" href="/explore">Open the explorer <ArrowRight size={16} /></Link>
           <Link className="button secondary" href="/catalog">Browse the catalog</Link>
+          <Link className="button secondary" href="/data">Where the numbers come from</Link>
         </div>
       </section>
 

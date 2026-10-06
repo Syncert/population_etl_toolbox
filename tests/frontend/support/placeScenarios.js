@@ -64,6 +64,12 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
         : grain === "COUNTY" ? COUNTIES.filter((county) => !params.get("state_fips") || county.state_fips === params.get("state_fips")) : [];
       return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
     }
+    if (path === "/api/v1/catalog/sources") return route.fulfill({ json: sources.map((source_code) => ({ source_code, source_name: source_code === "BLS" ? "Bureau of Labor Statistics" : source_code, source_type: "PRIMARY", reference_url: `https://example.org/${source_code.toLowerCase()}` })) });
+    // USDA NASS is deliberately absent from the rollup: the public data page
+    // must call it "not reported", never fresh.
+    if (path === "/api/v1/catalog/freshness") return route.fulfill({ json: { total: sources.length - 1, items: sources.filter((code) => code !== "USDA_NASS").map((source_code) => ({ source_code, metric_count: 12, current_count: 11, stale_count: 1, retired_count: 0,
+      latest_publication_time: "2026-09-01T00:00:00Z", latest_harvested_at: `2026-09-0${sources.indexOf(source_code) + 2}T00:00:00Z`, geo_grains: grainsFor(`${source_code}:x`).filter((grain) => grain !== "AGENCY") })) } });
+    if (path === "/api/v1/catalog/metrics") return route.fulfill({ json: { total: 0, limit: 6, offset: 0, items: [] } });
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
       return metrics[code] ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });

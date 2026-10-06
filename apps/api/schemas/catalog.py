@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SourceSystem(BaseModel):
@@ -212,6 +212,8 @@ class SourceFreshness(BaseModel):
     retired_count: int
     latest_publication_time: Optional[datetime] = None
     latest_harvested_at: Optional[datetime] = None
+    #: The geography grains the source's non-retired metrics publish, sorted.
+    geo_grains: list[str] = Field(default_factory=list)
 
 
 class FreshnessListResponse(BaseModel):

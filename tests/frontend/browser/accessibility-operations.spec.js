@@ -283,6 +283,11 @@ test("the active navigation link says so, and the skip link reaches main", async
   await installRoutes(page);
   await page.goto("/explore");
 
+  // The analyst routes sit under "Tools" (find-your-place-home); the menu
+  // says it holds the current page before it is opened.
+  const tools = page.getByTestId("tools-menu");
+  await expect(tools.locator(":scope > summary")).toHaveClass(/active/);
+  await tools.locator(":scope > summary").click();
   const active = page.getByRole("link", { name: "Explore", exact: true });
   await expect(active).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("link", { name: "Compare", exact: true })).not.toHaveAttribute(
@@ -292,6 +297,8 @@ test("the active navigation link says so, and the skip link reaches main", async
 
   // The skip link is the first thing a keyboard reaches, and it lands on the
   // content rather than scrolling to it and leaving focus behind.
+  await page.keyboard.press("Escape");
+  await page.reload();
   await page.keyboard.press("Tab");
   const skip = page.getByRole("link", { name: "Skip to main content" });
   await expect(skip).toBeFocused();

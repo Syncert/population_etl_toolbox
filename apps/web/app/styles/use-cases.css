@@ -149,3 +149,8 @@
   .use-case-page .profile-controls label { min-width: 100%; }
   .use-case-guardrail { padding: 14px; }
 }
+
+/* Tools menu (find-your-place-home): the analyst routes, one level down. */
+.tools-dropdown { position: absolute; top: 100%; right: 0; z-index: 20; display: grid; gap: 2px; min-width: 220px; max-width: calc(100vw - 32px); margin: 0; padding: 8px; list-style: none; background: white; border: 1px solid var(--line); border-radius: 0 0 12px 12px; box-shadow: var(--shadow); }
+.tools-dropdown .nav-link { display: flex; }
+@media (max-width: 780px) { .tools-dropdown { right: auto; left: 0; } }
