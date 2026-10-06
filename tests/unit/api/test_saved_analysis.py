@@ -1969,3 +1969,39 @@ def test_a_storage_failure_that_is_not_a_conflict_still_answers_503(
     )
     assert response.status_code == 503, response.json()
     assert "temporarily unavailable" in response.json()["detail"]
+
+
+def test_a_studio_frame_record_is_a_valid_workbench() -> None:
+    """Covers: WEB-132 — the studio stores its frame as a workbench the API accepts.
+
+    The shape `apps/web/lib/studioFrame.ts` writes: one observations series per
+    level, a bar presentation, and the studio's own fields in `visualization`,
+    which is stored verbatim.
+    """
+    code = _PEP_STATE_METRIC["metric_code"]
+    document = _workbench(
+        series=[
+            {
+                "metric_code": code,
+                "newest_per_geography": True,
+                "filters": {"geo_id": geo},
+            }
+            for geo in ("state:55", "state:27")
+        ],
+        presentation={"type": "bar", "options": {}},
+        visualization={
+            "studio": {
+                "version": 1,
+                "format": "16:9",
+                "requests": [
+                    {
+                        "level": "STATE",
+                        "geoId": "state:55",
+                        "url": "/api/v1/observations?metric_code=x",
+                    }
+                ],
+                "releases": {"state:55": "vintage-2025"},
+            }
+        },
+    )
+    assert _validate_workbench(document) == frozenset({"CENSUS_PEP"})

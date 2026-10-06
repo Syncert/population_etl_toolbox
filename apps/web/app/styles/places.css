@@ -213,3 +213,6 @@
     padding-top: 0;
   }
 }
+
+/* Studio (studio-video-frames) */
+.studio-preview { display: block; width: 100%; max-width: 960px; height: auto; border: 1px solid var(--line); }
