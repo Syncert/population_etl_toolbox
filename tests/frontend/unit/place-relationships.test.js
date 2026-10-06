@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { groupNearby, isEmpty, relatedPath, shareText } from "../../../apps/web/lib/placeRelationships";
+import { crossCountyNote, groupNearby, isEmpty, relatedPath, shareText } from "../../../apps/web/lib/placeRelationships";
 
 // Covers: WEB-130 — the Nearby section's groups, links and overlap wording,
 // all from the relationship rows' own identities.
@@ -41,8 +41,43 @@ describe("grouping related geographies", () => {
   });
 
   it("reads an empty answer as empty and encodes the identity in the path", () => {
+    expect(isEmpty({ within: [], neighbours: [], partOf: [], counties: [] })).toBe(true);
     expect(isEmpty(groupNearby({ geo_id: "x", total: 0, items: [] }, states, []))).toBe(true);
     expect(isEmpty(groupNearby(null, states, []))).toBe(true);
     expect(relatedPath("state:55|county:025")).toBe("/catalog/geographies/state%3A55%7Ccounty%3A025/related");
+  });
+});
+
+// Covers: WEB-134 — acs-place-grain: a city or town's page links the counties
+// it lies in and says when it crosses a county line, from the overlap weights.
+describe("a city or town's counties", () => {
+  const crossing = groupNearby({ geo_id: "state:55|place:99999", total: 4, items: [
+    row("intersects", "state:55|county:105", "COUNTY", "Rock County", "55", { overlap_weight: 0.4 }),
+    row("intersects", "state:55|county:025", "COUNTY", "Dane County", "55", { overlap_weight: 0.6 }),
+    row("part_of", "state:55", "STATE", "Wisconsin", "55"),
+    row("part_of", "us:1", "NATIONAL", "us:1", null),
+  ] }, states, wisconsin);
+
+  it("lists the counties, largest share first, with their place-page links", () => {
+    expect(crossing.counties.map((entry) => [entry.name, entry.href, entry.share])).toEqual([
+      ["Dane County, Wisconsin", "/us/wisconsin/dane-county", 0.6],
+      ["Rock County, Wisconsin", "/us/wisconsin/rock-county", 0.4],
+    ]);
+    expect(crossing.within).toEqual([]);
+  });
+
+  it("names one county plainly and several with their shares", () => {
+    expect(crossCountyNote("Crossing city", crossing.counties)).toBe(
+      "Crossing city crosses county lines: it lies in Dane County (60%) and Rock County (40%). A county's figures describe the whole county, not this place.",
+    );
+    expect(crossCountyNote("Madison city", crossing.counties.slice(0, 1))).toBe("Madison city lies in Dane County.");
+    expect(crossCountyNote("Nowhere", [])).toBe("");
+  });
+
+  it("links a place within a county by its seven-digit code", () => {
+    const county = groupNearby({ geo_id: "state:55|county:025", total: 1, items: [
+      row("intersects", "state:55|place:99999", "PLACE", "Crossing city", "55", { overlap_weight: 0.6 }),
+    ] }, states, wisconsin);
+    expect(county.within[0].href).toBe("/us/wisconsin/5599999");
   });
 });
