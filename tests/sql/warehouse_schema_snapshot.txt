@@ -125,6 +125,29 @@ r control.cdc_dataset_release
     index cdc_dataset_release_latest_idx CREATE INDEX cdc_dataset_release_latest_idx ON control.cdc_dataset_release USING btree (asset_id, release_watermark DESC, created_at DESC)
     index cdc_dataset_release_pkey CREATE UNIQUE INDEX cdc_dataset_release_pkey ON control.cdc_dataset_release USING btree (run_id)
 
+r control.census_sae_slice
+    column run_id uuid NOT NULL
+    column dataset_id text NOT NULL
+    column estimate_year integer NOT NULL
+    column geo_level text NOT NULL
+    column capture_id uuid NOT NULL
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint census_sae_slice_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint census_sae_slice_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint census_sae_slice_check CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint census_sae_slice_dataset_id_check CHECK ((dataset_id = ANY (ARRAY['saipe'::text, 'sahie'::text])))
+    constraint census_sae_slice_estimate_year_check CHECK (((estimate_year >= 1989) AND (estimate_year <= 2100)))
+    constraint census_sae_slice_geo_level_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text])))
+    constraint census_sae_slice_pkey PRIMARY KEY (run_id, geo_level)
+    constraint census_sae_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint census_sae_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'quarantined'::text, 'silver_ready'::text, 'published'::text])))
+    index census_sae_slice_latest_idx CREATE INDEX census_sae_slice_latest_idx ON control.census_sae_slice USING btree (dataset_id, estimate_year, geo_level, created_at DESC)
+    index census_sae_slice_pkey CREATE UNIQUE INDEX census_sae_slice_pkey ON control.census_sae_slice USING btree (run_id, geo_level)
+
 v control.data_quality_latest_result
     column rule_id text
     column severity text
@@ -2413,6 +2436,187 @@ v gold_census.v_metric_timeseries_by_geo
     body     margin_of_error_pct
     body    FROM gold_census.fact_observation;
 
+v gold_census_sae.estimate_latest
+    column dataset_id text
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column universe text
+    column estimate_method text
+    column methodology_url text
+    column estimate_year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column confidence_lower numeric
+    column confidence_upper numeric
+    column margin_of_error numeric
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (dataset_id, measure_id, estimate_year, geo_id) dataset_id,
+    body     measure_id,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     universe,
+    body     estimate_method,
+    body     methodology_url,
+    body     estimate_year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     confidence_lower,
+    body     confidence_upper,
+    body     margin_of_error,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_census_sae.estimate_revision revision
+    body   ORDER BY dataset_id, measure_id, estimate_year, geo_id, retrieved_at DESC, capture_id DESC;
+
+v gold_census_sae.estimate_revision
+    column dataset_id text
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column universe text
+    column estimate_method text
+    column methodology_url text
+    column estimate_year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column confidence_lower numeric
+    column confidence_upper numeric
+    column margin_of_error numeric
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT fact.dataset_id,
+    body     fact.measure_id,
+    body     (fact.dataset_id || ':'::text) || fact.measure_id AS metric_key,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.universe,
+    body     measure.estimate_method,
+    body     measure.methodology_url,
+    body     fact.estimate_year,
+    body     make_date(fact.estimate_year, 1, 1) AS period_start,
+    body     make_date(fact.estimate_year, 12, 31) AS period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.confidence_lower,
+    body     fact.confidence_upper,
+    body     fact.margin_of_error,
+    body     fact.retrieved_at,
+    body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_census_sae.fact_estimate fact
+    body      JOIN silver_census_sae.dim_measure measure ON measure.dataset_id = fact.dataset_id AND measure.measure_id = fact.measure_id
+    body      JOIN control.census_sae_slice slice ON slice.capture_id = fact.capture_id
+    body   WHERE slice.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_census_sae.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column universe text
+    column estimate_method text
+    column methodology_url text
+    column schema_version text
+    body SELECT dataset_id AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     unit,
+    body     universe,
+    body     estimate_method,
+    body     methodology_url,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_census_sae.dim_measure measure;
+
+v gold_census_sae.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CENSUS_SAIPE_SAHIE'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     (measure.dataset_id || ':'::text) || measure.measure_id AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     measure.measure_label AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_census_sae', 'relation', 'estimate_revision', 'key', (measure.dataset_id || ':'::text) || measure.measure_id) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Census Bureau Small Area Income and Poverty Estimates and Small Area Health Insurance Estimates'::text AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body     measure.methodology_url AS reference_url
+    body    FROM silver_census_sae.dim_measure measure
+    body      JOIN LATERAL ( SELECT max(latest.estimate_year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(slice.published_at) AS publication_time
+    body            FROM gold_census_sae.estimate_latest latest
+    body              JOIN control.census_sae_slice slice ON slice.capture_id = latest.capture_id
+    body           WHERE latest.dataset_id = measure.dataset_id AND latest.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
+
 v gold_fbi.agency_geography
     column relationship_sk bigint
     column ori text
@@ -4689,6 +4893,104 @@ r silver_census.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index census_observation_revision_slice_idx CREATE INDEX census_observation_revision_slice_idx ON silver_census.observation_revision USING btree (dataset, year, geo_level, state_fips_source, county_fips_source)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census.observation_revision USING btree (capture_id, source_row_index, source_column_index)
+
+r silver_census_sae.dim_measure
+    column dataset_id text NOT NULL
+    column measure_id text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column universe text NOT NULL
+    column estimate_method text NOT NULL
+    column methodology_url text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_dataset_id_check CHECK ((dataset_id = ANY (ARRAY['saipe'::text, 'sahie'::text])))
+    constraint dim_measure_measure_id_check CHECK ((measure_id ~ '^[A-Z0-9_]+$'::text))
+    constraint dim_measure_pkey PRIMARY KEY (dataset_id, measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_census_sae.dim_measure USING btree (dataset_id, measure_id)
+
+r silver_census_sae.fact_estimate
+    column dataset_id text NOT NULL
+    column measure_id text NOT NULL
+    column estimate_year integer NOT NULL
+    column geo_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column confidence_lower numeric
+    column confidence_upper numeric
+    column margin_of_error numeric
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_estimate_bounds_ordered CHECK (((confidence_lower IS NULL) OR (confidence_upper IS NULL) OR (confidence_lower <= confidence_upper)))
+    constraint fact_estimate_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_estimate_dataset_id_measure_id_fkey FOREIGN KEY (dataset_id, measure_id) REFERENCES silver_census_sae.dim_measure(dataset_id, measure_id)
+    constraint fact_estimate_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_estimate_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_estimate_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (value IS NULL)))
+    constraint fact_estimate_pkey PRIMARY KEY (dataset_id, measure_id, estimate_year, geo_id, capture_id)
+    constraint fact_estimate_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_estimate_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint fact_estimate_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index census_sae_fact_lookup_idx CREATE INDEX census_sae_fact_lookup_idx ON silver_census_sae.fact_estimate USING btree (dataset_id, measure_id, geo_id, estimate_year)
+    index fact_estimate_pkey CREATE UNIQUE INDEX fact_estimate_pkey ON silver_census_sae.fact_estimate USING btree (dataset_id, measure_id, estimate_year, geo_id, capture_id)
+
+r silver_census_sae.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_census_sae.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_census_sae.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_census_sae.observation_quarantine USING btree (quarantine_sk)
+
+r silver_census_sae.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure_id text NOT NULL
+    column run_id uuid NOT NULL
+    column dataset_id text NOT NULL
+    column estimate_year integer NOT NULL
+    column geo_type text NOT NULL
+    column geo_source_code text NOT NULL
+    column geo_source_label text
+    column geo_id text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column confidence_lower numeric
+    column confidence_upper numeric
+    column margin_of_error numeric
+    column source_record_id text NOT NULL
+    column source_record jsonb NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_revision_bounds_ordered CHECK (((confidence_lower IS NULL) OR (confidence_upper IS NULL) OR (confidence_lower <= confidence_upper)))
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_dataset_id_check CHECK ((dataset_id = ANY (ARRAY['saipe'::text, 'sahie'::text])))
+    constraint observation_revision_dataset_id_measure_id_fkey FOREIGN KEY (dataset_id, measure_id) REFERENCES silver_census_sae.dim_measure(dataset_id, measure_id)
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint observation_revision_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (value IS NULL)))
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, measure_id)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index census_sae_revision_run_idx CREATE INDEX census_sae_revision_run_idx ON silver_census_sae.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_sae.observation_revision USING btree (capture_id, source_row_index, measure_id)
 
 r silver_fbi.agency_geography_relationship
     column relationship_sk bigint NOT NULL DEFAULT nextval('silver_fbi.agency_geography_relationship_relationship_sk_seq'::regclass)

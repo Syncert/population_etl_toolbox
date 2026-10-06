@@ -662,6 +662,36 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_census_saipe_sahie(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the checked-in SAIPE/SAHIE responses; other years answer 204.
+
+    The fixtures are one estimate year. A year the DAG asks for that has no
+    fixture is the API's own "not published" answer, which is a recorded
+    empty slice rather than a failure.
+    """
+    from data_ingestion_toolbox.census_saipe_sahie import capture as sae_capture
+    from data_ingestion_toolbox.census_saipe_sahie.client import SaeSlice
+
+    def fetch(dataset: Any, *, year: int, geo_level: str, **_kwargs: Any) -> SaeSlice:
+        parameters = dataset.request_parameters(year=year, geo_level=geo_level)
+        path = (
+            FIXTURE_ROOT
+            / "census_saipe_sahie"
+            / f"{dataset.dataset_id}_{year}_{geo_level}.json"
+        )
+        if not path.is_file():
+            return SaeSlice(dataset.api_path, parameters, b"", {}, 204)
+        return SaeSlice(
+            dataset.api_path,
+            parameters,
+            path.read_bytes(),
+            {"content-type": "application/json;charset=utf-8"},
+            200,
+        )
+
+    monkeypatch.setattr(sae_capture, "fetch_slice", fetch)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1126,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("census_saipe_sahie", stub_census_saipe_sahie),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

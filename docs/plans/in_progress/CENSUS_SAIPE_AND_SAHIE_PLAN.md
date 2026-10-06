@@ -15,9 +15,12 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
+In progress. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Deliverables 1 to 5 are implemented on branch `feat/census-saipe-sahie`
+(warehouse, API, quality, operations). Deliverable 6, the web cards, needs
+the county page from `feat/place-pages` (WEB-125), which is not on `main`
+yet; it lands on a branch stacked on both.
 
 ## Why
 
@@ -90,7 +93,66 @@ every-county figures for the Work and Money and Health chapters.
 - Confirm the `time` parameter form and the slicing the API requires for
   all counties (official documentation first).
 
+## Decisions
+
+- **Dataset paths and variables** were read from the API's own variable lists
+  on 2026-10-06: `/timeseries/poverty/saipe` (`SAEPOVRTALL`, `SAEPOVALL`,
+  `SAEPOVRT0_17`, `SAEPOV0_17`, `SAEMHI`, each `_PT`/`_LB90`/`_UB90`/`_MOE`)
+  and `/timeseries/healthins/sahie` (`PCTUI`, `NUI`). Years: SAIPE 1989 to
+  2024, SAHIE 2006 to 2023.
+- **Time and slicing.** `time=<year>` and `for=county:*` with no `in` clause
+  answers every county in one call, so a slice is (dataset, year, grain), not
+  (dataset, year, state). A year and grain the API does not publish answers
+  `204` and is recorded as an `empty` slice.
+- **SAHIE breakdowns** (open item): the first release onboards only the
+  all-incomes, both-sexes, all-races figure for people under 65
+  (`AGECAT=IPRCAT=SEXCAT=RACECAT=0`), fixed as request predicates; a row
+  outside them is quarantined as `category_mismatch`.
+- **Identity.** A metric is `CENSUS_SAIPE_SAHIE:<dataset>:<measure>`; no ACS
+  variable can take that shape. The release is the read time
+  (`release_key`), because the timeseries API names no release.
+- **Serving.** `/api/v1/observations` through the dispatch registry, with the
+  interval under `uncertainty` and `dimensions.estimate_method` naming the
+  model-based basis. No source-specific route. Analysis-ready, like PEP.
+- **Pool.** `census_api`, shared with the ACS (one host, one key).
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2193 passed (14 in
+  `tests/unit/census_saipe_sahie`).
+- Database: `tests/integration/database/test_census_saipe_sahie_capture_replay.py`
+  -- 5 passed (both datasets to gold with bounds; publisher and harvest; rerun
+  idempotent and a changed response keeps both checksums; malformed row
+  quarantined; 204 grain recorded empty and the DDL reapplies).
+- Full `tests/integration tests/e2e -m "not external"` -- 460 passed, then the
+  four failures it showed were fixed (serving-role grant on
+  `gold_census_sae`, the foundation table list) or passed on rerun
+  (`test_usda_nass_dag_tasks` hit a Windows `Address already in use` socket
+  error; `test_pep_teardown...` passed alone); the focused rerun of those
+  files plus the SAIPE/SAHIE nodes and `test_catalog_serving_agreement.py`
+  -- 41 passed.
+- End to end: `tests/e2e/test_census_saipe_sahie_pipeline.py` serves a SAIPE
+  and a SAHIE metric for Kent County, Delaware with value, bounds, margin of
+  error and the model-based label, matching the fixture.
+- DAG: `pytest -m dag tests/dags` in the scheduler container -- 154 passed;
+  with the disposable database, `test_dag_pipeline_execution.py` -- 4 passed
+  (the orchestrated run includes `census_saipe_sahie_ingest`). One combined
+  run failed earlier in `fred_ingest.mark_slices_planned` on a retry, before
+  the new DAG ran; the same file passed in isolation.
+- Live: `tests/external/test_census_sae_source_contracts.py` with the stack's
+  `CENSUS_API_KEY` -- 7 passed.
+- `ruff check .` and `ruff format --check .` clean. OpenAPI snapshot
+  regenerated with no change (no new route); schema snapshot regenerated.
+
+## Remaining
+
+- Deliverable 6: Work and Money and Health chapter cards with interval and
+  "model-based annual estimate" label beside the ACS cards, a browser
+  scenario asserting the labels, and the explainer link. Stacked on
+  `feat/place-pages`.
+
 ## Checkpoint
 
-Next pickup: copy the starter, record the verified dataset paths and
-variables, and write the failing replay test for one state's SAIPE fixture.
+Next pickup: branch from `feat/place-pages`, merge `feat/census-saipe-sahie`,
+add the SAIPE/SAHIE candidates to `apps/web/lib/placeChapters.ts`, and write
+the browser scenario.
