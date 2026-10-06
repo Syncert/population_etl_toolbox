@@ -2,7 +2,7 @@
 id: county-crime-rollup-from-agency-reports
 depends_on: []
 parallel_safe: false
-complexity: large
+complexity: high
 verify:
   - python -u -m pytest tests/unit/fbi_ucr -vv --tb=short
   - python -u -m pytest tests/unit/api -vv --tb=short

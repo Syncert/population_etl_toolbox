@@ -67,7 +67,14 @@ SCOPE_AS_RELEASED = "as_released"
 
 #: Query parameters every source accepts; anything else must be declared in
 #: the source's ``filter_conditions`` to be usable for that source.
-UNIVERSAL_PARAMETERS = ("metric_code", "scope", "release", "period_start", "limit", "offset")
+UNIVERSAL_PARAMETERS = (
+    "metric_code",
+    "scope",
+    "release",
+    "period_start",
+    "limit",
+    "offset",
+)
 
 #: The two query parameters that reduce a read to one row per geography (and,
 #: for the second, per period within a geography).
@@ -726,9 +733,11 @@ def list_metric_periods(
         """
     )
     total = int(db.execute(count_query, params).scalar() or 0)
-    rows = db.execute(
-        list_query, {**params, "limit": limit, "offset": offset}
-    ).mappings().all()
+    rows = (
+        db.execute(list_query, {**params, "limit": limit, "offset": offset})
+        .mappings()
+        .all()
+    )
     return MetricPeriodListResponse(
         metric_code=metric_code,
         source_code=dispatch.source_code,
