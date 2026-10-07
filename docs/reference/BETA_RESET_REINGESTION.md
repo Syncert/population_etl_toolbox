@@ -322,6 +322,11 @@ FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
+BLS now requests its own annual averages (`M13`, ADR-0007). A warehouse
+built before migration `033` gets the new key from the `source-fix` phase;
+re-run `bls_ingest` afterwards so each series' annual averages are captured
+beside its months.
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

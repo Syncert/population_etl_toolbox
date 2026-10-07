@@ -1282,7 +1282,7 @@ v gold_bls.fact_bls_observation
     body    FROM silver_bls.fact_labor_statistics s
     body      JOIN gold_bls.dim_bls_series sr ON sr.series_id = s.series_id::text
     body      JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
-    body   WHERE s.series_id IS NOT NULL AND s.series_id::text <> ''::text;
+    body   WHERE s.series_id IS NOT NULL AND s.series_id::text <> ''::text AND s.period::text <> 'M13'::text;
 
 v gold_bls.fact_observation
     column source_code text
@@ -1488,6 +1488,36 @@ r gold_bls.mv_bls_latest
     index ix_mv_bls_latest_observation_date CREATE INDEX ix_mv_bls_latest_observation_date ON gold_bls.mv_bls_latest USING btree (observation_date)
     index ix_mv_bls_latest_source_metric CREATE INDEX ix_mv_bls_latest_source_metric ON gold_bls.mv_bls_latest USING btree (source_code, metric_code)
     index uq_mv_bls_latest CREATE UNIQUE INDEX uq_mv_bls_latest ON gold_bls.mv_bls_latest USING btree (geo_id, series_id, COALESCE(metric_code, ''::text))
+
+v gold_bls.provider_annual_average
+    column series_id character varying(255)
+    column program_code text
+    column geo_id character varying(255)
+    column geo_sk bigint
+    column year integer
+    column period_start date
+    column period_end date
+    column value numeric
+    column value_status text
+    column source_value text
+    column seasonal_adjustment_status character varying(1)
+    column capture_id uuid
+    column ingested_at timestamp with time zone
+    body SELECT series_id,
+    body     upper(program::text) AS program_code,
+    body     geo_id,
+    body     geo_sk,
+    body     year,
+    body     duration_start AS period_start,
+    body     duration_end AS period_end,
+    body     value,
+    body     value_status,
+    body     source_value,
+    body     seasonal_adjustment AS seasonal_adjustment_status,
+    body     capture_id,
+    body     ingested_at
+    body    FROM silver_bls.fact_labor_statistics s
+    body   WHERE period::text = 'M13'::text AND series_id IS NOT NULL AND series_id::text <> ''::text;
 
 r gold_bls.rpt_bls_observations
     column source_code text NOT NULL DEFAULT 'BLS'::text
@@ -4403,9 +4433,9 @@ r silver_bls.fact_labor_statistics
     constraint fact_labor_statistics_published_value_check CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_labor_statistics_time_sk_fkey FOREIGN KEY (time_sk) REFERENCES silver_ref.dim_time(time_sk)
     constraint fact_labor_statistics_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
-    constraint fact_labor_stats_uk UNIQUE (series_id, period_date)
+    constraint fact_labor_stats_uk UNIQUE (series_id, year, period)
     index fact_labor_statistics_pkey CREATE UNIQUE INDEX fact_labor_statistics_pkey ON silver_bls.fact_labor_statistics USING btree (labor_stat_sk)
-    index fact_labor_stats_uk CREATE UNIQUE INDEX fact_labor_stats_uk ON silver_bls.fact_labor_statistics USING btree (series_id, period_date)
+    index fact_labor_stats_uk CREATE UNIQUE INDEX fact_labor_stats_uk ON silver_bls.fact_labor_statistics USING btree (series_id, year, period)
     index idx_fact_labor_geo_sk CREATE INDEX idx_fact_labor_geo_sk ON silver_bls.fact_labor_statistics USING btree (geo_sk)
     index idx_fact_labor_ingested_at CREATE INDEX idx_fact_labor_ingested_at ON silver_bls.fact_labor_statistics USING btree (ingested_at)
     index idx_fact_labor_program CREATE INDEX idx_fact_labor_program ON silver_bls.fact_labor_statistics USING btree (program)

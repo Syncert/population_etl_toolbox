@@ -135,6 +135,32 @@ JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
 -- that says why. What is still excluded is a row with no series to identify
 -- it, which is not a withheld value but an unusable row.
 WHERE s.series_id IS NOT NULL
+  AND s.series_id <> ''
+  -- BLS's annual averages are provider aggregates over the year, not a
+  -- thirteenth month; they are served through
+  -- `gold_bls.provider_annual_average` (ADR-0007), never as a monthly row.
+  AND s.period <> 'M13';
+
+-- BLS's own annual averages (`M13`), one per series and year: provider
+-- facts (ADR-0007), kept apart from the monthly observations so a December
+-- value and a year's average are never confused.
+CREATE OR REPLACE VIEW gold_bls.provider_annual_average AS
+SELECT s.series_id,
+       UPPER(s.program) AS program_code,
+       s.geo_id,
+       s.geo_sk,
+       s.year,
+       s.duration_start AS period_start,
+       s.duration_end AS period_end,
+       s.value,
+       s.value_status,
+       s.source_value,
+       s.seasonal_adjustment AS seasonal_adjustment_status,
+       s.capture_id,
+       s.ingested_at
+FROM silver_bls.fact_labor_statistics AS s
+WHERE s.period = 'M13'
+  AND s.series_id IS NOT NULL
   AND s.series_id <> '';
 
 -- ============================================================

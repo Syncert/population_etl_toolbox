@@ -923,7 +923,7 @@ _BLS_OBJECTS: tuple[WarehouseObject, ...] = (
         "silver_bls.fact_labor_statistics",
         "silver",
         "BLS",
-        grain="series_id, period_date",
+        grain="series_id, year, period (M13 is BLS's annual average, beside M12)",
         lineage="silver_bls.observation_revision, silver_ref.geography_resolution",
         scope_method="curated series and published observation ranges",
         cadence="per BLS ingestion run",
@@ -963,11 +963,21 @@ _BLS_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold_bls.fact_bls_observation",
         "gold",
         "BLS",
-        grain="series_id, period_date",
+        grain="series_id, period_date (monthly and other periods; no M13)",
         lineage="silver_bls.fact_labor_statistics, gold_bls.dim_bls_series",
         scope_method="published subset of the curated silver scope",
         cadence="per publication",
         empty_behavior="empty only before the first publication",
+    ),
+    _obj(
+        "gold_bls.provider_annual_average",
+        "gold",
+        "BLS",
+        grain="series_id, year",
+        lineage="silver_bls.fact_labor_statistics",
+        scope_method="BLS's own annual averages (period M13) of the curated series",
+        cadence="per BLS ingestion run",
+        empty_behavior="a series BLS publishes no annual average for has no row",
     ),
     _obj(
         "gold_bls.rpt_bls_observations",
@@ -2428,12 +2438,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_bls.fact_labor_statistics",
             "gold_bls.fact_bls_observation",
+            "gold_bls.provider_annual_average",
             "gold_bls.rpt_bls_observations",
             "gold_bls.mv_bls_latest",
         ),
         automation="enforced",
         automation_note=(
-            "Enforced, not measured: (series_id, period_date) is a UNIQUE "
+            "Enforced, not measured: (series_id, year, period) is a UNIQUE "
             "constraint on the silver fact, and the two serving relations carry "
             "unique indexes at their own wider grains, adding the geography and "
             "the published metric code. A duplicate is refused at write time, "
@@ -2443,7 +2454,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         enforced_grains=(
             EnforcedGrain(
                 "silver_bls.fact_labor_statistics",
-                ("series_id", "period_date"),
+                ("series_id", "year", "period"),
             ),
             EnforcedGrain(
                 "gold_bls.rpt_bls_observations",

@@ -25,9 +25,10 @@ verify:
 - **Last updated:** 2026-09-28
 - **Dependencies:** `map-shows-any-published-period` (the period parameter and
   periods route this plan extends).
-- **Next pickup:** RU-1's proposed ADR awaits human acceptance before RU-3.
-  RU-2 can proceed independently once per-metric method evidence and review
-  ownership are established; no draft method may authorize a rollup.
+- **Next pickup:** ADR-0007 was accepted by Nick on 2026-10-07 (RU-1 done).
+  RU-3 (provider aggregates) is unblocked. RU-2's per-metric methods are
+  drafted with citations and need Nick's approval before RU-4/RU-5 may serve
+  a derived value; no draft method may authorize a rollup.
 
 ### Checkpoint (2026-09-28)
 
@@ -47,6 +48,25 @@ verify:
   definitions, and this branch has not assigned aggregation methods by
   inference from source or units. RU-3 remains gated by human acceptance
   of ADR-0007, as this plan explicitly requires.
+
+### Checkpoint (2026-10-07)
+
+- **RU-1 done.** Nick accepted ADR-0007 on 2026-10-07; the ADR and the
+  workbench plan's non-goal note now say so.
+- **RU-3 done for BLS** (ETL-072): requests carry `annualaverage=true`;
+  `M13` parses as the calendar year; the silver key is
+  `(series_id, year, period)` (migration `033` for existing warehouses);
+  the monthly serving view excludes `M13`; `gold_bls.provider_annual_average`
+  holds BLS's own annual averages. Evidence: unit 2 new tests, database
+  `tests/integration/database/test_bls_annual_average.py` 2 passed (M12 and
+  M13 coexist; serving shows only M12; the provider view shows M13; the
+  migration swaps an old key and reruns safely).
+  Integration and end to end: 448 passed, 2 skipped, 1 failed (the PEP
+  teardown node, failing on `main` too). DAG: 144 passed; orchestrated run 4
+  passed.
+- **Next:** RU-2 method registry (drafted methods need Nick's approval before
+  RU-4/RU-5 serve a derived value), then RU-6 serving BLS provider annuals
+  at `time_grain=annual`.
 
 ## Why
 
@@ -119,13 +139,13 @@ workbench out-of-scope entry and WEB-095 to name what is now permitted
 
 ## Work items
 
-- [ ] **RU-1: ADR-0007 "Derived time aggregates"** — product class, labelling,
+- [x] **RU-1: ADR-0007 "Derived time aggregates"** (accepted 2026-10-07) — product class, labelling,
   refusal rule, provider precedence, where methods live; amend workbench plan
   note and WEB-095. **Human acceptance required before RU-3.**
 - [ ] **RU-2: semantic method registry** for BLS, FBI UCR and FRED metrics, with
   a contract test that every served sub-annual metric has a reviewed method or
   is explicitly `not_aggregable`.
-- [ ] **RU-3: provider aggregates as facts** — BLS `M13` with its own period
+- [x] **RU-3: provider aggregates as facts** (BLS done 2026-10-07; FRED server-side aggregation is not configured for any series, so there is nothing to ingest yet) — BLS `M13` with its own period
   identity; FRED aggregated series where configured. Fixture-first adapter
   tests per `ADDING_A_DATA_SOURCE.md`; re-ingestion per
   `BETA_RESET_REINGESTION.md`.
