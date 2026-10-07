@@ -1,0 +1,51 @@
+# Register a HUD User API token
+
+**What it unblocks:** the HUD Fair Market Rent and income-limit pipeline
+([`HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../in_progress/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md)).
+HUD User's website answers this pipeline's honest, self-identifying
+downloads with an empty `202` challenge, so the scheduled job cannot fetch
+the workbooks. On 2026-10-07 you chose HUD's API as the capture path
+instead: it is HUD's sanctioned channel for automated access, and it needs a
+token.
+
+**Why it was not automated:** the token belongs to a person's HUD User
+account and comes with HUD's API terms, which only the account holder can
+accept.
+
+**What you need:** an email address, about ten minutes, and write access to
+`infra/docker/stack.env` on the machine that runs the stack.
+
+**What it touches:** one HUD User account and one line in your local
+`stack.env`. Nothing is committed: `stack.env` holds secrets and is not
+checked in.
+
+## Steps
+
+1. Register (or sign in) at HUD User and open the dataset API page:
+   <https://www.huduser.gov/portal/dataset/fmr-api.html>.
+2. Create an API token for the **Fair Market Rents and Income Limits** API
+   (the page's "Create New Token" flow). Give it a name such as
+   `population-etl-toolbox`.
+3. Read the API terms of service shown with the token
+   (<https://www.huduser.gov/portal/dataset/api-terms-of-service.html>). They
+   permit search, display, analysis and retrieval, limit use to 60 queries a
+   minute, and require services to show "This product uses the HUD User Data
+   API but is not endorsed or certified by HUD User." If anything there
+   forbids republishing county values, stop and say so in the thread instead
+   of adding the token.
+4. Add the token to `infra/docker/stack.env`:
+
+   ```text
+   HUD_USER_API_TOKEN=<the token>
+   ```
+
+   Do not paste the token into the project thread, a commit, or an issue.
+5. Tell the agent the token is in place. The agent then switches the HUD
+   adapter's capture path to the API, records real API answers as fixtures,
+   and reruns the live contract check.
+
+## When it is done
+
+Move this file to [`completed/`](completed/) with the date. The HUD plan
+stays in `in_progress/` until the API capture path is built and its live
+check passes; this item only makes that possible.

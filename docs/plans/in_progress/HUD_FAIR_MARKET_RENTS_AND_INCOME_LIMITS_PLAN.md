@@ -244,7 +244,12 @@ control state, not a zero.
 ## Blocker
 
 The scheduled DAG cannot download the workbooks while HUD User challenges
-self-identifying clients. Choosing how to proceed is the user's call:
+self-identifying clients. **Decided 2026-10-07: option 1, the HUD User API
+with a token.** Registering the token is filed as
+[`REGISTER_A_HUD_USER_API_TOKEN.md`](../human_testing/REGISTER_A_HUD_USER_API_TOKEN.md).
+Once `HUD_USER_API_TOKEN` is in `stack.env`, the API capture path is built
+with real API answers as fixtures (the token never enters a capture,
+fingerprint, log or error), and the live check reruns. The options were:
 
 1. Register a HUD User API token (`HUD_USER_API_TOKEN`) and add the API as
    the capture path (recommended: it is HUD's sanctioned automated channel).
@@ -254,5 +259,6 @@ self-identifying clients. Choosing how to proceed is the user's call:
 
 ## Checkpoint
 
-Waiting on the blocker above. Implementation, fixtures, tests and docs
-are complete on `feat/hud-fair-market-rents`.
+Waiting on the HUD User API token (filed for the user). Next: build the
+API capture path against real API answers. The workbook path, fixtures,
+tests and docs are complete on `feat/hud-fair-market-rents`.
