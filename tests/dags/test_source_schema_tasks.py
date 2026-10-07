@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
 from data_ingestion_toolbox.usda_nass import schema as nass_schema
@@ -35,6 +36,13 @@ SOURCES = [
         "ingest_batch_",
         nass_schema,
         "USDA_NASS",
+    ),
+    (
+        "census_lodes_ingest",
+        "ensure_census_lodes_schema",
+        "ingest_batch_",
+        census_lodes_schema,
+        "CENSUS_LODES",
     ),
 ]
 

@@ -392,6 +392,31 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a LEHD LODES row: jobs where people live and where they work
+
+`CENSUS_LODES` serves the Census Bureau's LEHD Origin-Destination Employment
+Statistics (LODES8) for every county and state: `CENSUS_LODES:resident_workers`
+(jobs held by people living there), `CENSUS_LODES:jobs` (jobs located there),
+`CENSUS_LODES:live_and_work`, `CENSUS_LODES:inbound` (jobs there held by
+people living elsewhere) and, for counties, `CENSUS_LODES:outbound_in_state`
+(jobs elsewhere in the state held by people living there). The unit is
+`jobs`, counting all jobs (`JT00`), not people: one person can hold two.
+
+- **It is this warehouse's sum, not a Bureau county figure.** LODES
+  publishes census blocks only; each county and state value is the sum of
+  the state's block rows, and `dimensions.observation_basis` says so. The
+  Bureau protects those blocks (noise for workplaces, synthesized residence
+  locations), so every value is a protected estimate.
+- **`live_and_work + inbound = jobs`** for a county. A state's
+  `live_and_work` is every in-state commute and its `inbound` the jobs held
+  by people living in another state. Out-of-state outflow is not served.
+- **A state-year with no workplace file has no workplace row**, never a
+  zero: Alaska publishes none from 2017 and Michigan none for 2022-2023, so
+  those years serve `resident_workers` only.
+- **The release is the state's data vintage** (`YYYYMMDD_HHMM`). A newer
+  vintage is a new release beside the old one, and `observation_latest`
+  serves the newest.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -513,6 +538,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 

@@ -651,6 +651,92 @@ def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome
     ]
 
 
+def lodes_slice_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-LODES-002 — no state-year left unreplayed; every readable file reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.census_lodes_slice")
+    if total == 0:
+        return [RuleOutcome("control.census_lodes_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.state, slice.year, file.family
+          FROM control.census_lodes_slice AS slice
+          LEFT JOIN control.census_lodes_file AS file
+            ON file.run_id = slice.run_id AND file.status = 'captured'
+         WHERE slice.status = 'captured'
+            OR (slice.status IN ('silver_ready', 'published')
+                AND file.row_count > file.quarantined_count
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_census_lodes.fact_area AS area
+                     WHERE area.run_id = slice.run_id AND area.family = file.family
+                    UNION ALL
+                    SELECT 1 FROM silver_census_lodes.fact_flow AS flow
+                     WHERE flow.run_id = slice.run_id
+                       AND 'od_' || flow.part = file.family
+                ))
+        """,
+        order_by="1, 2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "control.census_lodes_slice",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def lodes_od_workplace_agreement(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-LODES-004 — OD jobs by work county equal the workplace file's total."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_census_lodes.fact_area AS area
+        JOIN control.census_lodes_slice AS slice USING (run_id)
+        WHERE slice.status = 'published' AND area.family = 'wac' AND area.column_code = 'C000'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_census_lodes.fact_flow", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT area.run_id, area.geo_id, area.value AS workplace_jobs,
+               COALESCE(od.jobs, 0) AS od_jobs
+          FROM silver_census_lodes.fact_area AS area
+          JOIN control.census_lodes_slice AS slice USING (run_id)
+          LEFT JOIN LATERAL (
+                SELECT SUM(flow.jobs) AS jobs FROM silver_census_lodes.fact_flow AS flow
+                 WHERE flow.run_id = area.run_id AND flow.work_geo_id = area.geo_id
+          ) AS od ON TRUE
+         WHERE slice.status = 'published' AND area.family = 'wac' AND area.column_code = 'C000'
+           AND EXISTS (
+                SELECT 1 FROM control.census_lodes_file AS file
+                 WHERE file.run_id = area.run_id AND file.family = 'od_main' AND file.status = 'captured'
+           )
+           AND area.value <> COALESCE(od.jobs, 0)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_census_lodes.fact_flow",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1698,6 +1784,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-LODES-002": lodes_slice_reconciliation,
+    "DQ-LODES-004": lodes_od_workplace_agreement,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

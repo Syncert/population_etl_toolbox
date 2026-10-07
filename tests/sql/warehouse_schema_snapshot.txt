@@ -125,6 +125,49 @@ r control.cdc_dataset_release
     index cdc_dataset_release_latest_idx CREATE INDEX cdc_dataset_release_latest_idx ON control.cdc_dataset_release USING btree (asset_id, release_watermark DESC, created_at DESC)
     index cdc_dataset_release_pkey CREATE UNIQUE INDEX cdc_dataset_release_pkey ON control.cdc_dataset_release USING btree (run_id)
 
+r control.census_lodes_file
+    column run_id uuid NOT NULL
+    column family text NOT NULL
+    column file_name text NOT NULL
+    column capture_id uuid
+    column listed_sha256 text
+    column status text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column quarantined_count integer NOT NULL DEFAULT 0
+    constraint census_lodes_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint census_lodes_file_family_check CHECK ((family = ANY (ARRAY['rac'::text, 'wac'::text, 'od_main'::text, 'od_aux'::text])))
+    constraint census_lodes_file_listed_sha256_check CHECK (((listed_sha256 IS NULL) OR (listed_sha256 ~ '^[0-9a-f]{64}$'::text)))
+    constraint census_lodes_file_pkey PRIMARY KEY (run_id, family)
+    constraint census_lodes_file_quarantined_count_check CHECK ((quarantined_count >= 0))
+    constraint census_lodes_file_row_count_check CHECK ((row_count >= 0))
+    constraint census_lodes_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.census_lodes_slice(run_id)
+    constraint census_lodes_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'not_published'::text])))
+    constraint lodes_file_captured_has_checksum CHECK ((((status = 'captured'::text) AND (capture_id IS NOT NULL) AND (listed_sha256 IS NOT NULL)) OR ((status = 'not_published'::text) AND (capture_id IS NULL))))
+    index census_lodes_file_pkey CREATE UNIQUE INDEX census_lodes_file_pkey ON control.census_lodes_file USING btree (run_id, family)
+
+r control.census_lodes_slice
+    column run_id uuid NOT NULL
+    column state text NOT NULL
+    column year integer NOT NULL
+    column data_vintage text NOT NULL
+    column format_version text NOT NULL
+    column version_capture_id uuid NOT NULL
+    column checksum_capture_id uuid NOT NULL
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint census_lodes_slice_checksum_capture_id_fkey FOREIGN KEY (checksum_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint census_lodes_slice_data_vintage_check CHECK ((data_vintage ~ '^[0-9]{8}(_[0-9]{4})?$'::text))
+    constraint census_lodes_slice_pkey PRIMARY KEY (run_id)
+    constraint census_lodes_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint census_lodes_slice_state_check CHECK ((state ~ '^[a-z]{2}$'::text))
+    constraint census_lodes_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint census_lodes_slice_version_capture_id_fkey FOREIGN KEY (version_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint census_lodes_slice_year_check CHECK (((year >= 2002) AND (year <= 2100)))
+    constraint lodes_slice_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    index census_lodes_slice_pkey CREATE UNIQUE INDEX census_lodes_slice_pkey ON control.census_lodes_slice USING btree (run_id)
+
 v control.data_quality_latest_result
     column rule_id text
     column severity text
@@ -2413,6 +2456,273 @@ v gold_census.v_metric_timeseries_by_geo
     body     margin_of_error_pct
     body    FROM gold_census.fact_observation;
 
+v gold_census_lodes.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     'jobs'::text AS unit,
+    body     ('LEHD LODES: jobs counted from administrative records, summed from '::text || 'census blocks by this warehouse; workplace counts carry noise and '::text) || 'residence counts are synthesized, so each is a protected estimate'::text AS observation_basis
+    body    FROM ( VALUES ('resident_workers'::text,'Jobs held by people living here'::text), ('jobs'::text,'Jobs located here'::text), ('live_and_work'::text,'Jobs held by people living and working here'::text), ('inbound'::text,'Jobs here held by people living elsewhere'::text), ('outbound_in_state'::text,'Jobs elsewhere in the state held by people living here'::text)) measure(measure, measure_label);
+
+v gold_census_lodes.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'census_lodes8_csv:v1'::text AS schema_version
+    body    FROM gold_census_lodes.measure_definition;
+
+v gold_census_lodes.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CENSUS_LODES'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (LEHD LODES)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_census_lodes', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Census Bureau LEHD Origin-Destination Employment Statistics'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://lehd.ces.census.gov/data/'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(file.published_at) AS publication_time
+    body            FROM gold_census_lodes.observation_latest latest
+    body              JOIN control.census_lodes_slice file ON file.run_id = latest.run_id
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_census_lodes.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_census_lodes.observation_latest
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column release_key text
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     value,
+    body     value_status,
+    body     release_key,
+    body     retrieved_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_census_lodes.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, release_key DESC, retrieved_at DESC, run_id DESC;
+
+v gold_census_lodes.observation_revision
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column release_key text
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH published AS (
+    body          SELECT slice.run_id,
+    body             slice.state,
+    body             slice.year,
+    body             slice.data_vintage,
+    body             slice.published_at
+    body            FROM control.census_lodes_slice slice
+    body           WHERE slice.status = 'published'::text
+    body         ), area AS (
+    body          SELECT area.run_id,
+    body             area.family,
+    body             area.geo_id,
+    body             area.geo_sk,
+    body             area.value,
+    body             area.capture_id
+    body            FROM silver_census_lodes.fact_area area
+    body              JOIN published published_1 USING (run_id)
+    body           WHERE area.column_code = 'C000'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]))
+    body         ), flow AS (
+    body          SELECT flow.run_id,
+    body             flow.part,
+    body             flow.home_geo_id,
+    body             flow.work_geo_id,
+    body             flow.year,
+    body             flow.capture_id,
+    body             flow.home_geo_sk,
+    body             flow.work_geo_sk,
+    body             flow.jobs,
+    body             flow.created_at
+    body            FROM silver_census_lodes.fact_flow flow
+    body              JOIN published published_1 USING (run_id)
+    body         ), county AS (
+    body          SELECT area.run_id,
+    body                 CASE area.family
+    body                     WHEN 'rac'::text THEN 'resident_workers'::text
+    body                     ELSE 'jobs'::text
+    body                 END AS measure,
+    body             area.geo_id,
+    body             area.value,
+    body             area.capture_id
+    body            FROM area
+    body         UNION ALL
+    body          SELECT flow.run_id,
+    body             'live_and_work'::text,
+    body             flow.work_geo_id,
+    body             sum(flow.jobs) AS sum,
+    body             min(flow.capture_id::text)::uuid AS min
+    body            FROM flow
+    body           WHERE flow.part = 'main'::text AND flow.home_geo_id = flow.work_geo_id
+    body           GROUP BY flow.run_id, flow.work_geo_id
+    body         UNION ALL
+    body          SELECT flow.run_id,
+    body             'inbound'::text,
+    body             flow.work_geo_id,
+    body             sum(flow.jobs) AS sum,
+    body             min(flow.capture_id::text)::uuid AS min
+    body            FROM flow
+    body           WHERE flow.home_geo_id <> flow.work_geo_id
+    body           GROUP BY flow.run_id, flow.work_geo_id
+    body         UNION ALL
+    body          SELECT flow.run_id,
+    body             'outbound_in_state'::text,
+    body             flow.home_geo_id,
+    body             sum(flow.jobs) AS sum,
+    body             min(flow.capture_id::text)::uuid AS min
+    body            FROM flow
+    body           WHERE flow.part = 'main'::text AND flow.home_geo_id <> flow.work_geo_id
+    body           GROUP BY flow.run_id, flow.home_geo_id
+    body         ), state AS (
+    body          SELECT area.run_id,
+    body                 CASE area.family
+    body                     WHEN 'rac'::text THEN 'resident_workers'::text
+    body                     ELSE 'jobs'::text
+    body                 END AS measure,
+    body             split_part(area.geo_id, '|'::text, 1) AS geo_id,
+    body             sum(area.value) AS value,
+    body             min(area.capture_id::text)::uuid AS capture_id
+    body            FROM silver_census_lodes.fact_area area
+    body              JOIN published published_1 USING (run_id)
+    body           WHERE area.column_code = 'C000'::text
+    body           GROUP BY area.run_id, area.family, (split_part(area.geo_id, '|'::text, 1))
+    body         UNION ALL
+    body          SELECT flow.run_id,
+    body                 CASE flow.part
+    body                     WHEN 'main'::text THEN 'live_and_work'::text
+    body                     ELSE 'inbound'::text
+    body                 END AS "case",
+    body             split_part(flow.work_geo_id, '|'::text, 1) AS split_part,
+    body             sum(flow.jobs) AS sum,
+    body             min(flow.capture_id::text)::uuid AS min
+    body            FROM flow
+    body           GROUP BY flow.run_id, flow.part, (split_part(flow.work_geo_id, '|'::text, 1))
+    body         ), measured AS (
+    body          SELECT county.run_id,
+    body             county.measure,
+    body             county.geo_id,
+    body             county.value,
+    body             county.capture_id,
+    body             'county'::text AS geo_type
+    body            FROM county
+    body         UNION ALL
+    body          SELECT state.run_id,
+    body             state.measure,
+    body             state.geo_id,
+    body             state.value,
+    body             state.capture_id,
+    body             'state'::text AS text
+    body            FROM state
+    body         )
+    body  SELECT measured.measure AS metric_key,
+    body     measured.measure,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     published.year,
+    body     make_date(published.year, 1, 1) AS period_start,
+    body     make_date(published.year, 12, 31) AS period_end,
+    body     measured.geo_id,
+    body     entity.geo_sk,
+    body     measured.geo_type,
+    body     gold_glossary.geo_grain(measured.geo_type) AS geo_level,
+    body     measured.value,
+    body     'valid'::text AS value_status,
+    body     published.data_vintage AS release_key,
+    body     published.published_at AS retrieved_at,
+    body     md5((((((measured.measure || '|'::text) || measured.geo_id) || '|'::text) || published.year::text) || '|'::text) || published.data_vintage) AS source_record_id,
+    body     measured.capture_id,
+    body     measured.run_id
+    body    FROM measured
+    body      JOIN published USING (run_id)
+    body      JOIN gold_census_lodes.measure_definition definition ON definition.measure = measured.measure
+    body      JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = measured.geo_id;
+
 v gold_fbi.agency_geography
     column relationship_sk bigint
     column ori text
@@ -4689,6 +4999,68 @@ r silver_census.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index census_observation_revision_slice_idx CREATE INDEX census_observation_revision_slice_idx ON silver_census.observation_revision USING btree (dataset, year, geo_level, state_fips_source, county_fips_source)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census.observation_revision USING btree (capture_id, source_row_index, source_column_index)
+
+r silver_census_lodes.fact_area
+    column run_id uuid NOT NULL
+    column family text NOT NULL
+    column column_code text NOT NULL
+    column geo_id text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column block_count integer NOT NULL
+    column value_source text NOT NULL
+    column value bigint
+    column value_status text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_area_block_count_check CHECK ((block_count > 0))
+    constraint fact_area_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_area_column_code_check CHECK ((column_code ~ '^C[A-Z]*[0-9]{2,3}$'::text))
+    constraint fact_area_family_check CHECK ((family = ANY (ARRAY['rac'::text, 'wac'::text])))
+    constraint fact_area_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_area_pkey PRIMARY KEY (run_id, family, column_code, geo_id)
+    constraint fact_area_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.census_lodes_slice(run_id)
+    constraint fact_area_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'not_available'::text])))
+    constraint lodes_area_unavailable_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint lodes_area_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index fact_area_pkey CREATE UNIQUE INDEX fact_area_pkey ON silver_census_lodes.fact_area USING btree (run_id, family, column_code, geo_id)
+
+r silver_census_lodes.fact_flow
+    column run_id uuid NOT NULL
+    column part text NOT NULL
+    column home_geo_id text NOT NULL
+    column work_geo_id text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column home_geo_sk bigint
+    column work_geo_sk bigint
+    column jobs bigint NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_flow_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_flow_jobs_check CHECK ((jobs >= 0))
+    constraint fact_flow_part_check CHECK ((part = ANY (ARRAY['main'::text, 'aux'::text])))
+    constraint fact_flow_pkey PRIMARY KEY (run_id, part, home_geo_id, work_geo_id)
+    constraint fact_flow_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.census_lodes_slice(run_id)
+    index fact_flow_pkey CREATE UNIQUE INDEX fact_flow_pkey ON silver_census_lodes.fact_flow USING btree (run_id, part, home_geo_id, work_geo_id)
+    index lodes_fact_flow_home_idx CREATE INDEX lodes_fact_flow_home_idx ON silver_census_lodes.fact_flow USING btree (home_geo_id, year)
+    index lodes_fact_flow_work_idx CREATE INDEX lodes_fact_flow_work_idx ON silver_census_lodes.fact_flow USING btree (work_geo_id, year)
+
+r silver_census_lodes.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_census_lodes.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_census_lodes.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_census_lodes.quarantine USING btree (quarantine_sk)
 
 r silver_fbi.agency_geography_relationship
     column relationship_sk bigint NOT NULL DEFAULT nextval('silver_fbi.agency_geography_relationship_relationship_sk_seq'::regclass)

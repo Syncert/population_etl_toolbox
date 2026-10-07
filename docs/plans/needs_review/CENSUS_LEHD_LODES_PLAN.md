@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/census-lehd-lodes`, which is
+`docs/scout-county-sources` (where this plan was written) with the work on
+top.
 
 ## Why
 
@@ -168,7 +170,75 @@ states' `aux` files). Feeds the Work and Money chapter.
 - Whether job type `JT01` (primary jobs) is the better almanac default.
 - Storage budget for capturing all states and years of OD `main`.
 
+## Decisions (open items resolved)
+
+- **Connecticut:** county identity is the block code's first five digits.
+  The 2020 tabulation blocks carry Connecticut's eight legacy county codes,
+  not the planning regions the crosswalk's "current" `cty` may name; they
+  resolve only where the shared dimension holds those codes, and a county
+  that does not resolve is `canonical_geography_absent` in the ledger and
+  not served (its blocks still count toward the state). The crosswalk is not
+  captured.
+- **File names:** no `_1` suffix. Names are built from the registry and
+  checked against the state's own checksum list, which every run captures;
+  a name the list lacks is `not_published`, and EXT-021 asserts every
+  registered name for the newest year is listed.
+- **Licensing:** no LODES-specific public-domain page was located; the
+  operations guide and gold basis cite the Bureau and vintage. Recorded,
+  not blocking.
+- **Job type:** `JT00` (all jobs), as the adapter section specifies. `JT01`
+  would need a second registry entry; not added.
+- **Storage:** an ordinary run captures only the newest `recent_years`
+  (default 1) registered year and fetches nothing beyond the two metadata
+  files while a state's vintage is unchanged. State-years run one at a time
+  through the one-slot `census_lodes_files` pool.
+- **Control grain:** one slice per state-year (`control.census_lodes_slice`)
+  with one row per family (`control.census_lodes_file`), not per segment
+  and job type, because only `S000`/`JT00` is registered.
+- **Gold grains: county and state, not nation (deviation from deliverable
+  5).** LODES publishes no national data file, and a national sum is only
+  true when every state's same year is captured; a partial sum would be
+  served as the nation. The state's `live_and_work` is every in-state
+  commute and its `inbound` the out-of-state homes; `outbound_in_state` is
+  county only.
+- **A failed capture withdraws its slice.** The run and request keep their
+  errors in the ingestion ledger; the half-registered slice is deleted so
+  DQ-LODES-002 does not read it as work waiting to be replayed.
+- **Fixtures:** Delaware 2023 (all four files) and 2008 (residence and
+  workplace) trimmed to the blocks of tracts 100010401 and 100050501, with
+  origin-destination rows kept by work block so they reconcile to the
+  workplace file; the checksum list is recomputed for the trimmed files and
+  `version.txt` is the state's real one. The header-only and malformed
+  cases are built from these bytes in the unit tests.
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2186 passed, including
+  `tests/unit/census_lodes` (7); the one documentation-link failure seen
+  mid-run was this plan's own link before it moved here, and passes now.
+- Database: `tests/integration/database/test_census_lodes_capture_replay.py`
+  -- 6 passed: county and state sums equal the hand-summed blocks; 2008
+  demographics and `JT00` firm columns `not_available`; a state-year with
+  no workplace or origin-destination file serves residents only; the same
+  vintage fetches only the two metadata files and a new vintage is kept
+  beside the old; a checksum mismatch fails capture and withdraws the
+  slice; `DQ-LODES-002` and `DQ-LODES-004` pass then catch a loss; the
+  schema reapplies; the harvest names five metrics.
+- End to end: `tests/e2e/test_census_lodes_pipeline.py` serves a county's
+  jobs, live-and-work and inbound counts with the vintage and the
+  protected-estimate basis through `/api/v1/observations`.
+- Live: `tests/external/test_census_lodes_source_contracts.py` -- 5 passed
+  against lehd.ces.census.gov.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 461 passed, 1 failed: the PEP teardown node, which fails on
+  `main` too (fixed on `test/catalog-agreement-fixture-residue`).
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `census_lodes_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format --check` clean on the changed files;
+  schema snapshot, OpenAPI contract, viz coverage and plan environments
+  regenerated.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `census_lodes`, trim a Wisconsin OD, RAC,
-and WAC 2023 fixture to two counties, and write the failing replay test.
+Awaiting human review.

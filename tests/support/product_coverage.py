@@ -331,6 +331,40 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="census_lodes.commuting_counts",
+        source="CENSUS_LODES",
+        publisher_schema="gold_census_lodes",
+        datasets=("de:2023",),
+        fixtures=(
+            "tests/fixtures/census_lodes/version.txt",
+            "tests/fixtures/census_lodes/lodes_de.sha256sum",
+            "tests/fixtures/census_lodes/de_rac_S000_JT00_2023.csv.gz",
+            "tests/fixtures/census_lodes/de_wac_S000_JT00_2023.csv.gz",
+            "tests/fixtures/census_lodes/de_od_main_JT00_2023.csv.gz",
+            "tests/fixtures/census_lodes/de_od_aux_JT00_2023.csv.gz",
+        ),
+        serving_relations=(
+            "gold_census_lodes.observation_revision",
+            "gold_census_lodes.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_lodes_pipeline.py::"
+            "test_commuting_counts_reach_the_neutral_api_with_their_basis"
+        ),
+        api_absence_reason=(
+            "LEHD LODES publishes no source-specific HTTP route: each county "
+            "or state count is the neutral observation shape with its measure "
+            "and the statement that it is this warehouse's sum of protected "
+            "block estimates as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
 )
 
 

@@ -117,6 +117,11 @@
       "path": "src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql"
     },
     {
+      "id": "silver-census-lodes",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -167,6 +172,11 @@
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql"
     },
     {
+      "id": "gold-census-lodes",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/gold_census_lodes.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -195,6 +205,11 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-lodes",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/publisher.sql"
     },
     {
       "id": "migration-028",
