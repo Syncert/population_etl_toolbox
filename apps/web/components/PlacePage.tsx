@@ -68,6 +68,7 @@ import { explorerHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+const WithinCounty = dynamic(() => import("./WithinCounty"));
 
 const CATALOG_PAGE_SIZE = 1000;
 /** How many observation requests one page keeps in flight at once. */
@@ -465,6 +466,8 @@ export default function PlacePage({
           sourceFor={sourceFor}
         />
       ))}
+
+      {level === "COUNTY" && county && resolution.state === "found" ? <WithinCounty county={county} /> : null}
 
       {level !== "COUNTY" && resolution.state === "found" ? (
         <section className="analysis-panel place-children" aria-labelledby="place-children-heading">

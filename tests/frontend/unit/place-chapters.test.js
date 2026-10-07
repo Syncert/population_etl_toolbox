@@ -247,3 +247,22 @@ describe("place titles", () => {
     expect(placeRouteTitle("<script>")).toBe("United States");
   });
 });
+
+// Covers: WEB-139 — sub-county-geography: the tract measures are the
+// tables the warehouse loads at tract grain, and the legend says how many
+// tracts are left uncoloured rather than painting them as zero.
+describe("within this county", () => {
+  it("offers only the tract tables and states the uncoloured count", async () => {
+    const { TRACT_MEASURES, uncolouredSentence } = await import("../../../apps/web/components/WithinCounty.tsx");
+    expect(TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0])).toEqual([
+      "B19013",
+      "B01003",
+      "B17001",
+      "B25064",
+      "B25077",
+    ]);
+    expect(uncolouredSentence(3, 2)).toBe("1 of 3 tracts have no published value and are left uncoloured, not shown as zero.");
+    expect(uncolouredSentence(4, 4)).toBe("All 4 tracts have a published value.");
+  });
+});
+

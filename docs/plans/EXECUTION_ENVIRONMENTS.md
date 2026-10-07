@@ -104,7 +104,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**11 plans.**
+**10 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -117,7 +117,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
-| [`sub-county-geography`](in_progress/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
 | [`time-windows-and-rollups`](in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
 
 
