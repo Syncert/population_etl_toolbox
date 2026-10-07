@@ -15,12 +15,13 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
 Deliverables 1 to 6 (adapter, registry, silver, gold, serving, quality and
 operations) are on branch `feat/bls-qcew`, cut from `main`. Deliverable 7,
-the county-page cards, needs the place pages from `feat/place-pages`
-(WEB-125), which is not on `main` yet.
+the county-page cards, is on `feat/bls-qcew-cards`, which is built on
+`feat/place-pages` (WEB-125) with `feat/bls-qcew` merged. Merge those two
+first.
 
 ## Why
 
@@ -166,13 +167,22 @@ the series-identifier model used for LAUS and CES
 - `ruff check .` and `ruff format --check .` clean; schema snapshot
   regenerated; OpenAPI snapshot unchanged (no new route).
 
-## Remaining
+### County-page cards (WEB-135, `feat/bls-qcew-cards`)
 
-- Deliverable 7: the Work and Money chapter's "Jobs located here" cards and
-  industry-mix table beside the LAUS cards, each labelled with its basis,
-  with a browser scenario. Builds on `feat/place-pages`.
+- Work and Money gains "Jobs located here" (`BLS_QCEW:employment:10:0`) and
+  "Average weekly wage of jobs located here" beside the LAUS unemployment
+  rate. The QCEW cards read "Jobs located here, counted by employers
+  (QCEW)" and the LAUS card reads "Residents who work, counted where they
+  live (LAUS)". No slot mixes the two.
+- An industry-mix table lists private jobs located here for the 21 NAICS
+  sectors, each the published figure for the newest month. Its caption
+  states the establishment basis. A withheld sector says so, and nothing is
+  summed or divided.
+- Evidence: `npm --prefix apps/web run test:unit` -- 740 passed; `lint`
+  clean; `test:browser` -- 208 passed, including the new places scenario;
+  `check:bundle` keeps every route within its budget.
 
 ## Checkpoint
 
-Next pickup: branch from `feat/place-pages`, merge `feat/bls-qcew`, and add
-the QCEW slots and industry-mix table to the Work and Money chapter.
+Implementation complete; awaiting human review of `feat/bls-qcew`, then
+`feat/bls-qcew-cards`.

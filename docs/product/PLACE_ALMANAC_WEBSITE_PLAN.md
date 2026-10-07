@@ -314,7 +314,7 @@ Web, over the published API:
 Warehouse, county and place depth:
 
 - [`docs/plans/needs_review/ACS_AT_PLACE_GRAIN_PLAN.md`](../plans/needs_review/ACS_AT_PLACE_GRAIN_PLAN.md) — unlocks city and town pages.
-- [`docs/plans/in_progress/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/in_progress/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
+- [`docs/plans/needs_review/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/needs_review/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
 - [`docs/plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
 - [`docs/plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
 - [`docs/plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.

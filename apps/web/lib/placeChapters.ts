@@ -53,7 +53,7 @@ export interface PlaceMeasure {
    */
   basis?: string;
   /** Depth rows rendered together as one table rather than a list. */
-  group?: "bea-earnings";
+  group?: "bea-earnings" | "industry-mix";
 }
 
 export interface PlaceChapter {
@@ -104,6 +104,39 @@ export const BEA_EARNINGS_SECTORS: readonly (readonly [string, string])[] = [
   ["1800", "Accommodation and food services"],
   ["1900", "Other services"],
   ["2000", "Government and government enterprises"],
+];
+
+/** QCEW: one measure for one industry and ownership (bls-qcew-county-wages). */
+const qcew = (measure: string, industry: string, ownership: string): string[] => [
+  `BLS_QCEW:${measure}:${industry}:${ownership}`,
+];
+
+const ESTABLISHMENT_BASIS = "Jobs located here, counted by employers (QCEW)";
+const HOUSEHOLD_BASIS = "Residents who work, counted where they live (LAUS)";
+
+/** The NAICS sectors of the industry-mix table, in QCEW's order. */
+export const INDUSTRY_MIX_SECTORS: readonly (readonly [string, string])[] = [
+  ["11", "Agriculture, forestry, fishing and hunting"],
+  ["21", "Mining, quarrying, and oil and gas extraction"],
+  ["22", "Utilities"],
+  ["23", "Construction"],
+  ["31-33", "Manufacturing"],
+  ["42", "Wholesale trade"],
+  ["44-45", "Retail trade"],
+  ["48-49", "Transportation and warehousing"],
+  ["51", "Information"],
+  ["52", "Finance and insurance"],
+  ["53", "Real estate and rental and leasing"],
+  ["54", "Professional, scientific, and technical services"],
+  ["55", "Management of companies and enterprises"],
+  ["56", "Administrative and waste services"],
+  ["61", "Educational services"],
+  ["62", "Health care and social assistance"],
+  ["71", "Arts, entertainment, and recreation"],
+  ["72", "Accommodation and food services"],
+  ["81", "Other services"],
+  ["92", "Public administration"],
+  ["99", "Unclassified"],
 ];
 
 const acs = (variable: string): string[] => [
@@ -184,6 +217,20 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         label: "Unemployment rate",
         candidates: ["BLS:LAU:UNEMP_RATE"],
         note: "Local Area Unemployment Statistics, a different universe from the survey counts below.",
+        basis: HOUSEHOLD_BASIS,
+      },
+      {
+        id: "qcew-jobs",
+        label: "Jobs located here",
+        candidates: qcew("employment", "10", "0"),
+        note: "Every covered job at an employer in this place, wherever its worker lives; not the residents who work.",
+        basis: ESTABLISHMENT_BASIS,
+      },
+      {
+        id: "qcew-weekly-wage",
+        label: "Average weekly wage of jobs located here",
+        candidates: qcew("avg_weekly_wage", "10", "0"),
+        basis: ESTABLISHMENT_BASIS,
       },
     ],
     depth: [
@@ -206,9 +253,17 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         basis: ACCOUNT_BASIS,
         group: "bea-earnings" as const,
       })),
+      ...INDUSTRY_MIX_SECTORS.map(([code, title]) => ({
+        id: `qcew-sector-${code}`,
+        label: title,
+        candidates: qcew("employment", code, "5"),
+        universe: "private jobs located here",
+        basis: ESTABLISHMENT_BASIS,
+        group: "industry-mix" as const,
+      })),
     ],
     trend: { measureId: "unemployment-rate", scale: "level" },
-    caveat: `The unemployment rate is BLS's; the survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT}`,
+    caveat: `The unemployment rate is BLS's count of residents; the jobs and the industry mix are QCEW's count of jobs located here, by employer, and the two are never added or subtracted. The survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT}`,
   },
   {
     id: "housing",

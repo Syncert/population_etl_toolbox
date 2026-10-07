@@ -148,6 +148,29 @@ test("a state page has no within-this-county section", async ({ page }) => {
   await expect(page.getByTestId("within-county")).toHaveCount(0);
 });
 
+// Covers: WEB-135 — bls-qcew-county-wages: the county page shows jobs located
+// here beside residents who work, each labelled with how it was counted, and
+// an industry mix of private jobs that states a withheld sector.
+test("jobs located here sit beside residents who work, labelled apart, with an industry mix", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-qcew-jobs")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-qcew-jobs-basis")).toHaveText("Jobs located here, counted by employers (QCEW)");
+  await expect(page.getByTestId("card-unemployment-rate-basis")).toHaveText("Residents who work, counted where they live (LAUS)");
+  await expect(page.getByTestId("card-qcew-jobs")).toContainText("BLS_QCEW:employment:10:0");
+  await expect(page.getByTestId("card-qcew-jobs-county")).toContainText("jobs");
+  await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
+
+  const mix = page.getByTestId("industry-mix");
+  await expect(mix.locator("tbody tr")).toHaveCount(21);
+  await expect(page.getByTestId("industry-mix-basis")).toContainText("counted by employers (QCEW)");
+  await expect(page.getByTestId("industry-mix-qcew-sector-62")).toContainText("Health care and social assistance");
+  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toContainText("Published without a value: withheld");
+  await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never added or subtracted");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);

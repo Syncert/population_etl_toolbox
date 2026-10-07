@@ -4,7 +4,7 @@
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
 import { servedParameters } from "./servedContract.js";
 
-const sources = ["BEA", "CENSUS_ACS", "CENSUS_PEP", "BLS", "CDC", "FBI_UCR", "USDA_NASS"];
+const sources = ["BEA", "CENSUS_ACS", "CENSUS_PEP", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
 
 export const NATION = { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "us:1" };
 export const STATES = [
@@ -44,6 +44,8 @@ function unitFor(code) {
   if (code === "BEA:CAINC1:3") return "Dollars";
   if (code === "BEA:CAGDP1:1") return "Thousands of chained 2017 dollars";
   if (code.startsWith("BEA:")) return "Thousands of dollars";
+  if (code.startsWith("BLS_QCEW:avg_weekly_wage")) return "dollars per week";
+  if (code.startsWith("BLS_QCEW:")) return "jobs";
   if (code.startsWith("BLS:")) return "Percent";
   if (code.startsWith("CDC:")) return "%";
   if (code.startsWith("FBI_UCR:")) return "per_100000_population";
@@ -184,8 +186,9 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       const newest = params.get("limit") === "1" || params.get("newest_per_geography") === "true";
       const lastYear = nationLagsMedianAge && geo === "us:1" && code.endsWith("B01002_001") ? 2023 : 2024;
       // BEA withholds mining earnings for Dane County in this fixture, as it
-      // does for a sector that would disclose one employer.
-      const withheld = code === "BEA:CAINC5N:200" && geo === "state:55|county:025";
+      // does for a sector that would disclose one employer; QCEW withholds a
+      // sector it cannot disclose, and Mining is withheld here too.
+      const withheld = (code === "BEA:CAINC5N:200" || code === "BLS_QCEW:employment:21:5") && geo === "state:55|county:025";
       let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
         const year = lastYear - 5 + index;
         const base = rates.test(code) ? 40 + (scale[geo] || 1) : 1000 * (scale[geo] || 1);

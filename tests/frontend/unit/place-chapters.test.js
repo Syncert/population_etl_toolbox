@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INDUSTRY_MIX_SECTORS,
   PLACE_CHAPTERS,
   PLACE_SEGMENT,
   buildTrend,
@@ -59,10 +60,11 @@ describe("the chapter contract", () => {
         trend: { measureId: "population-estimate", scale: "index" },
       },
       "work-money": {
-        headline: ["CENSUS_ACS:acs5:B19013_001", "BEA:CAINC1:3", "BEA:CAGDP1:1", "BLS:LAU:UNEMP_RATE"],
+        headline: ["CENSUS_ACS:acs5:B19013_001", "BEA:CAINC1:3", "BEA:CAGDP1:1", "BLS:LAU:UNEMP_RATE", "BLS_QCEW:employment:10:0", "BLS_QCEW:avg_weekly_wage:10:0"],
         depth: [
           ...["B19301_001", "B19083_001", "B17001_002", "B19001_002", "B19001_017", "B23025_002", "B23025_005", "C24050_001", "B08301_021", "B08301_010", "B08303_013"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
           ...["81", "100", "200", "300", "400", "500", "600", "700", "800", "900", "1000", "1100", "1200", "1300", "1400", "1500", "1600", "1700", "1800", "1900", "2000"].map((line) => `BEA:CAINC5N:${line}`),
+          ...INDUSTRY_MIX_SECTORS.map(([code]) => `BLS_QCEW:employment:${code}:5`),
         ],
         trend: { measureId: "unemployment-rate", scale: "level" },
       },
@@ -333,5 +335,32 @@ describe("BEA income and GDP", () => {
     expect(earnings).toHaveLength(21);
     expect(earnings.every((measure) => measure.candidates[0].startsWith("BEA:CAINC5N:"))).toBe(true);
     expect(work.caveat).toContain("never combined with the survey's income");
+  });
+});
+
+// Covers: WEB-135 — bls-qcew-county-wages: jobs located here and residents
+// who work are labelled with how each was counted, and never share a slot.
+describe("jobs located here beside residents who work", () => {
+  const work = PLACE_CHAPTERS.find((chapter) => chapter.id === "work-money");
+  const byId = Object.fromEntries([...work.headline, ...work.depth].map((measure) => [measure.id, measure]));
+
+  it("labels the QCEW and LAUS cards with their bases", () => {
+    expect(byId["qcew-jobs"].basis).toBe("Jobs located here, counted by employers (QCEW)");
+    expect(byId["unemployment-rate"].basis).toBe("Residents who work, counted where they live (LAUS)");
+    expect(byId["qcew-weekly-wage"].basis).toBe(byId["qcew-jobs"].basis);
+  });
+
+  it("never lists a QCEW and a LAUS identity in one slot", () => {
+    for (const measure of [...work.headline, ...work.depth]) {
+      const sources = new Set(measure.candidates.map((code) => code.split(":")[0]));
+      expect(sources.has("BLS") && sources.has("BLS_QCEW"), measure.id).toBe(false);
+    }
+  });
+
+  it("builds the industry mix from private sector employment only", () => {
+    const mix = work.depth.filter((measure) => measure.group === "industry-mix");
+    expect(mix).toHaveLength(21);
+    expect(mix.every((measure) => /^BLS_QCEW:employment:[0-9-]+:5$/.test(measure.candidates[0]))).toBe(true);
+    expect(mix.find((measure) => measure.id === "qcew-sector-62").label).toBe("Health care and social assistance");
   });
 });
