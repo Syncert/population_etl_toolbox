@@ -6,8 +6,11 @@
       "STATE"
     ],
     "BLS": [
+      "CENSUS_DIVISION",
+      "CENSUS_REGION",
       "COUNTY",
       "NATIONAL",
+      "PROVIDER_AREA",
       "STATE"
     ],
     "CDC": [

@@ -22,7 +22,9 @@ from __future__ import annotations
 #: * ``BLS`` -- ``bls/geography.py`` parses a LAUS area code to ``state`` or
 #:   ``county`` and to nothing else ("LAUS has no national series"); the
 #:   national CPS/CES series carry ``us:1``, which
-#:   ``gold_bls.fact_bls_observation`` reads as ``NATIONAL``.
+#:   ``gold_bls.fact_bls_observation`` reads as ``NATIONAL``; the CPI and
+#:   average-price series carry a Census region or division or a BLS metro
+#:   (``silver_bls/geography_parser.py``, grocery-and-gasoline-prices).
 #: * ``CDC`` -- ``cdc/registry.py`` declares ``geography_levels`` per asset:
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
@@ -41,7 +43,9 @@ from __future__ import annotations
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BEA": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "BLS": frozenset(
+        {"NATIONAL", "CENSUS_REGION", "CENSUS_DIVISION", "STATE", "COUNTY", "PROVIDER_AREA"}
+    ),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
