@@ -440,6 +440,11 @@ dollars per year) for counties.
   FMRs, the revised edition is the release `FY2026-revised` beside
   `FY2026`; `observation_latest` serves the revision, and
   `dimensions.edition` says which edition a row is.
+- **The area code is not always there.** HUD's API names an area code for
+  metro areas only, so a nonmetropolitan county's row carries its area's
+  name and no `hud_area_code`. Rows read through the HUD User API carry
+  HUD's required notice in `observation_basis`: "This product uses the HUD
+  User Data API but is not endorsed or certified by HUD User."
 - **New England towns are not counties.** HUD publishes Connecticut,
   Maine, Massachusetts, New Hampshire, Rhode Island and Vermont by town, and
   a county's towns can sit in different HUD areas, so those rows are not

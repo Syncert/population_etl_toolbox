@@ -52,17 +52,20 @@ def _values(raw: bytes, item) -> dict[tuple[str, str], object]:  # noqa: ANN001
     }
 
 
-def test_configuration_imports_without_io_and_holds_no_credential() -> None:
-    """Covers: ETL-065 — the workbooks need no token, so there is none to leak."""
+def test_configuration_imports_without_io_and_reads_the_token_only_on_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-065 — importing reads no token; only ``from_environment`` does."""
+    monkeypatch.setenv("HUD_USER_API_TOKEN", "fixture-token-not-a-real-secret")
     for name in list(sys.modules):
         if name.startswith("data_ingestion_toolbox.hud_fmr_il"):
             del sys.modules[name]
     module = importlib.import_module("data_ingestion_toolbox.hud_fmr_il.config")
-    assert not {
-        field
-        for field in module.HudConfig.model_fields
-        if "key" in field or "token" in field
-    }
+    assert module.HudConfig().hud_user_api_token == ""
+    assert (
+        module.HudConfig.from_environment().hud_user_api_token
+        == "fixture-token-not-a-real-secret"
+    )
     assert [item.key for item in registered_files()] == [
         "fmr:fy2026:original",
         "fmr:fy2026:revised",

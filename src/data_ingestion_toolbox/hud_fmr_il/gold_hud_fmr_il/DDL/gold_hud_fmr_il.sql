@@ -18,13 +18,15 @@ SELECT measure.measure, measure.measure_label, measure.unit, measure.dataset,
                || 'paid for standard-quality units in the HUD FMR area this county '
                || 'belongs to; an area value repeated for each county, not a county '
                || 'estimate and not the ACS median rent. Source: U.S. Department of '
-               || 'Housing and Urban Development, HUD User.'
+               || 'Housing and Urban Development, HUD User. This product uses the HUD User Data '
+               || 'API but is not endorsed or certified by HUD User.'
            ELSE
                'HUD Section 8 income limits: program eligibility thresholds and the '
                || 'area median family income they are based on, set for the fiscal year '
                || 'for the HUD area this county belongs to; an area value repeated for '
                || 'each county, not a county estimate and not the ACS median income. '
-               || 'Source: U.S. Department of Housing and Urban Development, HUD User.'
+               || 'Source: U.S. Department of Housing and Urban Development, HUD User. This '
+               || 'product uses the HUD User Data API but is not endorsed or certified by HUD User.'
        END::TEXT AS observation_basis
 FROM (VALUES
     ('fmr_0br', 'Fair Market Rent, efficiency', 'dollars per month', 'fmr'),

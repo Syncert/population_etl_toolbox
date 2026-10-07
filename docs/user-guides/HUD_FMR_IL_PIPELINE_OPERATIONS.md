@@ -7,12 +7,47 @@ year and each HUD area -- a metro area, a HUD metro subdivision, or a
 nonmetropolitan county -- and repeats for each county in the area. Every
 served row names its area and says it is not a county estimate.
 
-## What is registered
+## What the schedule reads: the HUD User Data API
 
-`src/data_ingestion_toolbox/hud_fmr_il/registry.py` names each edition the
-pipeline reads under `https://www.huduser.gov/portal/datasets/`. They need no
-credential: the keyless workbooks are read, and the HUD User API (which needs
-a token) is not used.
+HUD User answers automated workbook downloads with an empty `202` challenge,
+so the scheduled DAG reads HUD's sanctioned automated channel, the HUD User
+Data API (`https://www.huduser.gov/hudapi/public/`), with a token:
+`HUD_USER_API_TOKEN` in `infra/docker/stack.env` (see
+`docs/plans/human_testing/completed/REGISTER_A_HUD_USER_API_TOKEN.md`).
+Compose passes it to the Airflow containers. The token is sent only as an
+`Authorization: Bearer` header and reaches no capture, parameter set, log or
+error. HUD allows 60 calls a minute; the client spaces calls 1.05 seconds
+apart.
+
+`src/data_ingestion_toolbox/hud_fmr_il/api.py` registers one read per
+dataset and fiscal year, each labelled with the edition the API was checked
+to serve:
+
+| Read | Calls | Edition served (checked 2026-10-07) |
+| --- | --- | --- |
+| `api:fmr:fy2026` | `fmr/listStates`, then `fmr/statedata/<ST>?year=2026` (57 calls) | the May 21, 2026 reissue (`revised`) |
+| `api:fmr:fy2027` | the same for 2027 | `original`, effective 2026-10-01 |
+| `api:il:fy2026` | `fmr/listStates`, `fmr/listCounties/<ST>`, then `il/data/<fips>?year=2026` for each whole county (about 3,300 calls, about an hour) | `original`, effective 2026-05-01 |
+
+Every answer is its own capture, listed in `control.hud_fmr_il_api_capture`;
+the run's checksum is the checksum of its answers' checksums, so an
+unchanged read replays nothing. The API names a HUD area code only for metro
+areas; a nonmetropolitan county's row carries its area's name and no code
+(the code is not derivable: Virginia's independent cities share their
+county's area). Income limits are requested for whole counties only. HUD's
+API terms require the notice "This product uses the HUD User Data API but is
+not endorsed or certified by HUD User.", which every served row's basis
+carries. When HUD reissues a year, the API's answer changes; update the
+read's edition and effective date in the registry, and the live contract
+check (`tests/external/test_hud_fmr_il_source_contracts.py`) fails until you
+do.
+
+## The workbooks (loading by hand)
+
+`src/data_ingestion_toolbox/hud_fmr_il/registry.py` names each workbook
+edition under `https://www.huduser.gov/portal/datasets/`. They need no
+credential, but automated downloads are challenged, so they are not on the
+schedule; `capture_file` loads one when it can be fetched.
 
 | Edition | Path | Sheet | Takes effect |
 | --- | --- | --- | --- |
@@ -58,17 +93,16 @@ value; HUD's current files have none.
 
 ## Schedule and scope
 
-The DAG runs at 16:00 UTC on the 25th of each month and reads every
-registered edition. HUD User sends no validator, so every read downloads the
-workbook (under 1 MB each); a read whose bytes equal that edition's last
-published file is recorded `unchanged` and replays nothing. A revised
+The DAG runs at 16:00 UTC on the 25th of each month and makes every
+registered API read, one mapped task each through the one-slot pool (the
+income-limit task has a three-hour timeout). A read equal to its last
+published read is recorded `unchanged` and replays nothing. A revised
 edition is a second release (`FY2026-revised`) beside the original;
 `observation_latest` serves the revision.
 
-HUD User's site sometimes answers automated reads with an empty `202`
-while it challenges the client. The adapter retries it and then fails the
-run as unavailable, not as a changed file; the DAG's retries pick it up
-later. The adapter does not disguise its user agent.
+A refused token (401/403) fails the read as `token_refused`; a `202`,
+`429` or server error is retried and then reported as unavailable. Neither
+the API client nor the workbook client disguises its user agent.
 
 ## Deployment prerequisites
 
@@ -82,9 +116,9 @@ airflow pools set hud_fmr_il_files 1 'HUD FMR and income-limit workbooks (serial
 
 ## What a run does
 
-1. Commits one capture per edition and records it in
-   `control.hud_fmr_il_file` with its checksum and effective date, as
-   `captured` or `unchanged`.
+1. Commits one capture per API answer (or per workbook) and records the
+   read in `control.hud_fmr_il_file` with its channel, checksum and
+   effective date, as `captured` or `unchanged`.
 2. Replays a `captured` edition into `silver_hud_fmr_il.observation_revision`,
    one row per county or town and measure. A row with an unreadable `fips`,
    `metro` flag or value, or a repeated `fips`, goes to

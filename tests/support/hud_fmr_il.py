@@ -8,6 +8,13 @@ nonmetro), Napa County CA (reissued in the revised FY 2026 edition) and
 Andover town in Connecticut's Capitol Planning Region (a New England town
 row). They are played through the adapter's own capture path by a scripted
 client.
+
+``tests/fixtures/hud_fmr_il/api/`` holds real HUD User Data API answers read
+on 2026-10-07 for the same places: ``fmr/listStates`` cut to Delaware,
+California and Connecticut, each state's ``fmr/statedata`` for FY 2026 and FY
+2027 cut to the fixture places and their metro areas, each state's
+``fmr/listCounties`` cut the same way, and ``il/data`` for each whole county.
+Entries are copied as HUD answered them; only the lists are shortened.
 """
 
 from __future__ import annotations
@@ -21,6 +28,11 @@ import httpx
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.hud_fmr_il.api import (
+    ApiRead,
+    registered_reads,
+)
+from data_ingestion_toolbox.hud_fmr_il.api_capture import capture_api_read
 from data_ingestion_toolbox.hud_fmr_il.capture import capture_file
 from data_ingestion_toolbox.hud_fmr_il.config import SOURCE_CODE, HudConfig
 from data_ingestion_toolbox.hud_fmr_il.registry import HudFile, registered_files
@@ -139,6 +151,74 @@ def run_to_gold(
     return run_id, status, facts, published
 
 
+API_FIXTURE_DIR = FIXTURE_DIR / "api"
+#: A stand-in token: tests prove it never reaches a capture.
+FIXTURE_TOKEN = "fixture-token-not-a-real-secret"
+
+
+def api_fixture_name(url: str) -> str:
+    """The fixture file answering one API URL (path segments joined, year kept)."""
+    path, _, query = url.split("/hudapi/public/", 1)[1].partition("?")
+    year = query.split("year=", 1)[1] if "year=" in query else ""
+    return "_".join(path.split("/")) + (f"_{year}" if year else "")
+
+
+class ApiFixtureClient:
+    """Answers each HUD User API URL with its recorded answer, an override, or 404."""
+
+    def __init__(self, overrides: dict[str, bytes] | None = None) -> None:
+        self.overrides = dict(overrides or {})
+        self.calls: list[str] = []
+        self.headers: list[dict[str, str]] = []
+
+    def get(self, url: str, *, headers: dict[str, str]) -> httpx.Response:
+        name = api_fixture_name(url)
+        self.calls.append(name)
+        self.headers.append(dict(headers))
+        request = httpx.Request("GET", url)
+        if name in self.overrides:
+            return httpx.Response(200, content=self.overrides[name], request=request)
+        path = API_FIXTURE_DIR / f"{name}.json"
+        if not path.is_file():
+            return httpx.Response(
+                404,
+                content=b'{"error":"No data found for the entityid"}',
+                request=request,
+            )
+        return httpx.Response(200, content=path.read_bytes(), request=request)
+
+    def close(self) -> None:
+        return None
+
+
+def run_api_to_gold(
+    connection_factory: Callable[[], connection],
+    read: ApiRead,
+    *,
+    client: ApiFixtureClient | None = None,
+) -> tuple[UUID, str, int, int]:
+    """Capture, replay and publish one API read; return (run, status, facts, published)."""
+    run_id, status = capture_api_read(
+        connection_factory,
+        read,
+        config=HudConfig(
+            hud_user_api_token=FIXTURE_TOKEN,
+            min_spacing_seconds=0,
+            api_min_spacing_seconds=0,
+            max_attempts=1,
+        ),
+        client=client or ApiFixtureClient(),
+    )
+    facts = replay_run(connection_factory, run_id=run_id)
+    published = publish_run(connection_factory, run_id=run_id)
+    return run_id, status, facts, published
+
+
+def run_all_api(connection_factory: Callable[[], connection]) -> None:
+    for read in registered_reads():
+        run_api_to_gold(connection_factory, read)
+
+
 def run_all(connection_factory: Callable[[], connection]) -> None:
     for item in registered_files():
         run_to_gold(connection_factory, item)
@@ -182,6 +262,7 @@ def reviewed_warehouse(
                     "silver_hud_fmr_il.fact_observation",
                     "silver_hud_fmr_il.observation_revision",
                     "silver_hud_fmr_il.observation_quarantine",
+                    "control.hud_fmr_il_api_capture",
                     "control.hud_fmr_il_file",
                 ):
                     cursor.execute(f"DELETE FROM {table}")

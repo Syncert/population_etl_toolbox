@@ -16,6 +16,7 @@ from data_ingestion_toolbox.glossary.harvest import (
     harvest_publisher,
     process_pending_events,
 )
+from data_ingestion_toolbox.hud_fmr_il.api import HudApiPayloadError
 from data_ingestion_toolbox.hud_fmr_il.client import HudPayloadError
 from data_ingestion_toolbox.hud_fmr_il.registry import get_file
 from data_ingestion_toolbox.hud_fmr_il.schema import (
@@ -234,3 +235,88 @@ def test_the_harvest_names_every_published_measure(hud_warehouse) -> None:
         factory,
         "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'HUD_FMR_IL'",
     ) == [(9,)]
+
+
+def test_api_reads_reach_gold_with_the_workbook_values(hud_warehouse) -> None:
+    """Covers: ETL-065 — the HUD User API path serves the same county values as the workbooks."""
+    factory = hud_warehouse
+    client = hud.ApiFixtureClient()
+    published = [
+        hud.run_api_to_gold(factory, read, client=client)
+        for read in hud.registered_reads()
+    ]
+    assert [(status, done) for _run, status, _facts, done in published] == [
+        ("captured", 1),
+        ("captured", 1),
+        ("captured", 1),
+    ]
+    latest = dict(
+        (key, value)
+        for key, value in (
+            (
+                (metric, geo_id, year),
+                (value, release_key, area_code, area_name),
+            )
+            for metric, geo_id, year, value, release_key, area_code, area_name in _rows(
+                factory,
+                """
+                SELECT metric_key, geo_id, year, value, release_key, hud_area_code, hud_area_name
+                FROM gold_hud_fmr_il.observation_latest
+                WHERE metric_key IN ('fmr_2br', 'income_limit_50_4p')
+                """,
+            )
+        )
+    )
+    assert latest[("fmr_2br", hud.NAPA, 2026)][:2] == (
+        Decimal("3315"),
+        "FY2026-revised",
+    )
+    assert latest[("income_limit_50_4p", hud.KENT, 2026)][0] == Decimal("53900")
+    # A metro county keeps HUD's area code; the API names none for a
+    # nonmetropolitan area, so Sussex has its area's name and no code.
+    assert latest[("fmr_2br", hud.KENT, 2027)][2] == "METRO20100M20100"
+    assert latest[("fmr_2br", hud.SUSSEX, 2027)][2:] == (None, "Sussex County, DE")
+    # Andover's FMR is held as a town and never served as its county.
+    assert _rows(
+        factory,
+        "SELECT geography_status FROM silver_hud_fmr_il.fact_observation WHERE geo_id = %s LIMIT 1",
+        (hud.ANDOVER,),
+    ) == [("unsupported",)]
+    # Income limits were asked for whole counties only.
+    assert not [name for name in client.calls if name.startswith("il_data_09")]
+
+
+def test_the_api_token_reaches_no_capture_and_a_rerun_adds_nothing(
+    hud_warehouse,
+) -> None:
+    """Covers: ETL-065 — the token is a header only; an unchanged API read replays nothing."""
+    factory = hud_warehouse
+    read = hud.registered_reads()[0]
+    client = hud.ApiFixtureClient()
+    hud.run_api_to_gold(factory, read, client=client)
+    assert all(
+        headers["Authorization"] == f"Bearer {hud.FIXTURE_TOKEN}"
+        for headers in client.headers
+    )
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(*) FROM raw_capture.response_capture AS capture
+        JOIN raw_capture.payload_blob AS blob USING (payload_checksum)
+        WHERE capture.source_code = 'HUD_FMR_IL'
+          AND (capture.endpoint LIKE %s OR capture.request_parameters::TEXT LIKE %s
+               OR capture.response_headers::TEXT LIKE %s
+               OR POSITION(convert_to(%s, 'UTF8') IN blob.payload) > 0)
+        """,
+        (
+            f"%{hud.FIXTURE_TOKEN}%",
+            f"%{hud.FIXTURE_TOKEN}%",
+            f"%{hud.FIXTURE_TOKEN}%",
+            hud.FIXTURE_TOKEN,
+        ),
+    ) == [(0,)]
+    _run, status, facts, published = hud.run_api_to_gold(factory, read)
+    assert (status, facts, published) == ("unchanged", 0, 0)
+    refused = hud.ApiFixtureClient({"fmr_statedata_CA_2026": b"<html>busy</html>"})
+    with pytest.raises(HudApiPayloadError, match="not_json"):
+        hud.run_api_to_gold(factory, read, client=refused)

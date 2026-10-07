@@ -4,15 +4,19 @@
 CREATE SCHEMA IF NOT EXISTS silver_hud_fmr_il;
 
 -- One run per read of a registered edition: a dataset, a fiscal year and an
--- original or revised workbook. A read whose bytes equal that edition's last
--- published file is `unchanged` and replays nothing.
+-- original or revised workbook, or one HUD User API read of a dataset and
+-- fiscal year (many answers, listed in control.hud_fmr_il_api_capture; its
+-- checksum is the checksum of their checksums in order). A read whose bytes
+-- equal that edition's last published read on the same channel is
+-- `unchanged` and replays nothing.
 CREATE TABLE IF NOT EXISTS control.hud_fmr_il_file (
     run_id UUID PRIMARY KEY REFERENCES control.ingestion_run(run_id),
+    channel TEXT NOT NULL DEFAULT 'workbook' CHECK (channel IN ('workbook', 'api')),
     dataset TEXT NOT NULL CHECK (dataset IN ('fmr', 'il')),
     fiscal_year INTEGER NOT NULL CHECK (fiscal_year BETWEEN 1983 AND 2100),
     edition TEXT NOT NULL CHECK (edition IN ('original', 'revised')),
     effective_date DATE NOT NULL,
-    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    capture_id UUID REFERENCES raw_capture.response_capture(capture_id),
     payload_checksum TEXT NOT NULL CHECK (payload_checksum ~ '^[0-9a-f]{64}$'),
     row_count INTEGER NOT NULL DEFAULT 0 CHECK (row_count >= 0),
     county_row_count INTEGER NOT NULL DEFAULT 0 CHECK (county_row_count >= 0),
@@ -21,10 +25,23 @@ CREATE TABLE IF NOT EXISTS control.hud_fmr_il_file (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT hud_fmr_il_file_counties_within_rows CHECK (county_row_count <= row_count),
-    CONSTRAINT hud_fmr_il_file_published_has_time CHECK (status <> 'published' OR published_at IS NOT NULL)
+    CONSTRAINT hud_fmr_il_file_published_has_time CHECK (status <> 'published' OR published_at IS NOT NULL),
+    CONSTRAINT hud_fmr_il_file_workbook_has_capture CHECK ((channel = 'workbook') = (capture_id IS NOT NULL))
 );
 
 CREATE INDEX IF NOT EXISTS hud_fmr_il_file_capture_idx ON control.hud_fmr_il_file (capture_id);
+
+-- Every API answer of an API read: a state's FMRs, a state's county list, or
+-- one county's income limits. The token is a header; it is in no capture.
+CREATE TABLE IF NOT EXISTS control.hud_fmr_il_api_capture (
+    run_id UUID NOT NULL REFERENCES control.hud_fmr_il_file(run_id),
+    slice_key TEXT NOT NULL CHECK (slice_key ~ '^(fmr|list|il):[A-Z0-9]+$'),
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    payload_checksum TEXT NOT NULL CHECK (payload_checksum ~ '^[0-9a-f]{64}$'),
+    PRIMARY KEY (run_id, slice_key)
+);
+
+CREATE INDEX IF NOT EXISTS hud_fmr_il_api_capture_capture_idx ON control.hud_fmr_il_api_capture (capture_id);
 
 -- Every row of every replayed workbook, one row per measure, as the workbook
 -- stores it. A town row (a `fips` not ending 99999) is a county subdivision.
@@ -36,7 +53,7 @@ CREATE TABLE IF NOT EXISTS silver_hud_fmr_il.observation_revision (
     fips_code TEXT NOT NULL CHECK (fips_code ~ '^[0-9]{10}$'),
     geo_type TEXT NOT NULL CHECK (geo_type IN ('county', 'county_subdivision')),
     geo_id TEXT NOT NULL,
-    hud_area_code TEXT NOT NULL,
+    hud_area_code TEXT,
     hud_area_name TEXT NOT NULL,
     metro BOOLEAN NOT NULL,
     value_source TEXT NOT NULL,
@@ -80,7 +97,7 @@ CREATE TABLE IF NOT EXISTS silver_hud_fmr_il.fact_observation (
     geo_type TEXT NOT NULL CHECK (geo_type IN ('county', 'county_subdivision')),
     geo_sk BIGINT,
     geography_status TEXT NOT NULL CHECK (geography_status IN ('resolved', 'unmapped', 'unsupported')),
-    hud_area_code TEXT NOT NULL,
+    hud_area_code TEXT,
     hud_area_name TEXT NOT NULL,
     metro BOOLEAN NOT NULL,
     value_source TEXT NOT NULL,

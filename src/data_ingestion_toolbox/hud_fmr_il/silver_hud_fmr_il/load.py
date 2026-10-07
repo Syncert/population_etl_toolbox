@@ -1,10 +1,12 @@
-"""Replay one captured HUD workbook into silver, reconcile it, and publish it.
+"""Replay one captured HUD workbook or API read into silver, reconcile it, and publish it.
 
 Everything here reads the committed capture, never the network. One
 transaction per run: the parsed cells, the quarantine, the geography
 resolution ledger and the conformed facts land together or not at all, and
 the run is only marked ready when the counts reconcile. A run the capture
-found ``unchanged`` replays nothing.
+found ``unchanged`` replays nothing. An API read replays each of its
+answers -- a state's FMRs or a county's income limits -- with that answer's
+capture as the lineage of its rows.
 """
 
 from __future__ import annotations
@@ -18,8 +20,58 @@ from psycopg2.extras import execute_values
 from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..config import SOURCE_CODE
-from ..registry import get_file
-from .parse import parse_file
+from ..registry import FMR, get_file
+from .parse import HudObservation, HudQuarantine, ParsedFile, parse_file
+
+
+class _Combined:
+    """Every answer's rows, each with the capture it came from."""
+
+    def __init__(self, parts: list[tuple[str, ParsedFile]]) -> None:
+        self.observations: list[tuple[str, HudObservation]] = [
+            (capture, obs) for capture, part in parts for obs in part.observations
+        ]
+        self.quarantined: list[tuple[str, HudQuarantine]] = [
+            (capture, q) for capture, part in parts for q in part.quarantined
+        ]
+        self.row_count = sum(part.row_count for _capture, part in parts)
+        self.county_row_count = sum(part.county_row_count for _capture, part in parts)
+
+
+def _combine(parts: list[tuple[str, ParsedFile]]) -> _Combined:
+    return _Combined(parts)
+
+
+def _parse_api_read(
+    connection_factory: Callable[[], Any],
+    cursor: Any,
+    run_id: UUID,
+    dataset: str,
+    fiscal_year: int,
+) -> list[tuple[str, ParsedFile]]:
+    from ..api import get_read, parse_fmr_state, parse_il_county
+
+    read = get_read(f"api:{dataset}:fy{fiscal_year}")
+    cursor.execute(
+        """
+        SELECT slice_key, capture_id::TEXT FROM control.hud_fmr_il_api_capture
+        WHERE run_id = %s AND slice_key NOT LIKE 'list:%%' ORDER BY slice_key
+        """,
+        (str(run_id),),
+    )
+    parts: list[tuple[str, ParsedFile]] = []
+    for slice_key, capture_id in cursor.fetchall():
+        raw = load_captured_payload(connection_factory, UUID(capture_id))
+        if dataset == FMR:
+            parts.append((capture_id, parse_fmr_state(raw, read=read)))
+        else:
+            parts.append(
+                (
+                    capture_id,
+                    parse_il_county(raw, read=read, fips=slice_key.split(":", 1)[1]),
+                )
+            )
+    return parts
 
 
 class HudReconciliationError(RuntimeError):
@@ -37,7 +89,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT dataset || ':fy' || fiscal_year::TEXT || ':' || edition, capture_id::TEXT, status
+                SELECT dataset || ':fy' || fiscal_year::TEXT || ':' || edition, capture_id::TEXT, status,
+                       channel, dataset, fiscal_year
                 FROM control.hud_fmr_il_file WHERE run_id = %s
                 """,
                 (str(run_id),),
@@ -45,14 +98,25 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             row = cursor.fetchone()
             if row is None:
                 raise HudReconciliationError("run has no captured HUD workbook")
-            key, capture_id, status = row
+            key, capture_id, status, channel, dataset, fiscal_year = row
             if status == "unchanged":
                 connection.commit()
                 return 0
-            item = get_file(key)
-            parsed = parse_file(
-                load_captured_payload(connection_factory, UUID(capture_id)), item=item
-            )
+            if channel == "api":
+                parts = _parse_api_read(
+                    connection_factory, cursor, run_id, dataset, fiscal_year
+                )
+            else:
+                parts = [
+                    (
+                        capture_id,
+                        parse_file(
+                            load_captured_payload(connection_factory, UUID(capture_id)),
+                            item=get_file(key),
+                        ),
+                    )
+                ]
+            parsed = _combine(parts)
             if parsed.observations:
                 execute_values(
                     cursor,
@@ -66,7 +130,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     """,
                     [
                         (
-                            capture_id,
+                            obs_capture,
                             obs.source_row_index,
                             obs.measure,
                             str(run_id),
@@ -82,7 +146,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                             obs.missing_reason,
                             obs.source_record_id,
                         )
-                        for obs in parsed.observations
+                        for obs_capture, obs in parsed.observations
                     ],
                     page_size=10000,
                 )
@@ -98,15 +162,15 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     [
                         (
                             str(run_id),
-                            capture_id,
+                            q_capture,
                             q.source_row_index,
                             q.error_code,
                             q.error_summary,
                         )
-                        for q in parsed.quarantined
+                        for q_capture, q in parsed.quarantined
                     ],
                 )
-            refused = any(q.source_row_index == 0 for q in parsed.quarantined)
+            refused = any(q.source_row_index == 0 for _capture, q in parsed.quarantined)
             cursor.execute(
                 """
                 UPDATE control.hud_fmr_il_file
@@ -155,7 +219,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
                 """,
-                (SOURCE_CODE, f"hud_{item.dataset}", item.fiscal_year, str(run_id)),
+                (SOURCE_CODE, f"hud_{dataset}", fiscal_year, str(run_id)),
             )
             cursor.execute(
                 """

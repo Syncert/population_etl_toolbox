@@ -1,7 +1,7 @@
 # Register a HUD User API token
 
 **What it unblocks:** the HUD Fair Market Rent and income-limit pipeline
-([`HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../in_progress/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md)).
+([`HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../../needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md)).
 HUD User's website answers this pipeline's honest, self-identifying
 downloads with an empty `202` challenge, so the scheduled job cannot fetch
 the workbooks. On 2026-10-07 you chose HUD's API as the capture path
@@ -60,6 +60,15 @@ Nothing is committed: `stack.env` holds secrets and is not checked in.
 
 ## When it is done
 
-Move this file to [`completed/`](completed/) with the date. The HUD plan
+Move this file to [`completed/`](./) with the date. The HUD plan
 stays in `in_progress/` until the API capture path is built and its live
 check passes; this item only makes that possible.
+
+## Done (2026-10-07)
+
+Nick registered the token for the Fair Market Rent and Income Limits
+datasets and added `HUD_USER_API_TOKEN` to his local `stack.env`. Checked
+without printing it: the HUD User API answered `fmr/listStates` with 56
+states and territories, and `tests/external/test_hud_fmr_il_source_contracts.py`
+passed 9 of 9 against it. The API capture path is built on
+`feat/hud-fair-market-rents`.

@@ -42,6 +42,8 @@ jobs:
       # and Quick Stats refuses an unkeyed request.
       FBI_CDE_API_KEY: ${{ secrets.FBI_CDE_API_KEY }}
       USDA_NASS_API_KEY: ${{ secrets.USDA_NASS_API_KEY }}
+      # HUD User challenges automated workbook downloads; its API needs a token.
+      HUD_USER_API_TOKEN: ${{ secrets.HUD_USER_API_TOKEN }}
       # Optional: raises CDC Socrata rate limits; anonymous reads still work.
       CDC_SOCRATA_APP_TOKEN: ${{ secrets.CDC_SOCRATA_APP_TOKEN }}
 

@@ -25,6 +25,7 @@ DDL_FILES = [
 
 REQUIRED_RELATIONS = (
     "control.hud_fmr_il_file",
+    "control.hud_fmr_il_api_capture",
     "silver_hud_fmr_il.observation_revision",
     "silver_hud_fmr_il.observation_quarantine",
     "silver_hud_fmr_il.fact_observation",

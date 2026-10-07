@@ -1,12 +1,14 @@
 """Capture-first HUD Fair Market Rent and income-limit pipeline.
 
-Each run reads every registered edition -- each fiscal year's FMR workbook,
-its revised workbook where HUD reissued the year, and each income-limit
-workbook -- and, when an edition's bytes differ from its last published
-file, replays it into silver and publishes it. An unchanged read replays
-nothing; a revised edition is kept beside the original it reissued.
+Each run reads every registered HUD User Data API read -- each fiscal year's
+FMRs, state by state, and each year's income limits, county by county -- and,
+when a read differs from its last published read, replays it into silver
+and publishes it. An unchanged read replays nothing. HUD User challenges
+automated workbook downloads, so the workbook path (still registered, with
+its parser and tests) is for loading a file by hand, not for the schedule.
 
-One mapped task per edition, through the one-slot ``hud_fmr_il_files`` pool.
+One mapped task per read, through the one-slot ``hud_fmr_il_files`` pool; an
+income-limit read is about 3,300 calls at HUD's 60 a minute.
 """
 
 from __future__ import annotations
@@ -18,9 +20,9 @@ from uuid import UUID
 
 from airflow.decorators import dag, task
 
-from data_ingestion_toolbox.hud_fmr_il.capture import capture_file
+from data_ingestion_toolbox.hud_fmr_il.api import get_read, registered_reads
+from data_ingestion_toolbox.hud_fmr_il.api_capture import capture_api_read
 from data_ingestion_toolbox.hud_fmr_il.config import HudConfig
-from data_ingestion_toolbox.hud_fmr_il.registry import get_file, registered_files
 from data_ingestion_toolbox.hud_fmr_il.schema import ensure_hud_fmr_il_schema
 from data_ingestion_toolbox.hud_fmr_il.silver_hud_fmr_il.load import (
     publish_run,
@@ -72,13 +74,13 @@ def hud_fmr_il_ingest():
 
     @task()
     def plan_files() -> list[str]:
-        return [item.key for item in registered_files()]
+        return [read.key for read in registered_reads()]
 
-    @task(pool="hud_fmr_il_files")
+    @task(pool="hud_fmr_il_files", execution_timeout=timedelta(hours=3))
     def ingest_batch_file(file_key: str) -> dict[str, Any]:
         connection_factory = _get_postgres_hook().get_conn
-        run_id, status = capture_file(
-            connection_factory, get_file(file_key), config=HudConfig()
+        run_id, status = capture_api_read(
+            connection_factory, get_read(file_key), config=HudConfig.from_environment()
         )
         facts = replay_run(connection_factory, run_id=UUID(str(run_id)))
         published = publish_run(connection_factory, run_id=UUID(str(run_id)))

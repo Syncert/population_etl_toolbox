@@ -680,19 +680,24 @@ def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_hud_fmr_il(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve each registered edition's reviewed workbook in place of HUD User's."""
-    from data_ingestion_toolbox.hud_fmr_il import capture as hud_capture
-    from data_ingestion_toolbox.hud_fmr_il.client import HudResponse
+    """Serve HUD User API answers from the recorded fixtures, with a stand-in token."""
+    from data_ingestion_toolbox.hud_fmr_il import api_capture as hud_api_capture
+    from tests.support.hud_fmr_il import FIXTURE_TOKEN, ApiFixtureClient
 
-    root = FIXTURE_ROOT / "hud_fmr_il"
+    real_client = hud_api_capture.HudApiClient
 
-    def fetch_file(item: Any, **_kwargs: Any) -> HudResponse:
-        payload = (root / item.path.rsplit("/", 1)[1]).read_bytes()
-        return HudResponse(
-            item.path, payload, {"content-type": "application/octet-stream"}, 200
+    def client(config: Any, **_kwargs: Any) -> Any:
+        return real_client(
+            config.model_copy(
+                update={
+                    "hud_user_api_token": FIXTURE_TOKEN,
+                    "api_min_spacing_seconds": 0,
+                }
+            ),
+            client=ApiFixtureClient(),
         )
 
-    monkeypatch.setattr(hud_capture, "fetch_file", fetch_file)
+    monkeypatch.setattr(hud_api_capture, "HudApiClient", client)
 
 
 def build_pep_release_csv(url: str) -> bytes:

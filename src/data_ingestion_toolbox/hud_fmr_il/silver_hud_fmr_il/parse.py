@@ -33,7 +33,8 @@ class HudObservation:
     fips_code: str
     geo_type: str
     geo_id: str
-    hud_area_code: str
+    #: None where the source does not name it (API nonmetropolitan areas).
+    hud_area_code: str | None
     hud_area_name: str
     metro: bool
     value_source: str

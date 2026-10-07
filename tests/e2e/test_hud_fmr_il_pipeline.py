@@ -35,11 +35,13 @@ def test_rents_and_limits_reach_the_neutral_api_with_their_area(hud_warehouse) -
     """Covers: E2E-014 — a glossary-discovered HUD metric answers through
     `/api/v1/observations` for a county with the fixture's value.
 
-    Covers: ETL-065 — the HUD area, the edition and its effective date travel
-    with the value, and the reissued edition is the one served.
+    Covers: ETL-065 — read through the HUD User API as scheduled, the HUD
+    area, the edition and its effective date travel with the value, the
+    reissued edition is the one served, and the API's required notice is in
+    the basis.
     """
     factory = hud_warehouse
-    hud.run_all(factory)
+    hud.run_all_api(factory)
     assert harvest_publisher(factory, Publisher("gold_hud_fmr_il")) > 0
 
     with real_api_client() as client:
@@ -69,6 +71,10 @@ def test_rents_and_limits_reach_the_neutral_api_with_their_area(hud_warehouse) -
         )
         assert row["dimensions"]["hud_area_code"] == "METRO34900M34900"
         assert "not a county estimate" in row["dimensions"]["observation_basis"]
+        assert (
+            "not endorsed or certified by HUD User"
+            in row["dimensions"]["observation_basis"]
+        )
 
         limit = client.get(
             "/api/v1/observations",
