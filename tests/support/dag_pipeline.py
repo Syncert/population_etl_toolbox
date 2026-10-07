@@ -475,6 +475,11 @@ def assert_dag_run_succeeded(dag_run: Any, dag_id: str) -> dict[str, str]:
     return states
 
 
+AREA_FIXTURES = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "silver_ref" / "area"
+)
+
+
 def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace the TIGER/Gazetteer downloads with one bounded fixture vintage.
 
@@ -499,11 +504,23 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
         "resolve_historical_county_years",
         lambda *_args, **_kwargs: [FIXTURE_GEOGRAPHY_VINTAGE],
     )
-    monkeypatch.setattr(
-        geography_pipeline,
-        "_download_with_retry",
-        lambda client, url, **_kwargs: stub_response(url.encode(), url=url),
-    )
+    def download(client: Any, url: str, **_kwargs: Any) -> Any:
+        # The region and CBSA files are parsed for real, from the reviewed
+        # excerpts (grocery-and-gasoline-prices); every other asset's parser
+        # is replaced below.
+        for name in ("NST-EST2024-ALLDATA", "cbsa-est2024-alldata"):
+            if url.endswith(f"{name}.csv"):
+                return stub_response(
+                    (AREA_FIXTURES / f"{name}.excerpt.csv").read_bytes(), url=url
+                )
+        if url.endswith("/cu/cu.area"):
+            return stub_response(
+                (AREA_FIXTURES.parent / "provider_areas" / "bls_cu.area").read_bytes(),
+                url=url,
+            )
+        return stub_response(url.encode(), url=url)
+
+    monkeypatch.setattr(geography_pipeline, "_download_with_retry", download)
 
     def parse_attributes(
         _payload: bytes, *, geo_type: str, geography_vintage: int
@@ -968,6 +985,9 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
 BLS_FIXTURE_AREA = {"area_code": "ST1100000000000", "area_text": "District of Columbia"}
 
 
+PRICE_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "bls" / "price"
+
+
 def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed BLS fixtures instead of the live provider.
 
@@ -1041,7 +1061,20 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     }
 
+    # The price programs' series lists are BLS's own excerpts, so the
+    # orchestrated run selects the regional and metro series from them as
+    # production does (grocery-and-gasoline-prices).
+    price_lists = {
+        "/cu/cu.series": "cu.series.excerpt",
+        "/ap/ap.series": "ap.series.excerpt",
+    }
+
     def read_tsv(url: str) -> Any:
+        for suffix, name in price_lists.items():
+            if str(url).endswith(suffix):
+                return pl.read_csv(
+                    PRICE_FIXTURES / name, separator="	", infer_schema_length=0
+                )
         for suffix, frame in catalogues.items():
             if str(url).endswith(suffix):
                 return frame

@@ -522,3 +522,19 @@ def test_missing_census_key_fails_at_runtime_not_import(
         ValueError, match=r"^CENSUS_API_KEY required for Census API requests$"
     ):
         ingest.fetch_acs_api.__wrapped__(2024, "acs5", ["B01003_001E"], "state")
+
+
+@pytest.mark.dag
+def test_area_geography_follows_the_counties_it_contains(dagbag) -> None:
+    """Covers: ETL-075 — regions, divisions and CBSAs load after the county reference."""
+    dag = dagbag.dags["silver_ref"]
+    areas = dag.get_task("load_area_geo")
+    assert "load_dim_geo" in {task.task_id for task in areas.upstream_list}
+
+
+@pytest.mark.dag
+def test_provider_areas_load_after_the_reference_schema(dagbag) -> None:
+    """Covers: ETL-076 — provider-defined areas are loaded by the reference DAG."""
+    dag = dagbag.dags["silver_ref"]
+    task = dag.get_task("load_provider_areas")
+    assert "ensure_schema" in {upstream.task_id for upstream in task.upstream_list}

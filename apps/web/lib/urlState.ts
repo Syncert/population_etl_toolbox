@@ -9,14 +9,26 @@
 // `scope`, `release`) stays valid; unknown or invalid values are dropped rather than
 // propagated into requests.
 
-// The published grain vocabulary, all six words of it. `geo_level` on a
+// The published grain vocabulary, all nine words of it. `geo_level` on a
 // served row is always one of these, and a metric's `valid_geo_grains` uses
 // the same words, so a grain read from the catalog can be sent straight back
 // as the filter (API_CONSUMER_GUIDE.md). PLACE is Census PEP's and AGENCY is
 // FBI UCR's; dropping them here made a shared link to either kind of view
 // open on a grain the measure does not publish (WEB-038). TRACT is the ACS
-// 5-year estimates' (sub-county-geography).
-export const GEO_LEVELS = ["NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT", "AGENCY"] as const;
+// 5-year estimates' (sub-county-geography); CENSUS_REGION, CENSUS_DIVISION
+// and PROVIDER_AREA are where BLS publishes regional and metro prices
+// (grocery-and-gasoline-prices).
+export const GEO_LEVELS = [
+  "NATIONAL",
+  "CENSUS_REGION",
+  "CENSUS_DIVISION",
+  "STATE",
+  "COUNTY",
+  "PLACE",
+  "TRACT",
+  "PROVIDER_AREA",
+  "AGENCY",
+] as const;
 
 // The words the vocabulary replaced, and what each one means now. The catalog
 // published `NATION` for CDC, PEP and USDA NASS before the grains were

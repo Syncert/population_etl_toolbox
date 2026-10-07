@@ -1437,7 +1437,7 @@ r gold_bls.dim_bls_series
     column semantic_notes text
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     constraint dim_bls_series_bls_survey_sk_fkey FOREIGN KEY (bls_survey_sk) REFERENCES gold_bls.dim_bls_survey(bls_survey_sk)
-    constraint dim_bls_series_measure_category_check CHECK ((measure_category = ANY (ARRAY['EMPLOYMENT'::text, 'UNEMPLOYMENT'::text, 'LABOR_FORCE'::text, 'PARTICIPATION'::text, 'POPULATION'::text, 'EARNINGS'::text, 'HOURS'::text, 'PRICE_INDEX'::text, 'OPENINGS'::text, 'HIRES'::text, 'QUITS'::text, 'LAYOFFS'::text, 'SEPARATIONS'::text, 'OTHER'::text])))
+    constraint dim_bls_series_measure_category_check CHECK ((measure_category = ANY (ARRAY['EMPLOYMENT'::text, 'UNEMPLOYMENT'::text, 'LABOR_FORCE'::text, 'PARTICIPATION'::text, 'POPULATION'::text, 'EARNINGS'::text, 'HOURS'::text, 'PRICE_INDEX'::text, 'AVERAGE_PRICE'::text, 'OPENINGS'::text, 'HIRES'::text, 'QUITS'::text, 'LAYOFFS'::text, 'SEPARATIONS'::text, 'OTHER'::text])))
     constraint dim_bls_series_pkey PRIMARY KEY (bls_series_sk)
     constraint dim_bls_series_series_id_key UNIQUE (series_id)
     constraint dim_bls_series_value_type_check CHECK ((value_type = ANY (ARRAY['LEVEL'::text, 'RATE'::text, 'INDEX'::text, 'PERCENT'::text, 'CURRENCY'::text, 'RATIO'::text, 'OTHER'::text])))
@@ -6060,13 +6060,14 @@ r silver_ref.dim_geo_entity
     column place_fips text
     column tract_code text
     column zcta_code text
+    column area_code text
     column provider_agency_code text
     column first_seen_version integer NOT NULL
     column last_seen_version integer NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     constraint dim_geo_entity_check CHECK ((last_seen_version >= first_seen_version))
-    constraint dim_geo_entity_check1 CHECK ((((geo_type = 'nation'::text) AND (geo_id = 'us:1'::text) AND (state_fips IS NULL)) OR ((geo_type = 'state'::text) AND (geo_id = ('state:'::text || state_fips))) OR ((geo_type = 'county'::text) AND (geo_id = ((('state:'::text || state_fips) || '|county:'::text) || county_fips))) OR ((geo_type = 'place'::text) AND (geo_id = ((('state:'::text || state_fips) || '|place:'::text) || place_fips))) OR ((geo_type = 'tract'::text) AND (county_fips IS NOT NULL) AND (tract_code IS NOT NULL) AND (geo_id = ((((('state:'::text || state_fips) || '|county:'::text) || county_fips) || '|tract:'::text) || tract_code))) OR ((geo_type = 'zcta'::text) AND (state_fips IS NULL) AND (zcta_code IS NOT NULL) AND (geo_id = ('zcta:'::text || zcta_code))) OR ((geo_type = 'agency'::text) AND (provider_agency_code IS NOT NULL))))
+    constraint dim_geo_entity_check1 CHECK ((((geo_type = 'nation'::text) AND (geo_id = 'us:1'::text) AND (state_fips IS NULL)) OR ((geo_type = 'state'::text) AND (geo_id = ('state:'::text || state_fips))) OR ((geo_type = 'county'::text) AND (geo_id = ((('state:'::text || state_fips) || '|county:'::text) || county_fips))) OR ((geo_type = 'place'::text) AND (geo_id = ((('state:'::text || state_fips) || '|place:'::text) || place_fips))) OR ((geo_type = 'tract'::text) AND (county_fips IS NOT NULL) AND (tract_code IS NOT NULL) AND (geo_id = ((((('state:'::text || state_fips) || '|county:'::text) || county_fips) || '|tract:'::text) || tract_code))) OR ((geo_type = 'zcta'::text) AND (state_fips IS NULL) AND (zcta_code IS NOT NULL) AND (geo_id = ('zcta:'::text || zcta_code))) OR ((geo_type = 'census_region'::text) AND (state_fips IS NULL) AND (area_code ~ '^[1-4]$'::text) AND (geo_id = ('region:'::text || area_code))) OR ((geo_type = 'census_division'::text) AND (state_fips IS NULL) AND (area_code ~ '^[1-9]$'::text) AND (geo_id = ('division:'::text || area_code))) OR ((geo_type = 'metro'::text) AND (state_fips IS NULL) AND (area_code ~ '^[0-9]{5}$'::text) AND (geo_id = ('cbsa:'::text || area_code))) OR ((geo_type = 'provider_area'::text) AND (state_fips IS NULL) AND (area_code ~ '^[a-z_]+:[A-Za-z0-9._-]+$'::text) AND (geo_id = ('area:'::text || area_code))) OR ((geo_type = 'agency'::text) AND (provider_agency_code IS NOT NULL))))
     constraint dim_geo_entity_county_fips_check CHECK (((county_fips IS NULL) OR (county_fips ~ '^[0-9]{3}$'::text)))
     constraint dim_geo_entity_geo_id_key UNIQUE (geo_id)
     constraint dim_geo_entity_geo_type_fkey FOREIGN KEY (geo_type) REFERENCES silver_ref.dim_geo_type(geo_type)

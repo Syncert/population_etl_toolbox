@@ -718,6 +718,11 @@ BLS_GRAIN_ROWS: tuple[tuple[str, str, int], ...] = (
     ("us:1", "NATIONAL", 1234),
     ("state:93", "STATE", 567),
     ("state:93|county:001", "COUNTY", 89),
+    # The grains BLS publishes its regional and metro prices at
+    # (grocery-and-gasoline-prices), swept like every other grain.
+    ("region:2", "CENSUS_REGION", 321),
+    ("division:3", "CENSUS_DIVISION", 432),
+    ("area:bls_cpi:S35A", "PROVIDER_AREA", 543),
 )
 
 

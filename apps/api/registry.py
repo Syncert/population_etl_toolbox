@@ -388,18 +388,22 @@ _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
-#: sent straight back as the ``geo_level`` filter. Six words, because that
+#: sent straight back as the ``geo_level`` filter. Nine words, because that
 #: is what the warehouse serves: PLACE is Census PEP's and ACS's, AGENCY is
-#: FBI UCR's, and TRACT is the ACS 5-year estimates' (sub-county-geography).
-#: The reference also holds ZIP Code Tabulation Areas, but no source
-#: publishes at that grain yet, and a grain with no publisher answers every
-#: request empty.
+#: FBI UCR's, TRACT is the ACS 5-year estimates' (sub-county-geography), and
+#: CENSUS_REGION, CENSUS_DIVISION and PROVIDER_AREA are where BLS publishes
+#: its regional and metro prices (grocery-and-gasoline-prices). The reference
+#: also holds ZIP Code Tabulation Areas and CBSAs, but no source publishes at
+#: those grains yet, and a grain with no publisher answers every request empty.
 GEO_GRAINS: tuple[str, ...] = (
     "NATIONAL",
+    "CENSUS_REGION",
+    "CENSUS_DIVISION",
     "STATE",
     "COUNTY",
     "PLACE",
     "TRACT",
+    "PROVIDER_AREA",
     "AGENCY",
 )
 

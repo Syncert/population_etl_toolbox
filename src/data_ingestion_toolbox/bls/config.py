@@ -99,6 +99,10 @@ class BlsConfig(BaseModel):
         "ce",
         "cu",
         "jt",
+        # Average prices (grocery-and-gasoline-prices). Its series are
+        # selected from BLS's own series list by item and area
+        # (`bls/price_series.py`), so it has no curated series ids.
+        "ap",
     ]
 
     # ------------------------------------------------------------------
@@ -238,6 +242,8 @@ class BlsConfig(BaseModel):
             "JTS000000000000000OSR",  # Other separations rate, total nonfarm
             "JTS000000000000000UOR",  # Unemployed persons per job opening
         ],
+        # Average prices: none hand-listed; see `price_series.py`.
+        "ap": [],
     }
 
     # Airflow connection ID to Postgres
@@ -280,7 +286,13 @@ class BlsConfig(BaseModel):
     def validate_curated_scope(
         cls, value: Dict[str, List[str]]
     ) -> Dict[str, List[str]]:
-        if not value or any(not series for series in value.values()):
+        from data_ingestion_toolbox.bls.price_series import PRICE_ITEMS
+
+        # A price program's series are selected from BLS's series list by
+        # item, so an empty curated list is its whole configuration.
+        if not value or any(
+            not series for program, series in value.items() if program not in PRICE_ITEMS
+        ):
             raise ValueError("configured BLS series scope must not be empty")
         return value
 
@@ -317,6 +329,7 @@ BLS_PROGRAM_LABELS: Dict[str, str] = {
     "ce": "CES",
     "cu": "CPI",
     "jt": "JOLTS",
+    "ap": "Average Price",
 }
 
 LAUS_MEASURE_META: Dict[str, Dict[str, str]] = {

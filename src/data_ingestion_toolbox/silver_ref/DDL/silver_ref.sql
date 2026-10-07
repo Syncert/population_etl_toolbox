@@ -22,7 +22,17 @@ INSERT INTO silver_ref.dim_geo_type VALUES
     -- counties and places by boundary overlap.
     ('tract', 'Census tract', 11, TRUE, 35),
     ('zcta', 'ZIP Code Tabulation Area', 5, TRUE, 35),
-    ('agency', 'Provider agency', NULL, FALSE, 40)
+    -- Areas larger than a county (grocery-and-gasoline-prices): the Census
+    -- Bureau's four regions and nine divisions, which contain states; core
+    -- based statistical areas by OMB code, which contain counties; and areas
+    -- a provider defines itself (an EIA PADD or city, a BLS CPI metro whose
+    -- definition is not a current CBSA, a BEA state metro or nonmetro
+    -- portion), which are not Census geography and carry the provider's code.
+    ('census_region', 'Census region', 1, TRUE, 15),
+    ('census_division', 'Census division', 1, TRUE, 17),
+    ('metro', 'Metro or micro area (CBSA)', 5, TRUE, 25),
+    ('agency', 'Provider agency', NULL, FALSE, 40),
+    ('provider_area', 'Provider-defined area', NULL, FALSE, 45)
 ON CONFLICT (geo_type) DO UPDATE SET
     display_label = EXCLUDED.display_label,
     canonical_code_length = EXCLUDED.canonical_code_length,
@@ -41,6 +51,9 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo_entity (
     tract_code TEXT,
     -- The five-digit ZCTA; set only for a ZCTA.
     zcta_code TEXT,
+    -- The code of an area larger than a county: a region (1-4), a division
+    -- (1-9), a CBSA (five digits), or a provider area as `provider:code`.
+    area_code TEXT,
     provider_agency_code TEXT,
     first_seen_version INTEGER NOT NULL,
     last_seen_version INTEGER NOT NULL,
@@ -63,6 +76,15 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo_entity (
             AND geo_id = 'state:' || state_fips || '|county:' || county_fips || '|tract:' || tract_code)
         OR (geo_type = 'zcta' AND state_fips IS NULL AND zcta_code IS NOT NULL
             AND geo_id = 'zcta:' || zcta_code)
+        OR (geo_type = 'census_region' AND state_fips IS NULL AND area_code ~ '^[1-4]$'
+            AND geo_id = 'region:' || area_code)
+        OR (geo_type = 'census_division' AND state_fips IS NULL AND area_code ~ '^[1-9]$'
+            AND geo_id = 'division:' || area_code)
+        OR (geo_type = 'metro' AND state_fips IS NULL AND area_code ~ '^[0-9]{5}$'
+            AND geo_id = 'cbsa:' || area_code)
+        OR (geo_type = 'provider_area' AND state_fips IS NULL
+            AND area_code ~ '^[a-z_]+:[A-Za-z0-9._-]+$'
+            AND geo_id = 'area:' || area_code)
         OR (geo_type = 'agency' AND provider_agency_code IS NOT NULL)
     )
 );
@@ -71,11 +93,13 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo_entity (
 -- the two code columns and with the identity CHECK that admits no tract or
 -- ZCTA. Re-applying this file brings it to the declaration above: the
 -- columns are added, and the CHECK is replaced under the same name only
--- when its definition does not yet name a tract. Every existing row is a
--- nation, state, county, place or agency and satisfies both definitions.
+-- when its definition does not yet name the newest type (a provider area,
+-- grocery-and-gasoline-prices). Every existing row satisfies both
+-- definitions, because each change only admits new types.
 ALTER TABLE silver_ref.dim_geo_entity
     ADD COLUMN IF NOT EXISTS tract_code TEXT,
-    ADD COLUMN IF NOT EXISTS zcta_code TEXT;
+    ADD COLUMN IF NOT EXISTS zcta_code TEXT,
+    ADD COLUMN IF NOT EXISTS area_code TEXT;
 
 DO $$
 BEGIN
@@ -101,7 +125,7 @@ BEGIN
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'silver_ref.dim_geo_entity'::regclass
           AND conname = 'dim_geo_entity_check1'
-          AND pg_get_constraintdef(oid) LIKE '%tract%'
+          AND pg_get_constraintdef(oid) LIKE '%provider_area%'
     ) THEN
         ALTER TABLE silver_ref.dim_geo_entity DROP CONSTRAINT IF EXISTS dim_geo_entity_check1;
         ALTER TABLE silver_ref.dim_geo_entity
@@ -114,6 +138,15 @@ BEGIN
                     AND geo_id = 'state:' || state_fips || '|county:' || county_fips || '|tract:' || tract_code)
                 OR (geo_type = 'zcta' AND state_fips IS NULL AND zcta_code IS NOT NULL
                     AND geo_id = 'zcta:' || zcta_code)
+                OR (geo_type = 'census_region' AND state_fips IS NULL AND area_code ~ '^[1-4]$'
+                    AND geo_id = 'region:' || area_code)
+                OR (geo_type = 'census_division' AND state_fips IS NULL AND area_code ~ '^[1-9]$'
+                    AND geo_id = 'division:' || area_code)
+                OR (geo_type = 'metro' AND state_fips IS NULL AND area_code ~ '^[0-9]{5}$'
+                    AND geo_id = 'cbsa:' || area_code)
+                OR (geo_type = 'provider_area' AND state_fips IS NULL
+                    AND area_code ~ '^[a-z_]+:[A-Za-z0-9._-]+$'
+                    AND geo_id = 'area:' || area_code)
                 OR (geo_type = 'agency' AND provider_agency_code IS NOT NULL)
             );
     END IF;
