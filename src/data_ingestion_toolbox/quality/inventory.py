@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "FHFA_HPI",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1807,6 +1808,102 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# FHFA annual House Price Index.
+# ---------------------------------------------------------------------------
+
+_HPI_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fhfa_hpi_file",
+        "control",
+        "FHFA_HPI",
+        grain="run_id (one run per read of a registered workbook)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered workbooks (the county file)",
+        cadence="monthly; a read whose bytes equal the last published file's is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_fhfa_hpi.observation_revision",
+        "silver",
+        "FHFA_HPI",
+        grain="capture_id, source_row_index, measure",
+        lineage="control.fhfa_hpi_file, raw_capture.response_capture",
+        scope_method="every county-year row of every replayed workbook, four measures each",
+        cadence="per FHFA replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_fhfa_hpi.observation_quarantine",
+        "silver",
+        "FHFA_HPI",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated workbook row; populated only on failure",
+        cadence="per FHFA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_fhfa_hpi.fact_observation",
+        "silver",
+        "FHFA_HPI",
+        grain="measure, geo_id, year, capture_id",
+        lineage="silver_fhfa_hpi.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="conformed county-year observations of every replayed workbook",
+        cadence="per FHFA replay",
+        empty_behavior="a missing index is missing with a reason, never 0",
+    ),
+    _obj(
+        "gold_fhfa_hpi.measure_definition",
+        "gold",
+        "FHFA_HPI",
+        grain="measure",
+        scope_method="the two published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_fhfa_hpi.observation_revision",
+        "gold",
+        "FHFA_HPI",
+        grain="metric_key, geo_id, year, run_id (published vintages only)",
+        lineage="silver_fhfa_hpi.fact_observation, control.fhfa_hpi_file",
+        scope_method="published workbooks; every vintage kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published workbook",
+    ),
+    _obj(
+        "gold_fhfa_hpi.observation_latest",
+        "gold",
+        "FHFA_HPI",
+        grain="metric_key, geo_id, year (newest vintage)",
+        lineage="gold_fhfa_hpi.observation_revision",
+        scope_method="newest-vintage projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published workbook",
+    ),
+    _obj(
+        "gold_fhfa_hpi.measure_export",
+        "publisher",
+        "FHFA_HPI",
+        grain="source_object_key (measure)",
+        lineage="gold_fhfa_hpi.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_fhfa_hpi.metric_publisher",
+        "publisher",
+        "FHFA_HPI",
+        grain="source_object_key (measure)",
+        lineage="gold_fhfa_hpi.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published workbook",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1819,6 +1916,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _HPI_OBJECTS
 )
 
 
@@ -2202,6 +2300,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_fhfa_hpi.metric_publisher",
         ),
     ),
     _rule(
@@ -3269,6 +3368,84 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
         ),
+    ),
+    # -- FHFA annual House Price Index ----------------------------------------
+    _rule(
+        "DQ-HPI-001",
+        "BLOCK",
+        "uniqueness",
+        "An FHFA observation is unique per (measure, county, year, capture): "
+        "a repeated county-year row is quarantined, and a new vintage is a "
+        "second capture beside the one it revised.",
+        (
+            "silver_fhfa_hpi.observation_revision",
+            "silver_fhfa_hpi.fact_observation",
+            "gold_fhfa_hpi.observation_revision",
+            "gold_fhfa_hpi.observation_latest",
+            "gold_fhfa_hpi.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact's primary key, the "
+            "parser quarantines a repeated county-year, and the gold relations "
+            "are views over the fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fhfa_hpi.fact_observation",
+                ("measure", "geo_id", "year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HPI-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured workbook is left unreplayed, and every replayed workbook "
+        "with readable rows reached its conformed facts.",
+        (
+            "control.fhfa_hpi_file",
+            "silver_fhfa_hpi.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-HPI-003",
+        "BLOCK",
+        "conformance",
+        "A missing or not-applicable index cell carries no number, and a valid "
+        "one always does: an empty workbook cell is never a zero.",
+        (
+            "silver_fhfa_hpi.fact_observation",
+            "gold_fhfa_hpi.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "observation without a value and a missing one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fhfa_hpi.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fhfa_hpi_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_fhfa_hpi.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fhfa_hpi_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HPI-004",
+        "WARN",
+        "plausibility",
+        "In every published workbook, no index value is zero or negative, the "
+        "2000-based index is 100 in 2000 wherever it is published, and every "
+        "county code resolved to the shared geography.",
+        ("silver_fhfa_hpi.fact_observation", "control.fhfa_hpi_file"),
     ),
 )
 

@@ -307,6 +307,31 @@ r control.fbi_ucr_release
     index fbi_ucr_release_pkey CREATE UNIQUE INDEX fbi_ucr_release_pkey ON control.fbi_ucr_release USING btree (run_id)
     index fbi_ucr_release_product_id_refresh_date_run_id_key CREATE UNIQUE INDEX fbi_ucr_release_product_id_refresh_date_run_id_key ON control.fbi_ucr_release USING btree (product_id, refresh_date, run_id)
 
+r control.fhfa_hpi_file
+    column run_id uuid NOT NULL
+    column kind text NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column provider_vintage date
+    column row_count integer NOT NULL DEFAULT 0
+    column county_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fhfa_hpi_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fhfa_hpi_file_county_count_check CHECK ((county_count >= 0))
+    constraint fhfa_hpi_file_kind_check CHECK ((kind = 'county'::text))
+    constraint fhfa_hpi_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint fhfa_hpi_file_pkey PRIMARY KEY (run_id)
+    constraint fhfa_hpi_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint fhfa_hpi_file_ready_has_vintage CHECK (((status <> ALL (ARRAY['silver_ready'::text, 'published'::text])) OR (provider_vintage IS NOT NULL)))
+    constraint fhfa_hpi_file_row_count_check CHECK ((row_count >= 0))
+    constraint fhfa_hpi_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fhfa_hpi_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index fhfa_hpi_file_capture_idx CREATE INDEX fhfa_hpi_file_capture_idx ON control.fhfa_hpi_file USING btree (capture_id)
+    index fhfa_hpi_file_pkey CREATE UNIQUE INDEX fhfa_hpi_file_pkey ON control.fhfa_hpi_file USING btree (run_id)
+
 r control.fred_ingestion_slices
     column id bigint NOT NULL DEFAULT nextval('control.fred_ingestion_slices_id_seq'::regclass)
     column domain text NOT NULL
@@ -2871,6 +2896,200 @@ v gold_fbi.reporting_coverage
     body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = coverage.product_id AND release.release_key = coverage.release_key
     body   WHERE release.status = 'published'::text;
 
+v gold_fhfa_hpi.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     (((('FHFA all-transactions House Price Index (annual, developmental): a '::text || 'nominal, not seasonally adjusted repeat-sales index of conventional '::text) || 'single-family mortgages bought or guaranteed by Fannie Mae and Freddie '::text) || 'Mac, not a price level; jumbo, FHA/VA, condominium and multi-unit '::text) || 'loans are out of scope. This product uses FHFA data but is neither '::text) || 'endorsed nor certified by FHFA.'::text AS observation_basis
+    body    FROM ( VALUES ('annual_change_pct'::text,'Annual change in the house price index'::text,'percent'::text), ('hpi_base_2000'::text,'House price index, 2000 = 100'::text,'index, 2000 = 100'::text)) measure(measure, measure_label, unit);
+
+v gold_fhfa_hpi.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'fhfa_hpi_xlsx:v1'::text AS schema_version
+    body    FROM gold_fhfa_hpi.measure_definition;
+
+v gold_fhfa_hpi.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'FHFA_HPI'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (FHFA all-transactions, nominal, not seasonally adjusted)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_fhfa_hpi', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Federal Housing Finance Agency House Price Index'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.fhfa.gov/data/hpi/datasets'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_fhfa_hpi.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_fhfa_hpi.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_fhfa_hpi.observation_latest
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column fips_code text
+    column value_source text
+    column value numeric(12,2)
+    column value_status text
+    column missing_reason text
+    column provider_vintage date
+    column release_key text
+    column published_at timestamp with time zone
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     fips_code,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     missing_reason,
+    body     provider_vintage,
+    body     release_key,
+    body     published_at,
+    body     retrieved_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_fhfa_hpi.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, provider_vintage DESC, published_at DESC, run_id DESC;
+
+v gold_fhfa_hpi.observation_revision
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column fips_code text
+    column value_source text
+    column value numeric(12,2)
+    column value_status text
+    column missing_reason text
+    column provider_vintage date
+    column release_key text
+    column published_at timestamp with time zone
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH published AS (
+    body          SELECT file.run_id,
+    body             file.capture_id,
+    body             file.provider_vintage,
+    body             file.published_at,
+    body             to_char(file.provider_vintage::timestamp with time zone, 'YYYY-MM-DD'::text) ||
+    body                 CASE
+    body                     WHEN row_number() OVER (PARTITION BY file.kind, file.provider_vintage ORDER BY file.published_at, file.run_id) > 1 THEN '.'::text || row_number() OVER (PARTITION BY file.kind, file.provider_vintage ORDER BY file.published_at, file.run_id)::text
+    body                     ELSE ''::text
+    body                 END AS release_key
+    body            FROM control.fhfa_hpi_file file
+    body           WHERE file.status = 'published'::text
+    body         )
+    body  SELECT fact.measure AS metric_key,
+    body     fact.measure,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.observation_basis,
+    body     fact.year,
+    body     make_date(fact.year, 1, 1) AS period_start,
+    body     make_date(fact.year, 12, 31) AS period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     'county'::text AS geo_type,
+    body     gold_glossary.geo_grain('county'::text) AS geo_level,
+    body     fact.geography_status,
+    body     fact.fips_code,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.missing_reason,
+    body     published.provider_vintage,
+    body     published.release_key,
+    body     published.published_at,
+    body     fact.retrieved_at,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_fhfa_hpi.fact_observation fact
+    body      JOIN published ON published.run_id = fact.run_id
+    body      JOIN gold_fhfa_hpi.measure_definition measure ON measure.measure = fact.measure
+    body   WHERE fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]);
+
 r gold_fred.dim_fred_series
     column fred_series_sk bigint NOT NULL DEFAULT nextval('gold_fred.dim_fred_series_fred_series_sk_seq'::regclass)
     column series_id text NOT NULL
@@ -5054,6 +5273,83 @@ r silver_fbi.slice_quarantine
     constraint slice_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
     index slice_quarantine_pkey CREATE UNIQUE INDEX slice_quarantine_pkey ON silver_fbi.slice_quarantine USING btree (quarantine_sk)
     index slice_quarantine_run_id_product_id_release_key_slice_key_so_key CREATE UNIQUE INDEX slice_quarantine_run_id_product_id_release_key_slice_key_so_key ON silver_fbi.slice_quarantine USING btree (run_id, product_id, release_key, slice_key, source_row_index, error_code)
+
+r silver_fhfa_hpi.fact_observation
+    column measure text NOT NULL
+    column geo_id text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column provider_vintage date NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column fips_code text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column value_source text NOT NULL
+    column value numeric(12,2)
+    column value_status text NOT NULL
+    column missing_reason text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_observation_pkey PRIMARY KEY (measure, geo_id, year, capture_id)
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'not_applicable'::text])))
+    constraint fhfa_hpi_fact_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint fhfa_hpi_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_fhfa_hpi.fact_observation USING btree (measure, geo_id, year, capture_id)
+    index fhfa_hpi_fact_lookup_idx CREATE INDEX fhfa_hpi_fact_lookup_idx ON silver_fhfa_hpi.fact_observation USING btree (measure, geo_id, year)
+    index fhfa_hpi_fact_run_idx CREATE INDEX fhfa_hpi_fact_run_idx ON silver_fhfa_hpi.fact_observation USING btree (run_id)
+
+r silver_fhfa_hpi.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_fhfa_hpi.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_fhfa_hpi.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_fhfa_hpi.observation_quarantine USING btree (quarantine_sk)
+
+r silver_fhfa_hpi.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure text NOT NULL
+    column run_id uuid NOT NULL
+    column year integer NOT NULL
+    column fips_source text NOT NULL
+    column fips_code text NOT NULL
+    column state_abbr text NOT NULL
+    column county_name text NOT NULL
+    column geo_id text NOT NULL
+    column value_source text NOT NULL
+    column value numeric(12,2)
+    column value_status text NOT NULL
+    column missing_reason text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fhfa_hpi_revision_missing_has_reason CHECK (((value_status = 'valid'::text) = (missing_reason IS NULL)))
+    constraint fhfa_hpi_revision_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint fhfa_hpi_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_fips_code_check CHECK ((fips_code ~ '^[0-9]{5}$'::text))
+    constraint observation_revision_measure_check CHECK ((measure = ANY (ARRAY['annual_change_pct'::text, 'hpi'::text, 'hpi_base_1990'::text, 'hpi_base_2000'::text])))
+    constraint observation_revision_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = ANY (ARRAY['provider_missing'::text, 'base_year_unavailable'::text, 'first_recorded_year'::text, 'prior_year_missing'::text]))))
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, measure)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'not_applicable'::text])))
+    constraint observation_revision_year_check CHECK (((year >= 1975) AND (year <= 2100)))
+    index fhfa_hpi_revision_run_idx CREATE INDEX fhfa_hpi_revision_run_idx ON silver_fhfa_hpi.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_fhfa_hpi.observation_revision USING btree (capture_id, source_row_index, measure)
 
 r silver_fred.fact_economic_indicators
     column economic_indicator_sk bigint NOT NULL DEFAULT nextval('silver_fred.fact_economic_indicators_economic_indicator_sk_seq'::regclass)
