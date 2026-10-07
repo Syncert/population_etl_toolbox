@@ -53,7 +53,7 @@ r control.bea_table_capture
     constraint bea_table_capture_pkey PRIMARY KEY (run_id)
     constraint bea_table_capture_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint bea_table_capture_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
-    constraint bea_table_capture_table_code_check CHECK ((table_code ~ '^CA[A-Z0-9]+$'::text))
+    constraint bea_table_capture_table_code_check CHECK ((table_code ~ '^(CA|SA|MA|PA)[A-Z0-9]+$'::text))
     index bea_table_capture_capture_idx CREATE INDEX bea_table_capture_capture_idx ON control.bea_table_capture USING btree (capture_id)
     index bea_table_capture_pkey CREATE UNIQUE INDEX bea_table_capture_pkey ON control.bea_table_capture USING btree (run_id)
 
@@ -4616,7 +4616,7 @@ r silver_bea.dim_line
     column methodology_url text NOT NULL
     column parser_contract_version text NOT NULL
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text])))
+    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text, 'price_level_us_100'::text])))
     constraint dim_line_line_code_check CHECK ((line_code ~ '^[0-9]+$'::text))
     constraint dim_line_pkey PRIMARY KEY (table_code, line_code)
     index dim_line_pkey CREATE UNIQUE INDEX dim_line_pkey ON silver_bea.dim_line USING btree (table_code, line_code)
@@ -4641,7 +4641,7 @@ r silver_bea.fact_observation
     constraint bea_fact_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
     constraint bea_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
-    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'metro'::text, 'provider_area'::text])))
     constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
     constraint fact_observation_pkey PRIMARY KEY (table_code, line_code, geo_id, year, capture_id)
     constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
@@ -4686,7 +4686,7 @@ r silver_bea.observation_revision
     constraint bea_revision_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
     constraint bea_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
-    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'metro'::text, 'provider_area'::text])))
     constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, year)
     constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))

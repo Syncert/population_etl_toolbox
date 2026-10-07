@@ -513,6 +513,11 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
                 return stub_response(
                     (AREA_FIXTURES / f"{name}.excerpt.csv").read_bytes(), url=url
                 )
+        if url.startswith("https://apps.bea.gov/regional/zip/"):
+            name = url.rsplit("/", 1)[-1]
+            return stub_response(
+                (AREA_FIXTURES.parents[1] / "bea" / name).read_bytes(), url=url
+            )
         if url.endswith("/cu/cu.area"):
             return stub_response(
                 (AREA_FIXTURES.parent / "provider_areas" / "bls_cu.area").read_bytes(),

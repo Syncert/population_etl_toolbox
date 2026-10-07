@@ -84,6 +84,9 @@ def test_the_registry_names_every_table_and_line() -> None:
         "CAINC5N",
         "CAGDP1",
         "CAGDP2",
+        "SARPP",
+        "MARPP",
+        "PARPP",
     ]
     gdp = get_table("CAGDP1")
     assert gdp.lines == {"1": "chained_dollars", "3": "current_dollars"}
@@ -225,3 +228,65 @@ def test_unreadable_rows_and_a_missing_release_are_quarantined() -> None:
         "release_date_missing"
     ]
     assert no_footer.observations == ()
+
+
+# ---------------------------------------------------------------------------
+# ETL-079 -- regional price parities (grocery-and-gasoline-prices)
+# ---------------------------------------------------------------------------
+
+
+def test_price_parities_reach_states_cbsas_and_portions_by_code() -> None:
+    """Covers: ETL-079 — states by FIPS, metros by OMB code, portions as BEA's own areas."""
+    states = parse_table(_fixture("SARPP"), table=get_table("SARPP"))
+    metros = parse_table(_fixture("MARPP"), table=get_table("MARPP"))
+    portions = parse_table(_fixture("PARPP"), table=get_table("PARPP"))
+    assert states.release_date == metros.release_date == portions.release_date
+    assert str(states.release_date) == "2026-02-19"
+    assert {o.geo_id for o in states.observations} == {"us:1", "state:10", "state:55"}
+    assert {o.geo_id for o in metros.observations} == {
+        "us:1",
+        "area:bea:00999",
+        "cbsa:10180",
+        "cbsa:20100",
+        "cbsa:25540",
+    }
+    assert {o.geo_type for o in portions.observations} == {"nation", "provider_area"}
+    assert {o.geo_id for o in portions.observations} == {
+        "us:1",
+        "area:bea:10998",
+        "area:bea:10999",
+    }
+    # Five lines: all items, goods, housing, utilities, other services.
+    assert {o.line_code for o in states.observations} == {"1", "2", "3", "4", "5"}
+    assert {get_table(code).lines["1"] for code in ("SARPP", "MARPP", "PARPP")} == {
+        "price_level_us_100"
+    }
+
+
+def test_the_nations_all_items_level_is_one_hundred_in_every_year() -> None:
+    """Covers: ETL-079 — every parity is relative to the nation's all-items level, which is 100."""
+    for code in ("SARPP", "MARPP", "PARPP"):
+        observations = parse_table(_fixture(code), table=get_table(code)).observations
+        nation = [o for o in observations if o.geo_id == "us:1" and o.line_code == "1"]
+        assert len(nation) == 17
+        assert {o.value for o in nation} == {Decimal("100.000")}
+        # The nation's categories are levels against that 100, not 100 each.
+        assert any(
+            o.value != Decimal("100.000")
+            for o in observations
+            if o.geo_id == "us:1" and o.line_code == "2"
+        )
+
+
+def test_a_portion_that_does_not_exist_is_not_a_price_level_of_zero() -> None:
+    """Covers: ETL-079 — Delaware has no nonmetropolitan county; BEA's 0.000 is kept, not served as 0."""
+    portions = parse_table(_fixture("PARPP"), table=get_table("PARPP"))
+    nonmetro = [o for o in portions.observations if o.geo_id == "area:bea:10999"]
+    assert nonmetro
+    assert {(o.value, o.value_status, o.value_source) for o in nonmetro} == {
+        (None, "not_meaningful", "0.000")
+    }
+    # The same text in a table without that convention would be a number.
+    metro = [o for o in portions.observations if o.geo_id == "area:bea:10998"]
+    assert all(o.value_status == "valid" and o.value > 0 for o in metro)
+

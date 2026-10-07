@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-017 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-052, ETL-055, ETL-058, ETL-060–ETL-061, ETL-075, ETL-076, ETL-077, ETL-078 | None |
+| ETL and shared units | ETL-001–ETL-052, ETL-055, ETL-058, ETL-060–ETL-061, ETL-075, ETL-076, ETL-077, ETL-078, ETL-079 | None |
 | Database integration | DB-001–DB-061 | None |
 | API | API-001–API-162, API-167 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-123 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **558 of 558** | **0 of 558** |
+| **Total** | **559 of 559** | **0 of 559** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 558-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 559-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -530,6 +530,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-076 | P0 | Contract + database + DAG / `unit integration database dag` | Provider-defined areas come from the provider's own list | `silver_ref.provider_areas` captures each registered provider's area list before parsing it (BLS `cu.area`, read with the adapter's identifying user agent) and loads each current area as a `provider_area` entity `area:<provider>:<code>` with the provider's name; BLS's 23 current CPI metros load, while discontinued `A` areas and size classes are refused as non-places; a list without its columns or without a current area is refused; a replay writes no second version; `silver_ref` loads provider areas after the schema (grocery-and-gasoline-prices, deliverable 1) | A provider area matched to a CBSA by name, a discontinued area loaded as current, or a provider's code rewritten |
 | ETL-077 | P0 | Contract / `unit` | A CPI or average-price area resolves by its code | `parse_bls_geography` reads the area from a CPI (`cu`) or average-price (`ap`) series id: `0000` is the nation, `0R00` Census region R, `0RD0` Census division D, a current metro `S..X` BLS's provider area `area:bls_cpi:<code>`; a discontinued area or a size class has no geography and is refused, never guessed (grocery-and-gasoline-prices, deliverable 2) | A regional or metro price attributed to the nation, a size class served as a place, or an area matched by name |
 | ETL-078 | P0 | Contract + database / `unit integration database` | Regional and metro CPI and average prices are BLS's own published pairs, under their own units | `bls/price_series.py` selects the CPI items food at home, gasoline, food and energy and nine average-price items (gasoline, eggs, milk, bread, ground beef, chicken, bananas, coffee) for the nation, the four regions, the nine divisions and the 23 current metros from BLS's own series lists (`cu.series`, `ap.series` synced into `raw_bls.bls_series`): unadjusted, the CPI at monthly periodicity, and published within the last year, so an item an area does not carry, a discontinued area, a size class or a stopped series is not requested; `ap` is a configured program with no hand-listed ids; silver resolves each to its region, division or BLS metro; a month BLS does not publish for a bimonthly metro has no row and none is invented; gold records an area index's own base period, `U.S. dollars per <unit>` from the item title, `PRICE`/`CURRENCY` for average prices, and notes the sampling error, the non-comparability of index levels across areas and the monthly or every-other-month cadence (New York, Chicago and Los Angeles monthly) (grocery-and-gasoline-prices, deliverable 2) | A hand-guessed series id, an area index labelled 1982-84=100, a price in an unstated unit, or an invented off-month |
+| ETL-079 | P0 | Contract + database / `unit integration database` | Regional price parities are price levels against the nation, for the areas BEA publishes | The BEA adapter registers `SARPP`, `MARPP` and `PARPP` (all items, goods, housing, utilities, other services, basis `price_level_us_100`); states resolve by FIPS, metros by OMB CBSA code to `cbsa:` (the July 2023 delineation, the same the reference loads), and the nation's and each state's metropolitan and nonmetropolitan portions to BEA's own provider areas, loaded from the price-parity files themselves; the nation's all-items parity is 100 in every year and DQ-BEA-005 fails a table where it is not; a portion that does not exist (`0.000` for Delaware's nonmetropolitan portion) is `not_meaningful` with no value, never a price level of zero; each line states that it is comparable across areas within a year, is not inflation, and that food is inside goods (grocery-and-gasoline-prices, deliverable 4) | A parity served as inflation, a missing portion served as 0, or a metro matched by name |
 
 ### PostgreSQL Integration Tests
 

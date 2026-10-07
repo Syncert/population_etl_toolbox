@@ -2,7 +2,9 @@
   "advertised_geo_grains": {
     "BEA": [
       "COUNTY",
+      "METRO",
       "NATIONAL",
+      "PROVIDER_AREA",
       "STATE"
     ],
     "BLS": [

@@ -67,5 +67,26 @@ def test_every_list_names_its_provider_and_source() -> None:
     """Covers: ETL-076 — each registered list is captured under its own source."""
     bls = PROVIDER_AREA_LISTS["bls_cpi"]
     assert bls.source_code == "BLS"
-    assert bls.url.endswith("/cu/cu.area")
+    assert bls.urls == ("https://download.bls.gov/pub/time.series/cu/cu.area",)
     assert "User-Agent" in bls.headers
+
+
+def test_bea_portions_come_from_the_price_parity_files() -> None:
+    """Covers: ETL-076 — a state's metro and nonmetro portions and the nation's, from BEA's own files."""
+    from data_ingestion_toolbox.silver_ref.provider_areas import parse_bea_portions
+
+    bea = Path(__file__).resolve().parents[2] / "fixtures" / "bea"
+    portions = parse_bea_portions((bea / "PARPP.zip").read_bytes())
+    nation = parse_bea_portions((bea / "MARPP.zip").read_bytes())
+    assert [(a.code, a.name) for a in portions] == [
+        ("10998", "Delaware (Metropolitan Portion)"),
+        ("10999", "Delaware (Nonmetropolitan Portion)"),
+    ]
+    assert [(a.code, a.name) for a in nation] == [
+        ("00999", "United States (Nonmetropolitan Portion)")
+    ]
+    assert PROVIDER_AREA_LISTS["bea"].source_code == "BEA"
+    (record,) = provider_area_records("bea", nation, vintage=2026)
+    assert record.geo_id == "area:bea:00999"
+    with pytest.raises(ValueError):
+        parse_bea_portions(b"not a zip")

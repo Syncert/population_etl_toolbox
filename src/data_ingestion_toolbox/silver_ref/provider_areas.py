@@ -18,6 +18,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import zipfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -67,7 +68,8 @@ class ProviderAreaList:
 
     provider: str
     source_code: str
-    url: str
+    #: One or more published files; the provider's areas are their union.
+    urls: tuple[str, ...]
     headers: Mapping[str, str]
     parse: Callable[[bytes], list[ProviderArea]]
 
@@ -90,13 +92,60 @@ def parse_bls_cpi_areas(payload: bytes) -> list[ProviderArea]:
     return areas
 
 
+#: A BEA area that is not Census geography: the nation's nonmetropolitan
+#: portion (`00999`) and each state's metropolitan (`ss998`) and
+#: nonmetropolitan (`ss999`) portion.
+BEA_PORTION = re.compile(r"^(00999|[0-8][0-9]99[89])$")
+
+
+def parse_bea_portions(payload: bytes) -> list[ProviderArea]:
+    """BEA's own portions from a regional price parity zip's every-area CSV."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(payload))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("the BEA file is not a zip") from exc
+    members = [
+        name for name in archive.namelist() if name.endswith(".csv") and "__" not in name
+    ]
+    if len(members) != 1:
+        raise ValueError("the BEA zip holds no single every-area CSV")
+    rows = csv.reader(io.StringIO(archive.read(members[0]).decode("latin-1")))
+    header = next(rows, [])
+    if [name.strip() for name in header[:2]] != ["GeoFIPS", "GeoName"]:
+        raise ValueError("the BEA file lacks GeoFIPS and GeoName")
+    areas: dict[str, str] = {}
+    for row in rows:
+        if len(row) < 2:
+            continue
+        code = row[0].strip().strip('"').strip()
+        if BEA_PORTION.fullmatch(code):
+            # BEA marks the nation's portion with a footnote asterisk.
+            areas.setdefault(code, row[1].strip().rstrip("*").strip())
+    return [ProviderArea(code, name) for code, name in sorted(areas.items())]
+
+
+BEA_HEADERS = {
+    "User-Agent": "population-etl-toolbox BEA regional ingestion (public-data warehouse)"
+}
+
 PROVIDER_AREA_LISTS: dict[str, ProviderAreaList] = {
     "bls_cpi": ProviderAreaList(
         provider="bls_cpi",
         source_code="BLS",
-        url="https://download.bls.gov/pub/time.series/cu/cu.area",
+        urls=("https://download.bls.gov/pub/time.series/cu/cu.area",),
         headers=BLS_HEADERS,
         parse=parse_bls_cpi_areas,
+    ),
+    # The portions BEA publishes price parities for (grocery-and-gasoline-prices).
+    "bea": ProviderAreaList(
+        provider="bea",
+        source_code="BEA",
+        urls=(
+            "https://apps.bea.gov/regional/zip/PARPP.zip",
+            "https://apps.bea.gov/regional/zip/MARPP.zip",
+        ),
+        headers=BEA_HEADERS,
+        parse=parse_bea_portions,
     ),
 }
 
@@ -125,7 +174,7 @@ def provider_area_records(
 
 
 def sync_provider_areas(provider: str) -> dict[str, int]:
-    """Capture one provider's area list and load its areas."""
+    """Capture one provider's area list(s) and load their areas."""
     area_list = PROVIDER_AREA_LISTS[provider]
     hook = geography_pipeline._get_hook()
     factory = hook.get_conn
@@ -135,58 +184,63 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
         watermark={"provider_area_list": provider, "retrieved": retrieved_at.date().isoformat()}
     )
     try:
-        parameters = {"provider_area_list": provider}
-        request = control.start_request(
-            run_id=run_id,
-            endpoint=area_list.url,
-            parameters=parameters,
-            max_attempts=HTTP_MAX_ATTEMPTS,
-        )
+        areas: dict[str, ProviderArea] = {}
+        last_capture = None
         with httpx.Client(
             follow_redirects=True, timeout=120, headers=dict(area_list.headers)
         ) as client:
-            try:
-                response = geography_pipeline._download_with_retry(
-                    client, area_list.url, control=control, request_id=request.request_id
+            for url in area_list.urls:
+                parameters = {"provider_area_list": provider, "file": url.rsplit("/", 1)[-1]}
+                request = control.start_request(
+                    run_id=run_id,
+                    endpoint=url,
+                    parameters=parameters,
+                    max_attempts=HTTP_MAX_ATTEMPTS,
                 )
-            except BaseException as exc:
-                control.finish_request(request.request_id, status="failed", error=exc)
-                raise
-        capture_id = uuid4()
-        persist_response_capture(
-            factory,
-            ResponseCapture(
-                capture_id=capture_id,
-                request_id=request.request_id,
-                run_id=run_id,
-                source_code=area_list.source_code,
-                endpoint=area_list.url,
-                request_parameters=parameters,
-                retrieved_at=retrieved_at,
-                http_status=response.status_code,
-                response_headers=response.headers,
-                media_type=response.headers.get("content-type", "text/plain"),
-                payload=response.content,
-                payload_schema_version=PARSER_VERSION,
-                source_revision=retrieved_at.date().isoformat(),
-            ),
-        )
-        control.finish_request(request.request_id, status="captured")
-        payload = load_captured_payload(factory, capture_id)
-        try:
-            areas = area_list.parse(payload)
-        except BaseException as exc:
-            control.quarantine(
-                capture_id=capture_id,
-                run_id=run_id,
-                parser_version=PARSER_VERSION,
-                error_code="provider_area_list_replay_failed",
-                error=exc,
-            )
-            raise
+                try:
+                    response = geography_pipeline._download_with_retry(
+                        client, url, control=control, request_id=request.request_id
+                    )
+                except BaseException as exc:
+                    control.finish_request(request.request_id, status="failed", error=exc)
+                    raise
+                capture_id = uuid4()
+                persist_response_capture(
+                    factory,
+                    ResponseCapture(
+                        capture_id=capture_id,
+                        request_id=request.request_id,
+                        run_id=run_id,
+                        source_code=area_list.source_code,
+                        endpoint=url,
+                        request_parameters=parameters,
+                        retrieved_at=retrieved_at,
+                        http_status=response.status_code,
+                        response_headers=response.headers,
+                        media_type=response.headers.get("content-type", "text/plain"),
+                        payload=response.content,
+                        payload_schema_version=PARSER_VERSION,
+                        source_revision=retrieved_at.date().isoformat(),
+                    ),
+                )
+                control.finish_request(request.request_id, status="captured")
+                payload = load_captured_payload(factory, capture_id)
+                try:
+                    for area in area_list.parse(payload):
+                        areas.setdefault(area.code, area)
+                except BaseException as exc:
+                    control.quarantine(
+                        capture_id=capture_id,
+                        run_id=run_id,
+                        parser_version=PARSER_VERSION,
+                        error_code="provider_area_list_replay_failed",
+                        error=exc,
+                    )
+                    raise
+                last_capture = capture_id
         loaded = GeographyRepository(factory).load_attributes(
-            provider_area_records(provider, areas, vintage=retrieved_at.year),
-            capture_id=capture_id,
+            provider_area_records(provider, list(areas.values()), vintage=retrieved_at.year),
+            capture_id=last_capture,
         )
         control.finish_run(run_id, status="success")
         return {"provider_areas": loaded}

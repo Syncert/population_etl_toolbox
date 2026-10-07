@@ -423,6 +423,35 @@ capita personal income and `BEA:CAGDP1:1` is real GDP.
   cities merged with their surrounding county, are not served: they are not
   counties.
 
+### Price levels, regional and metro prices
+
+Three sources describe what things cost below the nation, and none of them
+publishes a county's prices. A county page shows the figure of the area that
+contains it, labelled as that area.
+
+- **BEA regional price parities** (`BEA:SARPP:<line>`, `BEA:MARPP:<line>`,
+  `BEA:PARPP:<line>`, `dimensions.dollar_basis` `price_level_us_100`) are
+  price levels relative to the nation's all-items level, which is 100: line
+  1 all items, 2 goods, 3 housing, 4 utilities, 5 other services. A parity is
+  comparable across areas within one year and is **not inflation**. There is
+  no grocery line; food is inside goods. States are `STATE`, metropolitan
+  areas are `METRO` (`geo_id` `cbsa:<OMB code>`, the July 2023 delineation),
+  and the nation's and each state's metropolitan and nonmetropolitan
+  portions are `PROVIDER_AREA` (`area:bea:<code>`). A portion that does not
+  exist -- Delaware has no nonmetropolitan county -- is `not_meaningful` with
+  a `null` value, never a price level of zero.
+- **BLS regional and metro prices** add the CPI's food at home, gasoline,
+  food and energy indexes, and average prices in dollars (gasoline, eggs,
+  milk, bread, ground beef, chicken, bananas, coffee), for the four Census
+  regions (`CENSUS_REGION`, `region:<1-4>`), nine divisions
+  (`CENSUS_DIVISION`, `division:<1-9>`) and BLS's 23 metro areas
+  (`PROVIDER_AREA`, `area:bls_cpi:<code>`, BLS's own definitions, not
+  matched to a CBSA). Each metric is one series in one area. An area index
+  is relative to its own base period, which `unit` states, so index levels
+  are **not comparable across areas**: compare percent changes. Average
+  prices are dollars and are comparable. Most metros are published every
+  other month; a month BLS does not publish has no row.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published

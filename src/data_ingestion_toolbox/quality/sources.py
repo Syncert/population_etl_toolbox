@@ -686,6 +686,58 @@ def bea_table_reconciliation(
     ]
 
 
+def bea_price_parity_reference(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BEA-005 — the nation's all-items price parity is 100 in every year."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_bea.fact_observation
+         WHERE table_code IN ('SARPP', 'MARPP', 'PARPP')
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_bea.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.table_code, fact.year, fact.value_source
+          FROM silver_bea.fact_observation AS fact
+          JOIN control.bea_table_capture AS capture
+            ON capture.capture_id = fact.capture_id
+         WHERE fact.table_code IN ('SARPP', 'MARPP', 'PARPP')
+           AND fact.line_code = '1'
+           AND fact.geo_id = 'us:1'
+           AND capture.status = 'published'
+           -- The newest published release of each table's year.
+           AND fact.retrieved_at = (
+                SELECT MAX(other.retrieved_at)
+                  FROM silver_bea.fact_observation AS other
+                  JOIN control.bea_table_capture AS other_capture
+                    ON other_capture.capture_id = other.capture_id
+                 WHERE other.table_code = fact.table_code
+                   AND other.line_code = '1'
+                   AND other.geo_id = 'us:1'
+                   AND other.year = fact.year
+                   AND other_capture.status = 'published'
+           )
+           AND fact.value IS DISTINCT FROM 100
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_bea.fact_observation",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1734,6 +1786,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-BEA-002": bea_table_reconciliation,
+    "DQ-BEA-005": bea_price_parity_reference,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

@@ -865,9 +865,14 @@ def published_bea_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
 ) -> str:
-    """Publish the BEA personal income lines through their real pipeline."""
+    """Publish the BEA personal income lines and metro price parities through their real pipeline.
+
+    The metro parities are what reach the `METRO` and `PROVIDER_AREA` grains
+    (grocery-and-gasoline-prices).
+    """
     factory = bea_support.reviewed_warehouse(postgres_connection_factory, request)
     bea_support.run_to_gold(factory, "CAINC1")
+    bea_support.run_to_gold(factory, "MARPP")
     harvest_publisher(factory, Publisher("gold_bea"))
     return _one_published_code(factory, "BEA")
 

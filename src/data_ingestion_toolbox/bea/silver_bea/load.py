@@ -32,6 +32,18 @@ METHODOLOGY_URL = (
 )
 
 
+#: What a regional price parity is (grocery-and-gasoline-prices): a price
+#: level, not a price change, and not a grocery price.
+PRICE_OBSERVATION_BASIS = (
+    "Price level relative to the United States all-items level (= 100) in one "
+    "year: comparable across areas within a year, not a measure of inflation. "
+    "There is no grocery line; food is inside goods."
+)
+PRICE_METHODOLOGY_URL = (
+    "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area"
+)
+
+
 class BeaReconciliationError(RuntimeError):
     """A replayed run does not account for every in-scope captured row."""
 
@@ -89,8 +101,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                             description,
                             unit,
                             table.lines[line],
-                            OBSERVATION_BASIS,
-                            METHODOLOGY_URL,
+                            PRICE_OBSERVATION_BASIS
+                            if table.lines[line] == "price_level_us_100"
+                            else OBSERVATION_BASIS,
+                            PRICE_METHODOLOGY_URL
+                            if table.lines[line] == "price_level_us_100"
+                            else METHODOLOGY_URL,
                             PARSER_CONTRACT_VERSION,
                         )
                         for line, (description, unit) in sorted(lines.items())

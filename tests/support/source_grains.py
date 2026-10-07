@@ -31,7 +31,9 @@ from __future__ import annotations
 #:   ``geo_levels = ["us", "state", "county", "place", "tract"]``; tracts
 #:   from the 5-year estimates only (sub-county-geography).
 #: * ``BEA`` -- ``bea/registry.py`` loads the nation, states and counties
-#:   and counts BEA's regions and combined areas out of scope.
+#:   and counts BEA's regions and combined areas out of scope; its price
+#:   parities add CBSAs and BEA's own state metropolitan and nonmetropolitan
+#:   portions (grocery-and-gasoline-prices).
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
@@ -42,7 +44,9 @@ from __future__ import annotations
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
-    "BEA": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "BEA": frozenset(
+        {"NATIONAL", "STATE", "METRO", "COUNTY", "PROVIDER_AREA"}
+    ),
     "BLS": frozenset(
         {"NATIONAL", "CENSUS_REGION", "CENSUS_DIVISION", "STATE", "COUNTY", "PROVIDER_AREA"}
     ),

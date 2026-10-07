@@ -3462,6 +3462,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "years for gaps."
         ),
     ),
+    _rule(
+        "DQ-BEA-005",
+        "BLOCK",
+        "conformance",
+        "A regional price parity is relative to the nation: the United States "
+        "all-items parity is 100 in every published year of every parity table.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_price_parity_reference` reads the newest published release of line 1 (all items) for `us:1` in SARPP, MARPP and PARPP and fails any year whose value is not exactly 100 -- a parity table whose national row is not 100 is not relative to the nation, and every area's level in it would be misread (grocery-and-gasoline-prices)."
+        ),
+    ),
 )
 
 
