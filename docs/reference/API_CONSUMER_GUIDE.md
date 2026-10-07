@@ -392,6 +392,37 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a QCEW row: jobs located here, by industry and ownership
+
+`BLS_QCEW` serves the Bureau of Labor Statistics Quarterly Census of
+Employment and Wages for the nation, every state and every county. A metric
+code is `BLS_QCEW:<measure>:<industry>:<ownership>`. For example,
+`BLS_QCEW:employment:10:0` is employment in all industries with total
+covered ownership, and `BLS_QCEW:avg_weekly_wage:62:5` is the average weekly
+wage in private health care and social assistance. Every row carries the
+industry and ownership as `dimensions.industry_code`/`industry_title` and
+`dimensions.own_code`/`ownership_title`, so no row reads without them.
+
+**These are jobs located in the area, not residents who work.** QCEW counts
+employment where the employer reports it, from unemployment-insurance
+records; `dimensions.observation_basis` says so on every row. The `BLS`
+LAUS measures count residents who are employed, wherever they work. A county
+with a large employer and few residents has more QCEW jobs than LAUS
+employed residents. The two are different quantities, so do not subtract
+one from the other or add them.
+
+- `employment` is published per month: a quarter's row is three rows, one
+  for each month, each with its own `period_start` and `period_end`.
+- `establishments`, `total_wages` and `avg_weekly_wage` are quarterly.
+- `annual_avg_*` and `total_annual_wages` are the provider's own annual
+  averages, separate metrics from the quarterly ones and never derived here.
+- A cell QCEW did not disclose has `value_status` `withheld`, a `null`
+  value and `dimensions.disclosure_code` `N`. It is not zero. A
+  `not_published` row (code `-`) is the same.
+- A row's `release` is the time the warehouse read the file, because the
+  interface names no release. A file whose bytes changed is a new release
+  beside the old one, readable with `scope=as_released`.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -513,6 +544,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| BLS QCEW | the time the warehouse read the file | **Not a BLS publication.** The open-data interface names no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 

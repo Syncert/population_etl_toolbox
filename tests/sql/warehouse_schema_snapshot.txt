@@ -60,6 +60,32 @@ r control.bls_ingestion_slices
     index bls_ingestion_slices_status_idx CREATE INDEX bls_ingestion_slices_status_idx ON control.bls_ingestion_slices USING btree (status)
     index bls_ingestion_slices_uniq CREATE UNIQUE INDEX bls_ingestion_slices_uniq ON control.bls_ingestion_slices USING btree (program, year_start, year_end, COALESCE(geo_level, ''::text), COALESCE(state_fips, ''::text))
 
+r control.bls_qcew_slice
+    column run_id uuid NOT NULL
+    column year integer NOT NULL
+    column period text NOT NULL
+    column industry_code text NOT NULL
+    column capture_id uuid NOT NULL
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column in_scope_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint bls_qcew_slice_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint bls_qcew_slice_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint bls_qcew_slice_in_scope_row_count_check CHECK ((in_scope_row_count >= 0))
+    constraint bls_qcew_slice_industry_code_check CHECK ((industry_code ~ '^[0-9]{2}(-[0-9]{2})?$'::text))
+    constraint bls_qcew_slice_period_check CHECK ((period = ANY (ARRAY['1'::text, '2'::text, '3'::text, '4'::text, 'a'::text])))
+    constraint bls_qcew_slice_pkey PRIMARY KEY (run_id, industry_code)
+    constraint bls_qcew_slice_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint bls_qcew_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint bls_qcew_slice_scope_within_rows CHECK ((in_scope_row_count <= captured_row_count))
+    constraint bls_qcew_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint bls_qcew_slice_year_check CHECK (((year >= 2014) AND (year <= 2100)))
+    index bls_qcew_slice_capture_idx CREATE INDEX bls_qcew_slice_capture_idx ON control.bls_qcew_slice USING btree (capture_id)
+    index bls_qcew_slice_pkey CREATE UNIQUE INDEX bls_qcew_slice_pkey ON control.bls_qcew_slice USING btree (run_id, industry_code)
+
 r control.capture_quarantine
     column quarantine_id uuid NOT NULL
     column capture_id uuid NOT NULL
@@ -1667,6 +1693,222 @@ v gold_bls.v_metric_timeseries_by_geo
     body     margin_of_error,
     body     margin_of_error_pct
     body    FROM gold_bls.fact_observation;
+
+v gold_bls_qcew.measure_export
+    column source_object_key text
+    column measure_id text
+    column measure_label text
+    column unit text
+    column period_kind text
+    column observation_basis text
+    column industry_code text
+    column industry_title text
+    column own_code text
+    column schema_version text
+    body SELECT (((measure.measure_id || ':'::text) || industry.industry_code) || ':'::text) || ownership.own_code AS source_object_key,
+    body     measure.measure_id,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.period_kind,
+    body     measure.observation_basis,
+    body     industry.industry_code,
+    body     industry.industry_title,
+    body     ownership.own_code,
+    body     measure.parser_contract_version AS schema_version
+    body    FROM silver_bls_qcew.dim_measure measure
+    body      CROSS JOIN silver_bls_qcew.dim_industry industry
+    body      CROSS JOIN ( VALUES ('0'::text), ('5'::text)) ownership(own_code)
+    body   WHERE ownership.own_code = '5'::text OR industry.industry_level = 'total'::text;
+
+v gold_bls_qcew.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'BLS_QCEW'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     ((((measure.measure_label || ', '::text) || industry.industry_title) || ', '::text) ||
+    body         CASE served.own_code
+    body             WHEN '0'::text THEN 'total covered'::text
+    body             ELSE 'private'::text
+    body         END) || ' (jobs located here)'::text AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY[upper(
+    body         CASE measure.period_kind
+    body             WHEN 'month'::text THEN 'monthly'::text
+    body             WHEN 'quarter'::text THEN 'quarterly'::text
+    body             ELSE 'annual'::text
+    body         END)] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_bls_qcew', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Bureau of Labor Statistics Quarterly Census of Employment and Wages'::text AS source_name,
+    body     'government-establishment-statistics'::text AS source_type,
+    body     measure.methodology_url AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             latest.measure_id,
+    body             latest.industry_code,
+    body             latest.own_code,
+    body             max(to_char(latest.period_end::timestamp with time zone, 'YYYY-MM-DD'::text)) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(slice.published_at) AS publication_time
+    body            FROM gold_bls_qcew.observation_latest latest
+    body              JOIN control.bls_qcew_slice slice ON slice.capture_id = latest.capture_id
+    body           GROUP BY latest.metric_key, latest.measure_id, latest.industry_code, latest.own_code) served
+    body      JOIN silver_bls_qcew.dim_measure measure ON measure.measure_id = served.measure_id
+    body      JOIN silver_bls_qcew.dim_industry industry ON industry.industry_code = served.industry_code
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_bls_qcew.observation_latest
+    column metric_key text
+    column measure_id text
+    column measure_label text
+    column unit text
+    column period_kind text
+    column observation_basis text
+    column industry_code text
+    column industry_title text
+    column industry_level text
+    column own_code text
+    column ownership_title text
+    column year integer
+    column period text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column disclosure_code text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, period_start) metric_key,
+    body     measure_id,
+    body     measure_label,
+    body     unit,
+    body     period_kind,
+    body     observation_basis,
+    body     industry_code,
+    body     industry_title,
+    body     industry_level,
+    body     own_code,
+    body     ownership_title,
+    body     year,
+    body     period,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     disclosure_code,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_bls_qcew.observation_revision revision
+    body   ORDER BY metric_key, geo_id, period_start, retrieved_at DESC, capture_id DESC;
+
+v gold_bls_qcew.observation_revision
+    column metric_key text
+    column measure_id text
+    column measure_label text
+    column unit text
+    column period_kind text
+    column observation_basis text
+    column industry_code text
+    column industry_title text
+    column industry_level text
+    column own_code text
+    column ownership_title text
+    column year integer
+    column period text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column disclosure_code text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT (((fact.measure_id || ':'::text) || fact.industry_code) || ':'::text) || fact.own_code AS metric_key,
+    body     fact.measure_id,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.period_kind,
+    body     measure.observation_basis,
+    body     fact.industry_code,
+    body     industry.industry_title,
+    body     industry.industry_level,
+    body     fact.own_code,
+    body         CASE fact.own_code
+    body             WHEN '0'::text THEN 'Total covered'::text
+    body             WHEN '5'::text THEN 'Private'::text
+    body             ELSE NULL::text
+    body         END AS ownership_title,
+    body     fact.year,
+    body     fact.period,
+    body     fact.period_start,
+    body     fact.period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.disclosure_code,
+    body     fact.retrieved_at,
+    body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_bls_qcew.fact_observation fact
+    body      JOIN silver_bls_qcew.dim_measure measure ON measure.measure_id = fact.measure_id
+    body      JOIN silver_bls_qcew.dim_industry industry ON industry.industry_code = fact.industry_code
+    body      JOIN control.bls_qcew_slice slice ON slice.capture_id = fact.capture_id
+    body   WHERE slice.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
 
 v gold_cdc.health_observation
     column observation_sk bigint
@@ -4438,6 +4680,121 @@ r silver_bls.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
     index bls_observation_revision_current_idx CREATE INDEX bls_observation_revision_current_idx ON silver_bls.observation_revision USING btree (program, series_id, year, period, is_latest DESC)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_bls.observation_revision USING btree (capture_id, observation_index)
+
+r silver_bls_qcew.dim_industry
+    column industry_code text NOT NULL
+    column industry_title text NOT NULL
+    column industry_level text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_industry_industry_level_check CHECK ((industry_level = ANY (ARRAY['total'::text, 'sector'::text])))
+    constraint dim_industry_pkey PRIMARY KEY (industry_code)
+    index dim_industry_pkey CREATE UNIQUE INDEX dim_industry_pkey ON silver_bls_qcew.dim_industry USING btree (industry_code)
+
+r silver_bls_qcew.dim_measure
+    column measure_id text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column period_kind text NOT NULL
+    column observation_basis text NOT NULL
+    column methodology_url text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_measure_id_check CHECK ((measure_id ~ '^[a-z_]+$'::text))
+    constraint dim_measure_period_kind_check CHECK ((period_kind = ANY (ARRAY['month'::text, 'quarter'::text, 'year'::text])))
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_bls_qcew.dim_measure USING btree (measure_id)
+
+r silver_bls_qcew.fact_observation
+    column measure_id text NOT NULL
+    column industry_code text NOT NULL
+    column own_code text NOT NULL
+    column geo_id text NOT NULL
+    column period_start date NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column period_end date NOT NULL
+    column year integer NOT NULL
+    column period text NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column disclosure_code text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_observation_industry_code_fkey FOREIGN KEY (industry_code) REFERENCES silver_bls_qcew.dim_industry(industry_code)
+    constraint fact_observation_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_bls_qcew.dim_measure(measure_id)
+    constraint fact_observation_own_code_check CHECK ((own_code = ANY (ARRAY['0'::text, '5'::text])))
+    constraint fact_observation_pkey PRIMARY KEY (measure_id, industry_code, own_code, geo_id, period_start, capture_id)
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'not_published'::text, 'missing'::text])))
+    constraint qcew_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint qcew_fact_withheld_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    index bls_qcew_fact_lookup_idx CREATE INDEX bls_qcew_fact_lookup_idx ON silver_bls_qcew.fact_observation USING btree (measure_id, industry_code, own_code, geo_id, period_start)
+    index bls_qcew_fact_run_idx CREATE INDEX bls_qcew_fact_run_idx ON silver_bls_qcew.fact_observation USING btree (run_id)
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_bls_qcew.fact_observation USING btree (measure_id, industry_code, own_code, geo_id, period_start, capture_id)
+
+r silver_bls_qcew.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_bls_qcew.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_bls_qcew.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_bls_qcew.observation_quarantine USING btree (quarantine_sk)
+
+r silver_bls_qcew.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure_id text NOT NULL
+    column month_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column year integer NOT NULL
+    column period text NOT NULL
+    column industry_code text NOT NULL
+    column own_code text NOT NULL
+    column agglvl_code text NOT NULL
+    column geo_type text NOT NULL
+    column geo_source_code text NOT NULL
+    column geo_id text NOT NULL
+    column period_start date NOT NULL
+    column period_end date NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column disclosure_code text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint observation_revision_industry_code_fkey FOREIGN KEY (industry_code) REFERENCES silver_bls_qcew.dim_industry(industry_code)
+    constraint observation_revision_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_bls_qcew.dim_measure(measure_id)
+    constraint observation_revision_month_index_check CHECK (((month_index >= 0) AND (month_index <= 2)))
+    constraint observation_revision_own_code_check CHECK ((own_code = ANY (ARRAY['0'::text, '5'::text])))
+    constraint observation_revision_period_check CHECK ((period = ANY (ARRAY['1'::text, '2'::text, '3'::text, '4'::text, 'a'::text])))
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, measure_id, month_index)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'not_published'::text, 'missing'::text])))
+    constraint qcew_revision_period_ordered CHECK ((period_start <= period_end))
+    constraint qcew_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint qcew_revision_withheld_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    index bls_qcew_revision_run_idx CREATE INDEX bls_qcew_revision_run_idx ON silver_bls_qcew.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_bls_qcew.observation_revision USING btree (capture_id, source_row_index, measure_id, month_index)
 
 r silver_cdc.dim_dataset_release
     column asset_id text NOT NULL

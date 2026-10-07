@@ -58,6 +58,12 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "BLS_QCEW",
+        SRC / "bls_qcew/DDL/silver_bls_qcew.sql",
+        "silver_bls_qcew.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "CDC",
         SRC / "cdc/DDL/silver_cdc.sql",
         "silver_cdc.fact_health_observation",

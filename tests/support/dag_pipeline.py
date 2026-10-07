@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "bls_qcew_api",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,38 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_bls_qcew(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed QCEW slices; a period with no fixture answers 404.
+
+    The fixtures are one quarter and one annual average. Every other period
+    the DAG asks for is the interface's own "not published" answer, which is
+    a recorded empty slice rather than a failure.
+    """
+    from data_ingestion_toolbox.bls_qcew import capture as qcew_capture
+    from data_ingestion_toolbox.bls_qcew.client import QcewSlice
+
+    def fetch(year: int, period: str, industry: Any, **_kwargs: Any) -> QcewSlice:
+        parameters = {
+            "year": str(year),
+            "period": period,
+            "industry_code": industry.code,
+        }
+        path = (
+            FIXTURE_ROOT
+            / "bls_qcew"
+            / f"{year}_{period}_industry_{industry.slice_code}.csv"
+        )
+        endpoint = f"/{year}/{period}/industry/{industry.slice_code}.csv"
+        if not path.is_file():
+            return QcewSlice(endpoint, parameters, b"", {}, 404)
+        return QcewSlice(
+            endpoint, parameters, path.read_bytes(), {"content-type": "text/csv"}, 200
+        )
+
+    monkeypatch.setattr(qcew_capture, "fetch_slice", fetch)
+    monkeypatch.setattr(qcew_capture, "pause", lambda _seconds: None)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1129,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("bls_qcew", stub_bls_qcew),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

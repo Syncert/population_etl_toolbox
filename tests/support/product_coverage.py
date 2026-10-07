@@ -331,6 +331,37 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="bls_qcew.county_employment_and_wages",
+        source="BLS_QCEW",
+        publisher_schema="gold_bls_qcew",
+        datasets=("10", "62"),
+        fixtures=(
+            "tests/fixtures/bls_qcew/2024_1_industry_10.csv",
+            "tests/fixtures/bls_qcew/2024_1_industry_62.csv",
+            "tests/fixtures/bls_qcew/2023_a_industry_10.csv",
+        ),
+        serving_relations=(
+            "gold_bls_qcew.observation_revision",
+            "gold_bls_qcew.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_bls_qcew_pipeline.py::"
+            "test_qcew_reaches_the_neutral_api_with_industry_ownership_and_basis"
+        ),
+        api_absence_reason=(
+            "BLS QCEW publishes no source-specific HTTP route: each row is the "
+            "neutral observation shape with its industry, ownership and basis "
+            "as declared dimensions, so `/api/v1/observations` serves it through "
+            "the dispatch registry."
+        ),
+    ),
 )
 
 
