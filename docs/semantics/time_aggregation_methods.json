@@ -1,0 +1,1995 @@
+{
+  "schema_version": 1,
+  "description": "Per-metric time-aggregation methods (ADR-0007). Every served sub-annual BLS, FRED and FBI UCR metric has one entry. Only an entry with status `approved` may authorize a derived value; `draft` entries are proposals awaiting review, and `not_aggregable` is the safe default.",
+  "entries": [
+    {
+      "metric_code": "BLS:CES0000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES0500000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES0500000002",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS weights annual average hours by employment and annual average earnings by hours (AWH13 = sum of weekly hours / sum of employment; AHE13 = sum of payrolls / sum of hours); the aggregate hours and payrolls are not served, so a plain mean would not be BLS's figure.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES0500000003",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS weights annual average hours by employment and annual average earnings by hours (AWH13 = sum of weekly hours / sum of employment; AHE13 = sum of payrolls / sum of hours); the aggregate hours and payrolls are not served, so a plain mean would not be BLS's figure.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES0500000008",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS weights annual average hours by employment and annual average earnings by hours (AWH13 = sum of weekly hours / sum of employment; AHE13 = sum of payrolls / sum of hours); the aggregate hours and payrolls are not served, so a plain mean would not be BLS's figure.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES0500000011",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS weights annual average hours by employment and annual average earnings by hours (AWH13 = sum of weekly hours / sum of employment; AHE13 = sum of payrolls / sum of hours); the aggregate hours and payrolls are not served, so a plain mean would not be BLS's figure.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES1000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES2000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES3000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES4000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES5000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES5500000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES6000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES6500000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES7000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES8000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CES9000000001",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes annual average employment as the sum of the 12 monthly estimates divided by 12 (Handbook of Methods, CES calculation, AE13).",
+      "limitations": [
+        "This series is seasonally adjusted; BLS's AE13 formula is stated for its estimates and publishes annual averages for not seasonally adjusted series, so a derived mean of adjusted months can differ slightly from BLS's annual average."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/ces/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SA0",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SA0E",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SA0L1E",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SAF1",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SAH1",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SAM",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SEHA",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CUUR0000SEHC",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:CWUR0000SA0",
+      "method": "mean",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "BLS computes a CPI annual average index as the sum of 12 successive monthly indexes divided by 12 (Handbook of Methods, CPI calculation).",
+      "limitations": [
+        "BLS publishes this series' annual average (M13); serve the provider value and use a derived mean only for quarters or trailing windows."
+      ],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cpi/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000HIL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000HIR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000JOL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000JOR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000LDL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000LDR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000OSL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000OSR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000QUL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000QUR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000TSL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000TSR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:JTS000000000000000UOR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The JOLTS Handbook describes monthly estimation only; no annual method is stated, so none is assumed.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/jlt/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:CNIP",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:EMP_LEVEL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:EMP_POP_RATIO",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:LABOR_FORCE",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:LFPR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:UNEMP_LEVEL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LAU:UNEMP_RATE",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The LAUS Handbook does not state the annual-average formula; BLS publishes LAUS annual averages (M13), which are served as provider facts instead of a derived value.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/lau/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS11000000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS11300000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS11300060",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS12000000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS12032194",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS12300000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS12300060",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS13000000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS13008276",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS13025703",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS13327709",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS14000000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS14000003",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS14000006",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS14000009",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS14032183",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "BLS:LNS15000000",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "The CPS Handbook does not state the annual-average formula for levels or rates; where BLS publishes an annual average (M13, not seasonally adjusted series) it is served as a provider fact.",
+      "limitations": [],
+      "citations": [
+        "https://www.bls.gov/opub/hom/cps/calculation.htm"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_arson:ARS:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_arson:ARS:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_arson:ARS:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_arson:ARS:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_assault:ASS:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_assault:ASS:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_assault:ASS:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_assault:ASS:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_burglary:BUR:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_burglary:BUR:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_burglary:BUR:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_burglary:BUR:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_homicide:HOM:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_homicide:HOM:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_homicide:HOM:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_homicide:HOM:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_larceny:LAR:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_larceny:LAR:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_larceny:LAR:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_larceny:LAR:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_motor_vehicle_theft:MVT:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_motor_vehicle_theft:MVT:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_motor_vehicle_theft:MVT:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_motor_vehicle_theft:MVT:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_property_crime:P:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_property_crime:P:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_property_crime:P:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_property_crime:P:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_rape:RPE:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_rape:RPE:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_rape:RPE:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_rape:RPE:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_robbery:ROB:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_robbery:ROB:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_robbery:ROB:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_robbery:ROB:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_violent_crime:V:clearance:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_violent_crime:V:clearance:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
+      "method": "sum",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A count of offenses or clearances reported for each month; a calendar quarter or year is the sum of its months, provided every month is reported.",
+      "limitations": [
+        "An agency that did not report a month makes the window incomplete; it is refused, never treated as zero."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FBI_UCR:summarized_violent_crime:V:offense:rate",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "A rate per 100,000 population; a window's rate must be recomputed from summed counts and the population, and no monthly population series is served, so it is not averaged.",
+      "limitations": [],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/"
+      ]
+    },
+    {
+      "metric_code": "FRED:CIVPART",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:CPIAUCSL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:DGS10",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:DSPIC96",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:FEDFUNDS",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:GDPC1",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:HOUST",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:ICSA",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:INDPRO",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:JTSJOL",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:MORTGAGE30US",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:MSACSR",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:MSPUS",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:NFCI",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:PAYEMS",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:PCEC96",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:PCEPI",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:PCEPILFE",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:PERMIT",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:PSAVERT",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:RSAFS",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:T10Y2Y",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:T10YIE",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    },
+    {
+      "metric_code": "FRED:UNRATE",
+      "method": "not_aggregable",
+      "status": "draft",
+      "owner": "data-eng",
+      "reviewer": "Nick (pending review)",
+      "version": 1,
+      "effective_date": "2026-10-07",
+      "last_reviewed_date": "2026-10-07",
+      "rationale": "FRED aggregates server-side when asked (frequency and aggregation_method); ADR-0007 prefers that provider answer, which is not configured for this series, and no derived method is assumed from units.",
+      "limitations": [],
+      "citations": [
+        "https://fred.stlouisfed.org/docs/api/fred/series_observations.html"
+      ]
+    }
+  ]
+}

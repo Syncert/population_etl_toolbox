@@ -64,9 +64,19 @@ verify:
   Integration and end to end: 448 passed, 2 skipped, 1 failed (the PEP
   teardown node, failing on `main` too). DAG: 144 passed; orchestrated run 4
   passed.
-- **Next:** RU-2 method registry (drafted methods need Nick's approval before
-  RU-4/RU-5 serve a derived value), then RU-6 serving BLS provider annuals
-  at `time_grain=annual`.
+- **RU-2 drafted** (ETL-073): `docs/semantics/time_aggregation_methods.json`
+  covers all 127 served sub-annual metrics. Methods come only from provider
+  formulas: CPI indexes `mean` (BLS: 12 successive months / 12), CES
+  all-employee levels `mean` (BLS AE13), FBI counts `sum`; CES hours and
+  earnings are `not_aggregable` (BLS weights by aggregate hours and payrolls,
+  not served); CPS, LAUS and JOLTS state no formula in their handbooks and
+  FRED's aggregation is a provider option, so those are `not_aggregable`; FBI
+  rates need a population series that is not served. Every entry is `draft`;
+  `data_ingestion_toolbox.semantics.time_aggregation` authorizes only
+  approved entries, and the contract test proves a draft authorizes nothing.
+- **Next:** Nick reviews the 42 drafted `mean`/`sum` methods (approve,
+  change or reject); then RU-4 gold calendar rollups for approved metrics and
+  RU-6 serving BLS provider annuals at `time_grain=annual`.
 
 ## Why
 
@@ -142,7 +152,7 @@ workbench out-of-scope entry and WEB-095 to name what is now permitted
 - [x] **RU-1: ADR-0007 "Derived time aggregates"** (accepted 2026-10-07) — product class, labelling,
   refusal rule, provider precedence, where methods live; amend workbench plan
   note and WEB-095. **Human acceptance required before RU-3.**
-- [ ] **RU-2: semantic method registry** for BLS, FBI UCR and FRED metrics, with
+- [x] **RU-2: semantic method registry** (drafted 2026-10-07; approval pending) for BLS, FBI UCR and FRED metrics, with
   a contract test that every served sub-annual metric has a reviewed method or
   is explicitly `not_aggregable`.
 - [x] **RU-3: provider aggregates as facts** (BLS done 2026-10-07; FRED server-side aggregation is not configured for any series, so there is nothing to ingest yet) — BLS `M13` with its own period
