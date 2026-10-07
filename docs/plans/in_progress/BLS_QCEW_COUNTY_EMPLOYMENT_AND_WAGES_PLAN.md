@@ -15,9 +15,12 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
+In progress. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Deliverables 1 to 6 (adapter, registry, silver, gold, serving, quality and
+operations) are on branch `feat/bls-qcew`, cut from `main`. Deliverable 7,
+the county-page cards, needs the place pages from `feat/place-pages`
+(WEB-125), which is not on `main` yet.
 
 ## Why
 
@@ -106,8 +109,70 @@ the series-identifier model used for LAUS and CES
   covered employment only; sector level is what the industry-mix table
   needs, so prefer it if slice volume allows.
 
+## Decisions
+
+- **Slices, verified 2026-10-06.** One CSV per (year, quarter `1`-`4` or
+  annual `a`, industry) at
+  `https://data.bls.gov/cew/data/api/<year>/<period>/industry/<code>.csv`,
+  with `31-33` spelled `31_33`. The interface starts at 2014 (2013 answers
+  404), answers 404 for a quarter not yet published, takes no credential,
+  and refuses requests without a descriptive `User-Agent`. The annual
+  layout has its own columns (`annual_avg_estabs`, `annual_avg_emplvl`,
+  `total_annual_wages`, `annual_avg_wkly_wage`).
+- **Scope.** NAICS sectors are onboarded in the first release (open item):
+  the total of all industries for ownership 0 (total covered) and 5
+  (private), and the 21 sectors for ownership 5, at the national, state and
+  county aggregation levels (10-14, 50-54, 70-74). A slice's other rows are
+  counted, not loaded: MSAs and CSAs, other ownerships, size classes, and
+  the `SS999` "unknown county" areas.
+- **Values.** Disclosure `N` is `withheld` and `-` is `not_published`. Both
+  carry no number, because the file writes `0` there. Monthly employment is
+  three month-dated rows. Annual averages are separate measures, never
+  derived from the quarters.
+- **Identity.** A metric is `BLS_QCEW:<measure>:<industry>:<ownership>`. The
+  display name ends "(jobs located here)", and every row carries
+  `observation_basis`, so a QCEW figure cannot be read as LAUS's residents.
+- **Cadence.** Monthly. An ordinary run asks for the last six calendar
+  quarters and their years' annual averages, and unpublished ones are
+  recorded empty. `{"history": true}` sweeps from 2014. The one-slot
+  `bls_qcew_api` pool serializes the requests.
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2188 passed, including
+  `tests/unit/bls_qcew` (9).
+- Database: `tests/integration/database/test_bls_qcew_capture_replay.py` --
+  6 passed. Covered: gold with withheld cells, publisher and harvest, rerun
+  and changed file, quarantine, 404 period and schema reapply, and
+  `DQ-QCEW-002` passing the fixtures and failing on a lost row.
+  `tests/integration/api/test_catalog_serving_agreement.py` -- 21 passed with
+  a QCEW fixture (DB-043/DB-044).
+- End to end: `tests/e2e/test_bls_qcew_pipeline.py` serves Kent County,
+  Delaware employment by month with industry, ownership and basis on the
+  row, and withheld cells as nulls.
+- Live: `tests/external/test_bls_qcew_source_contracts.py` -- 5 passed
+  against data.bls.gov.
+- DAG: `pytest -m dag tests/dags` in the scheduler container -- 156 passed.
+  `test_dag_pipeline_execution.py` passed 4 of 4 on its own, with
+  `bls_qcew_ingest` in the orchestrated run. In the combined tier it hits
+  the same `fred_ingest.mark_slices_planned` failure it hits on other
+  branches, before this DAG runs.
+- Integration: `tests/integration/api` -- 186 passed on a fresh database.
+  `tests/integration/database tests/e2e` -- 268 passed and 2 failed. The
+  foundation table list now names `control.bls_qcew_slice` and passes. The
+  PEP teardown node counts every `CENSUS_PEP` capture in the database, so it
+  fails after an earlier database node leaves PEP captures behind; it passes
+  on its own, and it fails the same way on other branches.
+- `ruff check .` and `ruff format --check .` clean; schema snapshot
+  regenerated; OpenAPI snapshot unchanged (no new route).
+
+## Remaining
+
+- Deliverable 7: the Work and Money chapter's "Jobs located here" cards and
+  industry-mix table beside the LAUS cards, each labelled with its basis,
+  with a browser scenario. Builds on `feat/place-pages`.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `bls_qcew/`, record the verified slice
-URL pattern and layout in `config.py`, and write the failing replay test
-over one county fixture.
+Next pickup: branch from `feat/place-pages`, merge `feat/bls-qcew`, and add
+the QCEW slots and industry-mix table to the Work and Money chapter.

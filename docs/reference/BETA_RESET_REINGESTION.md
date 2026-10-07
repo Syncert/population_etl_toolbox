@@ -292,7 +292,7 @@ airflow dags trigger silver_ref
 ```
 
 Wait for `silver_ref` to succeed before running observation DAGs. **Every
-source DAG now refuses to start until it has**: the first task of all six
+source DAG now refuses to start until it has**: the first task of every
 ingestion DAGs calls
 `data_ingestion_toolbox.silver_ref.geography_guard.require_shared_geography_loaded`,
 which counts active rows in `silver_ref.dim_geo_current` and raises with the
@@ -321,6 +321,11 @@ SELECT count(*) AS invalid_geometry_count
 FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
+
+Trigger `bls_qcew_ingest` with `--conf '{"history": true}'` to load every
+registered QCEW period from 2014: about 1,300 slice requests through the
+one-slot `bls_qcew_api` pool
+([operations](../user-guides/BLS_QCEW_PIPELINE_OPERATIONS.md)).
 
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and

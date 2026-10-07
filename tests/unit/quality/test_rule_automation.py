@@ -72,6 +72,8 @@ REGISTERED = (
 #: DQ-017 by being implemented.
 UNIMPLEMENTED_RULES = frozenset(
     {
+        # Declared; the run records each asked quarter, nothing checks gaps.
+        "DQ-QCEW-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
         "DQ-REF-004",
@@ -191,7 +193,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
     assert len(unbuilt) == 11, unbuilt
-    # The other eleven BLOCK rules that no executor runs are `enforced`: the
+    # Thirteen BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined
     # that set when `enforced` stopped meaning "unique constraint" and started
@@ -200,7 +202,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 11, enforced
+    assert len(enforced) == 13, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -421,6 +423,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     )
     assert set(SOURCE_SCHEMA_COMPONENTS) == {
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
         "CENSUS_PEP",
