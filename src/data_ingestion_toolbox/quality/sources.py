@@ -685,10 +685,14 @@ def ccd_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleO
     ]
 
 
-def ccd_placement_and_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+def ccd_placement_and_plausibility(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
     """DQ-NCES-004 — every valued school placed in a held county; FRPL within membership."""
     del scope
-    total = _count(cursor, "SELECT COUNT(*) FROM control.nces_ccd_file WHERE status = 'published'")
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.nces_ccd_file WHERE status = 'published'"
+    )
     if total == 0:
         return [RuleOutcome("gold_nces_ccd.school_observation", "not_applicable")]
     offenders, offenders_total = _offenders(

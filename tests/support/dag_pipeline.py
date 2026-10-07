@@ -668,7 +668,9 @@ def stub_nces_ccd(monkeypatch: pytest.MonkeyPatch) -> None:
     from data_ingestion_toolbox.nces_ccd import capture as ccd_capture
     from tests.support.nces_ccd import fixture_response
 
-    monkeypatch.setattr(ccd_capture, "fetch_file", lambda item, **_kwargs: fixture_response(item))
+    monkeypatch.setattr(
+        ccd_capture, "fetch_file", lambda item, **_kwargs: fixture_response(item)
+    )
 
 
 def build_pep_release_csv(url: str) -> bytes:

@@ -3425,7 +3425,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         enforced_grains=(
             EnforcedGrain("silver_nces_ccd.school_location", ("run_id", "ncessch")),
             EnforcedGrain("silver_nces_ccd.school_directory", ("run_id", "ncessch")),
-            EnforcedGrain("silver_nces_ccd.school_count", ("run_id", "ncessch", "measure")),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count", ("run_id", "ncessch", "measure")
+            ),
         ),
     ),
     _rule(
@@ -3484,7 +3486,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "is placed by that year's geocode file in a county the shared "
         "geography holds, and no school's free or reduced-price lunch count "
         "exceeds its membership.",
-        ("gold_nces_ccd.school_observation", "silver_nces_ccd.school_location", "control.nces_ccd_file"),
+        (
+            "gold_nces_ccd.school_observation",
+            "silver_nces_ccd.school_location",
+            "control.nces_ccd_file",
+        ),
     ),
 )
 
