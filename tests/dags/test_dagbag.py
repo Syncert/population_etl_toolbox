@@ -37,6 +37,7 @@ EXPECTED_DAG_IDS = {
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
     "bea_regional_ingest",
+    "eia_retail_gasoline_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
     "warehouse_data_quality",
@@ -60,6 +61,8 @@ EXPECTED_SCHEDULES = {
     "usda_nass_crop_ingest": "0 10 1 * 1-5",
     # Weekly: county income lands in November and county GDP in December.
     "bea_regional_ingest": "0 14 * * 3",
+    # Tuesdays: EIA publishes Monday's prices on Monday afternoon.
+    "eia_retail_gasoline_ingest": "0 15 * * 2",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
@@ -81,6 +84,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fbi_ucr_ingest": 2,
     "usda_nass_crop_ingest": 2,
     "bea_regional_ingest": 2,
+    "eia_retail_gasoline_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
@@ -101,6 +105,7 @@ EXPECTED_INGEST_POOLS = {
     "fbi_ucr_ingest": "fbi_cde_api",
     "usda_nass_crop_ingest": "usda_nass_api",
     "bea_regional_ingest": "bea_files",
+    "eia_retail_gasoline_ingest": "eia_api",
 }
 
 

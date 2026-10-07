@@ -118,6 +118,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
         ("control", "bea_table_capture"),
+        ("control", "eia_read"),
+        ("control", "eia_page"),
         ("control", "data_quality_run"),
         ("control", "data_quality_result"),
     }

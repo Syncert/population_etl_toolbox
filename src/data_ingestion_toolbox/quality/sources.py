@@ -686,6 +686,43 @@ def bea_table_reconciliation(
     ]
 
 
+def eia_read_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-EIA-002 — every captured row is replayed; no read is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.eia_read")
+    if total == 0:
+        return [RuleOutcome("control.eia_read", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT read.run_id, read.status, read.row_total, replayed.rows_kept
+          FROM control.eia_read AS read
+          LEFT JOIN LATERAL (
+                SELECT (SELECT COUNT(*) FROM silver_eia.price_revision AS revision
+                         WHERE revision.run_id = read.run_id)
+                     + (SELECT COUNT(*) FROM silver_eia.observation_quarantine AS rejected
+                         WHERE rejected.run_id = read.run_id AND rejected.row_index >= 0)
+                       AS rows_kept
+          ) AS replayed ON TRUE
+         WHERE read.status = 'captured'
+            OR (read.status IN ('silver_ready', 'published')
+                AND replayed.rows_kept <> read.row_total)
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.eia_read",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def bea_price_parity_reference(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1787,6 +1824,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-BEA-002": bea_table_reconciliation,
     "DQ-BEA-005": bea_price_parity_reference,
+    "DQ-EIA-002": eia_read_reconciliation,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

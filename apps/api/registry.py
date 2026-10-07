@@ -969,6 +969,53 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="EIA",
+            latest_relation="gold_eia.observation_latest",
+            released_relation="gold_eia.observation_revision",
+            lineage_schema="gold_eia",
+            lineage_relation="observation_revision",
+            # One metric per grade, keyed by EIA's product code (`EIA:EPMR`
+            # regular), across every area EIA publishes it for
+            # (grocery-and-gasoline-prices).
+            lineage_key_column="metric_key",
+            # EIA publishes no release identity: a read is the day it was
+            # retrieved, and a revised week is a second reading.
+            release_expression="release_key",
+            release_order_expression="release_date",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("product", "product"),
+                ("grade", "grade"),
+                # EIA's own series id and area code and name: a PADD or a
+                # city is EIA's area, not a CBSA.
+                ("series_id", "series_id"),
+                ("duoarea", "duoarea"),
+                ("area_name", "area_name"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "week_start >= MAKE_DATE(:year_from, 1, 1)"),
+                ("year_to", "week_start <= MAKE_DATE(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "week_start"),
+            released_order=(
+                "week_start",
+                "geo_id",
+                "release_date",
+                "retrieved_at",
+                "capture_id",
+            ),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1221,6 +1268,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         SourceDiscovery(
             source_code="BEA",
             display_name="Bureau of Economic Analysis regional economic accounts",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="EIA",
+            display_name="U.S. Energy Information Administration retail gasoline prices",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),

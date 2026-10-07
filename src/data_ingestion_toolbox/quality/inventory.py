@@ -67,6 +67,7 @@ SOURCES: tuple[str, ...] = (
     "FBI_UCR",
     "USDA_NASS",
     "BEA",
+    "EIA",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1909,6 +1910,99 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+_EIA_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.eia_read",
+        "control",
+        "EIA",
+        grain="run_id (one run per read of a window of weeks)",
+        lineage="control.ingestion_run",
+        scope_method="the window plan_window names: the whole history once, then eight weeks back",
+        cadence="weekly",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "control.eia_page",
+        "control",
+        "EIA",
+        grain="run_id, page_index",
+        lineage="control.eia_read, raw_capture.response_capture",
+        scope_method="every page of every read, in order",
+        cadence="weekly",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_eia.price_revision",
+        "silver",
+        "EIA",
+        grain="capture_id, row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per EIA replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_eia.observation_quarantine",
+        "silver",
+        "EIA",
+        grain="capture_id, row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected answer row; populated only on failure",
+        cadence="per EIA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_eia.fact_retail_price",
+        "silver",
+        "EIA",
+        grain="series_id, week_start, capture_id",
+        lineage="silver_eia.price_revision, silver_ref.geography_resolution",
+        scope_method="registered gasoline grades x every area EIA publishes them for",
+        cadence="per EIA replay",
+        empty_behavior="a week with no reported price keeps the row as missing, never zero",
+    ),
+    _obj(
+        "gold_eia.observation_revision",
+        "gold",
+        "EIA",
+        grain="series_id, week_start, capture_id (published reads only)",
+        lineage="silver_eia.fact_retail_price, control.eia_read",
+        scope_method="published reads; every reading of a week kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_eia.observation_latest",
+        "gold",
+        "EIA",
+        grain="series_id, week_start (newest reading)",
+        lineage="gold_eia.observation_revision",
+        scope_method="newest-reading projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_eia.measure_export",
+        "publisher",
+        "EIA",
+        grain="source_object_key (EIA product code)",
+        lineage="silver_eia.fact_retail_price",
+        scope_method="registered gasoline grades",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_eia.metric_publisher",
+        "publisher",
+        "EIA",
+        grain="source_object_key (EIA product code)",
+        lineage="gold_eia.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1922,6 +2016,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _FBI_OBJECTS
     + _NASS_OBJECTS
     + _BEA_OBJECTS
+    + _EIA_OBJECTS
 )
 
 
@@ -2306,6 +2401,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
             "gold_bea.metric_publisher",
+            "gold_eia.metric_publisher",
         ),
     ),
     _rule(
@@ -3372,6 +3468,86 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation_note=(
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
+        ),
+    ),
+    # -- EIA retail gasoline (grocery-and-gasoline-prices) ---------------------
+    _rule(
+        "DQ-EIA-001",
+        "BLOCK",
+        "uniqueness",
+        "EIA prices are unique per (series, week, capture): a week EIA revises "
+        "is a second reading beside the first.",
+        (
+            "silver_eia.fact_retail_price",
+            "gold_eia.observation_revision",
+            "gold_eia.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_eia.fact_retail_price",
+                ("series_id", "week_start", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-EIA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed read accounts for every captured row, and no captured "
+        "read is left unreplayed.",
+        (
+            "control.eia_read",
+            "control.eia_page",
+            "silver_eia.price_revision",
+            "silver_eia.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-EIA-003",
+        "BLOCK",
+        "conformance",
+        "A price is a positive number of dollars per gallon or a missing week "
+        "with no number; a missing week is never zero.",
+        ("silver_eia.fact_retail_price", "silver_eia.price_revision", "gold_eia.measure_export"),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value, a missing row with one, and any value that is not "
+            "positive; the revision's unit is fixed to $/GAL."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_eia.fact_retail_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="eia_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_eia.fact_retail_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="eia_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-EIA-004",
+        "WARN",
+        "referential_integrity",
+        "Every area EIA publishes resolves to the shared reference: the nation, "
+        "a state by its USPS code, or an EIA PADD or city loaded as a provider area.",
+        ("silver_eia.fact_retail_price",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as an executor: each read ledgers every area in "
+            "`silver_ref.geography_resolution` and the shared DQ-SHARED geography "
+            "rules read that ledger, but no EIA-specific rule fails on an "
+            "unmapped area."
         ),
     ),
     # -- BEA regional economic accounts --------------------------------------

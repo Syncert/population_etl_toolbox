@@ -157,6 +157,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       BLS_API_KEY: ${BLS_API_KEY:-}
+      EIA_API_KEY: ${EIA_API_KEY:-}
       FRED_API_KEY: ${FRED_API_KEY:-}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
@@ -191,6 +192,7 @@ services:
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
       airflow pools set bea_files 1 'BEA regional bulk files (serialized)';
+      airflow pools set eia_api 1 'EIA API v2 (serialized)';
       airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 

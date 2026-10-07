@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from data_ingestion_toolbox.bea import schema as bea_schema
+from data_ingestion_toolbox.eia import schema as eia_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
 from data_ingestion_toolbox.usda_nass import schema as nass_schema
@@ -38,6 +39,13 @@ SOURCES = [
         "USDA_NASS",
     ),
     ("bea_regional_ingest", "ensure_bea_schema", "ingest_batch_", bea_schema, "BEA"),
+    (
+        "eia_retail_gasoline_ingest",
+        "ensure_eia_schema",
+        "ingest_batch_",
+        eia_schema,
+        "EIA",
+    ),
 ]
 
 

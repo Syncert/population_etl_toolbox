@@ -41,6 +41,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fbi_cde_api",
     "usda_nass_api",
     "bea_files",
+    "eia_api",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -337,6 +338,7 @@ FIXTURE_CREDENTIALS: dict[str, str] = {
     "CDC_SOCRATA_APP_TOKEN": "fixture-cdc-token",
     "FBI_CDE_API_KEY": "fixture-fbi-cde-key",
     "USDA_NASS_API_KEY": "FIXTURE-USDA-NASS-KEY-0000-1111-2222",
+    "EIA_API_KEY": "fixture-eia-key",
 }
 
 
@@ -752,6 +754,20 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(nass_capture, "fetch_slice_count", count)
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
+
+
+def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed EIA answers: the gasoline window and the area facet."""
+    from data_ingestion_toolbox.eia import client as eia_client
+
+    window = (FIXTURE_ROOT / "eia" / "weekly_2026-08-31_2026-09-07.json").read_bytes()
+    facet = (FIXTURE_ROOT / "eia" / "duoarea_facet.json").read_bytes()
+
+    def get(self: Any, route: str, params: Any, **_kwargs: Any) -> Any:
+        payload = facet if route.endswith("facet/duoarea/") else window
+        return eia_client.EiaResponse(route, payload, {"content-type": "application/json"}, 200)
+
+    monkeypatch.setattr(eia_client.EiaClient, "get", get)
 
 
 def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1227,6 +1243,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
         ("bea", stub_bea_regional),
+        ("eia", stub_eia),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

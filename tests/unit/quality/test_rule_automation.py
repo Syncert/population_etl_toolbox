@@ -74,6 +74,8 @@ UNIMPLEMENTED_RULES = frozenset(
     {
         # Declared; the parser loads every year, nothing checks for gaps.
         "DQ-BEA-004",
+        # Ledgered in silver_ref.geography_resolution; no EIA rule fails on it.
+        "DQ-EIA-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
         "DQ-REF-004",
@@ -193,7 +195,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
     assert len(unbuilt) == 11, unbuilt
-    # Thirteen BLOCK rules that no executor runs are `enforced`: the
+    # Fifteen BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined
     # that set when `enforced` stopped meaning "unique constraint" and started
@@ -202,7 +204,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 13, enforced
+    assert len(enforced) == 15, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -427,6 +429,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CDC",
         "CENSUS_ACS",
         "CENSUS_PEP",
+        "EIA",
         "FBI_UCR",
         "FRED",
         "USDA_NASS",

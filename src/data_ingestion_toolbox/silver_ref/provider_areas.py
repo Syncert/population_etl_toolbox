@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 import zipfile
 from collections.abc import Callable, Mapping
@@ -72,6 +73,14 @@ class ProviderAreaList:
     urls: tuple[str, ...]
     headers: Mapping[str, str]
     parse: Callable[[bytes], list[ProviderArea]]
+    #: How to fetch a file where a plain download will not do -- EIA's list
+    #: needs its key, which only its own client may hold. Returns
+    #: (status, headers, bytes).
+    fetch: Callable[[str], tuple[int, Mapping[str, str], bytes]] | None = None
+    #: Whether the reference DAG loads this list. A list that needs a
+    #: provider's credential is loaded by that provider's own DAG instead, so
+    #: the shared reference never depends on a source's key.
+    loaded_by_reference: bool = True
 
 
 def parse_bls_cpi_areas(payload: bytes) -> list[ProviderArea]:
@@ -124,6 +133,43 @@ def parse_bea_portions(payload: bytes) -> list[ProviderArea]:
     return [ProviderArea(code, name) for code, name in sorted(areas.items())]
 
 
+#: An EIA area that is not Census geography: a PADD or sub-district (`R`) or
+#: a city (`Y`). States (`S`) and the nation (`NUS`) are Census geography.
+EIA_AREA = re.compile(r"^(R[0-9A-Z]{2,5}|Y[0-9A-Z]{2,5})$")
+
+
+def parse_eia_areas(payload: bytes) -> list[ProviderArea]:
+    """EIA's PADDs and cities from the route's ``duoarea`` facet answer."""
+    try:
+        facets = json.loads(payload)["response"]["facets"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError("the EIA facet answer lacks response.facets") from exc
+    areas = sorted(
+        (
+            ProviderArea(str(facet["id"]), str(facet["name"]))
+            for facet in facets
+            if EIA_AREA.fullmatch(str(facet.get("id", "")))
+        ),
+        key=lambda area: area.code,
+    )
+    if not areas:
+        raise ValueError("the EIA facet answer names no PADD or city")
+    return areas
+
+
+def fetch_eia_facet(url: str) -> tuple[int, Mapping[str, str], bytes]:
+    """The duoarea facet, through the EIA client that alone holds the key."""
+    from data_ingestion_toolbox.eia.client import EiaClient
+    from data_ingestion_toolbox.eia.config import EIA_API_BASE_URL, EiaConfig
+
+    client = EiaClient(EiaConfig.from_environment())
+    try:
+        response = client.get(url.removeprefix(f"{EIA_API_BASE_URL}/"), [])
+    finally:
+        client.close()
+    return response.http_status, response.response_headers, response.raw_bytes
+
+
 BEA_HEADERS = {
     "User-Agent": "population-etl-toolbox BEA regional ingestion (public-data warehouse)"
 }
@@ -146,6 +192,17 @@ PROVIDER_AREA_LISTS: dict[str, ProviderAreaList] = {
         ),
         headers=BEA_HEADERS,
         parse=parse_bea_portions,
+    ),
+    # EIA's PADDs and cities (grocery-and-gasoline-prices), from the gasoline
+    # route's own area facet.
+    "eia": ProviderAreaList(
+        provider="eia",
+        source_code="EIA",
+        urls=("https://api.eia.gov/v2/petroleum/pri/gnd/facet/duoarea/",),
+        headers={},
+        parse=parse_eia_areas,
+        fetch=fetch_eia_facet,
+        loaded_by_reference=False,
     ),
 }
 
@@ -198,9 +255,17 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
                     max_attempts=HTTP_MAX_ATTEMPTS,
                 )
                 try:
-                    response = geography_pipeline._download_with_retry(
-                        client, url, control=control, request_id=request.request_id
-                    )
+                    if area_list.fetch is not None:
+                        status, headers, content = area_list.fetch(url)
+                    else:
+                        response = geography_pipeline._download_with_retry(
+                            client, url, control=control, request_id=request.request_id
+                        )
+                        status, headers, content = (
+                            response.status_code,
+                            response.headers,
+                            response.content,
+                        )
                 except BaseException as exc:
                     control.finish_request(request.request_id, status="failed", error=exc)
                     raise
@@ -215,10 +280,10 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
                         endpoint=url,
                         request_parameters=parameters,
                         retrieved_at=retrieved_at,
-                        http_status=response.status_code,
-                        response_headers=response.headers,
-                        media_type=response.headers.get("content-type", "text/plain"),
-                        payload=response.content,
+                        http_status=status,
+                        response_headers=headers,
+                        media_type=headers.get("content-type", "text/plain"),
+                        payload=content,
                         payload_schema_version=PARSER_VERSION,
                         source_revision=retrieved_at.date().isoformat(),
                     ),

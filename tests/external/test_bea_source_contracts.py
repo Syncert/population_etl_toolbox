@@ -41,7 +41,10 @@ def test_each_registered_table_publishes_its_registered_lines(table) -> None:
     parsed = parse_table(response.raw_bytes, table=table)
     assert parsed.quarantined == ()
     assert parsed.release_date is not None
-    assert parsed.in_scope_row_count > 3000
+    # County tables carry thousands of areas; the price parity tables carry
+    # the states, the metros, or the states' portions.
+    minimum = {"county": 3000, "state": 250, "metro": 1500, "portion": 500}
+    assert parsed.in_scope_row_count > minimum[table.geography]
     national = {obs.line_code for obs in parsed.observations if obs.geo_id == "us:1"}
     assert national == set(table.lines)
 

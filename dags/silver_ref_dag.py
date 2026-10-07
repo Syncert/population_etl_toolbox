@@ -87,8 +87,9 @@ def silver_ref():
         # Areas a provider defines itself (a BLS CPI metro), from each
         # provider's own published list.
         loaded: dict[str, int] = {}
-        for provider in sorted(PROVIDER_AREA_LISTS):
-            loaded[provider] = sync_provider_areas(provider)["provider_areas"]
+        for provider, area_list in sorted(PROVIDER_AREA_LISTS.items()):
+            if area_list.loaded_by_reference:
+                loaded[provider] = sync_provider_areas(provider)["provider_areas"]
         return loaded
 
     @task

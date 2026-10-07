@@ -32,6 +32,7 @@ from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transfo
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import bea as bea_support
+from tests.support import eia as eia_support
 from tests.support import fbi_release
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
@@ -877,6 +878,22 @@ def published_bea_metric(
     return _one_published_code(factory, "BEA")
 
 
+@pytest.fixture
+def published_eia_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish EIA's weekly gasoline grades through their real pipeline.
+
+    The fixture window reaches the nation, two states and EIA's PADDs and
+    cities, so it publishes every grain EIA can (grocery-and-gasoline-prices).
+    """
+    factory = eia_support.reviewed_warehouse(postgres_connection_factory, request)
+    eia_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_eia"))
+    return _one_published_code(factory, "EIA")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -933,6 +950,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_bea_metric: str,
+    published_eia_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -995,6 +1013,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FBI_UCR", published_fbi_metric),
         ("USDA_NASS", published_nass_metric),
         ("BEA", published_bea_metric),
+        ("EIA", published_eia_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1137,6 +1156,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_bea_metric: str,
+    published_eia_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

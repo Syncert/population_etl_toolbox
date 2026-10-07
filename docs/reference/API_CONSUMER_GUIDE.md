@@ -451,6 +451,18 @@ contains it, labelled as that area.
   are **not comparable across areas**: compare percent changes. Average
   prices are dollars and are comparable. Most metros are published every
   other month; a month BLS does not publish has no row.
+- **EIA weekly retail gasoline** (`EIA:EPMR` regular, `EIA:EPMM` midgrade,
+  `EIA:EPMP` premium, `EIA:EPM0` all grades) is the price in U.S. dollars
+  per gallon for the week starting `period_start` (a Monday), from EIA's
+  EIA-878 survey: the nation (`NATIONAL`), nine states (`STATE`), and EIA's
+  Petroleum Administration for Defense Districts, their sub-districts and ten
+  cities (`PROVIDER_AREA`, `area:eia:<code>`; a city's price is EIA's city,
+  not a metro area). `dimensions.duoarea` and `dimensions.series_id` are
+  EIA's own codes. A week with no reported price is `missing` with a `null`
+  value. EIA publishes no release identity, so `release` is the day the
+  warehouse read the week, and a week EIA later revised is a second reading
+  under `scope=as_released`. Source: U.S. Energy Information Administration,
+  Gasoline and Diesel Fuel Update.
 
 ### Reading a row honestly
 

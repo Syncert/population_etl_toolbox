@@ -58,6 +58,12 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "EIA",
+        SRC / "eia/DDL/silver_eia.sql",
+        "silver_eia.fact_retail_price",
+        "valid",
+    ),
+    FactContract(
         "BLS",
         SRC / "bls/DDL/silver_bls.sql",
         "silver_bls.fact_labor_statistics",

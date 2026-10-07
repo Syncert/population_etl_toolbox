@@ -41,6 +41,7 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
     "bea_regional_ingest",
+    "eia_retail_gasoline_ingest",
     "census_pep_ingest",
     "glossary_reconciliation",
     "warehouse_data_quality",
