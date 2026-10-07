@@ -160,6 +160,11 @@ class SourceCapability(BaseModel):
     #: declaration the refusal is read from, so the published capability and
     #: the served behaviour cannot disagree.
     publishes_aligned_reduction: bool = False
+    #: The ``time_grain`` values ``/observations`` can answer for this source:
+    #: always ``native``, plus ``quarterly`` and ``annual`` where the dispatch
+    #: entry declares calendar windows (ADR-0007). Whether one metric has
+    #: figures at a calendar grain is on the metric resource.
+    time_grains: list[str] = ["native"]
 
 
 class CapabilityListResponse(BaseModel):
@@ -193,6 +198,11 @@ class MetricCapability(MetricCatalog):
     #: and sent ``newest_per_geography`` on the strength of the route's
     #: declared parameters met a 422 it had no way to predict (API-139).
     publishes_aligned_reduction: bool = False
+    #: The ``time_grain`` values ``/observations`` answers for this metric:
+    #: ``native``, plus each calendar grain at which its provider published a
+    #: figure or an approved method derived one -- read from the same relation
+    #: the route serves, so a listed grain is never refused (ADR-0007).
+    time_grains: list[str] = ["native"]
 
 
 class SourceFreshness(BaseModel):

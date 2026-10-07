@@ -980,6 +980,26 @@ _BLS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="a series BLS publishes no annual average for has no row",
     ),
     _obj(
+        "gold_bls.derived_calendar_rollup",
+        "gold",
+        "BLS",
+        grain="metric_code, geo_id, grain, window_start (unique index)",
+        lineage="gold_bls.rpt_bls_observations",
+        scope_method="calendar quarters and years of BLS metrics whose method is approved in docs/semantics/time_aggregation_methods.json",
+        cadence="after each BLS serving refresh",
+        empty_behavior="empty when no BLS method is approved",
+    ),
+    _obj(
+        "gold_bls.calendar_window_observation",
+        "serving",
+        "BLS",
+        grain="metric_code, geo_id, grain, period_start",
+        lineage="gold_bls.provider_annual_average, gold_bls.derived_calendar_rollup, gold_bls.mv_bls_latest",
+        scope_method="BLS's own annual averages of the served series, then derived calendar windows where BLS published no annual figure",
+        cadence="per BLS ingestion run",
+        empty_behavior="a served series with no BLS annual average and no approved method has no row",
+    ),
+    _obj(
         "gold_bls.rpt_bls_observations",
         "serving",
         "BLS",
@@ -1601,6 +1621,26 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="published releases excluding ambiguous/unsupported geography",
         cadence="per publication",
         empty_behavior="withheld ambiguous evidence stays queryable in silver",
+    ),
+    _obj(
+        "gold_fbi.derived_calendar_rollup",
+        "gold",
+        "FBI_UCR",
+        grain="metric_code, geo_id, subject_code, grain, window_start (unique index)",
+        lineage="gold_fbi.latest_release_observation",
+        scope_method="calendar quarters and years of FBI UCR counts whose method is approved in docs/semantics/time_aggregation_methods.json",
+        cadence="after each FBI UCR publication run",
+        empty_behavior="empty when no FBI UCR method is approved",
+    ),
+    _obj(
+        "gold_fbi.calendar_window_observation",
+        "serving",
+        "FBI_UCR",
+        grain="metric_code, geo_id, subject_code, grain, period_start",
+        lineage="gold_fbi.derived_calendar_rollup",
+        scope_method="derived calendar windows of the FBI UCR counts with an approved method",
+        cadence="after each FBI UCR publication run",
+        empty_behavior="empty when no FBI UCR method is approved",
     ),
     _obj(
         "gold_fbi.reporting_coverage",
@@ -2439,6 +2479,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_bls.fact_labor_statistics",
             "gold_bls.fact_bls_observation",
             "gold_bls.provider_annual_average",
+            "gold_bls.calendar_window_observation",
             "gold_bls.rpt_bls_observations",
             "gold_bls.mv_bls_latest",
         ),
@@ -2584,6 +2625,22 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation="automated",
         automation_note=(
             "`quality.sources.bls_contract_conformance` is DQ-ACS-007's shape against BLS's identity: a metric code is the series except where a measure-identified programme publishes one metric across every geography it covers, so the published side reads `gold_bls.dim_bls_measure` -- the mapping the refresh itself uses rather than a restatement of its rule. It runs in about a minute. Its first real run failed with 46 groups and the failure was real: the serving contract had been widened to publish a withheld observation and BLS had not been re-served since, so the API advertised `publishes_value_status: true` while its served rows still excluded every withheld value. No other guard could see that -- the schema tests check the columns exist and the capability test checks the flag matches the columns, and only this rule compares served data against published data."
+        ),
+    ),
+    _rule(
+        "DQ-BLS-008",
+        "WARN",
+        "reconciliation",
+        "A derived calendar year agrees with BLS's own annual average wherever "
+        "BLS publishes one, and a derived window holds a value only when every "
+        "month is reported.",
+        (
+            "gold_bls.derived_calendar_rollup",
+            "gold_bls.provider_annual_average",
+        ),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bls_derived_annual_reconciliation` compares each complete derived year with the `M13` annual average BLS published for the same series and geography (ADR-0007: where both exist, a disagreement is a finding). The tolerance is half a unit in the third decimal or a millionth of the value, whichever is larger: BLS averages the published monthly figures and rounds, so a derived mean of those same months can differ by rounding and by nothing else. The completeness half is enforced rather than measured: the table's CHECK refuses a value on a window missing a month and a reason on a complete one."
         ),
     ),
     _rule(
@@ -3135,6 +3192,30 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "registry's measure definitions, and no executor reads the "
             "published measures back to confirm counted-entity bases never "
             "share one."
+        ),
+    ),
+    _rule(
+        "DQ-FBI-008",
+        "BLOCK",
+        "uniqueness",
+        "A derived FBI UCR window is unique per metric, subject and calendar "
+        "window, and holds a value only when every month in it is reported.",
+        ("gold_fbi.derived_calendar_rollup", "gold_fbi.calendar_window_observation"),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: a unique index refuses a second row for "
+            "one metric, geography, subject, grain and window, and the table's "
+            "CHECK accepts either a complete window with a value and no reason "
+            "or an incomplete one with a reason and no value, so a month FBI "
+            "marks `not_reported` can never be summed as zero. The builder "
+            "counts the expected months from the calendar, not from the rows "
+            "that exist."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "gold_fbi.derived_calendar_rollup",
+                ("metric_code", "geo_id", "subject_code", "grain", "window_start"),
+            ),
         ),
     ),
     # -- USDA NASS ---------------------------------------------------------

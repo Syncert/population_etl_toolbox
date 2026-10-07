@@ -47,6 +47,7 @@ from apps.api.schemas import (
     NeutralObservation,
     NeutralObservationListResponse,
     ObservationCoverage,
+    ObservationDerivation,
     ObservationUncertainty,
 )
 from apps.api.services.contracts import (
@@ -54,6 +55,13 @@ from apps.api.services.contracts import (
     require_relation,
     session_memo,
 )
+from data_ingestion_toolbox.semantics.rollups import (
+    ROLLUP_SOURCES,
+    SERVING_WINDOWS,
+    SQL_AGGREGATES,
+    window_sql,
+)
+from data_ingestion_toolbox.semantics.time_aggregation import authorized_method
 from data_ingestion_toolbox.sql.catalog_queries import (
     METRIC_RELATION,
     build_metric_detail_query,
@@ -84,6 +92,16 @@ PER_GEOGRAPHY_REDUCTIONS = (
     REDUCTION_NEWEST_PER_GEOGRAPHY,
     REDUCTION_NEWEST_RELEASE_PER_PERIOD,
 )
+
+
+TIME_GRAIN_NATIVE = "native"
+#: Each calendar grain the API names, and the window the warehouse stores it as.
+CALENDAR_GRAINS: Mapping[str, str] = {"quarterly": "quarter", "annual": "year"}
+TIME_GRAINS = frozenset({TIME_GRAIN_NATIVE, *CALENDAR_GRAINS})
+#: The filters a serving window can honour: its geography.
+WINDOW_FILTERS = frozenset({"geo_id", "geo_level", "subject_code"})
+#: The filters a calendar window can honour: its geography and its years.
+CALENDAR_FILTERS = frozenset({"geo_id", "geo_level", "subject_code", "year_from", "year_to"})
 
 
 class NeutralQueryError(ValueError):
@@ -492,11 +510,55 @@ def list_neutral_observations(
     newest_per_geography: bool = False,
     newest_release_per_period: bool = False,
     period_start: Optional[str] = None,
+    time_grain: str = TIME_GRAIN_NATIVE,
+    window: Optional[str] = None,
 ) -> Optional[NeutralObservationListResponse]:
     """One metric's observations from its owning source's serving contract.
 
+    ``time_grain=quarterly|annual`` answers calendar windows from the
+    dispatch entry's ``calendar_relation`` (ADR-0007): the provider's own
+    figure where it publishes one, otherwise a value derived by an approved
+    method, each row naming which.
+
     Returns ``None`` for an unknown metric code; the router owns the 404.
     """
+    if window is not None:
+        if window not in SERVING_WINDOWS:
+            raise NeutralQueryError(
+                f"window must be one of {', '.join(SERVING_WINDOWS)}"
+            )
+        if time_grain != TIME_GRAIN_NATIVE:
+            raise NeutralQueryError(
+                "window and a calendar time_grain cannot be combined: a window "
+                "spans the source's own months ending at an anchor, a calendar "
+                "grain fixes the window to the calendar"
+            )
+        if (
+            scope != SCOPE_LATEST
+            or release
+            or newest_per_geography
+            or newest_release_per_period
+        ):
+            raise NeutralQueryError(
+                f"window={window} answers each geography's current window; it "
+                "combines only with scope=latest, without a release pin or a "
+                "reduction"
+            )
+    if time_grain not in TIME_GRAINS:
+        raise NeutralQueryError(
+            f"time_grain must be one of {', '.join(sorted(TIME_GRAINS))}"
+        )
+    if time_grain != TIME_GRAIN_NATIVE and (
+        scope != SCOPE_LATEST
+        or release
+        or newest_per_geography
+        or newest_release_per_period
+    ):
+        raise NeutralQueryError(
+            f"time_grain={time_grain} answers each calendar window's current "
+            "figure; it combines only with scope=latest, without a release "
+            "pin or a reduction"
+        )
     period_start = validated_period_start(period_start)
     if period_start is not None and scope != SCOPE_LATEST:
         raise NeutralQueryError("period_start can only be combined with scope=latest")
@@ -549,6 +611,31 @@ def list_neutral_observations(
         refusal = reduction_refusal(dispatch, reduction)
         if refusal is not None:
             raise NeutralQueryError(refusal)
+    if window is not None:
+        return _list_serving_windows(
+            db,
+            dispatch,
+            metric_code,
+            metric.get("metric_display_name"),
+            window,
+            filters,
+            limit,
+            offset,
+            period_start,
+        )
+    if time_grain != TIME_GRAIN_NATIVE:
+        return _list_calendar_windows(
+            db,
+            dispatch,
+            metric_code,
+            metric.get("metric_display_name"),
+            CALENDAR_GRAINS[time_grain],
+            time_grain,
+            filters,
+            limit,
+            offset,
+            period_start,
+        )
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     filter_conditions, filter_params = _filter_conditions(
@@ -616,12 +703,265 @@ def list_neutral_observations(
         metric_code=metric_code,
         source_code=dispatch.source_code,
         scope=scope,
+        time_grain=time_grain,
         release=release,
         total=total,
         limit=limit,
         offset=offset,
         items=[
             _observation_from(row, dispatch, metric_code, display_name) for row in rows
+        ],
+    )
+
+
+def _no_calendar_figures(metric_code: str, time_grain: str) -> str:
+    return (
+        f"{metric_code} has no {time_grain} figures: its provider publishes "
+        "none, and a value derived from its sub-annual observations needs a "
+        "reviewed, approved time-aggregation method, which this metric does "
+        "not have (ADR-0007)"
+    )
+
+
+def _list_calendar_windows(
+    db: Session,
+    dispatch: ObservationDispatch,
+    metric_code: str,
+    display_name: Optional[str],
+    grain: str,
+    time_grain: str,
+    filters: Mapping[str, Any],
+    limit: int,
+    offset: int,
+    period_start: Optional[str],
+) -> NeutralObservationListResponse:
+    """One metric's calendar windows, provider-published or derived (ADR-0007).
+
+    Read from the dispatch entry's ``calendar_relation``, whose neutral shape
+    every source shares: the metric is addressed by its published code, and a
+    window is filtered by its geography and its years. A metric with no row
+    at the grain is refused rather than answered with an empty page, because
+    "no window" and "no method" are different answers.
+    """
+    if dispatch.calendar_relation is None:
+        raise NeutralQueryError(_no_calendar_figures(metric_code, time_grain))
+    unsupported = sorted(
+        name
+        for name, value in filters.items()
+        if value is not None and name not in CALENDAR_FILTERS
+    )
+    if unsupported:
+        raise NeutralQueryError(
+            f"time_grain={time_grain} filters a window by geography and year "
+            f"only; {', '.join(unsupported)} applies to the source's native "
+            "periods"
+        )
+    relation = dispatch.calendar_relation
+    require_relation(db, relation)
+
+    params: dict[str, Any] = {"metric_code": metric_code, "grain": grain}
+    conditions = ["metric_code = :metric_code", "grain = :grain"]
+    published = db.execute(
+        text(
+            f"SELECT EXISTS (SELECT 1 FROM {relation} "
+            "WHERE metric_code = :metric_code AND grain = :grain)"
+        ),
+        params,
+    ).scalar()
+    if not published:
+        raise NeutralQueryError(_no_calendar_figures(metric_code, time_grain))
+
+    for name, condition in (
+        ("geo_id", "geo_id = :geo_id"),
+        ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)"),
+        ("subject_code", "subject_code = :subject_code"),
+        ("year_from", "period_end >= MAKE_DATE(:year_from, 1, 1)"),
+        ("year_to", "period_start <= MAKE_DATE(:year_to, 12, 31)"),
+    ):
+        if filters.get(name) is not None:
+            conditions.append(condition)
+            params[name] = filters[name]
+    if period_start is not None:
+        conditions.append("period_start = CAST(:period_start AS DATE)")
+        params["period_start"] = period_start
+    where_sql = " AND ".join(conditions)
+
+    total = int(
+        db.execute(
+            text(f"SELECT COUNT(*) FROM {relation} WHERE {where_sql}"), params
+        ).scalar()
+        or 0
+    )
+    rows = (
+        db.execute(
+            text(
+                f"""
+                SELECT geo_id, geo_level, subject_code, unit,
+                       period_start::TEXT AS period_start,
+                       period_end::TEXT AS period_end,
+                       as_of_date::TEXT AS as_of, value::TEXT AS value,
+                       value_status, derivation_kind, method, method_version,
+                       expected_periods, present_periods, refusal_reason,
+                       component_releases
+                FROM {relation}
+                WHERE {where_sql}
+                ORDER BY geo_id, subject_code, period_start
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {**params, "limit": limit, "offset": offset},
+        )
+        .mappings()
+        .all()
+    )
+    return NeutralObservationListResponse(
+        metric_code=metric_code,
+        source_code=dispatch.source_code,
+        scope=SCOPE_LATEST,
+        time_grain=time_grain,
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=[
+            NeutralObservation(
+                source_code=dispatch.source_code,
+                metric_code=metric_code,
+                metric_display_name=display_name,
+                geo_id=_text_or_none(row.get("geo_id")),
+                geo_level=_text_or_none(row.get("geo_level")),
+                period_start=_text_or_none(row.get("period_start")),
+                period_end=_text_or_none(row.get("period_end")),
+                as_of=_text_or_none(row.get("as_of")),
+                value=_text_or_none(row.get("value")),
+                value_status=_text_or_none(row.get("value_status")),
+                unit=_text_or_none(row.get("unit")),
+                dimensions=(
+                    {"subject_code": row.get("subject_code")}
+                    if row.get("subject_code") is not None
+                    else {}
+                ),
+                derivation=ObservationDerivation(
+                    kind=str(row.get("derivation_kind")),
+                    method=_text_or_none(row.get("method")),
+                    method_version=row.get("method_version"),
+                    expected_periods=row.get("expected_periods"),
+                    present_periods=row.get("present_periods"),
+                    refusal_reason=_text_or_none(row.get("refusal_reason")),
+                    component_releases=list(row.get("component_releases") or []),
+                ),
+            )
+            for row in rows
+        ],
+    )
+
+
+def _list_serving_windows(
+    db: Session,
+    dispatch: ObservationDispatch,
+    metric_code: str,
+    display_name: Optional[str],
+    window: str,
+    filters: Mapping[str, Any],
+    limit: int,
+    offset: int,
+    period_start: Optional[str],
+) -> NeutralObservationListResponse:
+    """One metric's trailing or year-to-date window per geography (RU-5).
+
+    Computed on request over the source's served months with the metric's
+    approved method, exactly as a calendar rollup is: complete or refused with
+    the reason. ``period_start`` anchors every window at that month; without
+    it each geography's window ends at its own newest month.
+    """
+    method = authorized_method(metric_code)
+    source = ROLLUP_SOURCES.get(dispatch.source_code)
+    if method is None or source is None or method.method not in SQL_AGGREGATES:
+        raise NeutralQueryError(
+            f"{metric_code} has no window: a value spanning several of its "
+            "periods needs a reviewed, approved time-aggregation method, which "
+            "this metric does not have (ADR-0007)"
+        )
+    unsupported = sorted(
+        name
+        for name, value in filters.items()
+        if value is not None and name not in WINDOW_FILTERS
+    )
+    if unsupported:
+        raise NeutralQueryError(
+            f"window={window} filters by geography only; "
+            f"{', '.join(unsupported)} applies to the source's native periods"
+        )
+    if period_start is not None and not period_start.endswith("-01"):
+        raise NeutralQueryError(
+            "a window is anchored at a month: period_start must be its first day"
+        )
+
+    conditions = []
+    params: dict[str, Any] = {
+        "metric_codes": [metric_code],
+        "anchor": period_start,
+        "span": SERVING_WINDOWS[window],
+    }
+    for name, condition in (
+        ("geo_id", "AND geo_id = %(geo_id)s"),
+        ("geo_level", "AND UPPER(geo_level) = UPPER(%(geo_level)s)"),
+        ("subject_code", "AND subject_code = %(subject_code)s"),
+    ):
+        if filters.get(name) is not None:
+            conditions.append(condition)
+            params[name] = filters[name]
+    # The builder speaks the driver's `%(name)s`; the session's `text()` binds
+    # `:name`. The statement composes no value, only these placeholders.
+    statement = re.sub(
+        r"%\((\w+)\)s",
+        r":\1",
+        window_sql(source, method, filters_sql=" ".join(conditions)),
+    )
+    rows = [
+        row
+        for row in db.execute(text(statement), params).mappings().all()
+        if row.get("period_start") is not None
+    ]
+    rows.sort(key=lambda row: (str(row.get("geo_id")), str(row.get("subject_code"))))
+    page = rows[offset : offset + limit]
+    return NeutralObservationListResponse(
+        metric_code=metric_code,
+        source_code=dispatch.source_code,
+        scope=SCOPE_LATEST,
+        window=window,
+        total=len(rows),
+        limit=limit,
+        offset=offset,
+        items=[
+            NeutralObservation(
+                source_code=dispatch.source_code,
+                metric_code=metric_code,
+                metric_display_name=display_name,
+                geo_id=_text_or_none(row.get("geo_id")),
+                geo_level=_text_or_none(row.get("geo_level")),
+                period_start=_text_or_none(row.get("period_start")),
+                period_end=_text_or_none(row.get("period_end")),
+                value=_text_or_none(row.get("value")),
+                value_status=(
+                    "incomplete_window" if row.get("value") is None else "valid"
+                ),
+                unit=_text_or_none(row.get("unit")),
+                dimensions=(
+                    {"subject_code": row.get("subject_code")}
+                    if row.get("subject_code") is not None
+                    else {}
+                ),
+                derivation=ObservationDerivation(
+                    kind="derived",
+                    method=method.method,
+                    method_version=method.version,
+                    expected_periods=row.get("expected_periods"),
+                    present_periods=row.get("present_periods"),
+                    refusal_reason=_text_or_none(row.get("refusal_reason")),
+                    component_releases=sorted(row.get("component_releases") or []),
+                ),
+            )
+            for row in page
         ],
     )
 

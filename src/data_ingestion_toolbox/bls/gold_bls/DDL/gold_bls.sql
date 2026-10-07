@@ -157,7 +157,8 @@ SELECT s.series_id,
        s.source_value,
        s.seasonal_adjustment AS seasonal_adjustment_status,
        s.capture_id,
-       s.ingested_at
+       s.ingested_at,
+       s.time_sk
 FROM silver_bls.fact_labor_statistics AS s
 WHERE s.period = 'M13'
   AND s.series_id IS NOT NULL
@@ -604,3 +605,123 @@ BEGIN
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
+
+
+
+
+-- Derived calendar rollups (ADR-0007, RU-4): quarters and calendar years of
+-- the BLS metrics whose time-aggregation method is approved in
+-- `docs/semantics/time_aggregation_methods.json`. Built by
+-- `data_ingestion_toolbox.semantics.rollups` from the served monthly rows,
+-- replaced whole on each refresh. A window missing a month, or holding a
+-- month without a provider value, keeps its row with no value and the
+-- reason; it is never zero. Every row is derived, never a provider fact.
+CREATE TABLE IF NOT EXISTS gold_bls.derived_calendar_rollup (
+    metric_code         TEXT NOT NULL,
+    geo_id              TEXT,
+    geo_level           TEXT,
+    subject_code        TEXT,
+    unit                TEXT,
+    grain               TEXT NOT NULL CHECK (grain IN ('quarter', 'year')),
+    window_start        DATE NOT NULL,
+    window_end          DATE NOT NULL CHECK (window_end > window_start),
+    method              TEXT NOT NULL CHECK (method IN ('sum', 'mean')),
+    method_version      INTEGER NOT NULL CHECK (method_version >= 1),
+    expected_periods    INTEGER NOT NULL CHECK (expected_periods IN (3, 12)),
+    present_periods     INTEGER NOT NULL
+        CHECK (present_periods BETWEEN 0 AND expected_periods),
+    value               NUMERIC,
+    refusal_reason      TEXT,
+    component_releases  TEXT[] NOT NULL,
+    derived             BOOLEAN NOT NULL DEFAULT TRUE CHECK (derived),
+    refreshed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- A complete window has a value and no reason; any other has a reason
+    -- and no value.
+    CONSTRAINT bls_rollup_value_or_reason CHECK (
+        (present_periods = expected_periods AND value IS NOT NULL
+             AND refusal_reason IS NULL)
+        OR (present_periods < expected_periods AND value IS NULL
+             AND refusal_reason IS NOT NULL)
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bls_derived_calendar_rollup
+    ON gold_bls.derived_calendar_rollup (
+        metric_code, COALESCE(geo_id, ''), COALESCE(subject_code, ''),
+        grain, window_start
+    );
+
+-- Every BLS figure for a calendar window, for `/observations` with
+-- `time_grain=quarterly|annual` (ADR-0007, RU-6): BLS's own annual averages
+-- (`provider_published`) and the derived calendar rollups (`derived`). A
+-- derived year is served only where BLS published no annual average for that
+-- series, geography and year: the provider's figure takes precedence, and
+-- DQ-BLS-008 compares the two wherever both exist. Each provider row borrows
+-- its series' published identity (metric code, units, geography level) from
+-- the latest projection, so a series the warehouse does not serve has no row.
+-- A derived window missing a month is served with no value and its reason.
+CREATE OR REPLACE VIEW gold_bls.calendar_window_observation AS
+WITH served AS (
+    SELECT DISTINCT ON (series_id, geo_id)
+           series_id, geo_id, geo_level, units, metric_code
+    FROM gold_bls.mv_bls_latest
+    ORDER BY series_id, geo_id, observation_date DESC
+),
+provider AS (
+    SELECT served.metric_code, served.geo_id, served.geo_level, served.units,
+           annual.period_start, annual.period_end, annual.value,
+           annual.value_status, annual.ingested_at
+    FROM gold_bls.provider_annual_average AS annual
+    JOIN served
+      ON served.series_id = annual.series_id
+     AND served.geo_id = annual.geo_id
+)
+SELECT provider.metric_code,
+       provider.geo_id,
+       provider.geo_level,
+       NULL::TEXT AS subject_code,
+       provider.units AS unit,
+       'year'::TEXT AS grain,
+       provider.period_start,
+       provider.period_end,
+       provider.value,
+       provider.value_status,
+       'provider_published'::TEXT AS derivation_kind,
+       NULL::TEXT AS method,
+       NULL::INTEGER AS method_version,
+       NULL::INTEGER AS expected_periods,
+       NULL::INTEGER AS present_periods,
+       NULL::TEXT AS refusal_reason,
+       NULL::TEXT[] AS component_releases,
+       provider.ingested_at::DATE AS as_of_date
+FROM provider
+UNION ALL
+SELECT derived.metric_code,
+       derived.geo_id,
+       derived.geo_level,
+       derived.subject_code,
+       derived.unit,
+       derived.grain,
+       derived.window_start,
+       derived.window_end,
+       derived.value,
+       CASE WHEN derived.value IS NULL THEN 'incomplete_window' ELSE 'valid' END,
+       'derived'::TEXT,
+       derived.method,
+       derived.method_version,
+       derived.expected_periods,
+       derived.present_periods,
+       derived.refusal_reason,
+       derived.component_releases,
+       derived.refreshed_at::DATE
+FROM gold_bls.derived_calendar_rollup AS derived
+WHERE NOT (
+    derived.grain = 'year'
+    AND EXISTS (
+        SELECT 1
+        FROM provider
+        WHERE provider.metric_code = derived.metric_code
+          AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
+          AND provider.period_start = derived.window_start
+    )
+);

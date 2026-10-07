@@ -149,6 +149,75 @@ JOIN LATERAL (
     LIMIT 1
 ) AS release ON TRUE;
 
+
+-- Derived calendar rollups (ADR-0007, RU-4): quarters and calendar years of
+-- the FBI UCR metrics whose time-aggregation method is approved in
+-- `docs/semantics/time_aggregation_methods.json`. Built by
+-- `data_ingestion_toolbox.semantics.rollups` from the served monthly rows,
+-- replaced whole on each refresh. A window missing a month, or holding a
+-- month without a provider value, keeps its row with no value and the
+-- reason; it is never zero. Every row is derived, never a provider fact.
+CREATE TABLE IF NOT EXISTS gold_fbi.derived_calendar_rollup (
+    metric_code         TEXT NOT NULL,
+    geo_id              TEXT,
+    geo_level           TEXT,
+    subject_code        TEXT,
+    unit                TEXT,
+    grain               TEXT NOT NULL CHECK (grain IN ('quarter', 'year')),
+    window_start        DATE NOT NULL,
+    window_end          DATE NOT NULL CHECK (window_end > window_start),
+    method              TEXT NOT NULL CHECK (method IN ('sum', 'mean')),
+    method_version      INTEGER NOT NULL CHECK (method_version >= 1),
+    expected_periods    INTEGER NOT NULL CHECK (expected_periods IN (3, 12)),
+    present_periods     INTEGER NOT NULL
+        CHECK (present_periods BETWEEN 0 AND expected_periods),
+    value               NUMERIC,
+    refusal_reason      TEXT,
+    component_releases  TEXT[] NOT NULL,
+    derived             BOOLEAN NOT NULL DEFAULT TRUE CHECK (derived),
+    refreshed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- A complete window has a value and no reason; any other has a reason
+    -- and no value.
+    CONSTRAINT fbi_rollup_value_or_reason CHECK (
+        (present_periods = expected_periods AND value IS NOT NULL
+             AND refusal_reason IS NULL)
+        OR (present_periods < expected_periods AND value IS NULL
+             AND refusal_reason IS NOT NULL)
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fbi_derived_calendar_rollup
+    ON gold_fbi.derived_calendar_rollup (
+        metric_code, COALESCE(geo_id, ''), COALESCE(subject_code, ''),
+        grain, window_start
+    );
+
+-- Every FBI UCR figure for a calendar window, for `/observations` with
+-- `time_grain=quarterly|annual` (ADR-0007, RU-6). FBI publishes no calendar
+-- totals of its own here, so every row is derived; a window missing a month
+-- is served with no value and its reason.
+CREATE OR REPLACE VIEW gold_fbi.calendar_window_observation AS
+SELECT derived.metric_code,
+       derived.geo_id,
+       derived.geo_level,
+       derived.subject_code,
+       derived.unit,
+       derived.grain,
+       derived.window_start AS period_start,
+       derived.window_end AS period_end,
+       derived.value,
+       CASE WHEN derived.value IS NULL THEN 'incomplete_window' ELSE 'reported' END
+           AS value_status,
+       'derived'::TEXT AS derivation_kind,
+       derived.method,
+       derived.method_version,
+       derived.expected_periods,
+       derived.present_periods,
+       derived.refusal_reason,
+       derived.component_releases,
+       derived.refreshed_at::DATE AS as_of_date
+FROM gold_fbi.derived_calendar_rollup AS derived;
+
 COMMENT ON SCHEMA gold_fbi IS
     'Policy-free publication views for validated FBI UCR observations and coverage.';
 

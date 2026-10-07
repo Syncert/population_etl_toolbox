@@ -45,6 +45,8 @@ REQUIRED_RELATIONS = (
     "gold_fbi.agency_observation_area_filter",
     "gold_fbi.measure_export",
     "gold_fbi.metric_publisher",
+    "gold_fbi.derived_calendar_rollup",
+    "gold_fbi.calendar_window_observation",
 )
 
 

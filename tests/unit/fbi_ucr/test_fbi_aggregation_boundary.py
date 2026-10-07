@@ -51,6 +51,9 @@ def test_the_expected_gold_products_exist() -> None:
         "latest_release_observation",
         "measure_export",
         "metric_publisher",
+        # Calendar windows of one subject's own months (ADR-0007): a time
+        # rollup within a subject, never a sum across subjects.
+        "calendar_window_observation",
     }
 
 

@@ -365,6 +365,15 @@ filling this table.
 Do not manually insert guessed geography rows. Correct an exact-code contract or
 add an evidence-backed crosswalk, then replay the affected captured observations.
 
+Derived calendar rollups (ADR-0007) need no separate step. `bls_ingest` and
+`fbi_ucr_ingest` each end by replacing their source's
+`derived_calendar_rollup` rows from the rows they just served, using only the
+methods approved in `docs/semantics/time_aggregation_methods.json`, so a
+re-ingested warehouse re-derives them, and a replay over the same served rows
+writes the same rows. After changing an approval, re-run either DAG (or call
+`data_ingestion_toolbox.semantics.rollups.refresh_calendar_rollups`) to apply
+it; a withdrawn approval leaves no derived value behind.
+
 ## 6. Completion checks
 
 - All ingestion and reference DAGs, including `cdc_ingest` and

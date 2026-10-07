@@ -347,6 +347,66 @@ That geography's history is every release that published it, which is what
 `scope=as_released&newest_release_per_period=true` answers: each period as
 its newest release left it.
 
+### Quarters and years
+
+`time_grain=quarterly` and `time_grain=annual` on `/observations` answer a
+metric's calendar windows instead of its native periods: one row per
+geography and calendar quarter or year, `period_start` the window's first
+day and `period_end` its last. Each row says where its figure came from in
+`derivation`:
+
+- `derivation.kind` is `provider_published` when the provider published the
+  window's figure itself. BLS annual averages are served this way: the
+  figure BLS published, not a mean of the months the warehouse holds, and
+  never the December value.
+- `derivation.kind` is `derived` when the warehouse computed the figure from
+  the provider's monthly figures, with the reviewed method named in
+  `derivation.method` (`mean` or `sum`) at `derivation.method_version`.
+  Only a method approved in the semantic registry (ADR-0007) derives
+  anything: today the CPI indexes and the CES employment levels (mean) and
+  the FBI UCR offense and clearance counts (sum).
+
+A derived window is computed only when every month in it is reported.
+`derivation.expected_periods` is the number of months the calendar says the
+window holds and `derivation.present_periods` the number reported with a
+value. A window missing one has `value: null`, `value_status:
+incomplete_window`, and the reason in `derivation.refusal_reason`, for
+example `incomplete_window: 11 of 12 periods reported`. It is never zero,
+and it is not left out, so a gap reads as a gap. `derivation.component_releases`
+lists the releases the window's months came from.
+
+Where a provider publishes a year and the warehouse could also derive one,
+the provider's figure is served and the derived one is not; a quality rule
+compares the two. A geography is never summed into a larger one.
+
+`time_grain=native` is the default and answers exactly what it always has;
+the response echoes the grain it answered in `time_grain`. A calendar grain
+combines only with `scope=latest`, without a release pin or a reduction,
+and filters by `geo_id`, `geo_level`, `subject_code`, `year_from`,
+`year_to` and an exact window `period_start`. A metric with no figure at the
+grain (no provider window and no approved method) answers 422 naming
+ADR-0007 rather than an empty page. `/catalog/capabilities` lists the grains
+each source can answer in `time_grains`, and `/catalog/metrics/{code}` lists
+the grains that metric has figures at, read from the same relation the route
+serves.
+
+### The last three months, the last twelve, the year to date
+
+`window=trailing_3`, `window=trailing_12` and `window=ytd` on `/observations`
+answer one value per geography over its months: the three or twelve months
+ending at the anchor, or January through the anchor. The anchor is
+`period_start`, which must be a month's first day, or, without it, each
+geography's newest served month. The value is computed when you ask, with the
+metric's approved method, by the same rule as a calendar window: every month
+in the window reported, or `value: null` with the reason in
+`derivation.refusal_reason`. Every row is `derivation.kind: derived`, and the
+response echoes the `window` it answered.
+
+A window combines only with `time_grain=native` and `scope=latest`, without
+a release pin or a reduction, and filters by `geo_id`, `geo_level` and
+`subject_code`. A metric without an approved method answers 422 naming
+ADR-0007.
+
 ### Census PEP spans six decades, and its measures do not
 
 Census PEP publishes one series per decade, each its own product with its
