@@ -60,6 +60,7 @@ from data_ingestion_toolbox.census_acs.config import (
     ACS_COUNTY_PARENT_FIPS,
     CONFIG,
     place_parent_fips,
+    tract_parent_fips,
 )
 from data_ingestion_toolbox.census_acs.metadata import (
     sync_acs_dataset_table,
@@ -445,6 +446,14 @@ def acs_ingest():
             )
             for dataset in {ds for ds, _ in varset_meta}
         }
+        # Tract slices (sub-county-geography): the 5-year estimates' newest
+        # years only (`AcsConfig.tract_recent_years`), for `tract_tables`.
+        tract_years_by_dataset = {
+            dataset: CONFIG.tract_years(
+                dataset, [year for ds, year in varset_meta if ds == dataset]
+            )
+            for dataset in {ds for ds, _ in varset_meta}
+        }
 
         # Build the plan. Include anything not done for current hash.
         plan: list[dict] = []
@@ -502,6 +511,23 @@ def acs_ingest():
                             "dataset": dataset,
                             "year": year,
                             "geo_level": "place",
+                            "state_fips": sf,
+                            "variables_hash": meta["variables_hash"],
+                            "variables_count": meta["variables_count"],
+                        }
+                    )
+
+            # TRACT slices (by state, every county at once), for the datasets
+            # that publish tracts: the 5-year estimates only.
+            if year in tract_years_by_dataset.get(dataset, set()):
+                for sf in tract_parent_fips(dataset):
+                    if is_done_for_current_varset(dataset, year, "tract", sf):
+                        continue
+                    plan.append(
+                        {
+                            "dataset": dataset,
+                            "year": year,
+                            "geo_level": "tract",
                             "state_fips": sf,
                             "variables_hash": meta["variables_hash"],
                             "variables_count": meta["variables_count"],

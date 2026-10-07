@@ -33,7 +33,7 @@ from data_ingestion_toolbox.capture import (
 from data_ingestion_toolbox.census_acs.silver_census.replay import (
     replay_census_capture,
 )
-from .config import CONFIG, place_parent_fips
+from .config import CONFIG, place_parent_fips, tract_parent_fips
 
 CENSUS_NULL_SENTINELS = {
     "-222222222",
@@ -102,10 +102,13 @@ def _get_pg_connection():
     return psycopg2.connect(**details.psycopg_kwargs())
 
 
-def get_curated_variables(year: int, dataset: str) -> List[str]:
+def get_curated_variables(
+    year: int, dataset: str, tables: Optional[List[str]] = None
+) -> List[str]:
     """
     Return the list of variable names (including E/M suffixes) for the given
-    year+dataset, restricted to curated tables.
+    year+dataset, restricted to curated tables -- or to ``tables`` when given,
+    which is how a tract slice asks for its smaller set.
     """
 
     sql = """
@@ -119,7 +122,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
 
     with _get_pg_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (dataset, year, CONFIG.curated_tables))
+            cur.execute(sql, (dataset, year, list(tables or CONFIG.curated_tables)))
             rows = cur.fetchall()
     return [r[0] for r in rows]
 
@@ -157,6 +160,16 @@ def build_geo_params(
                 f"{dataset or 'unknown dataset'} publishes no places for state {state_fips}"
             )
         return {"for": "place:*", "in": f"state:{state_fips}"}
+    elif geo_level == "tract":
+        # Every tract in every county of one state: the API takes the county
+        # wildcard inside `in` (sub-county-geography).
+        if not state_fips:
+            raise ValueError("state_fips required for tract-level requests")
+        if dataset is None or state_fips not in tract_parent_fips(dataset):
+            raise ValueError(
+                f"{dataset or 'unknown dataset'} publishes no tracts for state {state_fips}"
+            )
+        return {"for": "tract:*", "in": f"state:{state_fips} county:*"}
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
 
@@ -274,6 +287,7 @@ def rows_to_polars(
         "state": {"state"},
         "county": {"state", "county"},
         "place": {"state", "place"},
+        "tract": {"state", "county", "tract"},
     }
     if geo_level not in expected_geo_columns:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -286,7 +300,9 @@ def rows_to_polars(
     df = pl.DataFrame(records, schema=[str(h) for h in header], orient="row")
 
     # Determine which columns are variables and which are geos
-    geo_cols = [c for c in df.columns if c in ("us", "state", "county", "place")]
+    geo_cols = [
+        c for c in df.columns if c in ("us", "state", "county", "place", "tract")
+    ]
     var_cols = [c for c in df.columns if c not in geo_cols]
 
     # For US-level, there will be 'us' as the geo; for state/county, there will be 'state', 'county'
@@ -322,6 +338,21 @@ def rows_to_polars(
             ),
             state_fips=pl.col("state"),
             county_fips=pl.lit(None, dtype=pl.Utf8),
+        )
+    elif geo_level == "tract":
+        df = df.with_columns(
+            geo_id=pl.concat_str(
+                [
+                    pl.lit("state:"),
+                    pl.col("state"),
+                    pl.lit("|county:"),
+                    pl.col("county"),
+                    pl.lit("|tract:"),
+                    pl.col("tract"),
+                ]
+            ),
+            state_fips=pl.col("state"),
+            county_fips=pl.col("county"),
         )
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -405,7 +436,9 @@ def ingest_slice(
         (2022, 'acs5', 'state')
         (2022, 'acs5', 'county', '55')  # WI counties
     """
-    variables = get_curated_variables(year, dataset)
+    variables = get_curated_variables(
+        year, dataset, CONFIG.tract_tables if geo_level == "tract" else None
+    )
     if not variables:
         # nothing to ingest for this year+dataset
         return 0

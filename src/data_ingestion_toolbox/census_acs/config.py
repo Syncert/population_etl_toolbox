@@ -86,6 +86,16 @@ def place_parent_fips(dataset: str) -> tuple[str, ...]:
     return ACS_PLACE_PARENT_FIPS.get(dataset, ())
 
 
+#: States whose tracts each dataset publishes (sub-county-geography). Only the
+#: 5-year estimates publish tracts; the 1-year estimates publish none.
+ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {"acs5": ACS_COUNTY_PARENT_FIPS}
+
+
+def tract_parent_fips(dataset: str) -> tuple[str, ...]:
+    """The states whose tracts ``dataset`` publishes; empty for any other dataset."""
+    return ACS_TRACT_PARENT_FIPS.get(dataset, ())
+
+
 class AcsConfig(BaseModel):
     census_api_key: str = Field(
         default_factory=lambda: os.environ.get("CENSUS_API_KEY", "")
@@ -156,13 +166,22 @@ class AcsConfig(BaseModel):
         "C24050",  # Industry by occupation for the civilian employed population age 16+
     ]
     # geo levels we ingest
-    geo_levels: List[str] = ["us", "state", "county", "place"]
+    geo_levels: List[str] = ["us", "state", "county", "place", "tract"]
     # How many of each dataset's newest available years are requested at
     # place grain. Places are ten times the counties' volume -- about 62
     # million 5-year facts for one year against the counties' 6.2 million --
     # so the default is the newest year, which is what a place page reads;
     # raise it to backfill place history.
     place_recent_years: int = 1
+    # The tables requested at tract grain (sub-county-geography): the few a
+    # "within this county" map shows. Tracts are about 85,000 against the
+    # counties' 3,200, so the whole curated list at tract grain would be some
+    # 25 times the county volume per year; these five tables are about 700
+    # variables. Each must also be in `curated_tables`.
+    tract_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
+    # How many of the 5-year dataset's newest years are requested at tract
+    # grain; the default is the newest, which is what a county page reads.
+    tract_recent_years: int = 1
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
@@ -207,6 +226,20 @@ class AcsConfig(BaseModel):
         if value < 0:
             raise ValueError("place_recent_years must not be negative")
         return value
+
+    @field_validator("tract_recent_years")
+    @classmethod
+    def validate_tract_recent_years(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("tract_recent_years must not be negative")
+        return value
+
+    def tract_years(self, dataset: str, years: List[int]) -> set[int]:
+        """The years of ``dataset`` requested at tract grain: the newest ones."""
+        if "tract" not in self.geo_levels or not tract_parent_fips(dataset):
+            return set()
+        newest = sorted(set(years), reverse=True)
+        return set(newest[: self.tract_recent_years])
 
     def place_years(self, dataset: str, years: List[int]) -> set[int]:
         """The years of ``dataset`` requested at place grain: the newest ones."""
