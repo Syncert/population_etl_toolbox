@@ -171,6 +171,25 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-136 — census-building-permits: homes authorized sit beside the
+// housing stock, labelled as authorizations, with what was reported directly
+// and a monthly trend.
+test("homes authorized are labelled as authorizations, with what was reported and a monthly trend", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const card = page.getByTestId("card-bps-single-family-year");
+  await expect(card).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-bps-single-family-year-basis")).toHaveText("Authorized by building permits, not started or completed");
+  await expect(page.getByTestId("card-bps-single-family-year-reported")).toContainText("Reported directly by permit offices");
+  await expect(page.getByTestId("card-bps-single-family-year-reported")).toContainText("the Bureau estimates the rest");
+  await expect(page.getByTestId("card-median-gross-rent")).not.toContainText("Authorized");
+  await expect(page.getByTestId("chapter-housing-trend")).toBeVisible();
+  await expect(page.getByTestId("chapter-housing-trend-bps-single-family-month")).toBeVisible();
+  await expect(page.getByTestId("chapter-housing-footer")).toContainText("not started or completed");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);

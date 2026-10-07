@@ -15,11 +15,12 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
 Deliverables 1 to 5 are on branch `feat/census-building-permits`, cut from
-`main`. Deliverable 6, the Housing chapter card and trend, needs the place
-pages from `feat/place-pages` (WEB-125).
+`main`. Deliverable 6, the Housing chapter cards and trend, is on
+`feat/census-building-permits-cards`, which is built on `feat/place-pages`
+(WEB-125) with `feat/census-building-permits` merged. Merge those first.
 
 ## Why
 
@@ -140,14 +141,22 @@ rather than completions.
 - `ruff check .` and `ruff format --check .` clean; schema snapshot
   regenerated; OpenAPI snapshot unchanged (no new route).
 
-## Remaining
+### Housing chapter cards (WEB-136, `feat/census-building-permits-cards`)
 
-- Deliverable 6: the Housing chapter's "Authorized this year" card and
-  monthly trend, with the reported share stated, beside the ACS stock cards.
-  Builds on `feat/place-pages`.
+- The Housing chapter gains three cards beside the ACS rent and value
+  cards: single-family homes authorized in the newest year, homes in
+  buildings of 5 or more units authorized in the newest year, and
+  single-family homes authorized by month. Each reads "Authorized by
+  building permits, not started or completed". Each also states "Reported
+  directly by permit offices: N of M", taken from the row's
+  `reported_value`. The imputed part is described in words, not computed.
+- The monthly figure is drawn as a second trend (`moreTrends`) after the
+  rent trend, so the place-pages trend decision stands.
+- Evidence: `npm --prefix apps/web run test:unit` -- 739 passed; `lint`
+  clean; `test:browser` -- 208 passed, including the new places scenario;
+  `check:bundle` keeps every route within its budget.
 
 ## Checkpoint
 
-Next pickup: branch from `feat/place-pages`, merge
-`feat/census-building-permits`, and add the permits slots to the Housing
-chapter.
+Implementation complete; awaiting human review of
+`feat/census-building-permits`, then `feat/census-building-permits-cards`.
