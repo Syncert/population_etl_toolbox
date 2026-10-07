@@ -62,7 +62,7 @@ describe("the chapter contract", () => {
         trend: { measureId: "unemployment-rate", scale: "level" },
       },
       housing: {
-        headline: ["CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B25077_001"],
+        headline: ["CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B25077_001", "CENSUS_BPS:units:1_unit:annual", "CENSUS_BPS:units:5_plus_units:annual", "CENSUS_BPS:units:1_unit:monthly"],
         depth: ["B25001_001", "B25003_002", "B25003_003", "B25002_003", "B25024_002", "B25034_002", "B08201_002", "B28002_004", "B28002_013"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
         trend: { measureId: "median-gross-rent", scale: "level" },
       },
@@ -245,5 +245,24 @@ describe("place titles", () => {
     expect(placeRouteTitle("wisconsin", "dane-county")).toBe("Dane County, Wisconsin");
     expect(placeRouteTitle("55", "025")).toBe("025, 55");
     expect(placeRouteTitle("<script>")).toBe("United States");
+  });
+});
+
+// Covers: WEB-136 — census-building-permits: the Housing chapter shows homes
+// authorized beside the stock, labelled as authorizations, with a monthly trend.
+describe("homes authorized", () => {
+  const housing = PLACE_CHAPTERS.find((chapter) => chapter.id === "housing");
+
+  it("labels every permits slot as an authorization and states what was reported", () => {
+    const permits = housing.headline.filter((measure) => measure.candidates[0].startsWith("CENSUS_BPS:"));
+    expect(permits.map((measure) => measure.id)).toEqual(["bps-single-family-year", "bps-multifamily-year", "bps-single-family-month"]);
+    expect(permits.every((measure) => measure.basis === "Authorized by building permits, not started or completed")).toBe(true);
+    expect(permits.every((measure) => measure.showReported)).toBe(true);
+  });
+
+  it("draws the monthly permits as a second trend after the rent trend", () => {
+    expect(housing.trend).toEqual({ measureId: "median-gross-rent", scale: "level" });
+    expect(housing.moreTrends).toEqual([{ measureId: "bps-single-family-month", scale: "level" }]);
+    expect(housing.headline.some((measure) => measure.id === housing.moreTrends[0].measureId)).toBe(true);
   });
 });

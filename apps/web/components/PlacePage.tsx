@@ -336,7 +336,8 @@ export default function PlacePage({
         for (const entry of chain) {
           if (publishesAt(measure, entry.level)) tasks.push(askNewest(measure, entry.geoId));
         }
-        if (measure.measure.id === resolved.chapter.trend.measureId) {
+        const trended = [resolved.chapter.trend, ...(resolved.chapter.moreTrends || [])].map((item) => item.measureId);
+        if (trended.includes(measure.measure.id)) {
           for (const entry of chain) {
             if (publishesAt(measure, entry.level)) tasks.push(askHistory(measure, entry));
           }
@@ -534,6 +535,16 @@ function Chapter({
         chapter.trend.scale,
       )
     : null;
+  const moreTrends = (chapter.moreTrends || []).flatMap((spec) => {
+    const measure = resolved.headline.find((entry) => entry.measure.id === spec.measureId);
+    if (!measure?.metric) return [];
+    const model = buildTrend(
+      levels.filter((entry) => publishesAt(measure, entry.level)),
+      new Map(levels.map((entry) => [entry.geoId, histories.get(answerKey(measure.metricCode, entry.geoId)) || []])),
+      spec.scale,
+    );
+    return model ? [{ measure, model }] : [];
+  });
   const sourcesShown = [...new Set([...resolved.headline, ...resolved.depth].map((measure) => measure.metric?.source_code).filter(Boolean))];
   const periods = [...new Set(
     [...resolved.headline, ...resolved.depth]
@@ -578,6 +589,15 @@ function Chapter({
           testId={`chapter-${chapter.id}-trend`}
         />
       ) : null}
+      {moreTrends.map(({ measure, model }) => (
+        <PlaceTrend
+          key={measure.measure.id}
+          model={model}
+          label={`${measure.measure.label} trend`}
+          unit={String(measure.metric?.units || "")}
+          testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
+        />
+      ))}
       {resolved.depth.length && own ? (
         <dl className="place-depth" data-testid={`chapter-${chapter.id}-depth`}>
           {resolved.depth.map((measure) => (
@@ -662,8 +682,30 @@ function HeadlineCard({
           ))}
         </tbody>
       </table>
+      {measure.measure.basis ? (
+        <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measure.measure.basis}</p>
+      ) : null}
+      {measure.measure.showReported ? <ReportedLine measure={measure} row={card.rows[0]?.row ?? null} /> : null}
       {measure.measure.note ? <p className="subtle">{measure.measure.note}</p> : null}
     </div>
+  );
+}
+
+/**
+ * What jurisdictions reported directly, beside the Bureau's estimate
+ * (census-building-permits). Read from the row as published; nothing is
+ * subtracted, so the imputed part is stated rather than computed.
+ */
+function ReportedLine({ measure, row }: { measure: ResolvedPlaceMeasure; row: ObservationRow | null }) {
+  const dimensions = (row?.dimensions || {}) as Record<string, unknown>;
+  const reported = dimensions["reported_value"];
+  if (!row || row.value === null || row.value === undefined || reported === null || reported === undefined || reported === "") {
+    return null;
+  }
+  return (
+    <p className="subtle" data-testid={`card-${measure.measure.id}-reported`}>
+      Reported directly by permit offices: {formatObservationValue(reported as string)} of {formatObservationValue(row.value)}; the Bureau estimates the rest for offices that did not report.
+    </p>
   );
 }
 
@@ -689,6 +731,7 @@ function DepthRow({
       <dt>
         {measure.measure.label}
         {measure.measure.universe ? <span className="place-universe"> · Universe: {measure.measure.universe}</span> : null}
+        {measure.measure.basis ? <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measure.measure.basis}</span> : null}
       </dt>
       <dd>
         {!measure.metric

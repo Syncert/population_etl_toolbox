@@ -4,7 +4,7 @@
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
 import { servedParameters } from "./servedContract.js";
 
-const sources = ["CENSUS_ACS", "CENSUS_PEP", "BLS", "CDC", "FBI_UCR", "USDA_NASS"];
+const sources = ["CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "BLS", "CDC", "FBI_UCR", "USDA_NASS"];
 
 export const NATION = { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "us:1" };
 export const STATES = [
@@ -27,6 +27,7 @@ function grainsFor(code) {
 function unitFor(code) {
   if (code.startsWith("CENSUS_PEP:R")) return "per_1000_population";
   if (code.startsWith("CENSUS_PEP:")) return "persons";
+  if (code.startsWith("CENSUS_BPS:")) return "housing units";
   if (code.startsWith("BLS:")) return "Percent";
   if (code.startsWith("CDC:")) return "%";
   if (code.startsWith("FBI_UCR:")) return "per_100000_population";
@@ -81,10 +82,14 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       const lastYear = nationLagsMedianAge && geo === "us:1" && code.endsWith("B01002_001") ? 2023 : 2024;
       let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
         const year = lastYear - 5 + index;
+        const monthly = code.endsWith(":monthly");
         const base = rates.test(code) ? 40 + (scale[geo] || 1) : 1000 * (scale[geo] || 1);
         return { metric_code: code, source_code: metric.source_code, geo_id: geo, geo_level: place.geo_level, geo_name: place.geo_name,
           value: String(Math.round(base * (1 + index * 0.02) * 100) / 100), value_status: "valid", unit: metric.units,
-          period_start: `${year}-01-01`, period_end: `${year}-12-31`, release: "fixture-release-2025", as_of: "2025-09-01", dimensions: {},
+          period_start: monthly ? `2024-${String(index + 1).padStart(2, "0")}-01` : `${year}-01-01`,
+          period_end: monthly ? `2024-${String(index + 1).padStart(2, "0")}-28` : `${year}-12-31`,
+          release: "fixture-release-2025", as_of: "2025-09-01",
+          dimensions: code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
           uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" } : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" } : null,
           coverage: null };
       });

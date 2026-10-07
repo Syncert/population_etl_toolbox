@@ -45,6 +45,19 @@ export interface PlaceMeasure {
    */
   universe?: string;
   note?: string;
+  /**
+   * How the figure was counted, when two measures of one subject are counted
+   * differently -- jobs located here (QCEW, establishments) against
+   * residents who work (LAUS, households). Shown on the card so neither is
+   * read as the other (bls-qcew-county-wages).
+   */
+  basis?: string;
+  /**
+   * The card also states what was reported directly, read from the row's
+   * `reported_value` dimension, beside an estimate that imputes for
+   * non-reporters (census-building-permits).
+   */
+  showReported?: boolean;
 }
 
 export interface PlaceChapter {
@@ -57,6 +70,8 @@ export interface PlaceChapter {
   depth: PlaceMeasure[];
   /** The headline measure the chapter's trend draws. */
   trend: { measureId: string; scale: TrendScale };
+  /** Further headline measures drawn as their own trend, after the first. */
+  moreTrends?: { measureId: string; scale: TrendScale }[];
   /** The caveat every footer repeats, in the source's own terms. */
   caveat: string;
   /**
@@ -65,6 +80,13 @@ export interface PlaceChapter {
    */
   stateContextAtCounty?: boolean;
 }
+
+/** Building Permits Survey: one measure, structure type and frequency. */
+const bps = (measure: string, structure: string, frequency: string): string[] => [
+  `CENSUS_BPS:${measure}:${structure}:${frequency}`,
+];
+
+const AUTHORIZED_BASIS = "Authorized by building permits, not started or completed";
 
 const acs = (variable: string): string[] => [
   `CENSUS_ACS:acs5:${variable}`,
@@ -164,6 +186,27 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: acs("B25077_001"),
         note: "The owner's own estimate, which is what the ACS asks.",
       },
+      {
+        id: "bps-single-family-year",
+        label: "Single-family homes authorized, newest year",
+        candidates: bps("units", "1_unit", "annual"),
+        basis: AUTHORIZED_BASIS,
+        showReported: true,
+      },
+      {
+        id: "bps-multifamily-year",
+        label: "Homes in buildings of 5 or more units authorized, newest year",
+        candidates: bps("units", "5_plus_units", "annual"),
+        basis: AUTHORIZED_BASIS,
+        showReported: true,
+      },
+      {
+        id: "bps-single-family-month",
+        label: "Single-family homes authorized, by month",
+        candidates: bps("units", "1_unit", "monthly"),
+        basis: AUTHORIZED_BASIS,
+        showReported: true,
+      },
     ],
     depth: [
       { id: "housing-units", label: "Housing units", candidates: acs("B25001_001"), universe: "housing units" },
@@ -177,7 +220,8 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       { id: "no-internet", label: "Households with no internet access", candidates: acs("B28002_013"), universe: "households" },
     ],
     trend: { measureId: "median-gross-rent", scale: "level" },
-    caveat: ACS_CAVEAT,
+    moreTrends: [{ measureId: "bps-single-family-month", scale: "level" }],
+    caveat: `${ACS_CAVEAT} Permit figures count homes authorized, not started or completed; the Bureau's estimate imputes for jurisdictions that did not report, and what was reported directly is stated beside it.`,
   },
   {
     id: "health",

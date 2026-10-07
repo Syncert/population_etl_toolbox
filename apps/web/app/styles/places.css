@@ -53,6 +53,15 @@
   font-size: 1rem;
 }
 
+/* How a figure was counted, where two counts of one subject sit side by side. */
+.place-basis {
+  margin: 6px 0 0;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .place-card .subtle,
 .place-depth .subtle,
 .place-universe,
