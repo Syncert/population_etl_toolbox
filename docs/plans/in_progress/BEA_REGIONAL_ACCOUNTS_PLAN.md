@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
+In progress. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Deliverables 1 to 5 are on branch `feat/bea-regional-accounts`, cut from
+`main`. Deliverable 6, the Work and Money cards, needs the place pages from
+`feat/place-pages` (WEB-125).
 
 ## Why
 
@@ -90,8 +92,73 @@ economy doing" and the only county-grain GDP any public source publishes.
   model them as BEA's own geography, like NASS combined counties, never as
   a county.
 
+## Decisions
+
+- **Bulk files, not the API (deviation from deliverable 1).** BEA publishes
+  every regional table as one zip at
+  `https://apps.bea.gov/regional/zip/<TABLE>.zip` holding an every-area CSV
+  with all years and the release date in its footer. The files need no
+  credential, so there is no `BEA_API_KEY`: the key-hygiene criterion is
+  met by there being no key, and the unit test asserts the configuration
+  has no key or token field. The API's per-request limits and county
+  slicing (open item) do not arise: one request per table returns every
+  county. The external contract needs no scheduled credential.
+- **Tables and lines, verified 2026-10-06** against the files: `CAINC1`
+  lines 1 to 3; `CAINC4` lines 35 (earnings by place of work), 47 (personal
+  current transfer receipts) and 50 (wages and salaries); `CAINC5N` farm
+  earnings and the NAICS sector lines; `CAGDP1` line 1 (real GDP, chained
+  2017 dollars) and 3 (current dollars); `CAGDP2` all industries and the
+  NAICS sectors. Each line carries a `dollar_basis`, and a metric is
+  `BEA:<table>:<line>`, so real and current-dollar GDP are distinct
+  identities.
+- **Combined areas (open item).** The Virginia combined areas (`51901` to
+  `51958`) and Kalawao merged into Maui (`15901`), like BEA's regions, are
+  counted out of scope and never loaded as counties. They are BEA's own
+  geography; serving them would need a BEA geography in the shared
+  reference, which no consumer has asked for.
+- **Release identity.** The footer's "Last updated" date is the release.
+  `observation_latest` orders by it, then by retrieval, so a revised
+  release is served while the one it revised is kept.
+- **Provider codes.** `(D)`, `(NA)`, `(NM)` and `(L)` are `withheld`,
+  `not_available`, `not_meaningful` and `below_threshold`, with no value.
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2186 passed, including
+  `tests/unit/bea` (7).
+- Database: `tests/integration/database/test_bea_capture_replay.py` -- 4
+  passed: three tables to gold with their dollar bases and release, regions
+  and combined areas absent, withheld cells with no value; the publisher
+  and harvest; rerun and a revised release kept beside the old; a file
+  without a release quarantined, `DQ-BEA-002` passing and then failing on a
+  lost row, and the schema reapplied.
+- End to end: `tests/e2e/test_bea_pipeline.py` serves per capita income,
+  real GDP and withheld industry GDP for a county through
+  `/api/v1/observations`.
+- Live: `tests/external/test_bea_source_contracts.py` -- 9 passed against
+  apps.bea.gov.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 452 passed, 1 failed and 7 errors. The seven errors were
+  `caplog` missing because that run disabled the logging plugin; rerun with
+  it, those files pass (55 passed, and the FRED e2e node passes alone). The
+  failure is the PEP teardown node, which counts every `CENSUS_PEP` capture
+  and runs after `test_catalog_serving_agreement.py`, whose PEP fixture
+  leaves ten behind on `main`; the fix is on
+  `test/catalog-agreement-fixture-residue`.
+- DAG: `pytest -m dag tests/dags` in the scheduler container -- 155 passed;
+  `test_dag_pipeline_execution.py` on its own -- 4 passed, with
+  `bea_regional_ingest` in the orchestrated run.
+- `ruff check .` clean; schema snapshot regenerated; viz coverage
+  regenerated; OpenAPI snapshot unchanged (no new route).
+
+## Remaining
+
+- Deliverable 6: per capita personal income and county GDP cards and an
+  earnings-by-industry table in the Work and Money chapter, labeled with
+  BEA's basis beside the ACS income cards. Builds on `feat/place-pages`.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `bea/`, record the verified table and
-line codes in `config.py`, and write the failing key-hygiene and replay
-tests.
+Next pickup: branch from `feat/place-pages`, merge
+`feat/bea-regional-accounts`, and add the BEA slots to the Work and Money
+chapter.

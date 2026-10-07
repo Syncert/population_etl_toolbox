@@ -27,6 +27,8 @@ from __future__ import annotations
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
 #:   ``geo_levels = ["us", "state", "county"]``.
+#: * ``BEA`` -- ``bea/registry.py`` loads the nation, states and counties
+#:   and counts BEA's regions and combined areas out of scope.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
@@ -37,6 +39,7 @@ from __future__ import annotations
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
+    "BEA": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),

@@ -331,6 +331,36 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="bea.regional_income_and_gdp",
+        source="BEA",
+        publisher_schema="gold_bea",
+        datasets=("CAINC1", "CAGDP1", "CAGDP2"),
+        fixtures=(
+            "tests/fixtures/bea/CAINC1.zip",
+            "tests/fixtures/bea/CAGDP1.zip",
+            "tests/fixtures/bea/CAGDP2.zip",
+        ),
+        serving_relations=(
+            "gold_bea.observation_revision",
+            "gold_bea.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_bea_pipeline.py::"
+            "test_income_and_gdp_reach_the_neutral_api_with_their_dollar_basis"
+        ),
+        api_absence_reason=(
+            "BEA regional accounts publish no source-specific HTTP route: each "
+            "row is the neutral observation shape with its table, line, dollar "
+            "basis and provider cell code as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

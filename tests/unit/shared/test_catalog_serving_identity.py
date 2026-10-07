@@ -111,6 +111,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
     """Covers: ARC-005 — the rule reads real publisher declarations."""
     codes = _publisher_source_codes()
     assert codes == {
+        "gold_bea": "BEA",
         "gold_bls": "BLS",
         "gold_cdc": "CDC",
         "gold_census": "CENSUS_ACS",

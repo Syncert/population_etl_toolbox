@@ -322,6 +322,10 @@ FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
+Trigger `bea_regional_ingest` once: every run reads every year of every
+registered BEA table, five zips through the one-slot `bea_files` pool
+([operations](../user-guides/BEA_REGIONAL_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

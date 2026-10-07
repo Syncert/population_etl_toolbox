@@ -33,6 +33,30 @@ r control.acs_ingestion_slices
     index acs_ingestion_slices_uniq_nostate CREATE UNIQUE INDEX acs_ingestion_slices_uniq_nostate ON control.acs_ingestion_slices USING btree (dataset, year, geo_level) WHERE (state_fips IS NULL)
     index acs_ingestion_slices_uniq_state CREATE UNIQUE INDEX acs_ingestion_slices_uniq_state ON control.acs_ingestion_slices USING btree (dataset, year, geo_level, state_fips) WHERE (state_fips IS NOT NULL)
 
+r control.bea_table_capture
+    column run_id uuid NOT NULL
+    column table_code text NOT NULL
+    column capture_id uuid NOT NULL
+    column member_name text
+    column release_date date
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column in_scope_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint bea_capture_published_has_release CHECK (((status <> 'published'::text) OR ((published_at IS NOT NULL) AND (release_date IS NOT NULL))))
+    constraint bea_capture_scope_within_rows CHECK ((in_scope_row_count <= captured_row_count))
+    constraint bea_table_capture_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint bea_table_capture_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint bea_table_capture_in_scope_row_count_check CHECK ((in_scope_row_count >= 0))
+    constraint bea_table_capture_pkey PRIMARY KEY (run_id)
+    constraint bea_table_capture_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint bea_table_capture_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint bea_table_capture_table_code_check CHECK ((table_code ~ '^CA[A-Z0-9]+$'::text))
+    index bea_table_capture_capture_idx CREATE INDEX bea_table_capture_capture_idx ON control.bea_table_capture USING btree (capture_id)
+    index bea_table_capture_pkey CREATE UNIQUE INDEX bea_table_capture_pkey ON control.bea_table_capture USING btree (run_id)
+
 r control.bls_ingestion_slices
     column id bigint NOT NULL DEFAULT nextval('control.bls_ingestion_slices_id_seq'::regclass)
     column program text NOT NULL
@@ -1171,6 +1195,185 @@ v gold.v_metric_timeseries_by_geo
     body     v_metric_timeseries_by_geo.margin_of_error,
     body     v_metric_timeseries_by_geo.margin_of_error_pct
     body    FROM gold_fred.v_metric_timeseries_by_geo;
+
+v gold_bea.measure_export
+    column source_object_key text
+    column table_code text
+    column table_title text
+    column line_code text
+    column description text
+    column unit text
+    column dollar_basis text
+    column observation_basis text
+    column schema_version text
+    body SELECT (table_code || ':'::text) || line_code AS source_object_key,
+    body     table_code,
+    body     table_title,
+    body     line_code,
+    body     description,
+    body     unit,
+    body     dollar_basis,
+    body     observation_basis,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_bea.dim_line line;
+
+v gold_bea.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'BEA'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     ((((line.description || ' ('::text) || line.table_code) || ', BEA '::text) || lower(line.unit)) || ')'::text AS metric_display_name,
+    body     line.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_bea', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Bureau of Economic Analysis regional economic accounts'::text AS source_name,
+    body     'government-economic-accounts'::text AS source_type,
+    body     line.methodology_url AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             latest.table_code,
+    body             latest.line_code,
+    body             max(latest.release_date)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(capture.published_at) AS publication_time
+    body            FROM gold_bea.observation_latest latest
+    body              JOIN control.bea_table_capture capture ON capture.capture_id = latest.capture_id
+    body           GROUP BY latest.metric_key, latest.table_code, latest.line_code) served
+    body      JOIN silver_bea.dim_line line ON line.table_code = served.table_code AND line.line_code = served.line_code
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_bea.observation_latest
+    column metric_key text
+    column table_code text
+    column table_title text
+    column line_code text
+    column description text
+    column unit text
+    column dollar_basis text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column release_date date
+    column release_key text
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     table_code,
+    body     table_title,
+    body     line_code,
+    body     description,
+    body     unit,
+    body     dollar_basis,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     release_date,
+    body     release_key,
+    body     retrieved_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_bea.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, release_date DESC, retrieved_at DESC, capture_id DESC;
+
+v gold_bea.observation_revision
+    column metric_key text
+    column table_code text
+    column table_title text
+    column line_code text
+    column description text
+    column unit text
+    column dollar_basis text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column release_date date
+    column release_key text
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT (fact.table_code || ':'::text) || fact.line_code AS metric_key,
+    body     fact.table_code,
+    body     line.table_title,
+    body     fact.line_code,
+    body     line.description,
+    body     line.unit,
+    body     line.dollar_basis,
+    body     line.observation_basis,
+    body     fact.year,
+    body     make_date(fact.year, 1, 1) AS period_start,
+    body     make_date(fact.year, 12, 31) AS period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.release_date,
+    body     fact.release_date::text AS release_key,
+    body     fact.retrieved_at,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_bea.fact_observation fact
+    body      JOIN silver_bea.dim_line line ON line.table_code = fact.table_code AND line.line_code = fact.line_code
+    body      JOIN control.bea_table_capture capture ON capture.capture_id = fact.capture_id
+    body   WHERE capture.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
 
 r gold_bls.dim_bls_measure
     column bls_measure_sk bigint NOT NULL DEFAULT nextval('gold_bls.dim_bls_measure_bls_measure_sk_seq'::regclass)
@@ -4370,6 +4573,98 @@ r raw_fred.fred_series
     column last_checked_at timestamp with time zone NOT NULL DEFAULT now()
     constraint fred_series_pkey PRIMARY KEY (series_id)
     index fred_series_pkey CREATE UNIQUE INDEX fred_series_pkey ON raw_fred.fred_series USING btree (series_id)
+
+r silver_bea.dim_line
+    column table_code text NOT NULL
+    column line_code text NOT NULL
+    column table_title text NOT NULL
+    column description text NOT NULL
+    column unit text NOT NULL
+    column dollar_basis text NOT NULL
+    column observation_basis text NOT NULL
+    column methodology_url text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text])))
+    constraint dim_line_line_code_check CHECK ((line_code ~ '^[0-9]+$'::text))
+    constraint dim_line_pkey PRIMARY KEY (table_code, line_code)
+    index dim_line_pkey CREATE UNIQUE INDEX dim_line_pkey ON silver_bea.dim_line USING btree (table_code, line_code)
+
+r silver_bea.fact_observation
+    column table_code text NOT NULL
+    column line_code text NOT NULL
+    column geo_id text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column release_date date NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint bea_fact_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint bea_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_observation_pkey PRIMARY KEY (table_code, line_code, geo_id, year, capture_id)
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_table_code_line_code_fkey FOREIGN KEY (table_code, line_code) REFERENCES silver_bea.dim_line(table_code, line_code)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'not_available'::text, 'not_meaningful'::text, 'below_threshold'::text, 'missing'::text])))
+    index bea_fact_lookup_idx CREATE INDEX bea_fact_lookup_idx ON silver_bea.fact_observation USING btree (table_code, line_code, geo_id, year)
+    index bea_fact_run_idx CREATE INDEX bea_fact_run_idx ON silver_bea.fact_observation USING btree (run_id)
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_bea.fact_observation USING btree (table_code, line_code, geo_id, year, capture_id)
+
+r silver_bea.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_bea.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_bea.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_bea.observation_quarantine USING btree (quarantine_sk)
+
+r silver_bea.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column year integer NOT NULL
+    column run_id uuid NOT NULL
+    column table_code text NOT NULL
+    column line_code text NOT NULL
+    column geo_type text NOT NULL
+    column geo_source_code text NOT NULL
+    column geo_source_label text
+    column geo_id text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint bea_revision_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint bea_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, year)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_table_code_line_code_fkey FOREIGN KEY (table_code, line_code) REFERENCES silver_bea.dim_line(table_code, line_code)
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'not_available'::text, 'not_meaningful'::text, 'below_threshold'::text, 'missing'::text])))
+    constraint observation_revision_year_check CHECK (((year >= 1929) AND (year <= 2100)))
+    index bea_revision_run_idx CREATE INDEX bea_revision_run_idx ON silver_bea.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_bea.observation_revision USING btree (capture_id, source_row_index, year)
 
 r silver_bls.fact_labor_statistics
     column labor_stat_sk bigint NOT NULL DEFAULT nextval('silver_bls.fact_labor_statistics_labor_stat_sk_seq'::regclass)
