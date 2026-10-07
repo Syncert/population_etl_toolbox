@@ -18,7 +18,7 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-07 at Nick's request, after a search of `main`, every
+In progress (2026-10-07). Drafted 2026-10-07 at Nick's request, after a search of `main`, every
 pushed branch and every plan found no grocery or gasoline price measure below
 the nation. No implementation yet.
 
@@ -274,6 +274,39 @@ Resolution rules:
 
 ## Checkpoint
 
-Next pickup: add `census_region` and `census_division` to the geography
-contract with a failing test that a county fixture resolves to its region,
-then add the BLS regional `SAF11` and `SETB01` series against it.
+Branch `feat/grocery-and-gasoline-prices`, built on `feat/bea-regional-accounts`
+with `feat/sub-county-geography` merged in (both change the shared geography;
+merge those first).
+
+- **Deliverable 1 done** (ETL-075, ETL-076). `census_region`,
+  `census_division`, `metro` and `provider_area` geo types, identified only by
+  code. Regions, divisions and their states come from the Census estimates
+  state file (`NST-EST2024-ALLDATA.csv`); CBSAs and their counties from the
+  estimates CBSA file (`cbsa-est2024-alldata.csv`, July 2023 delineation,
+  OMB 23-01), both CSV, captured first; a member the reference lacks is
+  ledgered `unmapped`. Provider areas load from each provider's own list
+  (`silver_ref/provider_areas.py`): BLS `cu.area` (23 current metros) and
+  BEA's `PARPP`/`MARPP` portions. BLS metros stay provider areas: BLS
+  publishes no machine-readable county list to prove a CBSA match.
+- **Deliverable 2 done** (ETL-077, ETL-078). BLS `cu` items SAF11, SETB01,
+  SAF1, SA0E and nine `ap` average prices for the nation, 4 regions, 9
+  divisions and 23 metros, selected from BLS's own `cu.series`/`ap.series`
+  (148 + 108 series). `download.bls.gov` is reachable with the adapter's own
+  identifying user agent. Gold records each area index's own base, the
+  dollar unit, sampling error and cadence. **Deviation:** an off-month of a
+  bimonthly metro has no row (BLS returns none) rather than a
+  `not_published` row; the cadence is stated in the series' notes.
+- **Deliverable 4 done** (ETL-079). BEA `SARPP`, `MARPP`, `PARPP`; `0.000`
+  for a nonexistent portion is `not_meaningful`; DQ-BEA-005 checks the
+  nation's all-items parity is 100. Table names confirmed from the bulk zips.
+- **Next:** deliverable 3, the EIA retail gasoline adapter (`EIA_API_KEY` is
+  set locally and verified), then deliverables 5-7 (registration, glossary
+  and explainer text, remaining quality rules) and 9 (cards, after
+  `place-pages`).
+- **Evidence so far:** unit 2248 passed; web unit 719; DAG 156 (container);
+  orchestrated DAG run 3 passed; API integration 187; integration and end to
+  end 473 passed, 2 skipped, 1 failed (the PEP teardown node, failing on
+  `main` too) before the last sweep fix, which then passed 187/187.
+- **Found, not mine:** with tract rows left in a reused test database,
+  re-applying migration `031_acs_place_grain.sql` fails its place-only CHECK;
+  a fresh database passes. Belongs to `sub-county-geography`.
