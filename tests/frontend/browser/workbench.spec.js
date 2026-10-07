@@ -1346,4 +1346,16 @@ test("a series reads a calendar year or window, labelled, and the link keeps it"
   await expect(page.getByTestId("workbench-legend")).toContainText(
     "Unemployment rate · Calendar years",
   );
+
+  // Beside the monthly line, each published year is held level across the
+  // year it covers (the owner's WT-4 decision), and the chart says so.
+  await addSeries(page, {
+    source: "fred",
+    metric: { code: METRIC_FRED, label: "Unemployment rate" },
+    grain: "NATIONAL",
+  });
+  await expect(page.locator("[data-held-across-period='true']")).toHaveCount(1);
+  await expect(page.getByTestId("workbench-held-note")).toContainText(
+    "one published value repeated",
+  );
 });

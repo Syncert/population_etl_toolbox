@@ -497,6 +497,52 @@ export interface PlottedPoint {
   row: ObservationRow;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When a point's published period ends, in epoch milliseconds, or null when
+ * it covers a single date or its end cannot be read.
+ */
+export function pointPeriodEnd(point: PlottedPoint): number | null {
+  if (point.time === null) return null;
+  const end = Date.parse(String(point.row?.period_end ?? ""));
+  return Number.isFinite(end) && end - point.time >= DAY_MS ? end : null;
+}
+
+function typicalSpan(entry: PlottedSeries): number {
+  const spans = entry.points
+    .map((point) => {
+      const end = pointPeriodEnd(point);
+      return end === null || point.time === null ? 0 : end - point.time;
+    })
+    .sort((left, right) => left - right);
+  return spans[Math.floor(spans.length / 2)] ?? 0;
+}
+
+/**
+ * The series a chart draws flat across each period they publish: those whose
+ * periods are coarser than another series' on the same chart (an annual
+ * figure beside a monthly one). The provider published one value for the
+ * whole year, so it is held level through the year rather than drawn as a
+ * slope between January firsts. Nothing is aligned or computed: the value
+ * is the published one, repeated across the span it covers. A chart whose
+ * series share a grain draws as it always did.
+ */
+export function seriesHeldAcrossPeriods(plotted: readonly PlottedSeries[]): Set<string> {
+  const spans = plotted
+    .filter((entry) => entry.points.length > 0)
+    .map((entry) => ({ key: entry.key, span: typicalSpan(entry) }));
+  if (spans.length < 2) return new Set();
+  const finest = Math.min(...spans.map((entry) => entry.span));
+  // Twice the finest span: a quarter beside a month or a year beside a
+  // quarter is held; months of 28 and 31 days are the same grain.
+  return new Set(
+    spans
+      .filter((entry) => entry.span > 0 && entry.span >= 2 * Math.max(finest, DAY_MS))
+      .map((entry) => entry.key),
+  );
+}
+
 /** One series ready to draw, with everything its legend entry must say. */
 export interface PlottedSeries {
   key: string;
@@ -548,7 +594,10 @@ export function buildPlottedSeries({
       continue;
     }
     const period = observationPeriodLabel(row);
-    const parsed = Date.parse(period);
+    // A period published as a span ("2024-01-01 – 2024-12-31") is placed
+    // at its start, beside a series published as single dates.
+    const label = Date.parse(period);
+    const parsed = Number.isFinite(label) ? label : Date.parse(String(row?.period_start ?? ""));
     points.push({
       period,
       time: Number.isFinite(parsed) ? parsed : null,

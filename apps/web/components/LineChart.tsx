@@ -18,7 +18,12 @@
 // every plotted value is readable without the chart.
 
 import type { AxisAssignment, PlottedSeries } from "../lib/workbench";
-import { describeChart, describeSeries } from "../lib/workbench";
+import {
+  describeChart,
+  describeSeries,
+  pointPeriodEnd,
+  seriesHeldAcrossPeriods,
+} from "../lib/workbench";
 import { formatNumber } from "../lib/format";
 
 const WIDTH = 680;
@@ -111,8 +116,15 @@ export default function LineChart({
   // One time domain for the whole chart, so two series covering different
   // spans sit in their real positions relative to each other rather than each
   // being stretched to the full width.
+  // A coarser series beside a finer one is held level across each period
+  // it published, so the domain reaches the end of its last period.
+  const held = seriesHeldAcrossPeriods(drawable);
   const times = drawable
-    .flatMap((entry) => entry.points.map((point) => point.time))
+    .flatMap((entry) =>
+      entry.points.flatMap((point) =>
+        held.has(entry.key) ? [point.time, pointPeriodEnd(point)] : [point.time],
+      ),
+    )
     .filter((time): time is number => time !== null);
   const minTime = times.length > 0 ? Math.min(...times) : 0;
   const maxTime = times.length > 0 ? Math.max(...times) : 0;
@@ -159,15 +171,24 @@ export default function LineChart({
         />
         {drawable.map((entry, seriesIndex) => {
           const scale = scaleOf.get(axisOf.get(entry.key) || "") || { min: 0, max: 1 };
-          const points = entry.points.map((point, index) => ({
-            ...point,
-            x: positionX(point.time, index, entry.points.length),
-            y: positionY(point.value, scale),
-          }));
+          const holds = held.has(entry.key);
+          const points = entry.points.map((point, index) => {
+            const end = holds ? pointPeriodEnd(point) : null;
+            return {
+              ...point,
+              x: positionX(point.time, index, entry.points.length),
+              xEnd: end === null ? null : positionX(end, index, entry.points.length),
+              y: positionY(point.value, scale),
+            };
+          });
           const stroke = seriesStroke(seriesIndex);
           return (
-            <g key={entry.key} data-series-key={entry.key}>
-              {points.length > 1 ? (
+            <g
+              key={entry.key}
+              data-series-key={entry.key}
+              data-held-across-period={holds ? "true" : undefined}
+            >
+              {points.length > 1 || (holds && points.length > 0) ? (
                 <polyline
                   className="chart-line"
                   data-testid="workbench-line"
@@ -175,7 +196,13 @@ export default function LineChart({
                   stroke={stroke}
                   strokeWidth="1.8"
                   strokeDasharray={seriesDashed(seriesIndex) ? "5 3" : undefined}
-                  points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+                  points={points
+                    .map((point) =>
+                      point.xEnd === null
+                        ? `${point.x},${point.y}`
+                        : `${point.x},${point.y} ${point.xEnd},${point.y}`,
+                    )
+                    .join(" ")}
                 />
               ) : null}
               {points.map((point) => (
@@ -253,6 +280,13 @@ export default function LineChart({
 
       <figcaption className="subtle">
         {assignment.note ? <span data-testid="workbench-axis-note">{assignment.note} </span> : null}
+        {held.size > 0 ? (
+          <span data-testid="workbench-held-note">
+            A series published for a longer period than another on this chart is drawn level
+            across each period it covers: one published value repeated, not a value for every
+            month.{" "}
+          </span>
+        ) : null}
         Every plotted value is listed in the table below.
       </figcaption>
     </figure>

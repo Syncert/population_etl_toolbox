@@ -431,3 +431,26 @@ test("a time-view series names whose figures it draws", async () => {
   expect(derivationLabel([provider, derived])).toBe("provider-published and derived (mean)");
   expect(derivationLabel([{ value: "1" }])).toBeNull();
 });
+
+test("an annual series beside a monthly one is held level across its year", async () => {
+  // Covers: WEB-141 — the owner's WT-4 decision: no alignment through a
+  // rollup; a coarser series is drawn as its published value repeated across
+  // the period it covers, and a chart of one grain is unchanged.
+  const { seriesHeldAcrossPeriods, pointPeriodEnd } = await import(
+    "../../../apps/web/lib/workbench"
+  );
+  const point = (start, end) => ({
+    period: start,
+    time: Date.parse(start),
+    value: 1,
+    row: { period_start: start, period_end: end },
+  });
+  const monthly = { key: "m", points: [point("2024-01-01", "2024-01-31"), point("2024-02-01", "2024-02-29")] };
+  const annual = { key: "a", points: [point("2023-01-01", "2023-12-31"), point("2024-01-01", "2024-12-31")] };
+  const otherMonthly = { key: "m2", points: [point("2024-03-01", "2024-03-31")] };
+  expect([...seriesHeldAcrossPeriods([monthly, annual])]).toEqual(["a"]);
+  expect(seriesHeldAcrossPeriods([monthly, otherMonthly]).size).toBe(0);
+  expect(seriesHeldAcrossPeriods([annual]).size).toBe(0);
+  expect(pointPeriodEnd(point("2024-01-01", "2024-01-01"))).toBeNull();
+  expect(pointPeriodEnd(annual.points[1])).toBe(Date.parse("2024-12-31"));
+});

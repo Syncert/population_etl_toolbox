@@ -18,9 +18,9 @@ verify:
 
 Ready for review (2026-10-07). Split out of
 [`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](TIME_WINDOWS_AND_ROLLUPS_PLAN.md) RU-7.
-WT-1..WT-3 are implemented and tested (WEB-141). WT-4 is an owner decision
-and is raised at review; until it is made, compatibility keeps refusing a
-monthly and an annual measure as before, so nothing here changes it.
+WT-1..WT-4 are implemented and tested (WEB-141). The owner decided WT-4 on
+2026-10-07: compatibility keeps refusing a monthly and an annual measure,
+and on a chart the annual value is repeated across its year.
 
 ## Why
 
@@ -42,12 +42,16 @@ workbench cannot ask.
   legend and tooltip with the method; an incomplete window is a gap labelled
   with its reason, never a zero or an interpolated point; provider annual
   averages are labelled as the provider's.
-- [ ] **WT-4: alignment.** Decide with the owner whether compatibility
+- [x] **WT-4: alignment.** Decide with the owner whether compatibility
   (`apps/api/services/compatibility.py`) may align a monthly and an annual
   measure through a declared rollup (the time-windows plan's optional RU-7
-  clause). Geographic roll-up stays refused. **Open: raised with the owner
-  at review.** Default if declined or unanswered: alignment stays refused
-  (current behavior); a yes becomes its own plan.
+  clause). Geographic roll-up stays refused. **Decided by the owner
+  (2026-10-07): no.** The check refuses the pair, or the annual value is
+  shown repeated to say it holds for the whole year. Compatibility is
+  unchanged; the workbench line chart draws a series coarser than another
+  on the same chart level across each period it published
+  (`seriesHeldAcrossPeriods`, `pointPeriodEnd`) and says so under the chart.
+  A span period ("2024-01-01 – 2024-12-31") is placed at its start.
 
 ## Decisions
 
@@ -82,6 +86,6 @@ workbench cannot ask.
   `components/WorkbenchPage.tsx` (Time control, legend and hover name the
   view and method, derivation caption; an incomplete window is dropped and
   counted, never drawn).
-- Validation (2026-10-07): `npm run test:unit` 731 passed; `tsc` and
+- Validation (2026-10-07): `npm run test:unit` 732 passed; `tsc` and
   `npm run lint` clean; `npm run build` ok; `npx playwright test` 203 passed;
   `ruff check .` clean; `pytest tests/unit` passed.
