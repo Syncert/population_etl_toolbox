@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "fema_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,26 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_fema_nri(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed NRI and declaration pages in place of FEMA's services."""
+    from data_ingestion_toolbox.fema_nri import capture as fema_capture
+    from data_ingestion_toolbox.fema_nri.client import FemaPage, read_page
+
+    root = FIXTURE_ROOT / "fema_nri"
+
+    def fetch_page(stream: str, page_index: int, **_kwargs: Any) -> FemaPage:
+        name = "nri_counties.json" if stream == "nri" else "declarations.json"
+        payload = (root / name).read_bytes()
+        records, _more = read_page(
+            stream, payload, f"{stream}:page:{page_index}", page_size=10**6
+        )
+        return FemaPage(
+            name, {"page": str(page_index)}, payload, records, False, {}, 200
+        )
+
+    monkeypatch.setattr(fema_capture, "fetch_page", fetch_page)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1117,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("fema_nri", stub_fema_nri),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

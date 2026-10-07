@@ -307,6 +307,40 @@ r control.fbi_ucr_release
     index fbi_ucr_release_pkey CREATE UNIQUE INDEX fbi_ucr_release_pkey ON control.fbi_ucr_release USING btree (run_id)
     index fbi_ucr_release_product_id_refresh_date_run_id_key CREATE UNIQUE INDEX fbi_ucr_release_product_id_refresh_date_run_id_key ON control.fbi_ucr_release USING btree (product_id, refresh_date, run_id)
 
+r control.fema_nri_page
+    column run_id uuid NOT NULL
+    column page_index integer NOT NULL
+    column capture_id uuid NOT NULL
+    column record_count integer NOT NULL
+    constraint fema_nri_page_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fema_nri_page_page_index_check CHECK ((page_index >= 0))
+    constraint fema_nri_page_pkey PRIMARY KEY (run_id, page_index)
+    constraint fema_nri_page_record_count_check CHECK ((record_count >= 0))
+    constraint fema_nri_page_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.fema_nri_run(run_id)
+    index fema_nri_page_pkey CREATE UNIQUE INDEX fema_nri_page_pkey ON control.fema_nri_page USING btree (run_id, page_index)
+
+r control.fema_nri_run
+    column run_id uuid NOT NULL
+    column stream text NOT NULL
+    column status text NOT NULL
+    column run_checksum text
+    column nri_version text
+    column page_count integer NOT NULL DEFAULT 0
+    column record_count integer NOT NULL DEFAULT 0
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fema_nri_run_nri_has_version CHECK (((stream <> 'nri'::text) OR (status = ANY (ARRAY['capturing'::text, 'quarantined'::text])) OR (nri_version IS NOT NULL)))
+    constraint fema_nri_run_page_count_check CHECK ((page_count >= 0))
+    constraint fema_nri_run_pkey PRIMARY KEY (run_id)
+    constraint fema_nri_run_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint fema_nri_run_record_count_check CHECK ((record_count >= 0))
+    constraint fema_nri_run_run_checksum_check CHECK (((run_checksum IS NULL) OR (run_checksum ~ '^[0-9a-f]{64}$'::text)))
+    constraint fema_nri_run_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fema_nri_run_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint fema_nri_run_stream_check CHECK ((stream = ANY (ARRAY['nri'::text, 'declarations'::text])))
+    index fema_nri_run_pkey CREATE UNIQUE INDEX fema_nri_run_pkey ON control.fema_nri_run USING btree (run_id)
+
 r control.fred_ingestion_slices
     column id bigint NOT NULL DEFAULT nextval('control.fred_ingestion_slices_id_seq'::regclass)
     column domain text NOT NULL
@@ -2871,6 +2905,342 @@ v gold_fbi.reporting_coverage
     body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = coverage.product_id AND release.release_key = coverage.release_key
     body   WHERE release.status = 'published'::text;
 
+v gold_fema_nri.declaration_count
+    column metric_key text
+    column geo_id text
+    column geo_sk bigint
+    column year integer
+    column value bigint
+    column declarations text
+    column last_refresh timestamp with time zone
+    column capture_id uuid
+    column run_id uuid
+    column published_at timestamp with time zone
+    body WITH current_revision AS (
+    body          SELECT DISTINCT ON (revision.declaration_id) revision.declaration_id,
+    body             revision.revision_hash,
+    body             revision.run_id,
+    body             revision.capture_id,
+    body             revision.record_index,
+    body             revision.declaration_string,
+    body             revision.disaster_number,
+    body             revision.declaration_type,
+    body             revision.declaration_date,
+    body             revision.incident_type,
+    body             revision.state_fips,
+    body             revision.county_fips,
+    body             revision.place_code,
+    body             revision.designated_area,
+    body             revision.last_refresh,
+    body             revision.geo_id,
+    body             revision.geo_sk,
+    body             revision.geography_status,
+    body             revision.created_at
+    body            FROM silver_fema_nri.declaration_revision revision
+    body              JOIN control.fema_nri_run run ON run.run_id = revision.run_id
+    body           WHERE run.status = 'published'::text
+    body           ORDER BY revision.declaration_id, revision.last_refresh DESC, revision.created_at DESC
+    body         ), latest_read AS (
+    body          SELECT max(fema_nri_run.published_at) AS published_at
+    body            FROM control.fema_nri_run
+    body           WHERE fema_nri_run.stream = 'declarations'::text AND fema_nri_run.status = 'published'::text
+    body         )
+    body  SELECT
+    body         CASE declaration_type
+    body             WHEN 'DR'::text THEN 'major_disaster_declarations'::text
+    body             WHEN 'EM'::text THEN 'emergency_declarations'::text
+    body             ELSE 'fire_management_declarations'::text
+    body         END AS metric_key,
+    body     geo_id,
+    body     min(geo_sk) AS geo_sk,
+    body     EXTRACT(year FROM declaration_date)::integer AS year,
+    body     count(DISTINCT disaster_number) AS value,
+    body     string_agg(DISTINCT declaration_string, ', '::text ORDER BY declaration_string) AS declarations,
+    body     max(last_refresh) AS last_refresh,
+    body     min(capture_id::text)::uuid AS capture_id,
+    body     min(run_id::text)::uuid AS run_id,
+    body     ( SELECT latest_read.published_at
+    body            FROM latest_read) AS published_at
+    body    FROM current_revision
+    body   WHERE geography_status = 'resolved'::text
+    body   GROUP BY (
+    body         CASE declaration_type
+    body             WHEN 'DR'::text THEN 'major_disaster_declarations'::text
+    body             WHEN 'EM'::text THEN 'emergency_declarations'::text
+    body             ELSE 'fire_management_declarations'::text
+    body         END), geo_id, (EXTRACT(year FROM declaration_date)::integer);
+
+v gold_fema_nri.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column stream text
+    column observation_basis text
+    body WITH hazard(prefix, hazard_key, hazard_name) AS (
+    body          VALUES ('AVLN'::text,'avalanche'::text,'Avalanche'::text), ('CFLD'::text,'coastal_flooding'::text,'Coastal Flooding'::text), ('CWAV'::text,'cold_wave'::text,'Cold Wave'::text), ('DRGT'::text,'drought'::text,'Drought'::text), ('ERQK'::text,'earthquake'::text,'Earthquake'::text), ('HAIL'::text,'hail'::text,'Hail'::text), ('HWAV'::text,'heat_wave'::text,'Heat Wave'::text), ('HRCN'::text,'hurricane'::text,'Hurricane'::text), ('ISTM'::text,'ice_storm'::text,'Ice Storm'::text), ('LNDS'::text,'landslide'::text,'Landslide'::text), ('LTNG'::text,'lightning'::text,'Lightning'::text), ('IFLD'::text,'inland_flooding'::text,'Inland Flooding'::text), ('SWND'::text,'strong_wind'::text,'Strong Wind'::text), ('TRND'::text,'tornado'::text,'Tornado'::text), ('TSUN'::text,'tsunami'::text,'Tsunami'::text), ('VLCN'::text,'volcanic_activity'::text,'Volcanic Activity'::text), ('WFIR'::text,'wildfire'::text,'Wildfire'::text), ('WNTW'::text,'winter_weather'::text,'Winter Weather'::text)
+    body         ), nri_basis(text) AS (
+    body          VALUES (((('FEMA National Risk Index: a modelled estimate for planning, not a measurement; '::text || 'expected annual loss is annualized frequency times exposure times historic loss '::text) || 'ratio, in dollars per year, with no margin of error, and methods change between '::text) || 'versions. National Risk Index data: Federal Emergency Management Agency, FEMA '::text) || 'National Risk Index.'::text)
+    body         )
+    body  SELECT 'expected_annual_loss'::text AS measure,
+    body     'Expected Annual Loss - Total - Composite'::text AS measure_label,
+    body     'dollars per year'::text AS unit,
+    body     'nri'::text AS stream,
+    body     nri_basis.text AS observation_basis
+    body    FROM nri_basis
+    body UNION ALL
+    body  SELECT 'expected_annual_loss_'::text || hazard.hazard_key AS measure,
+    body     hazard.hazard_name || ' - Expected Annual Loss - Total'::text AS measure_label,
+    body     'dollars per year'::text AS unit,
+    body     'nri'::text AS stream,
+    body     nri_basis.text AS observation_basis
+    body    FROM hazard
+    body      CROSS JOIN nri_basis
+    body UNION ALL
+    body  SELECT 'annualized_frequency_'::text || hazard.hazard_key AS measure,
+    body     hazard.hazard_name || ' - Annualized Frequency'::text AS measure_label,
+    body     'events per year'::text AS unit,
+    body     'nri'::text AS stream,
+    body     nri_basis.text AS observation_basis
+    body    FROM hazard
+    body      CROSS JOIN nri_basis
+    body   WHERE hazard.prefix = ANY (ARRAY['IFLD'::text, 'TRND'::text, 'WFIR'::text, 'HRCN'::text, 'HWAV'::text])
+    body UNION ALL
+    body  SELECT declaration.measure,
+    body     declaration.label AS measure_label,
+    body     'declarations'::text AS unit,
+    body     'declarations'::text AS stream,
+    body     (((('FEMA disaster declarations (OpenFEMA DisasterDeclarationsSummaries): the number of '::text || 'distinct declarations of this type that designated this county, by the calendar '::text) || 'year of the declaration date; a statewide or tribal-area designation is not '::text) || 'counted toward a county, and a year with no declaration has no row. This product '::text) || 'uses the Federal Emergency Management Agency''s OpenFEMA API, but is not endorsed '::text) || 'by FEMA.'::text AS observation_basis
+    body    FROM ( VALUES ('major_disaster_declarations'::text,'Major disaster declarations'::text,'DR'::text), ('emergency_declarations'::text,'Emergency declarations'::text,'EM'::text), ('fire_management_declarations'::text,'Fire management assistance declarations'::text,'FM'::text)) declaration(measure, label, declaration_type);
+
+v gold_fema_nri.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column stream text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     stream,
+    body     observation_basis,
+    body     'fema_nri_json:v1'::text AS schema_version
+    body    FROM gold_fema_nri.measure_definition;
+
+v gold_fema_nri.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'FEMA_NRI'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (FEMA)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body         CASE export.stream
+    body             WHEN 'nri'::text THEN 'modelled_estimate'::text
+    body             ELSE 'derived_count'::text
+    body         END AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_fema_nri', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Federal Emergency Management Agency National Risk Index and OpenFEMA'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.fema.gov/about/openfema/data-sets/national-risk-index-data'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_fema_nri.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_fema_nri.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_fema_nri.nri_observation
+    column metric_key text
+    column measure text
+    column field text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column year integer
+    column release_key text
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column rating text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column published_at timestamp with time zone
+    body SELECT fact.measure AS metric_key,
+    body     fact.measure,
+    body     fact.field,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geography_status,
+    body     "right"(fact.nri_version, 4)::integer AS year,
+    body     fact.nri_version AS release_key,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.missing_reason,
+    body     fact.rating,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id,
+    body     run.published_at
+    body    FROM silver_fema_nri.nri_fact fact
+    body      JOIN control.fema_nri_run run ON run.run_id = fact.run_id
+    body   WHERE run.status = 'published'::text AND "right"(fact.nri_version, 4) ~ '^[0-9]{4}$'::text;
+
+v gold_fema_nri.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column rating text
+    column declarations text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     value,
+    body     value_status,
+    body     missing_reason,
+    body     rating,
+    body     declarations,
+    body     release_key,
+    body     published_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_fema_nri.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, published_at DESC, run_id DESC;
+
+v gold_fema_nri.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column rating text
+    column declarations text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT observation.metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     observation.year,
+    body     make_date(observation.year, 1, 1) AS period_start,
+    body     make_date(observation.year, 12, 31) AS period_end,
+    body     observation.geo_id,
+    body     observation.geo_sk,
+    body     'county'::text AS geo_type,
+    body     gold_glossary.geo_grain('county'::text) AS geo_level,
+    body     observation.value,
+    body     observation.value_status,
+    body     observation.missing_reason,
+    body     observation.rating,
+    body     observation.declarations,
+    body     observation.release_key,
+    body     observation.published_at,
+    body     observation.source_record_id,
+    body     observation.capture_id,
+    body     observation.run_id
+    body    FROM ( SELECT nri.metric_key,
+    body             nri.year,
+    body             nri.geo_id,
+    body             nri.geo_sk,
+    body             nri.geography_status,
+    body             nri.value,
+    body             nri.value_status,
+    body             nri.missing_reason,
+    body             nri.rating,
+    body             NULL::text AS declarations,
+    body             nri.release_key,
+    body             nri.published_at,
+    body             nri.source_record_id,
+    body             nri.capture_id,
+    body             nri.run_id
+    body            FROM gold_fema_nri.nri_observation nri
+    body         UNION ALL
+    body          SELECT counted.metric_key,
+    body             counted.year,
+    body             counted.geo_id,
+    body             counted.geo_sk,
+    body             'resolved'::text,
+    body             counted.value::numeric AS value,
+    body             'valid'::text,
+    body             NULL::text,
+    body             NULL::text,
+    body             counted.declarations,
+    body             'OpenFEMA '::text || to_char((counted.last_refresh AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text),
+    body             counted.published_at,
+    body             md5((((counted.metric_key || '|'::text) || counted.geo_id) || '|'::text) || counted.year::text) AS md5,
+    body             counted.capture_id,
+    body             counted.run_id
+    body            FROM gold_fema_nri.declaration_count counted) observation
+    body      JOIN gold_fema_nri.measure_definition definition ON definition.measure = observation.metric_key
+    body   WHERE observation.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]);
+
 r gold_fred.dim_fred_series
     column fred_series_sk bigint NOT NULL DEFAULT nextval('gold_fred.dim_fred_series_fred_series_sk_seq'::regclass)
     column series_id text NOT NULL
@@ -5054,6 +5424,87 @@ r silver_fbi.slice_quarantine
     constraint slice_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
     index slice_quarantine_pkey CREATE UNIQUE INDEX slice_quarantine_pkey ON silver_fbi.slice_quarantine USING btree (quarantine_sk)
     index slice_quarantine_run_id_product_id_release_key_slice_key_so_key CREATE UNIQUE INDEX slice_quarantine_run_id_product_id_release_key_slice_key_so_key ON silver_fbi.slice_quarantine USING btree (run_id, product_id, release_key, slice_key, source_row_index, error_code)
+
+r silver_fema_nri.declaration_revision
+    column declaration_id text NOT NULL
+    column revision_hash text NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column record_index integer NOT NULL
+    column declaration_string text NOT NULL
+    column disaster_number integer NOT NULL
+    column declaration_type text NOT NULL
+    column declaration_date date NOT NULL
+    column incident_type text NOT NULL
+    column state_fips text NOT NULL
+    column county_fips text NOT NULL
+    column place_code text NOT NULL
+    column designated_area text NOT NULL
+    column last_refresh timestamp with time zone NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint declaration_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint declaration_revision_county_fips_check CHECK ((county_fips ~ '^[0-9]{3}$'::text))
+    constraint declaration_revision_declaration_type_check CHECK ((declaration_type = ANY (ARRAY['DR'::text, 'EM'::text, 'FM'::text])))
+    constraint declaration_revision_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'area'::text])))
+    constraint declaration_revision_pkey PRIMARY KEY (declaration_id, revision_hash)
+    constraint declaration_revision_record_index_check CHECK ((record_index >= 1))
+    constraint declaration_revision_revision_hash_check CHECK ((revision_hash ~ '^[0-9a-f]{40}$'::text))
+    constraint declaration_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.fema_nri_run(run_id)
+    constraint declaration_revision_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    constraint fema_declaration_area_has_no_county CHECK (((county_fips = '000'::text) = (geography_status = 'area'::text)))
+    constraint fema_declaration_county_has_geo CHECK (((geography_status = 'area'::text) OR (geo_id IS NOT NULL)))
+    index declaration_revision_pkey CREATE UNIQUE INDEX declaration_revision_pkey ON silver_fema_nri.declaration_revision USING btree (declaration_id, revision_hash)
+    index fema_declaration_geo_idx CREATE INDEX fema_declaration_geo_idx ON silver_fema_nri.declaration_revision USING btree (geo_id, declaration_date)
+
+r silver_fema_nri.nri_fact
+    column run_id uuid NOT NULL
+    column geo_id text NOT NULL
+    column field text NOT NULL
+    column measure text NOT NULL
+    column capture_id uuid NOT NULL
+    column stcofips text NOT NULL
+    column county_type text
+    column nri_version text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column rating text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fema_nri_fact_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint fema_nri_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint nri_fact_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint nri_fact_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint nri_fact_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = ANY (ARRAY['hazard_not_applicable'::text, 'insufficient_data'::text, 'data_unavailable'::text, 'blank'::text]))))
+    constraint nri_fact_pkey PRIMARY KEY (run_id, geo_id, field)
+    constraint nri_fact_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.fema_nri_run(run_id)
+    constraint nri_fact_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint nri_fact_stcofips_check CHECK ((stcofips ~ '^[0-9]{5}$'::text))
+    constraint nri_fact_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'not_applicable'::text])))
+    index fema_nri_fact_measure_idx CREATE INDEX fema_nri_fact_measure_idx ON silver_fema_nri.nri_fact USING btree (measure, geo_id)
+    index nri_fact_pkey CREATE UNIQUE INDEX nri_fact_pkey ON silver_fema_nri.nri_fact USING btree (run_id, geo_id, field)
+
+r silver_fema_nri.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_fema_nri.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column record_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_record_index_error_code_key UNIQUE (capture_id, record_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_record_index_check CHECK ((record_index >= 0))
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    index quarantine_capture_id_record_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_record_index_error_code_key ON silver_fema_nri.quarantine USING btree (capture_id, record_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_fema_nri.quarantine USING btree (quarantine_sk)
 
 r silver_fred.fact_economic_indicators
     column economic_indicator_sk bigint NOT NULL DEFAULT nextval('silver_fred.fact_economic_indicators_economic_indicator_sk_seq'::regclass)

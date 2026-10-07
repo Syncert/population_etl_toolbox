@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/fema-risk-and-declarations`, which is
+`docs/scout-county-sources` (where this plan was written) with the work on
+top.
 
 ## Why
 
@@ -35,7 +37,7 @@ Floods, tornadoes, and wildfire are place facts. FEMA publishes, for every count
 
 ## Geography
 
-- **NRI.** Native grain is county and census tract, keyed by `STCOFIPS` and `TRACTFIPS`. Boundaries are 2021 TIGER/Line for tracts and counties, and 2024 for Connecticut, which uses the nine planning regions as county equivalents ([FAQ](https://www.fema.gov/sites/default/files/documents/fema_national-risk-index_faq-page-documentation.pdf)). Counties resolve through `silver_ref.geography_resolution` / `silver_ref.dim_geo_entity` by FIPS code and boundary vintage. Connecticut rows resolve to the planning-region entities and are never mapped to the legacy counties. Tracts are captured and kept in silver, but they are published only after [`SUB_COUNTY_GEOGRAPHY_PLAN.md`](SUB_COUNTY_GEOGRAPHY_PLAN.md) lands tract identity. Territory rows resolve by FIPS where the geography layer has them. Otherwise they are quarantined with a reason, not dropped.
+- **NRI.** Native grain is county and census tract, keyed by `STCOFIPS` and `TRACTFIPS`. Boundaries are 2021 TIGER/Line for tracts and counties, and 2024 for Connecticut, which uses the nine planning regions as county equivalents ([FAQ](https://www.fema.gov/sites/default/files/documents/fema_national-risk-index_faq-page-documentation.pdf)). Counties resolve through `silver_ref.geography_resolution` / `silver_ref.dim_geo_entity` by FIPS code and boundary vintage. Connecticut rows resolve to the planning-region entities and are never mapped to the legacy counties. Tracts are captured and kept in silver, but they are published only after [`SUB_COUNTY_GEOGRAPHY_PLAN.md`](../to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) lands tract identity. Territory rows resolve by FIPS where the geography layer has them. Otherwise they are quarantined with a reason, not dropped.
 - **Declarations.** One designated area per row, keyed by `fipsStateCode` + `fipsCountyCode`. `fipsCountyCode = '000'` marks a statewide designation or a non-county area such as an Indian reservation. Those rows are identified by `placeCode` (which is '99' + county FIPS for counties) and are not county rows ([field metadata](https://www.fema.gov/api/open/v1/DataSetFields?$filter=openFemaDataSet%20eq%20'DisasterDeclarationsSummaries'%20and%20datasetVersion%20eq%202)). Tribal declarations are filed under their state. Connecticut declarations in 2024 still carry legacy county codes (observed: `09009`, `09003`). The county grain therefore needs a vintage-aware resolution. `designatedArea` text is kept for display only and is never used to match.
 
 ## Suppression and missing values
@@ -89,6 +91,77 @@ NRI data "are meant for planning purposes only" and "may be used for commercial 
 - The declaration count rule: count distinct `disasterNumber` per county, and decide whether a statewide (`000`) designation counts toward every county. Default is no, shown separately.
 - Whether the declarations stream belongs in this package or in a separate `fema_openfema` adapter.
 
+## Decisions (open items resolved)
+
+- **NRI channel (deviation).** The fema.gov table zip answers scripted
+  requests with HTTP 403 (checked 2026-10-07), so the NRI is read from
+  FEMA's own keyless ArcGIS layer `National_Risk_Index_Counties` (owner
+  `FEMA_NationalRiskIndex`, 467 fields, 3,232 counties, `NRI_VER =
+  'December 2025'`): registered fields only, no geometry, pages of 2,000
+  ordered by `OBJECTID`. The tract layer exists beside it and is not read
+  until tract identity lands. The pages are the raw capture; there is no zip.
+- **Release date (open item).** The release identity is the layer's own
+  `NRI_VER` text (`December 2025`), which also sets the year.
+- **`EAL_VALP` vs `EAL_VALPE` (open item).** Neither is published; only the
+  dollar totals (`EAL_VALT`, `*_EALT`) are, so the unit question does not
+  reach a consumer.
+- **Ratings.** `Not Applicable`, `Insufficient Data` and `Data Unavailable`
+  null the value with a typed status; `No Expected Annual Losses` and `No
+  Rating` keep the published value. `RISK_*`, `SOVI_*`, `RESL_*` and the
+  scores are not read at all.
+- **Declarations in this package (open item).** One package, two streams,
+  one DAG with a task per stream; they share FEMA's notice and pool.
+- **Declaration count rule (open item).** Distinct `disasterNumber` per
+  county, calendar year of `declarationDate` and `declarationType`, over the
+  newest revision of each row; `000` (statewide or non-county) rows are kept
+  as areas and not counted toward any county; a year with no declaration has
+  no row. Counts are per type only, not per `incidentType` (kept in silver).
+- **Connecticut.** NRI rows are planning regions; declarations still carry
+  legacy county codes. Both resolve by FIPS against the shared geography and
+  are recorded unmapped where it does not hold them -- no remapping. The
+  freely associated states (64, 68, 70) and the territories are accepted
+  codes; all 70,431 declarations parse.
+- **NRI terms (open item).** The NRI-specific terms page was not located;
+  rows carry FEMA attribution and the OpenFEMA notice.
+- **Analysis.** The source is `analysis_ready`: both families are one value
+  per county per year.
+- **Fixtures.** FEMA's own answers saved verbatim: the NRI layer queried for
+  Delaware's three counties, the Capitol Planning Region, Adjuntas PR (a
+  `Not Applicable` tsunami) and American Samoa's Eastern District; and
+  OpenFEMA declarations for Delaware and Connecticut since 2020 (80 rows: 15
+  statewide or tribal-area, Connecticut legacy counties, DR, EM and FM). A
+  scripted client serves pages by offset; small page sizes re-serialize
+  slices to exercise paging.
+
+## Evidence (2026-10-07, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2185 passed, including
+  `tests/unit/fema_nri` (6).
+- Database: `tests/integration/database/test_fema_nri_capture_replay.py`
+  -- 5 passed: the NRI to gold with its version and a Not Applicable
+  tsunami; declarations counted per county and year across four 25-row
+  pages, with areas and legacy Connecticut counties not counted; an
+  unchanged NRI read replays nothing and a new declaration hash keeps both
+  revisions; an ArcGIS error body fails capture; `DQ-FEMA-002` and
+  `DQ-FEMA-004` behave and then catch a fault; the schema reapplies; the
+  harvest names the measures with something to publish (fire management has
+  none in the fixture).
+- End to end: `tests/e2e/test_fema_nri_pipeline.py` serves Kent County's
+  expected annual loss with the NRI version, Adjuntas's Not Applicable
+  tsunami, and Kent's major-disaster counts with their declarations, through
+  `/api/v1/observations`.
+- Live: `tests/external/test_fema_nri_source_contracts.py` -- 6 passed
+  against FEMA's ArcGIS layer and OpenFEMA; separately, all eight
+  declaration pages (70,431 rows) parse with nothing quarantined.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 460 passed, 1 failed: the PEP teardown node, which fails on
+  `main` too (fixed on `test/catalog-agreement-fixture-residue`).
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `fema_nri_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
+  viz coverage and plan environments regenerated.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `fema_nri`, fetch one state's county rows from the v1.20 table zip as a fixture, and write the failing replay test that asserts a `Not Applicable` hazard lands as NULL with status, not zero.
+Awaiting human review.
