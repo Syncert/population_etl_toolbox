@@ -29,6 +29,9 @@
     "FRED": [
       "NATIONAL"
     ],
+    "IRS_MIGRATION": [
+      "COUNTY"
+    ],
     "USDA_NASS": [
       "COUNTY",
       "NATIONAL",
@@ -835,6 +838,123 @@
       "source_code": "FRED"
     },
     {
+      "datasets": [],
+      "display_name": "IRS Statistics of Income county-to-county migration",
+      "observation_dimensions": [
+        "category",
+        "direction",
+        "measure",
+        "value_source",
+        "year_pair"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "IRS_MIGRATION"
+    },
+    {
       "datasets": [
         "corn_survey_annual",
         "soybeans_survey_annual",
@@ -1008,6 +1128,7 @@
         "CENSUS_ACS",
         "CENSUS_PEP",
         "FBI_UCR",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.map",
@@ -1046,6 +1167,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.trend",
@@ -1082,6 +1204,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.table",
@@ -1117,6 +1240,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.export",
@@ -1147,6 +1271,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.quality",
@@ -1184,7 +1309,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "explorer.distribution",
       "title": "the explorer's distribution histogram and legend bins",
@@ -1225,6 +1351,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.as_released",
@@ -1263,7 +1390,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "explorer.settled_history",
       "title": "the explorer's settled trend",
@@ -1304,7 +1432,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "comparison.workspace",
       "title": "the comparison workspace's scatter, table, map and export",
@@ -1341,6 +1470,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "workbench.series",
@@ -1380,7 +1510,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.cross_section",
       "title": "the workbench's cross-sectional scatter",
@@ -1420,7 +1551,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.heatmap",
       "title": "the workbench's geography-by-period heatmap",
@@ -1462,7 +1594,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.correlation",
       "title": "the workbench's correlation panel",
@@ -1498,7 +1631,8 @@
         "BLS",
         "CENSUS_ACS",
         "CENSUS_PEP",
-        "FRED"
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.matrix",
       "title": "the workbench's correlation matrix",
@@ -1538,6 +1672,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "profiles.product",

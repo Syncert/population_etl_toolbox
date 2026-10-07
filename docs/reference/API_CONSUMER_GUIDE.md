@@ -244,8 +244,50 @@ history and require an explicit run. Export and the reproducible API request
 retain the model and assumptions. Official projection datasets, cohort models,
 and service-capacity forecasts require separate reviewed upstream contracts.
 
+### County migration flows
+
+`GET /api/v1/migration-flows` serves the IRS Statistics of Income
+county-to-county migration files: for one county, one direction and one
+pair of filing years, where its movers came from (`direction=inflow`) or
+went (`direction=outflow`). It is provider-published data, not a
+derivation (`derived: false`), and every row has two geographies, so it is
+its own resource rather than an observation ([ADR-0008](../decisions/0008-origin-destination-flow-facts.md)).
+
+Parameters: `geo_id` (a county, `state:SS|county:CCC`; anything else is
+422), `direction` (`inflow` or `outflow`), `year_pair` (SOI's label, such
+as `2022-2023`; the default is the newest published), `measure` (`returns`,
+`individuals` or `agi`, the ranking; default `returns`), `limit` (1 to 500,
+default 25). A county no published file covers answers 404.
+
+The response carries three lists, never mixed:
+
+- `items`: the county-to-county flows, largest first by `measure`, each with
+  `origin_geo_id` and `destination_geo_id`; `total` is how many the file
+  publishes for this county.
+- `totals`: the file's own totals for the county (US and foreign, US, same
+  state, different state, foreign) and its non-migrants.
+- `categories`: SOI's "Other flows" (same state, different state, by
+  region) and foreign rows. Every flow of fewer than 20 returns is in one
+  of these; nothing redistributes them into counties.
+
+Reading a flow row:
+
+- **Returns are tax filers whose address changed** between the two filing
+  years; `individuals` approximates people (filers and dependents);
+  `agi` is the movers' adjusted gross income on the year-2 return, in
+  thousands of dollars, as text.
+- **A deleted category is withheld.** SOI deletes a category of fewer than
+  20 returns to protect taxpayers; it is `value_status: withheld` with
+  every measure `null`, and `value_source` keeps SOI's `-1,-1,-1`.
+- **This is not PEP net migration.** Tax filers are a different population
+  from the Census Bureau's estimates, and no net figure is computed here.
+- The file totals are also ordinary observations: a metric code is
+  `IRS_MIGRATION:<direction>:<category>:<measure>`, for example
+  `IRS_MIGRATION:inflow:total_us:returns`, with the pair of years in
+  `dimensions.year_pair`.
+
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
-BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS). The metric resolves to its
+BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS, IRS SOI migration). The metric resolves to its
 owning source through the published glossary and is read from that source's
 own serving relations, so its semantics survive.
 
@@ -513,6 +555,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| IRS SOI migration | the time the warehouse read the file | **Not an SOI publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 
@@ -1268,6 +1311,7 @@ status code on the one class of error the API can explain.
 | `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
+| `/migration-flows` | `items` by the chosen measure, largest first, then `counterpart_geo_id`; `totals` in SOI's header order; `categories` by SOI's counterpart code |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
 | `/analysis-configurations` | `name`, then `configuration_id`. Names are unique per owner, and the id closes the order regardless |
 | `/evidence-packets` | `name`, then `packet_id`, on the same basis |

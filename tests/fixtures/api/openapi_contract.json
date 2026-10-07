@@ -1239,6 +1239,75 @@
         "health"
       ]
     },
+    "GET /api/v1/migration-flows": {
+      "parameters": [
+        {
+          "constraints": {
+            "enum": [
+              "inflow",
+              "outflow"
+            ]
+          },
+          "in": "query",
+          "name": "direction",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 25,
+            "maximum": 500,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": "returns",
+            "enum": [
+              "returns",
+              "individuals",
+              "agi"
+            ]
+          },
+          "in": "query",
+          "name": "measure",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 9
+          },
+          "in": "query",
+          "name": "year_pair",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MigrationFlowsResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "migration"
+      ]
+    },
     "GET /api/v1/observations": {
       "parameters": [
         {
@@ -3097,6 +3166,63 @@
         "offset",
         "source_code",
         "total"
+      ]
+    },
+    "MigrationFlowsResponse": {
+      "properties": {
+        "categories": "array<MigrationRow>",
+        "caveats": "array<string>",
+        "derived": "boolean",
+        "direction": "string",
+        "geo_id": "string",
+        "items": "array<MigrationRow>",
+        "limit": "integer",
+        "measure": "string",
+        "period_end": "string",
+        "period_start": "string",
+        "release": "string",
+        "source_code": "string",
+        "total": "integer",
+        "totals": "array<MigrationRow>",
+        "unit": "string",
+        "year_pair": "string"
+      },
+      "required": [
+        "categories",
+        "caveats",
+        "direction",
+        "geo_id",
+        "items",
+        "limit",
+        "measure",
+        "period_end",
+        "period_start",
+        "release",
+        "total",
+        "totals",
+        "unit",
+        "year_pair"
+      ]
+    },
+    "MigrationRow": {
+      "properties": {
+        "agi": "string | null",
+        "category": "string",
+        "category_label": "string",
+        "counterpart_geo_id": "string | null",
+        "counterpart_name": "string | null",
+        "destination_geo_id": "string | null",
+        "individuals": "integer | null",
+        "origin_geo_id": "string | null",
+        "returns": "integer | null",
+        "value_source": "string",
+        "value_status": "string"
+      },
+      "required": [
+        "category",
+        "category_label",
+        "value_source",
+        "value_status"
       ]
     },
     "NassMeasureListResponse": {

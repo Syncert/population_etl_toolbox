@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "IRS_MIGRATION",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1807,6 +1808,112 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# IRS Statistics of Income county-to-county migration.
+# ---------------------------------------------------------------------------
+
+_IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.irs_migration_file",
+        "control",
+        "IRS_MIGRATION",
+        grain="run_id (one run per direction and pair of filing years)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in irs_migration/registry.py",
+        cadence="monthly; an unchanged file adds a capture and no flow",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_migration.flow_revision",
+        "silver",
+        "IRS_MIGRATION",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per SOI migration replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_migration.flow_quarantine",
+        "silver",
+        "IRS_MIGRATION",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or unresolved row; populated only on failure",
+        cadence="per SOI migration replay",
+        empty_behavior="empty when every row conformed and resolved",
+    ),
+    _obj(
+        "silver_irs_migration.fact_flow",
+        "silver",
+        "IRS_MIGRATION",
+        grain="direction, year_pair, subject_geo_id, counterpart_code, capture_id",
+        lineage="silver_irs_migration.flow_revision, silver_ref.dim_geo_entity",
+        scope_method="registered files; county flows with both ends resolved and SOI's own categories",
+        cadence="per SOI migration replay",
+        empty_behavior="a deleted category is withheld with no value, never zero; a flow under 20 returns is in its Other flows category",
+    ),
+    _obj(
+        "gold_irs_migration.flow_revision",
+        "gold",
+        "IRS_MIGRATION",
+        grain="direction, year_pair, subject_geo_id, counterpart_code, capture_id (published files only)",
+        lineage="silver_irs_migration.fact_flow, control.irs_migration_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.flow_latest",
+        "gold",
+        "IRS_MIGRATION",
+        grain="direction, year_pair, subject_geo_id, counterpart_code (newest capture)",
+        lineage="gold_irs_migration.flow_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.total_observation_revision",
+        "gold",
+        "IRS_MIGRATION",
+        grain="metric_key, geo_id, year_pair, capture_id (file totals only)",
+        lineage="gold_irs_migration.flow_revision",
+        scope_method="the six header rows of each county, one row per measure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.total_observation_latest",
+        "gold",
+        "IRS_MIGRATION",
+        grain="metric_key, geo_id, year_pair (newest capture)",
+        lineage="gold_irs_migration.total_observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.measure_export",
+        "publisher",
+        "IRS_MIGRATION",
+        grain="source_object_key (direction:category:measure)",
+        scope_method="registered directions x total categories x measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered, not harvested",
+    ),
+    _obj(
+        "gold_irs_migration.metric_publisher",
+        "publisher",
+        "IRS_MIGRATION",
+        grain="source_object_key (direction:category:measure)",
+        lineage="gold_irs_migration.total_observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1819,6 +1926,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _IRS_MIGRATION_OBJECTS
 )
 
 
@@ -2202,6 +2310,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_irs_migration.metric_publisher",
         ),
     ),
     _rule(
@@ -3269,6 +3378,107 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
         ),
+    ),
+    # -- IRS SOI county migration -------------------------------------------
+    _rule(
+        "DQ-IRS-001",
+        "BLOCK",
+        "uniqueness",
+        "SOI migration rows are unique per (direction, pair of filing years, "
+        "subject county, counterpart, capture): a revised file is a second "
+        "row beside the one it revised.",
+        (
+            "silver_irs_migration.fact_flow",
+            "gold_irs_migration.flow_revision",
+            "gold_irs_migration.flow_latest",
+            "gold_irs_migration.total_observation_revision",
+            "gold_irs_migration.total_observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                (
+                    "direction",
+                    "year_pair",
+                    "subject_geo_id",
+                    "counterpart_code",
+                    "capture_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IRS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed file accounts for every captured row as a flow, a "
+        "refusal or a quarantined row, and no captured file is left "
+        "unreplayed.",
+        (
+            "control.irs_migration_file",
+            "silver_irs_migration.flow_revision",
+            "silver_irs_migration.flow_quarantine",
+            "silver_irs_migration.fact_flow",
+        ),
+    ),
+    _rule(
+        "DQ-IRS-003",
+        "BLOCK",
+        "conformance",
+        "A county-to-county flow resolves at both ends; an SOI category names "
+        "no county; a deleted category is withheld with no value and only a "
+        "valid row carries numbers.",
+        (
+            "silver_irs_migration.fact_flow",
+            "silver_irs_migration.flow_revision",
+            "gold_irs_migration.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a county "
+            "flow without both resolved keys, a category with one, and a value "
+            "that disagrees with its status."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("category", "origin_geo_sk", "destination_geo_sk"),
+                kind="check",
+                constraint_name="irs_flow_endpoints_resolved",
+            ),
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("category", "origin_geo_id", "destination_geo_id"),
+                kind="check",
+                constraint_name="irs_flow_category_names_no_county",
+            ),
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("value_status", "returns"),
+                kind="check",
+                constraint_name="irs_flow_withheld_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("value_status", "returns"),
+                kind="check",
+                constraint_name="irs_flow_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IRS-004",
+        "WARN",
+        "reconciliation",
+        "In the newest published file, a county's flows, Other flows and "
+        "foreign categories sum to the file's own total migration exactly "
+        "when none is withheld, and never exceed it when one is.",
+        ("silver_irs_migration.flow_revision", "control.irs_migration_file"),
     ),
 )
 
