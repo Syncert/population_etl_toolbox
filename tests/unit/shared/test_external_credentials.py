@@ -21,6 +21,8 @@ def test_scheduled_external_credentials_accept_all_configured_keys() -> None:
             "FRED_API_KEY": "fred-secret",
             "FBI_CDE_API_KEY": "fbi-secret",
             "USDA_NASS_API_KEY": "nass-secret",
+            "FCC_BDC_USERNAME": "fcc-user",
+            "FCC_BDC_API_TOKEN": "fcc-secret",
         }
     )
 
@@ -35,6 +37,8 @@ def test_scheduled_external_credentials_name_missing_keys_without_values() -> No
                 "FRED_API_KEY": "fred-secret",
                 "FBI_CDE_API_KEY": "fbi-secret",
                 "USDA_NASS_API_KEY": "nass-secret",
+                "FCC_BDC_USERNAME": "fcc-user",
+                "FCC_BDC_API_TOKEN": "fcc-secret",
             }
         )
 
@@ -58,4 +62,6 @@ def test_scheduled_external_credentials_cover_every_credentialed_source() -> Non
         "FRED_API_KEY",
         "FBI_CDE_API_KEY",
         "USDA_NASS_API_KEY",
+        "FCC_BDC_USERNAME",
+        "FCC_BDC_API_TOKEN",
     }

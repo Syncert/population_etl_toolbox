@@ -46,6 +46,8 @@ services:
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
       USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
+      FCC_BDC_USERNAME: ${FCC_BDC_USERNAME:-}
+      FCC_BDC_API_TOKEN: ${FCC_BDC_API_TOKEN:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
       # Shared so the webserver reads task logs directly from disk and
@@ -72,6 +74,7 @@ services:
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
+      airflow pools set fcc_bdc_api 1 'FCC broadband map API (10 calls a minute)';
       airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 

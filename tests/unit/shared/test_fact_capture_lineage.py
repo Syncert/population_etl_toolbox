@@ -52,6 +52,15 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "FCC_BDC",
+        SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
+        "silver_fcc_bdc.availability_row",
+        "valid",
+        # A row carries six shares; the 100/20 share is the one every
+        # published measure's status speaks for.
+        value_column="speed_100_20",
+    ),
+    FactContract(
         "BLS",
         SRC / "bls/DDL/silver_bls.sql",
         "silver_bls.fact_labor_statistics",

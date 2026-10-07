@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "FCC_BDC",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1807,6 +1808,112 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# FCC Broadband Data Collection (fixed availability summaries).
+# ---------------------------------------------------------------------------
+
+_BDC_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fcc_bdc_read",
+        "control",
+        "FCC_BDC",
+        grain="run_id (one run per read of a registered vintage)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered December 31 availability vintages",
+        cadence="monthly; a read whose files equal the vintage's last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.fcc_bdc_file",
+        "control",
+        "FCC_BDC",
+        grain="run_id, slice_key (one row per downloaded file)",
+        lineage="control.fcc_bdc_read, raw_capture.response_capture",
+        scope_method="each read's national other-geographies summary and each state's place summary",
+        cadence="monthly, with each read",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_fcc_bdc.quarantine",
+        "silver",
+        "FCC_BDC",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated row; populated only on failure",
+        cadence="per FCC replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_fcc_bdc.availability_row",
+        "silver",
+        "FCC_BDC",
+        grain="run_id, geo_id, technology",
+        lineage="control.fcc_bdc_file, silver_ref.dim_geo_entity",
+        scope_method="total-area residential rows for the registered technologies at the nation, states, counties and places",
+        cadence="per FCC replay",
+        empty_behavior="a share with no units is missing (no_units), never 0",
+    ),
+    _obj(
+        "gold_fcc_bdc.measure_definition",
+        "gold",
+        "FCC_BDC",
+        grain="measure",
+        scope_method="the six published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_fcc_bdc.availability_observation",
+        "gold",
+        "FCC_BDC",
+        grain="run_id, geo_id, technology",
+        lineage="silver_fcc_bdc.availability_row, control.fcc_bdc_read, control.fcc_bdc_file",
+        scope_method="published rows with their file revision: the lineage of every served figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published vintage",
+    ),
+    _obj(
+        "gold_fcc_bdc.observation_revision",
+        "gold",
+        "FCC_BDC",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_fcc_bdc.availability_observation",
+        scope_method="every published read's measures by geography",
+        cadence="per publication",
+        empty_behavior="empty only before the first published vintage",
+    ),
+    _obj(
+        "gold_fcc_bdc.observation_latest",
+        "gold",
+        "FCC_BDC",
+        grain="metric_key, geo_id, year (newest read)",
+        lineage="gold_fcc_bdc.observation_revision",
+        scope_method="newest-read projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published vintage",
+    ),
+    _obj(
+        "gold_fcc_bdc.measure_export",
+        "publisher",
+        "FCC_BDC",
+        grain="source_object_key (measure)",
+        lineage="gold_fcc_bdc.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_fcc_bdc.metric_publisher",
+        "publisher",
+        "FCC_BDC",
+        grain="source_object_key (measure)",
+        lineage="gold_fcc_bdc.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published vintage",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1819,6 +1926,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _BDC_OBJECTS
 )
 
 
@@ -2202,6 +2310,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_fcc_bdc.metric_publisher",
         ),
     ),
     _rule(
@@ -3269,6 +3378,90 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
         ),
+    ),
+    # -- FCC Broadband Data Collection (fixed availability) --------------------
+    _rule(
+        "DQ-FCC-001",
+        "BLOCK",
+        "uniqueness",
+        "A summary row is unique per (read, geography, technology): a repeat "
+        "is quarantined, and a new FCC revision is a second read.",
+        (
+            "silver_fcc_bdc.availability_row",
+            "gold_fcc_bdc.availability_observation",
+            "gold_fcc_bdc.observation_revision",
+            "gold_fcc_bdc.observation_latest",
+            "gold_fcc_bdc.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the availability row's "
+            "primary key; the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row", ("run_id", "geo_id", "technology")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FCC-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured vintage is left unreplayed, and every replayed vintage "
+        "reached its rows.",
+        (
+            "control.fcc_bdc_read",
+            "control.fcc_bdc_file",
+            "silver_fcc_bdc.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-FCC-003",
+        "BLOCK",
+        "conformance",
+        "Every share lies in 0..1, a valid row carries all six shares, and a "
+        "geography with no units carries none: no undefined share becomes a "
+        "zero.",
+        (
+            "silver_fcc_bdc.availability_row",
+            "gold_fcc_bdc.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a share "
+            "outside 0..1, a valid row missing a share, and a share on a "
+            "geography with no units."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row",
+                ("speed_02_02", "speed_1000_100"),
+                kind="check",
+                constraint_name="fcc_bdc_row_shares_in_range",
+            ),
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row",
+                ("value_status", "speed_02_02"),
+                kind="check",
+                constraint_name="fcc_bdc_row_valid_shares_present",
+            ),
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row",
+                ("missing_reason", "total_units"),
+                kind="check",
+                constraint_name="fcc_bdc_row_no_units_no_shares",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FCC-004",
+        "WARN",
+        "plausibility",
+        "In every published vintage, each row's shares do not rise with speed "
+        "(0.2/0.2 at least 10/1, down to 1000/100), and every state and county "
+        "row resolved to the shared geography.",
+        ("silver_fcc_bdc.availability_row", "control.fcc_bdc_read"),
     ),
 )
 

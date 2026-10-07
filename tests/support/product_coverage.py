@@ -331,6 +331,36 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="fcc_bdc.broadband_availability",
+        source="FCC_BDC",
+        publisher_schema="gold_fcc_bdc",
+        datasets=("availability:2024-12-31", "availability:2025-12-31"),
+        fixtures=(
+            "tests/fixtures/fcc_bdc/listAvailabilityData_2025-12-31.json",
+            "tests/fixtures/fcc_bdc/1820956.zip",
+            "tests/fixtures/fcc_bdc/1820975.zip",
+        ),
+        serving_relations=(
+            "gold_fcc_bdc.observation_revision",
+            "gold_fcc_bdc.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_fcc_bdc_pipeline.py::"
+            "test_county_and_place_availability_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "FCC broadband availability publishes no source-specific HTTP route: "
+            "each row is the neutral observation shape with its as-of date, the "
+            "FCC's revision and the unit denominator as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

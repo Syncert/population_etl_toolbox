@@ -651,6 +651,78 @@ def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome
     ]
 
 
+def bdc_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-FCC-002 — no vintage left unreplayed; every replayed one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.fcc_bdc_read")
+    if total == 0:
+        return [RuleOutcome("control.fcc_bdc_read", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT read.run_id, read.as_of_date, read.status, read.kept_row_count
+          FROM control.fcc_bdc_read AS read
+         WHERE read.status = 'captured'
+            OR (read.status IN ('silver_ready', 'published')
+                AND read.kept_row_count > 0
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_fcc_bdc.availability_row AS availability
+                     WHERE availability.run_id = read.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.fcc_bdc_read",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bdc_tier_order_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FCC-004 — shares never rise with speed; state and county rows resolve."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.fcc_bdc_read WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("silver_fcc_bdc.availability_row", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT availability.run_id, availability.geo_id, availability.technology,
+               availability.geography_status
+          FROM silver_fcc_bdc.availability_row AS availability
+          JOIN control.fcc_bdc_read AS read USING (run_id)
+         WHERE read.status = 'published'
+           AND ((availability.value_status = 'valid'
+                 AND NOT (availability.speed_02_02 >= availability.speed_10_1
+                          AND availability.speed_10_1 >= availability.speed_25_3
+                          AND availability.speed_25_3 >= availability.speed_100_20
+                          AND availability.speed_100_20 >= availability.speed_250_25
+                          AND availability.speed_250_25 >= availability.speed_1000_100))
+                OR (availability.geography_type IN ('state', 'county')
+                    AND availability.geography_status <> 'resolved'))
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_fcc_bdc.availability_row",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1698,6 +1770,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-FCC-002": bdc_read_reconciliation,
+    "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

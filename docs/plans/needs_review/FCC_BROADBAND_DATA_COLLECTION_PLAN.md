@@ -15,9 +15,10 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/fcc-broadband` (from `docs/scout-county-sources`)
+after Nick registered an FCC account and API token (2026-10-07).
 
 ## Why
 
@@ -115,6 +116,71 @@ Sources: *Specifications for Data Downloads from the National Broadband Map*, ve
 - **Deferred files.** Decide whether the location-level served/unserved file is ever onboarded. It is not in this plan.
 - **Unit counts.** The summary files publish shares, not counts of served units. Whether to publish shares × `total_units` as a labeled derived count is undecided; the default is no.
 
+## Decisions (open items resolved, 2026-10-07)
+
+- **Credentials and disclaimer.** Nick created the FCC account and token and
+  accepted the Terms of Use when generating it; he raised no restriction on
+  republishing county summaries. `FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN`
+  are in both stack example env files, passed by Compose, required by the
+  scheduled external run and wired from repository secrets.
+- **API host.** `https://broadbandmap.fcc.gov/api/public/map` answers the
+  API with the credentials (the spec's `bdc.fcc.gov` was not needed); no
+  403 from the DAG host.
+- **Revisions exposed.** The listing shows one current revision per vintage
+  (`..._D25_29sep2026`); a new revision is a new file name and release.
+- **Real layout.** Technologies are named `Any Technology`, `Any
+  Terrestrial`, `All Wired`, `Cable/Fiber` ... (not the spec's `All
+  Technologies`); `biz_res` is `R` or `B` per row (no combined row); county
+  `geography_id` is five digits, the nation `99`, places seven digits. No
+  empty cells and no zero-unit geographies in the 2025-12-31 file; both are
+  still handled (`blank`, `no_units`).
+- **Rows kept.** `Total` area, residential (`R`) units, three technology
+  groups, nation/state/county/place; CBSA, district and tribal rows dropped.
+  Six measures: residential units, any-technology shares at 25/3, 100/20
+  and 1000/100, terrestrial and wired at 100/20. No derived unit counts.
+- **Vintages.** December 31 only (2024 and 2025) so each year has one
+  figure; June vintages are not registered.
+- **Silver keeps every tier.** One row per (read, geography, technology)
+  with all six shares, so `DQ-FCC-004` can check the tier order; gold
+  derives the measures.
+- **Boundary vintage (open item).** The FCC says only "latest Census Bureau
+  data"; geographies resolve by code to the shared dimension, and
+  unseeded codes are recorded unmapped.
+- **Analysis-ready.** One figure per geography per year.
+- **Deferred files** (location-level, served/unserved): not onboarded.
+
+## Evidence (2026-10-07, Windows host, local Docker test stack)
+
+- Real files: the 2025-12-31 national summary (616,170 rows; 9,867 kept:
+  the nation, 56 states and 3,232 counties for three technologies) and
+  Delaware's place summary (7,830 rows; 234 kept) parse with nothing
+  quarantined; no row has shares rising with speed.
+- Unit: `python -m pytest tests/unit` -- 2186 passed, including
+  `tests/unit/fcc_bdc` (7).
+- Database: `tests/integration/database/test_fcc_bdc_capture_replay.py` --
+  5 passed: both vintages to gold for the nation, Delaware, Kent County,
+  Dover and Washington DC with the revision; credentials in no capture;
+  zero units giving no share; an unchanged read replaying nothing; a new
+  revision as a second release; an out-of-range share quarantined; a
+  non-zip failing capture; `DQ-FCC-002`/`-004` passing and then catching a
+  fault; the harvest naming six measures.
+- End to end: `tests/e2e/test_fcc_bdc_pipeline.py` serves Kent County's and
+  Dover's 1000/100 share through `/api/v1/observations` with the as-of date
+  and revision.
+- Live: `tests/external/test_fcc_bdc_source_contracts.py` -- 6 passed with
+  Nick's credentials.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 460 passed, 2 skipped, 1 failed (the PEP teardown node,
+  failing on `main` too), including the DB-025/DB-044 sweeps with a published
+  FCC metric.
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `fcc_bdc_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
+  viz coverage and plan environments regenerated.
+
 ## Checkpoint
 
-Next pickup: create an FCC account and token, read the Terms of Use modal, pull `listAsOfDates` and one other-geographies summary zip, then trim the fixture and write the failing replay test for one state and its counties.
+All acceptance criteria met; ready for review. Repository secrets
+`FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN` are needed for the scheduled
+external-contract workflow.

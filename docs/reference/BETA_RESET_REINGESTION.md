@@ -322,6 +322,13 @@ FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
+Trigger `fcc_bdc_ingest` once after the shared geography loads (it needs
+`FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN`): it reads each registered
+December vintage's national and per-state place summaries through the
+one-slot `fcc_bdc_api` pool, about seven minutes a vintage at the API's 10
+calls a minute
+([operations](../user-guides/FCC_BDC_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

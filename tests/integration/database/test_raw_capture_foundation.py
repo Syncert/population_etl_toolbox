@@ -117,6 +117,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "fbi_ucr_release"),
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
+        ("control", "fcc_bdc_read"),
+        ("control", "fcc_bdc_file"),
         ("control", "data_quality_run"),
         ("control", "data_quality_result"),
     }

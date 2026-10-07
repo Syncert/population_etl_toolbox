@@ -307,6 +307,52 @@ r control.fbi_ucr_release
     index fbi_ucr_release_pkey CREATE UNIQUE INDEX fbi_ucr_release_pkey ON control.fbi_ucr_release USING btree (run_id)
     index fbi_ucr_release_product_id_refresh_date_run_id_key CREATE UNIQUE INDEX fbi_ucr_release_product_id_refresh_date_run_id_key ON control.fbi_ucr_release USING btree (product_id, refresh_date, run_id)
 
+r control.fcc_bdc_file
+    column run_id uuid NOT NULL
+    column slice_key text NOT NULL
+    column subcategory text NOT NULL
+    column state_fips text
+    column file_id bigint NOT NULL
+    column file_name text NOT NULL
+    column revision text NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    constraint fcc_bdc_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fcc_bdc_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint fcc_bdc_file_pkey PRIMARY KEY (run_id, slice_key)
+    constraint fcc_bdc_file_place_has_state CHECK (((subcategory = 'place'::text) = (state_fips IS NOT NULL)))
+    constraint fcc_bdc_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.fcc_bdc_read(run_id)
+    constraint fcc_bdc_file_state_fips_check CHECK (((state_fips IS NULL) OR (state_fips ~ '^[0-9]{2}$'::text)))
+    constraint fcc_bdc_file_subcategory_check CHECK ((subcategory = ANY (ARRAY['other_geographies'::text, 'place'::text])))
+    index fcc_bdc_file_capture_idx CREATE INDEX fcc_bdc_file_capture_idx ON control.fcc_bdc_file USING btree (capture_id)
+    index fcc_bdc_file_pkey CREATE UNIQUE INDEX fcc_bdc_file_pkey ON control.fcc_bdc_file USING btree (run_id, slice_key)
+
+r control.fcc_bdc_read
+    column run_id uuid NOT NULL
+    column as_of_date date NOT NULL
+    column listing_capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column file_count integer NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fcc_bdc_read_as_of_date_check CHECK ((EXTRACT(month FROM as_of_date) = ANY (ARRAY[(6)::numeric, (12)::numeric])))
+    constraint fcc_bdc_read_file_count_check CHECK ((file_count >= 1))
+    constraint fcc_bdc_read_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint fcc_bdc_read_kept_within_rows CHECK ((kept_row_count <= row_count))
+    constraint fcc_bdc_read_listing_capture_id_fkey FOREIGN KEY (listing_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fcc_bdc_read_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint fcc_bdc_read_pkey PRIMARY KEY (run_id)
+    constraint fcc_bdc_read_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint fcc_bdc_read_row_count_check CHECK ((row_count >= 0))
+    constraint fcc_bdc_read_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fcc_bdc_read_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index fcc_bdc_read_listing_idx CREATE INDEX fcc_bdc_read_listing_idx ON control.fcc_bdc_read USING btree (listing_capture_id)
+    index fcc_bdc_read_pkey CREATE UNIQUE INDEX fcc_bdc_read_pkey ON control.fcc_bdc_read USING btree (run_id)
+
 r control.fred_ingestion_slices
     column id bigint NOT NULL DEFAULT nextval('control.fred_ingestion_slices_id_seq'::regclass)
     column domain text NOT NULL
@@ -2871,6 +2917,247 @@ v gold_fbi.reporting_coverage
     body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = coverage.product_id AND release.release_key = coverage.release_key
     body   WHERE release.status = 'published'::text;
 
+v gold_fcc_bdc.availability_observation
+    column run_id uuid
+    column geo_id text
+    column technology text
+    column capture_id uuid
+    column source_row_index integer
+    column geography_type text
+    column geography_id text
+    column geo_sk bigint
+    column geography_status text
+    column total_units integer
+    column speed_02_02 numeric
+    column speed_10_1 numeric
+    column speed_25_3 numeric
+    column speed_100_20 numeric
+    column speed_250_25 numeric
+    column speed_1000_100 numeric
+    column value_source text
+    column value_status text
+    column missing_reason text
+    column created_at timestamp with time zone
+    column as_of_date date
+    column file_name text
+    column revision text
+    column published_at timestamp with time zone
+    body SELECT availability.run_id,
+    body     availability.geo_id,
+    body     availability.technology,
+    body     availability.capture_id,
+    body     availability.source_row_index,
+    body     availability.geography_type,
+    body     availability.geography_id,
+    body     availability.geo_sk,
+    body     availability.geography_status,
+    body     availability.total_units,
+    body     availability.speed_02_02,
+    body     availability.speed_10_1,
+    body     availability.speed_25_3,
+    body     availability.speed_100_20,
+    body     availability.speed_250_25,
+    body     availability.speed_1000_100,
+    body     availability.value_source,
+    body     availability.value_status,
+    body     availability.missing_reason,
+    body     availability.created_at,
+    body     read.as_of_date,
+    body     file.file_name,
+    body     file.revision,
+    body     read.published_at
+    body    FROM silver_fcc_bdc.availability_row availability
+    body      JOIN control.fcc_bdc_read read ON read.run_id = availability.run_id
+    body      JOIN control.fcc_bdc_file file ON file.run_id = availability.run_id AND file.capture_id = availability.capture_id
+    body   WHERE read.status = 'published'::text;
+
+v gold_fcc_bdc.measure_definition
+    column measure text
+    column technology text
+    column tier_column text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     technology,
+    body     tier_column,
+    body     measure_label,
+    body     unit,
+    body     (((((('FCC National Broadband Map, fixed broadband availability summary (total area, residential '::text || 'units): what providers report they could serve, not what households subscribe to and not '::text) || 'a measured speed; distinct from the ACS broadband subscription measures. The FCC '::text) || 'aggregates its Broadband Serviceable Locations to the nation, states, counties and places '::text) || 'itself; this warehouse does not re-aggregate. '::text) || definition) || ' Source: Federal Communications Commission, National Broadband Map (Broadband Data '::text) || 'Collection).'::text AS observation_basis
+    body    FROM ( VALUES ('residential_units'::text,'Any Technology'::text,NULL::text,'Residential broadband serviceable units'::text,'units'::text,'The count of residential units at broadband serviceable locations, the denominator of the shares.'::text), ('share_any_25_3'::text,'Any Technology'::text,'speed_25_3'::text,'Share of residential units with fixed broadband reported at 25/3 Mbps or faster'::text,'share of units'::text,'The share of units where any provider reports fixed service of at least 25 Mbps down and 3 up, by any technology.'::text), ('share_any_100_20'::text,'Any Technology'::text,'speed_100_20'::text,'Share of residential units with fixed broadband reported at 100/20 Mbps or faster'::text,'share of units'::text,'The share of units where any provider reports fixed service of at least 100 Mbps down and 20 up, by any technology.'::text), ('share_any_1000_100'::text,'Any Technology'::text,'speed_1000_100'::text,'Share of residential units with fixed broadband reported at 1000/100 Mbps or faster'::text,'share of units'::text,'The share of units where any provider reports fixed service of at least 1000 Mbps down and 100 up, by any technology.'::text), ('share_terrestrial_100_20'::text,'Any Terrestrial'::text,'speed_100_20'::text,'Share of residential units with terrestrial fixed broadband reported at 100/20 Mbps or faster'::text,'share of units'::text,'As share_any_100_20, counting terrestrial technologies only (not satellite).'::text), ('share_wired_100_20'::text,'All Wired'::text,'speed_100_20'::text,'Share of residential units with wired broadband reported at 100/20 Mbps or faster'::text,'share of units'::text,'As share_any_100_20, counting wired technologies only (copper, cable, fiber).'::text)) measure(measure, technology, tier_column, measure_label, unit, definition);
+
+v gold_fcc_bdc.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'fcc_bdc_summary_csv:v1'::text AS schema_version
+    body    FROM gold_fcc_bdc.measure_definition;
+
+v gold_fcc_bdc.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'FCC_BDC'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (FCC National Broadband Map, provider-reported availability)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_fcc_bdc', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Federal Communications Commission National Broadband Map'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://broadbandmap.fcc.gov/data-download'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_fcc_bdc.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_fcc_bdc.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_fcc_bdc.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column total_units integer
+    column as_of_date text
+    column revision text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     missing_reason,
+    body     total_units,
+    body     as_of_date,
+    body     revision,
+    body     release_key,
+    body     published_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_fcc_bdc.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, published_at DESC, run_id DESC;
+
+v gold_fcc_bdc.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column total_units integer
+    column as_of_date text
+    column revision text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT definition.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     EXTRACT(year FROM "row".as_of_date)::integer AS year,
+    body     "row".as_of_date AS period_start,
+    body     "row".as_of_date AS period_end,
+    body     "row".geo_id,
+    body     "row".geo_sk,
+    body     "row".geography_type AS geo_type,
+    body     gold_glossary.geo_grain("row".geography_type) AS geo_level,
+    body     "row".geography_status,
+    body         CASE definition.tier_column
+    body             WHEN 'speed_25_3'::text THEN "row".speed_25_3
+    body             WHEN 'speed_100_20'::text THEN "row".speed_100_20
+    body             WHEN 'speed_1000_100'::text THEN "row".speed_1000_100
+    body             ELSE "row".total_units::numeric
+    body         END AS value,
+    body         CASE
+    body             WHEN definition.tier_column IS NULL THEN 'valid'::text
+    body             ELSE "row".value_status
+    body         END AS value_status,
+    body         CASE
+    body             WHEN definition.tier_column IS NULL THEN NULL::text
+    body             ELSE "row".missing_reason
+    body         END AS missing_reason,
+    body     "row".total_units,
+    body     "row".as_of_date::text AS as_of_date,
+    body     "row".revision,
+    body     (((('BDC '::text || "row".as_of_date::text) || ' rev '::text) || "row".revision) || ' read '::text) || to_char(("row".published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'::text) AS release_key,
+    body     "row".published_at,
+    body     md5((((definition.measure || '|'::text) || "row".geo_id) || '|'::text) || "row".run_id::text) AS source_record_id,
+    body     "row".capture_id,
+    body     "row".run_id
+    body    FROM gold_fcc_bdc.availability_observation "row"
+    body      JOIN gold_fcc_bdc.measure_definition definition ON definition.technology = "row".technology
+    body   WHERE "row".geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]);
+
 r gold_fred.dim_fred_series
     column fred_series_sk bigint NOT NULL DEFAULT nextval('gold_fred.dim_fred_series_fred_series_sk_seq'::regclass)
     column series_id text NOT NULL
@@ -5054,6 +5341,61 @@ r silver_fbi.slice_quarantine
     constraint slice_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
     index slice_quarantine_pkey CREATE UNIQUE INDEX slice_quarantine_pkey ON silver_fbi.slice_quarantine USING btree (quarantine_sk)
     index slice_quarantine_run_id_product_id_release_key_slice_key_so_key CREATE UNIQUE INDEX slice_quarantine_run_id_product_id_release_key_slice_key_so_key ON silver_fbi.slice_quarantine USING btree (run_id, product_id, release_key, slice_key, source_row_index, error_code)
+
+r silver_fcc_bdc.availability_row
+    column run_id uuid NOT NULL
+    column geo_id text NOT NULL
+    column technology text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column geography_type text NOT NULL
+    column geography_id text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column total_units integer NOT NULL
+    column speed_02_02 numeric
+    column speed_10_1 numeric
+    column speed_25_3 numeric
+    column speed_100_20 numeric
+    column speed_250_25 numeric
+    column speed_1000_100 numeric
+    column value_source text NOT NULL
+    column value_status text NOT NULL
+    column missing_reason text
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint availability_row_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint availability_row_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint availability_row_geography_type_check CHECK ((geography_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'place'::text])))
+    constraint availability_row_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = ANY (ARRAY['no_units'::text, 'blank'::text]))))
+    constraint availability_row_pkey PRIMARY KEY (run_id, geo_id, technology)
+    constraint availability_row_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.fcc_bdc_read(run_id)
+    constraint availability_row_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint availability_row_technology_check CHECK ((technology = ANY (ARRAY['Any Technology'::text, 'Any Terrestrial'::text, 'All Wired'::text])))
+    constraint availability_row_total_units_check CHECK ((total_units >= 0))
+    constraint availability_row_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint fcc_bdc_row_no_units_no_shares CHECK (((missing_reason IS DISTINCT FROM 'no_units'::text) OR ((total_units = 0) AND (speed_02_02 IS NULL) AND (speed_10_1 IS NULL) AND (speed_25_3 IS NULL) AND (speed_100_20 IS NULL) AND (speed_250_25 IS NULL) AND (speed_1000_100 IS NULL))))
+    constraint fcc_bdc_row_shares_in_range CHECK ((((COALESCE(speed_02_02, (0)::numeric) >= (0)::numeric) AND (COALESCE(speed_02_02, (0)::numeric) <= (1)::numeric)) AND ((COALESCE(speed_10_1, (0)::numeric) >= (0)::numeric) AND (COALESCE(speed_10_1, (0)::numeric) <= (1)::numeric)) AND ((COALESCE(speed_25_3, (0)::numeric) >= (0)::numeric) AND (COALESCE(speed_25_3, (0)::numeric) <= (1)::numeric)) AND ((COALESCE(speed_100_20, (0)::numeric) >= (0)::numeric) AND (COALESCE(speed_100_20, (0)::numeric) <= (1)::numeric)) AND ((COALESCE(speed_250_25, (0)::numeric) >= (0)::numeric) AND (COALESCE(speed_250_25, (0)::numeric) <= (1)::numeric)) AND ((COALESCE(speed_1000_100, (0)::numeric) >= (0)::numeric) AND (COALESCE(speed_1000_100, (0)::numeric) <= (1)::numeric))))
+    constraint fcc_bdc_row_status_reason CHECK (((value_status = 'valid'::text) = (missing_reason IS NULL)))
+    constraint fcc_bdc_row_valid_shares_present CHECK (((value_status <> 'valid'::text) OR ((speed_02_02 IS NOT NULL) AND (speed_10_1 IS NOT NULL) AND (speed_25_3 IS NOT NULL) AND (speed_100_20 IS NOT NULL) AND (speed_250_25 IS NOT NULL) AND (speed_1000_100 IS NOT NULL))))
+    constraint fcc_bdc_row_valid_value_present CHECK (((value_status <> 'valid'::text) OR (speed_100_20 IS NOT NULL)))
+    index availability_row_pkey CREATE UNIQUE INDEX availability_row_pkey ON silver_fcc_bdc.availability_row USING btree (run_id, geo_id, technology)
+    index fcc_bdc_row_geo_idx CREATE INDEX fcc_bdc_row_geo_idx ON silver_fcc_bdc.availability_row USING btree (geo_id)
+
+r silver_fcc_bdc.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_fcc_bdc.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_fcc_bdc.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_fcc_bdc.quarantine USING btree (quarantine_sk)
 
 r silver_fred.fact_economic_indicators
     column economic_indicator_sk bigint NOT NULL DEFAULT nextval('silver_fred.fact_economic_indicators_economic_indicator_sk_seq'::regclass)

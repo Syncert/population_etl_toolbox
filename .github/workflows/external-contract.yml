@@ -42,6 +42,9 @@ jobs:
       # and Quick Stats refuses an unkeyed request.
       FBI_CDE_API_KEY: ${{ secrets.FBI_CDE_API_KEY }}
       USDA_NASS_API_KEY: ${{ secrets.USDA_NASS_API_KEY }}
+      # The FCC broadband map API needs an FCC account and its API token.
+      FCC_BDC_USERNAME: ${{ secrets.FCC_BDC_USERNAME }}
+      FCC_BDC_API_TOKEN: ${{ secrets.FCC_BDC_API_TOKEN }}
       # Optional: raises CDC Socrata rate limits; anonymous reads still work.
       CDC_SOCRATA_APP_TOKEN: ${{ secrets.CDC_SOCRATA_APP_TOKEN }}
 
