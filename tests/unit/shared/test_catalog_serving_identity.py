@@ -114,6 +114,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
         "gold_bls": "BLS",
         "gold_cdc": "CDC",
         "gold_census": "CENSUS_ACS",
+        "gold_census_bps": "CENSUS_BPS",
         "gold_fbi": "FBI_UCR",
         "gold_fred": "FRED",
         "gold_nass": "USDA_NASS",

@@ -331,6 +331,37 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="census_bps.housing_units_authorized",
+        source="CENSUS_BPS",
+        publisher_schema="gold_census_bps",
+        datasets=("county", "state", "place:south"),
+        fixtures=(
+            "tests/fixtures/census_bps/County_co2403c.txt",
+            "tests/fixtures/census_bps/County_co2412y.txt",
+            "tests/fixtures/census_bps/State_st2403c.txt",
+            "tests/fixtures/census_bps/Place_South_so2024a.txt",
+        ),
+        serving_relations=(
+            "gold_census_bps.observation_revision",
+            "gold_census_bps.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_bps_pipeline.py::"
+            "test_permits_reach_the_neutral_api_as_authorizations_for_a_county_and_a_place"
+        ),
+        api_absence_reason=(
+            "The Building Permits Survey publishes no source-specific HTTP route: "
+            "each row is the neutral observation shape with its structure type, "
+            "frequency, reported figure and authorization basis as declared "
+            "dimensions, so `/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

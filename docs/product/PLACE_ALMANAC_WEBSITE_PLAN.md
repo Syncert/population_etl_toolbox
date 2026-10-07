@@ -317,7 +317,7 @@ Warehouse, county and place depth:
 - [`docs/plans/to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
 - [`docs/plans/to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
 - [`docs/plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
-- [`docs/plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
+- [`docs/plans/in_progress/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/in_progress/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
 - [`docs/plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
 - [`docs/plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
 - [`docs/plans/to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md`](../plans/to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) — tracts and ZCTAs, after place grain.

@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "census_bps_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,37 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_census_building_permits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Building Permits files; any other file answers 404."""
+    from data_ingestion_toolbox.census_bps import capture as bps_capture
+    from data_ingestion_toolbox.census_bps.client import BpsFile
+
+    fixtures = {
+        "/County/co2403c.txt": "County_co2403c.txt",
+        "/County/co2412y.txt": "County_co2412y.txt",
+        "/State/st2403c.txt": "State_st2403c.txt",
+        "/Place/South Region/so2024a.txt": "Place_South_so2024a.txt",
+    }
+
+    def fetch(item: Any, **_kwargs: Any) -> BpsFile:
+        parameters = {
+            "slice": item.slice_key,
+            "frequency": item.frequency,
+            "year": str(item.year),
+            "month": str(item.month),
+        }
+        name = fixtures.get(item.path)
+        if name is None:
+            return BpsFile(item.path, parameters, b"", {}, 404)
+        payload = (FIXTURE_ROOT / "census_bps" / name).read_bytes()
+        return BpsFile(
+            item.path, parameters, payload, {"content-type": "text/plain"}, 200
+        )
+
+    monkeypatch.setattr(bps_capture, "fetch_file", fetch)
+    monkeypatch.setattr(bps_capture, "pause", lambda _seconds: None)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1128,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("census_bps", stub_census_building_permits),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )
