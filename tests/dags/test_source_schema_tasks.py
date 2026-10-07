@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from data_ingestion_toolbox.cdc import schema as cdc_schema
+from data_ingestion_toolbox.census_bps import schema as bps_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
 from data_ingestion_toolbox.usda_nass import schema as nass_schema
 from data_ingestion_toolbox.utility import gold_schema
@@ -35,6 +36,13 @@ SOURCES = [
         "ingest_batch_",
         nass_schema,
         "USDA_NASS",
+    ),
+    (
+        "census_building_permits_ingest",
+        "ensure_census_bps_schema",
+        "ingest_batch_",
+        bps_schema,
+        "CENSUS_BPS",
     ),
 ]
 
