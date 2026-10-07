@@ -122,6 +122,11 @@
       "path": "src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql"
     },
     {
+      "id": "silver-noaa-normals",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -177,6 +182,11 @@
       "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/gold_epa_aqs.sql"
     },
     {
+      "id": "gold-noaa-normals",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -210,6 +220,11 @@
       "id": "publisher-epa-aqs",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-noaa-normals",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql"
     },
     {
       "id": "migration-028",

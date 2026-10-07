@@ -407,6 +407,30 @@ r control.ingestion_run
     index ingestion_run_run_id_source_code_key CREATE UNIQUE INDEX ingestion_run_run_id_source_code_key ON control.ingestion_run USING btree (run_id, source_code)
     index ingestion_run_source_status_idx CREATE INDEX ingestion_run_source_status_idx ON control.ingestion_run USING btree (source_code, status, created_at DESC)
 
+r control.noaa_normals_file
+    column run_id uuid NOT NULL
+    column archive_version text NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column station_file_count integer NOT NULL DEFAULT 0
+    column station_count integer NOT NULL DEFAULT 0
+    column boundary_vintage integer
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint noaa_normals_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint noaa_normals_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint noaa_normals_file_pkey PRIMARY KEY (run_id)
+    constraint noaa_normals_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint noaa_normals_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint noaa_normals_file_station_count_check CHECK ((station_count >= 0))
+    constraint noaa_normals_file_station_file_count_check CHECK ((station_file_count >= 0))
+    constraint noaa_normals_file_stations_within_files CHECK ((station_count <= station_file_count))
+    constraint noaa_normals_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index noaa_normals_file_capture_idx CREATE INDEX noaa_normals_file_capture_idx ON control.noaa_normals_file USING btree (capture_id)
+    index noaa_normals_file_pkey CREATE UNIQUE INDEX noaa_normals_file_pkey ON control.noaa_normals_file USING btree (run_id)
+
 r control.publisher_ready_event
     column event_id uuid NOT NULL
     column source_code text NOT NULL
@@ -4177,6 +4201,269 @@ v gold_nass.metric_publisher
     body           ORDER BY candidate.release_watermark DESC
     body          LIMIT 1) release ON true;
 
+v gold_noaa_normals.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     (((((('NOAA U.S. Climate Normals 1991-2020 (annual/seasonal, by station): a 30-year normal, '::text || 'not the value of any one year. NCEI publishes normals for stations, not counties; this '::text) || 'warehouse''s county figure is the unweighted mean of the stations it places inside the '::text) || 'county boundary, counting only stations NCEI flags standard (S) or representative (R) '::text) || 'for that element. It is a derived summary, not an NCEI product. '::text) || statistic) || ' Source: NOAA National Centers for Environmental Information, '::text) || 'U.S. Climate Normals 1991-2020.'::text AS observation_basis
+    body    FROM ( VALUES ('annual_mean_temperature'::text,'Annual mean temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TAVG-NORMAL.'::text), ('annual_mean_maximum_temperature'::text,'Annual mean daily maximum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TMAX-NORMAL.'::text), ('annual_mean_minimum_temperature'::text,'Annual mean daily minimum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TMIN-NORMAL.'::text), ('annual_precipitation'::text,'Annual precipitation normal, county station mean'::text,'inches'::text,'NCEI element ANN-PRCP-NORMAL.'::text), ('annual_heating_degree_days'::text,'Annual heating degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element ANN-HTDD-NORMAL.'::text), ('annual_cooling_degree_days'::text,'Annual cooling degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element ANN-CLDD-NORMAL.'::text)) measure(measure, measure_label, unit, statistic);
+
+v gold_noaa_normals.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'noaa_normals_csv:v1'::text AS schema_version
+    body    FROM gold_noaa_normals.measure_definition;
+
+v gold_noaa_normals.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'NOAA_NORMALS'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (NOAA Climate Normals 1991-2020, derived county figure)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'derived_summary'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_noaa_normals', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'NOAA National Centers for Environmental Information'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.ncei.noaa.gov/products/land-based-station/us-climate-normals'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_noaa_normals.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_noaa_normals.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_noaa_normals.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column station_count bigint
+    column station_ids text
+    column boundary_vintage integer
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     station_count,
+    body     station_ids,
+    body     boundary_vintage,
+    body     release_key,
+    body     published_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_noaa_normals.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, published_at DESC, run_id DESC;
+
+v gold_noaa_normals.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column station_count bigint
+    column station_ids text
+    column boundary_vintage integer
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH eligible AS (
+    body          SELECT station.run_id,
+    body             station.station_id,
+    body             station.station_name,
+    body             station.latitude,
+    body             station.longitude,
+    body             station.elevation_m,
+    body             station.geo_id,
+    body             station.geo_sk,
+    body             station.boundary_vintage,
+    body             station.geography_status,
+    body             station.geography_reason,
+    body             station.variable,
+    body             station.measure,
+    body             station.value_source,
+    body             station.value,
+    body             station.value_status,
+    body             station.missing_reason,
+    body             station.measurement_flag,
+    body             station.completeness_flag,
+    body             station.years,
+    body             station.source_record_id,
+    body             station.capture_id,
+    body             station.archive_version,
+    body             station.published_at
+    body            FROM gold_noaa_normals.station_observation station
+    body           WHERE station.geography_status = 'resolved'::text AND (station.completeness_flag = ANY (ARRAY['S'::text, 'R'::text])) AND station.value_status = 'valid'::text
+    body         ), county AS (
+    body          SELECT eligible.run_id,
+    body             eligible.measure,
+    body             eligible.geo_id,
+    body             min(eligible.geo_sk) AS geo_sk,
+    body             round(avg(eligible.value), 2) AS value,
+    body             count(*) AS stations,
+    body             string_agg(eligible.station_id, ','::text ORDER BY eligible.station_id) AS station_ids,
+    body             min(eligible.boundary_vintage) AS boundary_vintage,
+    body             min(eligible.archive_version) AS archive_version,
+    body             min(eligible.capture_id::text)::uuid AS capture_id,
+    body             min(eligible.published_at) AS published_at
+    body            FROM eligible
+    body           GROUP BY eligible.run_id, eligible.measure, eligible.geo_id
+    body         )
+    body  SELECT county.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     2020 AS year,
+    body     '1991-01-01'::date AS period_start,
+    body     '2020-12-31'::date AS period_end,
+    body     county.geo_id,
+    body     county.geo_sk,
+    body     'county'::text AS geo_type,
+    body     gold_glossary.geo_grain('county'::text) AS geo_level,
+    body     'resolved'::text AS geography_status,
+    body     county.value,
+    body     'valid'::text AS value_status,
+    body     county.stations AS station_count,
+    body     county.station_ids,
+    body     county.boundary_vintage,
+    body     (('Normals 1991-2020 '::text || county.archive_version) || ' read '::text) || to_char((county.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'::text) AS release_key,
+    body     county.published_at,
+    body     md5((((county.measure || '|'::text) || county.geo_id) || '|'::text) || county.run_id::text) AS source_record_id,
+    body     county.capture_id,
+    body     county.run_id
+    body    FROM county
+    body      JOIN gold_noaa_normals.measure_definition definition ON definition.measure = county.measure;
+
+v gold_noaa_normals.station_observation
+    column run_id uuid
+    column station_id text
+    column station_name text
+    column latitude numeric
+    column longitude numeric
+    column elevation_m numeric
+    column geo_id text
+    column geo_sk bigint
+    column boundary_vintage integer
+    column geography_status text
+    column geography_reason text
+    column variable text
+    column measure text
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column measurement_flag text
+    column completeness_flag text
+    column years integer
+    column source_record_id text
+    column capture_id uuid
+    column archive_version text
+    column published_at timestamp with time zone
+    body SELECT normal.run_id,
+    body     normal.station_id,
+    body     station.station_name,
+    body     station.latitude,
+    body     station.longitude,
+    body     station.elevation_m,
+    body     station.geo_id,
+    body     station.geo_sk,
+    body     station.boundary_vintage,
+    body     station.geography_status,
+    body     station.geography_reason,
+    body     normal.variable,
+    body     normal.measure,
+    body     normal.value_source,
+    body     normal.value,
+    body     normal.value_status,
+    body     normal.missing_reason,
+    body     normal.measurement_flag,
+    body     normal.completeness_flag,
+    body     normal.years,
+    body     normal.source_record_id,
+    body     normal.capture_id,
+    body     file.archive_version,
+    body     file.published_at
+    body    FROM silver_noaa_normals.station_normal normal
+    body      JOIN silver_noaa_normals.station station ON station.run_id = normal.run_id AND station.station_id = normal.station_id
+    body      JOIN control.noaa_normals_file file ON file.run_id = normal.run_id
+    body   WHERE file.status = 'published'::text;
+
 v gold_pep.measure_export
     column source_object_key text
     column metric_display_name text
@@ -5726,6 +6013,82 @@ r silver_nass.observation_revision
     constraint observation_revision_year_check CHECK (((year >= 1800) AND (year <= 2200)))
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_nass.observation_revision USING btree (capture_id, source_row_index)
     index usda_nass_observation_revision_run_idx CREATE INDEX usda_nass_observation_revision_run_idx ON silver_nass.observation_revision USING btree (run_id, product_id, release_watermark)
+
+r silver_noaa_normals.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_noaa_normals.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_noaa_normals.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_noaa_normals.quarantine USING btree (quarantine_sk)
+
+r silver_noaa_normals.station
+    column run_id uuid NOT NULL
+    column station_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column latitude numeric NOT NULL
+    column longitude numeric NOT NULL
+    column elevation_m numeric
+    column station_name text NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column boundary_vintage integer
+    column geography_status text NOT NULL
+    column geography_reason text
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint noaa_normals_station_reason CHECK (((geography_status = 'resolved'::text) = (geography_reason IS NULL)))
+    constraint noaa_normals_station_resolved_has_county CHECK (((geography_status = 'resolved'::text) = ((geo_sk IS NOT NULL) AND (geo_id IS NOT NULL))))
+    constraint station_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint station_geography_reason_check CHECK (((geography_reason IS NULL) OR (geography_reason = ANY (ARRAY['outside_counties'::text, 'on_county_boundary'::text, 'no_county_boundaries'::text]))))
+    constraint station_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'ambiguous'::text])))
+    constraint station_latitude_check CHECK (((latitude >= ('-90'::integer)::numeric) AND (latitude <= (90)::numeric)))
+    constraint station_longitude_check CHECK (((longitude >= ('-180'::integer)::numeric) AND (longitude <= (180)::numeric)))
+    constraint station_pkey PRIMARY KEY (run_id, station_id)
+    constraint station_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.noaa_normals_file(run_id)
+    constraint station_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint station_station_id_check CHECK ((station_id ~ '^[A-Z0-9]{11}$'::text))
+    index noaa_normals_station_county_idx CREATE INDEX noaa_normals_station_county_idx ON silver_noaa_normals.station USING btree (geo_id)
+    index station_pkey CREATE UNIQUE INDEX station_pkey ON silver_noaa_normals.station USING btree (run_id, station_id)
+
+r silver_noaa_normals.station_normal
+    column run_id uuid NOT NULL
+    column station_id text NOT NULL
+    column variable text NOT NULL
+    column measure text NOT NULL
+    column capture_id uuid NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column measurement_flag text
+    column completeness_flag text
+    column years integer
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint noaa_normals_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint noaa_normals_withheld_has_reason CHECK (((value_status = 'valid'::text) = (missing_reason IS NULL)))
+    constraint noaa_normals_withheld_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint station_normal_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint station_normal_completeness_flag_check CHECK (((completeness_flag IS NULL) OR (completeness_flag = ANY (ARRAY['S'::text, 'R'::text, 'P'::text, 'E'::text]))))
+    constraint station_normal_measure_check CHECK ((measure = ANY (ARRAY['annual_mean_temperature'::text, 'annual_mean_maximum_temperature'::text, 'annual_mean_minimum_temperature'::text, 'annual_precipitation'::text, 'annual_heating_degree_days'::text, 'annual_cooling_degree_days'::text])))
+    constraint station_normal_measurement_flag_check CHECK (((measurement_flag IS NULL) OR (measurement_flag = ANY (ARRAY['M'::text, 'V'::text, 'X'::text, 'Y'::text, 'Z'::text]))))
+    constraint station_normal_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = ANY (ARRAY['missing'::text, 'too_cold_to_compute'::text, 'insufficient_values'::text, 'blank'::text]))))
+    constraint station_normal_pkey PRIMARY KEY (run_id, station_id, variable)
+    constraint station_normal_run_id_station_id_fkey FOREIGN KEY (run_id, station_id) REFERENCES silver_noaa_normals.station(run_id, station_id)
+    constraint station_normal_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{32}$'::text))
+    constraint station_normal_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'not_applicable'::text])))
+    constraint station_normal_years_check CHECK (((years IS NULL) OR ((years >= 0) AND (years <= 30))))
+    index noaa_normals_station_normal_measure_idx CREATE INDEX noaa_normals_station_normal_measure_idx ON silver_noaa_normals.station_normal USING btree (run_id, measure)
+    index station_normal_pkey CREATE UNIQUE INDEX station_normal_pkey ON silver_noaa_normals.station_normal USING btree (run_id, station_id, variable)
 
 r silver_pep.dim_measure
     column metric_code text NOT NULL

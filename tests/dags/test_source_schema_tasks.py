@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
+from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
 from data_ingestion_toolbox.usda_nass import schema as nass_schema
@@ -43,6 +44,13 @@ SOURCES = [
         "ingest_batch_",
         epa_aqs_schema,
         "EPA_AQS",
+    ),
+    (
+        "noaa_normals_ingest",
+        "ensure_noaa_normals_schema",
+        "ingest_batch_",
+        noaa_normals_schema,
+        "NOAA_NORMALS",
     ),
 ]
 

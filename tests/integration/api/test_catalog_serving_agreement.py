@@ -33,6 +33,7 @@ from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import fbi_release
 from tests.support import epa_aqs as aqs_support
+from tests.support import noaa_normals as normals_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -837,6 +838,18 @@ def published_aqs_metric(
     return _one_published_code(factory, "EPA_AQS")
 
 
+@pytest.fixture
+def published_normals_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NOAA county climate normals."""
+    factory = normals_support.reviewed_warehouse(postgres_connection_factory, request)
+    normals_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_noaa_normals"))
+    return _one_published_code(factory, "NOAA_NORMALS")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -893,6 +906,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_aqs_metric: str,
+    published_normals_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -955,6 +969,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FBI_UCR", published_fbi_metric),
         ("USDA_NASS", published_nass_metric),
         ("EPA_AQS", published_aqs_metric),
+        ("NOAA_NORMALS", published_normals_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1097,6 +1112,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_aqs_metric: str,
+    published_normals_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

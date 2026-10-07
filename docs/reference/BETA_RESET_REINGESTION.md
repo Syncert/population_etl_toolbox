@@ -327,6 +327,11 @@ every registered year's AirData annual monitor file through the one-slot
 `epa_aqs_files` pool
 ([operations](../user-guides/EPA_AQS_PIPELINE_OPERATIONS.md)).
 
+Trigger `noaa_normals_ingest` once after county boundaries load: it reads
+the 1991-2020 normals archive through the one-slot `noaa_normals_files` pool
+and places each station in the newest county boundary vintage loaded
+([operations](../user-guides/NOAA_NORMALS_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

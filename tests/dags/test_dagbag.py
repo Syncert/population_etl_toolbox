@@ -37,6 +37,7 @@ EXPECTED_DAG_IDS = {
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
     "epa_aqs_ingest",
+    "noaa_normals_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
     "warehouse_data_quality",
@@ -61,6 +62,9 @@ EXPECTED_SCHEDULES = {
     # Monthly: EPA regenerates the files in June and December without a
     # fixed date, and an unchanged file replays nothing.
     "epa_aqs_ingest": "0 18 25 * *",
+    # Quarterly: the 1991-2020 normals change only by a new archive version,
+    # and an unchanged archive replays nothing.
+    "noaa_normals_ingest": "0 19 2 1,4,7,10 *",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
@@ -82,6 +86,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fbi_ucr_ingest": 2,
     "usda_nass_crop_ingest": 2,
     "epa_aqs_ingest": 2,
+    "noaa_normals_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
@@ -102,6 +107,7 @@ EXPECTED_INGEST_POOLS = {
     "fbi_ucr_ingest": "fbi_cde_api",
     "usda_nass_crop_ingest": "usda_nass_api",
     "epa_aqs_ingest": "epa_aqs_files",
+    "noaa_normals_ingest": "noaa_normals_files",
 }
 
 

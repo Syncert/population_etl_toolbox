@@ -52,6 +52,12 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "NOAA_NORMALS",
+        SRC / "noaa_normals/DDL/silver_noaa_normals.sql",
+        "silver_noaa_normals.station_normal",
+        "valid",
+    ),
+    FactContract(
         "EPA_AQS",
         SRC / "epa_aqs/DDL/silver_epa_aqs.sql",
         "silver_epa_aqs.monitor_fact",

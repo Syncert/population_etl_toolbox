@@ -4,9 +4,9 @@ depends_on: []
 parallel_safe: true
 complexity: high
 verify:
-  - python -m pytest tests/unit/epa_aqs tests/unit/noaa_climate_normals -q
+  - python -m pytest tests/unit/epa_aqs tests/unit/noaa_normals -q
   - python -m pytest tests/unit/api -q
-  - python -m pytest tests/integration/database/test_epa_aqs_noaa_normals_capture_replay.py -m "integration and database" -q
+  - python -m pytest tests/integration/database/test_epa_aqs_capture_replay.py tests/integration/database/test_noaa_normals_capture_replay.py -m "integration and database" -q
   - python -m pytest tests/dags -m dag -q
   - ruff check .
 ---
@@ -15,10 +15,12 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-The EPA half is implemented on branch `feat/epa-air-quality` (from
-`docs/scout-county-sources`); the NOAA climate normals half is not started.
+The EPA half is on branch `feat/epa-air-quality` (from
+`docs/scout-county-sources`); the NOAA climate normals half is on
+`feat/noaa-climate-normals`, stacked on it. Both halves are implemented and
+validated (2026-10-07).
 
 ## Why
 
@@ -164,14 +166,76 @@ The almanac's Land and Environment chapter needs the two place facts people look
 - `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
   viz coverage and plan environments regenerated.
 
-## Remaining (NOAA half)
+## Decisions (NOAA half)
 
-NOAA U.S. Climate Normals 1991-2020 (package `noaa_climate_normals`), as
-specified above: station capture, flag handling (`X` distinct from zero,
-`M`/`V`/`Y` null with the flag), point-in-polygon county assignment against
-a recorded boundary vintage, and its own tests, docs and catalog row. The
-plan moves to `needs_review/` when both halves are done.
+- **Package and source code.** `src/data_ingestion_toolbox/noaa_normals/`,
+  source `NOAA_NORMALS`, schemas `silver_noaa_normals`/`gold_noaa_normals`
+  (shorter than the drafted `noaa_climate_normals`; the verify commands
+  above name the real paths).
+- **One archive, not per-station files.** The registered
+  `us-climate-normals_1991-2020_v1.0.1_annualseasonal_multivariate_by-station_c20230404.tar.gz`
+  (54 MB, 15,616 station files) is one capture per read; a new NCEI version
+  is a new archive name and a registry change. The inventory file is not
+  read: every station file carries its own coordinates.
+- **Flags.** `M`/`Y` publish `missing`, `V` `not_applicable`, each with its
+  reason and no number; `X` keeps NCEI's rounded zero as `valid` with its
+  flag; `Z` keeps value and flag. **Sentinels (open item resolved):** no
+  unflagged sentinel and no `M`/`V`/`Y` flag appears in the six annual
+  variables of v1.0.1 (all 15,616 stations parsed on 2026-10-07); an
+  unflagged `-9999`/`-8888`/`-7777`/`-6666`/`-5555` quarantines the file.
+- **County placement.** In silver, against the newest county boundary
+  vintage in `silver_ref.dim_geo_geometry_version` (`ST_Covers`), recorded on
+  the run and every station; inside none is `unmapped`
+  (`outside_counties`), on a shared edge `ambiguous`; both are kept and
+  never served. Against the dev warehouse's 2025 500k boundaries (read-only
+  check, rolled back) 15,477 of 15,493 `US` stations land in exactly one
+  county, none ambiguous; the 16 outside are coastal points beyond the
+  cartographic shoreline, which `DQ-NOAA-004` reports as a warning.
+- **County figure (derived).** The unweighted mean (two decimals) of the
+  county's `S`/`R` stations per element, with station ids, count and
+  boundary vintage; `E`/`P` stations are kept and never averaged in. Period
+  1991-01-01 to 2020-12-31, labelled year 2020.
+- **Analysis routes decline the source.** A 30-year normal is not a year's
+  value; aligning it by year with annual metrics would mislead. Seven
+  reviewed declines in `tests/support/viz_coverage.py`; the guide says so.
+  (The guide's analysis paragraph now also names EPA air quality, which is
+  analysis-ready but was missing from that sentence.)
+- **Licensing (open item).** NCEI states no licence on the product page;
+  served rows credit "NOAA National Centers for Environmental Information,
+  U.S. Climate Normals 1991-2020".
+
+## Evidence (NOAA half, 2026-10-07, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2198 passed, including
+  `tests/unit/noaa_normals` (11): flags, sentinels, quarantine of one bad
+  file beside a good one, archive refusal, retry/no-retry.
+- Database: `tests/integration/database/test_noaa_normals_capture_replay.py`
+  -- 6 passed: Delaware's eleven fixture stations placed in seeded county
+  rectangles with vintage 2024, the Canadian, Puerto Rico and California
+  stations `outside_counties`; New Castle's temperature is the mean of three
+  stations (54.87); Felton's estimated precipitation is not averaged in;
+  `X` zeros keep their flag; `M`/`V` publish null and Kent then has no
+  temperature row; an unchanged read replays nothing; a non-archive or
+  foreign header fails capture; a malformed station file is quarantined
+  alone; `DQ-NOAA-002`/`-004` behave and then catch a fault; the harvest
+  names six measures.
+- Live: `tests/external/test_noaa_normals_source_contracts.py` -- 5 passed
+  against ncei.noaa.gov.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 473 passed, 2 skipped, 1 failed: the PEP teardown node, which
+  fails on `main` too (fixed on `test/catalog-agreement-fixture-residue`).
+  Includes the NOAA e2e node (New Castle's temperature served through
+  `/api/v1/observations` with stations, vintage and basis) and the DB-025 /
+  DB-044 catalog agreement sweeps with a published NOAA metric.
+- DAG: `tests/dags` in the scheduler container -- 162 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `noaa_normals_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format --check .` clean; schema snapshot, OpenAPI
+  contract, viz coverage and plan environments regenerated.
 
 ## Checkpoint
 
-Next: NOAA climate normals on its own branch.
+Both halves done; ready for human review. Not done here: the plan's
+glossary harvest of parameter names from `list/parametersByClass` (the AQS
+API is not used) and the AQS rate limiter and key hygiene (no key is used);
+both are recorded under the EPA decisions.

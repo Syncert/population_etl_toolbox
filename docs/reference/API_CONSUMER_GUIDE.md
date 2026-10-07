@@ -412,6 +412,30 @@ million, the year's fourth-highest daily maximum 8-hour average under the
 - **EPA revises old years.** Each read of a regenerated file is a new
   release (`AirData <year> read <time>`) beside the earlier one.
 
+### Reading a NOAA climate normals row: a 30-year normal, placed by coordinates
+
+`NOAA_NORMALS` serves six county figures from NCEI's U.S. Climate Normals
+1991-2020 (annual/seasonal, by station): `annual_mean_temperature`,
+`annual_mean_maximum_temperature` and `annual_mean_minimum_temperature`
+(degrees Fahrenheit), `annual_precipitation` (inches), and
+`annual_heating_degree_days` and `annual_cooling_degree_days` (degree days,
+base 65 F).
+
+- **It is a normal, not a year.** Each row covers 1991-01-01 to 2020-12-31
+  and is labelled year 2020; it is not the value of 2020 or of any year, and
+  the analysis routes decline it so it is never aligned with annual values.
+- **It is derived from stations.** NCEI publishes stations with coordinates,
+  not counties. This warehouse places each station in the county boundary
+  that contains it, from the boundary vintage named in
+  `dimensions.boundary_vintage`, and serves the unweighted mean of the
+  county's stations that NCEI flags standard (S) or representative (R) for
+  that element. `dimensions.station_ids` and `dimensions.station_count` say
+  which.
+- **No eligible station, no row.** A county with no S or R station for an
+  element has no row, never a zero. A withheld station normal (NCEI flags
+  `M`, `V`, `Y`) carries no number; an `X` normal is NCEI's rounded zero and
+  keeps its flag.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -534,6 +558,7 @@ prevent:
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
+| NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 
@@ -795,11 +820,14 @@ with its published semantics and no routes — is declined by `/observations`
 and `/distribution/bins` with the same `422` naming the source and pointing
 here, never a `500`.
 
-**The analysis routes answer for Census ACS, BLS, FRED, and Census PEP.** CDC,
-USDA NASS, and FBI UCR are declined with a stated reason: they publish
-stratified, multi-dimensional, or agency-grain observations that an aligned
-one-value-per-geography analysis would silently collapse. Query them through
-`/observations` with the appropriate stratum, domain, or subject filters.
+**The analysis routes answer for Census ACS, BLS, FRED, Census PEP, and EPA
+air quality.** CDC, USDA NASS, and FBI UCR are declined with a stated reason:
+they publish stratified, multi-dimensional, or agency-grain observations that
+an aligned one-value-per-geography analysis would silently collapse. NOAA
+climate normals are declined because a 30-year normal is not the value of any
+one year, so aligning it by year with annual values would mislead. Query them
+through `/observations` with the appropriate stratum, domain, or subject
+filters.
 
 All four analysis routes — `/comparison`, `/comparison/preflight`,
 `/comparison/correlation`, `/comparison/matrix` — and `/distribution/bins`
@@ -818,7 +846,7 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS and FBI UCR.
+restriction for CDC, USDA NASS, FBI UCR and NOAA climate normals.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -907,7 +935,8 @@ each measure's own coverage is `metrics[].geographies`. Read the two against
 each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
-measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR),
+measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR,
+NOAA climate normals),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined

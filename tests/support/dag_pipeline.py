@@ -41,6 +41,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fbi_cde_api",
     "usda_nass_api",
     "epa_aqs_files",
+    "noaa_normals_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -693,6 +694,24 @@ def stub_epa_aqs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(aqs_capture, "fetch_file", fetch_file)
 
 
+def stub_noaa_normals(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed eleven-station normals archive."""
+    from data_ingestion_toolbox.noaa_normals import capture as normals_capture
+    from data_ingestion_toolbox.noaa_normals.client import NormalsResponse
+    from data_ingestion_toolbox.noaa_normals.registry import ARCHIVE_PATH
+
+    reviewed = (
+        FIXTURE_ROOT / "noaa_normals" / "annualseasonal_by_station.tar.gz"
+    ).read_bytes()
+
+    def fetch_archive(**_kwargs: Any) -> NormalsResponse:
+        return NormalsResponse(
+            ARCHIVE_PATH, reviewed, {"content-type": "application/gzip"}, 200
+        )
+
+    monkeypatch.setattr(normals_capture, "fetch_archive", fetch_archive)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1128,6 +1147,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
         ("epa_aqs", stub_epa_aqs),
+        ("noaa_normals", stub_noaa_normals),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

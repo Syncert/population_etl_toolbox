@@ -716,6 +716,86 @@ def aqs_value_and_geography(cursor: Any, scope: Mapping[str, Any]) -> list[RuleO
     ]
 
 
+def normals_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-NOAA-002 — no archive left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.noaa_normals_file")
+    if total == 0:
+        return [RuleOutcome("control.noaa_normals_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.archive_version, file.status, file.station_file_count
+          FROM control.noaa_normals_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.station_file_count > (
+                    SELECT COUNT(*) FROM silver_noaa_normals.quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_noaa_normals.station AS station
+                     WHERE station.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.noaa_normals_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def normals_value_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-NOAA-004 — no negative accumulation; U.S. stations land in one county."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.noaa_normals_file WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_noaa_normals.station", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT station.run_id, station.station_id, station.geography_status, station.geography_reason
+          FROM silver_noaa_normals.station AS station
+          JOIN control.noaa_normals_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (station.geography_status = 'ambiguous'
+                OR (station.geography_status = 'unmapped' AND LEFT(station.station_id, 2) = 'US')
+                OR EXISTS (
+                    SELECT 1 FROM silver_noaa_normals.station_normal AS normal
+                     WHERE normal.run_id = station.run_id
+                       AND normal.station_id = station.station_id
+                       AND normal.value < 0
+                       AND normal.measure IN (
+                           'annual_precipitation', 'annual_heating_degree_days', 'annual_cooling_degree_days'
+                       )
+                ))
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_noaa_normals.station",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1765,6 +1845,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-AQS-002": aqs_file_reconciliation,
     "DQ-AQS-004": aqs_value_and_geography,
+    "DQ-NOAA-002": normals_file_reconciliation,
+    "DQ-NOAA-004": normals_value_and_geography,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

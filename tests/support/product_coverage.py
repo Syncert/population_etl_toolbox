@@ -357,6 +357,32 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "`/api/v1/observations` serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="noaa_normals.county_climate_normals",
+        source="NOAA_NORMALS",
+        publisher_schema="gold_noaa_normals",
+        datasets=("normals-annualseasonal:1991-2020",),
+        fixtures=("tests/fixtures/noaa_normals/annualseasonal_by_station.tar.gz",),
+        serving_relations=(
+            "gold_noaa_normals.observation_revision",
+            "gold_noaa_normals.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_noaa_normals_pipeline.py::"
+            "test_county_climate_normals_reach_the_neutral_api_as_derived"
+        ),
+        api_absence_reason=(
+            "NOAA climate normals publish no source-specific HTTP route: each "
+            "county row is the neutral observation shape with its stations, "
+            "station count and boundary vintage as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

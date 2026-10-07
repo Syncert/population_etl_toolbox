@@ -29,6 +29,9 @@ from __future__ import annotations
 #:   ``geo_levels = ["us", "state", "county"]``.
 #: * ``EPA_AQS`` -- a county figure derived from its highest complete
 #:   monitor; counties without a complete monitor have no row.
+#: * ``NOAA_NORMALS`` -- a county figure derived from the stations placed
+#:   inside the county; counties without a standard or representative
+#:   station have no row.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
@@ -41,6 +44,7 @@ from __future__ import annotations
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "EPA_AQS": frozenset({"COUNTY"}),
+    "NOAA_NORMALS": frozenset({"COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),

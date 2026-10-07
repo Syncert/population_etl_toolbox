@@ -487,6 +487,8 @@ SPATIAL_SURFACES: frozenset[str] = frozenset({"explorer.map"})
 #:   parameters, so three screens decline those three sources -- and until
 #:   the capability entry published the fact (API-139) the client could not
 #:   tell, so it sent the request and drew nothing.
+#:   NOAA climate normals decline the same three for theirs: a 30-year
+#:   normal is not a value of any one year to align or reduce by year.
 #: - **Spatial presentation.** ``gold_fred.fact_fred_observation`` writes
 #:   ``'NATIONAL'`` as a literal: FRED is national by construction, and the
 #:   boundary draws no national polygon. The map declines it before any
@@ -495,25 +497,32 @@ REVIEWED_DECLINES: dict[tuple[str, str], str] = {
     ("comparison.workspace", "CDC"): ANALYSIS_POLICY,
     ("comparison.workspace", "FBI_UCR"): ANALYSIS_POLICY,
     ("comparison.workspace", "USDA_NASS"): ANALYSIS_POLICY,
+    ("comparison.workspace", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("explorer.distribution", "CDC"): ANALYSIS_POLICY,
     ("explorer.distribution", "FBI_UCR"): ANALYSIS_POLICY,
     ("explorer.distribution", "USDA_NASS"): ANALYSIS_POLICY,
+    ("explorer.distribution", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("explorer.map", "FRED"): SPATIAL_POLICY,
     ("explorer.settled_history", "CDC"): REDUCTION_POLICY,
     ("explorer.settled_history", "FBI_UCR"): REDUCTION_POLICY,
     ("explorer.settled_history", "USDA_NASS"): REDUCTION_POLICY,
+    ("explorer.settled_history", "NOAA_NORMALS"): REDUCTION_POLICY,
     ("workbench.cross_section", "CDC"): REDUCTION_POLICY,
     ("workbench.cross_section", "FBI_UCR"): REDUCTION_POLICY,
     ("workbench.cross_section", "USDA_NASS"): REDUCTION_POLICY,
+    ("workbench.cross_section", "NOAA_NORMALS"): REDUCTION_POLICY,
     ("workbench.heatmap", "CDC"): REDUCTION_POLICY,
     ("workbench.heatmap", "FBI_UCR"): REDUCTION_POLICY,
     ("workbench.heatmap", "USDA_NASS"): REDUCTION_POLICY,
+    ("workbench.heatmap", "NOAA_NORMALS"): REDUCTION_POLICY,
     ("workbench.correlation", "CDC"): ANALYSIS_POLICY,
     ("workbench.correlation", "FBI_UCR"): ANALYSIS_POLICY,
     ("workbench.correlation", "USDA_NASS"): ANALYSIS_POLICY,
+    ("workbench.correlation", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("workbench.matrix", "CDC"): ANALYSIS_POLICY,
     ("workbench.matrix", "FBI_UCR"): ANALYSIS_POLICY,
     ("workbench.matrix", "USDA_NASS"): ANALYSIS_POLICY,
+    ("workbench.matrix", "NOAA_NORMALS"): ANALYSIS_POLICY,
 }
 
 
