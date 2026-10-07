@@ -392,6 +392,33 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading an NCES schools row: a county or state sum of schools
+
+`NCES_CCD` serves county and state figures from NCES's Common Core of Data,
+each summed over the public schools NCES's EDGE geocode file places there:
+`operating_schools` and `charter_schools` (schools), `teacher_fte`
+(full-time-equivalent teachers), and `frpl_eligible`, `free_lunch_eligible`,
+`reduced_price_lunch_eligible` and `direct_certification` (students). Rows are
+labelled with the school year's fall (`year` 2024 is 2024-25, `period_start`
+2024-07-01, `period_end` 2025-06-30).
+
+- **It is summed from schools.** NCES publishes schools, not counties. A
+  school is placed by EDGE's five-digit county code and its physical state;
+  Bureau of Indian Education (operating code 59) and DoDEA (63) schools are
+  placed where they stand, never as a state of their own.
+- **A partial sum says so.** `dimensions.schools_with_value` and
+  `dimensions.schools_without_value` count the placed schools that did and
+  did not report, and `dimensions.completeness` is `complete` or `partial`.
+  Where no placed school reported, the row has no value and status
+  `missing` -- never a zero.
+- **Free or reduced-price lunch and direct certification are different
+  measures.** Since 2016-17 a state may report either or both; Delaware, for
+  example, reports only direct certification. One is never substituted for
+  the other, and Community Eligibility Provision schools may report every
+  student as free-eligible.
+- **Enrollment is not served yet.** NCES's membership file is compressed in a
+  format this warehouse does not read yet.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -513,6 +540,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| NCES schools | `CCD <school year> v<release> read <time>` | NCES's release (`1a`, `2a`) from the file name plus the read; a later release supersedes an earlier one for the same school year |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 

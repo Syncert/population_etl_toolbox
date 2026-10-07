@@ -36,6 +36,7 @@ EXPECTED_DAG_IDS = {
     "cdc_ingest",
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
+    "nces_ccd_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
     "warehouse_data_quality",
@@ -57,6 +58,9 @@ EXPECTED_SCHEDULES = {
     # full-history sweep needs a logical date on the first whatever day it
     # falls on (DAG-018).
     "usda_nass_crop_ingest": "0 10 1 * 1-5",
+    # Quarterly: NCES releases a school year's files once or twice a year
+    # under new names, and an unchanged file replays nothing.
+    "nces_ccd_ingest": "0 20 3 1,4,7,10 *",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
@@ -77,6 +81,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "cdc_ingest": 2,
     "fbi_ucr_ingest": 2,
     "usda_nass_crop_ingest": 2,
+    "nces_ccd_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
@@ -96,6 +101,7 @@ EXPECTED_INGEST_POOLS = {
     "cdc_ingest": "cdc_api",
     "fbi_ucr_ingest": "fbi_cde_api",
     "usda_nass_crop_ingest": "usda_nass_api",
+    "nces_ccd_ingest": "nces_ccd_files",
 }
 
 

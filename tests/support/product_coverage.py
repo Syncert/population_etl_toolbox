@@ -331,6 +331,42 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="nces_ccd.county_public_schools",
+        source="NCES_CCD",
+        publisher_schema="gold_nces_ccd",
+        datasets=(
+            "geocode:2024-2025",
+            "directory:2024-2025",
+            "staff:2024-2025",
+            "lunch:2024-2025",
+        ),
+        fixtures=(
+            "tests/fixtures/nces_ccd/EDGE_GEOCODE_PUBLICSCH_2425.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_029_2425_w_1a_073025.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_059_2425_l_1a_073025.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_033_2425_l_2a_073025.zip",
+        ),
+        serving_relations=(
+            "gold_nces_ccd.observation_revision",
+            "gold_nces_ccd.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_nces_ccd_pipeline.py::"
+            "test_county_school_figures_reach_the_neutral_api_as_rollups"
+        ),
+        api_absence_reason=(
+            "NCES public schools publish no source-specific HTTP route: each county "
+            "and state row is the neutral observation shape with its school counts, "
+            "completeness and files as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

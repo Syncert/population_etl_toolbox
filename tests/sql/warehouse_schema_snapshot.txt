@@ -383,6 +383,37 @@ r control.ingestion_run
     index ingestion_run_run_id_source_code_key CREATE UNIQUE INDEX ingestion_run_run_id_source_code_key ON control.ingestion_run USING btree (run_id, source_code)
     index ingestion_run_source_status_idx CREATE INDEX ingestion_run_source_status_idx ON control.ingestion_run USING btree (source_code, status, created_at DESC)
 
+r control.nces_ccd_file
+    column run_id uuid NOT NULL
+    column component text NOT NULL
+    column school_year text NOT NULL
+    column file_stem text NOT NULL
+    column release_version text NOT NULL
+    column version_rank integer NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint nces_ccd_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint nces_ccd_file_component_check CHECK ((component = ANY (ARRAY['geocode'::text, 'directory'::text, 'membership'::text, 'staff'::text, 'lunch'::text])))
+    constraint nces_ccd_file_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint nces_ccd_file_kept_within_rows CHECK ((kept_row_count <= row_count))
+    constraint nces_ccd_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint nces_ccd_file_pkey PRIMARY KEY (run_id)
+    constraint nces_ccd_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint nces_ccd_file_row_count_check CHECK ((row_count >= 0))
+    constraint nces_ccd_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint nces_ccd_file_school_year_check CHECK ((school_year ~ '^[0-9]{4}-[0-9]{4}$'::text))
+    constraint nces_ccd_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint nces_ccd_file_version_rank_check CHECK ((version_rank >= 0))
+    index nces_ccd_file_capture_idx CREATE INDEX nces_ccd_file_capture_idx ON control.nces_ccd_file USING btree (capture_id)
+    index nces_ccd_file_component_idx CREATE INDEX nces_ccd_file_component_idx ON control.nces_ccd_file USING btree (component, school_year, status)
+    index nces_ccd_file_pkey CREATE UNIQUE INDEX nces_ccd_file_pkey ON control.nces_ccd_file USING btree (run_id)
+
 r control.publisher_ready_event
     column event_id uuid NOT NULL
     column source_code text NOT NULL
@@ -3868,6 +3899,392 @@ v gold_nass.metric_publisher
     body           ORDER BY candidate.release_watermark DESC
     body          LIMIT 1) release ON true;
 
+v gold_nces_ccd.measure_definition
+    column measure text
+    column component text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     component,
+    body     measure_label,
+    body     unit,
+    body     ((((((('NCES Common Core of Data (public schools): NCES publishes schools, not counties or states; '::text || 'this warehouse''s figure is the sum over the public schools that NCES''s EDGE geocode file '::text) || 'places in the county (by its five-digit county code) or state (by the school''s physical '::text) || 'state, never the BIE or DoDEA operating code), counting only values NCES flags Reported. '::text) || 'schools_without_value says how many placed schools had none, so a partial sum is never '::text) || 'silent. '::text) || definition) || ' Source: U.S. Department of Education, National Center for Education Statistics, Common '::text) || 'Core of Data and EDGE school geocodes.'::text AS observation_basis
+    body    FROM ( VALUES ('operating_schools'::text,'directory'::text,'Operating public schools'::text,'schools'::text,'A school is counted when its directory status that year is Open, New, Added, Reopened or Changed Boundary/Agency.'::text), ('charter_schools'::text,'directory'::text,'Operating public charter schools'::text,'schools'::text,'An operating school whose directory charter flag is Yes.'::text), ('student_membership'::text,'membership'::text,'Students enrolled (membership)'::text,'students'::text,'Membership is the school''s reported enrollment count on or about October 1.'::text), ('teacher_fte'::text,'staff'::text,'Teachers (full-time equivalent)'::text,'full-time-equivalent teachers'::text,'Classroom teachers in full-time equivalents.'::text), ('frpl_eligible'::text,'lunch'::text,'Students eligible for free or reduced-price lunch'::text,'students'::text,'Free lunch is family income below 130 percent of poverty or direct certification; reduced-price is 130 to 185 percent. Since 2016-17 states may report this, direct certification, or both, and Community Eligibility Provision schools may report every student as free-eligible.'::text), ('free_lunch_eligible'::text,'lunch'::text,'Students eligible for free lunch'::text,'students'::text,'Family income below 130 percent of poverty or categorical eligibility; Community Eligibility Provision schools may report every student.'::text), ('reduced_price_lunch_eligible'::text,'lunch'::text,'Students eligible for reduced-price lunch'::text,'students'::text,'Family income from 130 to 185 percent of poverty.'::text), ('direct_certification'::text,'lunch'::text,'Students directly certified for free meals'::text,'students'::text,'Students categorically eligible and reported to USDA (FNS-742); a separate measure from free or reduced-price eligibility, never a substitute for it.'::text)) measure(measure, component, measure_label, unit, definition);
+
+v gold_nces_ccd.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'nces_ccd_csv:v1'::text AS schema_version
+    body    FROM gold_nces_ccd.measure_definition;
+
+v gold_nces_ccd.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'NCES_CCD'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (NCES Common Core of Data, summed from schools)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'derived_summary'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_nces_ccd', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'National Center for Education Statistics Common Core of Data'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://nces.ed.gov/ccd/files.asp'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_nces_ccd.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_nces_ccd.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_nces_ccd.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column school_year text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column schools_with_value bigint
+    column schools_without_value bigint
+    column completeness text
+    column ccd_file text
+    column geocode_file text
+    column release_key text
+    column version_rank integer
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     school_year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     schools_with_value,
+    body     schools_without_value,
+    body     completeness,
+    body     ccd_file,
+    body     geocode_file,
+    body     release_key,
+    body     version_rank,
+    body     published_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_nces_ccd.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, version_rank DESC, published_at DESC, run_id DESC;
+
+v gold_nces_ccd.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column school_year text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column schools_with_value bigint
+    column schools_without_value bigint
+    column completeness text
+    column ccd_file text
+    column geocode_file text
+    column release_key text
+    column version_rank integer
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH grains AS (
+    body          SELECT school.run_id,
+    body             school.component,
+    body             school.school_year,
+    body             school.file_stem,
+    body             school.release_version,
+    body             school.version_rank,
+    body             school.published_at,
+    body             school.capture_id,
+    body             school.ncessch,
+    body             school.measure,
+    body             school.value,
+    body             school.value_status,
+    body             school.dms_flag,
+    body             school.geocode_file,
+    body             school.state_fips,
+    body             school.county_fips,
+    body             school.county_geo_id,
+    body             school.county_geo_sk,
+    body             school.county_status,
+    body             'county'::text AS geo_type,
+    body             school.county_geo_id AS geo_id,
+    body             school.county_geo_sk AS geo_sk
+    body            FROM gold_nces_ccd.school_observation school
+    body           WHERE school.county_status = 'resolved'::text
+    body         UNION ALL
+    body          SELECT school.run_id,
+    body             school.component,
+    body             school.school_year,
+    body             school.file_stem,
+    body             school.release_version,
+    body             school.version_rank,
+    body             school.published_at,
+    body             school.capture_id,
+    body             school.ncessch,
+    body             school.measure,
+    body             school.value,
+    body             school.value_status,
+    body             school.dms_flag,
+    body             school.geocode_file,
+    body             school.state_fips,
+    body             school.county_fips,
+    body             school.county_geo_id,
+    body             school.county_geo_sk,
+    body             school.county_status,
+    body             'state'::text AS text,
+    body             entity.geo_id,
+    body             entity.geo_sk
+    body            FROM gold_nces_ccd.school_observation school
+    body              JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = ('state:'::text || school.state_fips) AND entity.geo_type = 'state'::text
+    body         ), rolled AS (
+    body          SELECT grains.run_id,
+    body             grains.measure,
+    body             grains.geo_type,
+    body             grains.geo_id,
+    body             min(grains.geo_sk) AS geo_sk,
+    body             sum(grains.value) FILTER (WHERE grains.value_status = 'valid'::text) AS value,
+    body             count(*) FILTER (WHERE grains.value_status = 'valid'::text) AS schools_with_value,
+    body             count(*) FILTER (WHERE grains.value_status <> 'valid'::text) AS schools_without_value,
+    body             min(grains.school_year) AS school_year,
+    body             min(grains.file_stem) AS file_stem,
+    body             min(grains.release_version) AS release_version,
+    body             min(grains.version_rank) AS version_rank,
+    body             min(grains.geocode_file) AS geocode_file,
+    body             min(grains.capture_id::text)::uuid AS capture_id,
+    body             min(grains.published_at) AS published_at
+    body            FROM grains
+    body           GROUP BY grains.run_id, grains.measure, grains.geo_type, grains.geo_id
+    body         )
+    body  SELECT rolled.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     "left"(rolled.school_year, 4)::integer AS year,
+    body     rolled.school_year,
+    body     make_date("left"(rolled.school_year, 4)::integer, 7, 1) AS period_start,
+    body     make_date("right"(rolled.school_year, 4)::integer, 6, 30) AS period_end,
+    body     rolled.geo_id,
+    body     rolled.geo_sk,
+    body     rolled.geo_type,
+    body     gold_glossary.geo_grain(rolled.geo_type) AS geo_level,
+    body     'resolved'::text AS geography_status,
+    body         CASE
+    body             WHEN rolled.schools_with_value > 0 THEN rolled.value
+    body             ELSE NULL::numeric
+    body         END AS value,
+    body         CASE
+    body             WHEN rolled.schools_with_value > 0 THEN 'valid'::text
+    body             ELSE 'missing'::text
+    body         END AS value_status,
+    body     rolled.schools_with_value,
+    body     rolled.schools_without_value,
+    body         CASE
+    body             WHEN rolled.schools_without_value = 0 THEN 'complete'::text
+    body             ELSE 'partial'::text
+    body         END AS completeness,
+    body     rolled.file_stem AS ccd_file,
+    body     rolled.geocode_file,
+    body     (((('CCD '::text || rolled.school_year) || ' v'::text) || rolled.release_version) || ' read '::text) || to_char((rolled.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'::text) AS release_key,
+    body     rolled.version_rank,
+    body     rolled.published_at,
+    body     md5((((rolled.measure || '|'::text) || rolled.geo_id) || '|'::text) || rolled.run_id::text) AS source_record_id,
+    body     rolled.capture_id,
+    body     rolled.run_id
+    body    FROM rolled
+    body      JOIN gold_nces_ccd.measure_definition definition ON definition.measure = rolled.measure;
+
+v gold_nces_ccd.school_observation
+    column run_id uuid
+    column component text
+    column school_year text
+    column file_stem text
+    column release_version text
+    column version_rank integer
+    column published_at timestamp with time zone
+    column capture_id uuid
+    column ncessch text
+    column measure text
+    column value numeric
+    column value_status text
+    column dms_flag text
+    column geocode_file text
+    column state_fips text
+    column county_fips text
+    column county_geo_id text
+    column county_geo_sk bigint
+    column county_status text
+    body WITH published AS (
+    body          SELECT file.run_id,
+    body             file.component,
+    body             file.school_year,
+    body             file.file_stem,
+    body             file.release_version,
+    body             file.version_rank,
+    body             file.capture_id,
+    body             file.payload_checksum,
+    body             file.row_count,
+    body             file.kept_row_count,
+    body             file.status,
+    body             file.published_at,
+    body             file.created_at,
+    body             file.updated_at
+    body            FROM control.nces_ccd_file file
+    body           WHERE file.status = 'published'::text AND file.component <> 'geocode'::text
+    body         ), school_values AS (
+    body          SELECT count.run_id,
+    body             count.ncessch,
+    body             count.measure,
+    body             count.value,
+    body             count.value_status,
+    body             count.dms_flag,
+    body             count.capture_id
+    body            FROM silver_nces_ccd.school_count count
+    body         UNION ALL
+    body          SELECT directory.run_id,
+    body             directory.ncessch,
+    body             'operating_schools'::text,
+    body             1,
+    body             'valid'::text,
+    body             'Reported'::text,
+    body             directory.capture_id
+    body            FROM silver_nces_ccd.school_directory directory
+    body           WHERE directory.school_status = ANY (ARRAY['Open'::text, 'New'::text, 'Added'::text, 'Reopened'::text, 'Changed Boundary/Agency'::text])
+    body         UNION ALL
+    body          SELECT directory.run_id,
+    body             directory.ncessch,
+    body             'charter_schools'::text,
+    body                 CASE
+    body                     WHEN directory.charter = 'Yes'::text THEN 1
+    body                     ELSE 0
+    body                 END AS "case",
+    body             'valid'::text,
+    body             'Reported'::text,
+    body             directory.capture_id
+    body            FROM silver_nces_ccd.school_directory directory
+    body           WHERE directory.school_status = ANY (ARRAY['Open'::text, 'New'::text, 'Added'::text, 'Reopened'::text, 'Changed Boundary/Agency'::text])
+    body         )
+    body  SELECT published.run_id,
+    body     published.component,
+    body     published.school_year,
+    body     published.file_stem,
+    body     published.release_version,
+    body     published.version_rank,
+    body     published.published_at,
+    body     school_values.capture_id,
+    body     school_values.ncessch,
+    body     school_values.measure,
+    body     school_values.value,
+    body     school_values.value_status,
+    body     school_values.dms_flag,
+    body     placement.geocode_file,
+    body     placement.state_fips,
+    body     placement.county_fips,
+    body     placement.county_geo_id,
+    body     placement.county_geo_sk,
+    body     placement.county_status
+    body    FROM school_values
+    body      JOIN published ON published.run_id = school_values.run_id
+    body      LEFT JOIN gold_nces_ccd.school_placement placement ON placement.school_year = published.school_year AND placement.ncessch = school_values.ncessch;
+
+v gold_nces_ccd.school_placement
+    column school_year text
+    column geocode_file text
+    column ncessch text
+    column state_fips text
+    column county_fips text
+    column operating_state_fips text
+    column county_geo_id text
+    column county_geo_sk bigint
+    column county_status text
+    body WITH selected AS (
+    body          SELECT DISTINCT ON (file.school_year) file.run_id,
+    body             file.school_year,
+    body             file.file_stem
+    body            FROM control.nces_ccd_file file
+    body           WHERE file.component = 'geocode'::text AND file.status = 'published'::text
+    body           ORDER BY file.school_year, file.version_rank DESC, file.published_at DESC, file.run_id DESC
+    body         )
+    body  SELECT selected.school_year,
+    body     selected.file_stem AS geocode_file,
+    body     location.ncessch,
+    body     location.state_fips,
+    body     location.county_fips,
+    body     location.operating_state_fips,
+    body     location.geo_id AS county_geo_id,
+    body     location.geo_sk AS county_geo_sk,
+    body     location.geography_status AS county_status
+    body    FROM silver_nces_ccd.school_location location
+    body      JOIN selected ON selected.run_id = location.run_id;
+
 v gold_pep.measure_export
     column source_object_key text
     column metric_display_name text
@@ -5358,6 +5775,104 @@ r silver_nass.observation_revision
     constraint observation_revision_year_check CHECK (((year >= 1800) AND (year <= 2200)))
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_nass.observation_revision USING btree (capture_id, source_row_index)
     index usda_nass_observation_revision_run_idx CREATE INDEX usda_nass_observation_revision_run_idx ON silver_nass.observation_revision USING btree (run_id, product_id, release_watermark)
+
+r silver_nces_ccd.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_nces_ccd.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_nces_ccd.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_nces_ccd.quarantine USING btree (quarantine_sk)
+
+r silver_nces_ccd.school_count
+    column run_id uuid NOT NULL
+    column ncessch text NOT NULL
+    column measure text NOT NULL
+    column leaid text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column operating_state_fips text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column dms_flag text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint nces_ccd_count_not_negative CHECK (((value IS NULL) OR (value >= (0)::numeric)))
+    constraint nces_ccd_count_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint nces_ccd_count_withheld_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint school_count_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint school_count_dms_flag_check CHECK ((dms_flag = ANY (ARRAY['Reported'::text, 'Not reported'::text, 'Missing'::text, 'Suppressed'::text])))
+    constraint school_count_leaid_check CHECK ((leaid ~ '^[0-9]{7}$'::text))
+    constraint school_count_measure_check CHECK ((measure = ANY (ARRAY['student_membership'::text, 'teacher_fte'::text, 'frpl_eligible'::text, 'free_lunch_eligible'::text, 'reduced_price_lunch_eligible'::text, 'direct_certification'::text])))
+    constraint school_count_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = ANY (ARRAY['not_reported'::text, 'missing'::text, 'suppressed'::text]))))
+    constraint school_count_ncessch_check CHECK ((ncessch ~ '^[0-9]{12}$'::text))
+    constraint school_count_operating_state_fips_check CHECK ((operating_state_fips ~ '^[0-9]{2}$'::text))
+    constraint school_count_pkey PRIMARY KEY (run_id, ncessch, measure)
+    constraint school_count_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ccd_file(run_id)
+    constraint school_count_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint school_count_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'suppressed'::text])))
+    index nces_ccd_count_school_idx CREATE INDEX nces_ccd_count_school_idx ON silver_nces_ccd.school_count USING btree (ncessch, measure)
+    index school_count_pkey CREATE UNIQUE INDEX school_count_pkey ON silver_nces_ccd.school_count USING btree (run_id, ncessch, measure)
+
+r silver_nces_ccd.school_directory
+    column run_id uuid NOT NULL
+    column ncessch text NOT NULL
+    column leaid text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column operating_state_fips text NOT NULL
+    column school_status text NOT NULL
+    column school_type text NOT NULL
+    column charter text NOT NULL
+    column school_level text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint school_directory_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint school_directory_leaid_check CHECK ((leaid ~ '^[0-9]{7}$'::text))
+    constraint school_directory_ncessch_check CHECK ((ncessch ~ '^[0-9]{12}$'::text))
+    constraint school_directory_operating_state_fips_check CHECK ((operating_state_fips ~ '^[0-9]{2}$'::text))
+    constraint school_directory_pkey PRIMARY KEY (run_id, ncessch)
+    constraint school_directory_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ccd_file(run_id)
+    constraint school_directory_source_row_index_check CHECK ((source_row_index >= 1))
+    index school_directory_pkey CREATE UNIQUE INDEX school_directory_pkey ON silver_nces_ccd.school_directory USING btree (run_id, ncessch)
+
+r silver_nces_ccd.school_location
+    column run_id uuid NOT NULL
+    column ncessch text NOT NULL
+    column leaid text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column operating_state_fips text NOT NULL
+    column state_fips text NOT NULL
+    column county_fips text NOT NULL
+    column latitude numeric
+    column longitude numeric
+    column geo_id text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint nces_ccd_location_county_in_state CHECK (("left"(county_fips, 2) = state_fips))
+    constraint nces_ccd_location_resolved_has_key CHECK (((geography_status = 'resolved'::text) = (geo_sk IS NOT NULL)))
+    constraint school_location_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint school_location_county_fips_check CHECK ((county_fips ~ '^[0-9]{5}$'::text))
+    constraint school_location_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint school_location_leaid_check CHECK ((leaid ~ '^[0-9]{7}$'::text))
+    constraint school_location_ncessch_check CHECK ((ncessch ~ '^[0-9]{12}$'::text))
+    constraint school_location_operating_state_fips_check CHECK ((operating_state_fips ~ '^[0-9]{2}$'::text))
+    constraint school_location_pkey PRIMARY KEY (run_id, ncessch)
+    constraint school_location_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ccd_file(run_id)
+    constraint school_location_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint school_location_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    index nces_ccd_location_school_idx CREATE INDEX nces_ccd_location_school_idx ON silver_nces_ccd.school_location USING btree (ncessch)
+    index school_location_pkey CREATE UNIQUE INDEX school_location_pkey ON silver_nces_ccd.school_location USING btree (run_id, ncessch)
 
 r silver_pep.dim_measure
     column metric_code text NOT NULL

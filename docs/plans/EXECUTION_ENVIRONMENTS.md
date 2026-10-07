@@ -121,7 +121,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`fhfa-house-price-index`](to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) | medium | `postgres` | -- |
 | [`hud-fair-market-rents-and-income-limits`](to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
 | [`irs-county-migration`](to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) | high | `postgres` | -- |
-| [`nces-common-core-of-data`](to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
+| [`nces-common-core-of-data`](in_progress/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |

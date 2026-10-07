@@ -15,9 +15,10 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+In progress. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/nces-common-core` (from `docs/scout-county-sources`)
+except membership (enrollment), which waits on a decision: see Blocker.
 
 ## Why
 
@@ -170,8 +171,82 @@ the fetcher and was not read.
 - Whether 1b-or-later revisions are still issued; Puerto Rico, outlying areas, BIE, and DoDEA in
   state and nation totals; any rate limit or robots policy on the download hosts.
 
+## Decisions (2026-10-07)
+
+- **Package and source code.** `src/data_ingestion_toolbox/nces_ccd/`, source
+  `NCES_CCD`, schemas `silver_nces_ccd`/`gold_nces_ccd`.
+- **File names (open item resolved).** The CCD Data File Tool loads its
+  catalog from `https://nces.ed.gov/ccd/datatables/api/File` (JSON). 2024-25:
+  `ccd_sch_029_2425_w_1a_073025` (directory), `ccd_sch_052_2425_l_1a_073025`
+  (membership), `ccd_sch_059_2425_l_1a_073025` (staff),
+  `ccd_sch_033_2425_l_2a_073025` (lunch, release 2a); 2023-24 the same
+  components at `..._2324_..._1a_073124`. `l`/`w` are long/wide, confirmed
+  from the files. The EDGE geocode files are
+  `programs/edge/data/EDGE_GEOCODE_PUBLICSCH_<yyyy>.zip`, a pipe-delimited
+  `.TXT` with no header (columns from the `.xlsx` member).
+- **Reserve codes (open item resolved).** Current files carry `DMS_FLAG`
+  (`Reported`, `Not reported`, `Missing`, `Suppressed`) with a blank count
+  when not Reported; the 2009-10 `-1`/`-2`/`-9` codes do not appear. Typed
+  as `missing` (`not_reported`/`missing`) and `suppressed`, never zero.
+- **Releases.** 1b-style releases still exist (2024-25 lunch is `2a`).
+  `version_rank` orders them; a later release is captured beside the earlier
+  one and `observation_latest` serves it.
+- **Geography.** Counties through EDGE `CNTY` only; state rollups by EDGE
+  `STFIP` (physical state); BIE (59) and DoDEA (63) operating codes are kept
+  and never resolved. No nation rollup and no district grain in this pass
+  (district facts would need GRF lineage; nothing is apportioned).
+- **Measures.** `operating_schools` and `charter_schools` (directory status
+  Open/New/Added/Reopened/Changed Boundary/Agency), `teacher_fte`,
+  `frpl_eligible`, `free_lunch_eligible`, `reduced_price_lunch_eligible`,
+  `direct_certification`; each a sum over placed schools with
+  `schools_with_value`, `schools_without_value` and `completeness`. A grain
+  with no reporting school is `missing` with no value. Year = the school
+  year's fall; period July 1 to June 30. Analysis-ready (they are counts).
+- **Fixtures.** 2024-25 directory, staff, lunch and geocode trimmed to
+  Delaware (reports direct certification only), Rhode Island (reports both)
+  and one BIE school in Rolette County, ND; rows verbatim.
+
+## Blocker
+
+**Membership (enrollment) needs a decision.** NCES compresses the membership
+zips (about 210 MB each, 2.3 GB uncompressed) with Deflate64 (zip method 9).
+Neither Python's `zipfile` nor the Airflow image (no `unzip`/`7z`) can read
+it. Asked Nick on 2026-10-07: add the `inflate64` dependency (recommended) or
+leave enrollment out. The `MEMBERSHIP` component and `student_membership`
+measure are defined and the files are documented in `registry.py`; once a
+reader exists, register the two files and add a membership fixture. The
+acceptance criterion "serves county membership" is not met until then.
+
+## Evidence so far (2026-10-07, Windows host, local Docker test stack)
+
+- Real files: the full 2024-25 directory (102,178 schools), staff (100,237),
+  lunch (469,350 rows, 375,480 kept) and EDGE geocode (102,178) files parse
+  with nothing quarantined.
+- Unit: `python -m pytest tests/unit` -- 2187 passed, including
+  `tests/unit/nces_ccd` (8).
+- Database: `tests/integration/database/test_nces_ccd_capture_replay.py` --
+  5 passed: county and state sums with completeness counts (Providence
+  FRPL 56,037 from 197 schools, 3 without a value); Delaware FRPL `missing`
+  with no value while direct certification is served; the BIE school kept as
+  59/38 and unmapped, never served; withheld counts carry no number; a bad
+  flag and a wrong year are quarantined alone; an unchanged read replays
+  nothing and a 1b release supersedes 1a with both kept; a non-zip and a
+  foreign header fail capture; `DQ-NCES-002`/`-004` behave and then catch a
+  fault; the harvest names seven measures.
+- Live: `tests/external/test_nces_ccd_source_contracts.py` -- 8 passed
+  against nces.ed.gov.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 462 passed, 2 skipped, 1 failed: the PEP teardown node, which
+  fails on `main` too. Includes the NCES e2e node (Providence's FRPL served
+  through `/api/v1/observations` with completeness dimensions; Sussex's FRPL
+  `missing`) and the DB-025/DB-044 sweeps with a published NCES metric.
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `nces_ccd_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
+  viz coverage and plan environments regenerated.
+
 ## Checkpoint
 
-Next pickup: open the CCD Data File Tool in a browser, record the exact 2024-25 directory, membership,
-and lunch file names and documentation PDFs here, copy the starter, and write the failing replay test
-for one state's directory and lunch fixture.
+Next: membership once Nick decides on the Deflate64 reader; then move this
+plan to `needs_review/`.

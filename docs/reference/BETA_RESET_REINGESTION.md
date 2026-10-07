@@ -322,6 +322,11 @@ FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
+Trigger `nces_ccd_ingest` once after the shared geography loads: it reads
+each registered school year's CCD directory, staff and lunch files and EDGE
+school geocodes through the one-slot `nces_ccd_files` pool
+([operations](../user-guides/NCES_CCD_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography
