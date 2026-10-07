@@ -238,6 +238,12 @@ def test_orchestrated_run_publishes_partial_county_place_overlaps(
                        COUNT(DISTINCT overlap_area_m2)
                 FROM silver_ref.bridge_geo_relationship_version
                 WHERE relationship_type = 'intersects'
+                  -- County/place overlaps only: a ZCTA's overlaps
+                  -- (sub-county-geography) are a different relationship
+                  -- with their own weights.
+                  AND related_geo_sk IN (
+                      SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_type = 'place'
+                  )
                 """
             )
             published, lowest, highest, weights, areas = cursor.fetchone()
@@ -248,6 +254,9 @@ def test_orchestrated_run_publishes_partial_county_place_overlaps(
                     SELECT related_geo_sk, SUM(overlap_weight) AS total_weight
                     FROM silver_ref.bridge_geo_relationship_version
                     WHERE relationship_type = 'intersects'
+                      AND parent_geo_sk IN (
+                          SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_type = 'county'
+                      )
                     GROUP BY related_geo_sk
                     HAVING COUNT(*) = 4
                 ) AS interior

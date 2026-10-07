@@ -388,9 +388,20 @@ _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
-#: sent straight back as the ``geo_level`` filter. Five words, because that
-#: is what the warehouse serves: PLACE is Census PEP's, AGENCY is FBI UCR's.
-GEO_GRAINS: tuple[str, ...] = ("NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY")
+#: sent straight back as the ``geo_level`` filter. Six words, because that
+#: is what the warehouse serves: PLACE is Census PEP's and ACS's, AGENCY is
+#: FBI UCR's, and TRACT is the ACS 5-year estimates' (sub-county-geography).
+#: The reference also holds ZIP Code Tabulation Areas, but no source
+#: publishes at that grain yet, and a grain with no publisher answers every
+#: request empty.
+GEO_GRAINS: tuple[str, ...] = (
+    "NATIONAL",
+    "STATE",
+    "COUNTY",
+    "PLACE",
+    "TRACT",
+    "AGENCY",
+)
 
 #: Words the catalog published before the vocabulary was unified. A saved
 #: configuration or a shared link holding one must keep answering (ADR-0002),

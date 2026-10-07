@@ -70,6 +70,9 @@ class GeographyLatest(BaseModel):
     #: refreshes. NULL while the geography is current.
     retired_at: Optional[datetime] = None
     is_active: Optional[bool] = None
+    #: A tract's or ZCTA's own name; NULL for every other level. A tract's
+    #: ``county_name`` is its county's (sub-county-geography).
+    area_name: Optional[str] = None
 
 
 class GeographyListResponse(BaseModel):

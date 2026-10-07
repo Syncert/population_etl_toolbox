@@ -291,6 +291,13 @@ is empty, then run:
 airflow dags trigger silver_ref
 ```
 
+`silver_ref` also publishes the newest vintage's Census tracts and ZIP Code
+Tabulation Areas after its counties and places (`load_sub_county_geo`): about
+85,000 tracts and 33,800 ZCTAs, from a 58 MB tract boundary file and the 67 MB
+2020 ZCTA boundary file, with county-contains-tract and ZCTA-intersects-county
+and -place relationships. A tract whose county is not loaded is refused into
+`silver_ref.geography_resolution` (`parent_county_absent`), not loaded.
+
 Wait for `silver_ref` to succeed before running observation DAGs. **Every
 source DAG now refuses to start until it has**: the first task of all six
 ingestion DAGs calls
@@ -321,6 +328,21 @@ SELECT count(*) AS invalid_geometry_count
 FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
+
+`acs_ingest` requests five levels per dataset and year: the nation, all
+states, each county parent's counties, and -- for the newest year only, by
+default (`AcsConfig.place_recent_years`) -- each state's places. The place
+slices are the large ones. One 5-year year is 52 place slices of 77 requests
+each (3,844 curated variables in chunks of 50), about 4,000 requests, and
+about 62 million facts for some 32,000 places against the counties' 6.2
+million; the 1-year estimates add 50 smaller slices (their 649 places of
+65,000 or more; Vermont and West Virginia have none and are never asked).
+Expect the first place load to dominate the run and the silver transform and
+`mv_acs_latest` refresh to grow roughly tenfold. Raise `place_recent_years`
+only with that volume in mind. A place the shared reference does not carry
+is recorded `unmapped` in `silver_ref.geography_resolution` with the year it
+was requested under and left out of the facts; unlike a missing state or
+county it does not stop the transform.
 
 Trigger `bea_regional_ingest` once: every run reads every year of every
 registered BEA table, five zips through the one-slot `bea_files` pool

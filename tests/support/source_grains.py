@@ -26,7 +26,8 @@ from __future__ import annotations
 #: * ``CDC`` -- ``cdc/registry.py`` declares ``geography_levels`` per asset:
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
-#:   ``geo_levels = ["us", "state", "county"]``.
+#:   ``geo_levels = ["us", "state", "county", "place", "tract"]``; tracts
+#:   from the 5-year estimates only (sub-county-geography).
 #: * ``BEA`` -- ``bea/registry.py`` loads the nation, states and counties
 #:   and counts BEA's regions and combined areas out of scope.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
@@ -42,7 +43,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BEA": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),

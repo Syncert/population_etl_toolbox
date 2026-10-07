@@ -18,7 +18,9 @@
     "CENSUS_ACS": [
       "COUNTY",
       "NATIONAL",
-      "STATE"
+      "PLACE",
+      "STATE",
+      "TRACT"
     ],
     "CENSUS_PEP": [
       "COUNTY",

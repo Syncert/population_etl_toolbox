@@ -16,6 +16,7 @@ from data_ingestion_toolbox import silver_ref as silver_ref_package
 from data_ingestion_toolbox.silver_ref.config import CONFIG
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     sync_geography_history,
+    sync_sub_county_geography,
 )
 from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 
@@ -63,12 +64,20 @@ def silver_ref():
         return sync_geography_history(source_year=None)
 
     @task
+    def load_sub_county_geo(core: dict[str, int]) -> dict[str, int]:
+        # Tracts and ZCTAs for the vintage `load_dim_geo` just published: a
+        # tract is refused unless its county is already an entity, and the
+        # ZCTA overlaps are computed against that vintage's boundaries.
+        return sync_sub_county_geography(source_year=int(core["latest_vintage"]))
+
+    @task
     def load_dim_time() -> int:
         # Build from 1970 through end of current year (matches FRED historical range)
         return sync_time_dim(start_date=date(1970, 1, 1), end_date=None)
 
     ddl = ensure_schema()
     geo = load_dim_geo()
+    load_sub_county_geo(geo)
     time = load_dim_time()
 
     ddl >> geo

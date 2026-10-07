@@ -240,6 +240,64 @@ def geography_boundary(geo_type: str, entry: dict[str, Any], ordinal: int) -> st
     )
 
 
+def build_sub_county_geographies(geo_type: str) -> list[tuple[Any, str]]:
+    """One tract per anchor county, cut from its county's cell, and one ZCTA per anchor state.
+
+    The sub-county snapshot (sub-county-geography) only needs enough to
+    exercise refusal, containment and overlap, not production scale: each
+    tract sits inside its county's lattice cell, and each ZCTA covers its
+    state's first county cell so it overlaps a county.
+    """
+    from data_ingestion_toolbox.silver_ref import geography_pipeline
+
+    counties = [entry for entry in build_geography_records("county")]
+    boundaries = dict(
+        ((entry["state_fips"], entry["county_fips"]), boundary)
+        for entry, boundary in build_geography_boundaries("county")
+    )
+    out: list[tuple[Any, str]] = []
+    if geo_type == "tract":
+        for state, county, _place, _name in [
+            (s, c, p, n) for kind, s, c, p, n in ANCHOR_GEOGRAPHIES if kind == "county"
+        ]:
+            record = geography_pipeline.GeographyRecord(
+                "tract",
+                geography_pipeline.canonical_geo_id(
+                    "tract", state_fips=state, county_fips=county, tract_code="000100"
+                ),
+                f"{state}{county}000100",
+                state,
+                county,
+                None,
+                "Census Tract 1",
+                FIXTURE_GEOGRAPHY_VINTAGE,
+                tract_code="000100",
+            )
+            out.append((record, boundaries[(state, county)]))
+    else:
+        firsts: dict[str, dict[str, Any]] = {}
+        for entry in counties:
+            firsts.setdefault(entry["state_fips"], entry)
+        for ordinal, state in enumerate(
+            sorted({s for kind, s, *_ in ANCHOR_GEOGRAPHIES if kind == "state"})
+        ):
+            zcta = f"{90000 + ordinal:05d}"
+            first = firsts[state]
+            record = geography_pipeline.GeographyRecord(
+                "zcta",
+                geography_pipeline.canonical_geo_id("zcta", zcta_code=zcta),
+                zcta,
+                None,
+                None,
+                None,
+                f"ZCTA5 {zcta}",
+                FIXTURE_GEOGRAPHY_VINTAGE,
+                zcta_code=zcta,
+            )
+            out.append((record, boundaries[(state, first["county_fips"])]))
+    return out
+
+
 def build_geography_boundaries(geo_type: str) -> list[tuple[dict[str, Any], str]]:
     """Pair every generated geography of one level with its lattice boundary."""
     ordinals: dict[str, int] = {}
@@ -450,6 +508,10 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     def parse_attributes(
         _payload: bytes, *, geo_type: str, geography_vintage: int
     ) -> list[Any]:
+        if geo_type in {"tract", "zcta"}:
+            return [
+                record for record, _boundary in build_sub_county_geographies(geo_type)
+            ]
         return [
             geography_pipeline.GeographyRecord(
                 geo_type,
@@ -472,6 +534,13 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     def parse_geometry(
         _payload: bytes, *, geo_type: str, boundary_vintage: int
     ) -> list[Any]:
+        if geo_type in {"tract", "zcta"}:
+            return [
+                geography_pipeline.GeometryRecord(
+                    record.geo_id, boundary_vintage, boundary
+                )
+                for record, boundary in build_sub_county_geographies(geo_type)
+            ]
         return [
             geography_pipeline.GeometryRecord(
                 geography_pipeline.canonical_geo_id(
@@ -848,6 +917,8 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
             "state": (["state"], [["11"]]),
             "county": (["state", "county"], [["11", "001"]]),
             "place": (["state", "place"], [["11", "50000"]]),
+            # The tract `build_sub_county_geographies` gives county 11/001.
+            "tract": (["state", "county", "tract"], [["11", "001", "000100"]]),
         }
         if geo_level not in geographies:
             raise AssertionError(
