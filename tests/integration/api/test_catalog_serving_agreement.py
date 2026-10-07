@@ -35,6 +35,7 @@ from tests.support import fbi_release
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
+    delete_seed_captures,
     delete_shared_geographies,
     preexisting_geographies,
     seed_geography,
@@ -1515,6 +1516,11 @@ def published_pep_metrics(
                     (PEP_DATASET,),
                 )
                 delete_shared_geographies(database_cursor, PEP_GEO_IDS, preexisting_geo)
+                # The capture graph `seed_capture` committed. Left behind, it
+                # outlived the fixture, and the PEP end-to-end teardown node --
+                # which counts every CENSUS_PEP capture -- failed whenever this
+                # file ran before it in one session.
+                delete_seed_captures(database_cursor, [capture_id])
                 _remove_registration(database_cursor, registered_before, "CENSUS_PEP")
             cleanup.commit()
         finally:
@@ -1919,6 +1925,7 @@ def _publish_cdc_measure(
                     (stratum_id,),
                 )
                 delete_shared_geographies(database_cursor, geo_ids, preexisting_geo)
+                delete_seed_captures(database_cursor, [capture_id])
                 _remove_registration(database_cursor, registered_before, "CDC")
             cleanup.commit()
         finally:
