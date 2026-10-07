@@ -41,6 +41,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fbi_cde_api",
     "usda_nass_api",
     "fhfa_hpi_files",
+    "hud_fmr_il_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -678,6 +679,22 @@ def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hpi_capture, "fetch_file", fetch_file)
 
 
+def stub_hud_fmr_il(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve each registered edition's reviewed workbook in place of HUD User's."""
+    from data_ingestion_toolbox.hud_fmr_il import capture as hud_capture
+    from data_ingestion_toolbox.hud_fmr_il.client import HudResponse
+
+    root = FIXTURE_ROOT / "hud_fmr_il"
+
+    def fetch_file(item: Any, **_kwargs: Any) -> HudResponse:
+        payload = (root / item.path.rsplit("/", 1)[1]).read_bytes()
+        return HudResponse(
+            item.path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(hud_capture, "fetch_file", fetch_file)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1113,6 +1130,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
         ("fhfa_hpi", stub_fhfa_hpi),
+        ("hud_fmr_il", stub_hud_fmr_il),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Blocked on a decision; everything else is implemented and tested. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/hud-fair-market-rents`, which is
+`feat/fhfa-house-price-index` (it reuses that branch's workbook reader) with
+the work on top.
 
 ## Why
 
@@ -165,7 +167,92 @@ control state, not a zero.
 - Whether Small Area FMRs (ZIP grain) and MTSP limits are in scope later.
 - FY 2027 income-limit release date (not yet posted when checked).
 
+## Decisions (open items resolved)
+
+- **Keyless workbooks only; no API path.** The county-level workbooks carry
+  every measure, both editions and every county in one file each, with no
+  token. The HUD User API (60 calls a minute, a token, its own notice) is
+  not used, so `HUD_USER_API_TOKEN` and its scheduled-credential
+  registration are not introduced; the external contract checks the
+  workbooks instead. The API open items (which edition it serves, the
+  `il/statedata` layout) are therefore moot.
+- **Registered editions:** FY 2026 FMRs, the FY 2026 reissue (effective May
+  21, 2026), FY 2027 FMRs and FY 2026 income limits. Earlier vintages and the
+  1983-2027 history file are not registered; each needs its columns checked
+  first (open item, unchanged). The FY 2027 income limits were not posted
+  when checked.
+- **Columns by name, not `Field_Descriptions`.** Each edition registers the
+  columns it is read by (`median2026` for FY 2026 limits); the
+  `Field_Descriptions` sheet is kept in the raw capture but not parsed, since
+  it names columns without types or units.
+- **Territories:** HUD's files include American Samoa, Guam, the Northern
+  Mariana Islands, Puerto Rico and the U.S. Virgin Islands (84 rows); their
+  codes are accepted and resolve only where the shared dimension has them.
+  Every current file now parses with nothing quarantined: 4,764 rows, 3,161
+  whole-county rows each (checked against the files downloaded 2026-10-07).
+- **New England towns** are kept in silver as `unsupported` county
+  subdivisions and never served as their county; the sub-county layer has
+  no county subdivisions yet.
+- **Connecticut:** FY 2026 files use the planning regions (`09110`...), so a
+  Connecticut county value would be a planning region; Connecticut is all
+  towns in these files, so nothing Connecticut is served today.
+- **Credit:** the workbooks state no licence; served rows carry "Source: U.S.
+  Department of Housing and Urban Development, HUD User." in the basis. The
+  API's notice is not shown, since the API is not used.
+- **HUD User's edge challenge:** automated reads sometimes get an empty
+  `202`. The client retries it and reports it as unavailable; it does not
+  disguise its user agent. The live contract module can fail as
+  `upstream-unavailable` for that reason (see Evidence).
+- **Small Area FMRs and MTSP limits:** out of scope (open item, unchanged).
+- **Fixtures:** each workbook trimmed to five rows with HUD's row numbers
+  and cell references kept as written and the shared-string table pruned to
+  the strings used: Delaware's three counties, Napa County (reissued in the
+  revised edition) and Andover town, CT. The malformed variants are built
+  from these bytes in the unit tests. The FHFA fixture was regenerated the
+  same way, keeping FHFA's row numbers.
+
+## Evidence (2026-10-07, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2195 passed, including
+  `tests/unit/hud_fmr_il` (6, among them the empty-`202` retry).
+- Database: `tests/integration/database/test_hud_fmr_il_capture_replay.py`
+  -- 5 passed: every edition to gold with its area, edition and effective
+  date; the town row held; both FY 2026 editions kept and the reissue
+  served; an unchanged read replays nothing; a non-workbook fails capture;
+  `DQ-HUD-002` and `DQ-HUD-004` pass and then catch a fault; the schema
+  reapplies; the harvest names nine metrics.
+- End to end: `tests/e2e/test_hud_fmr_il_pipeline.py` serves Napa's revised
+  FY 2026 two-bedroom FMR with its area, edition and effective date, and
+  Kent's four-person 50% limit, through `/api/v1/observations`.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 472 passed, 1 failed: the PEP teardown node, which fails on
+  `main` too (fixed on `test/catalog-agreement-fixture-residue`).
+- DAG: `tests/dags` in the scheduler container -- 162 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `hud_fmr_il_ingest` in the orchestrated run.
+- Offline against the real files: all four workbooks downloaded 2026-10-07
+  parse with nothing quarantined (4,764 rows, 3,161 whole-county rows each).
+- **Live: `tests/external/test_hud_fmr_il_source_contracts.py` -- 4 passed
+  (classification), 4 failed as `upstream-unavailable`.** HUD User's edge
+  answers this adapter's honest user agent with an empty `202` on every
+  read, while a browser user agent gets the file (checked with curl,
+  2026-10-07). The first reads that day succeeded; later ones are
+  challenged.
+- `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI
+  contract, viz coverage and plan environments regenerated.
+
+## Blocker
+
+The scheduled DAG cannot download the workbooks while HUD User challenges
+self-identifying clients. Choosing how to proceed is the user's call:
+
+1. Register a HUD User API token (`HUD_USER_API_TOKEN`) and add the API as
+   the capture path (recommended: it is HUD's sanctioned automated channel).
+2. Send a browser user agent to the workbook URLs (works today, but it
+   sidesteps HUD's bot control).
+3. Keep the workbook path and load the files by hand when HUD publishes.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `hud_fmr_il`, check in trimmed FY26 FMR (original and revised)
-fixtures, and write the failing replay test that resolves a `99999` row to its county FIPS.
+Waiting on the blocker above. Implementation, fixtures, tests and docs
+are complete on `feat/hud-fair-market-rents`.

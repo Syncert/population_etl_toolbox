@@ -36,6 +36,7 @@ services:
       - ../../src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql:/docker-entrypoint-initdb.d/105_silver_fbi.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql:/docker-entrypoint-initdb.d/110_silver_nass.sql:ro
       - ../../src/data_ingestion_toolbox/fhfa_hpi/DDL/silver_fhfa_hpi.sql:/docker-entrypoint-initdb.d/118_silver_fhfa_hpi.sql:ro
+      - ../../src/data_ingestion_toolbox/hud_fmr_il/DDL/silver_hud_fmr_il.sql:/docker-entrypoint-initdb.d/119_silver_hud_fmr_il.sql:ro
       - ../../sql/migrations/019_stratum_shape_contract.sql:/docker-entrypoint-initdb.d/115_migration_019.sql:ro
       - ../../sql/migrations/025_county_label_is_not_reviewed.sql:/docker-entrypoint-initdb.d/120_migration_025.sql:ro
       - ../../sql/migrations/027_acs_bls_fact_lineage.sql:/docker-entrypoint-initdb.d/125_migration_027.sql:ro
@@ -47,6 +48,7 @@ services:
       - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql:/docker-entrypoint-initdb.d/155_gold_fbi.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql:/docker-entrypoint-initdb.d/160_gold_nass.sql:ro
       - ../../src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/gold_fhfa_hpi.sql:/docker-entrypoint-initdb.d/168_gold_fhfa_hpi.sql:ro
+      - ../../src/data_ingestion_toolbox/hud_fmr_il/gold_hud_fmr_il/DDL/gold_hud_fmr_il.sql:/docker-entrypoint-initdb.d/169_gold_hud_fmr_il.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/165_publisher_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/170_publisher_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/175_publisher_fred.sql:ro
@@ -54,6 +56,7 @@ services:
       - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql:/docker-entrypoint-initdb.d/185_publisher_fbi.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql:/docker-entrypoint-initdb.d/190_publisher_nass.sql:ro
       - ../../src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/publisher.sql:/docker-entrypoint-initdb.d/198_publisher_fhfa_hpi.sql:ro
+      - ../../src/data_ingestion_toolbox/hud_fmr_il/gold_hud_fmr_il/DDL/publisher.sql:/docker-entrypoint-initdb.d/199_publisher_hud_fmr_il.sql:ro
       - ../../sql/migrations/028_serving_publishes_a_withheld_value.sql:/docker-entrypoint-initdb.d/195_migration_028.sql:ro
       - ../../sql/migrations/029_nass_combined_counties_are_not_counties.sql:/docker-entrypoint-initdb.d/197_migration_029.sql:ro
       - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/200_glossary_schema.sql:ro

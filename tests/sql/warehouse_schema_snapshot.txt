@@ -356,6 +356,35 @@ r control.fred_ingestion_slices
     index fred_ingestion_slices_pkey CREATE UNIQUE INDEX fred_ingestion_slices_pkey ON control.fred_ingestion_slices USING btree (id)
     index fred_ingestion_slices_status_idx CREATE INDEX fred_ingestion_slices_status_idx ON control.fred_ingestion_slices USING btree (status)
 
+r control.hud_fmr_il_file
+    column run_id uuid NOT NULL
+    column dataset text NOT NULL
+    column fiscal_year integer NOT NULL
+    column edition text NOT NULL
+    column effective_date date NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column county_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint hud_fmr_il_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint hud_fmr_il_file_counties_within_rows CHECK ((county_row_count <= row_count))
+    constraint hud_fmr_il_file_county_row_count_check CHECK ((county_row_count >= 0))
+    constraint hud_fmr_il_file_dataset_check CHECK ((dataset = ANY (ARRAY['fmr'::text, 'il'::text])))
+    constraint hud_fmr_il_file_edition_check CHECK ((edition = ANY (ARRAY['original'::text, 'revised'::text])))
+    constraint hud_fmr_il_file_fiscal_year_check CHECK (((fiscal_year >= 1983) AND (fiscal_year <= 2100)))
+    constraint hud_fmr_il_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint hud_fmr_il_file_pkey PRIMARY KEY (run_id)
+    constraint hud_fmr_il_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint hud_fmr_il_file_row_count_check CHECK ((row_count >= 0))
+    constraint hud_fmr_il_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint hud_fmr_il_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index hud_fmr_il_file_capture_idx CREATE INDEX hud_fmr_il_file_capture_idx ON control.hud_fmr_il_file USING btree (capture_id)
+    index hud_fmr_il_file_pkey CREATE UNIQUE INDEX hud_fmr_il_file_pkey ON control.hud_fmr_il_file USING btree (run_id)
+
 r control.ingestion_request
     column request_id uuid NOT NULL
     column run_id uuid NOT NULL
@@ -3654,6 +3683,216 @@ r gold_glossary.publisher_registry
     index publisher_registry_pkey CREATE UNIQUE INDEX publisher_registry_pkey ON gold_glossary.publisher_registry USING btree (source_code)
     index publisher_registry_publisher_schema_publisher_view_key CREATE UNIQUE INDEX publisher_registry_publisher_schema_publisher_view_key ON gold_glossary.publisher_registry USING btree (publisher_schema, publisher_view)
 
+v gold_hud_fmr_il.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column dataset text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     dataset,
+    body         CASE dataset
+    body             WHEN 'fmr'::text THEN (((('HUD Fair Market Rent: the gross rent (shelter plus utilities) HUD sets '::text || 'for the fiscal year from the 40th percentile of rents recent movers '::text) || 'paid for standard-quality units in the HUD FMR area this county '::text) || 'belongs to; an area value repeated for each county, not a county '::text) || 'estimate and not the ACS median rent. Source: U.S. Department of '::text) || 'Housing and Urban Development, HUD User.'::text
+    body             ELSE ((('HUD Section 8 income limits: program eligibility thresholds and the '::text || 'area median family income they are based on, set for the fiscal year '::text) || 'for the HUD area this county belongs to; an area value repeated for '::text) || 'each county, not a county estimate and not the ACS median income. '::text) || 'Source: U.S. Department of Housing and Urban Development, HUD User.'::text
+    body         END AS observation_basis
+    body    FROM ( VALUES ('fmr_0br'::text,'Fair Market Rent, efficiency'::text,'dollars per month'::text,'fmr'::text), ('fmr_1br'::text,'Fair Market Rent, one bedroom'::text,'dollars per month'::text,'fmr'::text), ('fmr_2br'::text,'Fair Market Rent, two bedrooms'::text,'dollars per month'::text,'fmr'::text), ('fmr_3br'::text,'Fair Market Rent, three bedrooms'::text,'dollars per month'::text,'fmr'::text), ('fmr_4br'::text,'Fair Market Rent, four bedrooms'::text,'dollars per month'::text,'fmr'::text), ('median_family_income'::text,'HUD area median family income'::text,'dollars per year'::text,'il'::text), ('income_limit_30_4p'::text,'Extremely low income limit (30%), four-person household'::text,'dollars per year'::text,'il'::text), ('income_limit_50_4p'::text,'Very low income limit (50%), four-person household'::text,'dollars per year'::text,'il'::text), ('income_limit_80_4p'::text,'Low income limit (80%), four-person household'::text,'dollars per year'::text,'il'::text)) measure(measure, measure_label, unit, dataset);
+
+v gold_hud_fmr_il.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'hud_fmr_il_xlsx:v1'::text AS schema_version
+    body    FROM gold_hud_fmr_il.measure_definition;
+
+v gold_hud_fmr_il.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'HUD_FMR_IL'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (HUD program reference value)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_hud_fmr_il', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'HUD Fair Market Rents and Section 8 Income Limits'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.huduser.gov/portal/datasets/fmr.html'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_hud_fmr_il.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_hud_fmr_il.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_hud_fmr_il.observation_latest
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column dataset text
+    column year integer
+    column period_start date
+    column period_end date
+    column effective_date date
+    column edition text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column fips_code text
+    column hud_area_code text
+    column hud_area_name text
+    column metro boolean
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column release_key text
+    column published_at timestamp with time zone
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     dataset,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     effective_date,
+    body     edition,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     fips_code,
+    body     hud_area_code,
+    body     hud_area_name,
+    body     metro,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     missing_reason,
+    body     release_key,
+    body     published_at,
+    body     retrieved_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_hud_fmr_il.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, (edition = 'revised'::text) DESC, published_at DESC, run_id DESC;
+
+v gold_hud_fmr_il.observation_revision
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column dataset text
+    column year integer
+    column period_start date
+    column period_end date
+    column effective_date date
+    column edition text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column fips_code text
+    column hud_area_code text
+    column hud_area_name text
+    column metro boolean
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column release_key text
+    column published_at timestamp with time zone
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT fact.measure AS metric_key,
+    body     fact.measure,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.observation_basis,
+    body     fact.dataset,
+    body     fact.fiscal_year AS year,
+    body     make_date(fact.fiscal_year - 1, 10, 1) AS period_start,
+    body     make_date(fact.fiscal_year, 9, 30) AS period_end,
+    body     fact.effective_date,
+    body     fact.edition,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     fact.fips_code,
+    body     fact.hud_area_code,
+    body     fact.hud_area_name,
+    body     fact.metro,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.missing_reason,
+    body     ('FY'::text || fact.fiscal_year::text) ||
+    body         CASE fact.edition
+    body             WHEN 'revised'::text THEN '-revised'::text
+    body             ELSE ''::text
+    body         END AS release_key,
+    body     file.published_at,
+    body     fact.retrieved_at,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_hud_fmr_il.fact_observation fact
+    body      JOIN control.hud_fmr_il_file file ON file.run_id = fact.run_id
+    body      JOIN gold_hud_fmr_il.measure_definition measure ON measure.measure = fact.measure
+    body   WHERE file.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]));
+
 v gold_nass.crop_observation
     column observation_sk bigint
     column product_id text
@@ -5410,6 +5649,90 @@ r silver_fred.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
     index observation_revision_current_idx CREATE INDEX observation_revision_current_idx ON silver_fred.observation_revision USING btree (domain, series_id, observation_date, realtime_start DESC)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_fred.observation_revision USING btree (capture_id, observation_index)
+
+r silver_hud_fmr_il.fact_observation
+    column measure text NOT NULL
+    column geo_id text NOT NULL
+    column fiscal_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column dataset text NOT NULL
+    column edition text NOT NULL
+    column effective_date date NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column fips_code text NOT NULL
+    column geo_type text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column hud_area_code text NOT NULL
+    column hud_area_name text NOT NULL
+    column metro boolean NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['county'::text, 'county_subdivision'::text])))
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'unsupported'::text])))
+    constraint fact_observation_pkey PRIMARY KEY (measure, geo_id, fiscal_year, capture_id)
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint hud_fmr_il_fact_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint hud_fmr_il_fact_town_unsupported CHECK (((geo_type = 'county'::text) OR (geography_status = 'unsupported'::text)))
+    constraint hud_fmr_il_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_hud_fmr_il.fact_observation USING btree (measure, geo_id, fiscal_year, capture_id)
+    index hud_fmr_il_fact_lookup_idx CREATE INDEX hud_fmr_il_fact_lookup_idx ON silver_hud_fmr_il.fact_observation USING btree (measure, geo_id, fiscal_year)
+    index hud_fmr_il_fact_run_idx CREATE INDEX hud_fmr_il_fact_run_idx ON silver_hud_fmr_il.fact_observation USING btree (run_id)
+
+r silver_hud_fmr_il.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_hud_fmr_il.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_hud_fmr_il.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_hud_fmr_il.observation_quarantine USING btree (quarantine_sk)
+
+r silver_hud_fmr_il.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure text NOT NULL
+    column run_id uuid NOT NULL
+    column fips_code text NOT NULL
+    column geo_type text NOT NULL
+    column geo_id text NOT NULL
+    column hud_area_code text NOT NULL
+    column hud_area_name text NOT NULL
+    column metro boolean NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint hud_fmr_il_revision_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint hud_fmr_il_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_fips_code_check CHECK ((fips_code ~ '^[0-9]{10}$'::text))
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['county'::text, 'county_subdivision'::text])))
+    constraint observation_revision_measure_check CHECK ((measure ~ '^(fmr_[0-4]br|median_family_income|income_limit_(30|50|80)_[1-8]p)$'::text))
+    constraint observation_revision_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = 'provider_missing'::text)))
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, measure)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index hud_fmr_il_revision_run_idx CREATE INDEX hud_fmr_il_revision_run_idx ON silver_hud_fmr_il.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_hud_fmr_il.observation_revision USING btree (capture_id, source_row_index, measure)
 
 r silver_nass.dim_commodity
     column commodity_sk text NOT NULL

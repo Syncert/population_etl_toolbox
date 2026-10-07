@@ -291,6 +291,7 @@ services:
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
       airflow pools set fhfa_hpi_files 1 'FHFA HPI workbooks (serialized)';
+      airflow pools set hud_fmr_il_files 1 'HUD FMR and income-limit workbooks (serialized)';
       airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 

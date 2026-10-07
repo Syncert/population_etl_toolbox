@@ -37,6 +37,7 @@ EXPECTED_DAG_IDS = {
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
     "fhfa_hpi_ingest",
+    "hud_fmr_il_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
     "warehouse_data_quality",
@@ -61,6 +62,9 @@ EXPECTED_SCHEDULES = {
     # Monthly: FHFA revises the annual workbook without a published
     # calendar, and an unchanged file replays nothing.
     "fhfa_hpi_ingest": "0 15 25 * *",
+    # Monthly: HUD reissues FMRs within a fiscal year without a calendar, and
+    # an unchanged workbook replays nothing.
+    "hud_fmr_il_ingest": "0 16 25 * *",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
@@ -82,6 +86,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fbi_ucr_ingest": 2,
     "usda_nass_crop_ingest": 2,
     "fhfa_hpi_ingest": 2,
+    "hud_fmr_il_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
@@ -102,6 +107,7 @@ EXPECTED_INGEST_POOLS = {
     "fbi_ucr_ingest": "fbi_cde_api",
     "usda_nass_crop_ingest": "usda_nass_api",
     "fhfa_hpi_ingest": "fhfa_hpi_files",
+    "hud_fmr_il_ingest": "hud_fmr_il_files",
 }
 
 

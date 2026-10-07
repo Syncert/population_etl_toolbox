@@ -118,7 +118,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`epa-aqs-noaa-climate-normals`](to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) | high | `postgres` | -- |
 | [`fcc-broadband-data-collection`](to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) | medium | `postgres` | -- |
 | [`fema-nri-declarations`](to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) | medium | `postgres` | -- |
-| [`hud-fair-market-rents-and-income-limits`](to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
+| [`hud-fair-market-rents-and-income-limits`](in_progress/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
 | [`irs-county-migration`](to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) | high | `postgres` | -- |
 | [`nces-common-core-of-data`](to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |

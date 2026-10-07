@@ -122,6 +122,11 @@
       "path": "src/data_ingestion_toolbox/fhfa_hpi/DDL/silver_fhfa_hpi.sql"
     },
     {
+      "id": "silver-hud-fmr-il",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/hud_fmr_il/DDL/silver_hud_fmr_il.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -177,6 +182,11 @@
       "path": "src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/gold_fhfa_hpi.sql"
     },
     {
+      "id": "gold-hud-fmr-il",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/hud_fmr_il/gold_hud_fmr_il/DDL/gold_hud_fmr_il.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -210,6 +220,11 @@
       "id": "publisher-fhfa-hpi",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-hud-fmr-il",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/hud_fmr_il/gold_hud_fmr_il/DDL/publisher.sql"
     },
     {
       "id": "migration-028",

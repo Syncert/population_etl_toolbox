@@ -29,6 +29,8 @@ from __future__ import annotations
 #:   ``geo_levels = ["us", "state", "county"]``.
 #: * ``FHFA_HPI`` -- the annual county workbook only; the ZIP and tract
 #:   files wait on sub-county identities.
+#: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
+#:   rows are held, not published as their county.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
@@ -41,6 +43,7 @@ from __future__ import annotations
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),
+    "HUD_FMR_IL": frozenset({"COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),

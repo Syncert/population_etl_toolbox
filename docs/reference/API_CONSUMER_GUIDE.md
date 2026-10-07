@@ -419,6 +419,32 @@ all-transactions House Price Index for counties:
   nor certified by FHFA. `dimensions.observation_basis` carries it on every
   row.
 
+### Reading a HUD Fair Market Rent or income-limit row: an area's reference value
+
+`HUD_FMR_IL` serves the Department of Housing and Urban Development's Fair
+Market Rents (`HUD_FMR_IL:fmr_0br` to `HUD_FMR_IL:fmr_4br`, dollars per
+month, efficiency to four bedrooms) and Section 8 income limits
+(`HUD_FMR_IL:median_family_income` and the four-person
+`income_limit_30_4p`, `income_limit_50_4p` and `income_limit_80_4p`,
+dollars per year) for counties.
+
+- **It is the HUD area's value, not the county's.** HUD sets one figure per
+  FMR area (a metro area, a HUD metro subdivision or a nonmetropolitan
+  county) and repeats it for each county in the area;
+  `dimensions.hud_area_code` and `hud_area_name` say which area. It is a
+  program reference value, not the ACS median rent or income.
+- **`year` is HUD's fiscal year.** `period_start` is October 1 of the year
+  before; `dimensions.effective_date` is when that edition took effect
+  (income limits take effect on their own date, after October 1).
+- **A reissued year is a second release.** When HUD revises a fiscal year's
+  FMRs, the revised edition is the release `FY2026-revised` beside
+  `FY2026`; `observation_latest` serves the revision, and
+  `dimensions.edition` says which edition a row is.
+- **New England towns are not counties.** HUD publishes Connecticut,
+  Maine, Massachusetts, New Hampshire, Rhode Island and Vermont by town, and
+  a county's towns can sit in different HUD areas, so those rows are not
+  served as county values.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -540,6 +566,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| HUD Fair Market Rents and income limits | the fiscal year and edition (`FY2026`, `FY2026-revised`) | HUD's own fiscal-year label; a reissued year is a second release beside the first |
 | FHFA House Price Index | the workbook's "Last updated" date | FHFA's own date in the file; a second file of the same date with different bytes is that date with `.2` |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
