@@ -578,12 +578,19 @@ function Chapter({
           testId={`chapter-${chapter.id}-trend`}
         />
       ) : null}
-      {resolved.depth.length && own ? (
+      {resolved.depth.some((measure) => !measure.measure.group) && own ? (
         <dl className="place-depth" data-testid={`chapter-${chapter.id}-depth`}>
-          {resolved.depth.map((measure) => (
+          {resolved.depth.filter((measure) => !measure.measure.group).map((measure) => (
             <DepthRow key={measure.measure.id} measure={measure} place={own} answer={answers.get(answerKey(measure.metricCode, own.geoId))} />
           ))}
         </dl>
+      ) : null}
+      {own ? (
+        <IndustryMix
+          rows={resolved.depth.filter((measure) => measure.measure.group === "industry-mix" && measure.metric)}
+          place={own}
+          answers={answers}
+        />
       ) : null}
       <footer className="place-chapter-footer" data-testid={`chapter-${chapter.id}-footer`}>
         <p>
@@ -662,7 +669,69 @@ function HeadlineCard({
           ))}
         </tbody>
       </table>
+      {measure.measure.basis ? (
+        <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measure.measure.basis}</p>
+      ) : null}
       {measure.measure.note ? <p className="subtle">{measure.measure.note}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Private jobs located in this place, by NAICS sector (bls-qcew-county-wages).
+ *
+ * Each row is QCEW's own published figure for its newest month; nothing here
+ * sums the sectors or computes a share, so a withheld sector reads as
+ * withheld rather than as a gap someone filled with arithmetic.
+ */
+function IndustryMix({
+  rows,
+  place,
+  answers,
+}: {
+  rows: ResolvedPlaceMeasure[];
+  place: LevelPlace;
+  answers: Map<string, LevelAnswer>;
+}) {
+  if (!rows.length) return null;
+  const read = rows.map((measure) => ({ measure, answer: answers.get(answerKey(measure.metricCode, place.geoId)) }));
+  const period = read.map((entry) => (entry.answer?.row ? observationPeriodLabel(entry.answer.row) : "")).find(Boolean) || "";
+  return (
+    <div className="table-scroll" data-testid="industry-mix">
+      <table className="place-industry-mix">
+        <caption>
+          Private jobs located in {place.name}, by industry{period ? `, ${period}` : ""}
+          <span className="place-basis" data-testid="industry-mix-basis"> · {rows[0]!.measure.basis}</span>
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Industry</th>
+            <th scope="col">Jobs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {read.map(({ measure, answer }) => {
+            const row = answer?.row ?? null;
+            const published = row && row.value !== null && row.value !== undefined;
+            return (
+              <tr key={measure.measure.id} data-testid={`industry-mix-${measure.measure.id}`}>
+                <th scope="row">{measure.measure.label}</th>
+                <td>
+                  {!publishesAt(measure, place.level)
+                    ? `Not published at ${place.level.toLowerCase()} grain`
+                    : answer?.error
+                      ? answer.error
+                      : published
+                        ? formatObservationValue(row!.value)
+                        : row?.value_status
+                          ? `Published without a value: ${String(row.value_status)}`
+                          : "Not published for this place"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -689,6 +758,7 @@ function DepthRow({
       <dt>
         {measure.measure.label}
         {measure.measure.universe ? <span className="place-universe"> · Universe: {measure.measure.universe}</span> : null}
+        {measure.measure.basis ? <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measure.measure.basis}</span> : null}
       </dt>
       <dd>
         {!measure.metric

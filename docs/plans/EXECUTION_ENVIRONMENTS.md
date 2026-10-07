@@ -104,13 +104,12 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**11 plans.**
+**10 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-place-grain`](to_do/ACS_AT_PLACE_GRAIN_PLAN.md) | high | `postgres` | -- |
 | [`bea-regional-accounts`](to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) | high | `postgres` | -- |
-| [`bls-qcew-county-wages`](in_progress/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) | high | `postgres` | -- |
 | [`census-building-permits`](to_do/CENSUS_BUILDING_PERMITS_PLAN.md) | medium | `postgres` | -- |
 | [`census-saipe-sahie`](to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) | medium | `postgres` | -- |
 | [`irs-county-migration`](to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) | high | `postgres` | -- |
