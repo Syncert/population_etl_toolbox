@@ -176,8 +176,10 @@ class AcsConfig(BaseModel):
     # The tables requested at tract grain (sub-county-geography): the few a
     # "within this county" map shows. Tracts are about 85,000 against the
     # counties' 3,200, so the whole curated list at tract grain would be some
-    # 25 times the county volume per year; these five tables are about 700
-    # variables. Each must also be in `curated_tables`.
+    # 25 times the county volume per year. These five tables are 63
+    # variables (B17001 is 59 of them): about 5.4 million facts and 10.7
+    # million revision rows (estimate and margin) for one year, in 51 state
+    # slices. Each must also be in `curated_tables`.
     tract_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
     # How many of the 5-year dataset's newest years are requested at tract
     # grain; the default is the newest, which is what a county page reads.

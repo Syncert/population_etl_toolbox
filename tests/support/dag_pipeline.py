@@ -896,6 +896,8 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
             "state": (["state"], [["11"]]),
             "county": (["state", "county"], [["11", "001"]]),
             "place": (["state", "place"], [["11", "50000"]]),
+            # The tract `build_sub_county_geographies` gives county 11/001.
+            "tract": (["state", "county", "tract"], [["11", "001", "000100"]]),
         }
         if geo_level not in geographies:
             raise AssertionError(

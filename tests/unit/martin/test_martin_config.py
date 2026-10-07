@@ -44,7 +44,7 @@ def test_martin_counties_layer_maps_the_authoritative_geography_contract() -> No
     assert config["base_path"] == "/tiles"
     assert postgres["connection_string"] == "${MARTIN_DATABASE_URL}"
     assert postgres["auto_publish"] is False
-    assert set(tables) == {"counties"}
+    assert set(tables) == {"counties", "tracts"}
 
     counties = tables["counties"]
     assert counties == {
@@ -59,6 +59,49 @@ def test_martin_counties_layer_maps_the_authoritative_geography_contract() -> No
         "bounds": [-180.0, -90.0, 180.0, 90.0],
         "properties": EXPECTED_PROPERTIES,
     }
+
+
+def test_martin_tracts_layer_draws_only_current_tracts() -> None:
+    """Covers: MARTIN-011 — sub-county-geography: tracts are their own layer.
+
+    The county layer's relation is unchanged, so its tiles do not grow by
+    85,000 tract polygons; the tract layer reads `gold.tile_tract`, which
+    selects only the TRACT grain, and names the tract and its county.
+    """
+    tracts = _martin_config()["postgres"]["tables"]["tracts"]
+    assert tracts == {
+        "layer_id": "tracts",
+        "schema": "gold",
+        "table": "tile_tract",
+        "geometry_column": "geo_geom",
+        "id_column": None,
+        "srid": 4326,
+        "minzoom": 6,
+        "maxzoom": 14,
+        "bounds": [-180.0, -90.0, 180.0, 90.0],
+        "properties": {
+            "geo_id": "text",
+            "geo_level": "text",
+            "state_fips": "text",
+            "county_fips": "text",
+            "county_name": "text",
+            "area_name": "text",
+            "latitude": "float8",
+            "longitude": "float8",
+        },
+    }
+    views = (
+        REPOSITORY_ROOT / "sql/gold_contract/001_gold_contract_views.sql"
+    ).read_text(encoding="utf-8")
+    body = views.split("CREATE OR REPLACE VIEW gold.tile_tract AS", 1)[1].split(";", 1)[
+        0
+    ]
+    assert "WHERE geo_level = gold_glossary.geo_grain('tract')" in body
+    assert "geography_state = 'current'" in body
+    boundary = views.split("CREATE OR REPLACE VIEW gold.tile_boundary AS", 1)[1].split(
+        ";", 1
+    )[0]
+    assert "tract" not in boundary
 
 
 def test_martin_paths_and_relation_are_consistent_across_runtime_surfaces() -> None:
@@ -108,7 +151,7 @@ def test_martin_configuration_has_no_implicit_table_publication() -> None:
     """Covers: MARTIN-001 — no undeclared database relation is auto-published."""
     postgres = _martin_config()["postgres"]
     assert postgres["auto_publish"] is False
-    assert list(postgres["tables"]) == ["counties"]
+    assert list(postgres["tables"]) == ["counties", "tracts"]
 
 
 def test_disposable_postgres_healthcheck_waits_for_martin_contract() -> None:

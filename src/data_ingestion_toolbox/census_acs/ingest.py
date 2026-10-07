@@ -436,8 +436,12 @@ def ingest_slice(
         (2022, 'acs5', 'state')
         (2022, 'acs5', 'county', '55')  # WI counties
     """
-    variables = get_curated_variables(
-        year, dataset, CONFIG.tract_tables if geo_level == "tract" else None
+    # A tract slice asks for the tract tables only; every other level for
+    # the whole curated list.
+    variables = (
+        get_curated_variables(year, dataset, CONFIG.tract_tables)
+        if geo_level == "tract"
+        else get_curated_variables(year, dataset)
     )
     if not variables:
         # nothing to ingest for this year+dataset

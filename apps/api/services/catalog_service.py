@@ -89,6 +89,7 @@ def list_geographies(
     q: Optional[str],
     limit: int,
     offset: int,
+    county_fips: Optional[str] = None,
 ) -> GeographyListResponse:
     require_relation(db, GEOGRAPHY_RELATION)
     # `gold_glossary.dim_geo_latest` stores the vocabulary word, and the
@@ -102,6 +103,7 @@ def list_geographies(
         q=q,
         limit=limit,
         offset=offset,
+        county_fips=county_fips,
     )
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()

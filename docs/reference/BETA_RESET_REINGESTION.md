@@ -291,6 +291,13 @@ is empty, then run:
 airflow dags trigger silver_ref
 ```
 
+`silver_ref` also publishes the newest vintage's Census tracts and ZIP Code
+Tabulation Areas after its counties and places (`load_sub_county_geo`): about
+85,000 tracts and 33,800 ZCTAs, from a 58 MB tract boundary file and the 67 MB
+2020 ZCTA boundary file, with county-contains-tract and ZCTA-intersects-county
+and -place relationships. A tract whose county is not loaded is refused into
+`silver_ref.geography_resolution` (`parent_county_absent`), not loaded.
+
 Wait for `silver_ref` to succeed before running observation DAGs. **Every
 source DAG now refuses to start until it has**: the first task of all six
 ingestion DAGs calls
