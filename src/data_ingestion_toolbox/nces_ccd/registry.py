@@ -232,18 +232,17 @@ class SchoolFile:
 
 #: Registered files, newest release per component and school year.
 #:
-#: Membership (``ccd_sch_052_2324_l_1a_073124``, ``ccd_sch_052_2425_l_1a_073025``)
-#: is not registered yet: NCES compresses those zips with Deflate64 (method
-#: 9), which the standard library cannot read. The component and its measure
-#: are defined so that registering the files is the only change once a
-#: Deflate64 reader is chosen.
+#: Membership zips are compressed with Deflate64 (method 9); the client
+#: reads them through ``inflate64``.
 FILES: tuple[SchoolFile, ...] = (
     SchoolFile(GEOCODE, 2023, "EDGE_GEOCODE_PUBLICSCH_2324", "edge"),
     SchoolFile(DIRECTORY, 2023, "ccd_sch_029_2324_w_1a_073124", "1a"),
+    SchoolFile(MEMBERSHIP, 2023, "ccd_sch_052_2324_l_1a_073124", "1a"),
     SchoolFile(STAFF, 2023, "ccd_sch_059_2324_l_1a_073124", "1a"),
     SchoolFile(LUNCH, 2023, "ccd_sch_033_2324_l_1a_073124", "1a"),
     SchoolFile(GEOCODE, 2024, "EDGE_GEOCODE_PUBLICSCH_2425", "edge"),
     SchoolFile(DIRECTORY, 2024, "ccd_sch_029_2425_w_1a_073025", "1a"),
+    SchoolFile(MEMBERSHIP, 2024, "ccd_sch_052_2425_l_1a_073025", "1a"),
     SchoolFile(STAFF, 2024, "ccd_sch_059_2425_l_1a_073025", "1a"),
     SchoolFile(LUNCH, 2024, "ccd_sch_033_2425_l_2a_073025", "2a"),
 )

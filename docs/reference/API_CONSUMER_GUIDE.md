@@ -396,7 +396,8 @@ without misreporting the period they cover.
 
 `NCES_CCD` serves county and state figures from NCES's Common Core of Data,
 each summed over the public schools NCES's EDGE geocode file places there:
-`operating_schools` and `charter_schools` (schools), `teacher_fte`
+`operating_schools` and `charter_schools` (schools), `student_membership` (students enrolled on or
+about October 1), `teacher_fte`
 (full-time-equivalent teachers), and `frpl_eligible`, `free_lunch_eligible`,
 `reduced_price_lunch_eligible` and `direct_certification` (students). Rows are
 labelled with the school year's fall (`year` 2024 is 2024-25, `period_start`
@@ -416,8 +417,6 @@ labelled with the school year's fall (`year` 2024 is 2024-25, `period_start`
   example, reports only direct certification. One is never substituted for
   the other, and Community Eligibility Provision schools may report every
   student as free-eligible.
-- **Enrollment is not served yet.** NCES's membership file is compressed in a
-  format this warehouse does not read yet.
 
 ### Reading a row honestly
 

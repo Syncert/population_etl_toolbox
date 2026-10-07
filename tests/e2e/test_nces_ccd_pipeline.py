@@ -68,6 +68,16 @@ def test_county_school_figures_reach_the_neutral_api_as_rollups(ccd_warehouse) -
         assert (
             "Community Eligibility Provision" in row["dimensions"]["observation_basis"]
         )
+        enrolled = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": f"{SOURCE_CODE}:student_membership",
+                "geo_id": ccd.PROVIDENCE_RI,
+            },
+        ).json()["items"]
+        assert [
+            (item["value"], item["dimensions"]["completeness"]) for item in enrolled
+        ] == [("87970", "complete")]
         sussex = client.get(
             "/api/v1/observations",
             params={

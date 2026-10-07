@@ -93,6 +93,7 @@ def test_county_and_state_figures_are_sums_of_placed_schools(ccd_warehouse) -> N
     assert [(status, rows, done) for _run, status, rows, done in published] == [
         ("captured", 555, 1),
         ("captured", 555, 1),
+        ("captured", 539, 1),
         ("captured", 550, 1),
         ("captured", 2168, 1),
     ]
@@ -107,6 +108,13 @@ def test_county_and_state_figures_are_sums_of_placed_schools(ccd_warehouse) -> N
         Decimal("1867.64"),
         "valid",
         54,
+        0,
+        "complete",
+    )
+    assert _latest(factory, "student_membership", ccd.PROVIDENCE_RI) == (
+        Decimal("87970"),
+        "valid",
+        197,
         0,
         "complete",
     )
@@ -253,6 +261,23 @@ def test_a_refused_file_and_the_rules(ccd_warehouse) -> None:
         with writer.cursor() as cursor:
             cursor.execute(
                 """
+                UPDATE silver_nces_ccd.school_count SET value = 1
+                WHERE measure = 'student_membership' AND ncessch = (
+                    SELECT ncessch FROM silver_nces_ccd.school_count
+                    WHERE measure = 'frpl_eligible' AND value > 1 ORDER BY ncessch LIMIT 1
+                )
+                """
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    implausible = _outcome(factory, ccd_placement_and_plausibility)
+    assert (implausible.result, implausible.observed_count) == ("warn", 2)
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
                 DELETE FROM silver_nces_ccd.school_count
                 WHERE run_id = (SELECT run_id FROM control.nces_ccd_file WHERE component = 'staff')
                 """
@@ -286,6 +311,7 @@ def test_the_harvest_names_every_published_measure(ccd_warehouse) -> None:
         )
     )
     assert set(published) == {
+        "student_membership",
         "operating_schools",
         "charter_schools",
         "teacher_fte",
@@ -308,4 +334,4 @@ def test_the_harvest_names_every_published_measure(ccd_warehouse) -> None:
     assert _rows(
         factory,
         "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'NCES_CCD'",
-    ) == [(7,)]
+    ) == [(8,)]

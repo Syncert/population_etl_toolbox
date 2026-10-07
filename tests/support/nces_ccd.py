@@ -1,13 +1,16 @@
 """Shared seeding and cleanup for NCES Common Core of Data database tests.
 
 The checked-in files under ``tests/fixtures/nces_ccd/`` are NCES's 2024-25
-directory, staff and lunch files and the EDGE 2024-25 public-school geocode
-file, trimmed to Delaware's and Rhode Island's schools plus one Bureau of
-Indian Education school (operating code 59, located in Rolette County, North
-Dakota), every kept row copied verbatim. Delaware reports direct
-certification but not free or reduced-price lunch; Rhode Island reports
-both. They are played through the adapter's own capture path by a scripted
-client. A registered file with no fixture answers a header-only file.
+directory, membership, staff and lunch files and the EDGE 2024-25
+public-school geocode file, trimmed to Delaware's and Rhode Island's schools
+plus one Bureau of Indian Education school (operating code 59, located in
+Rolette County, North Dakota), every kept row copied verbatim. Membership
+keeps each school's ``Education Unit Total`` row and every breakdown row of
+one Rhode Island school, and is compressed with Deflate64 like NCES's own.
+Delaware reports direct certification but not free or reduced-price lunch;
+Rhode Island reports both. They are played through the adapter's own
+capture path by a scripted client. A registered file with no fixture answers
+a header-only file.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import pytest
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.nces_ccd.capture import capture_file
-from data_ingestion_toolbox.nces_ccd.client import CcdResponse
+from data_ingestion_toolbox.nces_ccd.client import CcdResponse, open_member
 from data_ingestion_toolbox.nces_ccd.config import SOURCE_CODE, CcdConfig
 from data_ingestion_toolbox.nces_ccd.registry import (
     SchoolFile,
@@ -52,10 +55,11 @@ BIE_SCHOOL = "590002500172"
 
 GEOCODE = get_file("geocode:2024-2025")
 DIRECTORY = get_file("directory:2024-2025")
+MEMBERSHIP = get_file("membership:2024-2025")
 STAFF = get_file("staff:2024-2025")
 LUNCH = get_file("lunch:2024-2025")
 #: The files with a checked-in fixture, in the order a run publishes them.
-REVIEWED = (GEOCODE, DIRECTORY, STAFF, LUNCH)
+REVIEWED = (GEOCODE, DIRECTORY, MEMBERSHIP, STAFF, LUNCH)
 
 _COUNTIES = {
     "10": (
@@ -104,10 +108,9 @@ def header_only(item: SchoolFile) -> bytes:
         reviewed = next(
             candidate for candidate in REVIEWED if candidate.component is item.component
         )
-        member = zipfile.ZipFile(io.BytesIO(fixture_bytes(reviewed) or b"")).read(
-            reviewed.member
-        )
-        text = member.split(b"\n", 1)[0] + b"\n"
+        # Through the client: the membership fixture is Deflate64.
+        with open_member(fixture_bytes(reviewed) or b"", reviewed) as member:
+            text = member.readline()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(item.member, text)

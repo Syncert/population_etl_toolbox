@@ -4,20 +4,24 @@ Any client error fails without retrying; ``429`` and server errors retry
 with backoff. Error text names the path and status only. A response is kept
 only when it is a zip holding the registered member, whose first line has the
 columns this adapter reads. Members are read as a stream: the membership file
-is over a gigabyte uncompressed.
+is over two gigabytes uncompressed, and NCES compresses it with Deflate64,
+which ``inflate64`` decompresses here because ``zipfile`` cannot.
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import struct
 import time
 import zipfile
+import zlib
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import IO, Any
 
 import httpx
+import inflate64
 
 from data_ingestion_toolbox.capture import allowlisted_response_headers
 
@@ -48,6 +52,84 @@ class CcdResponse:
     http_status: int
 
 
+#: Zip method 9, Deflate64: NCES's choice for members over 2 GB uncompressed.
+_DEFLATE64 = 9
+_LOCAL_HEADER = b"PK\x03\x04"
+_CHUNK = 1 << 20
+
+
+class _Deflate64Member(io.RawIOBase):
+    """One Deflate64 member of an in-memory zip, decompressed as a stream.
+
+    ``zipfile`` reads the archive's directory but cannot decompress method 9;
+    this reads the member's compressed bytes from its local header and checks
+    the decompressed size and CRC-32 at the end, as ``zipfile`` would.
+    """
+
+    def __init__(self, raw_bytes: bytes, info: zipfile.ZipInfo, path: str) -> None:
+        offset = info.header_offset
+        if raw_bytes[offset : offset + 4] != _LOCAL_HEADER:
+            raise CcdPayloadError(path, code="member_missing")
+        name_length, extra_length = struct.unpack(
+            "<HH", raw_bytes[offset + 26 : offset + 30]
+        )
+        start = offset + 30 + name_length + extra_length
+        self._compressed = memoryview(raw_bytes)[start : start + info.compress_size]
+        self._position = 0
+        self._inflater = inflate64.Inflater()
+        self._pending = b""
+        self._pending_at = 0
+        self._crc = 0
+        self._size = 0
+        self._info = info
+        self._path = path
+
+    def readable(self) -> bool:
+        return True
+
+    def _fill(self) -> bool:
+        while self._pending_at >= len(self._pending):
+            if self._position >= len(self._compressed):
+                if self._size != self._info.file_size or self._crc != self._info.CRC:
+                    raise CcdPayloadError(self._path, code="corrupt_member")
+                return False
+            chunk = bytes(self._compressed[self._position : self._position + _CHUNK])
+            self._position += len(chunk)
+            # inflate64 signals corrupt input with a bare exception type.
+            try:
+                self._pending = self._inflater.inflate(chunk)
+            except Exception as exc:
+                raise CcdPayloadError(self._path, code="corrupt_member") from exc
+            self._pending_at = 0
+            self._crc = zlib.crc32(self._pending, self._crc)
+            self._size += len(self._pending)
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        if not self._fill():
+            return 0
+        count = min(len(buffer), len(self._pending) - self._pending_at)
+        buffer[:count] = self._pending[self._pending_at : self._pending_at + count]
+        self._pending_at += count
+        return count
+
+
+def open_member(raw_bytes: bytes, item: SchoolFile) -> IO[bytes]:
+    """The registered member as a binary stream, whatever its compression."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw_bytes))
+        info = archive.getinfo(item.member)
+        if info.compress_type == _DEFLATE64:
+            return io.BufferedReader(
+                _Deflate64Member(raw_bytes, info, item.path), _CHUNK
+            )
+        return archive.open(info)
+    except (zipfile.BadZipFile, KeyError) as exc:
+        raise CcdPayloadError(item.path, code="member_missing") from exc
+    except NotImplementedError as exc:
+        raise CcdPayloadError(item.path, code="unsupported_compression") from exc
+
+
 def member_rows(raw_bytes: bytes, item: SchoolFile) -> Iterator[dict[str, str]]:
     """Each row of the registered member as a dict, streamed, or CcdPayloadError.
 
@@ -55,11 +137,7 @@ def member_rows(raw_bytes: bytes, item: SchoolFile) -> Iterator[dict[str, str]]:
     pipe-delimited with no header and takes the registered column names.
     Both are read as Latin-1, which decodes every byte.
     """
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(raw_bytes))
-        handle = archive.open(item.member)
-    except (zipfile.BadZipFile, KeyError) as exc:
-        raise CcdPayloadError(item.path, code="member_missing") from exc
+    handle = open_member(raw_bytes, item)
     with handle:
         text = io.TextIOWrapper(handle, encoding="latin-1", newline="")
         if item.is_geocode:

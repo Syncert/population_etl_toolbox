@@ -15,6 +15,7 @@ and every row says how many placed schools had no value.
 | --- | --- | --- |
 | EDGE geocode | `programs/edge/data/EDGE_GEOCODE_PUBLICSCH_2425.zip` (pipe-delimited `.TXT`, no header) | each school's physical state (`STFIP`), county (`CNTY`), operating state (`OPSTFIPS`), coordinates |
 | Directory | `ccd/Data/zip/ccd_sch_029_2425_w_1a_073025.zip` | status, school type, charter flag, level |
+| Membership | `ccd/Data/zip/ccd_sch_052_2425_l_1a_073025.zip` (Deflate64, 213 MB; 2.3 GB uncompressed) | students, the `Education Unit Total` row |
 | Staff | `ccd/Data/zip/ccd_sch_059_2425_l_1a_073025.zip` | teachers (FTE), the `Education Unit Total` row |
 | Lunch | `ccd/Data/zip/ccd_sch_033_2425_l_2a_073025.zip` | FRPL total, free, reduced-price, direct certification |
 
@@ -23,11 +24,11 @@ The file names come from the CCD Data File Tool's catalog
 the name (`1a`, `2a`), so a new release is a registry change; it is captured
 beside the earlier one and served in its place for that school year.
 
-**Membership (enrollment) is not registered.** NCES compresses the membership
-zips (`ccd_sch_052_*`, about 210 MB, 2.3 GB uncompressed) with Deflate64,
-which the standard library cannot read. The component and its measure
-(`student_membership`) are defined; registering the two files is the only
-change once a Deflate64 reader is chosen.
+NCES compresses the membership zips with Deflate64 (zip method 9), which the
+standard library cannot decompress. The client reads that member as a
+stream through `inflate64` (a project dependency) and checks its size and
+CRC-32 at the end; the full 2024-25 file, 11.2 million rows, parses in
+about 40 seconds on a workstation and keeps one row per school (99,420).
 
 ## Values and placement
 
@@ -47,8 +48,9 @@ code the shared geography lacks is recorded `canonical_geography_absent`.
 
 `gold_nces_ccd.observation_revision` serves, per published file, the county
 and state sum of placed schools' Reported values for `operating_schools`,
-`charter_schools`, `teacher_fte`, `frpl_eligible`, `free_lunch_eligible`,
-`reduced_price_lunch_eligible` and `direct_certification`, with
+`charter_schools`, `student_membership`, `teacher_fte`, `frpl_eligible`,
+`free_lunch_eligible`, `reduced_price_lunch_eligible` and
+`direct_certification`, with
 `schools_with_value`, `schools_without_value` and `completeness`. A grain
 where no placed school reported has status `missing` and no value. Rows
 carry `year` = the fall of the school year. `gold_nces_ccd.observation_latest`
@@ -91,7 +93,7 @@ FROM gold_nces_ccd.observation_latest GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
   that reached no row, and runs in the daily sweep.
 - `DQ-NCES-004` warns on a school with a published value that the year's
   geocode file does not place in a county the shared geography holds, or a
-  school whose FRPL count exceeds its membership (once membership is read).
+  school whose FRPL count exceeds its membership.
 
 Source: U.S. Department of Education, National Center for Education
 Statistics, Common Core of Data and EDGE school geocodes. NCES publications

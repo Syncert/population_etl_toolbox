@@ -338,12 +338,14 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         datasets=(
             "geocode:2024-2025",
             "directory:2024-2025",
+            "membership:2024-2025",
             "staff:2024-2025",
             "lunch:2024-2025",
         ),
         fixtures=(
             "tests/fixtures/nces_ccd/EDGE_GEOCODE_PUBLICSCH_2425.zip",
             "tests/fixtures/nces_ccd/ccd_sch_029_2425_w_1a_073025.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_052_2425_l_1a_073025.zip",
             "tests/fixtures/nces_ccd/ccd_sch_059_2425_l_1a_073025.zip",
             "tests/fixtures/nces_ccd/ccd_sch_033_2425_l_2a_073025.zip",
         ),

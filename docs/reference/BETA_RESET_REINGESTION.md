@@ -323,7 +323,8 @@ WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
 Trigger `nces_ccd_ingest` once after the shared geography loads: it reads
-each registered school year's CCD directory, staff and lunch files and EDGE
+each registered school year's CCD directory, membership, staff and lunch
+files and EDGE
 school geocodes through the one-slot `nces_ccd_files` pool
 ([operations](../user-guides/NCES_CCD_PIPELINE_OPERATIONS.md)).
 

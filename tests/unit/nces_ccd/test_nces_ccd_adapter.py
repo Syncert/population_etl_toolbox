@@ -21,6 +21,7 @@ from data_ingestion_toolbox.nces_ccd.client import (
     CcdPayloadError,
     check_file,
     fetch_file,
+    member_rows,
 )
 from data_ingestion_toolbox.nces_ccd.config import CcdConfig
 from data_ingestion_toolbox.nces_ccd.registry import (
@@ -30,12 +31,14 @@ from data_ingestion_toolbox.nces_ccd.registry import (
     version_rank,
 )
 from data_ingestion_toolbox.nces_ccd.silver_nces_ccd.parse import parse_file
+from tests.support.deflate64_zip import deflate64_zip
 
 pytestmark = pytest.mark.unit
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "nces_ccd"
 GEOCODE = get_file("geocode:2024-2025")
 DIRECTORY = get_file("directory:2024-2025")
+MEMBERSHIP = get_file("membership:2024-2025")
 STAFF = get_file("staff:2024-2025")
 LUNCH = get_file("lunch:2024-2025")
 GOLD_SQL = (
@@ -200,8 +203,41 @@ def test_a_payload_that_is_not_the_registered_file_is_refused() -> None:
         check_file(_zip(GEOCODE, ""), GEOCODE)
     with pytest.raises(CcdPayloadError, match="unexpected_header"):
         check_file(_zip(GEOCODE, "a|b\r\n"), GEOCODE)
-    for item in (GEOCODE, DIRECTORY, STAFF, LUNCH):
+    for item in (GEOCODE, DIRECTORY, MEMBERSHIP, STAFF, LUNCH):
         check_file(_fixture(item), item)
+
+
+def test_deflate64_membership_is_read_and_its_crc_checked() -> None:
+    """Covers: ETL-070 — NCES's Deflate64 membership zips decompress; a corrupt one is refused."""
+    raw = _fixture(MEMBERSHIP)
+    assert (
+        zipfile.ZipFile(io.BytesIO(raw)).getinfo(MEMBERSHIP.member).compress_type == 9
+    )
+    parsed = parse_file(raw, item=MEMBERSHIP)
+    assert (parsed.row_count, len(parsed.counts), parsed.quarantined) == (589, 539, ())
+    assert {row.measure for row in parsed.counts} == {"student_membership"}
+    assert sum(1 for row in parsed.counts if row.value is None) == 1
+    text = (
+        b"SCHOOL_YEAR,FIPST,LEAID,NCESSCH,GRADE,RACE_ETHNICITY,SEX,"
+        b"STUDENT_COUNT,TOTAL_INDICATOR,DMS_FLAG\n"
+        b"2024-2025,10,1000001,100000100001,No Category Codes,No Category Codes,"
+        b"No Category Codes,250,Education Unit Total,Reported\n"
+    )
+    archive = bytearray(deflate64_zip(MEMBERSHIP.member, text))
+    parsed = parse_file(bytes(archive), item=MEMBERSHIP)
+    assert [row.value for row in parsed.counts] == [Decimal("250")]
+    # Flip the CRC-32 in the local header and in the central directory: the
+    # member still decompresses, and the check at its end refuses it.
+    central = archive.rindex(b"PK\x01\x02")
+    for offset in (14, central + 16):
+        archive[offset] ^= 0xFF
+    with pytest.raises(CcdPayloadError, match="corrupt_member"):
+        list(member_rows(bytes(archive), MEMBERSHIP))
+    refused = parse_file(bytes(archive), item=MEMBERSHIP)
+    assert (refused.counts, [q.error_code for q in refused.quarantined]) == (
+        (),
+        ["corrupt_member"],
+    )
 
 
 class _Scripted:

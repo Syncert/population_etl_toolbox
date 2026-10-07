@@ -15,10 +15,10 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 by the second-tier source scouting plan from
+Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-Implemented on branch `feat/nces-common-core` (from `docs/scout-county-sources`)
-except membership (enrollment), which waits on a decision: see Blocker.
+Ready for review. Implemented on branch `feat/nces-common-core` (from
+`docs/scout-county-sources`), membership included.
 
 ## Why
 
@@ -206,24 +206,29 @@ the fetcher and was not read.
   Delaware (reports direct certification only), Rhode Island (reports both)
   and one BIE school in Rolette County, ND; rows verbatim.
 
-## Blocker
+## Deflate64 (decided 2026-10-07)
 
-**Membership (enrollment) needs a decision.** NCES compresses the membership
-zips (about 210 MB each, 2.3 GB uncompressed) with Deflate64 (zip method 9).
-Neither Python's `zipfile` nor the Airflow image (no `unzip`/`7z`) can read
-it. Asked Nick on 2026-10-07: add the `inflate64` dependency (recommended) or
-leave enrollment out. The `MEMBERSHIP` component and `student_membership`
-measure are defined and the files are documented in `registry.py`; once a
-reader exists, register the two files and add a membership fixture. The
-acceptance criterion "serves county membership" is not met until then.
+NCES compresses the membership zips (about 210 MB each, 2.3 GB uncompressed)
+with Deflate64 (zip method 9), which neither `zipfile` nor the Airflow image
+could read. Nick chose to add the `inflate64` dependency (2026-10-07). It is
+declared in `pyproject.toml` core dependencies and pinned with hashes in
+`requirements/api.lock.txt` (the lock refresh added only `inflate64==1.0.4`).
+The client streams a method-9 member from its local header through
+`inflate64.Inflater` and checks size and CRC-32 at the end
+(`corrupt_member` otherwise). `tests/support/deflate64_zip.py` writes
+method-9 archives with `inflate64.Deflater` for the fixture and tests. The
+local Airflow image was rebuilt and imports it; other deployments pick it up
+on their next image build.
 
-## Evidence so far (2026-10-07, Windows host, local Docker test stack)
+## Evidence (2026-10-07, Windows host, local Docker test stack)
 
-- Real files: the full 2024-25 directory (102,178 schools), staff (100,237),
+- Real files: the full 2024-25 directory (102,178 schools), membership
+  (11,172,292 rows, 99,420 school totals kept, about 40 s), staff (100,237),
   lunch (469,350 rows, 375,480 kept) and EDGE geocode (102,178) files parse
   with nothing quarantined.
-- Unit: `python -m pytest tests/unit` -- 2187 passed, including
-  `tests/unit/nces_ccd` (8).
+- Unit: `python -m pytest tests/unit` -- 2188 passed, including
+  `tests/unit/nces_ccd` (9: the Deflate64 fixture decompresses and a
+  flipped CRC is refused).
 - Database: `tests/integration/database/test_nces_ccd_capture_replay.py` --
   5 passed: county and state sums with completeness counts (Providence
   FRPL 56,037 from 197 schools, 3 without a value); Delaware FRPL `missing`
@@ -232,21 +237,22 @@ acceptance criterion "serves county membership" is not met until then.
   flag and a wrong year are quarantined alone; an unchanged read replays
   nothing and a 1b release supersedes 1a with both kept; a non-zip and a
   foreign header fail capture; `DQ-NCES-002`/`-004` behave and then catch a
-  fault; the harvest names seven measures.
-- Live: `tests/external/test_nces_ccd_source_contracts.py` -- 8 passed
-  against nces.ed.gov.
+  fault, including FRPL above membership; the harvest names eight measures,
+  and Providence's membership is 87,970 from 197 schools, complete.
+- Live: `tests/external/test_nces_ccd_source_contracts.py` -- 9 passed
+  against nces.ed.gov, including the 213 MB Deflate64 membership file.
 - Integration and end to end: `tests/integration tests/e2e -m "not
   external"` -- 462 passed, 2 skipped, 1 failed: the PEP teardown node, which
   fails on `main` too. Includes the NCES e2e node (Providence's FRPL served
   through `/api/v1/observations` with completeness dimensions; Sussex's FRPL
   `missing`) and the DB-025/DB-044 sweeps with a published NCES metric.
-- DAG: `tests/dags` in the scheduler container -- 153 passed;
+- DAG: on the rebuilt Airflow image, `tests/dags` -- 153 passed;
   `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
-  `nces_ccd_ingest` in the orchestrated run.
+  `nces_ccd_ingest` (including the Deflate64 membership fixture) in the
+  orchestrated run.
 - `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
   viz coverage and plan environments regenerated.
 
 ## Checkpoint
 
-Next: membership once Nick decides on the Deflate64 reader; then move this
-plan to `needs_review/`.
+All acceptance criteria met; ready for human review.
