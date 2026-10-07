@@ -686,6 +686,49 @@ def bea_table_reconciliation(
     ]
 
 
+def bls_bimonthly_cadence(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BLS-009 — an every-other-month CPI metro has no two consecutive months."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_bls.fact_labor_statistics
+         WHERE program = 'cu' AND geo_level = 'provider_area'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_bls.fact_labor_statistics", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT later.series_id, later.duration_start
+          FROM silver_bls.fact_labor_statistics AS later
+          JOIN silver_bls.fact_labor_statistics AS earlier
+            ON earlier.series_id = later.series_id
+           AND earlier.duration_start = (later.duration_start - INTERVAL '1 month')::DATE
+           AND earlier.period ~ '^M(0[1-9]|1[0-2])$'
+         WHERE later.program = 'cu'
+           AND later.geo_level = 'provider_area'
+           AND later.period ~ '^M(0[1-9]|1[0-2])$'
+           AND SUBSTRING(later.series_id FROM 5 FOR 4) NOT IN ('S12A', 'S23A', 'S49A')
+           AND later.value IS NOT NULL
+           AND earlier.value IS NOT NULL
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_bls.fact_labor_statistics",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def eia_read_reconciliation(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1807,6 +1850,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-BLS-004": bls_geography_accountability,
     "DQ-BLS-007": bls_contract_conformance,
+    "DQ-BLS-009": bls_bimonthly_cadence,
     "DQ-FRED-002": fred_slice_reconciliation,
     "DQ-FRED-003": fred_missing_marker_and_series_ownership,
     "DQ-FRED-004": fred_observation_dates_within_the_published_range,

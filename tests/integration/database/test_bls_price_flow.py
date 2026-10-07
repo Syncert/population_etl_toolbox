@@ -1,6 +1,6 @@
 """Regional and metro prices reach silver and gold under their own areas.
 
-Covers: ETL-078
+Covers: ETL-078, ETL-081
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.bls.gold_bls.transform import refresh_bls_elements
 from data_ingestion_toolbox.bls.silver_bls import transform
+from data_ingestion_toolbox.quality.sources import bls_bimonthly_cadence
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     GeographyRecord,
     GeographyRepository,
@@ -80,7 +81,7 @@ def test_prices_land_on_their_region_and_metro_with_their_own_units(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-078 — a region and a BLS metro by code, an index's own base, a dollar unit, and no invented month."""
+    """Covers: ETL-078, ETL-081 — a region and a BLS metro by code, their own units, no invented month, and the cadence rule."""
     _cleanup(postgres_connection_factory)
     writer = postgres_connection_factory()
     try:
@@ -190,6 +191,29 @@ def test_prices_land_on_their_region_and_metro_with_their_own_units(
         assert "every other month" in rows["CUURS35ASETB01"][5]
         assert "not comparable across areas" in rows["CUURS35ASETB01"][5]
         assert rows["CUUR0200SAF11"][5].endswith("Published monthly.")
+
+        # ETL-081: Washington is every other month. January alone is BLS's
+        # cadence; a February value beside it is a finding, not a fact to
+        # serve silently.
+        with writer.cursor() as cursor:
+            (on_cadence,) = bls_bimonthly_cadence(cursor, {})
+            cursor.execute(
+                """INSERT INTO silver_bls.observation_revision (
+                    capture_id, observation_index, program, series_id,
+                    year_source, period_source, period_name_source, value_source,
+                    year, period, period_name, value, value_status, is_latest
+                ) VALUES (%s, 99, 'cu', 'CUURS35ASETB01', '2097', 'M02', 'M02', '3.30',
+                          2097, 'M02', 'M02', 3.30, 'valid', TRUE)""",
+                (str(capture_id),),
+            )
+        writer.commit()
+        transform.transform_bls_to_silver("cu")
+        with writer.cursor() as cursor:
+            (off_cadence,) = bls_bimonthly_cadence(cursor, {})
+        writer.commit()
+        assert on_cadence.result == "pass"
+        assert off_cadence.result == "warn" and off_cadence.observed_count == 1
+        assert off_cadence.evidence == ["CUURS35ASETB01|2097-02-01"]
     finally:
         writer.close()
         _cleanup(postgres_connection_factory)

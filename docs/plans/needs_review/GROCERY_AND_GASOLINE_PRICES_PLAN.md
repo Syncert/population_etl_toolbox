@@ -18,7 +18,7 @@ verify:
 
 ## Status
 
-In progress (2026-10-07). Drafted 2026-10-07 at Nick's request, after a search of `main`, every
+Ready for review (2026-10-07). Drafted 2026-10-07 at Nick's request, after a search of `main`, every
 pushed branch and every plan found no grocery or gasoline price measure below
 the nation. No implementation yet.
 
@@ -299,11 +299,38 @@ merge those first).
 - **Deliverable 4 done** (ETL-079). BEA `SARPP`, `MARPP`, `PARPP`; `0.000`
   for a nonexistent portion is `not_meaningful`; DQ-BEA-005 checks the
   nation's all-items parity is 100. Table names confirmed from the bulk zips.
-- **Next:** deliverable 3, the EIA retail gasoline adapter (`EIA_API_KEY` is
-  set locally and verified), then deliverables 5-7 (registration, glossary
-  and explainer text, remaining quality rules) and 9 (cards, after
-  `place-pages`).
-- **Evidence so far:** unit 2248 passed; web unit 719; DAG 156 (container);
+- **Deliverable 3 done** (ETL-080, EXT-030). The `eia` adapter reads API v2
+  `petroleum/pri/gnd` for regular, midgrade, premium and all-grades
+  gasoline; `EIA_API_KEY` stays out of every recorded request, capture, error
+  and repr; PADDs and cities load from EIA's own facet in the EIA DAG
+  (the reference DAG never needs a source's key); states resolve by the
+  Gazetteer's USPS code. Weekly DAG, `eia_api` pool, compose, env examples,
+  external-contract workflow, operations guide.
+- **Deliverable 5 done.** `EIA` dispatch and discovery; the grain vocabulary
+  gains `CENSUS_REGION`, `CENSUS_DIVISION`, `METRO`, `PROVIDER_AREA` in the
+  API and the web; OpenAPI, viz coverage and schema snapshot regenerated;
+  every registration gate (catalog sweeps, product coverage, publisher
+  grains, fact lineage, rule automation) updated.
+- **Deliverable 6:** glossary entries are harvested from each publisher; the
+  "why an index is not a price, why levels are not comparable across areas,
+  why a county shows its area's figure" text is in the API consumer guide
+  ("Price levels, regional and metro prices") for the explainer pages to
+  reuse.
+- **Deliverable 7 done:** unresolved areas are ledgered (DQ-EIA-004 declared),
+  duplicates and non-positive prices are refused by constraints
+  (DQ-EIA-001/003), DQ-BEA-005 checks the nation's all-items parity is 100,
+  DQ-BLS-009 (ETL-081) warns on an off-month value of a bimonthly metro.
+- **Deliverable 8 done:** offline fixtures for every source, unit, database,
+  DAG, end-to-end and external tests.
+- **Deliverable 9 split** to
+  [`GROCERIES_AND_GAS_CARDS_PLAN.md`](../to_do/GROCERIES_AND_GAS_CARDS_PLAN.md):
+  the cards need `place-pages`, which is not merged.
+- **Evidence:** EIA tier: unit 2280; DAG 165 (container) and orchestrated
+  run 3 passed; API integration 191; integration and end to end 484 passed,
+  2 skipped, 3 failed (two catalog sweeps then fixed with an EIA fixture,
+  191/191, and the PEP teardown node failing on `main`); live EIA and BEA
+  contracts 18 passed; ruff clean; web unit 719.
+- **Earlier evidence:** unit 2248 passed; web unit 719; DAG 156 (container);
   orchestrated DAG run 3 passed; API integration 187; integration and end to
   end 473 passed, 2 skipped, 1 failed (the PEP teardown node, failing on
   `main` too) before the last sweep fix, which then passed 187/187.

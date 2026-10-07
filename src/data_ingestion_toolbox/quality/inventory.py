@@ -2776,6 +2776,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
     ),
     _rule(
+        "DQ-BLS-009",
+        "WARN",
+        "temporal_integrity",
+        "A CPI metro BLS publishes every other month carries no value in two "
+        "consecutive months: a value in an off month is not BLS's cadence.",
+        ("silver_bls.fact_labor_statistics",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bls_bimonthly_cadence` reads the monthly CPI series of every BLS metro other than New York, Chicago and Los Angeles (which BLS publishes monthly) and reports each pair of consecutive months that both hold a value (grocery-and-gasoline-prices). Average prices are not checked: BLS states no every-other-month cadence for them."
+        ),
+    ),
+    _rule(
         "DQ-FRED-001",
         "BLOCK",
         "uniqueness",

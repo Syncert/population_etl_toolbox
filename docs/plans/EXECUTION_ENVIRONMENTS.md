@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**13 plans.**
+**14 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -55,6 +55,7 @@ grep was looking for.
 | [`county-crime-rollup-from-agency-reports`](to_do/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md) | high | `browser` | -- |
 | [`explainer-pages`](to_do/EXPLAINER_PAGES_PLAN.md) | medium | `browser` | -- |
 | [`find-your-place-home`](to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) | medium | `browser` | `place-pages` |
+| [`groceries-and-gas-cards`](to_do/GROCERIES_AND_GAS_CARDS_PLAN.md) | medium | `browser` | `grocery-and-gasoline-prices`, `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`nearby-and-related-places`](to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`one-measure-every-county-map`](to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) | medium | `browser` | -- |
@@ -105,7 +106,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**12 plans.**
+**11 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -114,7 +115,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`bls-qcew-county-wages`](to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) | high | `postgres` | -- |
 | [`census-building-permits`](to_do/CENSUS_BUILDING_PERMITS_PLAN.md) | medium | `postgres` | -- |
 | [`census-saipe-sahie`](to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) | medium | `postgres` | -- |
-| [`grocery-and-gasoline-prices`](in_progress/GROCERY_AND_GASOLINE_PRICES_PLAN.md) | high | `postgres` | `bea-regional-accounts` |
 | [`irs-county-migration`](to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
