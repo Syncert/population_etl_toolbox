@@ -403,3 +403,31 @@ describe("what the chart and its legend say", () => {
     expect(label).toMatch(/cut short by the page bound/);
   });
 });
+
+test("a time view is part of a series' identity, and native keeps the old key", async () => {
+  // Covers: WEB-141 — the same measure by month and by year are two series.
+  const { seriesKey: key } = await import("../../../apps/web/lib/workbench");
+  const base = {
+    sourceKey: "bls",
+    sourceCode: "BLS",
+    metricCode: "BLS:CUUR0000SA0",
+    scope: "latest",
+    geoLevel: "NATIONAL",
+    geoId: "us:1",
+    filters: {},
+  };
+  expect(key({ ...base, timeView: "native" })).toBe(key(base));
+  expect(key({ ...base, timeView: "annual" })).not.toBe(key(base));
+  expect(key({ ...base, timeView: "annual" })).not.toBe(key({ ...base, timeView: "quarterly" }));
+});
+
+test("a time-view series names whose figures it draws", async () => {
+  // Covers: WEB-141 — the legend words for derived, provider and mixed rows.
+  const { derivationLabel } = await import("../../../apps/web/lib/timeViews");
+  const derived = { derivation: { kind: "derived", method: "mean" } };
+  const provider = { derivation: { kind: "provider_published" } };
+  expect(derivationLabel([derived])).toBe("derived (mean)");
+  expect(derivationLabel([provider])).toBe("provider-published");
+  expect(derivationLabel([provider, derived])).toBe("provider-published and derived (mean)");
+  expect(derivationLabel([{ value: "1" }])).toBeNull();
+});

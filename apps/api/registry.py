@@ -1261,6 +1261,9 @@ CONFIGURATION_DOCUMENT_FIELDS: dict[str, frozenset[str]] = {
             "release",
             "newest_per_geography",
             "newest_release_per_period",
+            # The calendar grain and the serving window (ADR-0007).
+            "time_grain",
+            "window",
         }
     ),
     "distribution": frozenset({"metric_code", "bin_count"}),

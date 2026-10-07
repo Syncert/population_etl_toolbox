@@ -1969,3 +1969,72 @@ def test_a_storage_failure_that_is_not_a_conflict_still_answers_503(
     )
     assert response.status_code == 503, response.json()
     assert "temporarily unavailable" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# WEB-141 / API-168 / API-169 — a stored series keeps its time view
+# ---------------------------------------------------------------------------
+
+_BLS_CPI_METRIC = {
+    "metric_code": "BLS:CUUR0000SA0",
+    "source_code": "BLS",
+    "units": "Index 1982-1984=100",
+    "valid_time_grains": ["MONTHLY"],
+    "valid_geo_grains": ["NATIONAL"],
+    "aggregation_characteristic": None,
+    "physical_lineage": {},
+    "freshness_state": "current",
+}
+
+
+def _validate_time_series(series: list[dict]):
+    metrics = {**_WORKBENCH_METRICS, _BLS_CPI_METRIC["metric_code"]: _BLS_CPI_METRIC}
+    return saved_analysis_service.validate_document(
+        _WarehouseSession(metrics), _workbench(series=series)
+    )
+
+
+def test_a_series_stores_a_calendar_grain_or_window_the_route_answers() -> None:
+    """Covers: WEB-141 — a CPI series at calendar years or a trailing window is stored as asked."""
+    assert _validate_time_series(
+        [
+            {"metric_code": "BLS:CUUR0000SA0", "time_grain": "annual"},
+            {"metric_code": "BLS:CUUR0000SA0", "window": "trailing_12"},
+        ]
+    ) == frozenset({"BLS"})
+    # Stored before the fields existed: an unwindowed native read.
+    stored = _workbench(series=[{"metric_code": "FRED:UNRATE"}])
+    assert (stored.series[0].time_grain, stored.series[0].window) == ("native", None)
+
+
+@pytest.mark.parametrize(
+    ("series", "expected"),
+    [
+        ({"metric_code": "FRED:UNRATE", "time_grain": "annual"}, "publishes no calendar"),
+        ({"metric_code": "FRED:UNRATE", "window": "ytd"}, "approved"),
+        (
+            {"metric_code": "BLS:CUUR0000SA0", "time_grain": "annual", "window": "ytd"},
+            "cannot be combined",
+        ),
+        (
+            {
+                "metric_code": "BLS:CUUR0000SA0",
+                "time_grain": "quarterly",
+                "scope": "as_released",
+            },
+            "scope=latest",
+        ),
+    ],
+)
+def test_a_time_view_the_route_refuses_is_not_stored(series: dict, expected: str) -> None:
+    """Covers: WEB-141 — a stored time view is checked as the route checks it."""
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_time_series([{"metric_code": "FRED:UNRATE"}, series])
+    assert "series 2" in refused.value.detail
+    assert expected in refused.value.detail
+
+
+def test_an_unknown_time_view_is_refused_by_the_schema() -> None:
+    """Covers: WEB-141 — only the route's own words."""
+    with pytest.raises(Exception):
+        _workbench(series=[{"metric_code": "FRED:UNRATE", "time_grain": "weekly"}])

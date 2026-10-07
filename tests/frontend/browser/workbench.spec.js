@@ -1244,3 +1244,106 @@ test("a correlation does not outlive the selection it was measured for", async (
   release();
   await expect(page.getByTestId("workbench-correlation")).toContainText("0.111");
 });
+
+test("a series reads a calendar year or window, labelled, and the link keeps it", async ({
+  page,
+}) => {
+  // Covers: WEB-141 — the workbench offers a measure's own calendar grains and
+  // windows; a chosen one is read through `/observations` with `time_grain`
+  // or `window`; the legend names the view and the caption says whose
+  // figures are drawn; and the address reopens the same view.
+  await installRoutes(page);
+  const timeRoutes = NEUTRAL_ROUTES.map((route) =>
+    route.path === "/api/v1/observations"
+      ? {
+          ...route,
+          parameters: [...route.parameters, "time_grain", "window"].sort(),
+        }
+      : route,
+  );
+  await page.route("**/api/v1/catalog/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        ...capabilities,
+        items: capabilities.items.map((item) => ({
+          ...item,
+          observation_routes: timeRoutes,
+        })),
+      },
+    }),
+  );
+  await page.route(
+    /\/api\/v1\/catalog\/metrics\/FRED%3AUNRATE$|\/catalog\/metrics\/FRED:UNRATE$/,
+    (route) =>
+      route.fulfill({
+        json: {
+          ...metricsBySource.FRED[0],
+          time_grains: ["native", "quarterly", "annual"],
+          time_windows: ["trailing_3", "trailing_12", "ytd"],
+        },
+      }),
+  );
+  const reads = [];
+  await page.route("**/api/v1/observations?*", (route) => {
+    const params = Object.fromEntries(
+      new URL(route.request().url()).searchParams,
+    );
+    reads.push(params);
+    const items =
+      params.time_grain === "annual"
+        ? ["2023", "2024"].map((year) => ({
+            ...observation(METRIC_FRED, `${year}-01-01`, "4.0", null),
+            period_end: `${year}-12-31`,
+            value_status: "valid",
+            derivation: {
+              kind: "derived",
+              method: "mean",
+              method_version: 1,
+              expected_periods: 12,
+              present_periods: 12,
+              component_releases: ["2025-01-10"],
+            },
+          }))
+        : observationsByMetric[params.metric_code] || [];
+    return route.fulfill({
+      json: { total: items.length, limit: 1000, offset: 0, items },
+    });
+  });
+  await page.goto("/workbench");
+
+  await page.getByTestId("workbench-source").selectOption("fred");
+  await page.getByTestId("workbench-metric").selectOption(METRIC_FRED);
+  await page.getByTestId("workbench-grain").selectOption("NATIONAL");
+  const time = page.getByTestId("workbench-time-view");
+  await expect(time.locator("option")).toHaveText([
+    "As published",
+    "Calendar quarters",
+    "Calendar years",
+    "Trailing 3 months",
+    "Trailing 12 months",
+    "Year to date",
+  ]);
+  await time.selectOption("annual");
+  await page.getByTestId("workbench-add-series").click();
+
+  // The legend and every point's hover name the view and the method.
+  await expect(page.getByTestId("workbench-legend")).toContainText(
+    "Unemployment rate · Calendar years, derived (mean)",
+  );
+  await expect(page.locator("svg title").first()).toContainText(
+    "Unemployment rate · Calendar years, derived (mean)",
+  );
+  await expect(page.getByTestId("workbench-derivation")).toContainText(
+    "Derived by the warehouse: mean of 12 monthly values (method v1)",
+  );
+  const annual = reads.findLast((read) => read.time_grain === "annual");
+  expect(annual).toMatchObject({ metric_code: METRIC_FRED });
+  expect(annual.release).toBeUndefined();
+  expect(annual.newest_release_per_period).toBeUndefined();
+
+  await expect(page).toHaveURL(/tv%3Aannual|tv:annual/);
+  await page.goto(page.url());
+  await expect(page.getByTestId("workbench-legend")).toContainText(
+    "Unemployment rate · Calendar years",
+  );
+});

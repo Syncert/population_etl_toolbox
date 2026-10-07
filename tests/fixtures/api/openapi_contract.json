@@ -2484,7 +2484,9 @@
         "release": "string | null",
         "scope": "string",
         "series": "array<SeriesDocument> | null",
-        "visualization": "object"
+        "time_grain": "string",
+        "visualization": "object",
+        "window": "string | null"
       },
       "required": [
         "kind"
@@ -3695,7 +3697,9 @@
         "newest_per_geography": "boolean",
         "newest_release_per_period": "boolean",
         "release": "string | null",
-        "scope": "string"
+        "scope": "string",
+        "time_grain": "string",
+        "window": "string | null"
       },
       "required": [
         "metric_code"

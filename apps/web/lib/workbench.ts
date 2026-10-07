@@ -26,6 +26,8 @@
 //    rather than keeping whichever row arrived last (WEB-014), and the
 //    workbench refuses to add the series at all.
 
+import { NATIVE_TIME_VIEW } from "./timeViews";
+import type { TimeView } from "./timeViews";
 import type { ExplorerSource } from "./explorerSources";
 import type { ObservationRow } from "./explorerViewModel";
 import { publishedNumber } from "./explorerViewModel";
@@ -72,6 +74,11 @@ export interface WorkbenchSeries {
   geoId: string;
   /** The source's own declared dimension filters, each pinned to one value. */
   filters: Record<string, string>;
+  /**
+   * A calendar grain or window (ADR-0007); native when absent. Part of the
+   * series' identity: the same measure by month and by year are two series.
+   */
+  timeView?: TimeView;
 }
 
 /**
@@ -95,6 +102,9 @@ export function seriesKey(series: WorkbenchSeries): string {
     series.geoLevel,
     series.geoId,
     filters,
+    // Appended only for a time view, so every key minted before it existed
+    // -- every saved and linked series -- is unchanged.
+    ...(series.timeView && series.timeView !== NATIVE_TIME_VIEW ? [series.timeView] : []),
   ].join("|");
 }
 

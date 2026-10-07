@@ -37,6 +37,7 @@ from apps.api.registry import (
     normalize_geo_level,
 )
 from apps.api.schemas.observations import OBSERVATION_FILTER_BOUNDS
+from data_ingestion_toolbox.semantics.time_aggregation import authorized_method
 from apps.api.schemas import (
     AnalysisDocument,
     ConfigurationValidation,
@@ -263,11 +264,40 @@ def _require_consistent_observation_read(
             f"{where}newest_per_geography and newest_release_per_period cannot "
             "be combined"
         )
+    # A calendar grain or a window is each window's current figure: the
+    # route refuses it beside a release, a reduction or the other one, so a
+    # stored read must too (ADR-0007, API-168, API-169).
+    time_grain = getattr(read, "time_grain", "native") or "native"
+    window = getattr(read, "window", None)
+    if time_grain != "native" and window is not None:
+        raise ConfigurationInvalid(
+            f"{where}window and a calendar time_grain cannot be combined"
+        )
+    if (time_grain != "native" or window is not None) and (
+        read.scope != "latest"
+        or read.release is not None
+        or read.newest_per_geography
+        or read.newest_release_per_period
+    ):
+        raise ConfigurationInvalid(
+            f"{where}a calendar grain or window combines only with scope=latest, "
+            "without a release pin or a reduction"
+        )
     if metric is None:
         return
     dispatch = OBSERVATION_DISPATCH.get(str(metric.get("source_code") or ""))
     if dispatch is None:
         return
+    if time_grain != "native" and dispatch.calendar_relation is None:
+        raise ConfigurationInvalid(
+            f"{where}{dispatch.source_code} publishes no calendar figures, and "
+            "a derived one needs an approved method (ADR-0007)"
+        )
+    if window is not None and authorized_method(str(read.metric_code)) is None:
+        raise ConfigurationInvalid(
+            f"{where}{read.metric_code} has no window: it has no approved "
+            "time-aggregation method (ADR-0007)"
+        )
     for name, asked in (
         ("newest_per_geography", read.newest_per_geography),
         ("newest_release_per_period", read.newest_release_per_period),

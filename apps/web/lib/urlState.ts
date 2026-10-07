@@ -9,6 +9,9 @@
 // `scope`, `release`) stays valid; unknown or invalid values are dropped rather than
 // propagated into requests.
 
+import { NATIVE_TIME_VIEW, parseTimeView } from "./timeViews";
+import type { TimeView } from "./timeViews";
+
 // The published grain vocabulary, all five words of it. `geo_level` on a
 // served row is always one of these, and a metric's `valid_geo_grains` uses
 // the same words, so a grain read from the catalog can be sent straight back
@@ -532,6 +535,8 @@ export interface WorkbenchSeriesUrlState {
   geoLevel?: GeoLevel;
   geoId?: string;
   filters?: Record<string, string>;
+  /** A calendar grain or window; native when absent (`tv:` in the link). */
+  timeView?: TimeView;
 }
 
 export interface WorkbenchUrlState {
@@ -577,6 +582,7 @@ const RELEASE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_:.\- ]{0,99}$/;
  * filters; nothing else may ride in as one.
  */
 const SERIES_RESERVED_KEYS = new Set([
+  "tv",
   "src",
   "m",
   "scope",
@@ -651,6 +657,10 @@ function parseWorkbenchSeries(
   const geoId = fields.get("geo");
   if (geoId && GEO_ID_PATTERN.test(geoId)) {
     series.geoId = geoId;
+  }
+  const timeView = parseTimeView(fields.get("tv"));
+  if (timeView !== NATIVE_TIME_VIEW) {
+    series.timeView = timeView;
   }
 
   const filters: Record<string, string> = {};
@@ -739,6 +749,10 @@ function serializeWorkbenchSeries(
   }
   if (series.geoId && GEO_ID_PATTERN.test(series.geoId)) {
     parts.push(`geo:${series.geoId}`);
+  }
+  // Native is the default and is omitted.
+  if (series.timeView && series.timeView !== NATIVE_TIME_VIEW) {
+    parts.push(`tv:${parseTimeView(series.timeView)}`);
   }
   for (const name of Object.keys(series.filters || {}).sort()) {
     const value = (series.filters || {})[name];

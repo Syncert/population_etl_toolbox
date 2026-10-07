@@ -98,6 +98,23 @@ const METHOD_WORDS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * A few words for a legend entry and its hover: whose figures a time-view
+ * series draws, with the method when the warehouse derived them. Null when
+ * the rows carry no derivation (a native read).
+ */
+export function derivationLabel(rows: readonly unknown[] | null | undefined): string | null {
+  const derivations = (rows || []).map(derivationOf).filter(Boolean) as Derivation[];
+  if (derivations.length === 0) return null;
+  const provider = derivations.some((d) => d.kind === "provider_published");
+  const derived = derivations.find((d) => d.kind === "derived");
+  const method = derived
+    ? `derived (${METHOD_WORDS[String(derived.method)] || String(derived.method || "reviewed method")})`
+    : null;
+  if (provider && method) return `provider-published and ${method}`;
+  return provider ? "provider-published" : method;
+}
+
+/**
  * One caption for a set of rows: what kind of figure the reader is looking
  * at. Provider-published and derived rows can share a page (BLS's own annual
  * average beside a derived year it did not publish), and the caption says so
@@ -161,3 +178,32 @@ export function mapWindowRows<T extends { geo_id?: unknown; value?: unknown; per
   }
   return [...chosen.values()];
 }
+
+const TIME_VIEWS: readonly TimeView[] = [NATIVE_TIME_VIEW, ...GRAIN_VIEWS, ...WINDOW_VIEWS];
+
+/** A view word from a link or a stored document, or native for anything else. */
+export function parseTimeView(value: unknown): TimeView {
+  return TIME_VIEWS.includes(value as TimeView) ? (value as TimeView) : NATIVE_TIME_VIEW;
+}
+
+/** The view a stored observations read names in `time_grain` and `window`. */
+export function timeViewFromDocument(read: {
+  time_grain?: string | null;
+  window?: string | null;
+}): TimeView {
+  if (read.window) return parseTimeView(read.window);
+  return parseTimeView(read.time_grain || NATIVE_TIME_VIEW);
+}
+
+/** The `time_grain` and `window` a stored read records for a view. */
+export function timeViewDocumentFields(view: TimeView | null | undefined): {
+  time_grain: "native" | "quarterly" | "annual";
+  window: "trailing_3" | "trailing_12" | "ytd" | null;
+} {
+  if (!view || view === NATIVE_TIME_VIEW) return { time_grain: "native", window: null };
+  if (isWindowView(view)) {
+    return { time_grain: "native", window: view as "trailing_3" | "trailing_12" | "ytd" };
+  }
+  return { time_grain: view as "quarterly" | "annual", window: null };
+}
+
