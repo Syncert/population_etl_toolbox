@@ -3019,6 +3019,7 @@
         "source_run_id": "any | null",
         "source_watermark": "string | null",
         "time_grains": "array<string>",
+        "time_windows": "array<string>",
         "units": "string | null",
         "valid_geo_grains": "array<string> | null",
         "valid_time_grains": "array<string> | null"

@@ -4,7 +4,7 @@
   2026-09-28.
 - **Date:** 2026-09-28
 - **Decision owners:** Repository owner and data-product maintainers
-- **Related work:** [Time windows and rollups](../plans/in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md)
+- **Related work:** [Time windows and rollups](../plans/needs_review/TIME_WINDOWS_AND_ROLLUPS_PLAN.md)
 - **Amends:** [ADR-0001](0001-data-layer-boundaries.md) and the
   [workbench plan](../plans/completed/ANALYTICS_WORKBENCH_PLAN.md) time-rollup
   non-goal. It does not amend the refusal of geographic rollups.

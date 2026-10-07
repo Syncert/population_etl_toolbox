@@ -316,6 +316,64 @@ const acsReleasedRow = (release, value) => ({
   value,
 });
 
+function calendarRows(metric, view) {
+  const base = {
+    source_code: "BLS",
+    metric_code: metric,
+    metric_display_name: "Unemployment rate",
+    geo_id: "state:55|county:025",
+    geo_level: "COUNTY",
+    unit: "Percent",
+    dimensions: {},
+  };
+  if (view === "annual") {
+    return [
+      {
+        ...base,
+        period_start: "2024-01-01",
+        period_end: "2024-12-31",
+        value: "2.9",
+        value_status: "valid",
+        derivation: { kind: "provider_published", component_releases: [] },
+      },
+      {
+        ...base,
+        period_start: "2025-01-01",
+        period_end: "2025-12-31",
+        value: null,
+        value_status: "incomplete_window",
+        derivation: {
+          kind: "derived",
+          method: "mean",
+          method_version: 1,
+          expected_periods: 12,
+          present_periods: 8,
+          refusal_reason: "incomplete_window: 8 of 12 periods reported",
+          component_releases: ["2025-09-18"],
+        },
+      },
+    ];
+  }
+  return [
+    {
+      ...base,
+      period_start: "2025-06-01",
+      period_end: "2025-08-31",
+      value: null,
+      value_status: "incomplete_window",
+      derivation: {
+        kind: "derived",
+        method: "mean",
+        method_version: 1,
+        expected_periods: 3,
+        present_periods: 2,
+        refusal_reason: "incomplete_window: 2 of 3 periods reported",
+        component_releases: ["2025-09-18"],
+      },
+    },
+  ];
+}
+
 async function installRoutes(
   page,
   {
@@ -384,6 +442,31 @@ async function installRoutes(
     const params = new URL(route.request().url()).searchParams;
     neutralRequests.push(Object.fromEntries(params));
     const metric = params.get("metric_code") || "";
+
+    // A calendar grain or window answers its own neutral shape: each row
+    // says whose figure it is, and an incomplete window carries its reason
+    // instead of a value (API-168, API-169).
+    const timeGrain = params.get("time_grain");
+    const window = params.get("window");
+    if (timeGrain || window) {
+      const items = calendarRows(metric, timeGrain || window).filter(
+        (row) => !params.get("geo_id") || row.geo_id === params.get("geo_id"),
+      );
+      return route.fulfill({
+        json: {
+          total: items.length,
+          limit: Number(params.get("limit") || 100),
+          offset: 0,
+          scope: "latest",
+          time_grain: timeGrain || "native",
+          window,
+          metric_code: metric,
+          source_code: "BLS",
+          items,
+        },
+        headers: { "x-cache": "MISS" },
+      });
+    }
 
     if (params.get("scope") === "as_released") {
       const pinned = params.get("release");
@@ -560,6 +643,20 @@ async function installRoutes(
     json: capabilities,
     headers: { "x-cache": "MISS" },
   }));
+  // The metric resource publishes the grains and windows each metric has.
+  await page.route("**/api/v1/catalog/metrics/*", (route) => {
+    const code = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop());
+    const known = [...metrics, pepMetric, cdcMetric, blsNationalMetric, blsMeasureMetric, fbiMetric, nassMetric];
+    const metric = known.find((item) => item.metric_code === code) || { metric_code: code };
+    const calendar = code === blsMeasureMetric.metric_code;
+    return route.fulfill({
+      json: {
+        ...metric,
+        time_grains: calendar ? ["native", "quarterly", "annual"] : ["native"],
+        time_windows: calendar ? ["trailing_3", "trailing_12", "ytd"] : [],
+      },
+    });
+  });
   await page.route("**/api/v1/catalog/metrics?*", (route) => {
     const sourceCode = new URL(route.request().url()).searchParams.get("source_code");
     const bySource = {
@@ -1251,6 +1348,62 @@ test("a measure-identified source draws its map through the shared paths", async
   await page.getByTestId("metric-select").selectOption("BLS:CES0000000001");
   await expect(dashboard).toHaveAttribute("data-map-supported", "false");
   await expect(page.getByTestId("non-spatial-note")).toContainText("no national geometry");
+});
+
+test("a metric's calendar years and windows are offered, labelled, and refused with a reason", async ({
+  page,
+}) => {
+  // Covers: WEB-140 — the Time control offers only the grains and windows the
+  // metric resource publishes; choosing one asks /observations with only the
+  // geography; the caption says whose figures are on screen; the map keeps a
+  // geography's newest complete year; and an incomplete window reads as its
+  // reason, never as "No observation".
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto("/explore");
+  await page.getByTestId("source-tab-bls").click();
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "BLS:LAU:UNEMP_RATE");
+
+  const timeSelect = page.getByTestId("time-view-select");
+  await expect(timeSelect.locator("option")).toHaveText([
+    "As published",
+    "Calendar quarters",
+    "Calendar years",
+    "Trailing 3 months",
+    "Trailing 12 months",
+    "Year to date",
+  ]);
+
+  await timeSelect.selectOption("annual");
+  await expect(page.getByTestId("derivation-caption")).toHaveText(
+    "Provider-published figures. Derived by the warehouse: mean of 12 monthly values (method v1). 1 incomplete window shown without a value.",
+  );
+  const annualRead = neutralRequests.findLast((request) => request.time_grain === "annual");
+  expect(annualRead).toMatchObject({ metric_code: "BLS:LAU:UNEMP_RATE", geo_level: "COUNTY" });
+  expect(annualRead.state_fips).toBeUndefined();
+  expect(annualRead.newest_per_geography).toBeUndefined();
+  expect(annualRead.scope).toBeUndefined();
+  // The newest complete year colours the county; the year under way does not
+  // blank the map.
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
+  // A calendar view has no release pin and no published-period choice.
+  await expect(page.getByTestId("publication-select")).toHaveCount(0);
+  await expect(page.getByTestId("period-select")).toHaveCount(0);
+
+  await timeSelect.selectOption("trailing_3");
+  const windowRead = neutralRequests.findLast((request) => request.window === "trailing_3");
+  expect(windowRead).toMatchObject({ metric_code: "BLS:LAU:UNEMP_RATE" });
+  await page.getByTestId("state-select").selectOption("55");
+  await page.getByTestId("county-select").selectOption(county.geo_id);
+  await expect(page.locator(".county-panel")).toContainText(
+    "Incomplete window: 2 of 3 months reported",
+  );
+  await expect(page.locator(".county-panel")).not.toContainText("No observation");
+
+  // A metric that publishes no calendar figures offers no Time control.
+  await page.getByTestId("metric-select").selectOption("BLS:CES0000000001");
+  await expect(page.getByTestId("time-view-select")).toHaveCount(0);
 });
 
 test("the retired source dashboards land on the live explorer for their source", async ({ page }) => {

@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**13 plans.**
+**14 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -63,6 +63,7 @@ grep was looking for.
 | [`studio-video-frames`](to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) | high | `browser` | `place-pages` |
 | [`unit-suite-time-budget`](to_do/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 | [`what-makes-this-place-distinctive`](to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) | high | `browser` | `place-pages` |
+| [`workbench-time-views`](to_do/WORKBENCH_TIME_VIEWS_PLAN.md) | medium | `browser` | `time-windows-and-rollups` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
@@ -105,7 +106,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**11 plans.**
+**10 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -119,7 +120,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
 | [`sub-county-geography`](to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
-| [`time-windows-and-rollups`](in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
 
 
 ## Notes on the cloud container

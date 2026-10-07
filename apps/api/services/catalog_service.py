@@ -42,6 +42,12 @@ from apps.api.schemas import (
 from apps.api.services.contracts import require_relation
 from apps.api.services.metric_freshness import is_retired
 from apps.api.versioning import VERSIONED_ROOT
+from data_ingestion_toolbox.semantics.rollups import (
+    ROLLUP_SOURCES,
+    SERVING_WINDOWS,
+    SQL_AGGREGATES,
+)
+from data_ingestion_toolbox.semantics.time_aggregation import authorized_method
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_RELATION,
     METRIC_RELATION,
@@ -220,6 +226,18 @@ def _time_grains(source_code: str) -> list[str]:
     return ["native"]
 
 
+def _metric_time_windows(source_code: str, metric_code: str) -> list[str]:
+    """The serving windows this metric answers: the route's own check."""
+    method = authorized_method(metric_code)
+    if (
+        method is None
+        or method.method not in SQL_AGGREGATES
+        or source_code not in ROLLUP_SOURCES
+    ):
+        return []
+    return list(SERVING_WINDOWS)
+
+
 def _metric_time_grains(db: Session, source_code: str, metric_code: str) -> list[str]:
     """The grains this metric has figures at: exactly what the route answers.
 
@@ -316,6 +334,9 @@ def get_metric_capability(
     )
     capability.time_grains = _metric_time_grains(
         db, discovery.source_code, capability.metric_code
+    )
+    capability.time_windows = _metric_time_windows(
+        discovery.source_code, capability.metric_code
     )
     if is_retired(capability.freshness_state):
         # A retired measure keeps its catalog entry and its history; no route

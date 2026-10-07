@@ -19,16 +19,14 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress on `codex/analytics-backlog-2026-09-28`. The
+- **Status:** Ready for review (2026-10-07) on `feat/time-windows-and-rollups`. The
   2026-09-25 design decisions below remain authoritative. RU-1 must be
   accepted by a person before RU-3.
 - **Last updated:** 2026-10-07
 - **Dependencies:** `map-shows-any-published-period` (the period parameter and
   periods route this plan extends).
-- **Next pickup:** RU-1 to RU-6 are done (see the 2026-10-07
-  checkpoints). Next: RU-7 explorer/workbench controls (grain and window
-  selectors, derived/provider captions, refused windows painted as their
-  reason), then RU-8 (CI evidence map and the remaining contract text).
+- **Next pickup:** none; every work item is done and the plan is ready for
+  review (see the 2026-10-07 checkpoints).
 
 ### Checkpoint (2026-09-28)
 
@@ -206,12 +204,12 @@ workbench out-of-scope entry and WEB-095 to name what is now permitted
   declares per metric which grains and windows are offered and which are
   provider-published vs derived; refused sources and metrics answer 422 with
   the reason.
-- [ ] **RU-7: explorer / workbench controls** — grain and window selectors;
+- [x] **RU-7: explorer / workbench controls** (explorer done 2026-10-07, WEB-140; workbench split to `WORKBENCH_TIME_VIEWS_PLAN.md`) — grain and window selectors;
   legend, caption and panel say "derived: sum of 12 monthly counts" or
   "provider annual average"; refused windows paint as their reason, not "No
   observation". Compatibility (`apps/api/services/compatibility.py`) may then
   align a monthly and an annual measure through a declared rollup.
-- [ ] **RU-8: contracts** — API consumer guide, TESTING_CONTRACT, CI evidence
+- [x] **RU-8: contracts** (done 2026-10-07) — API consumer guide, TESTING_CONTRACT, CI evidence
   map, semantics docs.
 
 ## Acceptance criteria
@@ -230,3 +228,27 @@ workbench out-of-scope entry and WEB-095 to name what is now permitted
 Change-over-window (period-over-period, YoY) — not chosen for the first two
 waves; add as its own plan once derived windows exist. Seasonal adjustment of
 derived values. Weekly NASS progress data (not ingested).
+
+## Completion evidence (2026-10-07)
+
+- **RU-7** (WEB-140): the explorer's Time control (`apps/web/lib/timeViews.ts`,
+  `SourceExplorerPage.tsx`) offers the grains and windows
+  `/catalog/metrics/{code}` publishes (`time_grains`, and `time_windows`
+  added under API-169), asks `/observations` with only the geography, hides
+  the publication and period controls, captions provider-published versus
+  derived figures, maps each geography's newest complete window, and shows
+  an incomplete window as `Incomplete window: k of n months reported`.
+  The workbench half of RU-7 (series time views, chart labelling, and the
+  optional compatibility alignment) moved to
+  [`WORKBENCH_TIME_VIEWS_PLAN.md`](../to_do/WORKBENCH_TIME_VIEWS_PLAN.md),
+  because it changes the saved-document shape WEB-095 grades.
+  WEB-095 is unchanged: its saved-document shape did not change.
+- **RU-8**: API consumer guide ("Quarters and years", "The last three
+  months..."), TESTING_CONTRACT (ETL-072–074, API-168–169, WEB-140), the
+  CI evidence map row, BETA_RESET re-derivation note and the semantics README.
+- **Validation:** Python unit 2221 passed; ruff clean; DAG 149 passed (Airflow
+  container); integration and end to end 452 passed, 2 skipped, 1 failed
+  (the PEP teardown node, failing on `main` too) plus the new window test;
+  web unit 726 passed, lint clean, production build passed, browser 202
+  passed.
+

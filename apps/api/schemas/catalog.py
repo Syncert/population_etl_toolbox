@@ -203,6 +203,11 @@ class MetricCapability(MetricCatalog):
     #: figure or an approved method derived one -- read from the same relation
     #: the route serves, so a listed grain is never refused (ADR-0007).
     time_grains: list[str] = ["native"]
+    #: The ``window`` values ``/observations`` answers for this metric
+    #: (``trailing_3``, ``trailing_12``, ``ytd``): all of them where the
+    #: metric has an approved method its source's months can be windowed
+    #: with, none otherwise -- the same check the route refuses by.
+    time_windows: list[str] = []
 
 
 class SourceFreshness(BaseModel):

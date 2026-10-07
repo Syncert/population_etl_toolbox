@@ -294,6 +294,29 @@ def test_a_metric_lists_only_the_calendar_grains_it_has(
     assert response.json()["time_grains"] == expected
 
 
+@pytest.mark.parametrize(
+    ("metric_code", "expected"),
+    [
+        ("BLS:CUUR0000SA0", ["trailing_3", "trailing_12", "ytd"]),
+        ("BLS:LNS14000000", []),
+    ],
+)
+def test_a_metric_lists_the_windows_its_approved_method_allows(
+    metric_code: str, expected: list[str]
+) -> None:
+    """Covers: API-169 — windows are offered exactly where the route computes them."""
+    row = dict(_METRIC_ROW)
+    row.update({"metric_code": metric_code, "source_code": "BLS", "units": "index"})
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get(f"/api/v1/catalog/metrics/{metric_code}")
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["time_windows"] == expected
+
+
 def test_a_retired_metric_advertises_no_route_that_will_not_answer_it() -> None:
     """Covers: API-119 — retirement is a served fact, not a silent empty page.
 

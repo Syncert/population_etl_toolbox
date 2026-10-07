@@ -405,7 +405,8 @@ response echoes the `window` it answered.
 A window combines only with `time_grain=native` and `scope=latest`, without
 a release pin or a reduction, and filters by `geo_id`, `geo_level` and
 `subject_code`. A metric without an approved method answers 422 naming
-ADR-0007.
+ADR-0007; `/catalog/metrics/{code}` lists the windows a metric answers in
+`time_windows`, empty where it has none.
 
 ### Census PEP spans six decades, and its measures do not
 
