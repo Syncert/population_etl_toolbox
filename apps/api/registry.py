@@ -907,6 +907,48 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "query /observations with domain and geography filters instead"
             ),
         ),
+        ObservationDispatch(
+            source_code="CENSUS_CBP",
+            latest_relation="gold_census_cbp.observation_latest",
+            released_relation="gold_census_cbp.observation_revision",
+            lineage_schema="gold_census_cbp",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>:<sector>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The files name no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                ("naics_key", "naics_key"),
+                ("naics_label", "naics_label"),
+                # "employer establishments ... excludes the self-employed":
+                # what keeps a CBP count from being read as all employment.
+                ("observation_basis", "observation_basis"),
+                # The employment-size range of a withheld cell, through 2017.
+                ("employment_range", "employment_range"),
+                ("value_source", "value_source"),
+            ),
+            # The Bureau's noise flag: G under 2%, H 2 to under 5%, J 5% or more.
+            uncertainty_expressions=(("noise_flag", "noise_flag"),),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1155,6 +1197,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_CBP",
+            display_name="Census Bureau County Business Patterns",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

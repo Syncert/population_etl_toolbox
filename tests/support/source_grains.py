@@ -27,6 +27,9 @@ from __future__ import annotations
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
 #:   ``geo_levels = ["us", "state", "county"]``.
+#: * ``CENSUS_CBP`` -- ``census_cbp/registry.py`` reads the nation, state
+#:   and county files and counts each county file's statewide row out of
+#:   scope.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
@@ -38,6 +41,7 @@ from __future__ import annotations
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),

@@ -112,6 +112,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
     codes = _publisher_source_codes()
     assert codes == {
         "gold_bls": "BLS",
+        "gold_census_cbp": "CENSUS_CBP",
         "gold_cdc": "CDC",
         "gold_census": "CENSUS_ACS",
         "gold_fbi": "FBI_UCR",

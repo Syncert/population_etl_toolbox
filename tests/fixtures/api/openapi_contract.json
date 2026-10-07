@@ -3467,7 +3467,8 @@
         "cv_symbol": "string | null",
         "cv_value": "string | null",
         "margin_of_error": "string | null",
-        "margin_of_error_pct": "string | null"
+        "margin_of_error_pct": "string | null",
+        "noise_flag": "string | null"
       },
       "required": []
     },

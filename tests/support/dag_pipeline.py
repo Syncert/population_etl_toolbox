@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "census_cbp_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,46 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_census_cbp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware County Business Patterns zips.
+
+    Four of the registered files have fixtures. The others answer with the
+    2023 file of their level, so every registered file captures, replays
+    and publishes without a network call.
+    """
+    from data_ingestion_toolbox.census_cbp import capture as cbp_capture
+    from data_ingestion_toolbox.census_cbp.client import CbpResponse
+
+    def fetch(item: Any, **_kwargs: Any) -> CbpResponse:
+        reviewed = (
+            FIXTURE_ROOT / "census_cbp" / f"cbp{item.year % 100:02d}{item.suffix}.zip"
+        )
+        path = (
+            reviewed
+            if reviewed.is_file()
+            else FIXTURE_ROOT / "census_cbp" / f"cbp23{item.suffix}.zip"
+        )
+        payload = path.read_bytes()
+        if not reviewed.is_file():
+            import io
+            import zipfile
+
+            source = zipfile.ZipFile(io.BytesIO(payload))
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w") as target:
+                target.writestr(item.member, source.read(source.namelist()[0]))
+            payload = out.getvalue()
+        return CbpResponse(
+            item.path,
+            {"kind": item.kind, "year": str(item.year)},
+            payload,
+            {"content-type": "application/zip"},
+            200,
+        )
+
+    monkeypatch.setattr(cbp_capture, "fetch_file", fetch)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1137,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("census_cbp", stub_census_cbp),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

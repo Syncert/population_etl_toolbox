@@ -125,6 +125,30 @@ r control.cdc_dataset_release
     index cdc_dataset_release_latest_idx CREATE INDEX cdc_dataset_release_latest_idx ON control.cdc_dataset_release USING btree (asset_id, release_watermark DESC, created_at DESC)
     index cdc_dataset_release_pkey CREATE UNIQUE INDEX cdc_dataset_release_pkey ON control.cdc_dataset_release USING btree (run_id)
 
+r control.census_cbp_file
+    column run_id uuid NOT NULL
+    column kind text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column in_scope_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cbp_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint cbp_file_scope_within_rows CHECK ((in_scope_row_count <= captured_row_count))
+    constraint census_cbp_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint census_cbp_file_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint census_cbp_file_in_scope_row_count_check CHECK ((in_scope_row_count >= 0))
+    constraint census_cbp_file_kind_check CHECK ((kind = ANY (ARRAY['county'::text, 'state'::text, 'nation'::text])))
+    constraint census_cbp_file_pkey PRIMARY KEY (run_id)
+    constraint census_cbp_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint census_cbp_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint census_cbp_file_year_check CHECK (((year >= 1986) AND (year <= 2100)))
+    index census_cbp_file_capture_idx CREATE INDEX census_cbp_file_capture_idx ON control.census_cbp_file USING btree (capture_id)
+    index census_cbp_file_pkey CREATE UNIQUE INDEX census_cbp_file_pkey ON control.census_cbp_file USING btree (run_id)
+
 v control.data_quality_latest_result
     column rule_id text
     column severity text
@@ -2413,6 +2437,205 @@ v gold_census.v_metric_timeseries_by_geo
     body     margin_of_error_pct
     body    FROM gold_census.fact_observation;
 
+v gold_census_cbp.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     (('County Business Patterns: employer establishments in the private '::text || 'nonfarm economy, employment in the pay period including March 12; '::text) || 'excludes the self-employed, private households, railroads, crop and '::text) || 'animal production and most government employees'::text AS observation_basis
+    body    FROM ( VALUES ('est'::text,'Establishments'::text,'establishments'::text), ('emp'::text,'Employees in the pay period including March 12'::text,'employees'::text), ('qp1'::text,'First-quarter payroll'::text,'thousands of dollars'::text), ('ap'::text,'Annual payroll'::text,'thousands of dollars'::text)) measure(measure, measure_label, unit);
+
+v gold_census_cbp.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column naics_key text
+    column naics_label text
+    column schema_version text
+    body SELECT (measure.measure || ':'::text) || sector.naics_key AS source_object_key,
+    body     measure.measure,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.observation_basis,
+    body     sector.naics_key,
+    body     sector.naics_label,
+    body     'census_cbp_csv:v1'::text AS schema_version
+    body    FROM gold_census_cbp.measure_definition measure
+    body      CROSS JOIN gold_census_cbp.sector_definition sector;
+
+v gold_census_cbp.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CENSUS_CBP'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     ((export.measure_label || ', '::text) || export.naics_label) || ' (County Business Patterns)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_census_cbp', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Census Bureau County Business Patterns'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.census.gov/programs-surveys/cbp.html'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(file.published_at) AS publication_time
+    body            FROM gold_census_cbp.observation_latest latest
+    body              JOIN control.census_cbp_file file ON file.capture_id = latest.capture_id
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_census_cbp.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_census_cbp.observation_latest
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column naics_key text
+    column naics_code text
+    column naics_label text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column noise_flag text
+    column employment_range text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     naics_key,
+    body     naics_code,
+    body     naics_label,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     noise_flag,
+    body     employment_range,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_census_cbp.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, retrieved_at DESC, capture_id DESC;
+
+v gold_census_cbp.observation_revision
+    column metric_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column naics_key text
+    column naics_code text
+    column naics_label text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column noise_flag text
+    column employment_range text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT (fact.measure || ':'::text) || fact.naics_key AS metric_key,
+    body     fact.measure,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.observation_basis,
+    body     fact.naics_key,
+    body     fact.naics_code,
+    body     sector.naics_label,
+    body     fact.year,
+    body     make_date(fact.year, 1, 1) AS period_start,
+    body     make_date(fact.year, 12, 31) AS period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.noise_flag,
+    body     fact.employment_range,
+    body     fact.retrieved_at,
+    body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_census_cbp.fact_observation fact
+    body      JOIN gold_census_cbp.measure_definition measure ON measure.measure = fact.measure
+    body      JOIN gold_census_cbp.sector_definition sector ON sector.naics_key = fact.naics_key
+    body      JOIN control.census_cbp_file file ON file.capture_id = fact.capture_id
+    body   WHERE file.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_census_cbp.sector_definition
+    column naics_key text
+    column naics_label text
+    body SELECT naics_key,
+    body     naics_label
+    body    FROM ( VALUES ('total'::text,'Total for all sectors'::text), ('11'::text,'Forestry, fishing, hunting, and agriculture support'::text), ('21'::text,'Mining, quarrying, and oil and gas extraction'::text), ('22'::text,'Utilities'::text), ('23'::text,'Construction'::text), ('31'::text,'Manufacturing'::text), ('42'::text,'Wholesale trade'::text), ('44'::text,'Retail trade'::text), ('48'::text,'Transportation and warehousing'::text), ('51'::text,'Information'::text), ('52'::text,'Finance and insurance'::text), ('53'::text,'Real estate and rental and leasing'::text), ('54'::text,'Professional, scientific, and technical services'::text), ('55'::text,'Management of companies and enterprises'::text), ('56'::text,'Administrative and support and waste management and remediation services'::text), ('61'::text,'Educational services'::text), ('62'::text,'Health care and social assistance'::text), ('71'::text,'Arts, entertainment, and recreation'::text), ('72'::text,'Accommodation and food services'::text), ('81'::text,'Other services (except public administration)'::text), ('99'::text,'Industries not classified'::text)) sector(naics_key, naics_label);
+
 v gold_fbi.agency_geography
     column relationship_sk bigint
     column ori text
@@ -4689,6 +4912,87 @@ r silver_census.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index census_observation_revision_slice_idx CREATE INDEX census_observation_revision_slice_idx ON silver_census.observation_revision USING btree (dataset, year, geo_level, state_fips_source, county_fips_source)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census.observation_revision USING btree (capture_id, source_row_index, source_column_index)
+
+r silver_census_cbp.fact_observation
+    column measure text NOT NULL
+    column naics_key text NOT NULL
+    column geo_id text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column naics_code text NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column noise_flag text
+    column employment_range text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cbp_fact_suppressed_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint cbp_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_observation_noise_flag_check CHECK (((noise_flag IS NULL) OR (noise_flag = ANY (ARRAY['G'::text, 'H'::text, 'J'::text]))))
+    constraint fact_observation_pkey PRIMARY KEY (measure, naics_key, geo_id, year, capture_id)
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'suppressed'::text])))
+    index census_cbp_fact_lookup_idx CREATE INDEX census_cbp_fact_lookup_idx ON silver_census_cbp.fact_observation USING btree (measure, naics_key, geo_id, year)
+    index census_cbp_fact_run_idx CREATE INDEX census_cbp_fact_run_idx ON silver_census_cbp.fact_observation USING btree (run_id)
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_census_cbp.fact_observation USING btree (measure, naics_key, geo_id, year, capture_id)
+
+r silver_census_cbp.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_census_cbp.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_census_cbp.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_census_cbp.observation_quarantine USING btree (quarantine_sk)
+
+r silver_census_cbp.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure text NOT NULL
+    column run_id uuid NOT NULL
+    column year integer NOT NULL
+    column naics_code text NOT NULL
+    column naics_key text NOT NULL
+    column geo_type text NOT NULL
+    column geo_source_code text NOT NULL
+    column geo_id text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column noise_flag text
+    column employment_range text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cbp_revision_suppressed_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint cbp_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint observation_revision_measure_check CHECK ((measure = ANY (ARRAY['est'::text, 'emp'::text, 'qp1'::text, 'ap'::text])))
+    constraint observation_revision_naics_key_check CHECK (((naics_key = 'total'::text) OR (naics_key ~ '^[0-9]{2}$'::text)))
+    constraint observation_revision_noise_flag_check CHECK (((noise_flag IS NULL) OR (noise_flag = ANY (ARRAY['G'::text, 'H'::text, 'J'::text]))))
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, measure)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'suppressed'::text])))
+    index census_cbp_revision_run_idx CREATE INDEX census_cbp_revision_run_idx ON silver_census_cbp.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_cbp.observation_revision USING btree (capture_id, source_row_index, measure)
 
 r silver_fbi.agency_geography_relationship
     column relationship_sk bigint NOT NULL DEFAULT nextval('silver_fbi.agency_geography_relationship_relationship_sk_seq'::regclass)

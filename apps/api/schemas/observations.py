@@ -203,6 +203,10 @@ class ObservationUncertainty(BaseModel):
     cv_value: Optional[str] = None
     cv_status: Optional[str] = None
     cv_symbol: Optional[str] = None
+    #: County Business Patterns' noise-infusion flag: ``G`` (under 2%),
+    #: ``H`` (2 to under 5%) or ``J`` (5% or more) of the published value
+    #: (census-county-business-patterns). Additive in v1.
+    noise_flag: Optional[str] = None
 
 
 class ObservationCoverage(BaseModel):
