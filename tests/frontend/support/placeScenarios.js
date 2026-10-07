@@ -91,6 +91,27 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       if (newest) items = items.slice(-1);
       return route.fulfill({ json: { metric_code: code, source_code: metric.source_code, scope: "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } });
     }
+    if (path === "/api/v1/migration-flows") {
+      // IRS SOI flows exist for Dane County only; every other county is the
+      // API's 404, which the page answers by showing nothing.
+      if (params.get("geo_id") !== "state:55|county:025") return route.fulfill({ status: 404, json: { detail: "No published SOI file covers this county." } });
+      const inflow = params.get("direction") === "inflow";
+      const counties = inflow
+        ? [["state:27|county:053", "Hennepin County", 412], ["state:55|county:105", "Rock County", 388], ["state:17|county:031", "Cook County", 301]]
+        : [["state:55|county:105", "Rock County", 455], ["state:27|county:053", "Hennepin County", 290]];
+      return route.fulfill({ json: {
+        source_code: "IRS_MIGRATION", derived: false, geo_id: params.get("geo_id"), direction: params.get("direction"),
+        year_pair: "2022-2023", period_start: "2022-01-01", period_end: "2023-12-31", measure: "returns", unit: "returns",
+        release: "2026-10-06T00:00:00Z", caveats: [],
+        totals: [{ category: "total_us_and_foreign", category_label: "Total migration, US and foreign", returns: inflow ? 9210 : 8740, value_status: "valid", value_source: "" }],
+        categories: [
+          { category: "other_flows_same_state", category_label: "Other flows, same state", returns: 1200, value_status: "valid", value_source: "" },
+          { category: "foreign_other_flows", category_label: "Foreign, other flows", returns: null, value_status: "withheld", value_source: "-1,-1,-1" },
+        ],
+        total: counties.length, limit: Number(params.get("limit") || 25),
+        items: counties.map(([geo, name, returns]) => ({ category: "county", category_label: "County-to-county flow", counterpart_geo_id: geo, counterpart_name: name, returns, value_status: "valid", value_source: "" })),
+      } });
+    }
     return route.fulfill({ status: 503, json: { detail: "No UI fixture for this resource" } });
   });
 }

@@ -4,7 +4,7 @@
 - **Date:** 2026-10-06
 - **Accepted:** 2026-10-06
 - **Decision owners:** Data engineering and data-product maintainers
-- **Related work:** [IRS county-to-county migration plan](../plans/in_progress/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md); [ADR-0001](0001-data-layer-boundaries.md)
+- **Related work:** [IRS county-to-county migration plan](../plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md); [ADR-0001](0001-data-layer-boundaries.md)
 
 ## Context
 

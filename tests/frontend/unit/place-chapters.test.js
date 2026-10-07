@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MIGRATION_POPULATION_NOTE,
   PLACE_CHAPTERS,
   PLACE_SEGMENT,
   buildTrend,
@@ -245,5 +246,16 @@ describe("place titles", () => {
     expect(placeRouteTitle("wisconsin", "dane-county")).toBe("Dane County, Wisconsin");
     expect(placeRouteTitle("55", "025")).toBe("025, 55");
     expect(placeRouteTitle("<script>")).toBe("United States");
+  });
+});
+
+// Covers: WEB-138 — irs-county-migration: the note shown beside PEP net
+// migration says the IRS counts tax returns and the two populations differ.
+describe("migration population note", () => {
+  it("names both sources and refuses a net figure", () => {
+    expect(MIGRATION_POPULATION_NOTE).toContain("tax returns");
+    expect(MIGRATION_POPULATION_NOTE).toContain("Population Estimates Program");
+    expect(MIGRATION_POPULATION_NOTE).toContain("different populations");
+    expect(MIGRATION_POPULATION_NOTE).toContain("no net figure");
   });
 });

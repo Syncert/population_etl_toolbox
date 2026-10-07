@@ -15,11 +15,12 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
 Deliverables 1 to 5 are on branch `feat/irs-county-migration`, cut from
-`main`. Deliverable 6, the People and Change chapter lists, needs the place
-pages from `feat/place-pages` (WEB-125).
+`main`. Deliverable 6 is on `feat/irs-county-migration-cards`, which is
+`feat/place-pages` (WEB-125) with `feat/irs-county-migration` merged, so it
+lands after both.
 
 ## Why
 
@@ -167,14 +168,22 @@ existing one-geography fact pattern.
 - `ruff check .` clean; schema snapshot, OpenAPI contract (the new route),
   viz coverage and plan environments regenerated.
 
+- Web (deliverable 6, WEB-138): the county page's People chapter lists
+  "Where people came from" and "Where people went" from
+  `/api/v1/migration-flows` with SOI's total and a sentence naming any
+  withheld category as withheld, not zero; the Change chapter says beside
+  PEP net migration that the two count different populations. `npm
+  --prefix apps/web run test:unit` -- 738 passed; `lint` clean;
+  `places.spec.js` -- 6 passed, including the migration scenario with axe
+  and no horizontal scroll; `build` and `check:bundle` within budget.
+
 ## Remaining
 
-- Deliverable 6: "Where people came from" and "Where people went" lists in
-  the People chapter with the withheld note, and the different-populations
-  statement beside PEP net migration in the Change chapter. Builds on
-  `feat/place-pages`.
+None in scope. Merge order: `feat/irs-county-migration` to `main`, then
+`feat/place-pages`, then `feat/irs-county-migration-cards`. Catalog totals
+on the cards branch count WEB-125 and WEB-138; recount when other open
+branches land first.
 
 ## Checkpoint
 
-Next pickup: branch from `feat/place-pages`, merge
-`feat/irs-county-migration`, and add the migration lists.
+Awaiting human review of both branches.

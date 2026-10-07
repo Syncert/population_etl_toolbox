@@ -42,6 +42,7 @@ import {
 } from "../lib/observationAccess";
 import { buildUseCaseHistory, verifyUseCaseRows } from "../lib/useCaseAnalysis";
 import {
+  MIGRATION_POPULATION_NOTE,
   PLACE_CHAPTERS,
   buildTrend,
   chapterHasValues,
@@ -68,6 +69,7 @@ import { explorerHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 
 const CATALOG_PAGE_SIZE = 1000;
 /** How many observation requests one page keeps in flight at once. */
@@ -584,6 +586,13 @@ function Chapter({
             <DepthRow key={measure.measure.id} measure={measure} place={own} answer={answers.get(answerKey(measure.metricCode, own.geoId))} />
           ))}
         </dl>
+      ) : null}
+      {chapter.id === "people" && pageLevel === "COUNTY" && own ? <MigrationFlows geoId={own.geoId} /> : null}
+      {chapter.id === "change" && pageLevel === "COUNTY" ? (
+        <p className="subtle" data-testid="change-migration-note">
+          <a className="text-link" href="#people">Where people came from and went</a>, from IRS tax returns, is in People.{" "}
+          {MIGRATION_POPULATION_NOTE}
+        </p>
       ) : null}
       <footer className="place-chapter-footer" data-testid={`chapter-${chapter.id}-footer`}>
         <p>
