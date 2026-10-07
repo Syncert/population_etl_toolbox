@@ -32,6 +32,7 @@ from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transfo
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import fbi_release
+from tests.support import irs_migration as irs_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -824,6 +825,18 @@ def published_nass_metric(
     return _one_published_code(factory, "USDA_NASS")
 
 
+@pytest.fixture
+def published_irs_migration_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the SOI file totals through their real pipeline."""
+    factory = irs_support.reviewed_warehouse(postgres_connection_factory, request)
+    irs_support.run_to_gold(factory, "inflow", "2022-2023")
+    harvest_publisher(factory, Publisher("gold_irs_migration"))
+    return _one_published_code(factory, "IRS_MIGRATION")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -879,6 +892,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_irs_migration_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -940,6 +954,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("BLS", published_bls_metric),
         ("FBI_UCR", published_fbi_metric),
         ("USDA_NASS", published_nass_metric),
+        ("IRS_MIGRATION", published_irs_migration_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1081,6 +1096,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_irs_migration_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

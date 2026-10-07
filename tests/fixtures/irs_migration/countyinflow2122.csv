@@ -1,0 +1,251 @@
+y2_statefips,y2_countyfips,y1_statefips,y1_countyfips,y1_state,y1_countyname,n1,n2,agi
+10,1,96,0,DE,Kent County Total Migration-US and Foreign,5473,10231,316746
+10,1,97,0,DE,Kent County Total Migration-US,5400,10066,312496
+10,1,97,1,DE,Kent County Total Migration-Same State,1866,3540,100111
+10,1,97,3,DE,Kent County Total Migration-Different State,3534,6526,212386
+10,1,98,0,DE,Kent County Total Migration-Foreign,73,165,4250
+10,1,10,1,DE,Kent County Non-migrants,68336,136052,4649852
+10,1,10,3,DE,New Castle County,1096,2092,64494
+10,1,10,5,DE,Sussex County,770,1448,35616
+10,1,42,101,PA,Philadelphia County,257,547,14157
+10,1,42,45,PA,Delaware County,107,233,6631
+10,1,36,47,NY,Kings County,92,147,4197
+10,1,57,5,FR,Foreign - APO/FPO ZIPs,73,165,4250
+10,1,24,11,MD,Caroline County,71,135,2615
+10,1,36,81,NY,Queens County,71,122,5059
+10,1,24,33,MD,Prince George's County,54,88,3268
+10,1,24,15,MD,Cecil County,51,81,2592
+10,1,36,5,NY,Bronx County,50,93,3133
+10,1,42,91,PA,Montgomery County,49,97,3054
+10,1,24,3,MD,Anne Arundel County,48,87,5603
+10,1,34,5,NJ,Burlington County,48,98,3097
+10,1,24,45,MD,Wicomico County,41,73,1971
+10,1,24,5,MD,Baltimore County,39,65,1859
+10,1,34,7,NJ,Camden County,39,78,2554
+10,1,34,23,NJ,Middlesex County,39,71,2759
+10,1,36,59,NY,Nassau County,38,60,2819
+10,1,24,29,MD,Kent County,35,60,2136
+10,1,36,103,NY,Suffolk County,35,63,2370
+10,1,42,29,PA,Chester County,34,60,1907
+10,1,24,35,MD,Queen Anne's County,32,54,1859
+10,1,36,85,NY,Richmond County,32,63,1808
+10,1,42,17,PA,Bucks County,29,51,1898
+10,1,34,29,NJ,Ocean County,27,57,2135
+10,1,24,31,MD,Montgomery County,24,36,864
+10,1,34,13,NJ,Essex County,24,43,1121
+10,1,34,39,NJ,Union County,24,44,1555
+10,1,34,15,NJ,Gloucester County,23,34,1356
+10,1,34,17,NJ,Hudson County,23,45,1557
+10,1,34,33,NJ,Salem County,22,37,1422
+10,1,34,21,NJ,Mercer County,21,38,1616
+10,1,6,37,CA,Los Angeles County,20,30,1079
+10,1,34,27,NJ,Morris County,20,33,991
+10,1,48,29,TX,Bexar County,20,43,1065
+10,1,59,0,DS,Other flows - Different State,1995,3661,118637
+10,1,59,1,DS,Other flows - Northeast,486,861,35001
+10,1,59,3,DS,Other flows - Midwest,202,389,10036
+10,1,59,5,DS,Other flows - South,982,1806,54838
+10,1,59,7,DS,Other flows - West,325,605,18761
+10,1,57,9,FR,Foreign - Other flows,-1,-1,-1
+10,3,96,0,DE,New Castle County Total Migration-US and Foreign,12561,21216,987102
+10,3,97,0,DE,New Castle County Total Migration-US,12539,21184,985486
+10,3,97,1,DE,New Castle County Total Migration-Same State,1192,1906,74998
+10,3,97,3,DE,New Castle County Total Migration-Different State,11347,19278,910488
+10,3,98,0,DE,New Castle County Total Migration-Foreign,22,32,1616
+10,3,10,3,DE,New Castle County Non-migrants,219455,425907,21164128
+10,3,42,101,PA,Philadelphia County,1400,2560,85808
+10,3,42,45,PA,Delaware County,1269,2315,83011
+10,3,10,1,DE,Kent County,795,1294,44432
+10,3,42,29,PA,Chester County,704,1201,90313
+10,3,24,15,MD,Cecil County,540,885,31037
+10,3,10,5,DE,Sussex County,397,612,30566
+10,3,42,91,PA,Montgomery County,268,443,21241
+10,3,36,47,NY,Kings County,187,305,11526
+10,3,34,7,NJ,Camden County,186,347,11229
+10,3,34,15,NJ,Gloucester County,167,263,11965
+10,3,36,81,NY,Queens County,145,260,8155
+10,3,34,33,NJ,Salem County,130,238,7133
+10,3,34,23,NJ,Middlesex County,117,221,11621
+10,3,34,5,NJ,Burlington County,115,186,9421
+10,3,36,5,NY,Bronx County,108,217,7255
+10,3,42,17,PA,Bucks County,101,154,6246
+10,3,24,5,MD,Baltimore County,97,151,7781
+10,3,36,61,NY,New York County,96,147,10865
+10,3,24,510,MD,Baltimore city,86,139,4533
+10,3,24,25,MD,Harford County,83,131,6120
+10,3,24,31,MD,Montgomery County,79,130,7099
+10,3,42,71,PA,Lancaster County,78,113,4875
+10,3,4,13,AZ,Maricopa County,77,129,6313
+10,3,36,103,NY,Suffolk County,77,142,6645
+10,3,6,37,CA,Los Angeles County,68,106,6682
+10,3,24,33,MD,Prince George's County,68,112,4237
+10,3,34,13,NJ,Essex County,67,105,4776
+10,3,34,21,NJ,Mercer County,62,104,5915
+10,3,34,3,NJ,Bergen County,58,98,5341
+10,3,36,119,NY,Westchester County,58,110,7098
+10,3,34,17,NJ,Hudson County,57,110,6190
+10,3,42,3,PA,Allegheny County,57,77,4440
+10,3,34,39,NJ,Union County,56,96,5453
+10,3,17,31,IL,Cook County,55,84,5226
+10,3,24,3,MD,Anne Arundel County,55,78,5289
+10,3,34,1,NJ,Atlantic County,55,78,3639
+10,3,42,11,PA,Berks County,55,90,3724
+10,3,36,59,NY,Nassau County,54,86,5422
+10,3,37,119,NC,Mecklenburg County,51,78,4419
+10,3,51,59,VA,Fairfax County,50,88,4850
+10,3,34,27,NJ,Morris County,49,79,6941
+10,3,48,201,TX,Harris County,47,74,2709
+10,3,34,35,NJ,Somerset County,45,81,5154
+10,3,12,11,FL,Broward County,42,66,2711
+10,3,34,25,NJ,Monmouth County,42,60,3946
+10,3,6,73,CA,San Diego County,41,73,3551
+10,3,25,17,MA,Middlesex County,41,57,3442
+10,3,42,77,PA,Lehigh County,41,73,3196
+10,3,48,113,TX,Dallas County,39,64,2417
+10,3,32,3,NV,Clark County,38,69,2377
+10,3,42,133,PA,York County,38,62,2016
+10,3,24,27,MD,Howard County,36,56,2988
+10,3,13,121,GA,Fulton County,35,50,2574
+10,3,42,43,PA,Dauphin County,34,58,2338
+10,3,36,85,NY,Richmond County,33,52,1952
+10,3,42,95,PA,Northampton County,33,49,2389
+10,3,12,86,FL,Miami-Dade County,32,48,2465
+10,3,13,135,GA,Gwinnett County,32,53,1784
+10,3,34,11,NJ,Cumberland County,32,46,1269
+10,3,39,49,OH,Franklin County,32,55,2291
+10,3,12,95,FL,Orange County,31,46,2103
+10,3,12,99,FL,Palm Beach County,31,41,2925
+10,3,12,103,FL,Pinellas County,31,42,2609
+10,3,34,29,NJ,Ocean County,31,48,3114
+10,3,51,13,VA,Arlington County,31,40,3561
+10,3,12,57,FL,Hillsborough County,29,60,1628
+10,3,53,33,WA,King County,29,57,4757
+10,3,9,110,CT,Capitol Planning Region,28,43,2571
+10,3,25,25,MA,Suffolk County,28,32,3109
+10,3,37,183,NC,Wake County,28,48,1877
+10,3,42,79,PA,Luzerne County,28,42,2208
+10,3,34,9,NJ,Cape May County,27,39,4805
+10,3,42,41,PA,Cumberland County,27,34,1869
+10,3,9,190,CT,Western Connecticut Planning Regi,26,48,2536
+10,3,48,439,TX,Tarrant County,26,56,1756
+10,3,6,1,CA,Alameda County,25,43,3206
+10,3,24,29,MD,Kent County,25,33,953
+10,3,34,31,NJ,Passaic County,25,43,3192
+10,3,6,85,CA,Santa Clara County,24,41,6619
+10,3,25,27,MA,Worcester County,24,34,1541
+10,3,51,153,VA,Prince William County,24,47,1985
+10,3,37,81,NC,Guilford County,23,44,819
+10,3,47,157,TN,Shelby County,23,42,1435
+10,3,9,170,CT,South Central Connecticut Plannin,22,41,2235
+10,3,24,45,MD,Wicomico County,22,37,544
+10,3,36,71,NY,Orange County,22,40,1110
+10,3,48,85,TX,Collin County,22,37,1945
+10,3,48,453,TX,Travis County,22,38,2438
+10,3,57,5,FR,Foreign - APO/FPO ZIPs,22,32,1616
+10,3,6,59,CA,Orange County,21,41,2000
+10,3,12,31,FL,Duval County,21,35,1504
+10,3,12,71,FL,Lee County,21,33,1549
+10,3,13,89,GA,DeKalb County,21,38,1660
+10,3,44,7,RI,Providence County,21,33,1731
+10,3,47,37,TN,Davidson County,21,31,1223
+10,3,51,510,VA,Alexandria city,21,30,2549
+10,3,36,87,NY,Rockland County,20,36,1350
+10,3,59,0,DS,Other flows - Different State,2648,4410,209185
+10,3,59,1,DS,Other flows - Northeast,466,722,31853
+10,3,59,3,DS,Other flows - Midwest,528,866,47161
+10,3,59,5,DS,Other flows - South,1262,2165,98022
+10,3,59,7,DS,Other flows - West,392,657,32150
+10,3,57,9,FR,Foreign - Other flows,-1,-1,-1
+10,5,96,0,DE,Sussex County Total Migration-US and Foreign,8898,15439,1133079
+10,5,97,0,DE,Sussex County Total Migration-US,8898,15439,1133079
+10,5,97,1,DE,Sussex County Total Migration-Same State,1539,2710,129399
+10,5,97,3,DE,Sussex County Total Migration-Different State,7359,12729,1003680
+10,5,10,5,DE,Sussex County Non-migrants,101222,190783,9275505
+10,5,10,1,DE,Kent County,855,1567,50498
+10,5,10,3,DE,New Castle County,684,1143,78901
+10,5,24,45,MD,Wicomico County,315,578,15762
+10,5,24,31,MD,Montgomery County,278,480,68889
+10,5,24,5,MD,Baltimore County,272,457,44558
+10,5,24,3,MD,Anne Arundel County,222,368,45108
+10,5,24,47,MD,Worcester County,200,314,16188
+10,5,42,29,PA,Chester County,191,350,35242
+10,5,51,59,VA,Fairfax County,176,296,67526
+10,5,42,101,PA,Philadelphia County,156,239,15553
+10,5,42,45,PA,Delaware County,154,268,19803
+10,5,42,91,PA,Montgomery County,153,262,21421
+10,5,24,27,MD,Howard County,146,284,28864
+10,5,24,25,MD,Harford County,133,244,16861
+10,5,11,1,DC,District of Columbia,97,140,31049
+10,5,24,33,MD,Prince George's County,93,165,9683
+10,5,24,510,MD,Baltimore city,93,138,9747
+10,5,42,133,PA,York County,93,162,11789
+10,5,42,71,PA,Lancaster County,90,156,8726
+10,5,36,103,NY,Suffolk County,89,158,10071
+10,5,34,23,NJ,Middlesex County,88,156,9746
+10,5,24,21,MD,Frederick County,81,145,11087
+10,5,42,11,PA,Berks County,81,148,9246
+10,5,24,11,MD,Caroline County,76,141,4701
+10,5,42,17,PA,Bucks County,73,116,9543
+10,5,34,3,NJ,Bergen County,72,131,10232
+10,5,24,13,MD,Carroll County,70,130,11245
+10,5,34,27,NJ,Morris County,70,125,12455
+10,5,34,25,NJ,Monmouth County,69,122,8211
+10,5,36,71,NY,Orange County,67,120,8834
+10,5,24,19,MD,Dorchester County,65,113,3337
+10,5,51,107,VA,Loudoun County,64,124,13453
+10,5,36,59,NY,Nassau County,59,97,7141
+10,5,34,5,NJ,Burlington County,58,115,7651
+10,5,34,29,NJ,Ocean County,52,100,5085
+10,5,24,15,MD,Cecil County,51,89,5182
+10,5,51,710,VA,Norfolk city,48,106,1256
+10,5,36,119,NY,Westchester County,46,77,6832
+10,5,34,7,NJ,Camden County,45,79,5959
+10,5,34,15,NJ,Gloucester County,45,90,7948
+10,5,34,35,NJ,Somerset County,44,88,9428
+10,5,9,190,CT,Western Connecticut Planning Regi,43,81,8171
+10,5,24,35,MD,Queen Anne's County,40,73,3773
+10,5,34,13,NJ,Essex County,40,57,5146
+10,5,34,21,NJ,Mercer County,40,77,6200
+10,5,51,13,VA,Arlington County,40,57,7514
+10,5,51,510,VA,Alexandria city,40,62,6602
+10,5,36,47,NY,Kings County,38,56,3618
+10,5,12,99,FL,Palm Beach County,37,62,2923
+10,5,36,61,NY,New York County,36,56,6589
+10,5,42,77,PA,Lehigh County,36,63,4182
+10,5,36,85,NY,Richmond County,35,70,4148
+10,5,4,13,AZ,Maricopa County,34,56,3069
+10,5,34,31,NJ,Passaic County,34,58,4510
+10,5,42,43,PA,Dauphin County,34,52,4410
+10,5,12,71,FL,Lee County,33,49,3781
+10,5,36,81,NY,Queens County,31,52,3203
+10,5,6,37,CA,Los Angeles County,30,43,2504
+10,5,24,17,MD,Charles County,30,52,3256
+10,5,51,153,VA,Prince William County,30,55,4975
+10,5,9,110,CT,Capitol Planning Region,28,44,3204
+10,5,6,73,CA,San Diego County,27,48,2180
+10,5,24,39,MD,Somerset County,26,46,1100
+10,5,34,39,NJ,Union County,26,53,3662
+10,5,36,27,NY,Dutchess County,26,50,3304
+10,5,24,41,MD,Talbot County,24,41,2419
+10,5,34,19,NJ,Hunterdon County,24,42,2453
+10,5,42,3,PA,Allegheny County,24,37,3860
+10,5,42,41,PA,Cumberland County,24,38,3541
+10,5,42,79,PA,Luzerne County,24,40,1688
+10,5,42,95,PA,Northampton County,24,36,2263
+10,5,34,1,NJ,Atlantic County,22,33,2648
+10,5,51,810,VA,Virginia Beach city,22,38,1975
+10,5,24,9,MD,Calvert County,21,35,2746
+10,5,24,37,MD,St. Mary's County,21,30,1893
+10,5,25,17,MA,Middlesex County,21,32,4435
+10,5,34,9,NJ,Cape May County,21,39,2519
+10,5,42,75,PA,Lebanon County,21,34,1280
+10,5,34,41,NJ,Warren County,20,40,3901
+10,5,36,87,NY,Rockland County,20,40,3192
+10,5,45,51,SC,Horry County,20,28,934
+10,5,51,1,VA,Accomack County,20,32,1004
+10,5,59,0,DS,Other flows - Different State,1897,3275,209177
+10,5,59,1,DS,Other flows - Northeast,520,909,61541
+10,5,59,3,DS,Other flows - Midwest,182,333,21506
+10,5,59,5,DS,Other flows - South,936,1579,88681
+10,5,59,7,DS,Other flows - West,259,454,37449
+10,5,57,9,FR,Foreign - Other flows,-1,-1,-1

@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "irs_soi_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,37 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware SOI files.
+
+    Three of the ten registered files have fixtures. The others answer with
+    their registered header and no rows, so the run captures, replays and
+    publishes every file without a network call.
+    """
+    from data_ingestion_toolbox.irs_migration import capture as irs_capture
+    from data_ingestion_toolbox.irs_migration.client import (
+        MigrationResponse,
+        expected_header,
+    )
+
+    def fetch(item: Any, **_kwargs: Any) -> MigrationResponse:
+        path = FIXTURE_ROOT / "irs_migration" / item.path.lstrip("/")
+        payload = (
+            path.read_bytes()
+            if path.is_file()
+            else (",".join(expected_header(item)) + "\n").encode("ascii")
+        )
+        return MigrationResponse(
+            item.path,
+            {"direction": item.direction, "year_pair": item.year_pair},
+            payload,
+            {"content-type": "text/csv"},
+            200,
+        )
+
+    monkeypatch.setattr(irs_capture, "fetch_file", fetch)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1128,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("irs_migration", stub_irs_migration),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

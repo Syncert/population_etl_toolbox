@@ -36,6 +36,7 @@ from apps.api.routers import (
     evidence_packets,
     health,
     identity,
+    migration,
     observations,
     population,
     saved_analysis,
@@ -68,6 +69,9 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     distribution.router,
     comparison.router,
     population.router,
+    # IRS SOI county-to-county flows (ADR-0008): provider-published rows with
+    # two geographies, cacheable like every other public warehouse read.
+    migration.router,
     # Per-source gold schema routers. The observation pairs are generated from
     # the serving registry; CDC and USDA NASS keep hand-written routers because
     # their source-explorer contracts are not the shared observation shape.
