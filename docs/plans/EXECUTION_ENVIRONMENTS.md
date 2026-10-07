@@ -108,7 +108,7 @@ make test-web-smoke        # the live-stack frontend smoke
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`acs-place-grain`](to_do/ACS_AT_PLACE_GRAIN_PLAN.md) | high | `postgres` | -- |
+| [`acs-place-grain`](in_progress/ACS_AT_PLACE_GRAIN_PLAN.md) | high | `postgres` | -- |
 | [`bea-regional-accounts`](to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) | high | `postgres` | -- |
 | [`bls-qcew-county-wages`](to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) | high | `postgres` | -- |
 | [`census-building-permits`](to_do/CENSUS_BUILDING_PERMITS_PLAN.md) | medium | `postgres` | -- |
@@ -117,7 +117,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
-| [`sub-county-geography`](to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
+| [`sub-county-geography`](in_progress/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
 | [`time-windows-and-rollups`](in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
 
 

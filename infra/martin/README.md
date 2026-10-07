@@ -13,3 +13,5 @@ Expected source database:
 - Port: `5432`
 - Database: `population_etl`
 - Source table/layer seed: `gold.tile_boundary` (published as `counties`)
+- Tract layer: `gold.tile_tract` (published as `tracts`, zoom 6 to 14), the
+  current Census tracts with their county's code and name

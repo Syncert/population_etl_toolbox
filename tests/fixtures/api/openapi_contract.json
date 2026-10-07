@@ -313,6 +313,15 @@
         },
         {
           "constraints": {
+            "maxLength": 3
+          },
+          "in": "query",
+          "name": "county_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
             "maxLength": 50
           },
           "in": "query",
@@ -2871,6 +2880,7 @@
     },
     "GeographyLatest": {
       "properties": {
+        "area_name": "string | null",
         "county_fips": "string | null",
         "county_name": "string | null",
         "geo_id": "string",
