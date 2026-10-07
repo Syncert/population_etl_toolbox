@@ -15,11 +15,12 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
 Deliverables 1 to 5 are on branch `feat/bea-regional-accounts`, cut from
-`main`. Deliverable 6, the Work and Money cards, needs the place pages from
-`feat/place-pages` (WEB-125).
+`main`. Deliverable 6 is on `feat/bea-regional-accounts-cards`, which is
+`feat/place-pages` (WEB-125) with `feat/bea-regional-accounts` merged, so it
+lands after both.
 
 ## Why
 
@@ -151,14 +152,19 @@ economy doing" and the only county-grain GDP any public source publishes.
 - `ruff check .` clean; schema snapshot regenerated; viz coverage
   regenerated; OpenAPI snapshot unchanged (no new route).
 
+- Web (deliverable 6, WEB-137): Work and Money shows BEA per capita
+  personal income and real GDP cards beside the ACS median household income,
+  each labelled with its basis ("BEA personal income account, current
+  dollars", "BEA county GDP, chained 2017 dollars", "Survey of households
+  (ACS)"), and an earnings-by-industry table of BEA's 21 sector figures
+  that says a withheld sector rather than filling it. `npm --prefix apps/web
+  run test:unit` -- 739 passed; `lint` clean; `places.spec.js` -- 6 passed,
+  including the BEA scenario with axe and no horizontal scroll; `build` and
+  `check:bundle` within budget.
+
 ## Remaining
 
-- Deliverable 6: per capita personal income and county GDP cards and an
-  earnings-by-industry table in the Work and Money chapter, labeled with
-  BEA's basis beside the ACS income cards. Builds on `feat/place-pages`.
-
-## Checkpoint
-
-Next pickup: branch from `feat/place-pages`, merge
-`feat/bea-regional-accounts`, and add the BEA slots to the Work and Money
-chapter.
+None in scope. Merge order: `feat/bea-regional-accounts` to `main`, then
+`feat/place-pages`, then `feat/bea-regional-accounts-cards`. The catalog
+totals on the cards branch count WEB-125 and WEB-137; recount when other
+open source branches land first.

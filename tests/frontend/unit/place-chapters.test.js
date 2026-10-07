@@ -57,8 +57,11 @@ describe("the chapter contract", () => {
         trend: { measureId: "population-estimate", scale: "index" },
       },
       "work-money": {
-        headline: ["CENSUS_ACS:acs5:B19013_001", "BLS:LAU:UNEMP_RATE"],
-        depth: ["B19301_001", "B19083_001", "B17001_002", "B19001_002", "B19001_017", "B23025_002", "B23025_005", "C24050_001", "B08301_021", "B08301_010", "B08303_013"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+        headline: ["CENSUS_ACS:acs5:B19013_001", "BEA:CAINC1:3", "BEA:CAGDP1:1", "BLS:LAU:UNEMP_RATE"],
+        depth: [
+          ...["B19301_001", "B19083_001", "B17001_002", "B19001_002", "B19001_017", "B23025_002", "B23025_005", "C24050_001", "B08301_021", "B08301_010", "B08303_013"].map((variable) => `CENSUS_ACS:acs5:${variable}`),
+          ...["81", "100", "200", "300", "400", "500", "600", "700", "800", "900", "1000", "1100", "1200", "1300", "1400", "1500", "1600", "1700", "1800", "1900", "2000"].map((line) => `BEA:CAINC5N:${line}`),
+        ],
         trend: { measureId: "unemployment-rate", scale: "level" },
       },
       housing: {
@@ -245,5 +248,28 @@ describe("place titles", () => {
     expect(placeRouteTitle("wisconsin", "dane-county")).toBe("Dane County, Wisconsin");
     expect(placeRouteTitle("55", "025")).toBe("025, 55");
     expect(placeRouteTitle("<script>")).toBe("United States");
+  });
+});
+
+// Covers: WEB-137 — bea-regional-accounts: Work and Money shows BEA per capita
+// income and real GDP beside the ACS income, each labelled with how it was
+// counted, and earnings by industry as BEA's own figures.
+describe("BEA income and GDP", () => {
+  const work = PLACE_CHAPTERS.find((chapter) => chapter.id === "work-money");
+  const slot = (id) => [...work.headline, ...work.depth].find((measure) => measure.id === id);
+
+  it("labels the account and the survey apart on every income slot", () => {
+    expect(slot("bea-per-capita-income").basis).toBe("BEA personal income account, current dollars");
+    expect(slot("median-household-income").basis).toBe("Survey of households (ACS)");
+    expect(slot("per-capita-income").basis).toBe("Survey of households (ACS)");
+    expect(slot("bea-real-gdp").basis).toBe("BEA county GDP, chained 2017 dollars");
+    expect(slot("bea-real-gdp").candidates).toEqual(["BEA:CAGDP1:1"]);
+  });
+
+  it("groups the earnings sectors into one table and states that nothing is combined", () => {
+    const earnings = work.depth.filter((measure) => measure.group === "bea-earnings");
+    expect(earnings).toHaveLength(21);
+    expect(earnings.every((measure) => measure.candidates[0].startsWith("BEA:CAINC5N:"))).toBe(true);
+    expect(work.caveat).toContain("never combined with the survey's income");
   });
 });

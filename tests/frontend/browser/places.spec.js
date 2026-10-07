@@ -88,6 +88,28 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-137 — bea-regional-accounts: BEA per capita income and real GDP
+// sit beside the ACS income, each labelled with how it was counted, and the
+// earnings table states a withheld sector.
+test("BEA income and GDP sit beside the survey income, labelled apart, with earnings by industry", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-bea-per-capita-income")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-bea-per-capita-income-basis")).toHaveText("BEA personal income account, current dollars");
+  await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey of households (ACS)");
+  await expect(page.getByTestId("card-bea-real-gdp-basis")).toHaveText("BEA county GDP, chained 2017 dollars");
+  await expect(page.getByTestId("card-median-household-income")).not.toContainText("BEA:");
+
+  const earnings = page.getByTestId("bea-earnings");
+  await expect(earnings.locator("tbody tr")).toHaveCount(21);
+  await expect(page.getByTestId("bea-earnings-basis")).toContainText("BEA personal income account");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-1600")).toContainText("Health care and social assistance");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toContainText("Published without a value: withheld");
+  await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never combined with the survey's income");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);
