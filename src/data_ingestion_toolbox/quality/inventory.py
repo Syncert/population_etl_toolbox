@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "EPA_AQS",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1807,6 +1808,102 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# EPA air quality (AirData annual monitor files).
+# ---------------------------------------------------------------------------
+
+_AQS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.epa_aqs_file",
+        "control",
+        "EPA_AQS",
+        grain="run_id (one run per read of a year's file)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered AirData annual monitor years",
+        cadence="monthly; a read whose bytes equal the year's last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_epa_aqs.quarantine",
+        "silver",
+        "EPA_AQS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated monitor row; populated only on failure",
+        cadence="per EPA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_epa_aqs.monitor_fact",
+        "silver",
+        "EPA_AQS",
+        grain="run_id, monitor_id, sample_duration, pollutant_standard, event_type",
+        lineage="control.epa_aqs_file, silver_ref.dim_geo_entity",
+        scope_method="every in-scope monitor-year row of every replayed file",
+        cadence="per EPA replay",
+        empty_behavior="an empty statistic is missing, never 0",
+    ),
+    _obj(
+        "gold_epa_aqs.measure_definition",
+        "gold",
+        "EPA_AQS",
+        grain="measure",
+        scope_method="the two published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_epa_aqs.monitor_observation",
+        "gold",
+        "EPA_AQS",
+        grain="run_id, monitor_id, sample_duration, pollutant_standard, event_type",
+        lineage="silver_epa_aqs.monitor_fact, control.epa_aqs_file",
+        scope_method="published monitor-year rows: the lineage of every county figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_epa_aqs.observation_revision",
+        "gold",
+        "EPA_AQS",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_epa_aqs.monitor_observation",
+        scope_method="the highest complete monitor per county, year and read",
+        cadence="per publication",
+        empty_behavior="a county with no complete monitor has no row",
+    ),
+    _obj(
+        "gold_epa_aqs.observation_latest",
+        "gold",
+        "EPA_AQS",
+        grain="metric_key, geo_id, year (newest read)",
+        lineage="gold_epa_aqs.observation_revision",
+        scope_method="newest-read projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_epa_aqs.measure_export",
+        "publisher",
+        "EPA_AQS",
+        grain="source_object_key (measure)",
+        lineage="gold_epa_aqs.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_epa_aqs.metric_publisher",
+        "publisher",
+        "EPA_AQS",
+        grain="source_object_key (measure)",
+        lineage="gold_epa_aqs.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1819,6 +1916,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _AQS_OBJECTS
 )
 
 
@@ -2202,6 +2300,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_epa_aqs.metric_publisher",
         ),
     ),
     _rule(
@@ -3269,6 +3368,88 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
         ),
+    ),
+    # -- EPA air quality (AirData annual monitor files) ------------------------
+    _rule(
+        "DQ-AQS-001",
+        "BLOCK",
+        "uniqueness",
+        "A monitor-year row is unique per (read, monitor, sample duration, "
+        "standard, event type): a repeat is quarantined, and a regenerated "
+        "file is a second read beside the first.",
+        (
+            "silver_epa_aqs.monitor_fact",
+            "gold_epa_aqs.monitor_observation",
+            "gold_epa_aqs.observation_revision",
+            "gold_epa_aqs.observation_latest",
+            "gold_epa_aqs.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the monitor fact's primary "
+            "key; the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_epa_aqs.monitor_fact",
+                (
+                    "run_id",
+                    "monitor_id",
+                    "sample_duration",
+                    "pollutant_standard",
+                    "event_type",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-AQS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and every replayed file with "
+        "in-scope rows reached its monitor facts.",
+        (
+            "control.epa_aqs_file",
+            "silver_epa_aqs.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-AQS-003",
+        "BLOCK",
+        "conformance",
+        "An empty monitor statistic carries no number, and a valid one always "
+        "does: no gap becomes a zero.",
+        (
+            "silver_epa_aqs.monitor_fact",
+            "gold_epa_aqs.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "statistic without a value and a missing one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_epa_aqs.monitor_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="epa_aqs_monitor_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_epa_aqs.monitor_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="epa_aqs_monitor_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-AQS-004",
+        "WARN",
+        "referential_integrity",
+        "In every published file, no statistic is negative and every monitor's "
+        "county resolved to the shared geography.",
+        ("silver_epa_aqs.monitor_fact", "control.epa_aqs_file"),
     ),
 )
 

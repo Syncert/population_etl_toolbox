@@ -52,6 +52,12 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "EPA_AQS",
+        SRC / "epa_aqs/DDL/silver_epa_aqs.sql",
+        "silver_epa_aqs.monitor_fact",
+        "valid",
+    ),
+    FactContract(
         "BLS",
         SRC / "bls/DDL/silver_bls.sql",
         "silver_bls.fact_labor_statistics",

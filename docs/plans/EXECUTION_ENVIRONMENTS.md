@@ -115,7 +115,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`census-county-business-patterns`](to_do/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) | medium | `postgres` | -- |
 | [`census-lehd-lodes`](to_do/CENSUS_LEHD_LODES_PLAN.md) | high | `postgres` | -- |
 | [`census-saipe-sahie`](to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) | medium | `postgres` | -- |
-| [`epa-aqs-noaa-climate-normals`](to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) | high | `postgres` | -- |
+| [`epa-aqs-noaa-climate-normals`](in_progress/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) | high | `postgres` | -- |
 | [`fcc-broadband-data-collection`](to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) | medium | `postgres` | -- |
 | [`fema-nri-declarations`](to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) | medium | `postgres` | -- |
 | [`fhfa-house-price-index`](to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) | medium | `postgres` | -- |

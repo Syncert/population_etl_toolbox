@@ -651,6 +651,71 @@ def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome
     ]
 
 
+def aqs_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-AQS-002 — no file left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.epa_aqs_file")
+    if total == 0:
+        return [RuleOutcome("control.epa_aqs_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.year, file.status, file.in_scope_row_count
+          FROM control.epa_aqs_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.in_scope_row_count > (
+                    SELECT COUNT(*) FROM silver_epa_aqs.quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_epa_aqs.monitor_fact AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.epa_aqs_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def aqs_value_and_geography(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-AQS-004 — no negative statistic; every monitor's county resolved."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.epa_aqs_file WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("silver_epa_aqs.monitor_fact", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.monitor_id, fact.event_type, fact.geography_status
+          FROM silver_epa_aqs.monitor_fact AS fact
+          JOIN control.epa_aqs_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (fact.value < 0 OR fact.geography_status <> 'resolved')
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_epa_aqs.monitor_fact",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1698,6 +1763,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-AQS-002": aqs_file_reconciliation,
+    "DQ-AQS-004": aqs_value_and_geography,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

@@ -266,6 +266,30 @@ v control.data_quality_source_status
     body           WHERE latest.source_code = run.source_code))
     body   GROUP BY run.source_code, run.quality_run_id;
 
+r control.epa_aqs_file
+    column run_id uuid NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column in_scope_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint epa_aqs_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint epa_aqs_file_in_scope_row_count_check CHECK ((in_scope_row_count >= 0))
+    constraint epa_aqs_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint epa_aqs_file_pkey PRIMARY KEY (run_id)
+    constraint epa_aqs_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint epa_aqs_file_row_count_check CHECK ((row_count >= 0))
+    constraint epa_aqs_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint epa_aqs_file_scope_within_rows CHECK ((in_scope_row_count <= row_count))
+    constraint epa_aqs_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint epa_aqs_file_year_check CHECK (((year >= 1980) AND (year <= 2100)))
+    index epa_aqs_file_capture_idx CREATE INDEX epa_aqs_file_capture_idx ON control.epa_aqs_file USING btree (capture_id)
+    index epa_aqs_file_pkey CREATE UNIQUE INDEX epa_aqs_file_pkey ON control.epa_aqs_file USING btree (run_id)
+
 r control.fbi_ucr_release
     column run_id uuid NOT NULL
     column product_id text NOT NULL
@@ -2412,6 +2436,291 @@ v gold_census.v_metric_timeseries_by_geo
     body     margin_of_error,
     body     margin_of_error_pct
     body    FROM gold_census.fact_observation;
+
+v gold_epa_aqs.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     ((((('EPA Air Quality System (AirData annual monitor file): this warehouse''s county figure '::text || 'is the highest value among the county''s monitors with a complete year (Completeness '::text) || 'Indicator Y), from every measured value with exceptional events included; it is a '::text) || 'derived summary, not an EPA design value or a regulatory determination. '::text) || statistic) || ' Source: U.S. Environmental Protection Agency, Air Quality '::text) || 'System (AirData).'::text AS observation_basis
+    body    FROM ( VALUES ('pm25_annual_mean'::text,'PM2.5 annual mean, highest complete monitor'::text,'micrograms per cubic meter'::text,'The statistic is the annual arithmetic mean under the 2024 annual PM2.5 standard (FRM/FEM, parameter 88101).'::text), ('ozone_8hour_4th_max'::text,'Ozone fourth-highest daily maximum 8-hour average, highest complete monitor'::text,'parts per million'::text,'The statistic is the year''s fourth-highest daily maximum 8-hour average under the 2015 ozone standard (parameter 44201).'::text)) measure(measure, measure_label, unit, statistic);
+
+v gold_epa_aqs.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'epa_aqs_csv:v1'::text AS schema_version
+    body    FROM gold_epa_aqs.measure_definition;
+
+v gold_epa_aqs.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'EPA_AQS'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (EPA AirData, derived county figure)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'derived_summary'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_epa_aqs', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'U.S. Environmental Protection Agency Air Quality System'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://aqs.epa.gov/aqsweb/airdata/download_files.html'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_epa_aqs.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_epa_aqs.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_epa_aqs.monitor_observation
+    column run_id uuid
+    column monitor_id text
+    column sample_duration text
+    column pollutant_standard text
+    column event_type text
+    column year integer
+    column capture_id uuid
+    column source_row_index integer
+    column measure text
+    column parameter_code text
+    column poc integer
+    column site_number text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column completeness text
+    column certification text
+    column observation_count integer
+    column units text
+    column value_source text
+    column value numeric
+    column value_status text
+    column date_of_last_change date
+    column source_record_id text
+    column created_at timestamp with time zone
+    column published_at timestamp with time zone
+    body SELECT fact.run_id,
+    body     fact.monitor_id,
+    body     fact.sample_duration,
+    body     fact.pollutant_standard,
+    body     fact.event_type,
+    body     fact.year,
+    body     fact.capture_id,
+    body     fact.source_row_index,
+    body     fact.measure,
+    body     fact.parameter_code,
+    body     fact.poc,
+    body     fact.site_number,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geography_status,
+    body     fact.completeness,
+    body     fact.certification,
+    body     fact.observation_count,
+    body     fact.units,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.date_of_last_change,
+    body     fact.source_record_id,
+    body     fact.created_at,
+    body     file.published_at
+    body    FROM silver_epa_aqs.monitor_fact fact
+    body      JOIN control.epa_aqs_file file ON file.run_id = fact.run_id
+    body   WHERE file.status = 'published'::text;
+
+v gold_epa_aqs.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column highest_monitor text
+    column complete_monitors bigint
+    column certification text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     highest_monitor,
+    body     complete_monitors,
+    body     certification,
+    body     release_key,
+    body     published_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_epa_aqs.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, published_at DESC, run_id DESC;
+
+v gold_epa_aqs.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column highest_monitor text
+    column complete_monitors bigint
+    column certification text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH eligible AS (
+    body          SELECT monitor.run_id,
+    body             monitor.monitor_id,
+    body             monitor.sample_duration,
+    body             monitor.pollutant_standard,
+    body             monitor.event_type,
+    body             monitor.year,
+    body             monitor.capture_id,
+    body             monitor.source_row_index,
+    body             monitor.measure,
+    body             monitor.parameter_code,
+    body             monitor.poc,
+    body             monitor.site_number,
+    body             monitor.geo_id,
+    body             monitor.geo_sk,
+    body             monitor.geography_status,
+    body             monitor.completeness,
+    body             monitor.certification,
+    body             monitor.observation_count,
+    body             monitor.units,
+    body             monitor.value_source,
+    body             monitor.value,
+    body             monitor.value_status,
+    body             monitor.date_of_last_change,
+    body             monitor.source_record_id,
+    body             monitor.created_at,
+    body             monitor.published_at
+    body            FROM gold_epa_aqs.monitor_observation monitor
+    body           WHERE monitor.completeness = 'Y'::text AND (monitor.event_type = ANY (ARRAY['No Events'::text, 'Events Included'::text])) AND monitor.value_status = 'valid'::text
+    body         ), ranked AS (
+    body          SELECT eligible.run_id,
+    body             eligible.monitor_id,
+    body             eligible.sample_duration,
+    body             eligible.pollutant_standard,
+    body             eligible.event_type,
+    body             eligible.year,
+    body             eligible.capture_id,
+    body             eligible.source_row_index,
+    body             eligible.measure,
+    body             eligible.parameter_code,
+    body             eligible.poc,
+    body             eligible.site_number,
+    body             eligible.geo_id,
+    body             eligible.geo_sk,
+    body             eligible.geography_status,
+    body             eligible.completeness,
+    body             eligible.certification,
+    body             eligible.observation_count,
+    body             eligible.units,
+    body             eligible.value_source,
+    body             eligible.value,
+    body             eligible.value_status,
+    body             eligible.date_of_last_change,
+    body             eligible.source_record_id,
+    body             eligible.created_at,
+    body             eligible.published_at,
+    body             row_number() OVER (PARTITION BY eligible.run_id, eligible.measure, eligible.geo_id ORDER BY eligible.value DESC, eligible.monitor_id) AS rank,
+    body             count(*) OVER (PARTITION BY eligible.run_id, eligible.measure, eligible.geo_id) AS monitors
+    body            FROM eligible
+    body         )
+    body  SELECT ranked.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     ranked.year,
+    body     make_date(ranked.year, 1, 1) AS period_start,
+    body     make_date(ranked.year, 12, 31) AS period_end,
+    body     ranked.geo_id,
+    body     ranked.geo_sk,
+    body     'county'::text AS geo_type,
+    body     gold_glossary.geo_grain('county'::text) AS geo_level,
+    body     ranked.geography_status,
+    body     ranked.value,
+    body     'valid'::text AS value_status,
+    body     ranked.monitor_id AS highest_monitor,
+    body     ranked.monitors AS complete_monitors,
+    body     ranked.certification,
+    body     (('AirData '::text || ranked.year::text) || ' read '::text) || to_char((ranked.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'::text) AS release_key,
+    body     ranked.published_at,
+    body     md5((((((ranked.measure || '|'::text) || ranked.geo_id) || '|'::text) || ranked.year::text) || '|'::text) || ranked.run_id::text) AS source_record_id,
+    body     ranked.capture_id,
+    body     ranked.run_id
+    body    FROM ranked
+    body      JOIN gold_epa_aqs.measure_definition definition ON definition.measure = ranked.measure
+    body   WHERE ranked.rank = 1 AND (ranked.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]));
 
 v gold_fbi.agency_geography
     column relationship_sk bigint
@@ -4689,6 +4998,65 @@ r silver_census.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index census_observation_revision_slice_idx CREATE INDEX census_observation_revision_slice_idx ON silver_census.observation_revision USING btree (dataset, year, geo_level, state_fips_source, county_fips_source)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census.observation_revision USING btree (capture_id, source_row_index, source_column_index)
+
+r silver_epa_aqs.monitor_fact
+    column run_id uuid NOT NULL
+    column monitor_id text NOT NULL
+    column sample_duration text NOT NULL
+    column pollutant_standard text NOT NULL
+    column event_type text NOT NULL
+    column year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure text NOT NULL
+    column parameter_code text NOT NULL
+    column poc integer NOT NULL
+    column site_number text NOT NULL
+    column geo_id text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column completeness text NOT NULL
+    column certification text NOT NULL
+    column observation_count integer NOT NULL
+    column units text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column date_of_last_change date
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint epa_aqs_monitor_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint epa_aqs_monitor_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint monitor_fact_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint monitor_fact_completeness_check CHECK ((completeness = ANY (ARRAY['Y'::text, 'N'::text])))
+    constraint monitor_fact_event_type_check CHECK ((event_type = ANY (ARRAY['No Events'::text, 'Events Included'::text, 'Events Excluded'::text, 'Concurred Events Excluded'::text])))
+    constraint monitor_fact_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint monitor_fact_measure_check CHECK ((measure = ANY (ARRAY['pm25_annual_mean'::text, 'ozone_8hour_4th_max'::text])))
+    constraint monitor_fact_monitor_id_check CHECK ((monitor_id ~ '^[0-9]{5}-[0-9]{4}-[0-9]{5}-[0-9]+$'::text))
+    constraint monitor_fact_observation_count_check CHECK ((observation_count >= 0))
+    constraint monitor_fact_pkey PRIMARY KEY (run_id, monitor_id, sample_duration, pollutant_standard, event_type)
+    constraint monitor_fact_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.epa_aqs_file(run_id)
+    constraint monitor_fact_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint monitor_fact_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint monitor_fact_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index epa_aqs_monitor_county_idx CREATE INDEX epa_aqs_monitor_county_idx ON silver_epa_aqs.monitor_fact USING btree (geo_id, year, measure)
+    index monitor_fact_pkey CREATE UNIQUE INDEX monitor_fact_pkey ON silver_epa_aqs.monitor_fact USING btree (run_id, monitor_id, sample_duration, pollutant_standard, event_type)
+
+r silver_epa_aqs.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_epa_aqs.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_epa_aqs.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_epa_aqs.quarantine USING btree (quarantine_sk)
 
 r silver_fbi.agency_geography_relationship
     column relationship_sk bigint NOT NULL DEFAULT nextval('silver_fbi.agency_geography_relationship_relationship_sk_seq'::regclass)

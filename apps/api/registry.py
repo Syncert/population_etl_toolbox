@@ -907,6 +907,47 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "query /observations with domain and geography filters instead"
             ),
         ),
+        ObservationDispatch(
+            source_code="EPA_AQS",
+            latest_relation="gold_epa_aqs.observation_latest",
+            released_relation="gold_epa_aqs.observation_revision",
+            lineage_schema="gold_epa_aqs",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `AirData <year> read <time>`: EPA names no release, so the read
+            # distinguishes a regenerated file; ordered by publication.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "the highest value among the county's monitors with a
+                # complete year ... not an EPA design value".
+                ("observation_basis", "observation_basis"),
+                # Which monitor it is, how many complete monitors there were,
+                # and that monitor's certification.
+                ("highest_monitor", "highest_monitor"),
+                ("complete_monitors", "complete_monitors::TEXT"),
+                ("certification", "certification"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1155,6 +1196,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="EPA_AQS",
+            display_name="EPA Air Quality System (AirData annual monitor files)",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

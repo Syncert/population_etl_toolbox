@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "epa_aqs_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,36 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_epa_aqs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed 2024 monitor file; every other year is header-only."""
+    import io
+    import zipfile
+
+    from data_ingestion_toolbox.epa_aqs import capture as aqs_capture
+    from data_ingestion_toolbox.epa_aqs.client import AqsResponse
+
+    reviewed = (
+        FIXTURE_ROOT / "epa_aqs" / "annual_conc_by_monitor_2024.zip"
+    ).read_bytes()
+    header = (
+        zipfile.ZipFile(io.BytesIO(reviewed))
+        .read("annual_conc_by_monitor_2024.csv")
+        .split(bytes([10]), 1)[0]
+    )
+
+    def fetch_file(item: Any, **_kwargs: Any) -> AqsResponse:
+        if item.year == 2024:
+            payload = reviewed
+        else:
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr(item.member, header + bytes([10]))
+            payload = buffer.getvalue()
+        return AqsResponse(item.path, payload, {"content-type": "application/zip"}, 200)
+
+    monkeypatch.setattr(aqs_capture, "fetch_file", fetch_file)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1127,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("epa_aqs", stub_epa_aqs),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

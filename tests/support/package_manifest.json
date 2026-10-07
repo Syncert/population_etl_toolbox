@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql",
+    "data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/gold_epa_aqs.sql",
+    "data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/publisher.sql",
     "data_ingestion_toolbox/bls/DDL/raw_bls.sql",
     "data_ingestion_toolbox/bls/DDL/silver_bls.sql",
     "data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql",

@@ -392,6 +392,26 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading an EPA air quality row: a county figure derived from monitors
+
+`EPA_AQS` serves two county air-quality figures from EPA's AirData annual
+monitor files: `EPA_AQS:pm25_annual_mean` (micrograms per cubic meter, under
+the 2024 annual PM2.5 standard) and `EPA_AQS:ozone_8hour_4th_max` (parts per
+million, the year's fourth-highest daily maximum 8-hour average under the
+2015 ozone standard).
+
+- **It is derived, and it is not a design value.** EPA publishes monitors,
+  not counties. Each county row is this warehouse's highest value among the
+  county's monitors with a complete year, from every measured value with
+  exceptional events included. It is not an EPA design value or an
+  attainment determination. `dimensions.highest_monitor`,
+  `dimensions.complete_monitors` and `dimensions.certification` say which
+  monitor and how many.
+- **No complete monitor, no row.** A county without a monitor, or whose
+  monitors all had an incomplete year, has no row -- never a zero.
+- **EPA revises old years.** Each read of a regenerated file is a new
+  release (`AirData <year> read <time>`) beside the earlier one.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -513,6 +533,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 

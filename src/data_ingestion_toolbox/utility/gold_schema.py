@@ -113,6 +113,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "FBI_UCR": "gold_ddl_fbi",
     "FRED": "gold_ddl_fred",
     "USDA_NASS": "gold_ddl_nass",
+    "EPA_AQS": "gold_ddl_epa_aqs",
 }
 
 
