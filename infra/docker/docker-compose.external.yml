@@ -161,6 +161,7 @@ services:
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
       USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
+      HUD_USER_API_TOKEN: ${HUD_USER_API_TOKEN:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
       # Shared so the webserver reads task logs directly from disk and

@@ -16,8 +16,8 @@ accept.
 `infra/docker/stack.env` on the machine that runs the stack.
 
 **What it touches:** one HUD User account and one line in your local
-`stack.env`. Nothing is committed: `stack.env` holds secrets and is not
-checked in.
+`stack.env` (the example files already list the variable, empty).
+Nothing is committed: `stack.env` holds secrets and is not checked in.
 
 ## Steps
 
@@ -33,14 +33,28 @@ checked in.
    API but is not endorsed or certified by HUD User." If anything there
    forbids republishing county values, stop and say so in the thread instead
    of adding the token.
-4. Add the token to `infra/docker/stack.env`:
+4. Add the token to your environment file. The variable is already listed,
+   empty, in both example files this repository checks in
+   (`infra/docker/stack.env.example` and
+   `infra/docker/stack.external.env.example`), and Compose passes it to the
+   Airflow containers. In your own `infra/docker/stack.env` (and
+   `stack.external.env` if you run the external stack), find or add the line
+   and set it:
 
    ```text
    HUD_USER_API_TOKEN=<the token>
    ```
 
-   Do not paste the token into the project thread, a commit, or an issue.
-5. Tell the agent the token is in place. The agent then switches the HUD
+   The expected value is the whole token string exactly as HUD User shows it
+   when you create it: one line, no quotes, no spaces, and no `Bearer `
+   prefix (the adapter adds that). Leave the example files empty; only your
+   local, uncommitted files get the real value. Do not paste the token into
+   the project thread, a commit, or an issue.
+5. Restart the stack (`make up`) so the Airflow containers pick up the new
+   value. To check it arrived without printing it, run
+   `docker exec docker-airflow-scheduler-1 sh -c 'test -n "$HUD_USER_API_TOKEN" && echo set'`;
+   it should print `set`.
+6. Tell the agent the token is in place. The agent then switches the HUD
    adapter's capture path to the API, records real API answers as fixtures,
    and reruns the live contract check.
 
