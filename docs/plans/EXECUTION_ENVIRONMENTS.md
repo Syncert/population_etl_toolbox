@@ -104,7 +104,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**20 plans.**
+**19 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -127,7 +127,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
 | [`sub-county-geography`](to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) | high | `postgres` | `acs-place-grain` |
 | [`time-windows-and-rollups`](in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md) | high | `browser`, `postgres` | `map-shows-any-published-period` |
-| [`usda-ers-county-codes-and-atlases`](to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) | medium | `postgres` | -- |
 
 
 ## Notes on the cloud container

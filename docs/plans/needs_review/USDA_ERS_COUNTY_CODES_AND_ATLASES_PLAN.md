@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/usda-ers-county-codes`, which is
+`docs/scout-county-sources` (where this plan was written) with the work on
+top.
 
 ## Why
 
@@ -185,7 +187,81 @@ items.
   fetch mentioned this ambiguously.
 - Whether the Atlas SNAP participation indicators are state-level only.
 
+## Decisions (open items resolved)
+
+- **Atlas scope:** the July 2025 zip is captured whole, but only the eight
+  registered county variables are loaded (SNAP-authorized stores and their
+  rate for 2017 and 2023; SNAP households with low store access, count and
+  percent, for 2015 and 2019); the rest are counted as out of scope. The SNAP
+  participation variables are state-level (`*` in `VariableList.csv`) and
+  are not registered. The variable codes, units and labels were read from
+  `VariableList.csv` in the downloaded zip.
+- **Typology `99` and `-1`:** `99` is how the 2025 file marks a flag not
+  computed for a geography (Connecticut publishes ACS-based flags for its
+  planning regions and the rest for its eight legacy counties), served as
+  `not_applicable` `not_computed_for_geography`. `-1` appears only on
+  `Persistent_Poverty_1721` for 24 counties; ERS's documentation does not
+  define it, so it is served as `not_applicable` `not_determined` (inferred),
+  never as a flag value.
+- **`Industry_Dependence_2025` codes (open item):** the documentation names
+  the five industries but not the code mapping; the code is served without a
+  label and the operations guide says so.
+- **Classifications are not analysed:** the source is not `analysis_ready`
+  (codes and flags would be averaged or correlated as quantities); the
+  aligned-analysis and reduction screens decline it as reviewed policy.
+- **Unknown FIPS (deviation from "quarantined"):** a well-formed FIPS the
+  shared geography does not hold is kept in silver as `unmapped`, recorded
+  in the resolution ledger as `canonical_geography_absent` and not served --
+  the same rule as every other source, so a Connecticut legacy county or a
+  territory is not lost. A malformed FIPS (`N/A`, an unknown state code) is
+  quarantined.
+- **Release identity:** ERS names no release; the release key is product,
+  edition and read time, and a replaced file is kept beside the old one.
+- **Editions:** only RUCC 2023, Typology 2025 and the July 2025 Atlas are
+  registered; older editions are not, given ERS's non-comparability note.
+- **Virginia independent cities (open item):** RUCC 2023 lists them as their
+  own county equivalents (each has its own FIPS row); nothing is combined.
+- **USDA public-domain statement (open item):** still not verified on an
+  official page; served rows carry "Source: USDA, Economic Research
+  Service." as ERS's standards ask.
+- **Fixtures:** each file trimmed to a few counties with every kept row
+  copied verbatim: Delaware, Connecticut's Capitol Planning Region (and
+  legacy Hartford County in the Typology and Atlas), Puerto Rico's Adjuntas
+  and American Samoa's Rose Island (RUCC), and Alaska's Chugach (an Atlas
+  `-8888` and `-9999`, a Typology `-1`). The Atlas zip keeps the full
+  `VariableList.csv` and read-me. `N/A` and blank Atlas cells are built from
+  these bytes in the unit tests.
+
+## Evidence (2026-10-07, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2184 passed, including
+  `tests/unit/usda_ers` (5).
+- Database: `tests/integration/database/test_usda_ers_capture_replay.py`
+  -- 4 passed: every file to gold with RUCC labels, flags, unset marks and
+  Atlas sentinels; Adjuntas (a territory) served and legacy Hartford County
+  recorded unmapped; an unchanged read replays nothing and a replaced file
+  is kept beside the first; a moved Atlas fails capture; `DQ-ERS-002` and
+  `DQ-ERS-004` pass or warn as expected and then catch a fault; the schema
+  reapplies; the harvest names eighteen metrics with classifications marked.
+- End to end: `tests/e2e/test_usda_ers_pipeline.py` serves Kent County's
+  RUCC with its label, the Capitol Planning Region's unset farming flag, and
+  Chugach's two Atlas sentinels through `/api/v1/observations`.
+- Live: `tests/external/test_usda_ers_source_contracts.py` -- 7 passed
+  against www.ers.usda.gov; offline, the full files parse with nothing
+  quarantined (RUCC 9,703 rows; Typology 40,976; Atlas 25,152 in scope of
+  957,753).
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 458 passed, 1 failed: the PEP teardown node, which fails on
+  `main` too (fixed on `test/catalog-agreement-fixture-residue`).
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `usda_ers_ingest` in the orchestrated run (a first attempt started before
+  the recreated database finished its init scripts and was refused
+  connections; rerun once init completed).
+- `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
+  viz coverage (ERS's seven analysis and reduction screens recorded as
+  reviewed declines) and plan environments regenerated.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `usda_ers`, check in a trimmed RUCC 2023
-CSV fixture with a Connecticut row, and write the failing replay test.
+Awaiting human review.

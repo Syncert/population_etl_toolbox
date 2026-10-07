@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "usda_ers_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -662,6 +663,22 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_usda_ers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve each registered ERS file's reviewed fixture in place of ERS's."""
+    from data_ingestion_toolbox.usda_ers import capture as ers_capture
+    from data_ingestion_toolbox.usda_ers.client import ErsResponse
+
+    root = FIXTURE_ROOT / "usda_ers"
+
+    def fetch_file(item: Any, **_kwargs: Any) -> ErsResponse:
+        payload = (root / item.path.rsplit("/", 1)[1]).read_bytes()
+        return ErsResponse(
+            item.path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(ers_capture, "fetch_file", fetch_file)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1096,6 +1113,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("usda_ers", stub_usda_ers),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

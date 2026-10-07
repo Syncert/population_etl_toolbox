@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/usda_ers/DDL/silver_usda_ers.sql",
+    "data_ingestion_toolbox/usda_ers/gold_usda_ers/DDL/gold_usda_ers.sql",
+    "data_ingestion_toolbox/usda_ers/gold_usda_ers/DDL/publisher.sql",
     "data_ingestion_toolbox/bls/DDL/raw_bls.sql",
     "data_ingestion_toolbox/bls/DDL/silver_bls.sql",
     "data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql",

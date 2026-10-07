@@ -29,6 +29,9 @@
     "FRED": [
       "NATIONAL"
     ],
+    "USDA_ERS": [
+      "COUNTY"
+    ],
     "USDA_NASS": [
       "COUNTY",
       "NATIONAL",
@@ -835,6 +838,74 @@
       "source_code": "FRED"
     },
     {
+      "datasets": [],
+      "display_name": "USDA Economic Research Service county classifications and Food Environment Atlas",
+      "observation_dimensions": [
+        "code_label",
+        "edition",
+        "measure",
+        "missing_reason",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "USDA_ERS"
+    },
+    {
       "datasets": [
         "corn_survey_annual",
         "soybeans_survey_annual",
@@ -1008,6 +1079,7 @@
         "CENSUS_ACS",
         "CENSUS_PEP",
         "FBI_UCR",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.map",
@@ -1046,6 +1118,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.trend",
@@ -1082,6 +1155,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.table",
@@ -1117,6 +1191,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.export",
@@ -1147,6 +1222,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.quality",
@@ -1167,6 +1243,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)"
       },
       "page": "/explore",
@@ -1225,6 +1302,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.as_released",
@@ -1244,6 +1322,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata"
       },
       "page": "/explore",
@@ -1283,6 +1362,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)"
       },
       "page": "/compare",
@@ -1341,6 +1421,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "workbench.series",
@@ -1361,6 +1442,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata"
       },
       "page": "/workbench",
@@ -1400,6 +1482,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata"
       },
       "page": "/workbench",
@@ -1441,6 +1524,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)"
       },
       "page": "/workbench",
@@ -1482,6 +1566,7 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)"
       },
       "page": "/workbench",
@@ -1538,6 +1623,7 @@
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "profiles.product",

@@ -392,6 +392,31 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a USDA ERS row: a classification is a code, not a quantity
+
+`USDA_ERS` serves three USDA Economic Research Service county products:
+the 2023 Rural-Urban Continuum Code (`USDA_ERS:rural_urban_continuum_code`,
+1-3 metro by metro-area size, 4-9 nonmetro by urban population and metro
+adjacency), the 2025 County Typology Codes (twelve flags such as
+`USDA_ERS:farming_dependent` and `USDA_ERS:persistent_poverty`, and the
+`USDA_ERS:industry_dependence` code), and four Food Environment Atlas
+indicators (`USDA_ERS:snap_authorized_stores`, its rate per 1,000 people,
+and SNAP households with low access to a store, as a count and a percent).
+
+- **A code or a flag is not a quantity.** `unit` says `code (1-9)`,
+  `code (0-5)` or `flag (0/1)`; `dimensions.code_label` carries ERS's label
+  for a RUCC code. Averaging or correlating codes is meaningless, so the
+  aligned-analysis routes decline this source.
+- **`0` is a real "no".** A Typology flag of `0` means the county is not
+  flagged. A flag ERS did not set is `not_applicable` with no value:
+  `not_computed_for_geography` where ERS computed the attribute for the other
+  of Connecticut's two county sets, `not_determined` where ERS wrote `-1`.
+- **Atlas gaps keep their reason.** `-9999` is `not_available`, `-8888`
+  `county_did_not_exist` (that year), `N/A` `incomplete_data`, an empty cell
+  `blank`; each is `missing` with a `null` value, never zero.
+- **Editions are not comparable.** ERS says its RUCC and Typology editions
+  differ in method; each row names its edition.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -513,6 +538,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| USDA ERS | the product, edition and the time the warehouse read the file | **Not an ERS release identity.** ERS replaces files in place and names no release, so a replaced file is a new release beside the old one |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 
@@ -777,7 +803,9 @@ here, never a `500`.
 **The analysis routes answer for Census ACS, BLS, FRED, and Census PEP.** CDC,
 USDA NASS, and FBI UCR are declined with a stated reason: they publish
 stratified, multi-dimensional, or agency-grain observations that an aligned
-one-value-per-geography analysis would silently collapse. Query them through
+one-value-per-geography analysis would silently collapse. USDA ERS is declined
+because it publishes classifications -- rural-urban codes and typology flags --
+that an analysis would average or correlate as quantities. Query them through
 `/observations` with the appropriate stratum, domain, or subject filters.
 
 All four analysis routes — `/comparison`, `/comparison/preflight`,
@@ -797,7 +825,7 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS and FBI UCR.
+restriction for CDC, USDA NASS, FBI UCR and USDA ERS.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -886,7 +914,7 @@ each measure's own coverage is `metrics[].geographies`. Read the two against
 each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
-measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR),
+measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR, USDA ERS),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined

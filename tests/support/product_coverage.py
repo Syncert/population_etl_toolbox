@@ -331,6 +331,36 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="usda_ers.county_codes_and_food_atlas",
+        source="USDA_ERS",
+        publisher_schema="gold_usda_ers",
+        datasets=("rucc:2023", "typology:2025", "fea:2025-07"),
+        fixtures=(
+            "tests/fixtures/usda_ers/2023-rural-urban-continuum-codes.csv",
+            "tests/fixtures/usda_ers/ers-county-typology-codes-2025-edition.csv",
+            "tests/fixtures/usda_ers/food-environment-atlas-csv-files.zip",
+        ),
+        serving_relations=(
+            "gold_usda_ers.observation_revision",
+            "gold_usda_ers.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_usda_ers_pipeline.py::"
+            "test_codes_flags_and_atlas_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "USDA ERS publishes no source-specific HTTP route: each county row is "
+            "the neutral observation shape with its code label, edition and "
+            "missing reason as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
 )
 
 

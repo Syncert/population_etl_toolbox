@@ -1,0 +1,21 @@
+FIPS,State,County_Name,Attribute,Value
+02063,AK,Chugach Census Area,Population_2020,7102
+02063,AK,Chugach Census Area,RUCC_2023,9
+02063,AK,Chugach Census Area,Description,"Nonmetro - Urban population of fewer than 5,000, not adjacent to a metro area"
+09110,CT,Capitol Planning Region,Population_2020,976248
+09110,CT,Capitol Planning Region,RUCC_2023,1
+09110,CT,Capitol Planning Region,Description,Metro - Counties in metro areas of 1 million population or more
+10001,DE,Kent County,Population_2020,181851
+10001,DE,Kent County,RUCC_2023,3
+10001,DE,Kent County,Description,"Metro - Counties in metro areas of fewer than 250,000 population"
+10003,DE,New Castle County,Population_2020,570719
+10003,DE,New Castle County,RUCC_2023,1
+10003,DE,New Castle County,Description,Metro - Counties in metro areas of 1 million population or more
+10005,DE,Sussex County,Population_2020,237378
+10005,DE,Sussex County,RUCC_2023,4
+10005,DE,Sussex County,Description,"Nonmetro - Urban population of 20,000 or more, adjacent to a metro area"
+60030,AS,Rose Island,Population_2020,0
+60030,AS,Rose Island,Description,Not Applicable
+72001,PR,Adjuntas Municipio,Population_2020,18020
+72001,PR,Adjuntas Municipio,RUCC_2023,6
+72001,PR,Adjuntas Municipio,Description,"Nonmetro - Urban population of 5,000 to 20,000, adjacent to a metro area"

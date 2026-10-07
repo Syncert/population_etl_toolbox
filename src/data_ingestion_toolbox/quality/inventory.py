@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "USDA_ERS",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1807,6 +1808,102 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# USDA ERS county codes and atlases.
+# ---------------------------------------------------------------------------
+
+_ERS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.usda_ers_file",
+        "control",
+        "USDA_ERS",
+        grain="run_id (one run per read of a registered file)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered RUCC, Typology and Food Environment Atlas files",
+        cadence="monthly; a read whose bytes equal the file's last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_usda_ers.observation_revision",
+        "silver",
+        "USDA_ERS",
+        grain="capture_id, source_row_index",
+        lineage="control.usda_ers_file, raw_capture.response_capture",
+        scope_method="every registered attribute of every replayed file, one row per county",
+        cadence="per ERS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_usda_ers.observation_quarantine",
+        "silver",
+        "USDA_ERS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable, out-of-domain or repeated row; populated only on failure",
+        cadence="per ERS replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_usda_ers.fact_observation",
+        "silver",
+        "USDA_ERS",
+        grain="attribute, geo_id, capture_id",
+        lineage="silver_usda_ers.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="conformed county observations of every replayed file",
+        cadence="per ERS replay",
+        empty_behavior="a sentinel or an unset flag carries its reason and no number, never 0",
+    ),
+    _obj(
+        "gold_usda_ers.measure_definition",
+        "gold",
+        "USDA_ERS",
+        grain="measure",
+        scope_method="the eighteen published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_usda_ers.observation_revision",
+        "gold",
+        "USDA_ERS",
+        grain="metric_key, geo_id, year, run_id (published captures only)",
+        lineage="silver_usda_ers.fact_observation, control.usda_ers_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_usda_ers.observation_latest",
+        "gold",
+        "USDA_ERS",
+        grain="metric_key, geo_id, year (newest capture)",
+        lineage="gold_usda_ers.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_usda_ers.measure_export",
+        "publisher",
+        "USDA_ERS",
+        grain="source_object_key (measure)",
+        lineage="gold_usda_ers.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_usda_ers.metric_publisher",
+        "publisher",
+        "USDA_ERS",
+        grain="source_object_key (measure)",
+        lineage="gold_usda_ers.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1819,6 +1916,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _ERS_OBJECTS
 )
 
 
@@ -2202,6 +2300,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_usda_ers.metric_publisher",
         ),
     ),
     _rule(
@@ -3269,6 +3368,84 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
         ),
+    ),
+    # -- USDA ERS county codes and atlases -------------------------------------
+    _rule(
+        "DQ-ERS-001",
+        "BLOCK",
+        "uniqueness",
+        "A USDA ERS observation is unique per (attribute, county, capture): a "
+        "repeated county and attribute is quarantined, and a replaced file is a "
+        "second capture beside the one it replaced.",
+        (
+            "silver_usda_ers.observation_revision",
+            "silver_usda_ers.fact_observation",
+            "gold_usda_ers.observation_revision",
+            "gold_usda_ers.observation_latest",
+            "gold_usda_ers.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact's primary key, the "
+            "parser quarantines a repeated county and attribute, and the gold "
+            "relations are views over the fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usda_ers.fact_observation",
+                ("attribute", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ERS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and every replayed file with "
+        "in-scope rows reached its conformed facts.",
+        (
+            "control.usda_ers_file",
+            "silver_usda_ers.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-ERS-003",
+        "BLOCK",
+        "conformance",
+        "An Atlas sentinel or an unset Typology flag carries its reason and no "
+        "number, and a valid cell always carries one: no sentinel becomes a zero.",
+        (
+            "silver_usda_ers.fact_observation",
+            "gold_usda_ers.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid cell "
+            "without a value and a missing or unset one with a value; the parser "
+            "quarantines a code or flag outside its domain."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usda_ers.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="usda_ers_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_usda_ers.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="usda_ers_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ERS-004",
+        "WARN",
+        "referential_integrity",
+        "In every published file, each county row resolved to the shared "
+        "geography, and each RUCC code carries ERS's label.",
+        ("silver_usda_ers.fact_observation", "control.usda_ers_file"),
     ),
 )
 
