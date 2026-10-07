@@ -154,6 +154,13 @@ const bps = (measure: string, structure: string, frequency: string): string[] =>
 
 const AUTHORIZED_BASIS = "Authorized by building permits, not started or completed";
 
+/**
+ * Said wherever IRS migration flows sit near PEP net migration
+ * (irs-county-migration): the two count different populations.
+ */
+export const MIGRATION_POPULATION_NOTE =
+  "IRS migration counts tax returns whose address changed between two filing years; the Population Estimates Program's net migration estimates residents. The two measure different populations, so neither is the other's breakdown and no net figure is computed from these lists.";
+
 const acs = (variable: string): string[] => [
   `CENSUS_ACS:acs5:${variable}`,
   `CENSUS_ACS:acs1:${variable}`,

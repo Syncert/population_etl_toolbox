@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+<<<<<<<
   INDUSTRY_MIX_SECTORS,
+=======
+  MIGRATION_POPULATION_NOTE,
+>>>>>>>
   PLACE_CHAPTERS,
   PLACE_SEGMENT,
   buildTrend,
@@ -409,5 +413,16 @@ describe("homes authorized", () => {
     expect(housing.trend).toEqual({ measureId: "median-gross-rent", scale: "level" });
     expect(housing.moreTrends).toEqual([{ measureId: "bps-single-family-month", scale: "level" }]);
     expect(housing.headline.some((measure) => measure.id === housing.moreTrends[0].measureId)).toBe(true);
+  });
+});
+
+// Covers: WEB-138 — irs-county-migration: the note shown beside PEP net
+// migration says the IRS counts tax returns and the two populations differ.
+describe("migration population note", () => {
+  it("names both sources and refuses a net figure", () => {
+    expect(MIGRATION_POPULATION_NOTE).toContain("tax returns");
+    expect(MIGRATION_POPULATION_NOTE).toContain("Population Estimates Program");
+    expect(MIGRATION_POPULATION_NOTE).toContain("different populations");
+    expect(MIGRATION_POPULATION_NOTE).toContain("no net figure");
   });
 });

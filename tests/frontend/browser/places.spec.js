@@ -228,6 +228,25 @@ test("a SAIPE slot the catalog does not publish says so and borrows no ACS figur
   await expect(page.getByTestId("card-median-household-income")).toHaveAttribute("data-available", "true");
 });
 
+// Covers: WEB-138 — irs-county-migration: the People chapter lists where
+// people came from and went, states SOI's withheld category, and the Change
+// chapter says beside PEP net migration that the two count different
+// populations.
+test("migration lists name origins and destinations and say the populations differ", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const inflow = page.getByTestId("migration-inflow");
+  await expect(inflow).toContainText("Where people came from");
+  await expect(inflow.locator("ol li")).toHaveCount(3);
+  await expect(page.getByTestId("migration-inflow-state:27|county:053")).toContainText("Hennepin County");
+  await expect(page.getByTestId("migration-outflow")).toContainText("Where people went");
+  await expect(page.getByTestId("migration-inflow-withheld")).toContainText("Foreign, other flows is withheld by SOI to protect taxpayers, not zero");
+  await expect(page.getByTestId("change-migration-note")).toContainText("The two measure different populations");
+  await expect(page.getByTestId("migration-population-note")).toContainText("no net figure is computed");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);
