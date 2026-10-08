@@ -3198,7 +3198,6 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: no executor compares `silver_ref.dim_time`'s "
             "coverage against the configured observation range, so a gap shows "
             "only as observations that resolve no time key."
-            "gold_epa_aqs.metric_publisher",
         ),
     ),
     # -- glossary and cross-source serving ---------------------------------
@@ -3225,6 +3224,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census_cbp.metric_publisher",
             "gold_census_lodes.metric_publisher",
             "gold_bls_qcew.metric_publisher",
+            "gold_epa_aqs.metric_publisher",
         ),
     ),
     _rule(
