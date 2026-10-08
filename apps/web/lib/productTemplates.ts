@@ -43,6 +43,12 @@ export interface TemplateMeasure {
   candidates: string[];
   /** Why this slot belongs in the product, for the reader. */
   note?: string;
+  /**
+   * The caveat this measure carries, answered by an explainer
+   * (`lib/explainerIndex.ts`). A key no explainer answers renders no link,
+   * and the unit tier fails on one.
+   */
+  caveat?: string;
 }
 
 export interface TemplateSection {
@@ -68,6 +74,7 @@ const COUNTY_ARTHRITIS: TemplateMeasure = {
   label: "County arthritis prevalence (age-adjusted)",
   candidates: ["CDC:places_county:ARTHRITIS:AgeAdjPrv"],
   note: "CDC PLACES modeled adult prevalence, with its published interval. It is distinct from state CDI surveillance and from a clinical count.",
+  caveat: "modeled-prevalence",
 };
 
 // The other thirty-nine county PLACES measures, enumerated from the live
@@ -84,6 +91,7 @@ const placesCounty = (
   id,
   label: `${label} (age-adjusted)`,
   candidates: [candidate],
+  caveat: "modeled-prevalence",
 });
 
 const PLACES_CONDITIONS: TemplateMeasure[] = [
@@ -177,12 +185,14 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
               "CENSUS_ACS:acs5:B01003_001",
               "CENSUS_ACS:acs1:B01003_001",
             ],
+            caveat: "margin-of-error",
             note: "American Community Survey estimate, with its own margin of error.",
           },
           {
             id: "population-estimate",
             label: "Resident population estimate",
             candidates: ["CENSUS_PEP:POPESTIMATE"],
+            caveat: "vintage",
             note: "Population Estimates Program vintage, a different method from the ACS survey estimate above.",
           },
         ],
@@ -197,6 +207,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "unemployment-rate",
             label: "Unemployment rate",
             candidates: ["BLS:LAU:UNEMP_RATE"],
+            caveat: "unemployment-rate",
             note: "Household-survey based; not the same universe as payroll employment.",
           },
           {
@@ -245,6 +256,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             candidates: [
               "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
             ],
+            caveat: "missing-crime-reports",
             note: "A period no agency reported is not zero crime; the explorer shows the participation context.",
           },
         ],
@@ -261,6 +273,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             candidates: [
               "USDA_NASS:corn_survey_annual:cfc67a954a17ac5a60541c90c59b5add41171f8b4b41f246db1e54eddfd65a11",
             ],
+            caveat: "suppressed-cell",
             note: "NASS suppresses small-cell values; a suppressed value is not a zero harvest.",
           },
         ],
@@ -285,6 +298,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "population-estimate",
             label: "Resident population estimate",
             candidates: ["CENSUS_PEP:POPESTIMATE"],
+            caveat: "vintage",
           },
         ],
       },
@@ -301,6 +315,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
               "CENSUS_ACS:acs5:B01003_001",
               "CENSUS_ACS:acs1:B01003_001",
             ],
+            caveat: "margin-of-error",
           },
           {
             id: "households",
@@ -334,6 +349,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "unemployment-rate",
             label: "Unemployment rate",
             candidates: ["BLS:LAU:UNEMP_RATE"],
+            caveat: "unemployment-rate",
           },
           {
             id: "participation",
@@ -492,6 +508,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "consumer-prices",
             label: "Consumer Price Index, all items (national)",
             candidates: ["FRED:CPIAUCSL"],
+            caveat: "cpi-not-local",
           },
         ],
       },
@@ -539,6 +556,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "population-estimate",
             label: "Resident population estimate",
             candidates: ["CENSUS_PEP:POPESTIMATE"],
+            caveat: "vintage",
             note: "A different method and vintage from the survey estimates above, shown beside them rather than merged with them.",
           },
         ],
@@ -693,6 +711,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
               "CENSUS_ACS:acs5:B01003_001",
               "CENSUS_ACS:acs1:B01003_001",
             ],
+            caveat: "margin-of-error",
             note: "Shown as context. It is not the denominator of any indicator above, which carry their own.",
           },
           {
@@ -708,6 +727,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "population-estimate",
             label: "Resident population estimate",
             candidates: ["CENSUS_PEP:POPESTIMATE"],
+            caveat: "vintage",
           },
         ],
       },
@@ -765,6 +785,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             candidates: [
               "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
             ],
+            caveat: "missing-crime-reports",
             note: "A missing period means no agency report, which is not a period without crime.",
           },
         ],
@@ -801,6 +822,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             id: "population-estimate",
             label: "Resident population estimate",
             candidates: ["CENSUS_PEP:POPESTIMATE"],
+            caveat: "vintage",
             note: "The Population Estimates Program vintage for this place. It is a base a reader can apply, not one this product applies.",
           },
           {
@@ -810,6 +832,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
               "CENSUS_ACS:acs5:B01003_001",
               "CENSUS_ACS:acs1:B01003_001",
             ],
+            caveat: "margin-of-error",
             note: "A survey estimate with its own margin of error, and a different method from the estimate above.",
           },
         ],
@@ -836,6 +859,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
             candidates: [
               "USDA_NASS:corn_survey_annual:cfc67a954a17ac5a60541c90c59b5add41171f8b4b41f246db1e54eddfd65a11",
             ],
+            caveat: "suppressed-cell",
             note: "Published per commodity, per survey year, in the program's own unit; a suppressed cell is withheld, not zero.",
           },
         ],
@@ -903,6 +927,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
               "CENSUS_ACS:acs5:B01003_001",
               "CENSUS_ACS:acs1:B01003_001",
             ],
+            caveat: "margin-of-error",
           },
         ],
       },

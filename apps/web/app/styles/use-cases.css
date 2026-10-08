@@ -149,3 +149,13 @@
   .use-case-page .profile-controls label { min-width: 100%; }
   .use-case-guardrail { padding: 14px; }
 }
+
+/* Explainers (explainer-pages) */
+.explainer-index { display: grid; gap: 14px; margin: 18px 0; padding: 0; list-style: none; }
+.explainer-index a { font-weight: 700; }
+.explainer-index p { margin: 4px 0 0; }
+.explainer-section { max-width: 72ch; margin: 22px 0; }
+.explainer-example { margin: 12px 0; overflow-wrap: anywhere; }
+.explainer-example table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.explainer-example th, .explainer-example td { border-top: 1px solid var(--line); padding: 6px 4px; text-align: left; white-space: normal; }
+.explainer-footer { max-width: 72ch; border-top: 1px solid var(--line); padding-top: 10px; }

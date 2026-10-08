@@ -32,6 +32,7 @@ export const STATIC_ROUTE_TITLES: Readonly<Record<string, string>> = {
   "/saved": "Saved analyses",
   "/builder": "Evidence packet builder",
   "/articles": "Composed article",
+  "/explain": "Explainers",
 };
 
 /**

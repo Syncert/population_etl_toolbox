@@ -15,6 +15,12 @@ vendorMaplibreWorkerForApp(fileURLToPath(new URL(".", import.meta.url)));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // The explainer routes read their Markdown at request time; tracing it
+  // copies the files into the standalone output beside the server.
+  outputFileTracingIncludes: {
+    "/explain": ["./content/explainers/**"],
+    "/explain/[slug]": ["./content/explainers/**"],
+  },
   // Which build is speaking, for the reports the browser sends back
   // (WEB-114). Inlined at build time: a client bundle cannot read the
   // server's environment, and a report that cannot say which build produced
