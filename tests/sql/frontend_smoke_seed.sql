@@ -73,7 +73,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000cdc', 'CDC', 'success'),
     ('00000000-0000-4000-8000-000000000fb1', 'FBI_UCR', 'success'),
     ('00000000-0000-4000-8000-000000000a55', 'USDA_NASS', 'success'),
-    ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success')
+    ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success'),
+    ('00000000-0000-4000-8000-00000000015c', 'IRS_MIGRATION', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -91,7 +92,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000a55', '00000000-0000-4000-8000-000000000a55',
      'USDA_NASS', 'smoke://seed', '{}'::JSONB, 'd3210f3ccecd2dd1a0473c07b25b34fb0715c0654b7fc12a96768d3017719090', 'captured'),
     ('00000000-0000-4000-9000-000000000e70', '00000000-0000-4000-8000-000000000e70',
-     'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured')
+     'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured'),
+    ('00000000-0000-4000-9000-00000000015c', '00000000-0000-4000-8000-00000000015c',
+     'IRS_MIGRATION', 'smoke://seed', '{}'::JSONB, 'aedef3c58968656b3f72cff6b2b82c475e7a2b68115b0693f74b09ef1eebb376', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -114,6 +117,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e70', '00000000-0000-4000-9000-000000000e70',
      '00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'smoke://seed', '{}'::JSONB,
      '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000015c', '00000000-0000-4000-9000-00000000015c',
+     '00000000-0000-4000-8000-00000000015c', 'IRS_MIGRATION', 'smoke://seed', '{}'::JSONB,
+     'aedef3c58968656b3f72cff6b2b82c475e7a2b68115b0693f74b09ef1eebb376', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -488,6 +495,33 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- IRS SOI migration -- one county's total US inflow for a year pair, which
+-- the total views publish as returns, individuals and AGI. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.irs_migration_file (
+    run_id, direction, year_pair, year1, year2, capture_id,
+    captured_row_count, parsed_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-00000000015c', 'inflow', '2097-2098', 2097, 2098, '00000000-0000-4000-a000-00000000015c', 1, 1, 'published',
+    '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_migration.fact_flow (
+    direction, year_pair, subject_geo_id, counterpart_code, capture_id,
+    run_id, year1, year2, retrieved_at, category, counterpart_label,
+    subject_geo_sk, returns, individuals, agi, value_status, value_source,
+    source_record_id
+)
+SELECT 'inflow', '2097-2098', 'state:55|county:025', '97:000', '00000000-0000-4000-a000-00000000015c',
+       '00000000-0000-4000-8000-00000000015c', 2097, 2098, '2098-12-31 00:00:00+00', 'total_us',
+       'Total Migration-US (smoke fixture)', geo_sk, 12345, 23456, 987654,
+       'valid', '12345,23456,987654',
+       '8a9dab3b4f5e6d7c8b9aadbecfd0e1f2304152637485960718293a4b5c6d7e8f'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -507,7 +541,8 @@ UNION ALL SELECT * FROM gold_bls.metric_publisher
 UNION ALL SELECT * FROM gold_pep.metric_publisher
 UNION ALL SELECT * FROM gold_cdc.metric_publisher
 UNION ALL SELECT * FROM gold_fbi.metric_publisher
-UNION ALL SELECT * FROM gold_nass.metric_publisher;
+UNION ALL SELECT * FROM gold_nass.metric_publisher
+UNION ALL SELECT * FROM gold_irs_migration.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url
