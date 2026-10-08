@@ -51,6 +51,7 @@ EXPECTED_DAG_IDS = {
     "census_lodes_ingest",
     "epa_aqs_ingest",
     "noaa_normals_ingest",
+    "fcc_bdc_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -100,6 +101,9 @@ EXPECTED_SCHEDULES = {
     # Quarterly: the 1991-2020 normals change only by a new archive version,
     # and an unchanged archive replays nothing.
     "noaa_normals_ingest": "0 19 2 1,4,7,10 *",
+    # Monthly: the FCC republishes vintages under new revision dates as
+    # challenges and corrections land, and an unchanged read replays nothing.
+    "fcc_bdc_ingest": "0 21 12 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -131,6 +135,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_lodes_ingest": 2,
     "epa_aqs_ingest": 2,
     "noaa_normals_ingest": 2,
+    "fcc_bdc_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -152,6 +157,7 @@ EXPECTED_INGEST_POOLS = {
     "census_lodes_ingest": "census_lodes_files",
     "epa_aqs_ingest": "epa_aqs_files",
     "noaa_normals_ingest": "noaa_normals_files",
+    "fcc_bdc_ingest": "fcc_bdc_api",
 }
 
 

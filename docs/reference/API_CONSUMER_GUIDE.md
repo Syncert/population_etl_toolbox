@@ -568,6 +568,25 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading an FCC broadband row: reported availability, not subscription
+
+`FCC_BDC` serves the FCC National Broadband Map's own fixed-broadband
+availability summaries for the nation, states, counties and places, for
+residential units: `share_any_25_3`, `share_any_100_20`,
+`share_any_1000_100` (any technology), `share_terrestrial_100_20`,
+`share_wired_100_20` (shares of units, 0 to 1) and `residential_units`.
+
+- **It is what providers report they could serve.** Not what households
+  subscribe to (that is the ACS broadband subscription measure, a different
+  metric) and not a measured speed.
+- **`period_start` and `period_end` are the as-of date.** Only December 31
+  vintages are served, so `year` has one value per year;
+  `dimensions.as_of_date` names it and `dimensions.revision` names the FCC's
+  revision of that vintage (`29sep2026`). The FCC republishes a vintage as
+  challenges land; each revision is a new release.
+- **No units, no share.** Where a geography has no residential units the
+  shares are `missing` with no value; a `0` is a reported zero.
+
 ### Reading an EPA air quality row: a county figure derived from monitors
 
 `EPA_AQS` serves two county air-quality figures from EPA's AirData annual
@@ -945,6 +964,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
 | Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |

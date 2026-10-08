@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
 from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
 from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
@@ -109,6 +110,13 @@ SOURCES = [
         "ingest_batch_",
         noaa_normals_schema,
         "NOAA_NORMALS",
+    ),
+    (
+        "fcc_bdc_ingest",
+        "ensure_fcc_bdc_schema",
+        "ingest_batch_",
+        fcc_bdc_schema,
+        "FCC_BDC",
     ),
 ]
 

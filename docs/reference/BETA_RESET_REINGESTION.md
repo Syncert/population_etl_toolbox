@@ -405,6 +405,13 @@ the 1991-2020 normals archive through the one-slot `noaa_normals_files` pool
 and places each station in the newest county boundary vintage loaded
 ([operations](../user-guides/NOAA_NORMALS_PIPELINE_OPERATIONS.md)).
 
+Trigger `fcc_bdc_ingest` once after the shared geography loads (it needs
+`FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN`): it reads each registered
+December vintage's national and per-state place summaries through the
+one-slot `fcc_bdc_api` pool, about seven minutes a vintage at the API's 10
+calls a minute
+([operations](../user-guides/FCC_BDC_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

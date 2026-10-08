@@ -142,6 +142,11 @@
       "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
     },
     {
+      "id": "silver-fcc-bdc",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/fcc_bdc/DDL/silver_fcc_bdc.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -267,6 +272,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
+      "id": "gold-fcc-bdc",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/gold_fcc_bdc.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -315,6 +325,11 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-fcc-bdc",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-sae",

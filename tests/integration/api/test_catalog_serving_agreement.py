@@ -42,6 +42,7 @@ from tests.support import fbi_release
 from tests.support import bls_qcew as qcew_support
 from tests.support import epa_aqs as aqs_support
 from tests.support import noaa_normals as normals_support
+from tests.support import fcc_bdc as bdc_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -1010,6 +1011,18 @@ def published_normals_metric(
     return _one_published_code(factory, "NOAA_NORMALS")
 
 
+@pytest.fixture
+def published_bdc_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the FCC broadband availability summaries."""
+    factory = bdc_support.reviewed_warehouse(postgres_connection_factory, request)
+    bdc_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_fcc_bdc"))
+    return _one_published_code(factory, "FCC_BDC")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1065,6 +1078,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,
     published_lodes_metric: str,
@@ -1140,6 +1154,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FBI_UCR", published_fbi_metric),
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
+        ("FCC_BDC", published_bdc_metric),
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
@@ -1291,6 +1306,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_qcew_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,
     published_bea_metric: str,

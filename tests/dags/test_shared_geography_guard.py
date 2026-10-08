@@ -31,6 +31,7 @@ GUARDED = {
     "cdc_ingest": "require_shared_geography",
     "fbi_ucr_ingest": "require_shared_geography",
     "usda_nass_crop_ingest": "require_shared_geography",
+    "fcc_bdc_ingest": "require_shared_geography",
     "epa_aqs_ingest": "require_shared_geography",
     "noaa_normals_ingest": "require_shared_geography",
     "census_lodes_ingest": "require_shared_geography",

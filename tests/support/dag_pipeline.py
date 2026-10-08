@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "fcc_bdc_api",
     "epa_aqs_files",
     "noaa_normals_files",
     "census_lodes_files",
@@ -1042,6 +1043,19 @@ def stub_noaa_normals(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(normals_capture, "fetch_archive", fetch_archive)
 
 
+def stub_fcc_bdc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer the FCC broadband map API from the recorded fixtures, with stand-in credentials."""
+    from data_ingestion_toolbox.fcc_bdc import capture as bdc_capture
+    from tests.support.fcc_bdc import FixtureClient, fixture_config
+
+    real_client = bdc_capture.BdcClient
+
+    def client(config: Any, **_kwargs: Any) -> Any:
+        return real_client(fixture_config(), client=FixtureClient())
+
+    monkeypatch.setattr(bdc_capture, "BdcClient", client)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1504,6 +1518,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("census_lodes", stub_census_lodes),
         ("epa_aqs", stub_epa_aqs),
         ("noaa_normals", stub_noaa_normals),
+        ("fcc_bdc", stub_fcc_bdc),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

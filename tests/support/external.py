@@ -18,6 +18,12 @@ from data_ingestion_toolbox.eia.config import (
 from data_ingestion_toolbox.fbi_ucr.config import (
     API_KEY_ENVIRONMENT_VARIABLE as FBI_CDE_API_KEY_VARIABLE,
 )
+from data_ingestion_toolbox.fcc_bdc.config import (
+    API_TOKEN_ENVIRONMENT_VARIABLE as FCC_BDC_API_TOKEN_VARIABLE,
+)
+from data_ingestion_toolbox.fcc_bdc.config import (
+    USERNAME_ENVIRONMENT_VARIABLE as FCC_BDC_USERNAME_VARIABLE,
+)
 from data_ingestion_toolbox.usda_nass.config import (
     API_KEY_ENVIRONMENT_VARIABLE as USDA_NASS_API_KEY_VARIABLE,
 )
@@ -35,6 +41,8 @@ REQUIRED_SCHEDULED_CREDENTIALS = (
     FBI_CDE_API_KEY_VARIABLE,
     USDA_NASS_API_KEY_VARIABLE,
     EIA_API_KEY_VARIABLE,
+    FCC_BDC_USERNAME_VARIABLE,
+    FCC_BDC_API_TOKEN_VARIABLE,
 )
 
 
