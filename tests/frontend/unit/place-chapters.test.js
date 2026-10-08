@@ -353,8 +353,8 @@ describe("BEA income and GDP", () => {
 
   it("labels the account and the survey apart on every income slot", () => {
     expect(slot("bea-per-capita-income").basis).toBe("BEA personal income account, current dollars");
-    expect(slot("median-household-income").basis).toBe("Survey of households (ACS)");
-    expect(slot("per-capita-income").basis).toBe("Survey of households (ACS)");
+    expect(slot("median-household-income").basis).toBe("Survey estimate (American Community Survey)");
+    expect(slot("per-capita-income").basis).toBe("Survey estimate (American Community Survey)");
     expect(slot("bea-real-gdp").basis).toBe("BEA county GDP, chained 2017 dollars");
     expect(slot("bea-real-gdp").candidates).toEqual(["BEA:CAGDP1:1"]);
   });

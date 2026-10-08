@@ -129,7 +129,7 @@ test("BEA income and GDP sit beside the survey income, labelled apart, with earn
   await ready(page, "/us/wisconsin/dane-county");
   await expect(page.getByTestId("card-bea-per-capita-income")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-bea-per-capita-income-basis")).toHaveText("BEA personal income account, current dollars");
-  await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey of households (ACS)");
+  await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
   await expect(page.getByTestId("card-bea-real-gdp-basis")).toHaveText("BEA county GDP, chained 2017 dollars");
   await expect(page.getByTestId("card-median-household-income")).not.toContainText("BEA:");
 

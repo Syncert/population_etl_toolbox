@@ -67,7 +67,7 @@ test("the public data page reports every source, and a missing one as not report
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/data");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("The sources behind every number");
-  await expect(page.locator("[data-testid^=source-card-]")).toHaveCount(6);
+  await expect(page.locator("[data-testid^=source-card-]")).toHaveCount(10);
   const bls = page.getByTestId("source-card-BLS");
   await expect(bls).toHaveAttribute("data-reported", "true");
   await expect(bls).toContainText("counties, states");
@@ -75,7 +75,7 @@ test("the public data page reports every source, and a missing one as not report
   await expect(nass).toHaveAttribute("data-reported", "false");
   await expect(nass.locator("dd").first()).toHaveText("not reported");
   await expect(page.getByTestId("site-rules").locator("li")).toHaveCount(5);
-  await expect(page.getByTestId("refresh-timeline").locator("li")).toHaveCount(5);
+  await expect(page.getByTestId("refresh-timeline").locator("li")).toHaveCount(9);
   await noViolations(page);
   await noHorizontalScroll(page);
 });

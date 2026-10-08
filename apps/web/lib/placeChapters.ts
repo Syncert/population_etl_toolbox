@@ -86,7 +86,8 @@ export interface PlaceChapter {
 /** BEA regional accounts: one table and line (bea-regional-accounts). */
 const bea = (table: string, line: string): string[] => [`BEA:${table}:${line}`];
 
-const SURVEY_BASIS = "Survey of households (ACS)";
+// One wording for an ACS figure wherever it is labelled, matching `measureBasis`.
+const SURVEY_BASIS = "Survey estimate (American Community Survey)";
 const ACCOUNT_BASIS = "BEA personal income account, current dollars";
 
 /** CAINC5N earnings by place of work, by sector, in BEA's order. */
