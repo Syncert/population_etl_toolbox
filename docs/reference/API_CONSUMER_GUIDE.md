@@ -121,7 +121,7 @@ list.
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `q`, `active_only`) — see below |
 | `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
-| `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
+| `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
 `valid_geo_grains` on a metric distinguishes an explicit empty list from an
 absent or null field. `[]` means the metric is discoverable but has no

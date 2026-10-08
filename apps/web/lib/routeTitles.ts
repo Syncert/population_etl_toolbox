@@ -35,6 +35,7 @@ export const STATIC_ROUTE_TITLES: Readonly<Record<string, string>> = {
   "/articles": "Composed article",
   "/explain": "Explainers",
   "/us": "United States",
+  "/data": "Where the numbers come from",
 };
 
 /**

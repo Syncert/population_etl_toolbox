@@ -316,6 +316,9 @@ GEOGRAPHY_EXISTS_QUERY: TextClause = text(
 #: harvested metric catalog. ``freshness_state`` is the warehouse's published
 #: data-quality signal (``current`` / ``stale`` / ``retired``); the API reports
 #: it rather than recomputing quality from internals it must not read.
+#: ``geo_grains`` is the union of the grains the source's non-retired metrics
+#: publish, so a reader-facing page can say what a source covers without
+#: paging through every metric it publishes.
 SOURCE_FRESHNESS_QUERY: TextClause = text(
     f"""
     SELECT
@@ -325,8 +328,18 @@ SOURCE_FRESHNESS_QUERY: TextClause = text(
         COUNT(*) FILTER (WHERE freshness_state = 'stale')::int AS stale_count,
         COUNT(*) FILTER (WHERE freshness_state = 'retired')::int AS retired_count,
         MAX(publication_time) AS latest_publication_time,
-        MAX(harvested_at) AS latest_harvested_at
-    FROM {METRIC_RELATION}
+        MAX(harvested_at) AS latest_harvested_at,
+        COALESCE(
+            (
+                SELECT ARRAY_AGG(DISTINCT grain ORDER BY grain)
+                FROM {METRIC_RELATION} AS covered
+                CROSS JOIN LATERAL UNNEST(covered.valid_geo_grains) AS grain
+                WHERE covered.source_code = metric.source_code
+                  AND covered.freshness_state IS DISTINCT FROM 'retired'
+            ),
+            ARRAY[]::text[]
+        ) AS geo_grains
+    FROM {METRIC_RELATION} AS metric
     GROUP BY source_code
     ORDER BY source_code
     """

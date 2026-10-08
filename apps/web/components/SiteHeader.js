@@ -5,12 +5,18 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import SignInControl from "./SignInControl";
-import { BarChart3, BookOpen, Bookmark, ChevronDown, Columns3, Database, FilePenLine, Landmark, Layers, LineChart, MapPinned, ShieldCheck } from "lucide-react";
+import { BarChart3, BookOpen, Bookmark, ChevronDown, Columns3, Database, FilePenLine, Landmark, Layers, LineChart, MapPinned, ShieldCheck, Wrench } from "lucide-react";
 
+// A resident's entries first (find-your-place-home); the analyst tools keep
+// every route they had, one level down under "Tools".
 const navigation = [
-  { href: "/", label: "Home" },
   // One page per place: the nation, each state, each county (place-pages).
-  { href: "/us", label: "Places", icon: Landmark },
+  { href: "/us", label: "Find your place", icon: Landmark },
+  { href: "/data", label: "Where the numbers come from", icon: ShieldCheck },
+];
+
+const tools = [
+  { href: "/", label: "Home" },
   { href: "/catalog", label: "Data Catalog", icon: Database },
   { href: "/explore", label: "Explore", icon: BarChart3 },
   { href: "/compare", label: "Compare", icon: Columns3 },
@@ -24,17 +30,24 @@ const navigation = [
   { href: "/saved", label: "Saved", icon: Bookmark },
 ];
 
+function isActive(href, pathname) {
+  return href === "/" ? pathname === href : pathname.startsWith(href);
+}
+
 export default function SiteHeader({ useCaseGroups = [] }) {
   const pathname = usePathname();
   const dropdown = useRef(null);
+  const toolsMenu = useRef(null);
   useEffect(() => {
     const dismiss = (event) => {
-      if (!dropdown.current?.open) return;
-      if (event.type === "keydown" && event.key === "Escape") {
-        dropdown.current.open = false;
-        dropdown.current.querySelector("summary")?.focus();
-      } else if (event.type === "pointerdown" && !dropdown.current.contains(event.target)) {
-        dropdown.current.open = false;
+      for (const menu of [dropdown.current, toolsMenu.current]) {
+        if (!menu?.open) continue;
+        if (event.type === "keydown" && event.key === "Escape") {
+          menu.open = false;
+          menu.querySelector("summary")?.focus();
+        } else if (event.type === "pointerdown" && !menu.contains(event.target)) {
+          menu.open = false;
+        }
       }
     };
     document.addEventListener("keydown", dismiss);
@@ -65,7 +78,7 @@ export default function SiteHeader({ useCaseGroups = [] }) {
           </div>
         </details>
         {navigation.map(({ href, label, icon: Icon }) => {
-          const active = href === "/" ? pathname === href : pathname.startsWith(href);
+          const active = isActive(href, pathname);
           return (
             <Link
               className={active ? "nav-link active" : "nav-link"}
@@ -80,6 +93,27 @@ export default function SiteHeader({ useCaseGroups = [] }) {
             </Link>
           );
         })}
+        <details className="use-case-menu tools-menu" ref={toolsMenu} data-testid="tools-menu">
+          <summary className={`nav-link${tools.some(({ href }) => isActive(href, pathname)) ? " active" : ""}`}><Wrench size={15} aria-hidden="true" />Tools<ChevronDown size={13} aria-hidden="true" /></summary>
+          <ul className="tools-dropdown">
+            {tools.map(({ href, label, icon: Icon }) => {
+              const active = isActive(href, pathname);
+              return (
+                <li key={href}>
+                  <Link
+                    className={active ? "nav-link active" : "nav-link"}
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => { toolsMenu.current.open = false; }}
+                  >
+                    {Icon ? <Icon aria-hidden="true" size={15} /> : null}
+                    <span>{label}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
       </nav>
       {/* Last in the header and outside the nav: signing in is not a place on
           this site, and putting it in the primary navigation would make it

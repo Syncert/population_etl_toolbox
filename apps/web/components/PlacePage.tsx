@@ -579,6 +579,9 @@ export default function PlacePage({
             <ul>{omissions.map((line) => <li key={line}>{line}</li>)}</ul>
           </>
         ) : null}
+        <p>
+          <Link className="text-link" href="/data#rules" data-testid="place-rules-link">The rules every number here follows</Link>
+        </p>
       </footer>
     </main>
   );
