@@ -225,27 +225,55 @@ def test_fbi_counts_sum_over_the_published_release(
             written = refresh_calendar_rollups(connection_, "FBI_UCR", registry)
             reader = connection_.cursor()
             # Each complete window equals the sum of its months, computed here
-            # independently of the builder.
+            # independently of the builder. The reported months are read once
+            # and summed in Python: a subquery per window re-evaluated the
+            # latest-release view for every rollup row and took the better
+            # part of an hour once other tests had left FBI rows behind.
             reader.execute(
                 """
-                SELECT rollup.grain, rollup.window_start, rollup.value,
-                       rollup.present_periods, rollup.expected_periods,
-                       rollup.refusal_reason, (
-                           SELECT SUM(observation.value)
-                           FROM gold_fbi.latest_release_observation AS observation
-                           WHERE 'FBI_UCR:' || observation.product_id || ':'
-                                 || observation.measure_id = rollup.metric_code
-                             AND observation.subject_code IS NOT DISTINCT FROM rollup.subject_code
-                             AND observation.period_start BETWEEN rollup.window_start
-                                                              AND rollup.window_end
-                             AND observation.value_status = 'reported'
-                       ) AS months
-                FROM gold_fbi.derived_calendar_rollup AS rollup
-                WHERE rollup.metric_code = %s
+                SELECT subject_code, period_start, value
+                FROM gold_fbi.latest_release_observation
+                WHERE 'FBI_UCR:' || product_id || ':' || measure_id = %s
+                  AND value_status = 'reported'
                 """,
                 (code,),
             )
-            rows = reader.fetchall()
+            reported = reader.fetchall()
+            reader.execute(
+                """
+                SELECT grain, window_start, window_end, subject_code, value,
+                       present_periods, expected_periods, refusal_reason
+                FROM gold_fbi.derived_calendar_rollup
+                WHERE metric_code = %s
+                """,
+                (code,),
+            )
+            rows = [
+                (
+                    grain,
+                    start,
+                    value,
+                    present,
+                    expected,
+                    reason,
+                    sum(
+                        (
+                            month_value
+                            for month_subject, month_start, month_value in reported
+                            if month_subject == subject and start <= month_start <= end
+                        ),
+                        start=Decimal(0),
+                    )
+                    if any(
+                        month_subject == subject and start <= month_start <= end
+                        for month_subject, month_start, _ in reported
+                    )
+                    else None,
+                )
+                for grain, start, end, subject, value, present, expected, reason in (
+                    reader.fetchall()
+                )
+            ]
             connection_.rollback()
         finally:
             connection_.close()
