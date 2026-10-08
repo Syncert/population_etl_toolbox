@@ -1390,6 +1390,9 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_cbp_metric: str,
     published_lodes_metric: str,
     published_hud_metric: str,
+    published_hpi_metric: str,
+    published_ccd_metric: str,
+    published_ers_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 
