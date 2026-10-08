@@ -142,11 +142,6 @@
       "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
     },
     {
-      "id": "silver-census-lodes",
-      "phase": "silver",
-      "path": "src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql"
-    },
-    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -165,6 +160,11 @@
       "id": "silver-eia",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/eia/DDL/silver_eia.sql"
+    },
+    {
+      "id": "silver-census-lodes",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql"
     },
     {
       "id": "migration-025",
@@ -257,11 +257,6 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
-      "id": "gold-census-lodes",
-      "phase": "gold",
-      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/gold_census_lodes.sql"
-    },
-    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -270,6 +265,11 @@
       "id": "gold-census-cbp",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql"
+    },
+    {
+      "id": "gold-census-lodes",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/gold_census_lodes.sql"
     },
     {
       "id": "publisher-bls",
@@ -295,11 +295,6 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
-    },
-    {
-      "id": "publisher-census-lodes",
-      "phase": "publisher",
-      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-sae",
@@ -345,6 +340,11 @@
       "id": "migration-029",
       "phase": "source-fix",
       "path": "sql/migrations/029_nass_combined_counties_are_not_counties.sql"
+    },
+    {
+      "id": "publisher-census-lodes",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/publisher.sql"
     },
     {
       "id": "migration-033",
