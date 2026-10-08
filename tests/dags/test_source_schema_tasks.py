@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
@@ -36,6 +37,13 @@ SOURCES = [
         "ingest_batch_",
         nass_schema,
         "USDA_NASS",
+    (
+        "bls_qcew_ingest",
+        "ensure_bls_qcew_schema",
+        "ingest_batch_",
+        qcew_schema,
+        "BLS_QCEW",
+    ),
     ),
     ("bea_regional_ingest", "ensure_bea_schema", "ingest_batch_", bea_schema, "BEA"),
 ]

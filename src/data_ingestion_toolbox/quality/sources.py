@@ -686,6 +686,48 @@ def bea_table_reconciliation(
     ]
 
 
+def qcew_slice_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-QCEW-002 — every in-scope captured row is a revision or quarantined."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.bls_qcew_slice")
+    if total == 0:
+        return [RuleOutcome("control.bls_qcew_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.industry_code, slice.status
+          FROM control.bls_qcew_slice AS slice
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS revisions
+                  FROM silver_bls_qcew.observation_revision AS revision
+                 WHERE revision.capture_id = slice.capture_id
+          ) AS parsed ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT quarantine.source_row_index) AS rows_set_aside
+                  FROM silver_bls_qcew.observation_quarantine AS quarantine
+                 WHERE quarantine.capture_id = slice.capture_id
+                   AND quarantine.source_row_index > 0
+          ) AS set_aside ON TRUE
+         WHERE slice.status = 'captured'
+            OR (slice.status IN ('silver_ready', 'published')
+                AND parsed.revisions <> (slice.in_scope_row_count - set_aside.rows_set_aside)
+                    * CASE slice.period WHEN 'a' THEN 4 ELSE 6 END)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.bls_qcew_slice",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1733,6 +1775,7 @@ def bls_derived_annual_reconciliation(
            AND provider.period_start = derived.window_start
          WHERE derived.grain = 'year'
            AND derived.value IS NOT NULL
+    "DQ-QCEW-002": qcew_slice_reconciliation,
            AND provider.value IS NOT NULL
         """,
     )

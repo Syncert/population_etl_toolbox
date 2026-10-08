@@ -74,7 +74,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000fb1', 'FBI_UCR', 'success'),
     ('00000000-0000-4000-8000-000000000a55', 'USDA_NASS', 'success'),
     ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success'),
-    ('00000000-0000-4000-8000-000000000bea', 'BEA', 'success')
+    ('00000000-0000-4000-8000-000000000bea', 'BEA', 'success'),
+    ('00000000-0000-4000-8000-000000000b1c', 'BLS_QCEW', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -94,7 +95,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000e70', '00000000-0000-4000-8000-000000000e70',
      'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured'),
     ('00000000-0000-4000-9000-000000000bea', '00000000-0000-4000-8000-000000000bea',
-     'BEA', 'smoke://seed', '{}'::JSONB, '70021e6443a882267a777f4fcb288121072a28e3c3fb1c2d11b25b4921ae167f', 'captured')
+     'BEA', 'smoke://seed', '{}'::JSONB, '70021e6443a882267a777f4fcb288121072a28e3c3fb1c2d11b25b4921ae167f', 'captured'),
+    ('00000000-0000-4000-9000-000000000b1c', '00000000-0000-4000-8000-000000000b1c',
+     'BLS_QCEW', 'smoke://seed', '{}'::JSONB, '172bff3668e0d4c3a201e34b7ea1d7340e9fb3d6c6135fef6410bdf9093d7afc', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -121,6 +124,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000bea', '00000000-0000-4000-9000-000000000bea',
      '00000000-0000-4000-8000-000000000bea', 'BEA', 'smoke://seed', '{}'::JSONB,
      '70021e6443a882267a777f4fcb288121072a28e3c3fb1c2d11b25b4921ae167f', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000b1c', '00000000-0000-4000-9000-000000000b1c',
+     '00000000-0000-4000-8000-000000000b1c', 'BLS_QCEW', 'smoke://seed', '{}'::JSONB,
+     '172bff3668e0d4c3a201e34b7ea1d7340e9fb3d6c6135fef6410bdf9093d7afc', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -531,6 +538,45 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- BLS QCEW -- the establishment-count family: jobs located in the county,
+-- keyed by (measure, industry, ownership), served from views over a
+-- published slice. COUNTY only, per rule 2.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.bls_qcew_slice (
+    run_id, year, period, industry_code, capture_id, captured_row_count,
+    in_scope_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000b1c', 2098, 'a', '10', '00000000-0000-4000-a000-000000000b1c', 1, 1, 'published',
+    '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_bls_qcew.dim_measure (
+    measure_id, measure_label, unit, period_kind, observation_basis,
+    methodology_url, parser_contract_version
+) VALUES (
+    'annual_avg_employment', 'Employment, annual average', 'jobs', 'year',
+    'establishment-based: jobs located in the area (smoke fixture)',
+    'https://www.bls.gov/opub/hom/cew/home.htm', 'bls_qcew_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_bls_qcew.dim_industry (industry_code, industry_title, industry_level)
+VALUES ('10', 'Total, all industries', 'total')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_bls_qcew.fact_observation (
+    measure_id, industry_code, own_code, geo_id, period_start, capture_id,
+    run_id, retrieved_at, period_end, year, period, geo_sk, geo_type,
+    geography_status, value_source, value, value_status, source_record_id
+)
+SELECT 'annual_avg_employment', '10', '0', 'state:55|county:025', '2098-01-01',
+       '00000000-0000-4000-a000-000000000b1c', '00000000-0000-4000-8000-000000000b1c', '2098-12-31 00:00:00+00', '2098-12-31', 2098, 'a',
+       geo_sk, 'county', 'resolved', '345678', 345678, 'valid',
+       '5d6a7f0e1c2b3a4958677a8b9cadbecf0d1e2f30415263748596a7b8c9dadbec'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -551,7 +597,8 @@ UNION ALL SELECT * FROM gold_pep.metric_publisher
 UNION ALL SELECT * FROM gold_cdc.metric_publisher
 UNION ALL SELECT * FROM gold_fbi.metric_publisher
 UNION ALL SELECT * FROM gold_nass.metric_publisher
-UNION ALL SELECT * FROM gold_bea.metric_publisher;
+UNION ALL SELECT * FROM gold_bea.metric_publisher
+UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

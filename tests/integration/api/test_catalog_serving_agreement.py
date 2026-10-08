@@ -33,6 +33,7 @@ from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import bea as bea_support
 from tests.support import fbi_release
+from tests.support import bls_qcew as qcew_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -868,6 +869,20 @@ def published_bea_metric(
     return _one_published_code(factory, "BEA")
 
 
+@pytest.fixture
+def published_qcew_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the BLS QCEW metrics through their real pipeline."""
+    from data_ingestion_toolbox.bls_qcew.registry import TOTAL
+
+    factory = qcew_support.reviewed_warehouse(postgres_connection_factory, request)
+    qcew_support.run_to_gold(factory, 2024, "1", (TOTAL,))
+    harvest_publisher(factory, Publisher("gold_bls_qcew"))
+    return _one_published_code(factory, "BLS_QCEW")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -923,6 +938,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_qcew_metric: str,
     published_bea_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
@@ -984,6 +1000,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CENSUS_PEP", published_pep_metric),
         ("BLS", published_bls_metric),
         ("FBI_UCR", published_fbi_metric),
+        ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
         ("BEA", published_bea_metric),
     ):
@@ -1125,6 +1142,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fred_metric: str,
     published_pep_metrics: list[str],
     published_bls_metric: str,
+    published_qcew_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
     published_bea_metric: str,

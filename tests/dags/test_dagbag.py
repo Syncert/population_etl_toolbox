@@ -36,6 +36,7 @@ EXPECTED_DAG_IDS = {
     "cdc_ingest",
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
+    "bls_qcew_ingest",
     "bea_regional_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
@@ -57,6 +58,8 @@ EXPECTED_SCHEDULES = {
     # day-of-month and day-of-week are both restricted, and the monthly
     # full-history sweep needs a logical date on the first whatever day it
     # falls on (DAG-018).
+    # Monthly: QCEW publishes one quarter at a time.
+    "bls_qcew_ingest": "0 12 20 * *",
     "usda_nass_crop_ingest": "0 10 1 * 1-5",
     # Weekly: county income lands in November and county GDP in December.
     "bea_regional_ingest": "0 14 * * 3",
@@ -77,6 +80,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "bls_ingest": 3,
     "fred_ingest": 3,
     "census_pep_ingest": 2,
+    "bls_qcew_ingest": 2,
     "cdc_ingest": 2,
     "fbi_ucr_ingest": 2,
     "usda_nass_crop_ingest": 2,
@@ -96,6 +100,7 @@ EXPECTED_DEFAULT_RETRIES = {
 EXPECTED_INGEST_POOLS = {
     "acs_ingest": "census_api",
     "bls_ingest": "bls_api",
+    "bls_qcew_ingest": "bls_qcew_api",
     "fred_ingest": "fred_api",
     "cdc_ingest": "cdc_api",
     "fbi_ucr_ingest": "fbi_cde_api",

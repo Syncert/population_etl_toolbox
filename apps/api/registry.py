@@ -973,6 +973,49 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="BLS_QCEW",
+            latest_relation="gold_bls_qcew.observation_latest",
+            released_relation="gold_bls_qcew.observation_revision",
+            lineage_schema="gold_bls_qcew",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>:<industry>:<ownership>`,
+            # the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("industry_code", "industry_code"),
+                ("industry_title", "industry_title"),
+                ("own_code", "own_code"),
+                ("ownership_title", "ownership_title"),
+                # "establishment-based: jobs located in the area": what keeps
+                # a QCEW employment row from being read as LAUS's residents.
+                ("observation_basis", "observation_basis"),
+                ("period_kind", "period_kind"),
+                ("disclosure_code", "disclosure_code"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            # One row per (metric, geography, period start) in the latest
+            # view, and the metric is pinned by every query.
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1178,6 +1221,12 @@ def _nass_datasets() -> tuple[str, ...]:
     return tuple(product.product_id for product in enabled_products())
 
 
+def _qcew_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.bls_qcew.registry import INDUSTRIES
+
+    return tuple(industry.code for industry in INDUSTRIES)
+
+
 def _fbi_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
 
@@ -1229,6 +1278,13 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="BLS_QCEW",
+            display_name="Bureau of Labor Statistics Quarterly Census of Employment and Wages",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_qcew_datasets,
         ),
         SourceDiscovery(
             source_code="BEA",

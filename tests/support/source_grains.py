@@ -33,6 +33,9 @@ from __future__ import annotations
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
+#: * ``BLS_QCEW`` -- ``bls_qcew/registry.py`` registers aggregation levels
+#:   10-14, 50-54 and 70-74 (national, state, county) and counts every other
+#:   level -- MSAs and the "unknown county" areas -- out of scope.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -42,6 +45,7 @@ from __future__ import annotations
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BEA": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "BLS_QCEW": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),

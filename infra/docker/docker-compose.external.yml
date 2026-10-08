@@ -190,6 +190,7 @@ services:
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
+      airflow pools set bls_qcew_api 1 'BLS QCEW open data (serialized: data.bls.gov throttles bursts)';
       airflow pools set bea_files 1 'BEA regional bulk files (serialized)';
       airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "

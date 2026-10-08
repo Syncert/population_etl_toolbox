@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "BLS_QCEW",
     "BEA",
 )
 
@@ -1999,6 +2000,111 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# BLS QCEW.
+# ---------------------------------------------------------------------------
+
+_QCEW_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.bls_qcew_slice",
+        "control",
+        "BLS_QCEW",
+        grain="run_id, industry_code (one run per year and period)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered industries x periods in bls_qcew/registry.py",
+        cadence="monthly; history sweep on request",
+        empty_behavior="a period QCEW has not published (HTTP 404) is status empty",
+    ),
+    _obj(
+        "silver_bls_qcew.dim_measure",
+        "silver",
+        "BLS_QCEW",
+        grain="measure_id",
+        scope_method="registered measures",
+        cadence="per QCEW replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_bls_qcew.dim_industry",
+        "silver",
+        "BLS_QCEW",
+        grain="industry_code",
+        scope_method="registered industries",
+        cadence="per QCEW replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_bls_qcew.observation_revision",
+        "silver",
+        "BLS_QCEW",
+        grain="capture_id, source_row_index, measure_id, month_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per QCEW replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_bls_qcew.observation_quarantine",
+        "silver",
+        "BLS_QCEW",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per QCEW replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_bls_qcew.fact_observation",
+        "silver",
+        "BLS_QCEW",
+        grain="measure_id, industry_code, own_code, geo_id, period_start, capture_id",
+        lineage="silver_bls_qcew.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered industries x ownerships x grains x periods",
+        cadence="per QCEW replay",
+        empty_behavior="a withheld cell is retained with status withheld, never zero",
+    ),
+    _obj(
+        "gold_bls_qcew.observation_revision",
+        "gold",
+        "BLS_QCEW",
+        grain="measure_id, industry_code, own_code, geo_id, period_start, capture_id (published slices only)",
+        lineage="silver_bls_qcew.fact_observation, control.bls_qcew_slice",
+        scope_method="published slices; every capture of an observation kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_bls_qcew.observation_latest",
+        "gold",
+        "BLS_QCEW",
+        grain="metric_key, geo_id, period_start (newest capture)",
+        lineage="gold_bls_qcew.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_bls_qcew.measure_export",
+        "publisher",
+        "BLS_QCEW",
+        grain="source_object_key (measure:industry:ownership)",
+        lineage="silver_bls_qcew.dim_measure, silver_bls_qcew.dim_industry",
+        scope_method="registered measures x industries x ownerships",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_bls_qcew.metric_publisher",
+        "publisher",
+        "BLS_QCEW",
+        grain="source_object_key (measure:industry:ownership)",
+        lineage="gold_bls_qcew.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -2011,6 +2117,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _QCEW_OBJECTS
     + _BEA_OBJECTS
 )
 
@@ -3515,6 +3622,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.crop_series",
             "gold_nass.measure_export",
             "gold_nass.metric_publisher",
+            "gold_bls_qcew.metric_publisher",
         ),
         automation="unimplemented",
         automation_note=(
@@ -3623,6 +3731,106 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: year continuity is declared; the parser loads every "
             "year column the file carries, but no executor checks the published "
             "years for gaps."
+        ),
+    ),
+    # -- BLS QCEW --------------------------------------------------------------
+    _rule(
+        "DQ-QCEW-001",
+        "BLOCK",
+        "uniqueness",
+        "QCEW observations are unique per (measure, industry, ownership, "
+        "geography, period start, capture): a revised file is a second row "
+        "beside the one it revised, never an overwrite.",
+        (
+            "silver_bls_qcew.fact_observation",
+            "gold_bls_qcew.observation_revision",
+            "gold_bls_qcew.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary "
+            "key. The gold relations are views over that fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bls_qcew.fact_observation",
+                (
+                    "measure_id",
+                    "industry_code",
+                    "own_code",
+                    "geo_id",
+                    "period_start",
+                    "capture_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-QCEW-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed slice accounts for every in-scope captured row: its "
+        "revisions equal the in-scope rows less the quarantined ones, times "
+        "the values a row carries, and no captured slice is left unreplayed.",
+        (
+            "control.bls_qcew_slice",
+            "silver_bls_qcew.observation_revision",
+            "silver_bls_qcew.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-QCEW-003",
+        "BLOCK",
+        "conformance",
+        "A cell the provider did not disclose is withheld and carries no "
+        "number, with the provider's text kept; only a valid value is a "
+        "number.",
+        (
+            "silver_bls_qcew.fact_observation",
+            "silver_bls_qcew.observation_revision",
+            "gold_bls_qcew.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints on the revision "
+            "and the fact refuse a valid row without a value and any other "
+            "status with one."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bls_qcew.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="qcew_fact_withheld_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_bls_qcew.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="qcew_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_bls_qcew.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="qcew_revision_withheld_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-QCEW-004",
+        "WARN",
+        "temporal_integrity",
+        "Each registered industry's published quarters are continuous: no "
+        "quarter between a slice's first and newest published quarter is "
+        "missing.",
+        ("control.bls_qcew_slice",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: period continuity is declared; an ordinary run "
+            "asks for a window of recent quarters and records each as "
+            "published or empty, but no executor checks the published set "
+            "for gaps."
         ),
     ),
 )
