@@ -111,7 +111,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
-    ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success')
+    ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
+    ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -157,7 +158,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
      'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
     ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
-     'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB, '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', 'captured')
+     'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB, '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', 'captured'),
+    ('00000000-0000-4000-9000-000000000ce5', '00000000-0000-4000-8000-000000000ce5',
+     'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -236,6 +239,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000d0d', '00000000-0000-4000-9000-000000000d0d',
      '00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB,
      '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000ce5', '00000000-0000-4000-9000-000000000ce5',
+     '00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'smoke://seed', '{}'::JSONB,
+     '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1052,6 +1059,50 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- NCES Common Core of Data -- one school's membership, placed in the county
+-- by the geocode file and summed to it. Two files, so a second run carries
+-- the geocode file; both cite the same seeded capture. COUNTY only (the
+-- state roll-up needs a state identity this seed does not publish).
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.ingestion_run (run_id, source_code, status)
+VALUES ('00000000-0000-4000-8000-000000001ce5', 'NCES_CCD', 'success')
+ON CONFLICT (run_id) DO NOTHING;
+
+INSERT INTO control.nces_ccd_file (
+    run_id, component, school_year, file_stem, release_version, version_rank,
+    capture_id, payload_checksum, row_count, kept_row_count, status,
+    published_at
+) VALUES
+    ('00000000-0000-4000-8000-000000001ce5', 'geocode', '2097-2098',
+     'EDGE_GEOCODE_PUBLICSCH_2098', '1a', 1, '00000000-0000-4000-a000-000000000ce5',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+     'published', '2098-12-31 00:00:00+00'),
+    ('00000000-0000-4000-8000-000000000ce5', 'membership', '2097-2098', 'ccd_sch_052_2098', '1a', 1,
+     '00000000-0000-4000-a000-000000000ce5', '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+     1, 1, 'published', '2098-12-31 00:00:00+00')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ccd.school_location (
+    run_id, ncessch, leaid, capture_id, source_row_index, operating_state_fips,
+    state_fips, county_fips, latitude, longitude, geo_id, geo_sk,
+    geography_status
+)
+SELECT '00000000-0000-4000-8000-000000001ce5', '550852001234', '5508520',
+       '00000000-0000-4000-a000-000000000ce5', 1, '55', '55', '55025', 43.07, -89.40, 'state:55|county:025',
+       geo_sk, 'resolved'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ccd.school_count (
+    run_id, ncessch, measure, leaid, capture_id, source_row_index,
+    operating_state_fips, value_source, value, value_status, dms_flag
+) VALUES (
+    '00000000-0000-4000-8000-000000000ce5', '550852001234', 'student_membership', '5508520', '00000000-0000-4000-a000-000000000ce5', 1,
+    '55', '512', 512, 'valid', 'Reported'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1085,7 +1136,8 @@ UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
 UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
-UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher;
+UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
+UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

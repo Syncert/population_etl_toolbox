@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "NCES_CCD",
     "FHFA_HPI",
     "HUD_FMR_IL",
     "FEMA_NRI",
@@ -3357,6 +3358,132 @@ _HUD_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# NCES Common Core of Data (public schools, placed by EDGE geocodes).
+# ---------------------------------------------------------------------------
+
+_CCD_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.nces_ccd_file",
+        "control",
+        "NCES_CCD",
+        grain="run_id (one run per read of a registered file)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered CCD school-universe and EDGE geocode files per school year",
+        cadence="quarterly; a read whose bytes equal the file's last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_nces_ccd.quarantine",
+        "silver",
+        "NCES_CCD",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated row; populated only on failure",
+        cadence="per NCES replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_nces_ccd.school_location",
+        "silver",
+        "NCES_CCD",
+        grain="run_id, ncessch",
+        lineage="control.nces_ccd_file, silver_ref.dim_geo_entity",
+        scope_method="every school of every replayed EDGE geocode file, with its county resolved by code",
+        cadence="per NCES replay",
+        empty_behavior="a county code the shared geography lacks is unmapped, never matched by name",
+    ),
+    _obj(
+        "silver_nces_ccd.school_directory",
+        "silver",
+        "NCES_CCD",
+        grain="run_id, ncessch",
+        lineage="control.nces_ccd_file",
+        scope_method="every school of every replayed directory file",
+        cadence="per NCES replay",
+        empty_behavior="empty only before the first directory replay",
+    ),
+    _obj(
+        "silver_nces_ccd.school_count",
+        "silver",
+        "NCES_CCD",
+        grain="run_id, ncessch, measure",
+        lineage="control.nces_ccd_file",
+        scope_method="every registered school count of every replayed membership, staff and lunch file",
+        cadence="per NCES replay",
+        empty_behavior="a count NCES did not report is missing or suppressed, never 0",
+    ),
+    _obj(
+        "gold_nces_ccd.measure_definition",
+        "gold",
+        "NCES_CCD",
+        grain="measure",
+        scope_method="the eight published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_nces_ccd.school_placement",
+        "gold",
+        "NCES_CCD",
+        grain="school_year, ncessch",
+        lineage="silver_nces_ccd.school_location, control.nces_ccd_file",
+        scope_method="the newest published geocode file per school year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published geocode file",
+    ),
+    _obj(
+        "gold_nces_ccd.school_observation",
+        "gold",
+        "NCES_CCD",
+        grain="run_id, ncessch, measure",
+        lineage="silver_nces_ccd.school_count, silver_nces_ccd.school_directory, gold_nces_ccd.school_placement",
+        scope_method="published school values: the lineage of every county and state figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ccd.observation_revision",
+        "gold",
+        "NCES_CCD",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_nces_ccd.school_observation",
+        scope_method="county and state sums of placed schools per file and read",
+        cadence="per publication",
+        empty_behavior="a grain where no placed school reported has a row with no value, never 0",
+    ),
+    _obj(
+        "gold_nces_ccd.observation_latest",
+        "gold",
+        "NCES_CCD",
+        grain="metric_key, geo_id, year (newest release and read)",
+        lineage="gold_nces_ccd.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ccd.measure_export",
+        "publisher",
+        "NCES_CCD",
+        grain="source_object_key (measure)",
+        lineage="gold_nces_ccd.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_nces_ccd.metric_publisher",
+        "publisher",
+        "NCES_CCD",
+        grain="source_object_key (measure)",
+        lineage="gold_nces_ccd.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -3369,6 +3496,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _CCD_OBJECTS
     + _HPI_OBJECTS
     + _HUD_OBJECTS
     + _FEMA_OBJECTS
@@ -3748,6 +3876,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: no executor compares `silver_ref.dim_time`'s "
             "coverage against the configured observation range, so a gap shows "
             "only as observations that resolve no time key."
+            "gold_nces_ccd.metric_publisher",
         ),
     ),
     # -- glossary and cross-source serving ---------------------------------
@@ -6201,6 +6330,99 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "the 50% the 80%, and every whole-county row resolved to the shared "
         "geography.",
         ("silver_hud_fmr_il.fact_observation", "control.hud_fmr_il_file"),
+    ),
+    # -- NCES Common Core of Data (public schools) -----------------------------
+    _rule(
+        "DQ-NCES-001",
+        "BLOCK",
+        "uniqueness",
+        "A school is unique per read in a geocode or directory file, and a "
+        "school count is unique per (read, school, measure): a repeat is "
+        "quarantined.",
+        (
+            "silver_nces_ccd.school_location",
+            "silver_nces_ccd.school_directory",
+            "silver_nces_ccd.school_count",
+            "gold_nces_ccd.school_placement",
+            "gold_nces_ccd.school_observation",
+            "gold_nces_ccd.observation_revision",
+            "gold_nces_ccd.observation_latest",
+            "gold_nces_ccd.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the silver primary keys; "
+            "the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_nces_ccd.school_location", ("run_id", "ncessch")),
+            EnforcedGrain("silver_nces_ccd.school_directory", ("run_id", "ncessch")),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count", ("run_id", "ncessch", "measure")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NCES-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and every replayed file with "
+        "kept rows reached silver.",
+        (
+            "control.nces_ccd_file",
+            "silver_nces_ccd.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-NCES-003",
+        "BLOCK",
+        "conformance",
+        "A school count NCES did not report carries no number, a Reported one "
+        "always does, and none is negative: no gap becomes a zero.",
+        (
+            "silver_nces_ccd.school_count",
+            "gold_nces_ccd.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "count without a value, a withheld one with a value, and a "
+            "negative value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_nces_ccd.school_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ccd_count_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ccd_count_withheld_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count",
+                ("value",),
+                kind="check",
+                constraint_name="nces_ccd_count_not_negative",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NCES-004",
+        "WARN",
+        "referential_integrity",
+        "In every published school year, every school with a published value "
+        "is placed by that year's geocode file in a county the shared "
+        "geography holds, and no school's free or reduced-price lunch count "
+        "exceeds its membership.",
+        (
+            "gold_nces_ccd.school_observation",
+            "silver_nces_ccd.school_location",
+            "control.nces_ccd_file",
+        ),
     ),
 )
 

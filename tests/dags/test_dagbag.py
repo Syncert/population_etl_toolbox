@@ -55,6 +55,7 @@ EXPECTED_DAG_IDS = {
     "fema_nri_ingest",
     "fhfa_hpi_ingest",
     "hud_fmr_il_ingest",
+    "nces_ccd_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -118,6 +119,9 @@ EXPECTED_SCHEDULES = {
     # Monthly: HUD reissues FMRs within a fiscal year without a calendar, and
     # an unchanged workbook replays nothing.
     "hud_fmr_il_ingest": "0 16 25 * *",
+    # Quarterly: NCES releases a school year's files once or twice a year
+    # under new names, and an unchanged file replays nothing.
+    "nces_ccd_ingest": "0 20 3 1,4,7,10 *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -153,6 +157,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fema_nri_ingest": 2,
     "fhfa_hpi_ingest": 2,
     "hud_fmr_il_ingest": 2,
+    "nces_ccd_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -178,6 +183,7 @@ EXPECTED_INGEST_POOLS = {
     "fema_nri_ingest": "fema_files",
     "fhfa_hpi_ingest": "fhfa_hpi_files",
     "hud_fmr_il_ingest": "hud_fmr_il_files",
+    "nces_ccd_ingest": "nces_ccd_files",
 }
 
 

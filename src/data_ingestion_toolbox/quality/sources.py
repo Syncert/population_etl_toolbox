@@ -1599,6 +1599,81 @@ def hud_value_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
     ]
 
 
+def ccd_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-NCES-002 — no file left unreplayed; every file with kept rows reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.nces_ccd_file")
+    if total == 0:
+        return [RuleOutcome("control.nces_ccd_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.file_stem, file.status, file.kept_row_count
+          FROM control.nces_ccd_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.kept_row_count > 0
+                AND NOT EXISTS (SELECT 1 FROM silver_nces_ccd.school_location AS location
+                                 WHERE location.run_id = file.run_id)
+                AND NOT EXISTS (SELECT 1 FROM silver_nces_ccd.school_directory AS directory
+                                 WHERE directory.run_id = file.run_id)
+                AND NOT EXISTS (SELECT 1 FROM silver_nces_ccd.school_count AS count
+                                 WHERE count.run_id = file.run_id))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.nces_ccd_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def ccd_placement_and_plausibility(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-NCES-004 — every valued school placed in a held county; FRPL within membership."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.nces_ccd_file WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("gold_nces_ccd.school_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT school.school_year, school.ncessch, 'unplaced' AS finding
+          FROM gold_nces_ccd.school_observation AS school
+         WHERE school.value_status = 'valid'
+           AND (school.county_status IS NULL OR school.county_status <> 'resolved')
+         GROUP BY school.school_year, school.ncessch
+        UNION ALL
+        SELECT lunch.school_year, lunch.ncessch, 'frpl_above_membership'
+          FROM gold_nces_ccd.school_observation AS lunch
+          JOIN gold_nces_ccd.school_observation AS membership
+            ON membership.school_year = lunch.school_year
+           AND membership.ncessch = lunch.ncessch
+           AND membership.measure = 'student_membership'
+         WHERE lunch.measure = 'frpl_eligible'
+           AND lunch.value > membership.value
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "gold_nces_ccd.school_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2704,6 +2779,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-NCES-002": ccd_file_reconciliation,
+    "DQ-NCES-004": ccd_placement_and_plausibility,
     "DQ-HPI-002": hpi_file_reconciliation,
     "DQ-HPI-004": hpi_index_plausibility,
     "DQ-HUD-002": hud_file_reconciliation,

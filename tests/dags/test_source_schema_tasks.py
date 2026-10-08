@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.nces_ccd import schema as nces_ccd_schema
 from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
 from data_ingestion_toolbox.hud_fmr_il import schema as hud_fmr_il_schema
 from data_ingestion_toolbox.fema_nri import schema as fema_nri_schema
@@ -141,6 +142,13 @@ SOURCES = [
         "ingest_batch_",
         hud_fmr_il_schema,
         "HUD_FMR_IL",
+    ),
+    (
+        "nces_ccd_ingest",
+        "ensure_nces_ccd_schema",
+        "ingest_batch_",
+        nces_ccd_schema,
+        "NCES_CCD",
     ),
 ]
 

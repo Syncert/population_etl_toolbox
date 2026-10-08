@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "nces_ccd_files",
     "fhfa_hpi_files",
     "hud_fmr_il_files",
     "fema_files",
@@ -1115,6 +1116,16 @@ def stub_hud_fmr_il(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hud_api_capture, "HudApiClient", client)
 
 
+def stub_nces_ccd(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed 2024-25 fixtures; every other file answers its header only."""
+    from data_ingestion_toolbox.nces_ccd import capture as ccd_capture
+    from tests.support.nces_ccd import fixture_response
+
+    monkeypatch.setattr(
+        ccd_capture, "fetch_file", lambda item, **_kwargs: fixture_response(item)
+    )
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1581,6 +1592,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fema_nri", stub_fema_nri),
         ("fhfa_hpi", stub_fhfa_hpi),
         ("hud_fmr_il", stub_hud_fmr_il),
+        ("nces_ccd", stub_nces_ccd),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

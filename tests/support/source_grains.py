@@ -67,6 +67,8 @@ from __future__ import annotations
 #:   files wait on sub-county identities.
 #: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
 #:   rows are held, not published as their county.
+#: * ``NCES_CCD`` -- county and state sums of the schools NCES's EDGE
+#:   geocodes place there; no nation row.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -94,6 +96,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "NCES_CCD": frozenset({"STATE", "COUNTY"}),
     "HUD_FMR_IL": frozenset({"COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),
     "FEMA_NRI": frozenset({"COUNTY"}),
