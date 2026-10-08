@@ -970,7 +970,7 @@ Performance results are compared on equivalent CI runner classes. A baseline is 
 
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
-| PERF-001 | P0 | Timing / `unit` | Unit suite duration | Deterministic unit suite completes in under 120 seconds | Runtime reaches 120 seconds |
+| PERF-001 | P0 | Timing / `unit` | Unit suite duration | Deterministic unit suite completes in under 120 seconds, including under `--cov` in the `coverage` job, whose log lists the twenty-five slowest tests on every run. A test module replays a shared release once rather than once per test that reads it | Runtime reaches 120 seconds. The coverage job tripped the guard at about 89 % on 2026-10-04 because `test_fbi_every_product.py` and `test_fbi_replay.py` replayed each product's complete release once per reading test: about 40 of the suite's 62 measured seconds under coverage locally, the two stalls in the hosted log |
 | PERF-002 | P0 | Timing / `dag` | DAG parse duration | Same thresholds as DAG-012 | Per-file >= 2 seconds or folder >= 10 seconds |
 | PERF-003 | P2 | Load / `performance slow` | API cache-hit load | At agreed target concurrency: error rate < 1%, p95 < 200 ms, p99 < 500 ms | Any threshold exceeded |
 | PERF-004 | P2 | Load / `performance slow` | API cache-miss load | At agreed target concurrency: error rate < 1%, p95 < 750 ms, p99 < 1.5 s | Any threshold exceeded |

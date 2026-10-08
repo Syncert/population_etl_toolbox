@@ -86,8 +86,10 @@ jobs:
 
       - name: Run deterministic unit coverage
         # Covers: PERF-001 — deterministic unit tests must finish within 120 seconds.
+        # --durations=25 names where the time went on every run, so a run that
+        # nears the guard is diagnosable from its own log.
         run: >-
-          timeout 120s pytest tests/unit -q --tb=short
+          timeout 120s pytest tests/unit -q --tb=short --durations=25
           --cov=apps --cov=data_ingestion_toolbox
           --cov-report=
           --junitxml=junit-coverage.xml
