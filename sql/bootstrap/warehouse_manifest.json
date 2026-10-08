@@ -142,6 +142,11 @@
       "path": "sql/migrations/027_acs_bls_fact_lineage.sql"
     },
     {
+      "id": "migration-031",
+      "phase": "source-fix",
+      "path": "sql/migrations/031_acs_place_grain.sql"
+    },
+    {
       "id": "gold-census",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"

@@ -26,7 +26,7 @@ from __future__ import annotations
 #: * ``CDC`` -- ``cdc/registry.py`` declares ``geography_levels`` per asset:
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
-#:   ``geo_levels = ["us", "state", "county"]``.
+#:   ``geo_levels = ["us", "state", "county", "place"]``.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
@@ -39,7 +39,7 @@ from __future__ import annotations
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),

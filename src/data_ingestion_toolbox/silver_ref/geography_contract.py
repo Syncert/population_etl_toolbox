@@ -84,7 +84,7 @@ def resolve_provider_geography(
     parts = [state_fips, county_fips, place_fips, agency_code]
     source_code = ":".join("" if value is None else str(value) for value in parts)
     supported = {
-        "CENSUS_ACS": {"nation", "us", "state", "county"},
+        "CENSUS_ACS": {"nation", "us", "state", "county", "place"},
         "BLS": {"nation", "us", "state", "county"},
         "CENSUS_PEP": {"nation", "us", "state", "county", "place"},
         "CDC": {"nation", "us", "state", "county"},

@@ -15,10 +15,12 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
+In progress. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet. This is the warehouse prerequisite for city and town
-pages; the almanac launches with counties until it lands.
+Deliverables 1 to 5 (warehouse, serving, operations) are implemented on
+branch `feat/acs-place-grain`, cut from `main`. Deliverable 6, the place
+pages, needs the county pages from `feat/place-pages` (WEB-125), which is not
+on `main` yet.
 
 ## Why
 
@@ -102,9 +104,73 @@ rather than a new source.
   slice volume stays predictable.
 - Slug and redirect strategy for place pages is shared with `place-pages`.
 
+## Decisions
+
+- **Scope, verified against the API on 2026-10-06.** `acs/acs5` 2023 answers
+  `for=place:*&in=state:*` with 32,325 places. `acs/acs1` 2023 answers 649
+  places of 65,000 or more in 50 of the 52 county parents. Vermont (50) and
+  West Virginia (54) have none, so `ACS_PLACE_PARENT_FIPS["acs1"]` leaves
+  them out and no request is formed for them. Place requests are sliced by
+  state (`in=state:<fips>`), as county requests are.
+- **Volume.** One 5-year year at place grain is about 4,000 requests (52
+  slices of 77 variable chunks) and about 62 million facts, ten times the
+  counties' 6.2 million. `AcsConfig.place_recent_years` (default 1) requests
+  only each dataset's newest year at place grain. Raising it backfills place
+  history at that cost.
+- **An unmatched place does not block.** The transform still refuses to run
+  when a state or county is missing from the shared reference. A place the
+  reference does not carry is recorded `unmapped` in
+  `silver_ref.geography_resolution` with the year it was requested under and
+  left out of the facts, so one renumbered place cannot stop every grain.
+- **Schema.** `silver_census.observation_revision.place_fips_source` is new.
+  Migration `031_acs_place_grain.sql` adds it to an existing warehouse and
+  swaps the unnamed `geo_level` checks on that relation and on
+  `control.acs_ingestion_slices` for named ones that admit `place`. A place
+  slice, like a county slice, must name a state, and a missing state is now
+  refused rather than passing as NULL.
+- **Consolidated cities and county subdivisions** (open item) stay out of
+  this plan; `sub-county-geography` owns them.
+- **Metric identity is unchanged.** Places are rows under the same ACS
+  metric codes, and `valid_geo_grains` gains `PLACE` from the served rows.
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2182 passed, with
+  `tests/unit/census/test_place_grain.py` (scope, request shape, newest-year
+  bound, offline replay of the checked-in Delaware response
+  `tests/fixtures/census/acs5_2023_place_10.json`).
+- Database: `tests/integration/database/test_census_acs_place_grain.py` -- 3
+  passed. Places are keyed by code, 76 unseeded places are ledgered
+  `unmapped` with their year, and a rerun changes nothing. A changed response
+  keeps both checksums, and a place slice without a state is refused.
+  `tests/integration/api/test_catalog_serving_agreement.py` -- 21 passed with
+  a place row in the ACS grain fixture (DB-044 now requires `PLACE` for
+  Census ACS).
+- DAG: `pytest -m dag tests/dags` in the scheduler container, with the
+  disposable database. `test_task_callables.py` -- 25 passed (106 work units
+  for one 5-year year; 50 1-year place slices, newest year only).
+  `test_dag_pipeline_execution.py` -- 4 passed. A combined run once failed
+  in `fred_ingest.mark_slices_planned`, as on other branches, and the file
+  passed alone.
+- Full `tests/integration tests/e2e -m "not external"` -- 449 passed, 2
+  skipped, 1 failed: `test_pep_teardown_removes_every_row_after_a_deliberate_failure`
+  counts every `CENSUS_PEP` capture in the database, and the PEP fixture in
+  `test_catalog_serving_agreement.py`, which runs earlier, leaves ten behind.
+  That residue is the same on `main`'s fixtures (measured with the new place
+  row deselected), so it is not this change; CI runs the two directories in
+  separate jobs.
+- `ruff check .` clean; OpenAPI snapshot unchanged (no new route); schema
+  snapshot regenerated.
+
+## Remaining
+
+- Deliverable 6: place pages at `/us/<state>/<place-slug>` through the
+  place-pages chapter contract, with the cross-county note from the
+  intersection bridge, and Safety and Land and Farms omitted at place grain
+  with the reason. They build on `feat/place-pages`.
+
 ## Checkpoint
 
-Next pickup: read `census_acs/config.py`, `census_acs/ingest.py`, and the
-geography contract; write the failing unit test that `place` is a supported
-ACS grain and that a 1-year place request is refused outside the declared
-scope.
+Next pickup: branch from `feat/place-pages`, merge `feat/acs-place-grain`,
+and settle the slug rule for a place whose name matches a county
+equivalent's (Baltimore city is both).
