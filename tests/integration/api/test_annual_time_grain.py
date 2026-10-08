@@ -35,7 +35,11 @@ def test_the_annual_grain_answers_the_providers_annual_average(
         with writer.cursor() as cursor:
             _seed_time(cursor, 20970101, "2097-01-01")
             geo_sk = seed_geography(
-                cursor, geo_type="state", state_fips="93", vintage=2097, name="Test State"
+                cursor,
+                geo_type="state",
+                state_fips="93",
+                vintage=2097,
+                name="Test State",
             )
             capture_id = seed_capture(cursor, "BLS")
             cursor.execute(
@@ -105,9 +109,7 @@ def test_the_annual_grain_answers_the_providers_annual_average(
         native = api_client.get(
             "/api/v1/observations", params={"metric_code": published_bls_metric}
         )
-        capabilities = api_client.get(
-            "/api/v1/catalog/metrics/" + published_bls_metric
-        )
+        capabilities = api_client.get("/api/v1/catalog/metrics/" + published_bls_metric)
     finally:
         cleanup = postgres_connection_factory()
         try:

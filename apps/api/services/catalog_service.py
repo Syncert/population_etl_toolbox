@@ -259,7 +259,10 @@ def _metric_time_grains(db: Session, source_code: str, metric_code: str) -> list
             {"metric_code": metric_code},
         ).all()
     }
-    return ["native", *(word for grain, word in _CALENDAR_GRAIN_WORDS if grain in present)]
+    return [
+        "native",
+        *(word for grain, word in _CALENDAR_GRAIN_WORDS if grain in present),
+    ]
 
 
 def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListResponse:
