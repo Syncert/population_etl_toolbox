@@ -12,9 +12,49 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Ready for review, 2026-10-06, on branch `docs/scout-county-sources`.
+
+### Outcome
+
+Nine implementation plans in `docs/plans/to_do/`, each citing the official
+documentation read, with grain, suppression, terms of use, the proposed
+adapter package and chapter, deliverables per the adapter checklist,
+acceptance criteria and open items (anything not verifiable from the
+official pages is listed as an open item rather than assumed):
+`CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`, `CENSUS_LEHD_LODES_PLAN.md`,
+`NCES_COMMON_CORE_OF_DATA_PLAN.md`, `FHFA_HOUSE_PRICE_INDEX_PLAN.md`,
+`HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`,
+`FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`,
+`EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`,
+`FCC_BROADBAND_DATA_COLLECTION_PLAN.md`,
+`USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`.
+
+One decline, recorded in
+[`docs/product/declined_sources/cdc-wonder.md`](../../product/declined_sources/cdc-wonder.md):
+the WONDER API serves mortality and natality nationally only, county
+detail exists only in the interactive forms (scripting them would get
+around a deliberate restriction), and county-identified public files need an
+NCHS data use agreement.
+
+Notable findings: County Business Patterns publishes no place grain (the
+almanac table's "county and place" is wrong for it); FEMA's National Risk
+Index score is a FEMA composite, so the plan onboards its components and
+labels any FEMA score exactly as FEMA publishes it, never as a ranking of
+this site's.
+
+The research was done by parallel research agents, one per source, reading
+the agencies' own documentation; the plans were checked against the plan
+metadata and documentation-link tests here.
+
+### Decision on the open item
+
+Schools and Land and Environment become chapters when their first source
+lands, not now: a chapter with no published measure would only be omitted.
+
+### Validation
+
+- `python -m pytest tests/unit/tooling tests/unit/shared -q`: 393 passed (plan metadata, environments, documentation links).
+- `ruff check .`: passed.
 
 ## Why
 
@@ -79,6 +119,4 @@ backlog grows with plans an agent can execute rather than a wish list.
 
 ## Checkpoint
 
-Next pickup: start with Census County Business Patterns and USDA ERS codes,
-whose contracts are smallest, then CDC WONDER, whose terms of use decide the
-most.
+Implementation complete; awaiting human review.

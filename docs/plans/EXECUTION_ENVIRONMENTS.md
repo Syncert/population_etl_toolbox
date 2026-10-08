@@ -46,13 +46,12 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**4 plans.**
+**3 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`groceries-and-gas-cards`](to_do/GROCERIES_AND_GAS_CARDS_PLAN.md) | medium | `browser` | `grocery-and-gasoline-prices`, `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
-| [`second-tier-county-source-scouting`](to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) | medium | none | -- |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 
 
@@ -96,13 +95,22 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**3 plans.**
+**12 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`census-county-business-patterns`](to_do/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) | medium | `postgres` | -- |
+| [`census-lehd-lodes`](to_do/CENSUS_LEHD_LODES_PLAN.md) | high | `postgres` | -- |
+| [`epa-aqs-noaa-climate-normals`](to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) | high | `postgres` | -- |
+| [`fcc-broadband-data-collection`](to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) | medium | `postgres` | -- |
+| [`fema-nri-declarations`](to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) | medium | `postgres` | -- |
+| [`fhfa-house-price-index`](to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) | medium | `postgres` | -- |
+| [`hud-fair-market-rents-and-income-limits`](to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
+| [`nces-common-core-of-data`](to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
+| [`usda-ers-county-codes-and-atlases`](to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) | medium | `postgres` | -- |
 
 
 ## Notes on the cloud container
