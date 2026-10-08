@@ -205,3 +205,19 @@ def test_server_errors_retry_and_client_errors_do_not() -> None:
         )
     assert (raised.value.code, raised.value.status) == ("non_retryable_http", 404)
     assert "https://" not in str(raised.value)
+
+
+def test_a_cocorahs_station_id_with_lower_case_letters_is_admitted() -> None:
+    """Covers: ETL-069 — NCEI's own ids include `US10adam002`; the table must accept them."""
+    import re
+    from pathlib import Path
+
+    ddl = (
+        Path(__file__).resolve().parents[3]
+        / "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
+    ).read_text(encoding="utf-8")
+    patterns = re.findall(r"station_id ~ '([^']+)'", ddl)
+    assert patterns and all(p == "^[A-Za-z0-9]{11}$" for p in patterns)
+    assert re.fullmatch(patterns[0], "US10adam002")
+    assert re.fullmatch(patterns[0], "USW00014837")
+    assert not re.fullmatch(patterns[0], "US10adam00")

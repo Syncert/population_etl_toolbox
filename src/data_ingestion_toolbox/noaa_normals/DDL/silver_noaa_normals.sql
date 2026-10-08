@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS silver_noaa_normals.quarantine (
 -- reason `outside_counties`; one on a shared boundary is `ambiguous`.
 CREATE TABLE IF NOT EXISTS silver_noaa_normals.station (
     run_id UUID NOT NULL REFERENCES control.noaa_normals_file(run_id),
-    station_id TEXT NOT NULL CHECK (station_id ~ '^[A-Z0-9]{11}$'),
+    -- NCEI ids are eleven characters; CoCoRaHS stations carry lower-case
+    -- letters (`US10adam002`), so the pattern admits both cases.
+    station_id TEXT NOT NULL CONSTRAINT station_station_id_check CHECK (station_id ~ '^[A-Za-z0-9]{11}$'),
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     source_row_index INTEGER NOT NULL CHECK (source_row_index >= 1),
     latitude NUMERIC NOT NULL CHECK (latitude BETWEEN -90 AND 90),
@@ -70,6 +72,23 @@ CREATE INDEX IF NOT EXISTS noaa_normals_station_county_idx ON silver_noaa_normal
 
 -- Every published annual normal of every station, with NCEI's measurement
 -- and completeness flags. A withheld value (M, V, Y) has no number.
+-- A warehouse built before the pattern admitted lower case keeps the old
+-- CHECK; replace it so the same file is the upgrade.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_noaa_normals.station'::regclass
+          AND conname = 'station_station_id_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%A-Za-z0-9%'
+    ) THEN
+        ALTER TABLE silver_noaa_normals.station DROP CONSTRAINT station_station_id_check;
+        ALTER TABLE silver_noaa_normals.station ADD CONSTRAINT station_station_id_check
+            CHECK (station_id ~ '^[A-Za-z0-9]{11}$');
+    END IF;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS silver_noaa_normals.station_normal (
     run_id UUID NOT NULL,
     station_id TEXT NOT NULL,
