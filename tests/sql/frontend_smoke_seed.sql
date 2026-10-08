@@ -73,7 +73,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000cdc', 'CDC', 'success'),
     ('00000000-0000-4000-8000-000000000fb1', 'FBI_UCR', 'success'),
     ('00000000-0000-4000-8000-000000000a55', 'USDA_NASS', 'success'),
-    ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success')
+    ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success'),
+    ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -91,7 +92,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000a55', '00000000-0000-4000-8000-000000000a55',
      'USDA_NASS', 'smoke://seed', '{}'::JSONB, 'd3210f3ccecd2dd1a0473c07b25b34fb0715c0654b7fc12a96768d3017719090', 'captured'),
     ('00000000-0000-4000-9000-000000000e70', '00000000-0000-4000-8000-000000000e70',
-     'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured')
+     'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured'),
+    ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
+     'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -114,6 +117,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e70', '00000000-0000-4000-9000-000000000e70',
      '00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'smoke://seed', '{}'::JSONB,
      '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000fcc', '00000000-0000-4000-9000-000000000fcc',
+     '00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'smoke://seed', '{}'::JSONB,
+     '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -488,6 +495,41 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- FCC Broadband Data Collection -- one county's availability shares for
+-- one technology, served from views over a published read. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.fcc_bdc_read (
+    run_id, as_of_date, listing_capture_id, payload_checksum, file_count,
+    row_count, kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000fcc', '2098-06-30', '00000000-0000-4000-a000-000000000fcc',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.fcc_bdc_file (
+    run_id, slice_key, subcategory, file_id, file_name, revision, capture_id,
+    payload_checksum
+) VALUES (
+    '00000000-0000-4000-8000-000000000fcc', 'other_geographies', 'other_geographies', 1,
+    'bdc_us_fixed_broadband_summary_by_geography_J98.csv', '1', '00000000-0000-4000-a000-000000000fcc',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_fcc_bdc.availability_row (
+    run_id, geo_id, technology, capture_id, source_row_index, geography_type,
+    geography_id, geo_sk, geography_status, total_units, speed_02_02,
+    speed_10_1, speed_25_3, speed_100_20, speed_250_25, speed_1000_100,
+    value_source, value_status
+)
+SELECT '00000000-0000-4000-8000-000000000fcc', 'state:55|county:025', 'Any Technology', '00000000-0000-4000-a000-000000000fcc', 1, 'county',
+       '55025', geo_sk, 'resolved', 250000, 0.999, 0.998, 0.995, 0.962, 0.901,
+       0.655, 'smoke fixture', 'valid'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -507,7 +549,8 @@ UNION ALL SELECT * FROM gold_bls.metric_publisher
 UNION ALL SELECT * FROM gold_pep.metric_publisher
 UNION ALL SELECT * FROM gold_cdc.metric_publisher
 UNION ALL SELECT * FROM gold_fbi.metric_publisher
-UNION ALL SELECT * FROM gold_nass.metric_publisher;
+UNION ALL SELECT * FROM gold_nass.metric_publisher
+UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url
