@@ -117,6 +117,12 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "HUD_FMR_IL",
+        SRC / "hud_fmr_il/DDL/silver_hud_fmr_il.sql",
+        "silver_hud_fmr_il.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "BLS",
         SRC / "bls/DDL/silver_bls.sql",
         "silver_bls.fact_labor_statistics",

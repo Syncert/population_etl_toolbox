@@ -595,6 +595,37 @@ all-transactions House Price Index for counties:
   nor certified by FHFA. `dimensions.observation_basis` carries it on every
   row.
 
+### Reading a HUD Fair Market Rent or income-limit row: an area's reference value
+
+`HUD_FMR_IL` serves the Department of Housing and Urban Development's Fair
+Market Rents (`HUD_FMR_IL:fmr_0br` to `HUD_FMR_IL:fmr_4br`, dollars per
+month, efficiency to four bedrooms) and Section 8 income limits
+(`HUD_FMR_IL:median_family_income` and the four-person
+`income_limit_30_4p`, `income_limit_50_4p` and `income_limit_80_4p`,
+dollars per year) for counties.
+
+- **It is the HUD area's value, not the county's.** HUD sets one figure per
+  FMR area (a metro area, a HUD metro subdivision or a nonmetropolitan
+  county) and repeats it for each county in the area;
+  `dimensions.hud_area_code` and `hud_area_name` say which area. It is a
+  program reference value, not the ACS median rent or income.
+- **`year` is HUD's fiscal year.** `period_start` is October 1 of the year
+  before; `dimensions.effective_date` is when that edition took effect
+  (income limits take effect on their own date, after October 1).
+- **A reissued year is a second release.** When HUD revises a fiscal year's
+  FMRs, the revised edition is the release `FY2026-revised` beside
+  `FY2026`; `observation_latest` serves the revision, and
+  `dimensions.edition` says which edition a row is.
+- **The area code is not always there.** HUD's API names an area code for
+  metro areas only, so a nonmetropolitan county's row carries its area's
+  name and no `hud_area_code`. Rows read through the HUD User API carry
+  HUD's required notice in `observation_basis`: "This product uses the HUD
+  User Data API but is not endorsed or certified by HUD User."
+- **New England towns are not counties.** HUD publishes Connecticut,
+  Maine, Massachusetts, New Hampshire, Rhode Island and Vermont by town, and
+  a county's towns can sit in different HUD areas, so those rows are not
+  served as county values.
+
 ### Reading a FEMA row: a modelled loss, or a count of declarations
 
 `FEMA_NRI` serves two FEMA products for counties. From the National Risk
@@ -1019,6 +1050,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| HUD Fair Market Rents and income limits | the fiscal year and edition (`FY2026`, `FY2026-revised`) | HUD's own fiscal-year label; a reissued year is a second release beside the first |
 | FHFA House Price Index | the workbook's "Last updated" date | FHFA's own date in the file; a second file of the same date with different bytes is that date with `.2` |
 | FEMA National Risk Index | the NRI version (`December 2025`) | FEMA's own version label; declaration counts take the date of the OpenFEMA refresh the warehouse read |
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |

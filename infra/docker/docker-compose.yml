@@ -263,6 +263,7 @@ services:
       USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
       FCC_BDC_USERNAME: ${FCC_BDC_USERNAME:-}
       FCC_BDC_API_TOKEN: ${FCC_BDC_API_TOKEN:-}
+      HUD_USER_API_TOKEN: ${HUD_USER_API_TOKEN:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
       # Shared so the webserver reads task logs directly from disk and
@@ -294,6 +295,7 @@ services:
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
       airflow pools set fhfa_hpi_files 1 'FHFA HPI workbooks (serialized)';
+      airflow pools set hud_fmr_il_files 1 'HUD FMR and income-limit workbooks (serialized)';
       airflow pools set fema_files 1 'FEMA NRI and OpenFEMA pages (serialized)';
       airflow pools set fcc_bdc_api 1 'FCC broadband map API (10 calls a minute)';
       airflow pools set epa_aqs_files 1 'EPA AirData files (serialized)';

@@ -54,6 +54,7 @@ EXPECTED_DAG_IDS = {
     "fcc_bdc_ingest",
     "fema_nri_ingest",
     "fhfa_hpi_ingest",
+    "hud_fmr_il_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -112,6 +113,11 @@ EXPECTED_SCHEDULES = {
     # Monthly: FHFA revises the annual workbook without a published
     # calendar, and an unchanged file replays nothing.
     "fhfa_hpi_ingest": "0 15 25 * *",
+    # Monthly: FHFA revises the annual workbook without a published
+    # calendar, and an unchanged file replays nothing.
+    # Monthly: HUD reissues FMRs within a fiscal year without a calendar, and
+    # an unchanged workbook replays nothing.
+    "hud_fmr_il_ingest": "0 16 25 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -146,6 +152,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
     "fhfa_hpi_ingest": 2,
+    "hud_fmr_il_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -170,6 +177,7 @@ EXPECTED_INGEST_POOLS = {
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",
     "fhfa_hpi_ingest": "fhfa_hpi_files",
+    "hud_fmr_il_ingest": "hud_fmr_il_files",
 }
 
 

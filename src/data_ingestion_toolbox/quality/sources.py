@@ -1515,6 +1515,90 @@ def hpi_index_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
     ]
 
 
+def hud_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HUD-002 — no edition left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.hud_fmr_il_file")
+    if total == 0:
+        return [RuleOutcome("control.hud_fmr_il_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.dataset, file.fiscal_year, file.edition, file.status
+          FROM control.hud_fmr_il_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.row_count > (
+                    SELECT COUNT(*) FROM silver_hud_fmr_il.observation_quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_hud_fmr_il.fact_observation AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.hud_fmr_il_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hud_value_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HUD-004 — rents rise with bedrooms, limits are ordered, counties resolved."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_hud_fmr_il.fact_observation AS fact
+        JOIN control.hud_fmr_il_file AS file USING (run_id)
+        WHERE file.status = 'published'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_hud_fmr_il.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.fiscal_year, fact.measure, fact.value,
+               fact.geography_status
+          FROM silver_hud_fmr_il.fact_observation AS fact
+          JOIN control.hud_fmr_il_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (
+                (fact.geo_type = 'county' AND fact.geography_status <> 'resolved')
+                OR EXISTS (
+                    SELECT 1 FROM silver_hud_fmr_il.fact_observation AS larger
+                     WHERE larger.run_id = fact.run_id AND larger.geo_id = fact.geo_id
+                       AND (
+                            (fact.measure ~ '^fmr_[0-3]br$'
+                             AND larger.measure = 'fmr_' || (SUBSTRING(fact.measure, 5, 1)::INT + 1)::TEXT || 'br')
+                            OR (fact.measure = 'income_limit_30_4p' AND larger.measure = 'income_limit_50_4p')
+                            OR (fact.measure = 'income_limit_50_4p' AND larger.measure = 'income_limit_80_4p')
+                       )
+                       AND larger.value < fact.value
+                )
+           )
+        """,
+        order_by="1, 2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "silver_hud_fmr_il.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2622,6 +2706,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-HPI-002": hpi_file_reconciliation,
     "DQ-HPI-004": hpi_index_plausibility,
+    "DQ-HUD-002": hud_file_reconciliation,
+    "DQ-HUD-004": hud_value_plausibility,
     "DQ-FEMA-002": fema_run_reconciliation,
     "DQ-FEMA-004": fema_value_and_geography,
     "DQ-FCC-002": bdc_read_reconciliation,

@@ -20,6 +20,8 @@ from data_ingestion_toolbox.fbi_ucr.config import (
 )
 from data_ingestion_toolbox.fcc_bdc.config import (
     API_TOKEN_ENVIRONMENT_VARIABLE as FCC_BDC_API_TOKEN_VARIABLE,
+from data_ingestion_toolbox.hud_fmr_il.config import (
+    API_TOKEN_ENVIRONMENT_VARIABLE as HUD_USER_API_TOKEN_VARIABLE,
 )
 from data_ingestion_toolbox.fcc_bdc.config import (
     USERNAME_ENVIRONMENT_VARIABLE as FCC_BDC_USERNAME_VARIABLE,
@@ -34,6 +36,7 @@ T = TypeVar("T")
 #: claim to cover every source. The two provider-required keys are read from
 #: their adapters so a renamed variable cannot silently drop a source from the
 #: tier. CDC reads anonymously, so its optional rate-limit token is not here.
+#: HUD User's workbooks are challenged for automated reads, so its API token is.
 REQUIRED_SCHEDULED_CREDENTIALS = (
     "CENSUS_API_KEY",
     "BLS_API_KEY",
@@ -43,6 +46,7 @@ REQUIRED_SCHEDULED_CREDENTIALS = (
     EIA_API_KEY_VARIABLE,
     FCC_BDC_USERNAME_VARIABLE,
     FCC_BDC_API_TOKEN_VARIABLE,
+    HUD_USER_API_TOKEN_VARIABLE,
 )
 
 

@@ -218,7 +218,7 @@ finer, openly licensed.
 | CDC WONDER mortality and natality | Deaths by cause, births, suppression below ten | County, annual | Health, People | Behind every life-expectancy headline; suppression stays visible |
 | NCES Common Core of Data | Schools, districts, enrollment, staffing, lunch eligibility | District and school, mapped to county and place | New chapter: Schools | Families ask about schools first |
 | FHFA House Price Index | Repeat-sales price index | County, annual (ZIP and tract later) | Housing | Local price change beside ACS values and FRED |
-| HUD Fair Market Rents and income limits | Reference rent and income thresholds | County and metro, annual | Housing | A reference point readers recognize |
+| HUD Fair Market Rents and income limits | Reference rent and income thresholds | County (the HUD area's value), annual | Housing | A reference point readers recognize |
 | FEMA National Risk Index and declarations | Expected annual loss by hazard, declared disasters | County and tract | New chapter: Land and Environment | Floods, tornadoes, wildfire are place facts |
 | EPA AQS and NOAA climate normals | Air quality summaries; thirty-year normals | Monitor and station, mapped to county | Land and Environment | Weather is the most-searched local fact |
 | FCC Broadband Data Collection | Availability by speed tier | Location, aggregated to county and place | Housing or People | Pairs ACS "has a subscription" with "could get one" |
@@ -337,10 +337,17 @@ Warehouse, county and place depth:
   - [`docs/plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
 <<<<<<<
 =======
+  - [`docs/plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+>>>>>>>
+<<<<<<<
+=======
 =======
   - [`docs/plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
 >>>>>>>
-  - [`docs/plans/to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
+  - [`docs/plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
 <<<<<<<
   - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
 =======

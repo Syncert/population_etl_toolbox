@@ -45,6 +45,7 @@ from tests.support import noaa_normals as normals_support
 from tests.support import fcc_bdc as bdc_support
 from tests.support import fema_nri as fema_support
 from tests.support import fhfa_hpi as hpi_support
+from tests.support import hud_fmr_il as hud_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -1049,6 +1050,18 @@ def published_hpi_metric(
     return _one_published_code(factory, "FHFA_HPI")
 
 
+@pytest.fixture
+def published_hud_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish every registered HUD edition's county measures."""
+    factory = hud_support.reviewed_warehouse(postgres_connection_factory, request)
+    hud_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_hud_fmr_il"))
+    return _one_published_code(factory, "HUD_FMR_IL")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1105,6 +1118,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_hpi_metric: str,
+    published_hud_metric: str,
     published_fema_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
@@ -1183,6 +1197,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
         ("FHFA_HPI", published_hpi_metric),
+        ("HUD_FMR_IL", published_hud_metric),
         ("FEMA_NRI", published_fema_metric),
         ("FCC_BDC", published_bdc_metric),
         ("EPA_AQS", published_aqs_metric),
@@ -1344,6 +1359,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_eia_metric: str,
     published_cbp_metric: str,
     published_lodes_metric: str,
+    published_hud_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

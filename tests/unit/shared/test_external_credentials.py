@@ -24,6 +24,7 @@ def test_scheduled_external_credentials_accept_all_configured_keys() -> None:
             "EIA_API_KEY": "eia-secret",
             "FCC_BDC_USERNAME": "fcc-user",
             "FCC_BDC_API_TOKEN": "fcc-secret",
+            "HUD_USER_API_TOKEN": "hud-secret",
         }
     )
 
@@ -41,6 +42,7 @@ def test_scheduled_external_credentials_name_missing_keys_without_values() -> No
                 "EIA_API_KEY": "eia-secret",
                 "FCC_BDC_USERNAME": "fcc-user",
                 "FCC_BDC_API_TOKEN": "fcc-secret",
+                "HUD_USER_API_TOKEN": "hud-secret",
             }
         )
 
@@ -67,4 +69,5 @@ def test_scheduled_external_credentials_cover_every_credentialed_source() -> Non
         "EIA_API_KEY",
         "FCC_BDC_USERNAME",
         "FCC_BDC_API_TOKEN",
+        "HUD_USER_API_TOKEN",
     }

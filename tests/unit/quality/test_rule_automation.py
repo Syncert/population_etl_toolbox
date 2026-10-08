@@ -459,6 +459,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "FCC_BDC",
         "FEMA_NRI",
         "FHFA_HPI",
+        "HUD_FMR_IL",
     }, (
         "every source that publishes gold declares the component its DDL is "
         "recorded under; CDC, FBI and USDA NASS joined the four when their "

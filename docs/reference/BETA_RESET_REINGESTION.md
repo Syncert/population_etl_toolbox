@@ -422,6 +422,12 @@ FHFA's annual county workbook, every county and year in one file, through the
 one-slot `fhfa_hpi_files` pool
 ([operations](../user-guides/FHFA_HPI_PIPELINE_OPERATIONS.md)).
 
+Trigger `hud_fmr_il_ingest` once after the shared geography loads: it reads
+every registered HUD User API read (it needs `HUD_USER_API_TOKEN`; the
+income-limit read takes about an hour) through the one-slot
+`hud_fmr_il_files` pool
+([operations](../user-guides/HUD_FMR_IL_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

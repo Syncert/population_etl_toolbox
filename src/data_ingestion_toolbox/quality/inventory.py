@@ -67,6 +67,7 @@ SOURCES: tuple[str, ...] = (
     "FBI_UCR",
     "USDA_NASS",
     "FHFA_HPI",
+    "HUD_FMR_IL",
     "FEMA_NRI",
     "FCC_BDC",
     "EPA_AQS",
@@ -3250,6 +3251,112 @@ _HPI_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# HUD Fair Market Rents and income limits.
+# ---------------------------------------------------------------------------
+
+_HUD_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.hud_fmr_il_file",
+        "control",
+        "HUD_FMR_IL",
+        grain="run_id (one run per read of a registered edition or API read)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered FMR and income-limit editions (fiscal year, original or revised) and HUD User API reads",
+        cadence="monthly; a read whose bytes equal the edition's last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.hud_fmr_il_api_capture",
+        "control",
+        "HUD_FMR_IL",
+        grain="run_id, slice_key (one row per API answer)",
+        lineage="control.hud_fmr_il_file, raw_capture.response_capture",
+        scope_method="every HUD User API answer of an API read: state lists, county lists, state FMRs, county income limits",
+        cadence="monthly, with each API read",
+        empty_behavior="empty when only workbooks were read",
+    ),
+    _obj(
+        "silver_hud_fmr_il.observation_revision",
+        "silver",
+        "HUD_FMR_IL",
+        grain="capture_id, source_row_index, measure",
+        lineage="control.hud_fmr_il_file, raw_capture.response_capture",
+        scope_method="every county and New England town row of every replayed edition, each measure",
+        cadence="per HUD replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_hud_fmr_il.observation_quarantine",
+        "silver",
+        "HUD_FMR_IL",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated workbook row; populated only on failure",
+        cadence="per HUD replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_hud_fmr_il.fact_observation",
+        "silver",
+        "HUD_FMR_IL",
+        grain="measure, geo_id, fiscal_year, capture_id",
+        lineage="silver_hud_fmr_il.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="conformed observations of every replayed edition; town rows held as unsupported",
+        cadence="per HUD replay",
+        empty_behavior="an empty cell is missing with a reason, never 0",
+    ),
+    _obj(
+        "gold_hud_fmr_il.measure_definition",
+        "gold",
+        "HUD_FMR_IL",
+        grain="measure",
+        scope_method="the nine published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_hud_fmr_il.observation_revision",
+        "gold",
+        "HUD_FMR_IL",
+        grain="metric_key, geo_id, year, run_id (published editions only)",
+        lineage="silver_hud_fmr_il.fact_observation, control.hud_fmr_il_file",
+        scope_method="published county rows of every edition; originals and revisions kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published edition",
+    ),
+    _obj(
+        "gold_hud_fmr_il.observation_latest",
+        "gold",
+        "HUD_FMR_IL",
+        grain="metric_key, geo_id, year (edition in force)",
+        lineage="gold_hud_fmr_il.observation_revision",
+        scope_method="revised edition over the original, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published edition",
+    ),
+    _obj(
+        "gold_hud_fmr_il.measure_export",
+        "publisher",
+        "HUD_FMR_IL",
+        grain="source_object_key (measure)",
+        lineage="gold_hud_fmr_il.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_hud_fmr_il.metric_publisher",
+        "publisher",
+        "HUD_FMR_IL",
+        grain="source_object_key (measure)",
+        lineage="gold_hud_fmr_il.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published edition",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -3263,6 +3370,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _FBI_OBJECTS
     + _NASS_OBJECTS
     + _HPI_OBJECTS
+    + _HUD_OBJECTS
     + _FEMA_OBJECTS
     + _BDC_OBJECTS
     + _AQS_OBJECTS
@@ -3671,6 +3779,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fcc_bdc.metric_publisher",
             "gold_fema_nri.metric_publisher",
             "gold_fhfa_hpi.metric_publisher",
+            "gold_hud_fmr_il.metric_publisher",
         ),
     ),
     _rule(
@@ -6012,6 +6121,86 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "2000-based index is 100 in 2000 wherever it is published, and every "
         "county code resolved to the shared geography.",
         ("silver_fhfa_hpi.fact_observation", "control.fhfa_hpi_file"),
+    ),
+    # -- HUD Fair Market Rents and income limits ------------------------------
+    _rule(
+        "DQ-HUD-001",
+        "BLOCK",
+        "uniqueness",
+        "A HUD observation is unique per (measure, county or town, fiscal year, "
+        "capture): a repeated fips is quarantined, and a revised edition is a "
+        "second capture beside the original.",
+        (
+            "silver_hud_fmr_il.observation_revision",
+            "silver_hud_fmr_il.fact_observation",
+            "gold_hud_fmr_il.observation_revision",
+            "gold_hud_fmr_il.observation_latest",
+            "gold_hud_fmr_il.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact's primary key, the "
+            "parser quarantines a repeated fips, and the gold relations are views "
+            "over the fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hud_fmr_il.fact_observation",
+                ("measure", "geo_id", "fiscal_year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HUD-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured edition is left unreplayed, and every replayed edition "
+        "with readable rows reached its conformed facts.",
+        (
+            "control.hud_fmr_il_file",
+            "silver_hud_fmr_il.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-HUD-003",
+        "BLOCK",
+        "conformance",
+        "A missing cell carries no number and a valid one always does, and a "
+        "New England town row is never conformed as its county.",
+        (
+            "silver_hud_fmr_il.fact_observation",
+            "gold_hud_fmr_il.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid cell "
+            "without a value, a missing one with a value, and a town that is not "
+            "held as unsupported."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hud_fmr_il.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hud_fmr_il_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_hud_fmr_il.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hud_fmr_il_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HUD-004",
+        "WARN",
+        "plausibility",
+        "In every published edition, Fair Market Rents do not fall as bedrooms "
+        "are added, the four-person 30% limit does not exceed the 50% limit or "
+        "the 50% the 80%, and every whole-county row resolved to the shared "
+        "geography.",
+        ("silver_hud_fmr_il.fact_observation", "control.hud_fmr_il_file"),
     ),
 )
 

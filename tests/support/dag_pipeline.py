@@ -41,6 +41,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fbi_cde_api",
     "usda_nass_api",
     "fhfa_hpi_files",
+    "hud_fmr_il_files",
     "fema_files",
     "fcc_bdc_api",
     "epa_aqs_files",
@@ -1093,6 +1094,27 @@ def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hpi_capture, "fetch_file", fetch_file)
 
 
+def stub_hud_fmr_il(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve HUD User API answers from the recorded fixtures, with a stand-in token."""
+    from data_ingestion_toolbox.hud_fmr_il import api_capture as hud_api_capture
+    from tests.support.hud_fmr_il import FIXTURE_TOKEN, ApiFixtureClient
+
+    real_client = hud_api_capture.HudApiClient
+
+    def client(config: Any, **_kwargs: Any) -> Any:
+        return real_client(
+            config.model_copy(
+                update={
+                    "hud_user_api_token": FIXTURE_TOKEN,
+                    "api_min_spacing_seconds": 0,
+                }
+            ),
+            client=ApiFixtureClient(),
+        )
+
+    monkeypatch.setattr(hud_api_capture, "HudApiClient", client)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1558,6 +1580,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),
         ("fhfa_hpi", stub_fhfa_hpi),
+        ("hud_fmr_il", stub_hud_fmr_il),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

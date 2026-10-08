@@ -65,6 +65,8 @@ from __future__ import annotations
 #:   statewide and tribal-area declarations are not counted toward a county.
 #: * ``FHFA_HPI`` -- the annual county workbook only; the ZIP and tract
 #:   files wait on sub-county identities.
+#: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
+#:   rows are held, not published as their county.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -92,6 +94,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "HUD_FMR_IL": frozenset({"COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),
     "FEMA_NRI": frozenset({"COUNTY"}),
     "FCC_BDC": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),

@@ -118,6 +118,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
         ("control", "fhfa_hpi_file"),
+        ("control", "hud_fmr_il_file"),
+        ("control", "hud_fmr_il_api_capture"),
         ("control", "fema_nri_run"),
         ("control", "fema_nri_page"),
         ("control", "fcc_bdc_read"),

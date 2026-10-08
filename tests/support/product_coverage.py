@@ -715,6 +715,42 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "dimensions, so `/api/v1/observations` serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="hud_fmr_il.county_reference_values",
+        source="HUD_FMR_IL",
+        publisher_schema="gold_hud_fmr_il",
+        datasets=(
+            "fmr:fy2026:original",
+            "fmr:fy2026:revised",
+            "fmr:fy2027:original",
+            "il:fy2026:original",
+        ),
+        fixtures=(
+            "tests/fixtures/hud_fmr_il/FY26_FMRs.xlsx",
+            "tests/fixtures/hud_fmr_il/FY26_FMRs_revised.xlsx",
+            "tests/fixtures/hud_fmr_il/FY27_FMRs.xlsx",
+            "tests/fixtures/hud_fmr_il/Section8-FY26.xlsx",
+        ),
+        serving_relations=(
+            "gold_hud_fmr_il.observation_revision",
+            "gold_hud_fmr_il.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_hud_fmr_il_pipeline.py::"
+            "test_rents_and_limits_reach_the_neutral_api_with_their_area"
+        ),
+        api_absence_reason=(
+            "HUD Fair Market Rents and income limits publish no source-specific "
+            "HTTP route: each county row is the neutral observation shape with its "
+            "HUD area, edition, effective date and basis as declared dimensions, "
+            "so `/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 
