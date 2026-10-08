@@ -44,8 +44,8 @@ CREATE TABLE IF NOT EXISTS silver_noaa_normals.quarantine (
 CREATE TABLE IF NOT EXISTS silver_noaa_normals.station (
     run_id UUID NOT NULL REFERENCES control.noaa_normals_file(run_id),
     -- NCEI ids are eleven characters; CoCoRaHS stations carry lower-case
-    -- letters (`US10adam002`), so the pattern admits both cases.
-    station_id TEXT NOT NULL CONSTRAINT station_station_id_check CHECK (station_id ~ '^[A-Za-z0-9]{11}$'),
+    -- letters and underscores (`US10adam002`, `US10box_001`).
+    station_id TEXT NOT NULL CONSTRAINT station_station_id_check CHECK (station_id ~ '^[A-Za-z0-9_]{11}$'),
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     source_row_index INTEGER NOT NULL CHECK (source_row_index >= 1),
     latitude NUMERIC NOT NULL CHECK (latitude BETWEEN -90 AND 90),
@@ -80,11 +80,11 @@ BEGIN
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'silver_noaa_normals.station'::regclass
           AND conname = 'station_station_id_check'
-          AND pg_get_constraintdef(oid) NOT LIKE '%A-Za-z0-9%'
+          AND pg_get_constraintdef(oid) NOT LIKE '%A-Za-z0-9\_%'
     ) THEN
         ALTER TABLE silver_noaa_normals.station DROP CONSTRAINT station_station_id_check;
         ALTER TABLE silver_noaa_normals.station ADD CONSTRAINT station_station_id_check
-            CHECK (station_id ~ '^[A-Za-z0-9]{11}$');
+            CHECK (station_id ~ '^[A-Za-z0-9_]{11}$');
     END IF;
 END
 $$;

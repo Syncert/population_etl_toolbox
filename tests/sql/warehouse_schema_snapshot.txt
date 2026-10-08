@@ -11309,7 +11309,7 @@ r silver_noaa_normals.station
     constraint station_pkey PRIMARY KEY (run_id, station_id)
     constraint station_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.noaa_normals_file(run_id)
     constraint station_source_row_index_check CHECK ((source_row_index >= 1))
-    constraint station_station_id_check CHECK ((station_id ~ '^[A-Za-z0-9]{11}$'::text))
+    constraint station_station_id_check CHECK ((station_id ~ '^[A-Za-z0-9_]{11}$'::text))
     index noaa_normals_station_county_idx CREATE INDEX noaa_normals_station_county_idx ON silver_noaa_normals.station USING btree (geo_id)
     index station_pkey CREATE UNIQUE INDEX station_pkey ON silver_noaa_normals.station USING btree (run_id, station_id)
 

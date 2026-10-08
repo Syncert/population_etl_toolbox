@@ -217,7 +217,8 @@ def test_a_cocorahs_station_id_with_lower_case_letters_is_admitted() -> None:
         / "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
     ).read_text(encoding="utf-8")
     patterns = re.findall(r"station_id ~ '([^']+)'", ddl)
-    assert patterns and all(p == "^[A-Za-z0-9]{11}$" for p in patterns)
+    assert patterns and all(p == "^[A-Za-z0-9_]{11}$" for p in patterns)
     assert re.fullmatch(patterns[0], "US10adam002")
     assert re.fullmatch(patterns[0], "USW00014837")
+    assert re.fullmatch(patterns[0], "US10box_001")
     assert not re.fullmatch(patterns[0], "US10adam00")
