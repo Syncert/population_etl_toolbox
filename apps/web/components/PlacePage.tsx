@@ -77,11 +77,8 @@ import { explorerHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
-<<<<<<<
 const WithinCounty = dynamic(() => import("./WithinCounty"));
-=======
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
->>>>>>>
 
 const CATALOG_PAGE_SIZE = 1000;
 /** How many observation requests one page keeps in flight at once. */

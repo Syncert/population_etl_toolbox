@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-<<<<<<<
   INDUSTRY_MIX_SECTORS,
-=======
   MIGRATION_POPULATION_NOTE,
->>>>>>>
   PLACE_CHAPTERS,
   PLACE_SEGMENT,
   buildTrend,
