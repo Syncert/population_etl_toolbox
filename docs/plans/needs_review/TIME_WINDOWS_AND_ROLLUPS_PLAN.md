@@ -240,7 +240,7 @@ derived values. Weekly NASS progress data (not ingested).
   an incomplete window as `Incomplete window: k of n months reported`.
   The workbench half of RU-7 (series time views, chart labelling, and the
   optional compatibility alignment) moved to
-  [`WORKBENCH_TIME_VIEWS_PLAN.md`](../to_do/WORKBENCH_TIME_VIEWS_PLAN.md),
+  [`WORKBENCH_TIME_VIEWS_PLAN.md`](WORKBENCH_TIME_VIEWS_PLAN.md),
   because it changes the saved-document shape WEB-095 grades.
   WEB-095 is unchanged: its saved-document shape did not change.
 - **RU-8**: API consumer guide ("Quarters and years", "The last three

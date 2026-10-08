@@ -529,14 +529,17 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
         assert distribution.status_code == 200
         assert distribution.json()["total"] == 1
 
-    # Covers: API-053 — an annual survey estimate and a monthly rate are not
-    # comparable, and the declared policy says so instead of serving a join.
+    # Covers: API-053 — an annual survey estimate beside a monthly rate is
+    # served (the owner's WT-4 decision, 2026-10-07): each geography pairs
+    # its own newest values, and the verdict says the annual value is one
+    # value repeated across its year rather than a monthly measurement.
     comparison = client.get(
         "/api/v1/comparison",
         params={"metric_code_a": census_metric, "metric_code_b": bls_metric},
     )
-    assert comparison.status_code == 422
-    assert "time grains" in comparison.json()["detail"]
+    assert comparison.status_code == 200
+    for row in comparison.json()["items"]:
+        assert row["period_a"] and row["period_b"]
 
     preflight = client.get(
         "/api/v1/comparison/preflight",
@@ -544,10 +547,14 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
     )
     assert preflight.status_code == 200
     verdict = preflight.json()
-    assert verdict["comparable"] is False
-    assert verdict["derivations"] == []
-    failed = {rule["rule"] for rule in verdict["rules"] if rule["status"] == "fail"}
-    assert failed == {"time_grains"}
+    assert verdict["comparable"] is True
+    time_rule = next(rule for rule in verdict["rules"] if rule["rule"] == "time_grains")
+    assert time_rule["status"] == "pass"
+    assert any(
+        "ANNUAL beside MONTHLY" in caveat and "repeated" in caveat
+        for caveat in verdict["caveats"]
+    )
+    assert not [rule for rule in verdict["rules"] if rule["status"] == "fail"]
 
 
 def test_real_neutral_observation_dispatch_and_releases(

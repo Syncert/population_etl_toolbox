@@ -812,6 +812,14 @@ publishes nothing to check (Census ACS publishes no units), the comparison is
 served and the unverified rule travels as a caveat, naming which of
 `metric_code_a` and `metric_code_b` published nothing.
 
+Time grains that nest compare. A measure published by year or by quarter
+beside one published at a finer calendar grain (an annual measure beside a
+monthly one) passes the time rule with a caveat: each side keeps its own
+newest published value, and the coarser value is one value held across the
+period it covers, repeated rather than measured at the finer grain. Read
+`period_a` and `period_b` for what was combined. Grains that do not nest
+(weekly beside monthly) or a word outside the calendar vocabulary still fail.
+
 Grains are compared in the vocabulary, not by spelling: the geography rule
 reads the same five words and the same `NATION`/`US` aliases as the
 `geo_level` filter, so a catalog row carrying a word the vocabulary replaced

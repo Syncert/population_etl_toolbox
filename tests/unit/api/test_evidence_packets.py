@@ -609,6 +609,18 @@ def test_incomplete_analytical_block_is_stored_and_reported(
             "records newest_release_per_period=true but its query asks for false",
             id="envelope-records-a-settled-history-the-query-does-not-ask-for",
         ),
+        # WEB-141: an envelope has no field for a derived calendar window, so a
+        # block cannot yet argue from one.
+        pytest.param(
+            _block(document=_query(time_grain="annual")),
+            "asks for a calendar grain or window",
+            id="query-asks-for-a-calendar-grain",
+        ),
+        pytest.param(
+            _block(document=_query(window="trailing_12")),
+            "asks for a calendar grain or window",
+            id="query-asks-for-a-window",
+        ),
     ],
 )
 def test_contradictions_are_refused_at_write_naming_the_block(
