@@ -66,6 +66,8 @@ import type {
 } from "../lib/placeChapters";
 import { groupNearby, isEmpty, relatedPath, shareText } from "../lib/placeRelationships";
 import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
+import { rankSentence, standouts } from "../lib/distinctive";
+import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 
@@ -140,6 +142,8 @@ export default function PlacePage({
   const [search, setSearch] = useState("");
   const [nearby, setNearby] = useState<NearbyGroups | null>(null);
   const [nearbyNote, setNearbyNote] = useState("");
+  const [distinctive, setDistinctive] = useState<DistinctiveResponse | null>(null);
+  const [distinctiveNote, setDistinctiveNote] = useState("");
   const settled = useRef(false);
 
   // Resolve the address through the catalog.
@@ -272,6 +276,22 @@ export default function PlacePage({
       });
     return () => controller.abort();
   }, [resolution.state, place, states, counties]);
+  // Where this place stands among its siblings, one measure at a time, as the
+  // API derives it (what-makes-this-place-distinctive).
+  useEffect(() => {
+    if (resolution.state !== "found" || !place || level === "NATIONAL") return;
+    const controller = new AbortController();
+    apiFetch<DistinctiveResponse>("/place/distinctive", { params: { geo_id: place.geo_id }, signal: controller.signal })
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setDistinctive(payload);
+        setDistinctiveNote(payload.ranked.length ? "" : "What stands out: no measure could be ranked for this place");
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setDistinctiveNote(`What stands out: ${apiErrorMessage(error)}`);
+      });
+    return () => controller.abort();
+  }, [resolution.state, place, level]);
 
   const levels = useMemo((): LevelPlace[] => {
     const chain: LevelPlace[] = [];
@@ -432,6 +452,7 @@ export default function PlacePage({
   const emptied = settled.current ? shown.filter((resolved) => !visible.includes(resolved)) : [];
   const omissions = [
     ...(nearbyNote ? [nearbyNote] : []),
+    ...(distinctiveNote ? [distinctiveNote] : []),
     ...omitted.map(omissionLine),
     ...emptied.map((resolved) => `${resolved.chapter.title}: no published values for this place`),
   ].sort((left, right) => chapterOrder(left) - chapterOrder(right));
@@ -466,6 +487,10 @@ export default function PlacePage({
         <StatusPill state={catalogStatus.state} label="Measures" message={catalogStatus.message} testId="place-catalog-status" />
         <StatusPill state={observationStatus.state} label="Observations" message={observationStatus.message} testId="place-observation-status" />
       </section>
+
+      {distinctive && distinctive.ranked.length ? (
+        <WhatStandsOut response={distinctive} siblingsName={level === "COUNTY" && state ? `${stateName(state)} counties` : "states"} />
+      ) : null}
 
       {visible.length ? (
         <nav className="chapter-rail" aria-label="Chapters" data-testid="chapter-rail">
@@ -778,5 +803,44 @@ function DepthRow({
         {published ? <span className="subtle"> · {observationPeriodLabel(row)}{uncertaintyText(row!) ? ` · ${uncertaintyText(row!)}` : ""}</span> : null}
       </dd>
     </div>
+  );
+}
+
+function StandoutRow({ measure, siblingsName }: { measure: DistinctiveMeasure; siblingsName: string }) {
+  const unit = measure.units && measure.units !== "value" ? ` ${measure.units}` : "";
+  return (
+    <li data-testid={`standout-${measure.metric_code}`}>
+      <strong>{measure.metric_display_name || measure.metric_code}</strong>
+      <span> · {formatObservationValue(measure.value)}{unit}{measure.period_start ? ` · period beginning ${measure.period_start}` : ""}</span>
+      <p className="subtle">{rankSentence(measure, siblingsName)}.</p>
+      {measure.caveats.map((caveat) => <p key={caveat} className="subtle">{caveat}</p>)}
+      <Link className="text-link" href={`/map/${encodeURIComponent(measure.metric_code)}`}>See every county on a map</Link>
+    </li>
+  );
+}
+
+function WhatStandsOut({ response, siblingsName }: { response: DistinctiveResponse; siblingsName: string }) {
+  const { highest, lowest, rankedCount } = standouts(response);
+  return (
+    <section className="analysis-panel place-standout" aria-labelledby="standout-heading" data-testid="place-standout">
+      <h2 id="standout-heading">What stands out</h2>
+      <p className="subtle" data-testid="place-standout-count">
+        {rankedCount} measure{rankedCount === 1 ? "" : "s"} could be ranked among {siblingsName}, each on its own. A rank
+        says where this place falls, not how far apart the values are, and nothing here adds measures together.
+        Places whose values carry overlapping margins of error may not truly differ.
+      </p>
+      <div className="place-standout-groups">
+        <div>
+          <h3>Among the highest</h3>
+          <ul data-testid="place-standout-highest">{highest.map((measure) => <StandoutRow key={measure.metric_code} measure={measure} siblingsName={siblingsName} />)}</ul>
+        </div>
+        {lowest.length ? (
+          <div>
+            <h3>Among the lowest</h3>
+            <ul data-testid="place-standout-lowest">{lowest.map((measure) => <StandoutRow key={measure.metric_code} measure={measure} siblingsName={siblingsName} />)}</ul>
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }

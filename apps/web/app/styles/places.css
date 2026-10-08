@@ -227,3 +227,7 @@
 @media (max-width: 520px) {
   .paired-bar { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }
+/* What stands out (what-makes-this-place-distinctive) */
+.place-standout-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.place-standout-groups ul { margin: 0; padding: 0; list-style: none; }
+.place-standout-groups li { border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }

@@ -215,6 +215,31 @@ two responses.
 
 ## Observations
 
+### Derived within-parent percentile ranks
+
+`GET /api/v1/place/distinctive?geo_id=…` is an API-derived reading of where
+one county stands among the other counties of its state, or one state among
+the states, **one measure at a time**. It publishes no warehouse fact and no
+score. For each measure in a reviewed list (medians, rates, shares, indices
+and per-person values; a count would rank a county by its size), the API reads
+the newest published value per geography through the source's own aligned
+reduction and returns, per measure: `value`, `period_start`, `units`,
+`siblings_with_value`, `siblings_withheld` (a row with no number),
+`siblings_missing` (no row at all), `siblings_below`, `siblings_tied`, and
+`percentile_rank` = `siblings_below / siblings_with_value`, with the
+`request` it read and the source's uncertainty caveat. Withheld and missing
+siblings are counted, never ranked as zero.
+
+A measure is listed in `not_ranked` with its reason, never dropped, when it is
+not published in the catalog or at the grain, when its source is declined for
+aligned analysis, when this geography has no value, when its siblings' newest
+values come from different periods (a rank across periods is not published),
+or when fewer than `minimum_siblings` (10) siblings have a value. The
+response carries `derived: true` and `method`, has no field that combines two
+measures, and orders `ranked` by `percentile_rank`, highest first. A nation
+has no siblings, so every measure is `not_ranked`. An unknown geography
+answers `404 {"detail": "geo_id not found"}`.
+
 ### Derived population planning scenario
 
 `GET /api/v1/population/scenario` is an API-derived planning calculation over

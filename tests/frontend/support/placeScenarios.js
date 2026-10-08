@@ -87,6 +87,22 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       if (!place) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
       const items = RELATED[geoId] || [];
       return route.fulfill({ json: { geo_id: geoId, geo_level: place.geo_level, total: items.length, items } });
+    if (path === "/api/v1/place/distinctive") {
+      const geoId = params.get("geo_id");
+      if (![...STATES, ...COUNTIES].some((item) => item.geo_id === geoId)) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
+      const rank = (metric_code, name, value, below, extra = {}) => ({ metric_code, metric_display_name: `${name} (UI fixture)`, source_code: metric_code.split(":")[0], units: null,
+        period_start: "2020-01-01", value, siblings_with_value: 70, siblings_withheld: 0, siblings_missing: 0, siblings_below: below, siblings_tied: 0, percentile_rank: below / 70,
+        caveats: [], request: `/api/v1/observations?metric_code=${metric_code}&scope=latest&geo_level=COUNTY&state_fips=55&newest_per_geography=true`, ...extra });
+      const ranked = geoId === "state:55|county:025" ? [
+        rank("CENSUS_ACS:acs5:B19013_001", "Median household income", 92000, 68, { siblings_withheld: 1, siblings_with_value: 70 }),
+        rank("CENSUS_ACS:acs5:B25077_001", "Median home value", 385000, 66),
+        rank("CENSUS_ACS:acs5:B19301_001", "Per capita income", 51000, 64),
+        rank("CENSUS_ACS:acs5:B01002_001", "Median age", 35.7, 2),
+        rank("BLS:LAU:UNEMP_RATE", "Unemployment rate", 2.4, 4),
+        rank("CENSUS_PEP:RDEATH", "Death rate", 7.1, 5),
+      ] : [];
+      return route.fulfill({ json: { derived: true, geo_id: geoId, geo_level: geoId.includes("county") ? "COUNTY" : "STATE", parent_scope: "state:55", minimum_siblings: 10,
+        method: "UI fixture", ranked, not_ranked: [{ metric_code: "CDC:places_county:OBESITY:AgeAdjPrv", reason: "not published at COUNTY (UI fixture)" }] } });
     }
     if (path === "/api/v1/catalog/geographies") {
       const grain = params.get("geo_level");

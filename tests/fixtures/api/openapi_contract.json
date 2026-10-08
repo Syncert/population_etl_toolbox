@@ -1960,6 +1960,30 @@
         "census-pep"
       ]
     },
+    "GET /api/v1/place/distinctive": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:DistinctiveResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "place"
+      ]
+    },
     "GET /api/v1/population/scenario": {
       "parameters": [
         {
@@ -2956,6 +2980,55 @@
         "value"
       ]
     },
+    "DistinctiveMeasure": {
+      "properties": {
+        "caveats": "array<string>",
+        "metric_code": "string",
+        "metric_display_name": "string | null",
+        "percentile_rank": "number",
+        "period_start": "string | null",
+        "request": "string",
+        "siblings_below": "integer",
+        "siblings_missing": "integer",
+        "siblings_tied": "integer",
+        "siblings_with_value": "integer",
+        "siblings_withheld": "integer",
+        "source_code": "string | null",
+        "units": "string | null",
+        "value": "number"
+      },
+      "required": [
+        "caveats",
+        "metric_code",
+        "percentile_rank",
+        "request",
+        "siblings_below",
+        "siblings_missing",
+        "siblings_tied",
+        "siblings_with_value",
+        "siblings_withheld",
+        "value"
+      ]
+    },
+    "DistinctiveResponse": {
+      "properties": {
+        "derived": "boolean",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "method": "string",
+        "minimum_siblings": "integer",
+        "not_ranked": "array<NotRankedMeasure>",
+        "parent_scope": "string | null",
+        "ranked": "array<DistinctiveMeasure>"
+      },
+      "required": [
+        "geo_id",
+        "method",
+        "minimum_siblings",
+        "not_ranked",
+        "ranked"
+      ]
+    },
     "DistributionBin": {
       "properties": {
         "bin_index": "integer",
@@ -3643,6 +3716,16 @@
         "scope",
         "source_code",
         "total"
+      ]
+    },
+    "NotRankedMeasure": {
+      "properties": {
+        "metric_code": "string",
+        "reason": "string"
+      },
+      "required": [
+        "metric_code",
+        "reason"
       ]
     },
     "ObservationCoverage": {
