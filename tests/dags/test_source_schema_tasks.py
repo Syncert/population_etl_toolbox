@@ -37,18 +37,18 @@ SOURCES = [
     (
         "usda_nass_crop_ingest",
         "ensure_nass_schema",
-        "irs_migration_ingest",
-        "ensure_irs_migration_schema",
         "ingest_batch_",
+        nass_schema,
+        "USDA_NASS",
     ),
+    ("bea_regional_ingest", "ensure_bea_schema", "ingest_batch_", bea_schema, "BEA"),
     (
-        irs_migration_schema,
-        "IRS_MIGRATION",
+        "bls_qcew_ingest",
+        "ensure_bls_qcew_schema",
         "ingest_batch_",
-        "census_saipe_sahie_ingest",
-        "ensure_census_sae_schema",
+        qcew_schema,
+        "BLS_QCEW",
     ),
-    ("ingest_batch_", sae_schema, "CENSUS_SAIPE_SAHIE", nass_schema, "USDA_NASS"),
     (
         "census_building_permits_ingest",
         "ensure_census_bps_schema",
@@ -57,13 +57,19 @@ SOURCES = [
         "CENSUS_BPS",
     ),
     (
-        "bls_qcew_ingest",
-        "ensure_bls_qcew_schema",
+        "census_saipe_sahie_ingest",
+        "ensure_census_sae_schema",
         "ingest_batch_",
-        qcew_schema,
-        "BLS_QCEW",
+        sae_schema,
+        "CENSUS_SAIPE_SAHIE",
     ),
-    ("bea_regional_ingest", "ensure_bea_schema", "ingest_batch_", bea_schema, "BEA"),
+    (
+        "irs_migration_ingest",
+        "ensure_irs_migration_schema",
+        "ingest_batch_",
+        irs_migration_schema,
+        "IRS_MIGRATION",
+    ),
 ]
 
 
