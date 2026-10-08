@@ -37,13 +37,13 @@ SOURCES = [
     (
         "usda_nass_crop_ingest",
         "ensure_nass_schema",
-    (
-        "irs_migration_ingest",
-        "ensure_irs_migration_schema",
-        "ingest_batch_",
-        irs_migration_schema,
-        "IRS_MIGRATION",
-    ),
+        (
+            "irs_migration_ingest",
+            "ensure_irs_migration_schema",
+            "ingest_batch_",
+            irs_migration_schema,
+            "IRS_MIGRATION",
+        ),
         "ingest_batch_",
         "census_saipe_sahie_ingest",
         "ensure_census_sae_schema",
