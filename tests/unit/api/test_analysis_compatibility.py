@@ -203,19 +203,7 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         for code, dispatch in OBSERVATION_DISPATCH.items()
         if dispatch.analysis_ready
     }
-    assert ready == {
-        "BLS",
-        "CENSUS_ACS",
-        "FRED",
-        "CENSUS_PEP",
-        "BEA",
-        "BLS_QCEW",
-        "CENSUS_BPS",
-        "CENSUS_SAIPE_SAHIE",
-        "IRS_MIGRATION",
-        "EIA",
-        "CENSUS_CBP",
-    }
+    assert ready == {"BLS", "CENSUS_ACS", "FRED", "CENSUS_PEP", "BEA", "BLS_QCEW", "CENSUS_BPS", "CENSUS_SAIPE_SAHIE", "IRS_MIGRATION", "EIA", "CENSUS_CBP", "CENSUS_LODES"}
 
 
 # ---------------------------------------------------------------------------

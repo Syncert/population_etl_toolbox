@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql",
+    "data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/gold_census_lodes.sql",
+    "data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/publisher.sql",
     "data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql",
     "data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql",
     "data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql",

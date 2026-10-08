@@ -568,6 +568,31 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a LEHD LODES row: jobs where people live and where they work
+
+`CENSUS_LODES` serves the Census Bureau's LEHD Origin-Destination Employment
+Statistics (LODES8) for every county and state: `CENSUS_LODES:resident_workers`
+(jobs held by people living there), `CENSUS_LODES:jobs` (jobs located there),
+`CENSUS_LODES:live_and_work`, `CENSUS_LODES:inbound` (jobs there held by
+people living elsewhere) and, for counties, `CENSUS_LODES:outbound_in_state`
+(jobs elsewhere in the state held by people living there). The unit is
+`jobs`, counting all jobs (`JT00`), not people: one person can hold two.
+
+- **It is this warehouse's sum, not a Bureau county figure.** LODES
+  publishes census blocks only; each county and state value is the sum of
+  the state's block rows, and `dimensions.observation_basis` says so. The
+  Bureau protects those blocks (noise for workplaces, synthesized residence
+  locations), so every value is a protected estimate.
+- **`live_and_work + inbound = jobs`** for a county. A state's
+  `live_and_work` is every in-state commute and its `inbound` the jobs held
+  by people living in another state. Out-of-state outflow is not served.
+- **A state-year with no workplace file has no workplace row**, never a
+  zero: Alaska publishes none from 2017 and Michigan none for 2022-2023, so
+  those years serve `resident_workers` only.
+- **The release is the state's data vintage** (`YYYYMMDD_HHMM`). A newer
+  vintage is a new release beside the old one, and `observation_latest`
+  serves the newest.
+
 ### Reading a County Business Patterns row: employer establishments, mid-March
 
 `CENSUS_CBP` serves the Census Bureau's County Business Patterns: employer
@@ -876,6 +901,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | Census Building Permits | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |

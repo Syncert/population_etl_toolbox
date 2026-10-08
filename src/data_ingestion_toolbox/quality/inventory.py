@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
     "CENSUS_SAIPE_SAHIE",
@@ -2608,6 +2609,112 @@ _CBP_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# Census LEHD LODES.
+# ---------------------------------------------------------------------------
+
+_LODES_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_lodes_slice",
+        "control",
+        "CENSUS_LODES",
+        grain="run_id (one run per state and year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered states x the configured newest years",
+        cadence="monthly; an unchanged vintage fetches only its version and checksum list",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.census_lodes_file",
+        "control",
+        "CENSUS_LODES",
+        grain="run_id, family",
+        lineage="control.census_lodes_slice, raw_capture.response_capture",
+        scope_method="the four registered files of each state-year",
+        cadence="per capture",
+        empty_behavior="a run whose vintage is unchanged records no file",
+    ),
+    _obj(
+        "silver_census_lodes.quarantine",
+        "silver",
+        "CENSUS_LODES",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable block row; populated only on failure",
+        cadence="per LODES replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_lodes.fact_area",
+        "silver",
+        "CENSUS_LODES",
+        grain="run_id, family, column_code, geo_id",
+        lineage="control.census_lodes_file, silver_ref.dim_geo_entity",
+        scope_method="residence and workplace columns summed from blocks to counties",
+        cadence="per LODES replay",
+        empty_behavior="a column the Bureau does not publish for the year or job type is not_available, never 0",
+    ),
+    _obj(
+        "silver_census_lodes.fact_flow",
+        "silver",
+        "CENSUS_LODES",
+        grain="run_id, part, home_geo_id, work_geo_id",
+        lineage="control.census_lodes_file",
+        scope_method="origin-destination block pairs summed to county pairs",
+        cadence="per LODES replay",
+        empty_behavior="a county pair with no jobs has no row",
+    ),
+    _obj(
+        "gold_census_lodes.measure_definition",
+        "gold",
+        "CENSUS_LODES",
+        grain="measure",
+        scope_method="the five registered measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_census_lodes.observation_revision",
+        "gold",
+        "CENSUS_LODES",
+        grain="metric_key, geo_id, year, run_id (published vintages only)",
+        lineage="silver_census_lodes.fact_area, silver_census_lodes.fact_flow",
+        scope_method="published state-years; every vintage kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published state-year",
+    ),
+    _obj(
+        "gold_census_lodes.observation_latest",
+        "gold",
+        "CENSUS_LODES",
+        grain="metric_key, geo_id, year (newest vintage)",
+        lineage="gold_census_lodes.observation_revision",
+        scope_method="newest-vintage projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published state-year",
+    ),
+    _obj(
+        "gold_census_lodes.measure_export",
+        "publisher",
+        "CENSUS_LODES",
+        grain="source_object_key (measure)",
+        lineage="gold_census_lodes.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_census_lodes.metric_publisher",
+        "publisher",
+        "CENSUS_LODES",
+        grain="source_object_key (measure)",
+        lineage="gold_census_lodes.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published state-year",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -2620,6 +2727,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
     + _SAE_OBJECTS
@@ -2992,6 +3100,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: no executor compares `silver_ref.dim_time`'s "
             "coverage against the configured observation range, so a gap shows "
             "only as observations that resolve no time key."
+            "gold_census_lodes.metric_publisher",
         ),
     ),
     # -- glossary and cross-source serving ---------------------------------
@@ -4862,6 +4971,89 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "counts never sum past its own total: establishments carry no noise, "
         "and an unpublished sector can only make the sum smaller.",
         ("gold_census_cbp.observation_latest",),
+    ),
+    # -- Census LEHD LODES ---------------------------------------------------
+    _rule(
+        "DQ-LODES-001",
+        "BLOCK",
+        "uniqueness",
+        "LODES county sums are unique per (run, file family, column, county) "
+        "and flows per (run, part, home county, work county): a new vintage "
+        "is a second run beside the one it revised.",
+        (
+            "silver_census_lodes.fact_area",
+            "silver_census_lodes.fact_flow",
+            "gold_census_lodes.observation_revision",
+            "gold_census_lodes.observation_latest",
+            "gold_census_lodes.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the two fact tables' primary "
+            "keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_lodes.fact_area",
+                ("run_id", "family", "column_code", "geo_id"),
+            ),
+            EnforcedGrain(
+                "silver_census_lodes.fact_flow",
+                ("run_id", "part", "home_geo_id", "work_geo_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-LODES-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured state-year is left unreplayed, and every captured file "
+        "with readable rows reached its county sums.",
+        (
+            "control.census_lodes_slice",
+            "control.census_lodes_file",
+            "silver_census_lodes.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-LODES-003",
+        "BLOCK",
+        "conformance",
+        "A column the Bureau publishes as zero because it publishes none for "
+        "the year or job type is not_available with no number; only an "
+        "available column is a number.",
+        (
+            "silver_census_lodes.fact_area",
+            "gold_census_lodes.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid sum "
+            "without a value and an unavailable one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_lodes.fact_area",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="lodes_area_unavailable_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_lodes.fact_area",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="lodes_area_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-LODES-004",
+        "WARN",
+        "reconciliation",
+        "For every published state-year, the origin-destination jobs worked "
+        "in each county (main and aux) equal the workplace file's total for "
+        "that county.",
+        ("silver_census_lodes.fact_flow", "silver_census_lodes.fact_area"),
     ),
 )
 

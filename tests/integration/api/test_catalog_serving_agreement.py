@@ -31,6 +31,7 @@ from apps.api.registry import OBSERVATION_DISPATCH
 from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transform
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
+from tests.support import census_lodes as lodes_support
 from tests.support import census_cbp as cbp_support
 from tests.support import bea as bea_support
 from tests.support import eia as eia_support
@@ -971,6 +972,18 @@ def published_cbp_metric(
     return _one_published_code(factory, "CENSUS_CBP")
 
 
+@pytest.fixture
+def published_lodes_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the LODES measures at county and state grains."""
+    factory = lodes_support.reviewed_warehouse(postgres_connection_factory, request)
+    lodes_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_census_lodes"))
+    return _one_published_code(factory, "CENSUS_LODES")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1026,6 +1039,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_lodes_metric: str,
     published_cbp_metric: str,
     published_irs_migration_metric: str,
     published_sae_metric: str,
@@ -1101,6 +1115,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
         ("CENSUS_CBP", published_cbp_metric),
+        ("CENSUS_LODES", published_lodes_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1249,6 +1264,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_bea_metric: str,
     published_eia_metric: str,
     published_cbp_metric: str,
+    published_lodes_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

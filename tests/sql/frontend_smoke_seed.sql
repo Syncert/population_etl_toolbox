@@ -104,7 +104,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-0000000005ae', 'CENSUS_SAIPE_SAHIE', 'success'),
     ('00000000-0000-4000-8000-00000000015c', 'IRS_MIGRATION', 'success'),
     ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success'),
-    ('00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'success')
+    ('00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'success'),
+    ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -136,7 +137,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000e1a', '00000000-0000-4000-8000-000000000e1a',
      'EIA', 'smoke://seed', '{}'::JSONB, '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', 'captured'),
     ('00000000-0000-4000-9000-000000000cb9', '00000000-0000-4000-8000-000000000cb9',
-     'CENSUS_CBP', 'smoke://seed', '{}'::JSONB, '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', 'captured')
+     'CENSUS_CBP', 'smoke://seed', '{}'::JSONB, '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', 'captured'),
+    ('00000000-0000-4000-9000-00000000010d', '00000000-0000-4000-8000-00000000010d',
+     'CENSUS_LODES', 'smoke://seed', '{}'::JSONB, '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -187,6 +190,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000cb9', '00000000-0000-4000-9000-000000000cb9',
      '00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'smoke://seed', '{}'::JSONB,
      '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000010d', '00000000-0000-4000-9000-00000000010d',
+     '00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'smoke://seed', '{}'::JSONB,
+     '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -791,6 +798,36 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Census LEHD LODES -- workplace jobs summed from census blocks to one
+-- county, served from views over a published state slice.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_lodes_slice (
+    run_id, state, year, data_vintage, format_version, version_capture_id,
+    checksum_capture_id, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-00000000010d', 'wi', 2098, '20981231', 'LODES8', '00000000-0000-4000-a000-00000000010d', '00000000-0000-4000-a000-00000000010d', 'published',
+    '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.census_lodes_file (
+    run_id, family, file_name, capture_id, listed_sha256, status, row_count
+) VALUES (
+    '00000000-0000-4000-8000-00000000010d', 'wac', 'wi_wac_S000_JT00_2098.csv.gz', '00000000-0000-4000-a000-00000000010d',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'captured', 1
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_lodes.fact_area (
+    run_id, family, column_code, geo_id, year, capture_id, geo_sk,
+    geography_status, block_count, value_source, value, value_status
+)
+SELECT '00000000-0000-4000-8000-00000000010d', 'wac', 'C000', 'state:55|county:025', 2098, '00000000-0000-4000-a000-00000000010d', geo_sk,
+       'resolved', 1, '345678', 345678, 'valid'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -817,7 +854,8 @@ UNION ALL SELECT * FROM gold_census_bps.metric_publisher
 UNION ALL SELECT * FROM gold_census_sae.metric_publisher
 UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
 UNION ALL SELECT * FROM gold_eia.metric_publisher
-UNION ALL SELECT * FROM gold_census_cbp.metric_publisher;
+UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
+UNION ALL SELECT * FROM gold_census_lodes.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

@@ -325,8 +325,13 @@ Warehouse, county and place depth:
 - [`docs/plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
 - [`docs/plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
 - [`docs/plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+<<<<<<<
   - [`docs/plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
-  - [`docs/plans/to_do/CENSUS_LEHD_LODES_PLAN.md`](../plans/to_do/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+  - [`docs/plans/needs_review/CENSUS_LEHD_LODES_PLAN.md`](../plans/needs_review/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+=======
+  - [`docs/plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
+  - [`docs/plans/needs_review/CENSUS_LEHD_LODES_PLAN.md`](../plans/needs_review/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+>>>>>>>
   - [`docs/plans/to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md`](../plans/to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) — NCES Common Core of Data (a Schools chapter).
   - [`docs/plans/to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
 >>>>>>>

@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "census_lodes_files",
     "census_cbp_files",
     "irs_soi_files",
     "census_bps_files",
@@ -959,6 +960,38 @@ def stub_census_cbp(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cbp_capture, "fetch_file", fetch)
 
 
+def stub_census_lodes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware LODES files; every other state publishes none.
+
+    Delaware answers with its trimmed files and their checksum list. Any
+    other state answers with Delaware's version and a checksum list naming
+    no registered file, so its run records every file as not published
+    rather than reaching the network.
+    """
+    from data_ingestion_toolbox.census_lodes import capture as lodes_capture
+    from data_ingestion_toolbox.census_lodes.client import LodesResponse
+
+    root = FIXTURE_ROOT / "census_lodes"
+
+    def fetch(path: str, **_kwargs: Any) -> LodesResponse:
+        state, name = path.strip("/").split("/", 1)[0], path.rsplit("/", 1)[1]
+        if name == "version.txt":
+            payload = (root / "version.txt").read_bytes()
+        elif name.endswith(".sha256sum"):
+            payload = (
+                (root / "lodes_de.sha256sum").read_bytes()
+                if state == "de"
+                else b"0" * 64 + b"  unregistered.csv" + bytes([10])
+            )
+        else:
+            payload = (root / name).read_bytes()
+        return LodesResponse(
+            path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(lodes_capture, "fetch", fetch)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1418,6 +1451,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("bea", stub_bea_regional),
         ("eia", stub_eia),
         ("census_cbp", stub_census_cbp),
+        ("census_lodes", stub_census_lodes),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

@@ -389,6 +389,12 @@ Business Patterns file, three a year from 2016, through the one-slot
 `census_cbp_files` pool
 ([operations](../user-guides/CENSUS_CBP_PIPELINE_OPERATIONS.md)).
 
+Trigger `census_lodes_ingest` once after the shared geography loads: it
+captures the newest registered LODES year for every state, four files each,
+through the one-slot `census_lodes_files` pool; earlier years are captured
+as the [operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md)
+describes.
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

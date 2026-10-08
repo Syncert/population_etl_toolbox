@@ -52,6 +52,8 @@ from __future__ import annotations
 #: * ``CENSUS_CBP`` -- ``census_cbp/registry.py`` reads the nation, state
 #:   and county files and counts each county file's statewide row out of
 #:   scope.
+#: * ``CENSUS_LODES`` -- the adapter sums each state's blocks to its
+#:   counties and the state; no national figure is published.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -79,6 +81,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
     "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
