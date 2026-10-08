@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/fhfa-house-price-index`, which is
+`docs/scout-county-sources` (where this plan was written) with the work on
+top.
 
 ## Why
 
@@ -82,7 +84,7 @@ so silver must read it as text and left-pad to five digits, quarantining any
 code that does not resolve. The file uses the Connecticut planning regions
 and the post-2019 Alaska code `02063` (Chugach); resolution must use a
 geography vintage that contains them, never a remap to legacy counties. ZIP5, ZIP3, and tract files are out of scope until the
-[sub-county geography plan](SUB_COUNTY_GEOGRAPHY_PLAN.md) supplies ZCTA and
+[sub-county geography plan](../to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) supplies ZCTA and
 tract identities; USPS ZIP codes are not ZCTAs and must not be joined as if
 they were.
 
@@ -191,8 +193,76 @@ them. The automated county use is permitted.
   silver only, given its base year differs by county.
 - ZIP5 and tract onboarding after the sub-county geography plan lands.
 
+## Decisions (open items resolved)
+
+- **Refresh month (open item):** not found on FHFA's pages, and not asked of
+  FHFA. The DAG reads the workbook monthly (15:00 UTC on the 25th); the
+  download sends no `Last-Modified` or `ETag` (checked 2026-10-06), so
+  change detection is the payload checksum. A read whose bytes equal the
+  last published file's is `unchanged` and replays nothing.
+- **Coverage thresholds (open item):** not verifiable from official pages;
+  the operations guide and consumer guide say a thin county is missing,
+  and no threshold is asserted in code.
+- **`"."` cells (open item):** the current file writes empty cells; both
+  empty and `.` are treated as missing (`MISSING_MARKS`), so either form
+  reads the same.
+- **First-recorded-base index (open item):** kept in silver only, with the
+  1990-based index. Gold publishes the annual change and the 2000-based
+  index, whose base is the same year everywhere.
+- **No spreadsheet dependency.** `utility/workbook.py` reads the sheet
+  with the standard library (zip and XML), so the Airflow image needs no
+  `openpyxl`. Cells keep their stored text; values are quantized to the
+  workbook's `0.00` format and the stored double is kept in `value_source`.
+- **Missing reasons:** `provider_missing` (empty or `.` cell),
+  `base_year_unavailable` (an indexed county with no 2000 or 1990 index),
+  `first_recorded_year` and `prior_year_missing` (annual change, status
+  `not_applicable`). The plan's `not_yet_recorded` describes years with no
+  row at all; no row is invented for them.
+- **Release identity:** the workbook's "Last updated" date; a second file
+  with the same date and different bytes is `<date>.2`.
+- **Fixture:** FHFA's workbook trimmed to seven counties with every kept
+  row's XML copied verbatim: Autauga AL (text FIPS), St. Clair AL (interior
+  gap), Chugach AK `02063` (no 2000 base, trailing gaps), the Connecticut
+  planning region `09110`, and Delaware's three counties (numeric FIPS).
+  The integer-FIPS-without-leading-zero and malformed variants are built
+  from these bytes in the unit tests, because no current row stores a
+  zero-led code as a number.
+- **Data quality:** `DQ-HPI-001` uniqueness and `DQ-HPI-003` missing-has-no-
+  number are enforced by key and CHECK constraints; a repeated county-year
+  is quarantined by the parser. `DQ-HPI-002` is the file ledger;
+  `DQ-HPI-004` covers unresolved FIPS, non-positive indexes and the 2000
+  base equal to 100.
+- **ZIP5 and tract (open item):** not registered; the operations guide
+  says why.
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2184 passed, including
+  `tests/unit/fhfa_hpi` (5).
+- Database: `tests/integration/database/test_fhfa_hpi_capture_replay.py`
+  -- 5 passed: the workbook to gold with values, missing reasons and the
+  vintage release; an unchanged read replays nothing and a revised file is
+  kept beside the first with both checksums; a non-workbook fails capture;
+  `DQ-HPI-002` passes then fails on lost facts; `DQ-HPI-004` passes then
+  warns on a 2000 base that is not 100 and an unresolved county; the schema
+  reapplies; the harvest names two metrics with FHFA's notice.
+- End to end: `tests/e2e/test_fhfa_hpi_pipeline.py` serves Kent County's
+  annual change with the vintage and notice, and Chugach's missing 2023
+  index as `missing` with its reason, through `/api/v1/observations`.
+- Live: `tests/external/test_fhfa_hpi_source_contracts.py` -- 5 passed
+  against www.fhfa.gov (every row of the current workbook read, nothing
+  quarantined, Connecticut by planning region).
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 459 passed, 1 failed: the PEP teardown node, which fails on
+  `main` too (fixed on `test/catalog-agreement-fixture-residue`).
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `fhfa_hpi_ingest` in the orchestrated run.
+- Deliverable 11's external-credential registration does not apply: the
+  workbook takes no credential.
+- `ruff check .` and `ruff format --check .` clean; schema snapshot,
+  OpenAPI contract, viz coverage and plan environments regenerated.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `fhfa_hpi`, build the trimmed county
-fixture from the current workbook, and write the failing replay test that
-asserts mixed-type FIPS resolution and null-with-reason for an empty cell.
+Awaiting human review.

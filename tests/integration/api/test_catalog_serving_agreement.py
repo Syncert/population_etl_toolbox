@@ -44,6 +44,7 @@ from tests.support import epa_aqs as aqs_support
 from tests.support import noaa_normals as normals_support
 from tests.support import fcc_bdc as bdc_support
 from tests.support import fema_nri as fema_support
+from tests.support import fhfa_hpi as hpi_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -1036,6 +1037,18 @@ def published_fema_metric(
     return _one_published_code(factory, "FEMA_NRI")
 
 
+@pytest.fixture
+def published_hpi_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the FHFA county index measures."""
+    factory = hpi_support.reviewed_warehouse(postgres_connection_factory, request)
+    hpi_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_fhfa_hpi"))
+    return _one_published_code(factory, "FHFA_HPI")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1091,6 +1104,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_hpi_metric: str,
     published_fema_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
@@ -1168,11 +1182,13 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FBI_UCR", published_fbi_metric),
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
+        ("FHFA_HPI", published_hpi_metric),
         ("FEMA_NRI", published_fema_metric),
         ("FCC_BDC", published_bdc_metric),
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
+    published_hpi_metric: str,
         ("CENSUS_CBP", published_cbp_metric),
         ("CENSUS_LODES", published_lodes_metric),
         ("NOAA_NORMALS", published_normals_metric),

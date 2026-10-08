@@ -117,6 +117,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "fbi_ucr_release"),
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
+        ("control", "fhfa_hpi_file"),
         ("control", "fema_nri_run"),
         ("control", "fema_nri_page"),
         ("control", "fcc_bdc_read"),

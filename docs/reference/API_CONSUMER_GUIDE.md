@@ -568,6 +568,33 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading an FHFA House Price Index row: an index, not a price
+
+`FHFA_HPI` serves the Federal Housing Finance Agency's annual
+all-transactions House Price Index for counties:
+`FHFA_HPI:annual_change_pct` (percent change from the previous year) and
+`FHFA_HPI:hpi_base_2000` (the index, 2000 = 100).
+
+- **It is an index, not a price level.** It tracks repeat sales and
+  refinance appraisals of the same houses, on conventional single-family
+  mortgages bought or guaranteed by Fannie Mae and Freddie Mac; jumbo,
+  FHA/VA, condominium and multi-unit loans are out of scope, so a high-cost
+  or rental-heavy county may be thinly covered. It is nominal and not
+  seasonally adjusted, and FHFA calls these annual indexes developmental.
+  It is not the ACS median home value.
+- **A missing index is `missing`, never zero.** FHFA leaves a cell empty
+  where a county's sample is too thin; the row says `value_status:
+  missing` with a `null` value and `dimensions.missing_reason`
+  (`provider_missing`, or `base_year_unavailable` when the county was not
+  indexed in 2000). The annual change in a county's first recorded year, or
+  after a missing year, is `not_applicable`.
+- **The release is the workbook's own "Last updated" date.** FHFA revises
+  every year's index in each new file, so a new file is a new release beside
+  the old one, and `observation_latest` serves the newest.
+- **Required notice:** This product uses FHFA data but is neither endorsed
+  nor certified by FHFA. `dimensions.observation_basis` carries it on every
+  row.
+
 ### Reading a FEMA row: a modelled loss, or a count of declarations
 
 `FEMA_NRI` serves two FEMA products for counties. From the National Risk
@@ -992,6 +1019,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| FHFA House Price Index | the workbook's "Last updated" date | FHFA's own date in the file; a second file of the same date with different bytes is that date with `.2` |
 | FEMA National Risk Index | the NRI version (`December 2025`) | FEMA's own version label; declaration counts take the date of the OpenFEMA refresh the warehouse read |
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |

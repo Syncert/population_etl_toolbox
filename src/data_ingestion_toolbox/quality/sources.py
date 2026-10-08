@@ -1441,6 +1441,80 @@ def fema_value_and_geography(
     ]
 
 
+def hpi_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HPI-002 — no workbook left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.fhfa_hpi_file")
+    if total == 0:
+        return [RuleOutcome("control.fhfa_hpi_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.kind, file.status, file.row_count
+          FROM control.fhfa_hpi_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.row_count > (
+                    SELECT COUNT(*) FROM silver_fhfa_hpi.observation_quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_fhfa_hpi.fact_observation AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.fhfa_hpi_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hpi_index_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HPI-004 — positive indexes, 100 in the base year, every county resolved."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_fhfa_hpi.fact_observation AS fact
+        JOIN control.fhfa_hpi_file AS file USING (run_id)
+        WHERE file.status = 'published'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_fhfa_hpi.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.year, fact.measure, fact.value, fact.geography_status
+          FROM silver_fhfa_hpi.fact_observation AS fact
+          JOIN control.fhfa_hpi_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (
+                (fact.measure <> 'annual_change_pct' AND fact.value <= 0)
+                OR (fact.measure = 'hpi_base_2000' AND fact.year = 2000 AND fact.value <> 100)
+                OR fact.geography_status <> 'resolved'
+           )
+        """,
+        order_by="1, 2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "silver_fhfa_hpi.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2546,6 +2620,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-HPI-002": hpi_file_reconciliation,
+    "DQ-HPI-004": hpi_index_plausibility,
     "DQ-FEMA-002": fema_run_reconciliation,
     "DQ-FEMA-004": fema_value_and_geography,
     "DQ-FCC-002": bdc_read_reconciliation,

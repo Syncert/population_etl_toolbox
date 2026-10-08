@@ -142,6 +142,11 @@
       "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
     },
     {
+      "id": "silver-fhfa-hpi",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/fhfa_hpi/DDL/silver_fhfa_hpi.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -277,6 +282,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
+      "id": "gold-fhfa-hpi",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/gold_fhfa_hpi.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -335,6 +345,11 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-fhfa-hpi",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-sae",

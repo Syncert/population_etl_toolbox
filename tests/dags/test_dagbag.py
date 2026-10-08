@@ -53,6 +53,7 @@ EXPECTED_DAG_IDS = {
     "noaa_normals_ingest",
     "fcc_bdc_ingest",
     "fema_nri_ingest",
+    "fhfa_hpi_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -108,6 +109,9 @@ EXPECTED_SCHEDULES = {
     # Daily: OpenFEMA refreshes declarations every twenty minutes, and an
     # unchanged NRI read replays nothing.
     "fema_nri_ingest": "0 6 * * *",
+    # Monthly: FHFA revises the annual workbook without a published
+    # calendar, and an unchanged file replays nothing.
+    "fhfa_hpi_ingest": "0 15 25 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -141,6 +145,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "noaa_normals_ingest": 2,
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
+    "fhfa_hpi_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -164,6 +169,7 @@ EXPECTED_INGEST_POOLS = {
     "noaa_normals_ingest": "noaa_normals_files",
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",
+    "fhfa_hpi_ingest": "fhfa_hpi_files",
 }
 
 

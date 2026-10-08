@@ -689,6 +689,32 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "`/api/v1/observations` serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="fhfa_hpi.county_annual_index",
+        source="FHFA_HPI",
+        publisher_schema="gold_fhfa_hpi",
+        datasets=("county:2026-03-31",),
+        fixtures=("tests/fixtures/fhfa_hpi/hpi_at_county.xlsx",),
+        serving_relations=(
+            "gold_fhfa_hpi.observation_revision",
+            "gold_fhfa_hpi.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_fhfa_hpi_pipeline.py::"
+            "test_house_price_index_reaches_the_neutral_api_with_its_notice"
+        ),
+        api_absence_reason=(
+            "The FHFA House Price Index publishes no source-specific HTTP route: "
+            "each county-year is the neutral observation shape with its measure, "
+            "its basis and FHFA's notice, and a missing cell's reason as declared "
+            "dimensions, so `/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

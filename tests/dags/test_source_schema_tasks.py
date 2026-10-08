@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
 from data_ingestion_toolbox.fema_nri import schema as fema_nri_schema
 from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
@@ -125,6 +126,13 @@ SOURCES = [
         "ingest_batch_",
         fema_nri_schema,
         "FEMA_NRI",
+    ),
+    (
+        "fhfa_hpi_ingest",
+        "ensure_fhfa_hpi_schema",
+        "ingest_batch_",
+        fhfa_hpi_schema,
+        "FHFA_HPI",
     ),
 ]
 

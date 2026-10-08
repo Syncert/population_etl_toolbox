@@ -109,7 +109,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
-    ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success')
+    ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
+    ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -151,7 +152,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
      'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
     ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
-     'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured')
+     'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured'),
+    ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
+     'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -222,6 +225,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000fe1', '00000000-0000-4000-9000-000000000fe1',
      '00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'smoke://seed', '{}'::JSONB,
      '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
+     '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
+     'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -983,6 +990,32 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- FHFA House Price Index -- one county's annual index from a published
+-- county workbook. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.fhfa_hpi_file (
+    run_id, kind, capture_id, payload_checksum, provider_vintage, row_count,
+    county_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000f4f', 'county', '00000000-0000-4000-a000-000000000f4f',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    '2098-11-30', 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_fhfa_hpi.fact_observation (
+    measure, geo_id, year, capture_id, run_id, provider_vintage, retrieved_at,
+    fips_code, geo_sk, geography_status, value_source, value, value_status,
+    source_record_id
+)
+SELECT 'hpi', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-8000-000000000f4f', '2098-11-30',
+       '2098-12-31 00:00:00+00', '55025', geo_sk, 'resolved', '412.34', 412.34,
+       'valid',
+       'dff3609fae1bdcdcedf0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1014,7 +1047,8 @@ UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
 UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
-UNION ALL SELECT * FROM gold_fema_nri.metric_publisher;
+UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
+UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

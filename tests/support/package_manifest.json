@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/fhfa_hpi/DDL/silver_fhfa_hpi.sql",
+    "data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/gold_fhfa_hpi.sql",
+    "data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/publisher.sql",
     "data_ingestion_toolbox/fema_nri/DDL/silver_fema_nri.sql",
     "data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/gold_fema_nri.sql",
     "data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/publisher.sql",

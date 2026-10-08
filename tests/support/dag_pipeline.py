@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "fhfa_hpi_files",
     "fema_files",
     "fcc_bdc_api",
     "epa_aqs_files",
@@ -1077,6 +1078,21 @@ def stub_fema_nri(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fema_capture, "fetch_page", fetch_page)
 
 
+def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed county workbook in place of FHFA's download."""
+    from data_ingestion_toolbox.fhfa_hpi import capture as hpi_capture
+    from data_ingestion_toolbox.fhfa_hpi.client import HpiResponse
+
+    payload = (FIXTURE_ROOT / "fhfa_hpi" / "hpi_at_county.xlsx").read_bytes()
+
+    def fetch_file(item: Any, **_kwargs: Any) -> HpiResponse:
+        return HpiResponse(
+            item.path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(hpi_capture, "fetch_file", fetch_file)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1541,6 +1557,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("noaa_normals", stub_noaa_normals),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),
+        ("fhfa_hpi", stub_fhfa_hpi),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

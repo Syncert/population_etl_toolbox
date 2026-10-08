@@ -52,6 +52,12 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "FHFA_HPI",
+        SRC / "fhfa_hpi/DDL/silver_fhfa_hpi.sql",
+        "silver_fhfa_hpi.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "FEMA_NRI",
         SRC / "fema_nri/DDL/silver_fema_nri.sql",
         "silver_fema_nri.nri_fact",
