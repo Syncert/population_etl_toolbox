@@ -5,10 +5,12 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import SignInControl from "./SignInControl";
-import { BarChart3, BookOpen, Bookmark, ChevronDown, Columns3, Database, FilePenLine, Layers, LineChart, MapPinned, ShieldCheck } from "lucide-react";
+import { BarChart3, BookOpen, Bookmark, ChevronDown, Columns3, Database, FilePenLine, Landmark, Layers, LineChart, MapPinned, ShieldCheck } from "lucide-react";
 
 const navigation = [
   { href: "/", label: "Home" },
+  // One page per place: the nation, each state, each county (place-pages).
+  { href: "/us", label: "Places", icon: Landmark },
   { href: "/catalog", label: "Data Catalog", icon: Database },
   { href: "/explore", label: "Explore", icon: BarChart3 },
   { href: "/compare", label: "Compare", icon: Columns3 },

@@ -10,6 +10,7 @@ import { useCasePages } from "./useCasePages";
 /** Routes a crawler may index. */
 export const PUBLIC_ROUTES: readonly string[] = [
   "/",
+  "/us",
   "/catalog",
   "/explore",
   "/compare",
