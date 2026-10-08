@@ -1369,6 +1369,78 @@ def bdc_tier_order_and_geography(
     ]
 
 
+def fema_run_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-FEMA-002 — no read left unreplayed; every readable NRI read reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.fema_nri_run")
+    if total == 0:
+        return [RuleOutcome("control.fema_nri_run", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT run.run_id, run.stream, run.status, run.record_count
+          FROM control.fema_nri_run AS run
+         WHERE run.status IN ('capturing', 'captured')
+            OR (run.stream = 'nri' AND run.status IN ('silver_ready', 'published')
+                AND run.record_count > (
+                    SELECT COUNT(*) FROM silver_fema_nri.quarantine AS quarantine
+                     WHERE quarantine.run_id = run.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_fema_nri.nri_fact AS fact
+                     WHERE fact.run_id = run.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.fema_nri_run",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def fema_value_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FEMA-004 — no negative loss or frequency; published counties resolve."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.fema_nri_run WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("silver_fema_nri.nri_fact", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.field AS item, fact.geography_status
+          FROM silver_fema_nri.nri_fact AS fact
+          JOIN control.fema_nri_run AS run USING (run_id)
+         WHERE run.status = 'published'
+           AND (fact.value < 0 OR fact.geography_status <> 'resolved')
+        UNION ALL
+        SELECT revision.run_id, revision.geo_id, revision.declaration_string, revision.geography_status
+          FROM silver_fema_nri.declaration_revision AS revision
+          JOIN control.fema_nri_run AS run USING (run_id)
+         WHERE run.status = 'published' AND revision.geography_status = 'unmapped'
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_fema_nri.nri_fact",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2474,6 +2546,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-FEMA-002": fema_run_reconciliation,
+    "DQ-FEMA-004": fema_value_and_geography,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

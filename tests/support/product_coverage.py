@@ -660,6 +660,35 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "`/api/v1/observations` serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="fema_nri.risk_and_declarations",
+        source="FEMA_NRI",
+        publisher_schema="gold_fema_nri",
+        datasets=("nri:December 2025", "declarations:openfema-v2"),
+        fixtures=(
+            "tests/fixtures/fema_nri/nri_counties.json",
+            "tests/fixtures/fema_nri/declarations.json",
+        ),
+        serving_relations=(
+            "gold_fema_nri.observation_revision",
+            "gold_fema_nri.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_fema_nri_pipeline.py::"
+            "test_losses_and_declarations_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "FEMA publishes no source-specific HTTP route here: each county row "
+            "is the neutral observation shape with FEMA's rating, missing reason "
+            "and the declarations a count is made of as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

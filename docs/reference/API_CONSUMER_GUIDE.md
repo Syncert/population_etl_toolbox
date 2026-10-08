@@ -568,6 +568,34 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a FEMA row: a modelled loss, or a count of declarations
+
+`FEMA_NRI` serves two FEMA products for counties. From the National Risk
+Index: `FEMA_NRI:expected_annual_loss` (all hazards), eighteen per-hazard
+losses such as `FEMA_NRI:expected_annual_loss_inland_flooding`, and the
+annualized frequency of inland flooding, tornado, wildfire, hurricane and
+heat wave. From OpenFEMA: `FEMA_NRI:major_disaster_declarations`,
+`FEMA_NRI:emergency_declarations` and `FEMA_NRI:fire_management_declarations`
+per county and calendar year.
+
+- **Expected annual loss is a model, not a measurement.** FEMA multiplies
+  annualized frequency, exposure and a historic loss ratio; the unit is
+  dollars per year, there is no margin of error, and methods change between
+  versions. The release is the NRI version (`December 2025`).
+- **A hazard that cannot happen has no number.** Where FEMA rates a hazard
+  `Not Applicable`, `Insufficient Data` or `Data Unavailable`, the row is
+  `not_applicable` or `missing` with `dimensions.rating` and no value.
+- **The NRI's scores and ratings are not served.** Risk scores, social
+  vulnerability and resilience are relative ranks, not measures.
+- **A declaration count is this warehouse's count.** It counts distinct
+  declarations of the type that designated the county in the calendar year
+  of the declaration date; `dimensions.declarations` lists them. Statewide
+  and tribal-area designations are not counted toward a county, and a year
+  with no declaration has no row. OpenFEMA still designates Connecticut's
+  legacy counties, which the shared geography may not hold.
+- **Required notice:** This product uses the Federal Emergency Management
+  Agency's OpenFEMA API, but is not endorsed by FEMA.
+
 ### Reading an FCC broadband row: reported availability, not subscription
 
 `FCC_BDC` serves the FCC National Broadband Map's own fixed-broadband
@@ -964,6 +992,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| FEMA National Risk Index | the NRI version (`December 2025`) | FEMA's own version label; declaration counts take the date of the OpenFEMA refresh the warehouse read |
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |

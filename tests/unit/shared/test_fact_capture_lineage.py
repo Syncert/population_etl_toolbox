@@ -52,6 +52,12 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "FEMA_NRI",
+        SRC / "fema_nri/DDL/silver_fema_nri.sql",
+        "silver_fema_nri.nri_fact",
+        "valid",
+    ),
+    FactContract(
         "FCC_BDC",
         SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
         "silver_fcc_bdc.availability_row",

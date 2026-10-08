@@ -108,7 +108,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success'),
     ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
-    ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success')
+    ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
+    ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -148,7 +149,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-0000000000aa', '00000000-0000-4000-8000-0000000000aa',
      'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured'),
     ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
-     'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured')
+     'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
+    ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
+     'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -215,6 +218,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000fcc', '00000000-0000-4000-9000-000000000fcc',
      '00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'smoke://seed', '{}'::JSONB,
      '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000fe1', '00000000-0000-4000-9000-000000000fe1',
+     '00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'smoke://seed', '{}'::JSONB,
+     '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -946,6 +953,36 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- FEMA National Risk Index -- one county's composite expected annual loss
+-- from a published NRI run. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.fema_nri_run (
+    run_id, stream, status, run_checksum, nri_version, page_count,
+    record_count, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000fe1', 'nri', 'published',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'November 2098', 1, 1, '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.fema_nri_page (run_id, page_index, capture_id, record_count)
+VALUES ('00000000-0000-4000-8000-000000000fe1', 0, '00000000-0000-4000-a000-000000000fe1', 1)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_fema_nri.nri_fact (
+    run_id, geo_id, field, measure, capture_id, stcofips, county_type,
+    nri_version, geo_sk, geography_status, value_source, value, value_status,
+    rating, source_record_id
+)
+SELECT '00000000-0000-4000-8000-000000000fe1', 'state:55|county:025', 'EAL_VALT', 'expected_annual_loss',
+       '00000000-0000-4000-a000-000000000fe1', '55025', 'County', 'November 2098', geo_sk, 'resolved',
+       '12345678.9', 12345678.9, 'valid', 'Relatively Low',
+       'cee25f8f9d0cabcbdcfe0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -976,7 +1013,8 @@ UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
 UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
 UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
-UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher;
+UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
+UNION ALL SELECT * FROM gold_fema_nri.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

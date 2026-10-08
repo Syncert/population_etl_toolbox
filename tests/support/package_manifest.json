@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/fema_nri/DDL/silver_fema_nri.sql",
+    "data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/gold_fema_nri.sql",
+    "data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/publisher.sql",
     "data_ingestion_toolbox/fcc_bdc/DDL/silver_fcc_bdc.sql",
     "data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/gold_fcc_bdc.sql",
     "data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/publisher.sql",

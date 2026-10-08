@@ -412,6 +412,11 @@ one-slot `fcc_bdc_api` pool, about seven minutes a vintage at the API's 10
 calls a minute
 ([operations](../user-guides/FCC_BDC_PIPELINE_OPERATIONS.md)).
 
+Trigger `fema_nri_ingest` once after the shared geography loads: it reads
+the National Risk Index county layer and every OpenFEMA declaration through
+the one-slot `fema_files` pool
+([operations](../user-guides/FEMA_NRI_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

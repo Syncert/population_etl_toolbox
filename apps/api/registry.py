@@ -1399,6 +1399,47 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("year", "geo_id", "release_key", "run_id"),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="FEMA_NRI",
+            latest_relation="gold_fema_nri.observation_latest",
+            released_relation="gold_fema_nri.observation_revision",
+            lineage_schema="gold_fema_nri",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The NRI version ("December 2025") or the OpenFEMA refresh read;
+            # releases are ordered by when the warehouse published them.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "a modelled estimate for planning, not a measurement", or
+                # how a declaration count was counted, with FEMA's notice.
+                ("observation_basis", "observation_basis"),
+                # FEMA's rating for the hazard, why a value is absent, and the
+                # declarations a count is made of.
+                ("rating", "rating"),
+                ("missing_reason", "missing_reason"),
+                ("declarations", "declarations"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1689,6 +1730,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="FEMA_NRI",
+            display_name="FEMA National Risk Index and Disaster Declarations",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="FCC_BDC",

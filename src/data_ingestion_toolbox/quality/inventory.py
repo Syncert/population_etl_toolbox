@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "FEMA_NRI",
     "FCC_BDC",
     "EPA_AQS",
     "NOAA_NORMALS",
@@ -3026,6 +3027,132 @@ _BDC_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# FEMA National Risk Index and disaster declarations.
+# ---------------------------------------------------------------------------
+
+_FEMA_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fema_nri_run",
+        "control",
+        "FEMA_NRI",
+        grain="run_id (one run per read of a stream)",
+        lineage="control.ingestion_run",
+        scope_method="the two FEMA streams: the NRI county layer and OpenFEMA declarations",
+        cadence="daily; an NRI read whose pages match the last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.fema_nri_page",
+        "control",
+        "FEMA_NRI",
+        grain="run_id, page_index",
+        lineage="control.fema_nri_run, raw_capture.response_capture",
+        scope_method="every committed page of every read",
+        cadence="per capture",
+        empty_behavior="a run with no page failed and was withdrawn",
+    ),
+    _obj(
+        "silver_fema_nri.quarantine",
+        "silver",
+        "FEMA_NRI",
+        grain="capture_id, record_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated record; populated only on failure",
+        cadence="per FEMA replay",
+        empty_behavior="empty when every record conformed",
+    ),
+    _obj(
+        "silver_fema_nri.nri_fact",
+        "silver",
+        "FEMA_NRI",
+        grain="run_id, geo_id, field",
+        lineage="control.fema_nri_page, silver_ref.dim_geo_entity",
+        scope_method="every registered NRI field of every county of a replayed read",
+        cadence="per FEMA replay",
+        empty_behavior="a field whose rating is not a measurement carries its status and no number",
+    ),
+    _obj(
+        "silver_fema_nri.declaration_revision",
+        "silver",
+        "FEMA_NRI",
+        grain="declaration_id, revision_hash",
+        lineage="control.fema_nri_page, silver_ref.dim_geo_entity",
+        scope_method="every revision of every declaration area row read",
+        cadence="per FEMA replay",
+        empty_behavior="a statewide or tribal-area row is kept as an area, never a county",
+    ),
+    _obj(
+        "gold_fema_nri.measure_definition",
+        "gold",
+        "FEMA_NRI",
+        grain="measure",
+        scope_method="the twenty-seven published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_fema_nri.nri_observation",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, run_id (published NRI reads)",
+        lineage="silver_fema_nri.nri_fact, control.fema_nri_run",
+        scope_method="published NRI reads; every version kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published NRI read",
+    ),
+    _obj(
+        "gold_fema_nri.declaration_count",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year",
+        lineage="silver_fema_nri.declaration_revision, control.fema_nri_run",
+        scope_method="distinct declarations per county, year and type from the newest revision of each row",
+        cadence="per publication",
+        empty_behavior="a county-year with no declaration has no row",
+    ),
+    _obj(
+        "gold_fema_nri.observation_revision",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_fema_nri.nri_observation, gold_fema_nri.declaration_count",
+        scope_method="both streams in the observation shape",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_fema_nri.observation_latest",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year (newest release)",
+        lineage="gold_fema_nri.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_fema_nri.measure_export",
+        "publisher",
+        "FEMA_NRI",
+        grain="source_object_key (measure)",
+        lineage="gold_fema_nri.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_fema_nri.metric_publisher",
+        "publisher",
+        "FEMA_NRI",
+        grain="source_object_key (measure)",
+        lineage="gold_fema_nri.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -3038,6 +3165,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _FEMA_OBJECTS
     + _BDC_OBJECTS
     + _AQS_OBJECTS
     + _NORMALS_OBJECTS
@@ -3414,6 +3542,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: no executor compares `silver_ref.dim_time`'s "
             "coverage against the configured observation range, so a gap shows "
             "only as observations that resolve no time key."
+            "gold_fema_nri.metric_publisher",
         ),
     ),
     # -- glossary and cross-source serving ---------------------------------
@@ -5621,6 +5750,91 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "(0.2/0.2 at least 10/1, down to 1000/100), and every state and county "
         "row resolved to the shared geography.",
         ("silver_fcc_bdc.availability_row", "control.fcc_bdc_read"),
+    ),
+    # -- FEMA National Risk Index and disaster declarations --------------------
+    _rule(
+        "DQ-FEMA-001",
+        "BLOCK",
+        "uniqueness",
+        "An NRI fact is unique per (read, county, field) and a declaration "
+        "revision per (id, hash): a repeated county is quarantined, and a new "
+        "hash for a declaration is a second revision beside the first.",
+        (
+            "silver_fema_nri.nri_fact",
+            "silver_fema_nri.declaration_revision",
+            "gold_fema_nri.nri_observation",
+            "gold_fema_nri.declaration_count",
+            "gold_fema_nri.observation_revision",
+            "gold_fema_nri.observation_latest",
+            "gold_fema_nri.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the two silver tables' "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_fema_nri.nri_fact", ("run_id", "geo_id", "field")),
+            EnforcedGrain(
+                "silver_fema_nri.declaration_revision",
+                ("declaration_id", "revision_hash"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FEMA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured read is left unreplayed, and every replayed NRI read with "
+        "readable records reached its facts.",
+        (
+            "control.fema_nri_run",
+            "control.fema_nri_page",
+            "silver_fema_nri.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-FEMA-003",
+        "BLOCK",
+        "conformance",
+        "An NRI field whose rating says it is not a measurement, or whose cell "
+        "is empty, carries no number; a valid field always does.",
+        (
+            "silver_fema_nri.nri_fact",
+            "gold_fema_nri.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "field without a value and a non-measure one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fema_nri.nri_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fema_nri_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_fema_nri.nri_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fema_nri_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FEMA-004",
+        "WARN",
+        "referential_integrity",
+        "In every published read, no expected annual loss or frequency is "
+        "negative, and every NRI county and every county-designated "
+        "declaration resolved to the shared geography.",
+        (
+            "silver_fema_nri.nri_fact",
+            "silver_fema_nri.declaration_revision",
+            "control.fema_nri_run",
+        ),
     ),
 )
 
