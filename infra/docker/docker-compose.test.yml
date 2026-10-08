@@ -35,13 +35,13 @@ services:
       - ../../sql/migrations/015_census_pep_historical_series.sql:/docker-entrypoint-initdb.d/095_migration_015.sql:ro
       - ../../src/data_ingestion_toolbox/cdc/DDL/silver_cdc.sql:/docker-entrypoint-initdb.d/100_silver_cdc.sql:ro
       - ../../src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql:/docker-entrypoint-initdb.d/105_silver_fbi.sql:ro
-      - ../../src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql:/docker-entrypoint-initdb.d/115_silver_irs_migration.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql:/docker-entrypoint-initdb.d/110_silver_nass.sql:ro
       - ../../src/data_ingestion_toolbox/census_saipe_sahie/DDL/silver_census_sae.sql:/docker-entrypoint-initdb.d/111_silver_census_sae.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql:/docker-entrypoint-initdb.d/112_silver_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/DDL/silver_census_bps.sql:/docker-entrypoint-initdb.d/113_silver_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/bea/DDL/silver_bea.sql:/docker-entrypoint-initdb.d/114_silver_bea.sql:ro
       - ../../sql/migrations/019_stratum_shape_contract.sql:/docker-entrypoint-initdb.d/115_migration_019.sql:ro
+      - ../../src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql:/docker-entrypoint-initdb.d/115_silver_irs_migration.sql:ro
       - ../../sql/migrations/025_county_label_is_not_reviewed.sql:/docker-entrypoint-initdb.d/120_migration_025.sql:ro
       - ../../sql/migrations/030_fbi_relationship_product_scope.sql:/docker-entrypoint-initdb.d/122_migration_030.sql:ro
       - ../../sql/migrations/027_acs_bls_fact_lineage.sql:/docker-entrypoint-initdb.d/125_migration_027.sql:ro
@@ -65,12 +65,12 @@ services:
       - ../../src/data_ingestion_toolbox/cdc/gold_cdc/DDL/publisher.sql:/docker-entrypoint-initdb.d/180_publisher_cdc.sql:ro
       - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql:/docker-entrypoint-initdb.d/185_publisher_fbi.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql:/docker-entrypoint-initdb.d/190_publisher_nass.sql:ro
-      - ../../src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql:/docker-entrypoint-initdb.d/195_publisher_irs_migration.sql:ro
       - ../../src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/publisher.sql:/docker-entrypoint-initdb.d/191_publisher_census_sae.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql:/docker-entrypoint-initdb.d/192_publisher_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/publisher.sql:/docker-entrypoint-initdb.d/194_publisher_bea.sql:ro
       - ../../sql/migrations/028_serving_publishes_a_withheld_value.sql:/docker-entrypoint-initdb.d/195_migration_028.sql:ro
+      - ../../src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql:/docker-entrypoint-initdb.d/195_publisher_irs_migration.sql:ro
       - ../../sql/migrations/029_nass_combined_counties_are_not_counties.sql:/docker-entrypoint-initdb.d/197_migration_029.sql:ro
       - ../../sql/migrations/033_bls_annual_average_identity.sql:/docker-entrypoint-initdb.d/197a_migration_033.sql:ro
       - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/200_glossary_schema.sql:ro
