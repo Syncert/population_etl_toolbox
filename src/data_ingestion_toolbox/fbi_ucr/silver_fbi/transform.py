@@ -380,7 +380,8 @@ def _load_agency_entities(cursor: Any, *, scope: dict) -> None:
 
 _RELATIONSHIP_CONFLICT = """
     ON CONFLICT (
-        ori, relationship_type, source_label, geography_vintage, effective_start
+        product_id, ori, relationship_type, source_label,
+        geography_vintage, effective_start
     ) DO UPDATE SET
         geo_id = EXCLUDED.geo_id,
         geo_sk = EXCLUDED.geo_sk,
@@ -698,7 +699,9 @@ def _load_participation_facts(cursor: Any, *, scope: dict) -> None:
                       ELSE 'agency:' || revision.subject_code END
         WHERE revision.run_id = %(run_id)s
         ON CONFLICT (product_id, release_key, subject_type, subject_code, period)
-        DO NOTHING
+        DO UPDATE SET geography_status = EXCLUDED.geography_status
+        WHERE fact_reporting_participation.geography_status
+              IS DISTINCT FROM EXCLUDED.geography_status
         """,
         scope,
     )
@@ -750,7 +753,12 @@ def _load_observation_facts(cursor: Any, *, scope: dict) -> None:
                       WHEN 'state' THEN 'state:' || state.state_fips
                       ELSE 'agency:' || revision.subject_code END
         WHERE revision.run_id = %(run_id)s
-        ON CONFLICT (product_id, release_key, source_record_id) DO NOTHING
+        -- Replay may repair mapping classifications after a schema upgrade;
+        -- provider values, capture lineage, and release history stay intact.
+        ON CONFLICT (product_id, release_key, source_record_id)
+        DO UPDATE SET geography_status = EXCLUDED.geography_status
+        WHERE fact_crime_observation.geography_status
+              IS DISTINCT FROM EXCLUDED.geography_status
         """,
         scope,
     )
@@ -783,6 +791,9 @@ def _load_observation_facts(cursor: Any, *, scope: dict) -> None:
 
 
 def _reconcile(cursor: Any, *, scope: dict) -> int:
+    # A refresh can be captured again with a wider period or subject scope.
+    # Replaying the earlier run must reconcile its exact identities, while
+    # preserving the other facts already published for the same release.
     cursor.execute(
         """
         SELECT
@@ -790,10 +801,26 @@ def _reconcile(cursor: Any, *, scope: dict) -> int:
             WHERE run_id = %(run_id)s),
           (SELECT COUNT(*) FROM silver_fbi.participation_revision
             WHERE run_id = %(run_id)s),
-          (SELECT COUNT(*) FROM silver_fbi.fact_crime_observation
-            WHERE product_id = %(product_id)s AND release_key = %(release_key)s),
-          (SELECT COUNT(*) FROM silver_fbi.fact_reporting_participation
-            WHERE product_id = %(product_id)s AND release_key = %(release_key)s),
+          (SELECT COUNT(*) FROM silver_fbi.fact_crime_observation AS fact
+            WHERE fact.product_id = %(product_id)s
+              AND fact.release_key = %(release_key)s
+              AND EXISTS (
+                  SELECT 1 FROM silver_fbi.observation_revision AS revision
+                  WHERE revision.run_id = %(run_id)s
+                    AND revision.product_id = fact.product_id
+                    AND revision.release_key = fact.release_key
+                    AND revision.source_record_id = fact.source_record_id)),
+          (SELECT COUNT(*) FROM silver_fbi.fact_reporting_participation AS fact
+            WHERE fact.product_id = %(product_id)s
+              AND fact.release_key = %(release_key)s
+              AND EXISTS (
+                  SELECT 1 FROM silver_fbi.participation_revision AS revision
+                  WHERE revision.run_id = %(run_id)s
+                    AND revision.product_id = fact.product_id
+                    AND revision.release_key = fact.release_key
+                    AND revision.subject_type = fact.subject_type
+                    AND revision.subject_code = fact.subject_code
+                    AND revision.period = fact.period)),
           (SELECT COUNT(*) FROM silver_fbi.slice_quarantine
             WHERE run_id = %(run_id)s
               AND error_code = 'coverage_interpretation_missing')

@@ -37,6 +37,7 @@ services:
       - ../../src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql:/docker-entrypoint-initdb.d/110_silver_nass.sql:ro
       - ../../sql/migrations/019_stratum_shape_contract.sql:/docker-entrypoint-initdb.d/115_migration_019.sql:ro
       - ../../sql/migrations/025_county_label_is_not_reviewed.sql:/docker-entrypoint-initdb.d/120_migration_025.sql:ro
+      - ../../sql/migrations/030_fbi_relationship_product_scope.sql:/docker-entrypoint-initdb.d/122_migration_030.sql:ro
       - ../../sql/migrations/027_acs_bls_fact_lineage.sql:/docker-entrypoint-initdb.d/125_migration_027.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/130_gold_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/135_gold_bls.sql:ro

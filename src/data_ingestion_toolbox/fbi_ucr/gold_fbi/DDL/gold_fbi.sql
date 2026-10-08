@@ -117,6 +117,132 @@ JOIN silver_fbi.agency_geography_relationship AS relationship
 WHERE observation.subject_type = 'agency'
   AND relationship.resolution_status = 'resolved';
 
+-- Derived county roll-up over agency-reported absolute totals.
+--
+-- This is the one declared-derived aggregate in this schema, the exception
+-- the county-crime roll-up plan carved out of the never-sum rule that
+-- `agency_observation_area_filter` keeps for provider-faithful products:
+--
+-- * Only absolute offense/clearance totals are summed; rates, percentages,
+--   and trends are never aggregated, and no rate is derived here.
+-- * An agency resolved to more than one county contributes its whole
+--   published count to each of its counties, because the provider publishes
+--   no allocation between them and a split would be an invented number.
+--   Every row therefore says whether such an agency contributed, and county
+--   values are not additive to state totals.
+-- * Only `reported` values enter the sum. An agency month the provider did
+--   not publish stays visible through the mapped-versus-reporting coverage
+--   columns and is never read as zero; a county period with no reporting
+--   agency publishes no row at all.
+CREATE OR REPLACE VIEW gold_fbi.county_rollup AS
+WITH county_link AS (
+    SELECT relationship.product_id, relationship.ori, relationship.geo_id,
+           relationship.geo_sk, relationship.effective_start,
+           relationship.effective_end
+    FROM silver_fbi.agency_geography_relationship AS relationship
+    WHERE relationship.relationship_type = 'county'
+      AND relationship.resolution_status = 'resolved'
+), contribution AS (
+    SELECT DISTINCT observation.product_id, observation.release_key,
+           observation.measure_id, link.geo_id, link.geo_sk,
+           observation.period, observation.period_start,
+           observation.period_end, observation.subject_code AS ori,
+           observation.value, observation.value_status,
+           (SELECT COUNT(DISTINCT sibling.geo_id) > 1
+            FROM county_link AS sibling
+            WHERE sibling.product_id = observation.product_id
+              AND sibling.ori = observation.subject_code
+              AND observation.period_start >= sibling.effective_start
+              AND observation.period_end <= sibling.effective_end
+           ) AS is_multi_county
+    FROM gold_fbi.crime_observation AS observation
+    JOIN county_link AS link
+      ON link.product_id = observation.product_id
+     AND link.ori = observation.subject_code
+     -- The relationship is effective-dated, so a contribution follows the
+     -- observation's period rather than the release it was confirmed in.
+     AND observation.period_start >= link.effective_start
+     AND observation.period_end <= link.effective_end
+    WHERE observation.subject_type = 'agency'
+      AND observation.measure_form = 'absolute_total'
+      AND observation.counted_entity_basis IN ('offense', 'clearance')
+), summed AS (
+    SELECT contribution.product_id, contribution.release_key,
+           contribution.measure_id, contribution.geo_id, contribution.geo_sk,
+           contribution.period, contribution.period_start,
+           contribution.period_end,
+           SUM(contribution.value)
+               FILTER (WHERE contribution.value_status = 'reported') AS value,
+           ARRAY_AGG(DISTINCT contribution.ori ORDER BY contribution.ori)
+               FILTER (WHERE contribution.value_status = 'reported')
+               AS contributing_oris,
+           COUNT(DISTINCT contribution.ori)
+               FILTER (WHERE contribution.value_status = 'reported')
+               AS reporting_agency_count,
+           BOOL_OR(contribution.is_multi_county)
+               FILTER (WHERE contribution.value_status = 'reported')
+               AS includes_multi_county_agency
+    FROM contribution
+    GROUP BY contribution.product_id, contribution.release_key,
+             contribution.measure_id, contribution.geo_id, contribution.geo_sk,
+             contribution.period, contribution.period_start,
+             contribution.period_end
+    -- A county period where no mapped agency reported publishes no row:
+    -- an empty sum is never presented as a zero observation.
+    HAVING COUNT(*) FILTER (WHERE contribution.value_status = 'reported') > 0
+)
+SELECT summed.product_id, summed.release_key, release.refresh_date,
+       release.max_data_month, release.ucr_program, measure.offense_code,
+       measure.offense_label, summed.measure_id, measure.measure_form,
+       measure.counted_entity_basis, measure.unit, summed.geo_id,
+       summed.geo_sk, county.county_name, county.state_fips,
+       county.county_fips, summed.period, summed.period_start,
+       summed.period_end, summed.value, summed.contributing_oris,
+       summed.reporting_agency_count, mapped.mapped_agency_count,
+       summed.includes_multi_county_agency,
+       TRUE AS derived,
+       'sum_of_agency_reported_totals'::TEXT AS derivation_method,
+       'derived county roll-up of agency-reported totals'::TEXT
+           AS result_label,
+       ('Each mapped agency''s whole published count is summed; an agency '
+        || 'serving more than one county is counted in full in each of its '
+        || 'counties, so county values are not additive to state totals. '
+        || 'Agency months the provider did not publish are excluded, never '
+        || 'zero.')::TEXT AS methodology_note,
+       release.counted_entity_note, release.methodology_url,
+       release.documentation_url
+FROM summed
+JOIN silver_fbi.dim_offense_measure AS measure
+  ON measure.product_id = summed.product_id
+ AND measure.measure_id = summed.measure_id
+JOIN silver_fbi.dim_ucr_dataset_release AS release
+  ON release.product_id = summed.product_id
+ AND release.release_key = summed.release_key
+JOIN silver_ref.dim_geo_current AS county
+  ON county.geo_id = summed.geo_id
+JOIN LATERAL (
+    SELECT COUNT(DISTINCT county_link.ori) AS mapped_agency_count
+    FROM county_link
+    WHERE county_link.product_id = summed.product_id
+      AND county_link.geo_id = summed.geo_id
+      AND summed.period_start >= county_link.effective_start
+      AND summed.period_end <= county_link.effective_end
+) AS mapped ON TRUE;
+
+-- The roll-up at each product's most recent published release, mirroring
+-- `latest_release_observation` so serving reads one release by default.
+CREATE OR REPLACE VIEW gold_fbi.latest_county_rollup AS
+SELECT rollup.*
+FROM gold_fbi.county_rollup AS rollup
+JOIN (
+    SELECT product_id, MAX(refresh_date) AS refresh_date
+    FROM silver_fbi.dim_ucr_dataset_release
+    WHERE status = 'published'
+    GROUP BY product_id
+) AS latest
+  ON latest.product_id = rollup.product_id
+ AND latest.refresh_date = rollup.refresh_date;
+
 CREATE OR REPLACE VIEW gold_fbi.latest_release_observation AS
 SELECT observation.*
 FROM gold_fbi.crime_observation AS observation
@@ -154,6 +280,11 @@ COMMENT ON SCHEMA gold_fbi IS
 
 COMMENT ON VIEW gold_fbi.agency_observation_area_filter IS
     'County/place filters over agency-grain observations; never a county or city total.';
+
+COMMENT ON VIEW gold_fbi.county_rollup IS
+    'Declared-derived county roll-up of agency-reported absolute totals; '
+    'multi-county agencies count in full in each county, non-reporting '
+    'months are never zero, and no rate is derived.';
 
 COMMENT ON VIEW gold_fbi.measure_export IS
     'Provider-neutral glossary publisher contract; owns no gold_glossary objects.';
