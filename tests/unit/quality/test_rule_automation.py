@@ -81,6 +81,8 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-QCEW-004",
         # Declared; the parser loads every year, nothing checks for gaps.
         "DQ-BEA-004",
+        # Ledgered in silver_ref.geography_resolution; no EIA rule fails on it.
+        "DQ-EIA-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
         "DQ-REF-004",
@@ -445,6 +447,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CENSUS_BPS",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "EIA",
         "FBI_UCR",
         "FRED",
         "IRS_MIGRATION",

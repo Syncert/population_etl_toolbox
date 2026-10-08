@@ -94,6 +94,10 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                  'Consumer price inflation', 'Fixed series coding',
                  'CPI index values are not directly comparable to level/count labor statistics.',
                  'https://www.bls.gov/cpi/'),
+                ('AP', 'Average Price Data', 'Urban consumers', 'PRICES',
+                 'Average retail prices of selected items', 'Fixed series coding',
+                 'An average price is dollars for one item in one area: comparable across areas, but not an index, and estimated from a sample.',
+                 'https://www.bls.gov/cpi/factsheets/average-prices.htm'),
                 ('JT', 'Job Openings and Labor Turnover Survey', 'Nonfarm establishments', 'FLOWS',
                  'Labor market flows (openings, hires, quits, layoffs, separations)', 'Fixed series coding',
                  'JOLTS flow measures are not equivalent to stock employment levels.',
@@ -190,6 +194,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                     WHEN f.program = 'ce' AND LOWER(COALESCE(bs.title, '')) LIKE '%hour%' THEN 'HOURS'
                     WHEN f.program = 'ce' AND LOWER(COALESCE(bs.title, '')) LIKE '%earn%' THEN 'EARNINGS'
                     WHEN f.program = 'cu' THEN 'PRICE_INDEX'
+                    WHEN f.program = 'ap' THEN 'AVERAGE_PRICE'
                     WHEN f.program = 'jt' AND LOWER(COALESCE(bs.title, '')) LIKE '%openings%' THEN 'OPENINGS'
                     WHEN f.program = 'jt' AND LOWER(COALESCE(bs.title, '')) LIKE '%hires%' THEN 'HIRES'
                     WHEN f.program = 'jt' AND LOWER(COALESCE(bs.title, '')) LIKE '%quits%' THEN 'QUITS'
@@ -203,7 +208,20 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                     WHEN f.program = 'la' AND f.measure_code IN ('04','05','06','09') THEN 'Persons'
                     WHEN f.series_id IN ('LNS14000000', 'LNS11300000', 'LNS12300000', 'LNS13327709') THEN 'Percent'
                     WHEN f.series_id IN ('LNS13000000', 'LNS12000000', 'LNS11000000', 'LNS15000000', 'LNS13025703') THEN 'Thousands of Persons'
-                    WHEN f.program = 'cu' THEN 'Index 1982-1984=100'
+                    -- An area index is relative to its own base period, which
+                    -- BLS's series list records per series.
+                    WHEN f.program = 'cu' AND COALESCE(
+                             NULLIF(TRIM(bs.raw_metadata ->> 'base_period'), ''),
+                             '1982-84=100'
+                         ) = '1982-84=100'
+                        THEN 'Index 1982-1984=100'
+                    WHEN f.program = 'cu'
+                        THEN 'Index ' || TRIM(bs.raw_metadata ->> 'base_period')
+                    -- The unit is the one BLS names in the item's title.
+                    WHEN f.program = 'ap'
+                        THEN 'U.S. dollars ' || COALESCE(
+                            SUBSTRING(bs.title FROM ', (per .+?) in '), 'per unit'
+                        )
                     WHEN f.series_id IN ('CES0000000001', 'CES0500000001') THEN 'Thousands of Persons'
                     WHEN f.series_id = 'CES0500000002' THEN 'Hours'
                     WHEN f.series_id = 'CES0500000003' THEN 'Dollars per Hour'
@@ -215,6 +233,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                 END AS unit_of_measure,
                 CASE
                     WHEN f.program = 'cu' THEN 'INDEX'
+                    WHEN f.program = 'ap' THEN 'CURRENCY'
                     WHEN f.series_id IN ('LNS14000000', 'LNS11300000', 'LNS13327709') THEN 'RATE'
                     WHEN f.series_id = 'LNS12300000' THEN 'RATIO'
                     WHEN f.series_id IN ('CES0500000003', 'CES0500000008') THEN 'CURRENCY'
@@ -265,6 +284,19 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                         THEN 'CES establishment/payroll survey series. These measure jobs, hours, and earnings at employers, not employed persons.'
                     WHEN f.series_id IN ('CUUR0000SA0', 'CUUR0000SA0L1E', 'CWUR0000SA0')
                         THEN 'CPI price index series. These are inflation context measures and are not directly comparable to labor levels or rates.'
+                    -- Below the nation (grocery-and-gasoline-prices): the index
+                    -- base, the sampling error and the cadence are part of
+                    -- what the series is.
+                    WHEN f.program = 'cu' AND COALESCE(f.geo_level, 'us') <> 'us'
+                        THEN 'CPI price index for one area. Its level is relative to this series'' own base period, so levels are not comparable across areas: compare percent changes. Area indexes carry substantially greater sampling error than the national CPI (BLS Handbook of Methods). Published '
+                             || CASE
+                                    WHEN f.geo_level = 'provider_area'
+                                         AND SUBSTRING(f.series_id FROM 5 FOR 4) NOT IN ('S12A', 'S23A', 'S49A')
+                                        THEN 'every other month; a month BLS does not publish has no value.'
+                                    ELSE 'monthly.'
+                                END
+                    WHEN f.program = 'ap'
+                        THEN 'Average price in U.S. dollars for one item in one area, estimated from the CPI sample. Comparable across areas in dollars; not an index.'
                     WHEN f.series_id IN ('JTS000000000000000JOL', 'JTS000000000000000HIR', 'JTS000000000000000QUR', 'JTS000000000000000LDL', 'JTS000000000000000TSL', 'JTS000000000000000OSL')
                         THEN 'JOLTS labor-flow series. These represent openings or turnover flows rather than employment stock measures.'
                     ELSE 'Preserve survey-specific interpretation; avoid cross-survey equivalence by label similarity.'

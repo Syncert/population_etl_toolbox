@@ -12,6 +12,9 @@ from typing import Callable, TypeVar
 import httpx
 import pytest
 
+from data_ingestion_toolbox.eia.config import (
+    API_KEY_ENVIRONMENT_VARIABLE as EIA_API_KEY_VARIABLE,
+)
 from data_ingestion_toolbox.fbi_ucr.config import (
     API_KEY_ENVIRONMENT_VARIABLE as FBI_CDE_API_KEY_VARIABLE,
 )
@@ -31,6 +34,7 @@ REQUIRED_SCHEDULED_CREDENTIALS = (
     "FRED_API_KEY",
     FBI_CDE_API_KEY_VARIABLE,
     USDA_NASS_API_KEY_VARIABLE,
+    EIA_API_KEY_VARIABLE,
 )
 
 

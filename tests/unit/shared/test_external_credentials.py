@@ -21,6 +21,7 @@ def test_scheduled_external_credentials_accept_all_configured_keys() -> None:
             "FRED_API_KEY": "fred-secret",
             "FBI_CDE_API_KEY": "fbi-secret",
             "USDA_NASS_API_KEY": "nass-secret",
+            "EIA_API_KEY": "eia-secret",
         }
     )
 
@@ -35,6 +36,7 @@ def test_scheduled_external_credentials_name_missing_keys_without_values() -> No
                 "FRED_API_KEY": "fred-secret",
                 "FBI_CDE_API_KEY": "fbi-secret",
                 "USDA_NASS_API_KEY": "nass-secret",
+                "EIA_API_KEY": "eia-secret",
             }
         )
 
@@ -58,4 +60,5 @@ def test_scheduled_external_credentials_cover_every_credentialed_source() -> Non
         "FRED_API_KEY",
         "FBI_CDE_API_KEY",
         "USDA_NASS_API_KEY",
+        "EIA_API_KEY",
     }

@@ -13,7 +13,12 @@ from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from data_ingestion_toolbox import silver_ref as silver_ref_package
+from data_ingestion_toolbox.silver_ref.area_geography import sync_area_geography
 from data_ingestion_toolbox.silver_ref.config import CONFIG
+from data_ingestion_toolbox.silver_ref.provider_areas import (
+    PROVIDER_AREA_LISTS,
+    sync_provider_areas,
+)
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     sync_geography_history,
     sync_sub_county_geography,
@@ -71,6 +76,23 @@ def silver_ref():
         return sync_sub_county_geography(source_year=int(core["latest_vintage"]))
 
     @task
+    def load_area_geo() -> dict[str, int]:
+        # Census regions, divisions and CBSAs, after the counties and states
+        # they contain: a membership is written only for a geography the
+        # reference already holds, and any other is ledgered unmapped.
+        return sync_area_geography(source_year=None)
+
+    @task
+    def load_provider_areas() -> dict[str, int]:
+        # Areas a provider defines itself (a BLS CPI metro), from each
+        # provider's own published list.
+        loaded: dict[str, int] = {}
+        for provider, area_list in sorted(PROVIDER_AREA_LISTS.items()):
+            if area_list.loaded_by_reference:
+                loaded[provider] = sync_provider_areas(provider)["provider_areas"]
+        return loaded
+
+    @task
     def load_dim_time() -> int:
         # Build from 1970 through end of current year (matches FRED historical range)
         return sync_time_dim(start_date=date(1970, 1, 1), end_date=None)
@@ -78,7 +100,12 @@ def silver_ref():
     ddl = ensure_schema()
     geo = load_dim_geo()
     load_sub_county_geo(geo)
+    areas = load_area_geo()
+    provider_areas = load_provider_areas()
     time = load_dim_time()
+
+    geo >> areas
+    ddl >> provider_areas
 
     ddl >> geo
     ddl >> time

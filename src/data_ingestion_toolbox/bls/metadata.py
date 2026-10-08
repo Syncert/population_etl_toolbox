@@ -185,11 +185,18 @@ def sync_bls_series_metadata(program: str) -> int:
                 seasonal = (
                     _safe_str(record.get("seasonal", "")) if program == "la" else None
                 )
+                # A price program's measure is its item; its area is the area
+                # the price describes (grocery-and-gasoline-prices).
                 measure = _safe_str(
-                    record.get("measure_code") or record.get("data_type_code", "")
+                    record.get("measure_code")
+                    or record.get("data_type_code")
+                    or (record.get("item_code") if program in {"cu", "ap"} else "")
+                    or ""
                 )
                 area_code = (
-                    _safe_str(record.get("area_code", "")) if program == "la" else None
+                    _safe_str(record.get("area_code", ""))
+                    if program in {"la", "cu", "ap"}
+                    else None
                 )
                 area_text = (
                     _safe_str(record.get("area_text", "")) if program == "la" else None

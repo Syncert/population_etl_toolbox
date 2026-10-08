@@ -8,6 +8,13 @@ from dataclasses import dataclass
 
 
 _DIGITS = re.compile(r"^[0-9]+$")
+_PROVIDER = re.compile(r"^[a-z_]+$")
+_PROVIDER_AREA_CODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+#: The Census Bureau's region and division codes, which are the whole set:
+#: four regions and nine divisions (grocery-and-gasoline-prices).
+CENSUS_REGION_CODES = frozenset("1234")
+CENSUS_DIVISION_CODES = frozenset("123456789")
 
 
 def _code(value: object, *, width: int, label: str) -> str:
@@ -26,9 +33,18 @@ def canonical_geo_id(
     agency_code: object | None = None,
     tract_code: object | None = None,
     zcta_code: object | None = None,
+    area_code: object | None = None,
+    provider: object | None = None,
 ) -> str:
     """Build a canonical identity only from exact provider codes, never names."""
     kind = geo_type.strip().lower()
+    if kind in {"census_region", "census_division", "metro", "provider_area"}:
+        if any(
+            v is not None
+            for v in (state_fips, county_fips, place_fips, tract_code, zcta_code)
+        ):
+            raise ValueError(f"a {kind} is identified by its own code alone")
+        return _area_geo_id(kind, area_code, provider)
     if kind in {"us", "nation", "national"}:
         if any(
             v is not None
@@ -83,6 +99,30 @@ def canonical_geo_id(
     raise ValueError(f"unsupported geography type: {geo_type}")
 
 
+def _area_geo_id(kind: str, area_code: object | None, provider: object | None) -> str:
+    code = str(area_code if area_code is not None else "").strip()
+    if kind == "census_region":
+        if code not in CENSUS_REGION_CODES:
+            raise ValueError("a census region code is 1 to 4")
+        return f"region:{code}"
+    if kind == "census_division":
+        if code not in CENSUS_DIVISION_CODES:
+            raise ValueError("a census division code is 1 to 9")
+        return f"division:{code}"
+    if kind == "metro":
+        if not _DIGITS.fullmatch(code) or len(code) != 5:
+            raise ValueError("a CBSA code is exactly five digits")
+        return f"cbsa:{code}"
+    # A provider area: the provider names it, and only the provider's own
+    # code identifies it.
+    owner = str(provider if provider is not None else "").strip().lower()
+    if not _PROVIDER.fullmatch(owner):
+        raise ValueError("a provider area needs its provider's name")
+    if not _PROVIDER_AREA_CODE.fullmatch(code):
+        raise ValueError("a provider area needs the provider's exact code")
+    return f"area:{owner}:{code}"
+
+
 @dataclass(frozen=True)
 class GeographyResolution:
     provider: str
@@ -103,6 +143,8 @@ def resolve_provider_geography(
     place_fips: object | None = None,
     agency_code: object | None = None,
     tract_code: object | None = None,
+    area_code: object | None = None,
+    area_provider: object | None = None,
 ) -> GeographyResolution:
     """Resolve supported provider codes without fuzzy or name-based matching."""
     source = provider.strip().upper()
@@ -110,10 +152,23 @@ def resolve_provider_geography(
     parts = [state_fips, county_fips, place_fips, agency_code]
     if tract_code is not None:
         parts.append(tract_code)
+    if area_code is not None:
+        parts.append(area_code)
     source_code = ":".join("" if value is None else str(value) for value in parts)
     supported = {
         "CENSUS_ACS": {"nation", "us", "state", "county", "place", "tract"},
-        "BLS": {"nation", "us", "state", "county"},
+        "BLS": {
+            "nation",
+            "us",
+            "state",
+            "county",
+            "census_region",
+            "census_division",
+            "metro",
+            "provider_area",
+        },
+        "EIA": {"nation", "us", "state", "provider_area"},
+        "BEA": {"nation", "us", "state", "county", "metro", "provider_area"},
         "CENSUS_PEP": {"nation", "us", "state", "county", "place"},
         "CDC": {"nation", "us", "state", "county"},
         "USDA_NASS": {"nation", "us", "state", "county"},
@@ -131,6 +186,8 @@ def resolve_provider_geography(
             place_fips=place_fips,
             agency_code=agency_code,
             tract_code=tract_code,
+            area_code=area_code,
+            provider=area_provider,
         )
     except ValueError:
         return GeographyResolution(
