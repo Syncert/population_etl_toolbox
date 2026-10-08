@@ -849,6 +849,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -876,7 +878,10 @@
       "publishes_value_status": true,
       "route_segment": null,
       "served_by_neutral_routes": true,
-      "source_code": "CENSUS_BPS"
+      "source_code": "CENSUS_BPS",
+      "time_grains": [
+        "native"
+      ]
     },
     {
       "datasets": [],

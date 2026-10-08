@@ -117,11 +117,6 @@
       "path": "src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql"
     },
     {
-      "id": "silver-census-bps",
-      "phase": "silver",
-      "path": "src/data_ingestion_toolbox/census_bps/DDL/silver_census_bps.sql"
-    },
-    {
       "id": "silver-nass",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql"
@@ -130,6 +125,11 @@
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
+    },
+    {
+      "id": "silver-census-bps",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_bps/DDL/silver_census_bps.sql"
     },
     {
       "id": "silver-bea",
@@ -172,11 +172,6 @@
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"
     },
     {
-      "id": "gold-census-bps",
-      "phase": "gold",
-      "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql"
-    },
-    {
       "id": "gold-bls",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql"
@@ -207,14 +202,14 @@
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql"
     },
     {
-      "id": "publisher-census-bps",
-      "phase": "publisher",
-      "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql"
-    },
-    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
+    },
+    {
+      "id": "gold-census-bps",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql"
     },
     {
       "id": "gold-bea",
@@ -255,6 +250,11 @@
       "id": "publisher-bls-qcew",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-bps",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql"
     },
     {
       "id": "publisher-bea",
