@@ -10,6 +10,7 @@ import pytest
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.silver_ref import time_dim
+from data_ingestion_toolbox.sql import catalog_queries
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     GeographyRecord,
     GeographyRepository,
@@ -115,7 +116,11 @@ def test_geography_replay_retains_versions_and_cross_county_place_relationships(
     postgres_connection_factory: Callable[[], connection],
     reference_dimension_scope: None,
 ) -> None:
-    """Covers: DB-018 — versions, retirement, geometry, and intersections persist."""
+    """Covers: DB-018 — versions, retirement, geometry, and intersections persist.
+
+    Also DB-062 (adjacency and the served relationship projection) and API-164
+    (the relationship read against the real projection).
+    """
     writer = postgres_connection_factory()
     with writer.cursor() as cursor:
         capture_2096 = seed_capture(cursor, "CENSUS_GEO", b"snapshot-2096")
@@ -177,6 +182,62 @@ def test_geography_replay_retains_versions_and_cross_county_place_relationships(
     try:
         with serving_reader.cursor() as cursor:
             cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            # West and East County share the edge at -89.5: neighbours, in both
+            # directions, from this vintage's geometry (nearby-and-related-places).
+            cursor.execute(
+                """SELECT geo_id, related_geo_id, geography_vintage, evidence_source
+                   FROM gold_glossary.geo_relationship
+                   WHERE relationship_type = 'adjacent'
+                     AND geo_id LIKE 'state:98|%%'
+                   ORDER BY geo_id"""
+            )
+            assert cursor.fetchall() == [
+                (
+                    "state:98|county:764",
+                    "state:98|county:765",
+                    2096,
+                    "census_boundary_adjacency",
+                ),
+                (
+                    "state:98|county:765",
+                    "state:98|county:764",
+                    2096,
+                    "census_boundary_adjacency",
+                ),
+            ]
+            cursor.execute(
+                """SELECT geo_id, relationship_type, overlap_weight
+                   FROM gold_glossary.geo_relationship
+                   WHERE related_geo_id = 'state:98|place:54321'
+                   ORDER BY geo_id, relationship_type"""
+            )
+            assert [
+                (
+                    row[0],
+                    row[1],
+                    round(float(row[2]), 3) if row[2] is not None else None,
+                )
+                for row in cursor.fetchall()
+            ] == [
+                ("state:98", "contains", None),
+                ("state:98|county:764", "intersects", 0.5),
+                ("state:98|county:765", "intersects", 0.5),
+            ]
+            # The API's relationship read, against the real projection: the
+            # county's neighbour, its overlapping place, and its state and
+            # nation, each with the vintage and evidence recorded (API-164).
+            cursor.execute(
+                str(catalog_queries.GEOGRAPHY_RELATED_QUERY).replace(
+                    ":geo_id", "%(geo_id)s"
+                ),
+                {"geo_id": "state:98|county:764"},
+            )
+            assert [(row[0], row[1], row[8]) for row in cursor.fetchall()] == [
+                ("adjacent", "state:98|county:765", "census_boundary_adjacency"),
+                ("intersects", "state:98|place:54321", "census_boundary_intersection"),
+                ("part_of", "state:98", "exact_census_code_hierarchy"),
+                ("part_of", "us:1", "exact_census_code_hierarchy"),
+            ]
             cursor.execute(
                 """SELECT place_fips, place_name, boundary_vintage,
                           ST_IsValid(geo_geom), ST_SRID(geo_geom)
@@ -351,7 +412,9 @@ def test_batched_geography_replay_is_idempotent_and_guards_missing_entities(
 
     publish()
     first = published_counts()
-    assert first == (5, 5, 4, 6)
+    # Six code-hierarchy and intersection rows, and the two counties' shared
+    # boundary recorded once in each direction.
+    assert first == (5, 5, 4, 8)
 
     publish()
     assert published_counts() == first, "replaying the snapshot published new rows"

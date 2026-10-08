@@ -46,6 +46,29 @@ const metrics = Object.fromEntries(codes.map((code) => [code, {
 const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2 };
 const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R/;
 
+// Relationships as the reference would record them. "Crossing city" spans
+// Dane and Rock counties: 60% of its area in Dane, 40% in Rock.
+const CROSSING = { geo_id: "state:55|place:99999", geo_level: "PLACE", geo_name: "Crossing city", state_fips: "55" };
+const link = (relationship, place, extra = {}) => ({ relationship, geo_id: place.geo_id, geo_level: place.geo_level, geo_name: place.county_name || place.state_name || place.geo_name, state_fips: place.state_fips || null,
+  geography_vintage: 2025, evidence_source: relationship === "adjacent" ? "census_boundary_adjacency" : relationship === "intersects" ? "census_boundary_intersection" : "exact_census_code_hierarchy",
+  overlap_area_m2: null, overlap_weight: null, ...extra });
+export const RELATED = {
+  "us:1": [], // the nation's states are listed by the page itself
+  "state:55": [link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" })],
+  "state:27": [link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" })],
+  "state:55|county:025": [
+    link("adjacent", COUNTIES[1]), link("adjacent", COUNTIES[2]),
+    link("intersects", CROSSING, { overlap_weight: 0.6, overlap_area_m2: 6e6 }),
+    link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
+  ],
+  "state:55|county:105": [
+    link("adjacent", COUNTIES[0]),
+    link("intersects", CROSSING, { overlap_weight: 0.4, overlap_area_m2: 4e6 }),
+    link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
+  ],
+  "state:27|county:053": [],
+};
+
 export async function installPlaceFixtures(page, { nationLagsMedianAge = true } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
@@ -58,6 +81,13 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       observation_filters: ["geo_id", "geo_level", "state_fips"], observation_dimensions: [],
       observation_routes: [{ path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") }],
     })) } });
+    if (path.startsWith("/api/v1/catalog/geographies/") && path.endsWith("/related")) {
+      const geoId = decodeURIComponent(path.slice("/api/v1/catalog/geographies/".length, -"/related".length));
+      const place = [NATION, ...STATES, ...COUNTIES].find((item) => item.geo_id === geoId);
+      if (!place) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
+      const items = RELATED[geoId] || [];
+      return route.fulfill({ json: { geo_id: geoId, geo_level: place.geo_level, total: items.length, items } });
+    }
     if (path === "/api/v1/catalog/geographies") {
       const grain = params.get("geo_level");
       const items = grain === "NATIONAL" ? [NATION] : grain === "STATE" ? STATES

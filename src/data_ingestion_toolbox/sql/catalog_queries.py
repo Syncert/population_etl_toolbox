@@ -31,10 +31,12 @@ from sqlalchemy.sql.elements import TextClause
 SOURCE_RELATION = "gold_glossary.dim_source_system"
 METRIC_RELATION = "gold_glossary.dim_metric"
 GEOGRAPHY_RELATION = "gold_glossary.dim_geography"
+#: The served geography relationship projection (nearby-and-related-places).
+RELATIONSHIP_RELATION = "gold_glossary.geo_relationship"
 
 #: Every relation a catalog query may read, for the allowlist assertions.
 CATALOG_RELATIONS: frozenset[str] = frozenset(
-    {SOURCE_RELATION, METRIC_RELATION, GEOGRAPHY_RELATION}
+    {SOURCE_RELATION, METRIC_RELATION, GEOGRAPHY_RELATION, RELATIONSHIP_RELATION}
 )
 
 #: The escape character the ``q`` searches declare, rather than relying on the
@@ -228,6 +230,82 @@ def build_geographies_queries(
     )
     count_q = text(f"SELECT COUNT(*) FROM {GEOGRAPHY_RELATION} WHERE {where}")
     return list_q, count_q, params
+
+
+# ---------------------------------------------------------------------------
+# Geography relationships
+# ---------------------------------------------------------------------------
+
+#: Every relationship of one geography, from its own point of view.
+#:
+#: ``contains`` reads the hierarchy downward (a state's counties; a state's
+#: places are left to its counties' ``intersects`` rows, because a place can
+#: cross a county line), ``part_of`` reads it upward, including the
+#: grandparent (a county's nation through its state, with that row's own
+#: vintage and evidence), ``intersects`` pairs a county with the places its
+#: boundary overlaps in either direction, and ``adjacent`` names the counties
+#: sharing a boundary. Every row keeps the vintage and evidence the bridge
+#: recorded; nothing is matched by name.
+GEOGRAPHY_RELATED_QUERY: TextClause = text(
+    f"""
+    WITH related AS (
+        SELECT relationship.related_geo_id AS other_geo_id,
+               relationship.relationship_type AS relationship,
+               relationship.geography_vintage,
+               relationship.overlap_area_m2,
+               relationship.overlap_weight,
+               relationship.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS relationship
+        WHERE relationship.geo_id = :geo_id
+        UNION ALL
+        SELECT relationship.geo_id,
+               CASE relationship.relationship_type
+                   WHEN 'contains' THEN 'part_of'
+                   ELSE relationship.relationship_type
+               END,
+               relationship.geography_vintage,
+               relationship.overlap_area_m2,
+               relationship.overlap_weight,
+               relationship.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS relationship
+        WHERE relationship.related_geo_id = :geo_id
+          AND relationship.relationship_type IN ('contains', 'intersects')
+        UNION ALL
+        SELECT ancestor.geo_id,
+               'part_of',
+               ancestor.geography_vintage,
+               ancestor.overlap_area_m2,
+               ancestor.overlap_weight,
+               ancestor.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS parent_link
+        JOIN {RELATIONSHIP_RELATION} AS ancestor
+             ON ancestor.related_geo_id = parent_link.geo_id
+            AND ancestor.relationship_type = 'contains'
+        WHERE parent_link.related_geo_id = :geo_id
+          AND parent_link.relationship_type = 'contains'
+    )
+    SELECT DISTINCT ON (related.relationship, geography.geo_id)
+           related.relationship,
+           geography.geo_id,
+           geography.geo_level,
+           geography.geo_name,
+           geography.state_fips,
+           related.geography_vintage,
+           related.overlap_area_m2,
+           related.overlap_weight,
+           related.evidence_source
+    FROM related
+    JOIN {GEOGRAPHY_RELATION} AS geography
+         ON geography.geo_id = related.other_geo_id
+    WHERE NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
+    ORDER BY related.relationship, geography.geo_id, related.geography_vintage DESC
+    """
+)
+
+#: Whether the catalog serves a geography at all, for the route's 404.
+GEOGRAPHY_EXISTS_QUERY: TextClause = text(
+    f"SELECT geo_id, geo_level FROM {GEOGRAPHY_RELATION} WHERE geo_id = :geo_id"
+)
 
 
 # ---------------------------------------------------------------------------

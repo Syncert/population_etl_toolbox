@@ -46,6 +46,8 @@ import {
 import type { LevelPlace, PlaceLevel } from "../lib/placeChapters";
 import { barPosition, compareMeasure, grainMismatch, pairPath } from "../lib/placeComparison";
 import type { ComparedPlace, ComparedRow, NotComparableRow } from "../lib/placeComparison";
+import { groupNearby, relatedPath } from "../lib/placeRelationships";
+import type { NearbyEntry, RelatedResponse } from "../lib/placeRelationships";
 import { comparisonHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 
@@ -412,6 +414,19 @@ function ComparePicker({ base, level, states }: { base: ResolvedSide; level: Pla
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [counties, setCounties] = useState<GeographySummary[] | null>(null);
+  const [neighbours, setNeighbours] = useState<NearbyEntry[]>([]);
+  // Neighbouring counties first (nearby-and-related-places): the pair a
+  // reader most often means, offered before any search.
+  useEffect(() => {
+    if (level !== "COUNTY") return;
+    const controller = new AbortController();
+    apiFetch<RelatedResponse>(relatedPath(base.place.geoId), { signal: controller.signal })
+      .then((payload) => {
+        if (!controller.signal.aborted) setNeighbours(groupNearby(payload, states, []).neighbours.filter((entry) => entry.href));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [level, base.place.geoId, states]);
   useEffect(() => {
     if (level !== "COUNTY" || counties || query.trim().length < 2) return;
     const controller = new AbortController();
@@ -421,7 +436,10 @@ function ComparePicker({ base, level, states }: { base: ResolvedSide; level: Pla
     return () => controller.abort();
   }, [level, counties, query]);
   const needle = query.trim().toLowerCase();
-  const options = !needle
+  const neighbourOptions = neighbours
+    .filter((entry) => !needle || entry.name.toLowerCase().includes(needle))
+    .map((entry) => ({ name: entry.name, path: entry.href!, neighbour: true }));
+  const searched = !needle
     ? []
     : level === "COUNTY"
       ? (counties || []).filter((county) => county.geo_id !== base.place.geoId).map((county) => {
@@ -430,6 +448,10 @@ function ComparePicker({ base, level, states }: { base: ResolvedSide; level: Pla
           return state ? { name: `${countyName(county)}, ${stateName(state)}`, path: placePath(stateSegment(state, states), countySegment(county, sameState)) } : null;
         }).filter((entry): entry is { name: string; path: string } => Boolean(entry) && entry!.name.toLowerCase().includes(needle)).slice(0, 8)
       : states.filter((state) => state.geo_id !== base.place.geoId && stateName(state).toLowerCase().includes(needle)).map((state) => ({ name: stateName(state), path: placePath(stateSegment(state, states)) })).slice(0, 8);
+  const options = [
+    ...neighbourOptions,
+    ...searched.filter((option) => !neighbourOptions.some((neighbour) => neighbour.name === option.name)).map((option) => ({ ...option, neighbour: false })),
+  ];
   return (
     <div className="measure-switcher">
       <label>
@@ -441,6 +463,7 @@ function ComparePicker({ base, level, states }: { base: ResolvedSide; level: Pla
           {options.map((option) => (
             <li key={option.path}>
               <button type="button" className="text-link" onClick={() => router.push(pairPath(base.path, option.path))}>{option.name}</button>
+              {option.neighbour ? <span className="subtle"> · neighbouring county</span> : null}
             </li>
           ))}
         </ul>

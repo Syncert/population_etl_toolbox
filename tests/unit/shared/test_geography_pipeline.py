@@ -821,7 +821,9 @@ def test_relationship_reconciliation_restricts_pairs_before_intersecting() -> No
     )
 
     spatial = [
-        statement for statement, _ in cursor.statements if "ST_Intersects" in statement
+        statement
+        for statement, _ in cursor.statements
+        if "ST_Intersects" in statement and "place_boundary" in statement
     ]
     assert len(spatial) == 1
     statement = spatial[0]
@@ -833,6 +835,38 @@ def test_relationship_reconciliation_restricts_pairs_before_intersecting() -> No
     # Each place's own area is computed once per place, not once per pair.
     assert statement.count("ST_Area(boundary.geom::geography)") == 1
     assert "ON CONFLICT DO NOTHING" in statement
+
+
+def test_county_adjacency_is_materialised_once_per_vintage() -> None:
+    """Covers: DB-062 — neighbouring counties are a versioned relationship.
+
+    Adjacency is recorded in the same bridge as containment and intersection,
+    from the vintage's own geometry, with its evidence source; two counties
+    meeting only at a corner are not neighbours, and the candidate side reads
+    the indexed geometry table rather than a materialised copy of it.
+    """
+    cursor = RecordingCursor()
+    repository, _ = _repository(cursor)
+    capture_id = uuid4()
+    repository.reconcile_relationships(
+        vintage=2023, capture_id=capture_id, active_geo_ids={"us:1"}
+    )
+
+    adjacency = [
+        (statement, parameters)
+        for statement, parameters in cursor.statements
+        if "'adjacent'" in statement
+    ]
+    assert len(adjacency) == 1
+    statement, parameters = adjacency[0]
+    assert "'census_boundary_adjacency'" in statement
+    assert (
+        "ST_Dimension(ST_Intersection(county.geom, candidate.geom)) >= 1" in statement
+    )
+    assert "JOIN silver_ref.dim_geo_geometry_version AS candidate" in statement
+    assert "candidate.geo_sk <> county.geo_sk" in statement
+    assert "ON CONFLICT DO NOTHING" in statement
+    assert parameters == (2023, 2023, str(capture_id), 2023)
 
 
 def test_an_unparseable_geography_writes_no_ledger_row() -> None:
