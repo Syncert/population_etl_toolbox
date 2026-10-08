@@ -2010,7 +2010,10 @@ def test_a_series_stores_a_calendar_grain_or_window_the_route_answers() -> None:
 @pytest.mark.parametrize(
     ("series", "expected"),
     [
-        ({"metric_code": "FRED:UNRATE", "time_grain": "annual"}, "publishes no calendar"),
+        (
+            {"metric_code": "FRED:UNRATE", "time_grain": "annual"},
+            "publishes no calendar",
+        ),
         ({"metric_code": "FRED:UNRATE", "window": "ytd"}, "approved"),
         (
             {"metric_code": "BLS:CUUR0000SA0", "time_grain": "annual", "window": "ytd"},
@@ -2026,7 +2029,9 @@ def test_a_series_stores_a_calendar_grain_or_window_the_route_answers() -> None:
         ),
     ],
 )
-def test_a_time_view_the_route_refuses_is_not_stored(series: dict, expected: str) -> None:
+def test_a_time_view_the_route_refuses_is_not_stored(
+    series: dict, expected: str
+) -> None:
     """Covers: WEB-141 — a stored time view is checked as the route checks it."""
     with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
         _validate_time_series([{"metric_code": "FRED:UNRATE"}, series])
