@@ -93,3 +93,29 @@ def test_bea_portions_come_from_the_price_parity_files() -> None:
     assert record.geo_id == "area:bea:00999"
     with pytest.raises(ValueError):
         parse_bea_portions(b"not a zip")
+
+
+def test_bea_portions_ignore_the_price_deflator_file_beside_the_parities() -> None:
+    """Covers: ETL-076 — BEA's published zip also carries `PAIRPD_*`; the parities' own CSV is read."""
+    import io
+    import zipfile
+
+    from data_ingestion_toolbox.silver_ref.provider_areas import parse_bea_portions
+
+    bea = Path(__file__).resolve().parents[2] / "fixtures" / "bea"
+    with zipfile.ZipFile(bea / "PARPP.zip") as fixture:
+        parity = next(
+            n for n in fixture.namelist() if n.endswith(".csv") and "__" not in n
+        )
+        parity_bytes = fixture.read(parity)
+    deflator = b'"GeoFIPS","GeoName"\n"10998","Not a parity row"\n'
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as published:
+        published.writestr("PAIRPD__definition.xml", b"<x/>")
+        published.writestr("PAIRPD_PORT_2008_2024.csv", deflator)
+        published.writestr("PARPP_PORT_2008_2024.csv", parity_bytes)
+    portions = parse_bea_portions(buffer.getvalue())
+    assert [a.name for a in portions] == [
+        "Delaware (Metropolitan Portion)",
+        "Delaware (Nonmetropolitan Portion)",
+    ]

@@ -115,10 +115,15 @@ def parse_bea_portions(payload: bytes) -> list[ProviderArea]:
         archive = zipfile.ZipFile(io.BytesIO(payload))
     except zipfile.BadZipFile as exc:
         raise ValueError("the BEA file is not a zip") from exc
+    # The published zips also carry the implicit regional price deflator
+    # (`PAIRPD_*`, `MAIRPD_*`) beside the parities; the parities' own file is
+    # the one whose table code ends `RPP`.
     members = [
         name
         for name in archive.namelist()
-        if name.endswith(".csv") and "__" not in name
+        if name.endswith(".csv")
+        and "__" not in name
+        and name.split("/")[-1].split("_", 1)[0].upper().endswith("RPP")
     ]
     if len(members) != 1:
         raise ValueError("the BEA zip holds no single every-area CSV")
