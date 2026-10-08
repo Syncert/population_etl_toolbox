@@ -95,11 +95,10 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**6 plans.**
+**5 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`hud-fair-market-rents-and-income-limits`](to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
 | [`nces-common-core-of-data`](to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |

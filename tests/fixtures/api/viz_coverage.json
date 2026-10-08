@@ -86,6 +86,9 @@
     "FRED": [
       "NATIONAL"
     ],
+    "HUD_FMR_IL": [
+      "COUNTY"
+    ],
     "IRS_MIGRATION": [
       "COUNTY"
     ],
@@ -2307,6 +2310,129 @@
     },
     {
       "datasets": [],
+      "display_name": "HUD Fair Market Rents and Section 8 Income Limits",
+      "observation_dimensions": [
+        "edition",
+        "effective_date",
+        "hud_area_code",
+        "hud_area_name",
+        "measure",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "HUD_FMR_IL",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
       "display_name": "IRS Statistics of Income county-to-county migration",
       "observation_dimensions": [
         "category",
@@ -2690,6 +2816,7 @@
         "FCC_BDC",
         "FEMA_NRI",
         "FHFA_HPI",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -2741,6 +2868,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -2790,6 +2918,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -2838,6 +2967,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -2881,6 +3011,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -2933,6 +3064,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "explorer.distribution",
@@ -2985,6 +3117,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -3038,6 +3171,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "explorer.settled_history",
@@ -3092,6 +3226,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "comparison.workspace",
@@ -3140,6 +3275,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
@@ -3194,6 +3330,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "workbench.cross_section",
@@ -3247,6 +3384,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "workbench.heatmap",
@@ -3302,6 +3440,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "workbench.correlation",
@@ -3351,6 +3490,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION"
       ],
       "surface_id": "workbench.matrix",
@@ -3402,6 +3542,7 @@
         "FEMA_NRI",
         "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
         "NOAA_NORMALS",
         "USDA_NASS"
