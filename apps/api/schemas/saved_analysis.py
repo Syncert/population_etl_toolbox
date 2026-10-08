@@ -57,6 +57,12 @@ class SeriesDocument(BaseModel):
     release: Optional[str] = Field(default=None, max_length=100)
     newest_per_geography: bool = False
     newest_release_per_period: bool = False
+    #: A calendar grain or a serving window (ADR-0007): the same two
+    #: parameters `/observations` takes, so a stored read replays as the read
+    #: it was. Both default to an unwindowed native read, so a document
+    #: stored before they existed replays exactly as it did.
+    time_grain: Literal["native", "quarterly", "annual"] = "native"
+    window: Optional[Literal["trailing_3", "trailing_12", "ytd"]] = None
     filters: dict[str, Any] = {}
 
 
@@ -116,6 +122,12 @@ class AnalysisDocument(BaseModel):
     #: existed replays exactly as it did.
     newest_per_geography: bool = False
     newest_release_per_period: bool = False
+    #: A calendar grain or a serving window (ADR-0007): the same two
+    #: parameters `/observations` takes, so a stored read replays as the read
+    #: it was. Both default to an unwindowed native read, so a document
+    #: stored before they existed replays exactly as it did.
+    time_grain: Literal["native", "quarterly", "annual"] = "native"
+    window: Optional[Literal["trailing_3", "trailing_12", "ytd"]] = None
     filters: dict[str, Any] = {}
     bin_count: Optional[int] = Field(default=None, ge=1, le=20)
     #: A workbench's series, each an observations request in its own right.

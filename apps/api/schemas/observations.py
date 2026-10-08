@@ -220,6 +220,25 @@ class ObservationCoverage(BaseModel):
     population_denominator: Optional[str] = None
 
 
+class ObservationDerivation(BaseModel):
+    """How a calendar-window figure came to be (ADR-0007).
+
+    ``kind`` is ``provider_published`` (the provider's own figure for the
+    window, such as a BLS annual average) or ``derived`` (computed by the
+    warehouse from the provider's monthly figures with the reviewed method
+    named here). A derived window missing a month has no value and says why in
+    ``refusal_reason``; it is never zero.
+    """
+
+    kind: str
+    method: Optional[str] = None
+    method_version: Optional[int] = None
+    expected_periods: Optional[int] = None
+    present_periods: Optional[int] = None
+    refusal_reason: Optional[str] = None
+    component_releases: list[str] = []
+
+
 class NeutralObservation(BaseModel):
     """One observation from any completed source, semantics preserved.
 
@@ -255,6 +274,8 @@ class NeutralObservation(BaseModel):
     coverage: Optional[ObservationCoverage] = None
     source_record_id: Optional[str] = None
     capture_id: Optional[str] = None
+    #: Present only on a ``time_grain=quarterly|annual`` row.
+    derivation: Optional[ObservationDerivation] = None
 
 
 class NeutralObservationListResponse(BaseModel):
@@ -265,11 +286,18 @@ class NeutralObservationListResponse(BaseModel):
     its release identity). ``release`` echoes a pinned release identity.
     Ordering is deterministic per source and documented as part of the
     contract.
+
+    ``time_grain`` is ``native`` (the source's own periods), ``quarterly`` or
+    ``annual`` (calendar windows, provider-published or derived, ADR-0007).
     """
 
     metric_code: str
     source_code: str
     scope: str
+    time_grain: str = "native"
+    #: The serving window answered (``trailing_3``, ``trailing_12``, ``ytd``),
+    #: or ``None`` for an unwindowed read.
+    window: Optional[str] = None
     release: Optional[str] = None
     total: int
     limit: int

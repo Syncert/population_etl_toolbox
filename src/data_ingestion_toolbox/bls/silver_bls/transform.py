@@ -385,7 +385,7 @@ def _upsert_silver_rows(
             capture_id, source_value, value_status,
             source_system, load_batch_id, ingested_at
         ) VALUES %s
-        ON CONFLICT (series_id, period_date)
+        ON CONFLICT (series_id, year, period)
         DO UPDATE SET
             time_sk = EXCLUDED.time_sk,
             geo_sk = EXCLUDED.geo_sk,
@@ -601,7 +601,7 @@ def _transform_rows_to_silver_df(
         return pl.DataFrame()
 
     initial_rows = df.height
-    df = df.unique(subset=["series_id", "period_date"], keep="last")
+    df = df.unique(subset=["series_id", "year", "period"], keep="last")
     if initial_rows > df.height:
         dedup_count = initial_rows - df.height
         logger.warning(

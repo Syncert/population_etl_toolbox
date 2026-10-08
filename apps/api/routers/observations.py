@@ -108,6 +108,33 @@ def get_neutral_observations(
             "can disagree with it."
         ),
     ),
+    time_grain: Literal["native", "quarterly", "annual"] = Query(
+        "native",
+        description=(
+            "native answers the source's own periods. quarterly and annual "
+            "answer calendar windows: the provider's own figure where it "
+            "publishes one (BLS annual averages), otherwise a value derived "
+            "by the metric's reviewed method, each row saying which in "
+            "`derivation`. A window missing a month carries its reason and "
+            "no value. Valid only with scope=latest; a metric with neither "
+            "is refused (ADR-0007). /catalog/metrics/{code} lists its grains."
+        ),
+    ),
+    # A string rather than a Literal: an empty value is absent everywhere in
+    # this API (API-124), and the service names the accepted windows.
+    window: Optional[str] = Query(
+        None,
+        max_length=20,
+        description=(
+            "trailing_3, trailing_12 or ytd. "
+            "One value per geography over its months: the trailing 3 or 12 "
+            "months, or year to date, ending at period_start (a month's first "
+            "day) or at each geography's newest month. Computed with the "
+            "metric's approved method only; a window missing a month carries "
+            "its reason and no value. Valid only with time_grain=native and "
+            "scope=latest (ADR-0007)."
+        ),
+    ),
     limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
@@ -159,6 +186,8 @@ def get_neutral_observations(
             offset=offset,
             newest_per_geography=newest_per_geography,
             newest_release_per_period=newest_release_per_period,
+            time_grain=time_grain,
+            window=window or None,
         )
     except NeutralQueryError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc

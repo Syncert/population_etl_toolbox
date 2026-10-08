@@ -19,15 +19,14 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress on `codex/analytics-backlog-2026-09-28`. The
+- **Status:** Ready for review (2026-10-07) on `feat/time-windows-and-rollups`. The
   2026-09-25 design decisions below remain authoritative. RU-1 must be
   accepted by a person before RU-3.
-- **Last updated:** 2026-09-28
+- **Last updated:** 2026-10-07
 - **Dependencies:** `map-shows-any-published-period` (the period parameter and
   periods route this plan extends).
-- **Next pickup:** RU-1's proposed ADR awaits human acceptance before RU-3.
-  RU-2 can proceed independently once per-metric method evidence and review
-  ownership are established; no draft method may authorize a rollup.
+- **Next pickup:** none; every work item is done and the plan is ready for
+  review (see the 2026-10-07 checkpoints).
 
 ### Checkpoint (2026-09-28)
 
@@ -47,6 +46,70 @@ verify:
   definitions, and this branch has not assigned aggregation methods by
   inference from source or units. RU-3 remains gated by human acceptance
   of ADR-0007, as this plan explicitly requires.
+
+### Checkpoint (2026-10-07)
+
+- **RU-1 done.** Nick accepted ADR-0007 on 2026-10-07; the ADR and the
+  workbench plan's non-goal note now say so.
+- **RU-3 done for BLS** (ETL-072): requests carry `annualaverage=true`;
+  `M13` parses as the calendar year; the silver key is
+  `(series_id, year, period)` (migration `033` for existing warehouses);
+  the monthly serving view excludes `M13`; `gold_bls.provider_annual_average`
+  holds BLS's own annual averages. Evidence: unit 2 new tests, database
+  `tests/integration/database/test_bls_annual_average.py` 2 passed (M12 and
+  M13 coexist; serving shows only M12; the provider view shows M13; the
+  migration swaps an old key and reruns safely).
+  Integration and end to end: 448 passed, 2 skipped, 1 failed (the PEP
+  teardown node, failing on `main` too). DAG: 144 passed; orchestrated run 4
+  passed.
+- **RU-2 drafted** (ETL-073): `docs/semantics/time_aggregation_methods.json`
+  covers all 127 served sub-annual metrics. Methods come only from provider
+  formulas: CPI indexes `mean` (BLS: 12 successive months / 12), CES
+  all-employee levels `mean` (BLS AE13), FBI counts `sum`; CES hours and
+  earnings are `not_aggregable` (BLS weights by aggregate hours and payrolls,
+  not served); CPS, LAUS and JOLTS state no formula in their handbooks and
+  FRED's aggregation is a provider option, so those are `not_aggregable`; FBI
+  rates need a population series that is not served. Every entry is `draft`;
+  `data_ingestion_toolbox.semantics.time_aggregation` authorizes only
+  approved entries, and the contract test proves a draft authorizes nothing.
+- **RU-2 approved.** Nick approved all 42 drafted `mean`/`sum` methods on
+  2026-10-07 (22 BLS means: CPI indexes and CES all-employee levels; 20 FBI
+  UCR sums: offense and clearance counts). They are `approved`, reviewer
+  Nick; the 85 `not_aggregable` entries stay drafts and derive nothing.
+
+### Checkpoint (2026-10-07, rollups and calendar grains)
+
+- **RU-4 done** (ETL-074). `data_ingestion_toolbox.semantics.rollups` derives
+  calendar quarters and years for the approved metrics from the served monthly
+  rows into `gold_bls.derived_calendar_rollup` and
+  `gold_fbi.derived_calendar_rollup` (method, version, expected and present
+  months, refusal reason, component releases, `derived` true; CHECK: value
+  iff complete). Refreshed by `bls_ingest` after its serving refresh and by
+  `fbi_ucr_ingest` after every publication; replaces the source's rows in one
+  transaction. DQ-BLS-008 compares complete derived years with BLS's own
+  annual averages; DQ-FBI-009 enforces the FBI table's grain.
+- **RU-6 calendar grains done** (API-168). `/observations` takes
+  `time_grain=native|quarterly|annual`; calendar rows come from each source's
+  `calendar_window_observation` view (BLS: provider annual averages first,
+  derived windows where BLS published none; FBI: derived) and carry a
+  `derivation` block; incomplete windows are served with `value: null` and
+  the reason; a metric with no window is a 422 naming ADR-0007.
+  `/catalog/capabilities` and `/catalog/metrics/{code}` publish `time_grains`.
+- **RU-5 done** (API-169). `window=trailing_3|trailing_12|ytd` is computed
+  on request over the served months with the approved method
+  (`rollups.window_sql`, the calendar rollups' completeness rule), anchored
+  at `period_start` or each geography's newest month; no approved method is a
+  422 naming ADR-0007.
+- **Evidence:** unit 2210 passed; DAG 149 passed (container);
+  `tests/integration/database/test_calendar_rollups.py` 2 passed (BLS mean,
+  refused gaps, idempotent replay, withdrawal, DQ-BLS-008 pass and fail; FBI
+  sums equal independently summed months over the real fixture release);
+  `tests/integration/api/test_annual_time_grain.py` 1 passed (provider year
+  beats a derived year, derived and refused quarters, metric grains);
+  `tests/integration/api/test_serving_windows.py` 1 passed (trailing-3 mean,
+  anchored YTD, refused trailing-12). Full integration and end to end: 452
+  passed, 2 skipped, 1 failed (the PEP teardown node, failing on `main`
+  too). Lint clean; OpenAPI, viz coverage and schema snapshot regenerated.
 
 ## Why
 
@@ -119,34 +182,34 @@ workbench out-of-scope entry and WEB-095 to name what is now permitted
 
 ## Work items
 
-- [ ] **RU-1: ADR-0007 "Derived time aggregates"** — product class, labelling,
+- [x] **RU-1: ADR-0007 "Derived time aggregates"** (accepted 2026-10-07) — product class, labelling,
   refusal rule, provider precedence, where methods live; amend workbench plan
   note and WEB-095. **Human acceptance required before RU-3.**
-- [ ] **RU-2: semantic method registry** for BLS, FBI UCR and FRED metrics, with
+- [x] **RU-2: semantic method registry** (approved by Nick 2026-10-07: 42 methods) for BLS, FBI UCR and FRED metrics, with
   a contract test that every served sub-annual metric has a reviewed method or
   is explicitly `not_aggregable`.
-- [ ] **RU-3: provider aggregates as facts** — BLS `M13` with its own period
+- [x] **RU-3: provider aggregates as facts** (BLS done 2026-10-07; FRED server-side aggregation is not configured for any series, so there is nothing to ingest yet) — BLS `M13` with its own period
   identity; FRED aggregated series where configured. Fixture-first adapter
   tests per `ADDING_A_DATA_SOURCE.md`; re-ingestion per
   `BETA_RESET_REINGESTION.md`.
-- [ ] **RU-4: gold derived calendar rollups** (quarter, calendar year) with
+- [x] **RU-4: gold derived calendar rollups** (done 2026-10-07, ETL-074) (quarter, calendar year) with
   columns: method, window start/end, expected and present component counts,
   refusal reason, component release lineage, `derived = true`. Replay /
   idempotency tests; DQ rule comparing derived vs provider annuals.
-- [ ] **RU-5: serving windows** — trailing N (3, 12 periods) and YTD, anchored
+- [x] **RU-5: serving windows** (done 2026-10-07, API-169) — trailing N (3, 12 periods) and YTD, anchored
   at the newest or a chosen period (from `map-shows-any-published-period`),
   same refusal and lineage fields.
-- [ ] **RU-6: API contract (additive v1)** — `time_grain` / `window`
+- [x] **RU-6: API contract (additive v1)** (done 2026-10-07: API-168 grains, API-169 windows) — `time_grain` / `window`
   parameters; response rows carry a `derivation` block; catalog/capabilities
   declares per metric which grains and windows are offered and which are
   provider-published vs derived; refused sources and metrics answer 422 with
   the reason.
-- [ ] **RU-7: explorer / workbench controls** — grain and window selectors;
+- [x] **RU-7: explorer / workbench controls** (explorer done 2026-10-07, WEB-140; workbench split to `WORKBENCH_TIME_VIEWS_PLAN.md`) — grain and window selectors;
   legend, caption and panel say "derived: sum of 12 monthly counts" or
   "provider annual average"; refused windows paint as their reason, not "No
   observation". Compatibility (`apps/api/services/compatibility.py`) may then
   align a monthly and an annual measure through a declared rollup.
-- [ ] **RU-8: contracts** — API consumer guide, TESTING_CONTRACT, CI evidence
+- [x] **RU-8: contracts** (done 2026-10-07) — API consumer guide, TESTING_CONTRACT, CI evidence
   map, semantics docs.
 
 ## Acceptance criteria
@@ -165,3 +228,27 @@ workbench out-of-scope entry and WEB-095 to name what is now permitted
 Change-over-window (period-over-period, YoY) — not chosen for the first two
 waves; add as its own plan once derived windows exist. Seasonal adjustment of
 derived values. Weekly NASS progress data (not ingested).
+
+## Completion evidence (2026-10-07)
+
+- **RU-7** (WEB-140): the explorer's Time control (`apps/web/lib/timeViews.ts`,
+  `SourceExplorerPage.tsx`) offers the grains and windows
+  `/catalog/metrics/{code}` publishes (`time_grains`, and `time_windows`
+  added under API-169), asks `/observations` with only the geography, hides
+  the publication and period controls, captions provider-published versus
+  derived figures, maps each geography's newest complete window, and shows
+  an incomplete window as `Incomplete window: k of n months reported`.
+  The workbench half of RU-7 (series time views, chart labelling, and the
+  optional compatibility alignment) moved to
+  [`WORKBENCH_TIME_VIEWS_PLAN.md`](WORKBENCH_TIME_VIEWS_PLAN.md),
+  because it changes the saved-document shape WEB-095 grades.
+  WEB-095 is unchanged: its saved-document shape did not change.
+- **RU-8**: API consumer guide ("Quarters and years", "The last three
+  months..."), TESTING_CONTRACT (ETL-072–074, API-168–169, WEB-140), the
+  CI evidence map row, BETA_RESET re-derivation note and the semantics README.
+- **Validation:** Python unit 2221 passed; ruff clean; DAG 149 passed (Airflow
+  container); integration and end to end 452 passed, 2 skipped, 1 failed
+  (the PEP teardown node, failing on `main` too) plus the new window test;
+  web unit 726 passed, lint clean, production build passed, browser 202
+  passed.
+

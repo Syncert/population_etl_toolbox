@@ -329,6 +329,11 @@ FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
+BLS now requests its own annual averages (`M13`, ADR-0007). A warehouse
+built before migration `033` gets the new key from the `source-fix` phase;
+re-run `bls_ingest` afterwards so each series' annual averages are captured
+beside its months.
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography
@@ -366,6 +371,15 @@ filling this table.
 
 Do not manually insert guessed geography rows. Correct an exact-code contract or
 add an evidence-backed crosswalk, then replay the affected captured observations.
+
+Derived calendar rollups (ADR-0007) need no separate step. `bls_ingest` and
+`fbi_ucr_ingest` each end by replacing their source's
+`derived_calendar_rollup` rows from the rows they just served, using only the
+methods approved in `docs/semantics/time_aggregation_methods.json`, so a
+re-ingested warehouse re-derives them, and a replay over the same served rows
+writes the same rows. After changing an approval, re-run either DAG (or call
+`data_ingestion_toolbox.semantics.rollups.refresh_calendar_rollups`) to apply
+it; a withdrawn approval leaves no derived value behind.
 
 ## 6. Completion checks
 

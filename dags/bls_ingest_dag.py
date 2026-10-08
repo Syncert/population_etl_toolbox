@@ -959,11 +959,22 @@ def bls_ingest():
         hook = _get_postgres_hook()
         emit_latest_publisher_ready(hook.get_conn, publisher_schema="gold_bls")
 
+    @task(trigger_rule="none_failed")
+    def refresh_bls_time_rollups() -> int:
+        """Derive quarters and years of the BLS metrics with an approved method."""
+        from data_ingestion_toolbox.semantics.rollups import (
+            refresh_calendar_rollups,
+        )
+
+        with _get_postgres_hook().get_conn() as conn:
+            return refresh_calendar_rollups(conn, "BLS")
+
     gold_bls_schema = ensure_gold_bls_schema()
     gold_geography = refresh_gold_geography()
     gold_bls_elements = refresh_gold_bls_elements()
     gold_bls_refresh = refresh_gold_bls_serving_layer()
     publisher_ready = emit_bls_publisher_ready()
+    time_rollups = refresh_bls_time_rollups()
 
     (
         silver_transforms
@@ -973,6 +984,9 @@ def bls_ingest():
         >> gold_bls_refresh
         >> publisher_ready
     )
+    # Derived from the served rows, so it follows the serving refresh; it
+    # publishes nothing to the glossary and does not hold the publisher back.
+    gold_bls_refresh >> time_rollups
 
 
 # Instantiate DAG

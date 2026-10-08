@@ -14,6 +14,14 @@
 // the wiring: discovery, the request per series, the URL state, and the
 // presentation of decisions those modules made.
 
+import {
+  NATIVE_TIME_VIEW,
+  TIME_VIEW_LABELS,
+  derivationCaption,
+  derivationLabel,
+  offeredTimeViews,
+} from "../lib/timeViews";
+import type { MetricTimeCapability, TimeView } from "../lib/timeViews";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, Save } from "lucide-react";
@@ -182,6 +190,11 @@ export default function WorkbenchPage() {
   const [draftStateFips, setDraftStateFips] = useState("");
   const [draftGeoId, setDraftGeoId] = useState("");
   const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
+  // The draft series' time view (ADR-0007), offered from the measure's own
+  // capability so a view the route would refuse is never on screen.
+  const [draftTimeView, setDraftTimeView] = useState<TimeView>(NATIVE_TIME_VIEW);
+  const [draftTimeCapability, setDraftTimeCapability] =
+    useState<MetricTimeCapability | null>(null);
   const [refusal, setRefusal] = useState("");
 
   const [metrics, setMetrics] = useState<MetricSummary[]>([]);
@@ -319,6 +332,9 @@ export default function WorkbenchPage() {
         geoLevel: entry.geoLevel || "",
         geoId: entry.geoId || "",
         filters: entry.filters || {},
+        ...(entry.timeView && entry.timeView !== NATIVE_TIME_VIEW
+          ? { timeView: entry.timeView }
+          : {}),
       });
     }
     if (restored.length > 0) {
@@ -548,6 +564,7 @@ export default function WorkbenchPage() {
       // the answer names it.
       geoId: draftGeoLevel === "NATIONAL" ? "NATIONAL" : draftGeoId,
       filters: draftFilters,
+      ...(draftTimeView !== NATIVE_TIME_VIEW ? { timeView: draftTimeView } : {}),
     };
   }, [
     draftSource,
@@ -555,7 +572,31 @@ export default function WorkbenchPage() {
     draftGeoLevel,
     draftGeoId,
     draftFilters,
+    draftTimeView,
   ]);
+  const draftTimeViews = useMemo(
+    () => offeredTimeViews(draftTimeCapability),
+    [draftTimeCapability],
+  );
+
+  // A measure changes what is offered: back to native until its capability
+  // says otherwise, and native only if the capability cannot be read.
+  useEffect(() => {
+    setDraftTimeView(NATIVE_TIME_VIEW);
+    setDraftTimeCapability(null);
+    if (!draftMetricCode) return;
+    let current = true;
+    getMetric(draftMetricCode)
+      .then((detail) => {
+        if (current) setDraftTimeCapability(detail as MetricTimeCapability);
+      })
+      .catch(() => {
+        if (current) setDraftTimeCapability(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [draftMetricCode]);
 
   const admission = useMemo(
     () =>
@@ -615,16 +656,22 @@ export default function WorkbenchPage() {
         // A settled history where the resource serves one: each period as its
         // newest release left it, which is the `explorer-settled-history`
         // rule. Where it does not, the source's own latest history.
+        // A time view is its own read of the latest publication; the
+        // settled history is a native-period read and is not asked for it.
+        const viewsTime = Boolean(entry.timeView && entry.timeView !== NATIVE_TIME_VIEW);
         const request =
-          buildSettledHistoryRequest(source, {
-            metricCode: entry.metricCode,
-            geoId: entry.geoId,
-            dimensions: entry.filters,
-          }) ||
+          (viewsTime
+            ? null
+            : buildSettledHistoryRequest(source, {
+                metricCode: entry.metricCode,
+                geoId: entry.geoId,
+                dimensions: entry.filters,
+              })) ||
           buildHistoryObservationRequest(source, {
             metricCode: entry.metricCode,
             geoId: entry.geoId,
             dimensions: entry.filters,
+            timeView: entry.timeView,
           });
         if (!request) {
           next[key] = {
@@ -675,7 +722,17 @@ export default function WorkbenchPage() {
         return buildPlottedSeries({
           series: entry,
           rows: load?.rows || [],
-          label: metricLabel(metric),
+          // A calendar or window series says which, so a year of averages is
+          // never read as the monthly line beside it.
+          label:
+            entry.timeView && entry.timeView !== NATIVE_TIME_VIEW
+              ? [
+                  `${metricLabel(metric)} · ${TIME_VIEW_LABELS[entry.timeView]}`,
+                  derivationLabel(load?.rows),
+                ]
+                  .filter(Boolean)
+                  .join(", ")
+              : metricLabel(metric),
           unit: metricUnit(metric),
           truncated: load ? !load.complete : false,
         });
@@ -1301,6 +1358,7 @@ export default function WorkbenchPage() {
           geoLevel: entry.geoLevel,
           geoId: entry.geoId,
           filters: entry.filters,
+          timeView: entry.timeView,
         })),
         presentation: effectivePresentation,
         alignment: isCrossSectional(effectivePresentation)
@@ -1549,6 +1607,7 @@ export default function WorkbenchPage() {
         geoLevel: entry.geoLevel as never,
         geoId: entry.geoId,
         filters: entry.filters,
+        timeView: entry.timeView,
       })),
       presentation: effectivePresentation,
       // Carried only where it means something: a shared grain and a state
@@ -1761,6 +1820,28 @@ export default function WorkbenchPage() {
               </select>
             </div>
 
+            {draftTimeViews.length > 1 ? (
+              <div className="control-group">
+                <label htmlFor="workbench-time-view">Time</label>
+                <select
+                  id="workbench-time-view"
+                  className="select"
+                  value={draftTimeView}
+                  onChange={(event) => {
+                    setDraftTimeView(event.target.value as TimeView);
+                    setRefusal("");
+                  }}
+                  data-testid="workbench-time-view"
+                >
+                  {draftTimeViews.map((view) => (
+                    <option key={view} value={view}>
+                      {TIME_VIEW_LABELS[view]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
             {draftDimensions.map((name) => (
               <div className="control-group" key={name}>
                 <label htmlFor={`workbench-dimension-${name}`}>{name}</label>
@@ -1841,6 +1922,11 @@ export default function WorkbenchPage() {
                     {describeSeries(entry, geographyNames[entry.series.geoId])} —{" "}
                     {entry.unit}
                   </span>{" "}
+                  {derivationCaption(loaded[entry.key]?.rows) ? (
+                    <small className="subtle" data-testid="workbench-derivation">
+                      {derivationCaption(loaded[entry.key]?.rows)}
+                    </small>
+                  ) : null}{" "}
                   <button
                     type="button"
                     className="button ghost"

@@ -73,13 +73,20 @@ class _FakeResult:
 
 
 class _RowSession:
-    """Answers every non-count query with the configured rows."""
+    """Answers every non-count query with the configured rows.
 
-    def __init__(self, rows=None, total=0):
+    The calendar-grain probe is answered with ``calendar_grains``: the grains
+    the metric has calendar windows at (API-168).
+    """
+
+    def __init__(self, rows=None, total=0, calendar_grains=()):
         self._rows = rows or []
         self._total = total
+        self._calendar_grains = [(grain,) for grain in calendar_grains]
 
     def execute(self, query, params=None):
+        if "SELECT DISTINCT grain" in str(query):
+            return _FakeResult(rows=self._calendar_grains)
         if "COUNT(*)" in str(query) and "FILTER" not in str(query):
             return _FakeResult(scalar_value=self._total)
         return _FakeResult(rows=self._rows)
@@ -259,6 +266,55 @@ def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None
         "/api/v1/bls/observations/latest",
         "/api/v1/bls/observations/timeseries",
     } <= paths
+
+
+@pytest.mark.parametrize(
+    ("calendar_grains", "expected"),
+    [
+        ((), ["native"]),
+        (("year",), ["native", "annual"]),
+        (("year", "quarter"), ["native", "quarterly", "annual"]),
+    ],
+)
+def test_a_metric_lists_only_the_calendar_grains_it_has(
+    calendar_grains: tuple[str, ...], expected: list[str]
+) -> None:
+    """Covers: API-168 — a metric's grains are the windows its calendar relation holds, so none is refused."""
+    row = dict(_METRIC_ROW)
+    row.update(
+        {"metric_code": "BLS:CUUR0000SA0", "source_code": "BLS", "units": "index"}
+    )
+    client = _client_with(_RowSession(rows=[row], calendar_grains=calendar_grains))
+    try:
+        response = client.get("/api/v1/catalog/metrics/BLS:CUUR0000SA0")
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["time_grains"] == expected
+
+
+@pytest.mark.parametrize(
+    ("metric_code", "expected"),
+    [
+        ("BLS:CUUR0000SA0", ["trailing_3", "trailing_12", "ytd"]),
+        ("BLS:LNS14000000", []),
+    ],
+)
+def test_a_metric_lists_the_windows_its_approved_method_allows(
+    metric_code: str, expected: list[str]
+) -> None:
+    """Covers: API-169 — windows are offered exactly where the route computes them."""
+    row = dict(_METRIC_ROW)
+    row.update({"metric_code": metric_code, "source_code": "BLS", "units": "index"})
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get(f"/api/v1/catalog/metrics/{metric_code}")
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["time_windows"] == expected
 
 
 def test_a_retired_metric_advertises_no_route_that_will_not_answer_it() -> None:
