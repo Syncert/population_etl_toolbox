@@ -766,6 +766,8 @@ export const OBSERVATION_UNCERTAINTY_FIELDS = [
   "cv_value",
   "cv_status",
   "cv_symbol",
+  // County Business Patterns' noise-infusion flag (G, H or J).
+  "noise_flag",
 ] as const;
 
 /**
