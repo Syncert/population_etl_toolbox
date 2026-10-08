@@ -30,6 +30,9 @@ from __future__ import annotations
 #:   from the 5-year estimates only (sub-county-geography).
 #: * ``CENSUS_BPS`` -- ``census_bps/registry.py`` registers the state file
 #:   (states and the US total), the county files and the place files.
+#: * ``CENSUS_SAIPE_SAHIE`` -- ``census_saipe_sahie/registry.py`` requests
+#:   ``us``, ``state`` and ``county`` only, and ``silver_census_sae`` closes
+#:   ``geo_type`` to ``nation``, ``state`` and ``county``.
 #: * ``BEA`` -- ``bea/registry.py`` loads the nation, states and counties
 #:   and counts BEA's regions and combined areas out of scope.
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
@@ -52,6 +55,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
+    "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),

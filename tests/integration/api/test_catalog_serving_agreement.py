@@ -32,6 +32,7 @@ from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transfo
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import bea as bea_support
+from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
 from tests.support import bls_qcew as qcew_support
@@ -901,6 +902,21 @@ def published_bps_metric(
     return _one_published_code(factory, "CENSUS_BPS")
 
 
+@pytest.fixture
+def published_sae_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the Census SAIPE/SAHIE metrics through their real pipeline."""
+    from data_ingestion_toolbox.census_saipe_sahie.registry import SAHIE, SAIPE
+
+    factory = sae_support.reviewed_warehouse(postgres_connection_factory, request)
+    for dataset in (SAIPE, SAHIE):
+        sae_support.run_to_gold(factory, dataset)
+    harvest_publisher(factory, Publisher("gold_census_sae"))
+    return _one_published_code(factory, "CENSUS_SAIPE_SAHIE")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -956,6 +972,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_sae_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
@@ -1017,6 +1034,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CDC", published_cdc_metric),
         ("FRED", published_fred_metric),
         ("CENSUS_PEP", published_pep_metric),
+        ("CENSUS_SAIPE_SAHIE", published_sae_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1158,6 +1176,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     api_client: TestClient,
     published_acs_grain_metric: str,
     published_cdc_metric: str,
+    published_sae_metric: str,
     published_cdc_county_metric: str,
     published_fred_metric: str,
     published_bps_metric: str,

@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
+from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
 from data_ingestion_toolbox.census_bps import schema as bps_schema
@@ -36,9 +37,10 @@ SOURCES = [
         "usda_nass_crop_ingest",
         "ensure_nass_schema",
         "ingest_batch_",
-        nass_schema,
-        "USDA_NASS",
+        "census_saipe_sahie_ingest",
+        "ensure_census_sae_schema",
     ),
+    ("ingest_batch_", sae_schema, "CENSUS_SAIPE_SAHIE", nass_schema, "USDA_NASS"),
     (
         "census_building_permits_ingest",
         "ensure_census_bps_schema",

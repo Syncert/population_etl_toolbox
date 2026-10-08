@@ -72,6 +72,9 @@ REGISTERED = (
 #: DQ-017 by being implemented.
 UNIMPLEMENTED_RULES = frozenset(
     {
+        # Reconciled in-pipeline by `replay_run`, which commits nothing that
+        # does not reconcile; no executor re-measures retained runs.
+        "DQ-SAE-004",
         # Declared; the run records each asked month, nothing checks gaps.
         "DQ-BPS-004",
         # Declared; the run records each asked quarter, nothing checks gaps.
@@ -441,6 +444,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CENSUS_ACS",
         "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
         "USDA_NASS",

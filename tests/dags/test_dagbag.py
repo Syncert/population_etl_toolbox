@@ -36,6 +36,7 @@ EXPECTED_DAG_IDS = {
     "cdc_ingest",
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
+    "census_saipe_sahie_ingest",
     "census_building_permits_ingest",
     "bls_qcew_ingest",
     "bea_regional_ingest",
@@ -57,6 +58,8 @@ EXPECTED_SCHEDULES = {
     "fbi_ucr_ingest": "0 10 * * 1",
     # Weekdays *and* the first of the month: cron takes the union when
     # day-of-month and day-of-week are both restricted, and the monthly
+    # Monthly: SAIPE publishes each December and SAHIE each spring.
+    "census_saipe_sahie_ingest": "0 6 15 * *",
     # full-history sweep needs a logical date on the first whatever day it
     # Monthly, after the Bureau's mid-month release.
     "census_building_permits_ingest": "0 13 25 * *",
@@ -77,6 +80,7 @@ EXPECTED_SCHEDULES = {
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
+    "census_saipe_sahie_ingest": 2,
 EXPECTED_DEFAULT_RETRIES = {
     "silver_ref": 2,
     "acs_ingest": 3,
@@ -96,6 +100,8 @@ EXPECTED_DEFAULT_RETRIES = {
     # Three, not one, because this task runs for hours and resumes: a
     # restart picks up at the year it stopped on. One retry was
     # consumed by the same scheduler sweep that killed the task, and a
+    # One host and one key with the ACS, so one rate limit.
+    "census_saipe_sahie_ingest": "census_api",
     # five-hour ACS re-serve ended at chunk 13 of 20 (DAG-008).
     "serving_full_reserve": 3,
 }

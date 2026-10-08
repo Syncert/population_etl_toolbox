@@ -114,6 +114,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
         "gold_bea": "BEA",
         "gold_bls": "BLS",
         "gold_bls_qcew": "BLS_QCEW",
+        "gold_census_sae": "CENSUS_SAIPE_SAHIE",
         "gold_cdc": "CDC",
         "gold_census": "CENSUS_ACS",
         "gold_census_bps": "CENSUS_BPS",

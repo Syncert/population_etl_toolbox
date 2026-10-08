@@ -423,6 +423,40 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "dimensions, so `/api/v1/observations` serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="census_saipe_sahie.estimate",
+        source="CENSUS_SAIPE_SAHIE",
+        publisher_schema="gold_census_sae",
+        datasets=("saipe", "sahie"),
+        fixtures=(
+            "tests/fixtures/census_saipe_sahie/saipe_2023_us.json",
+            "tests/fixtures/census_saipe_sahie/saipe_2023_state.json",
+            "tests/fixtures/census_saipe_sahie/saipe_2023_county.json",
+            "tests/fixtures/census_saipe_sahie/sahie_2023_us.json",
+            "tests/fixtures/census_saipe_sahie/sahie_2023_state.json",
+            "tests/fixtures/census_saipe_sahie/sahie_2023_county.json",
+        ),
+        serving_relations=(
+            "gold_census_sae.estimate_revision",
+            "gold_census_sae.estimate_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_saipe_sahie_pipeline.py::"
+            "test_saipe_and_sahie_reach_the_neutral_api_with_their_intervals"
+        ),
+        api_absence_reason=(
+            "Census SAIPE and SAHIE publish no source-specific HTTP route: "
+            "their rows are the neutral observation shape with an interval, "
+            "so `/api/v1/observations` serves them through the dispatch "
+            "registry and a source route would repeat it."
+        ),
+    ),
 )
 
 

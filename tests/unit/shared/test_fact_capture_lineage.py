@@ -96,6 +96,12 @@ FACTS = [
         can_withhold=False,
     ),
     FactContract(
+        "CENSUS_SAIPE_SAHIE",
+        SRC / "census_saipe_sahie/DDL/silver_census_sae.sql",
+        "silver_census_sae.fact_estimate",
+        "valid",
+    ),
+    FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",
         "silver_fbi.fact_crime_observation",
