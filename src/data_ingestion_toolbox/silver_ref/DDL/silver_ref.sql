@@ -17,6 +17,11 @@ INSERT INTO silver_ref.dim_geo_type VALUES
     ('state', 'State', 2, TRUE, 20),
     ('county', 'County', 5, TRUE, 30),
     ('place', 'City/place', 7, TRUE, 30),
+    -- Sub-county geography (sub-county-geography): a tract nests in its
+    -- county; a ZIP Code Tabulation Area nests in nothing and is related to
+    -- counties and places by boundary overlap.
+    ('tract', 'Census tract', 11, TRUE, 35),
+    ('zcta', 'ZIP Code Tabulation Area', 5, TRUE, 35),
     ('agency', 'Provider agency', NULL, FALSE, 40)
 ON CONFLICT (geo_type) DO UPDATE SET
     display_label = EXCLUDED.display_label,
@@ -32,6 +37,10 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo_entity (
     state_fips TEXT,
     county_fips TEXT,
     place_fips TEXT,
+    -- The tract's six-digit code within its county; set only for a tract.
+    tract_code TEXT,
+    -- The five-digit ZCTA; set only for a ZCTA.
+    zcta_code TEXT,
     provider_agency_code TEXT,
     first_seen_version INTEGER NOT NULL,
     last_seen_version INTEGER NOT NULL,
@@ -41,14 +50,74 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo_entity (
     CHECK (state_fips IS NULL OR state_fips ~ '^[0-9]{2}$'),
     CHECK (county_fips IS NULL OR county_fips ~ '^[0-9]{3}$'),
     CHECK (place_fips IS NULL OR place_fips ~ '^[0-9]{5}$'),
-    CHECK (
+    CONSTRAINT dim_geo_entity_tract_code_check CHECK (tract_code IS NULL OR tract_code ~ '^[0-9]{6}$'),
+    CONSTRAINT dim_geo_entity_zcta_code_check CHECK (zcta_code IS NULL OR zcta_code ~ '^[0-9]{5}$'),
+    -- Named so `sql/migrations/032_sub_county_geography.sql` can replace it
+    -- on a populated warehouse; the name is the one Postgres gave it before.
+    CONSTRAINT dim_geo_entity_check1 CHECK (
         (geo_type = 'nation' AND geo_id = 'us:1' AND state_fips IS NULL)
         OR (geo_type = 'state' AND geo_id = 'state:' || state_fips)
         OR (geo_type = 'county' AND geo_id = 'state:' || state_fips || '|county:' || county_fips)
         OR (geo_type = 'place' AND geo_id = 'state:' || state_fips || '|place:' || place_fips)
+        OR (geo_type = 'tract' AND county_fips IS NOT NULL AND tract_code IS NOT NULL
+            AND geo_id = 'state:' || state_fips || '|county:' || county_fips || '|tract:' || tract_code)
+        OR (geo_type = 'zcta' AND state_fips IS NULL AND zcta_code IS NOT NULL
+            AND geo_id = 'zcta:' || zcta_code)
         OR (geo_type = 'agency' AND provider_agency_code IS NOT NULL)
     )
 );
+
+-- A warehouse created before sub-county geography holds the table without
+-- the two code columns and with the identity CHECK that admits no tract or
+-- ZCTA. Re-applying this file brings it to the declaration above: the
+-- columns are added, and the CHECK is replaced under the same name only
+-- when its definition does not yet name a tract. Every existing row is a
+-- nation, state, county, place or agency and satisfies both definitions.
+ALTER TABLE silver_ref.dim_geo_entity
+    ADD COLUMN IF NOT EXISTS tract_code TEXT,
+    ADD COLUMN IF NOT EXISTS zcta_code TEXT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_ref.dim_geo_entity'::regclass
+          AND conname = 'dim_geo_entity_tract_code_check'
+    ) THEN
+        ALTER TABLE silver_ref.dim_geo_entity
+            ADD CONSTRAINT dim_geo_entity_tract_code_check
+            CHECK (tract_code IS NULL OR tract_code ~ '^[0-9]{6}$');
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_ref.dim_geo_entity'::regclass
+          AND conname = 'dim_geo_entity_zcta_code_check'
+    ) THEN
+        ALTER TABLE silver_ref.dim_geo_entity
+            ADD CONSTRAINT dim_geo_entity_zcta_code_check
+            CHECK (zcta_code IS NULL OR zcta_code ~ '^[0-9]{5}$');
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_ref.dim_geo_entity'::regclass
+          AND conname = 'dim_geo_entity_check1'
+          AND pg_get_constraintdef(oid) LIKE '%tract%'
+    ) THEN
+        ALTER TABLE silver_ref.dim_geo_entity DROP CONSTRAINT IF EXISTS dim_geo_entity_check1;
+        ALTER TABLE silver_ref.dim_geo_entity
+            ADD CONSTRAINT dim_geo_entity_check1 CHECK (
+                (geo_type = 'nation' AND geo_id = 'us:1' AND state_fips IS NULL)
+                OR (geo_type = 'state' AND geo_id = 'state:' || state_fips)
+                OR (geo_type = 'county' AND geo_id = 'state:' || state_fips || '|county:' || county_fips)
+                OR (geo_type = 'place' AND geo_id = 'state:' || state_fips || '|place:' || place_fips)
+                OR (geo_type = 'tract' AND county_fips IS NOT NULL AND tract_code IS NOT NULL
+                    AND geo_id = 'state:' || state_fips || '|county:' || county_fips || '|tract:' || tract_code)
+                OR (geo_type = 'zcta' AND state_fips IS NULL AND zcta_code IS NOT NULL
+                    AND geo_id = 'zcta:' || zcta_code)
+                OR (geo_type = 'agency' AND provider_agency_code IS NOT NULL)
+            );
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_geo_entity_version (
     geo_version_sk BIGSERIAL PRIMARY KEY,
@@ -149,19 +218,29 @@ SELECT entity.geo_sk, entity.geo_type,
     entity.geo_id, entity.census_geoid, entity.state_fips, entity.county_fips,
     entity.place_fips, attribute.name,
     CASE WHEN entity.geo_type = 'state' THEN attribute.name ELSE state_attribute.name END AS state_name,
-    CASE WHEN entity.geo_type = 'county' THEN attribute.name END AS county_name,
+    -- A tract carries its county's name; its own name is `area_name`.
+    CASE WHEN entity.geo_type = 'county' THEN attribute.name
+         WHEN entity.geo_type = 'tract' THEN county_attribute.name END AS county_name,
     CASE WHEN entity.geo_type = 'place' THEN attribute.name END AS place_name,
     attribute.latitude, attribute.longitude, geometry.geom, attribute.is_active,
     'census_geography_reference'::TEXT AS source,
     attribute.geography_vintage AS source_year,
     entity.first_seen_version AS first_seen_year,
     entity.last_seen_version AS last_seen_year,
-    attribute.source_snapshot_id, geometry.boundary_vintage, attribute.ingested_at
+    attribute.source_snapshot_id, geometry.boundary_vintage, attribute.ingested_at,
+    -- Appended (sub-county-geography): `CREATE OR REPLACE VIEW` can only add
+    -- columns at the end.
+    entity.tract_code, entity.zcta_code,
+    CASE WHEN entity.geo_type IN ('tract', 'zcta') THEN attribute.name END AS area_name
 FROM silver_ref.dim_geo_entity AS entity
 JOIN attribute_choice AS attribute USING (geo_sk)
 LEFT JOIN silver_ref.dim_geo_entity AS state_entity
   ON state_entity.geo_type = 'state' AND state_entity.state_fips = entity.state_fips
 LEFT JOIN attribute_choice AS state_attribute ON state_attribute.geo_sk = state_entity.geo_sk
+LEFT JOIN silver_ref.dim_geo_entity AS county_entity
+  ON entity.geo_type = 'tract' AND county_entity.geo_type = 'county'
+ AND county_entity.state_fips = entity.state_fips AND county_entity.county_fips = entity.county_fips
+LEFT JOIN attribute_choice AS county_attribute ON county_attribute.geo_sk = county_entity.geo_sk
 LEFT JOIN geometry_choice AS geometry ON geometry.geo_sk = entity.geo_sk;
 
 -- Read compatibility only; this projection owns no independent state.

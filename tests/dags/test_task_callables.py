@@ -472,9 +472,11 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "state",
             "county",
             "place",
+            "tract",
         }
-        # us + state + 52 county parents + 52 place parents (ETL-055).
-        assert len(work_units) == 106
+        # us + state + 52 county parents + 52 place parents (ETL-055) + 52
+        # tract parents (ETL-061).
+        assert len(work_units) == 158
         county_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
@@ -488,6 +490,12 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             if work_unit["geo_level"] == "place"
         }
         assert place_parent_fips == county_parent_fips
+        tract_parent_fips = {
+            work_unit["state_fips"]
+            for work_unit in work_units
+            if work_unit["geo_level"] == "tract"
+        }
+        assert tract_parent_fips == county_parent_fips
 
         # Covers: ETL-055 -- the 1-year estimates are planned at place grain
         # only for their newest year and only where they publish places.
@@ -502,6 +510,8 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
         assert {u["year"] for u in one_year_places} == {2024}
         assert {"50", "54"}.isdisjoint({u["state_fips"] for u in one_year_places})
         assert len(one_year_places) == 50
+        # Covers: ETL-061 -- the 1-year estimates publish no tracts.
+        assert not [u for u in one_year if u["geo_level"] == "tract"]
     else:
         starts = {
             work_unit.get("start_year", work_unit.get("date_start"))

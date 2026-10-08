@@ -84,7 +84,7 @@ _METRIC_COLUMNS = (
 _GEOGRAPHY_COLUMNS = (
     "geo_id, geo_level, geo_name, state_fips, county_fips, place_fips, "
     "state_name, county_name, place_name, geo_latitude, geo_longitude, "
-    "geography_state, retired_at, is_active"
+    "geography_state, retired_at, is_active, area_name"
 )
 
 # ---------------------------------------------------------------------------
@@ -185,6 +185,7 @@ def _build_geo_where(
     active_only: Optional[bool],
     q: Optional[str],
     params: dict,
+    county_fips: Optional[str] = None,
 ) -> str:
     clauses: list[str] = []
     if active_only:
@@ -195,6 +196,11 @@ def _build_geo_where(
     if state_fips:
         clauses.append("state_fips = :state_fips")
         params["state_fips"] = state_fips
+    # A tract carries its county's code, so `state_fips` with `county_fips`
+    # lists one county's tracts (sub-county-geography).
+    if county_fips:
+        clauses.append("county_fips = :county_fips")
+        params["county_fips"] = county_fips
     if q:
         clauses.append(
             f"(UPPER(geo_id) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE}"
@@ -214,6 +220,7 @@ def build_geographies_queries(
     q: Optional[str],
     limit: int,
     offset: int,
+    county_fips: Optional[str] = None,
 ) -> tuple[TextClause, TextClause, dict]:
     """The geography catalog page, retired geographies included by default.
 
@@ -223,7 +230,7 @@ def build_geographies_queries(
     ``active_only`` is the caller's choice, exactly as it is for metrics.
     """
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_geo_where(geo_level, state_fips, active_only, q, params)
+    where = _build_geo_where(geo_level, state_fips, active_only, q, params, county_fips)
     list_q = text(
         f"SELECT {_GEOGRAPHY_COLUMNS} FROM {GEOGRAPHY_RELATION} WHERE {where} "
         "ORDER BY geo_id LIMIT :limit OFFSET :offset"

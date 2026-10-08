@@ -14,7 +14,8 @@
       "COUNTY",
       "NATIONAL",
       "PLACE",
-      "STATE"
+      "STATE",
+      "TRACT"
     ],
     "CENSUS_PEP": [
       "COUNTY",

@@ -59,6 +59,7 @@ def parse_captured_values(
         "state": {"state"},
         "county": {"state", "county"},
         "place": {"state", "place"},
+        "tract": {"state", "county", "tract"},
     }
     if geo_level not in required_geographies:
         raise CensusCapturePayloadError("unsupported Census geography level")
@@ -68,7 +69,7 @@ def parse_captured_values(
             f"Census response missing geography columns: {sorted(missing)}"
         )
 
-    geo_columns = {"us", "state", "county", "place"}
+    geo_columns = {"us", "state", "county", "place", "tract"}
     variable_indexes = [
         index for index, name in enumerate(header) if name not in geo_columns
     ]
@@ -78,6 +79,7 @@ def parse_captured_values(
         state_source = _text(source_row.get("state"))
         county_source = _text(source_row.get("county"))
         place_source = _text(source_row.get("place"))
+        tract_source = _text(source_row.get("tract"))
         us_source = _text(source_row.get("us"))
         for column_index in variable_indexes:
             variable_name = header[column_index]
@@ -111,6 +113,7 @@ def parse_captured_values(
                     "state_fips_source": state_source,
                     "county_fips_source": county_source,
                     "place_fips_source": place_source,
+                    "tract_code_source": tract_source,
                     "variable_name": variable_name,
                     "table_id": variable_name.split("_", 1)[0],
                     "measure_type": variable_name[-1:] or None,
@@ -156,6 +159,7 @@ def replay_census_capture(
             item["state_fips_source"],
             item["county_fips_source"],
             item["place_fips_source"],
+            item["tract_code_source"],
             item["variable_name"],
             item["table_id"],
             item["measure_type"],
@@ -175,7 +179,7 @@ def replay_census_capture(
                     capture_id, source_row_index, source_column_index,
                     source_header, dataset, year, geo_level, us_source,
                     state_fips_source, county_fips_source, place_fips_source,
-                    variable_name,
+                    tract_code_source, variable_name,
                     table_id, measure_type, value_source, value, value_status
                 ) VALUES %s
                 ON CONFLICT (capture_id, source_row_index, source_column_index)

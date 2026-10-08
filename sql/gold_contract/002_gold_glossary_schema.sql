@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_geo_latest (
 ALTER TABLE gold_glossary.dim_geo_latest
     ADD COLUMN IF NOT EXISTS place_fips TEXT,
     ADD COLUMN IF NOT EXISTS place_name TEXT,
+    -- A tract's or ZCTA's own name ("Census Tract 401", "ZCTA5 19901");
+    -- `county_name` stays the tract's county (sub-county-geography).
+    ADD COLUMN IF NOT EXISTS area_name TEXT,
     ADD COLUMN IF NOT EXISTS boundary_vintage INTEGER,
     ADD COLUMN IF NOT EXISTS geography_state TEXT NOT NULL DEFAULT 'current',
     ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
@@ -130,7 +133,8 @@ BEGIN
         boundary_vintage,
         geography_state,
         retired_at,
-        refreshed_at
+        refreshed_at,
+        area_name
     )
     SELECT DISTINCT ON (g.geo_id)
         g.geo_id,
@@ -153,7 +157,8 @@ BEGIN
         g.boundary_vintage,
         'current',
         NULL,
-        NOW()
+        NOW(),
+        g.area_name
     FROM silver_ref.dim_geo g
     WHERE g.is_active = TRUE
     ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
@@ -175,6 +180,7 @@ BEGIN
         longitude = EXCLUDED.longitude,
         geo_geom = EXCLUDED.geo_geom,
         boundary_vintage = EXCLUDED.boundary_vintage,
+        area_name = EXCLUDED.area_name,
         refreshed_at = NOW()
     WHERE (
         gold_glossary.dim_geo_latest.geo_level,
@@ -188,7 +194,8 @@ BEGIN
         gold_glossary.dim_geo_latest.longitude,
         gold_glossary.dim_geo_latest.geo_geom,
         gold_glossary.dim_geo_latest.boundary_vintage,
-        gold_glossary.dim_geo_latest.geography_state
+        gold_glossary.dim_geo_latest.geography_state,
+        gold_glossary.dim_geo_latest.area_name
     ) IS DISTINCT FROM (
         EXCLUDED.geo_level,
         EXCLUDED.state_fips,
@@ -201,7 +208,8 @@ BEGIN
         EXCLUDED.longitude,
         EXCLUDED.geo_geom,
         EXCLUDED.boundary_vintage,
-        'current'
+        'current',
+        EXCLUDED.area_name
     );
 
     -- Retire rather than delete (DB-038). `retired_at` records when the
@@ -270,14 +278,18 @@ SELECT
     longitude AS geo_longitude,
     boundary_vintage,
     refreshed_at,
-    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
+    -- A tract's own name is its most specific one; for every other level
+    -- `area_name` is NULL and this is the call it always was.
+    gold_glossary.geo_name(COALESCE(area_name, place_name), county_name, state_name, geo_id) AS geo_name,
     -- Published for the same reason `dim_metric` publishes `freshness_state`:
     -- a retired geography stays resolvable, and the consumer decides whether
     -- to show it (DB-038). Its observations are still served, so a catalog
     -- that hid it would leave rows nothing could name.
     geography_state,
     retired_at,
-    geography_state = 'current' AS is_active
+    geography_state = 'current' AS is_active,
+    -- Appended: `CREATE OR REPLACE VIEW` can only add columns at the end.
+    area_name
 FROM gold_glossary.dim_geo_latest;
 
 -- Geography relationships, as the reference recorded them (nearby-and-related-places).
