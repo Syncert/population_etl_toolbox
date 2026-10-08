@@ -37,13 +37,13 @@ SOURCES = [
         "ingest_batch_",
         nass_schema,
         "USDA_NASS",
+    ),
     (
         "bls_qcew_ingest",
         "ensure_bls_qcew_schema",
         "ingest_batch_",
         qcew_schema,
         "BLS_QCEW",
-    ),
     ),
     ("bea_regional_ingest", "ensure_bea_schema", "ingest_batch_", bea_schema, "BEA"),
 ]

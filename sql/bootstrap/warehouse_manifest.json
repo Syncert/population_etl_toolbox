@@ -117,14 +117,14 @@
       "path": "src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql"
     },
     {
-      "id": "silver-bls-qcew",
-      "phase": "silver",
-      "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
-    },
-    {
       "id": "silver-nass",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql"
+    },
+    {
+      "id": "silver-bls-qcew",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
     },
     {
       "id": "silver-bea",
@@ -172,11 +172,6 @@
       "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql"
     },
     {
-      "id": "gold-bls-qcew",
-      "phase": "gold",
-      "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
-    },
-    {
       "id": "gold-fred",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql"
@@ -202,14 +197,14 @@
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql"
     },
     {
+      "id": "gold-bls-qcew",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
+    },
+    {
       "id": "gold-bea",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql"
-    },
-    {
-      "id": "publisher-bls-qcew",
-      "phase": "publisher",
-      "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql"
     },
     {
       "id": "publisher-census",
@@ -240,6 +235,11 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-bls-qcew",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql"
     },
     {
       "id": "publisher-bea",

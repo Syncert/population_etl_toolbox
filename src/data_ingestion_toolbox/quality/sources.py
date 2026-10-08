@@ -1775,7 +1775,6 @@ def bls_derived_annual_reconciliation(
            AND provider.period_start = derived.window_start
          WHERE derived.grain = 'year'
            AND derived.value IS NOT NULL
-    "DQ-QCEW-002": qcew_slice_reconciliation,
            AND provider.value IS NOT NULL
         """,
     )
@@ -1834,6 +1833,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-BEA-002": bea_table_reconciliation,
+    "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

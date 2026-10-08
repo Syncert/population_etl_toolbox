@@ -35,8 +35,8 @@ services:
       - ../../sql/migrations/015_census_pep_historical_series.sql:/docker-entrypoint-initdb.d/095_migration_015.sql:ro
       - ../../src/data_ingestion_toolbox/cdc/DDL/silver_cdc.sql:/docker-entrypoint-initdb.d/100_silver_cdc.sql:ro
       - ../../src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql:/docker-entrypoint-initdb.d/105_silver_fbi.sql:ro
-      - ../../src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql:/docker-entrypoint-initdb.d/112_silver_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql:/docker-entrypoint-initdb.d/110_silver_nass.sql:ro
+      - ../../src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql:/docker-entrypoint-initdb.d/112_silver_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/bea/DDL/silver_bea.sql:/docker-entrypoint-initdb.d/114_silver_bea.sql:ro
       - ../../sql/migrations/019_stratum_shape_contract.sql:/docker-entrypoint-initdb.d/115_migration_019.sql:ro
       - ../../sql/migrations/025_county_label_is_not_reviewed.sql:/docker-entrypoint-initdb.d/120_migration_025.sql:ro
@@ -51,8 +51,8 @@ services:
       - ../../src/data_ingestion_toolbox/cdc/gold_cdc/DDL/gold_cdc.sql:/docker-entrypoint-initdb.d/150_gold_cdc.sql:ro
       - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql:/docker-entrypoint-initdb.d/155_gold_fbi.sql:ro
       - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql:/docker-entrypoint-initdb.d/160_gold_nass.sql:ro
-      - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql:/docker-entrypoint-initdb.d/164_gold_bea.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql:/docker-entrypoint-initdb.d/162_gold_bls_qcew.sql:ro
+      - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql:/docker-entrypoint-initdb.d/164_gold_bea.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/165_publisher_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/170_publisher_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/175_publisher_fred.sql:ro
