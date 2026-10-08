@@ -291,7 +291,9 @@ class BlsConfig(BaseModel):
         # A price program's series are selected from BLS's series list by
         # item, so an empty curated list is its whole configuration.
         if not value or any(
-            not series for program, series in value.items() if program not in PRICE_ITEMS
+            not series
+            for program, series in value.items()
+            if program not in PRICE_ITEMS
         ):
             raise ValueError("configured BLS series scope must not be empty")
         return value

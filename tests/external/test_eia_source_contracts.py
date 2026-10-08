@@ -32,7 +32,9 @@ LOGGER = logging.getLogger(__name__)
 def _client() -> EiaClient:
     if not os.environ.get("EIA_API_KEY", "").strip():
         pytest.skip("EIA_API_KEY is not set")
-    return EiaClient(EiaConfig.from_environment().model_copy(update={"max_attempts": 2}))
+    return EiaClient(
+        EiaConfig.from_environment().model_copy(update={"max_attempts": 2})
+    )
 
 
 def test_recent_weeks_answer_every_grade_at_every_area_kind() -> None:
@@ -52,7 +54,11 @@ def test_recent_weeks_answer_every_grade_at_every_area_kind() -> None:
     page = parse_page(response.raw_bytes)
     assert page.quarantined == ()
     assert {price.product for price in page.prices} == set(PRODUCTS)
-    assert {price.geo_type for price in page.prices} == {"nation", "state", "provider_area"}
+    assert {price.geo_type for price in page.prices} == {
+        "nation",
+        "state",
+        "provider_area",
+    }
     assert all(price.units == "$/GAL" for price in page.prices)
 
 
@@ -75,9 +81,15 @@ def test_the_area_facet_lists_the_padds_and_cities() -> None:
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
-        (EiaFetchError(DATA_ROUTE, code="retry_exhausted", status=503), "upstream-unavailable"),
+        (
+            EiaFetchError(DATA_ROUTE, code="retry_exhausted", status=503),
+            "upstream-unavailable",
+        ),
         (httpx.ConnectTimeout("timed out"), "upstream-unavailable"),
-        (EiaFetchError(DATA_ROUTE, code="non_retryable_http", status=404), "contract-regression"),
+        (
+            EiaFetchError(DATA_ROUTE, code="non_retryable_http", status=404),
+            "contract-regression",
+        ),
         (EiaPayloadError(DATA_ROUTE, code="unexpected_answer"), "contract-regression"),
     ],
 )

@@ -3525,7 +3525,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "conformance",
         "A price is a positive number of dollars per gallon or a missing week "
         "with no number; a missing week is never zero.",
-        ("silver_eia.fact_retail_price", "silver_eia.price_revision", "gold_eia.measure_export"),
+        (
+            "silver_eia.fact_retail_price",
+            "silver_eia.price_revision",
+            "gold_eia.measure_export",
+        ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: named CHECK constraints refuse a valid row "

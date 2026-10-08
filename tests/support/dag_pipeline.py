@@ -477,9 +477,7 @@ def assert_dag_run_succeeded(dag_run: Any, dag_id: str) -> dict[str, str]:
     return states
 
 
-AREA_FIXTURES = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "silver_ref" / "area"
-)
+AREA_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "silver_ref" / "area"
 
 
 def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -506,6 +504,7 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
         "resolve_historical_county_years",
         lambda *_args, **_kwargs: [FIXTURE_GEOGRAPHY_VINTAGE],
     )
+
     def download(client: Any, url: str, **_kwargs: Any) -> Any:
         # The region and CBSA files are parsed for real, from the reviewed
         # excerpts (grocery-and-gasoline-prices); every other asset's parser
@@ -765,7 +764,9 @@ def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def get(self: Any, route: str, params: Any, **_kwargs: Any) -> Any:
         payload = facet if route.endswith("facet/duoarea/") else window
-        return eia_client.EiaResponse(route, payload, {"content-type": "application/json"}, 200)
+        return eia_client.EiaResponse(
+            route, payload, {"content-type": "application/json"}, 200
+        )
 
     monkeypatch.setattr(eia_client.EiaClient, "get", get)
 

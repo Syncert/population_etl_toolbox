@@ -289,4 +289,3 @@ def test_a_portion_that_does_not_exist_is_not_a_price_level_of_zero() -> None:
     # The same text in a table without that convention would be a number.
     metro = [o for o in portions.observations if o.geo_id == "area:bea:10998"]
     assert all(o.value_status == "valid" and o.value > 0 for o in metro)
-

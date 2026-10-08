@@ -71,7 +71,9 @@ def test_a_series_bls_stopped_is_not_requested() -> None:
     rows = _series_list("cu.series.excerpt")
     # The same list with New York's food index ending two years early.
     stopped = [
-        {**row, "end_year": "2024"} if row["series_id"].strip() == "CUURS12ASAF11" else row
+        {**row, "end_year": "2024"}
+        if row["series_id"].strip() == "CUURS12ASAF11"
+        else row
         for row in rows
     ]
     assert "CUURS12ASAF11" not in select_price_series("cu", stopped)

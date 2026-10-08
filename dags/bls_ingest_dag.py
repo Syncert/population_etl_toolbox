@@ -105,7 +105,9 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
         # A price program's series come from BLS's own series list.
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            series_list = sorted(set(series_list) | set(read_price_series(cur, program)))
+            series_list = sorted(
+                set(series_list) | set(read_price_series(cur, program))
+            )
     if not series_list:
         return "", 0
 

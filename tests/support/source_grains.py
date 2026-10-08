@@ -46,11 +46,16 @@ from __future__ import annotations
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
-    "BEA": frozenset(
-        {"NATIONAL", "STATE", "METRO", "COUNTY", "PROVIDER_AREA"}
-    ),
+    "BEA": frozenset({"NATIONAL", "STATE", "METRO", "COUNTY", "PROVIDER_AREA"}),
     "BLS": frozenset(
-        {"NATIONAL", "CENSUS_REGION", "CENSUS_DIVISION", "STATE", "COUNTY", "PROVIDER_AREA"}
+        {
+            "NATIONAL",
+            "CENSUS_REGION",
+            "CENSUS_DIVISION",
+            "STATE",
+            "COUNTY",
+            "PROVIDER_AREA",
+        }
     ),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),

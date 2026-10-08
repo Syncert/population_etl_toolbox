@@ -30,7 +30,9 @@ def eia_warehouse(
     return eia.reviewed_warehouse(postgres_connection_factory, request)
 
 
-def test_weekly_gasoline_reaches_the_neutral_api_at_every_area_kind(eia_warehouse) -> None:
+def test_weekly_gasoline_reaches_the_neutral_api_at_every_area_kind(
+    eia_warehouse,
+) -> None:
     """Covers: ETL-080 — a glossary-discovered grade answers through `/api/v1/observations`
     at the nation, a state and an EIA city, in dollars per gallon, week by week.
     """
@@ -44,7 +46,11 @@ def test_weekly_gasoline_reaches_the_neutral_api_at_every_area_kind(eia_warehous
             item for item in capabilities["items"] if item["source_code"] == "EIA"
         )["served_by_neutral_routes"]
         metric = client.get("/api/v1/catalog/metrics/EIA:EPMR").json()
-        assert sorted(metric["valid_geo_grains"]) == ["NATIONAL", "PROVIDER_AREA", "STATE"]
+        assert sorted(metric["valid_geo_grains"]) == [
+            "NATIONAL",
+            "PROVIDER_AREA",
+            "STATE",
+        ]
 
         for geo_id, geo_level in (
             ("us:1", "NATIONAL"),
@@ -65,6 +71,14 @@ def test_weekly_gasoline_reaches_the_neutral_api_at_every_area_kind(eia_warehous
 
         by_padd = client.get(
             "/api/v1/observations",
-            params={"metric_code": "EIA:EPMR", "geo_level": "PROVIDER_AREA", "limit": 500},
+            params={
+                "metric_code": "EIA:EPMR",
+                "geo_level": "PROVIDER_AREA",
+                "limit": 500,
+            },
         ).json()["items"]
-        assert {row["dimensions"]["duoarea"] for row in by_padd} >= {"R10", "R1X", "YBOS"}
+        assert {row["dimensions"]["duoarea"] for row in by_padd} >= {
+            "R10",
+            "R1X",
+            "YBOS",
+        }

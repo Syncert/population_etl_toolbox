@@ -29,7 +29,9 @@ KEY = "unit-test-eia-key"
 
 
 def _config(**overrides) -> EiaConfig:
-    return EiaConfig(eia_api_key=KEY, min_spacing_seconds=0, max_attempts=3, **overrides)
+    return EiaConfig(
+        eia_api_key=KEY, min_spacing_seconds=0, max_attempts=3, **overrides
+    )
 
 
 class _Client:
@@ -108,10 +110,12 @@ def test_the_fixture_window_parses_every_grade_at_every_area_kind() -> None:
         date(2026, 9, 7),
     }
     assert {price.product for price in page.prices} == set(PRODUCTS)
-    assert {price.geo_type for price in page.prices} == {"nation", "state", "provider_area"}
-    california = [
-        p for p in page.prices if p.duoarea == "SCA" and p.product == "EPMR"
-    ]
+    assert {price.geo_type for price in page.prices} == {
+        "nation",
+        "state",
+        "provider_area",
+    }
+    california = [p for p in page.prices if p.duoarea == "SCA" and p.product == "EPMR"]
     assert {p.state_usps for p in california} == {"CA"}
     assert all(p.value_status == "valid" and p.value > 0 for p in page.prices)
     assert all(p.units == "$/GAL" for p in page.prices)
@@ -140,7 +144,11 @@ def _row(**overrides) -> dict:
 def test_a_week_without_a_price_is_missing_and_never_zero() -> None:
     """Covers: ETL-080 — a null value keeps the row, as missing, with no number."""
     (price,) = parse_page(_page([_row(value=None)])).prices
-    assert (price.value, price.value_status, price.value_source) == (None, "missing", None)
+    assert (price.value, price.value_status, price.value_source) == (
+        None,
+        "missing",
+        None,
+    )
 
 
 @pytest.mark.parametrize(
@@ -175,16 +183,24 @@ def test_the_key_travels_only_in_the_query_and_never_in_an_error() -> None:
     assert missing.value.code == "missing_api_key"
 
     client = _Client(
-        [_response(503), httpx.ConnectError(f"https://api.eia.gov/v2?api_key={KEY}"), _response(200, WINDOW)]
+        [
+            _response(503),
+            httpx.ConnectError(f"https://api.eia.gov/v2?api_key={KEY}"),
+            _response(200, WINDOW),
+        ]
     )
     api = EiaClient(_config(), client=client, sleep=lambda _seconds: None)
     retries: list[BaseException] = []
-    answer = api.get("petroleum/pri/gnd/data/", [("frequency", "weekly")], on_retry=retries.append)
+    answer = api.get(
+        "petroleum/pri/gnd/data/", [("frequency", "weekly")], on_retry=retries.append
+    )
     assert answer.raw_bytes == WINDOW
     assert all(("api_key", KEY) in call["params"] for call in client.calls)
     assert all(KEY not in str(error) for error in retries)
 
-    refused = EiaClient(_config(), client=_Client([_response(403)]), sleep=lambda _s: None)
+    refused = EiaClient(
+        _config(), client=_Client([_response(403)]), sleep=lambda _s: None
+    )
     with pytest.raises(EiaFetchError) as denied:
         refused.get("petroleum/pri/gnd/data/", [])
     assert denied.value.code == "key_refused" and KEY not in str(denied.value)
@@ -205,7 +221,9 @@ def test_a_window_asks_for_every_grade_sorted_for_stable_paging() -> None:
     """Covers: ETL-080 — gasoline only, retail sales, sorted by week and series, and no key."""
     parameters = window_parameters(date(2026, 8, 31), None, offset=5000, length=5000)
     assert ("frequency", "weekly") in parameters
-    assert [value for name, value in parameters if name == "facets[product][]"] == sorted(PRODUCTS)
+    assert [
+        value for name, value in parameters if name == "facets[product][]"
+    ] == sorted(PRODUCTS)
     assert ("sort[0][column]", "period") in parameters
     assert ("sort[1][column]", "series") in parameters
     assert ("offset", "5000") in parameters

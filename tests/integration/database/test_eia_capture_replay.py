@@ -140,8 +140,12 @@ def test_a_second_reading_of_a_week_is_kept_beside_the_first(eia_warehouse) -> N
     factory = eia_warehouse
     eia.run_to_gold(factory)
     eia.run_to_gold(factory)
-    assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_revision") == [(352,)]
-    assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_latest") == [(176,)]
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_revision") == [
+        (352,)
+    ]
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_latest") == [
+        (176,)
+    ]
 
 
 def test_a_malformed_answer_is_kept_as_evidence_and_publishes_nothing(

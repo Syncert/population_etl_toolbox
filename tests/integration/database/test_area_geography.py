@@ -24,9 +24,14 @@ pytestmark = [pytest.mark.integration, pytest.mark.database]
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "silver_ref" / "area"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 AREA_IDS = [
-    "region:1", "region:2", "region:3", "region:4",
+    "region:1",
+    "region:2",
+    "region:3",
+    "region:4",
     *(f"division:{code}" for code in range(1, 10)),
-    "cbsa:10180", "cbsa:25540", "cbsa:31540",
+    "cbsa:10180",
+    "cbsa:25540",
+    "cbsa:31540",
 ]
 
 
@@ -55,10 +60,20 @@ def test_a_county_resolves_to_its_region_division_and_metro(
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
-            seed_geography(cursor, geo_type="state", state_fips="55", vintage=2023, name="Wisconsin")
             seed_geography(
-                cursor, geo_type="county", state_fips="55", county_fips="025",
-                vintage=2023, name="Dane County",
+                cursor,
+                geo_type="state",
+                state_fips="55",
+                vintage=2023,
+                name="Wisconsin",
+            )
+            seed_geography(
+                cursor,
+                geo_type="county",
+                state_fips="55",
+                county_fips="025",
+                vintage=2023,
+                name="Dane County",
             )
             capture_id = seed_capture(cursor, "CENSUS_GEO")
         writer.commit()
@@ -66,7 +81,8 @@ def test_a_county_resolves_to_its_region_division_and_metro(
         repository = GeographyRepository(postgres_connection_factory)
         snapshots = [
             parse_regions_and_divisions(
-                (FIXTURES / "NST-EST2024-ALLDATA.excerpt.csv").read_bytes(), vintage=2024
+                (FIXTURES / "NST-EST2024-ALLDATA.excerpt.csv").read_bytes(),
+                vintage=2024,
             ),
             parse_cbsa_delineation(
                 (FIXTURES / "cbsa-est2024-alldata.excerpt.csv").read_bytes(),
@@ -79,7 +95,10 @@ def test_a_county_resolves_to_its_region_division_and_metro(
             try:
                 counts = [
                     publish_area_snapshot(
-                        repository, snapshot, capture_id=capture_id, connection=publication
+                        repository,
+                        snapshot,
+                        capture_id=capture_id,
+                        connection=publication,
                     )
                     for snapshot in snapshots
                 ]
@@ -133,7 +152,9 @@ def test_a_county_resolves_to_its_region_division_and_metro(
                 (AREA_IDS,),
             )
             versions = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM silver_ref.bridge_geo_relationship_version")
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_ref.bridge_geo_relationship_version"
+            )
             edges = cursor.fetchone()[0]
         writer.commit()
 
@@ -146,7 +167,9 @@ def test_a_county_resolves_to_its_region_division_and_metro(
                 (AREA_IDS,),
             )
             assert cursor.fetchone()[0] == versions
-            cursor.execute("SELECT COUNT(*) FROM silver_ref.bridge_geo_relationship_version")
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_ref.bridge_geo_relationship_version"
+            )
             assert cursor.fetchone()[0] == edges
         writer.commit()
     finally:
@@ -235,7 +258,9 @@ def test_bls_cpi_metros_load_as_provider_areas(
     )
 
     payload = (FIXTURES.parent / "provider_areas" / "bls_cu.area").read_bytes()
-    records = provider_area_records("bls_cpi", parse_bls_cpi_areas(payload), vintage=2026)
+    records = provider_area_records(
+        "bls_cpi", parse_bls_cpi_areas(payload), vintage=2026
+    )
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:

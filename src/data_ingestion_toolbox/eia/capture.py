@@ -30,7 +30,9 @@ PARSER_CONTRACT_VERSION = "eia_v2_petroleum_pri_gnd_json:v1"
 DATA_ROUTE = f"{GASOLINE_ROUTE}/data/"
 
 
-def window_parameters(start: date, end: date | None, *, offset: int, length: int) -> list[tuple[str, str]]:
+def window_parameters(
+    start: date, end: date | None, *, offset: int, length: int
+) -> list[tuple[str, str]]:
     """The query for one page of a window, without the key."""
     parameters = [
         ("frequency", "weekly"),
@@ -69,7 +71,9 @@ def capture_window(
     runtime = config or EiaConfig.from_environment()
     # A missing key fails here, before any run is recorded.
     api = EiaClient(runtime, client=client, **({"sleep": sleep} if sleep else {}))
-    capture_control = control or CaptureControl(connection_factory, source_code=SOURCE_CODE)
+    capture_control = control or CaptureControl(
+        connection_factory, source_code=SOURCE_CODE
+    )
     run_id = capture_control.start_run(
         watermark={
             "start_week": start.isoformat(),
@@ -130,7 +134,9 @@ def capture_window(
                     ),
                 )
             except BaseException as exc:
-                capture_control.finish_request(request.request_id, status="failed", error=exc)
+                capture_control.finish_request(
+                    request.request_id, status="failed", error=exc
+                )
                 raise
             capture_control.finish_request(request.request_id, status="captured")
             receipts.append(receipt)
@@ -166,7 +172,12 @@ def capture_window(
                         INSERT INTO control.eia_page (run_id, page_index, capture_id, payload_checksum)
                         VALUES (%s, %s, %s, %s)
                         """,
-                        (str(run_id), index, str(receipt.capture_id), receipt.payload_checksum),
+                        (
+                            str(run_id),
+                            index,
+                            str(receipt.capture_id),
+                            receipt.payload_checksum,
+                        ),
                     )
             connection.commit()
         except BaseException:

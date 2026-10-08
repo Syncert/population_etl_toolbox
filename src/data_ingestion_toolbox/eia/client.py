@@ -143,4 +143,6 @@ class EiaClient:
                 if on_retry is not None and final_error is not None:
                     on_retry(final_error)
                 self._sleep(min(self._config.min_spacing_seconds * 2**attempt, 300.0))
-        raise EiaFetchError(route, code="retry_exhausted", status=final_status) from None
+        raise EiaFetchError(
+            route, code="retry_exhausted", status=final_status
+        ) from None

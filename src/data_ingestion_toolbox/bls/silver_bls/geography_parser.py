@@ -114,7 +114,9 @@ def parse_bls_price_area(series_id: str, program: str) -> Dict[str, Optional[str
             "geo_id": f"area:bls_cpi:{code}",
         }
     logger.warning(
-        "BLS %s series %s names area %s, which is not a geography", program, series_id, code
+        "BLS %s series %s names area %s, which is not a geography",
+        program,
+        series_id,
+        code,
     )
     return unresolved
-

@@ -43,8 +43,16 @@ def parity_warehouse(
         writer.close()
     records = [
         GeographyRecord(
-            "metro", "cbsa:20100", "20100", None, None, None, "Dover, DE", 2023,
-            lsad="Metropolitan Statistical Area", area_code="20100",
+            "metro",
+            "cbsa:20100",
+            "20100",
+            None,
+            None,
+            None,
+            "Dover, DE",
+            2023,
+            lsad="Metropolitan Statistical Area",
+            area_code="20100",
         ),
         *provider_area_records(
             "bea",

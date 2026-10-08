@@ -39,9 +39,7 @@ PRICE_OBSERVATION_BASIS = (
     "year: comparable across areas within a year, not a measure of inflation. "
     "There is no grocery line; food is inside goods."
 )
-PRICE_METHODOLOGY_URL = (
-    "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area"
-)
+PRICE_METHODOLOGY_URL = "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area"
 
 
 class BeaReconciliationError(RuntimeError):

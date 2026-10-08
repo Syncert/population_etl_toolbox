@@ -69,7 +69,9 @@ def parse_page(payload: bytes) -> ParsedPage:
     quarantined: list[EiaQuarantine] = []
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
-            quarantined.append(EiaQuarantine(index, "unreadable_row", "row is not an object"))
+            quarantined.append(
+                EiaQuarantine(index, "unreadable_row", "row is not an object")
+            )
             continue
         product = _text(row, "product")
         duoarea = _text(row, "duoarea")
@@ -81,7 +83,9 @@ def parse_page(payload: bytes) -> ParsedPage:
             )
             continue
         if units != UNITS:
-            quarantined.append(EiaQuarantine(index, "unexpected_unit", f"units {units!r}"))
+            quarantined.append(
+                EiaQuarantine(index, "unexpected_unit", f"units {units!r}")
+            )
             continue
         if not series_id:
             quarantined.append(EiaQuarantine(index, "series_missing", "no series id"))
@@ -106,10 +110,14 @@ def parse_page(payload: bytes) -> ParsedPage:
         try:
             value = Decimal(source) if source is not None else None
         except InvalidOperation:
-            quarantined.append(EiaQuarantine(index, "unreadable_value", f"value {source!r}"))
+            quarantined.append(
+                EiaQuarantine(index, "unreadable_value", f"value {source!r}")
+            )
             continue
         if value is not None and (not value.is_finite() or value <= 0):
-            quarantined.append(EiaQuarantine(index, "implausible_value", f"value {source!r}"))
+            quarantined.append(
+                EiaQuarantine(index, "implausible_value", f"value {source!r}")
+            )
             continue
         identity = "|".join((series_id, week.isoformat()))
         prices.append(

@@ -75,7 +75,9 @@ def _text(record: Mapping[str, Any], name: str) -> str:
     return str(record.get(name) or "").strip()
 
 
-def select_price_series(program: str, metadata: Iterable[Mapping[str, Any]]) -> list[str]:
+def select_price_series(
+    program: str, metadata: Iterable[Mapping[str, Any]]
+) -> list[str]:
     """The published series for the configured items in the price areas.
 
     ``metadata`` is BLS's own series list. A series is selected when its item
@@ -102,7 +104,9 @@ def select_price_series(program: str, metadata: Iterable[Mapping[str, Any]]) -> 
             continue
         # `ap.series` has no seasonal column: an average-price id carries it
         # as its third character (`APU...`).
-        seasonal = _text(record, "seasonal") or (series_id[2:3] if program == "ap" else "")
+        seasonal = _text(record, "seasonal") or (
+            series_id[2:3] if program == "ap" else ""
+        )
         if seasonal != "U":
             continue
         if program == "cu" and _text(record, "periodicity_code") != "R":

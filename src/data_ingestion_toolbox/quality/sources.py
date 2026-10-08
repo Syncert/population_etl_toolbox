@@ -686,9 +686,7 @@ def bea_table_reconciliation(
     ]
 
 
-def bls_bimonthly_cadence(
-    cursor: Any, scope: Mapping[str, Any]
-) -> list[RuleOutcome]:
+def bls_bimonthly_cadence(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-BLS-009 — an every-other-month CPI metro has no two consecutive months."""
     del scope
     total = _count(
@@ -729,9 +727,7 @@ def bls_bimonthly_cadence(
     ]
 
 
-def eia_read_reconciliation(
-    cursor: Any, scope: Mapping[str, Any]
-) -> list[RuleOutcome]:
+def eia_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-EIA-002 — every captured row is replayed; no read is left unreplayed."""
     del scope
     total = _count(cursor, "SELECT COUNT(*) FROM control.eia_read")

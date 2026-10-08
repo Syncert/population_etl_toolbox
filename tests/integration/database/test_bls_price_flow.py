@@ -93,12 +93,25 @@ def test_prices_land_on_their_region_and_metro_with_their_own_units(
         GeographyRepository(postgres_connection_factory).load_attributes(
             [
                 GeographyRecord(
-                    "census_region", "region:2", "2", None, None, None,
-                    "Midwest Region", 2024, area_code="2",
+                    "census_region",
+                    "region:2",
+                    "2",
+                    None,
+                    None,
+                    None,
+                    "Midwest Region",
+                    2024,
+                    area_code="2",
                 ),
                 GeographyRecord(
-                    "provider_area", "area:bls_cpi:S35A", "S35A", None, None, None,
-                    "Washington-Arlington-Alexandria, DC-VA-MD-WV", 2026,
+                    "provider_area",
+                    "area:bls_cpi:S35A",
+                    "S35A",
+                    None,
+                    None,
+                    None,
+                    "Washington-Arlington-Alexandria, DC-VA-MD-WV",
+                    2026,
                     area_code="bls_cpi:S35A",
                 ),
             ],
@@ -130,13 +143,24 @@ def test_prices_land_on_their_region_and_metro_with_their_own_units(
                             year, period, period_name, value, value_status, is_latest
                         ) VALUES (%s, %s, %s, %s, '2097', %s, %s, '3.25',
                                   2097, %s, %s, 3.25, 'valid', TRUE)""",
-                        (capture_id, index, program, series_id, month, month, month, month),
+                        (
+                            capture_id,
+                            index,
+                            program,
+                            series_id,
+                            month,
+                            month,
+                            month,
+                            month,
+                        ),
                     )
                     index += 1
         writer.commit()
 
         monkeypatch.setattr(
-            transform, "_get_hook", lambda: PostgresHookStub(postgres_connection_factory)
+            transform,
+            "_get_hook",
+            lambda: PostgresHookStub(postgres_connection_factory),
         )
         assert transform.transform_bls_to_silver("cu") == 3
         assert transform.transform_bls_to_silver("ap") == 1

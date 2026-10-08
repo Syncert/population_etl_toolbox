@@ -45,7 +45,9 @@ class EiaConfig(BaseModel):
     history_start: date = date(2015, 1, 5)
     #: How many weeks a routine read goes back, so a revised week is read again.
     refresh_weeks: int = 8
-    user_agent: str = "population-etl-toolbox EIA retail gasoline ingestion (public-data warehouse)"
+    user_agent: str = (
+        "population-etl-toolbox EIA retail gasoline ingestion (public-data warehouse)"
+    )
 
     @classmethod
     def from_environment(cls) -> "EiaConfig":

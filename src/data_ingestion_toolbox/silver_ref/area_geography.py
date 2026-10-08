@@ -111,25 +111,43 @@ def _rows(payload: bytes) -> list[dict[str, str]]:
 def parse_regions_and_divisions(payload: bytes, *, vintage: int) -> AreaSnapshot:
     """Regions and divisions, and the states each contains, by Census code."""
     rows = _rows(payload)
-    if not rows or not {"SUMLEV", "REGION", "DIVISION", "STATE", "NAME"} <= set(rows[0]):
+    if not rows or not {"SUMLEV", "REGION", "DIVISION", "STATE", "NAME"} <= set(
+        rows[0]
+    ):
         raise ValueError("the state estimates file lacks its geography columns")
-    snapshot = AreaSnapshot(evidence_source="census_region_division_codes", vintage=vintage)
+    snapshot = AreaSnapshot(
+        evidence_source="census_region_division_codes", vintage=vintage
+    )
     for row in rows:
         level, region, division = row["SUMLEV"], row["REGION"], row["DIVISION"]
         if level == "020":
             geo_id = canonical_geo_id("census_region", area_code=region)
             snapshot.records.append(
                 GeographyRecord(
-                    "census_region", geo_id, region, None, None, None,
-                    row["NAME"], vintage, area_code=region,
+                    "census_region",
+                    geo_id,
+                    region,
+                    None,
+                    None,
+                    None,
+                    row["NAME"],
+                    vintage,
+                    area_code=region,
                 )
             )
         elif level == "030":
             geo_id = canonical_geo_id("census_division", area_code=division)
             snapshot.records.append(
                 GeographyRecord(
-                    "census_division", geo_id, division, None, None, None,
-                    row["NAME"], vintage, area_code=division,
+                    "census_division",
+                    geo_id,
+                    division,
+                    None,
+                    None,
+                    None,
+                    row["NAME"],
+                    vintage,
+                    area_code=division,
                 )
             )
             snapshot.memberships.append(
@@ -149,7 +167,9 @@ def parse_regions_and_divisions(payload: bytes, *, vintage: int) -> AreaSnapshot
                 (canonical_geo_id("census_division", area_code=division), state)
             )
     regions = {r.area_code for r in snapshot.records if r.geo_type == "census_region"}
-    divisions = {r.area_code for r in snapshot.records if r.geo_type == "census_division"}
+    divisions = {
+        r.area_code for r in snapshot.records if r.geo_type == "census_division"
+    }
     if len(regions) != 4 or len(divisions) != 9:
         raise ValueError(
             f"expected 4 regions and 9 divisions, found {len(regions)} and {len(divisions)}"
@@ -171,8 +191,16 @@ def parse_cbsa_delineation(payload: bytes, *, delineation_vintage: int) -> AreaS
             geo_id = canonical_geo_id("metro", area_code=row["CBSA"])
             snapshot.records.append(
                 GeographyRecord(
-                    "metro", geo_id, row["CBSA"], None, None, None, row["NAME"],
-                    delineation_vintage, lsad=kind, area_code=row["CBSA"],
+                    "metro",
+                    geo_id,
+                    row["CBSA"],
+                    None,
+                    None,
+                    None,
+                    row["NAME"],
+                    delineation_vintage,
+                    lsad=kind,
+                    area_code=row["CBSA"],
                 )
             )
         elif kind == COUNTY_MEMBER:
@@ -319,7 +347,9 @@ def sync_area_geography(source_year: int | None = None) -> dict[str, int]:
                         client, url, control=control, request_id=request.request_id
                     )
                 except BaseException as exc:
-                    control.finish_request(request.request_id, status="failed", error=exc)
+                    control.finish_request(
+                        request.request_id, status="failed", error=exc
+                    )
                     raise
                 capture_id = uuid4()
                 persist_response_capture(

@@ -55,7 +55,10 @@ def test_a_provider_area_is_identified_by_provider_and_code() -> None:
 
 @pytest.mark.parametrize(
     "payload",
-    [b"code\tname\nS12A\tNew York\n", b"area_code\tarea_name\n0000\tU.S. city average\n"],
+    [
+        b"code\tname\nS12A\tNew York\n",
+        b"area_code\tarea_name\n0000\tU.S. city average\n",
+    ],
 )
 def test_a_list_without_its_columns_or_its_metros_is_refused(payload: bytes) -> None:
     """Covers: ETL-076 — a malformed or empty list stops the load."""

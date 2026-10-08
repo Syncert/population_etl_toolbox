@@ -31,7 +31,7 @@
 --    was true the day it was written, which is the class of drift ARC-005 and
 --    DB-034 both ended. Seed the data; let the publisher say what it means.
 --
--- 2. NO MEASURE MAY DECLARE THE `STATE` GRAIN. `spatialGrains` returns
+-- 2. ONLY A SOURCE WITH NO COUNTY MAY DECLARE THE `STATE` GRAIN. `spatialGrains` returns
 --    ['STATE', 'COUNTY'] in that order -- the tile layer publishes both
 --    attribution fields -- and the tier's tile-join test walks those grains
 --    and picks the first source publishing any metric at one. The Martin seed
@@ -41,6 +41,9 @@
 --    purely about this seed. County-grain measures here all use that county's
 --    `geo_id` for the same reason: the join must be on a real shared
 --    geography, not on two fixtures agreeing.
+--    The one exception is EIA, which publishes no county at all: Wisconsin is
+--    seeded as a state with a polygon around the county (below), so its
+--    state row joins a real STATE feature.
 --
 -- 3. EVERY VALUE IS DETERMINISTIC. Fixed uuids, fixed far-future dates, no
 --    `NOW()`. DB-039 records why: a `NOW()` in this file made the seed encode
@@ -65,6 +68,27 @@ INSERT INTO silver_ref.dim_geo_entity (
     'state:55|county:025', 'county', '55025', '55', '025', 2098, 2098
 ) ON CONFLICT (geo_id) DO NOTHING;
 
+-- Wisconsin itself, for a source that publishes no county (EIA's weekly
+-- gasoline prices are by state, PADD, city and nation). The polygon is the
+-- county's box grown a little, so the state contains the county and the tile
+-- layer has a STATE feature to join a state-grain measure against.
+INSERT INTO silver_ref.dim_geo_entity (
+    geo_id, geo_type, census_geoid, state_fips, first_seen_version,
+    last_seen_version
+) VALUES (
+    'state:55', 'state', '55', '55', 2098, 2098
+) ON CONFLICT (geo_id) DO NOTHING;
+
+INSERT INTO gold_glossary.dim_geo_latest (
+    geo_id, geo_level, state_fips, state_name, latitude, longitude, geo_geom
+) VALUES (
+    'state:55', 'STATE', '55', 'Wisconsin', 44.5, -89.5,
+    ST_Multi(ST_GeomFromText(
+        'POLYGON((-90.00 42.50,-88.80 42.50,-88.80 43.60,-90.00 43.60,-90.00 42.50))',
+        4326
+    ))
+) ON CONFLICT (geo_id) DO NOTHING;
+
 -- One run/request/capture chain per source that records provenance on its
 -- facts. The uuids are fixed and obviously synthetic: every capture-first
 -- relation below carries a foreign key into this graph, and a fixture that
@@ -74,7 +98,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000fb1', 'FBI_UCR', 'success'),
     ('00000000-0000-4000-8000-000000000a55', 'USDA_NASS', 'success'),
     ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success'),
-    ('00000000-0000-4000-8000-000000000bea', 'BEA', 'success')
+    ('00000000-0000-4000-8000-000000000bea', 'BEA', 'success'),
+    ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -94,7 +119,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000e70', '00000000-0000-4000-8000-000000000e70',
      'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured'),
     ('00000000-0000-4000-9000-000000000bea', '00000000-0000-4000-8000-000000000bea',
-     'BEA', 'smoke://seed', '{}'::JSONB, '70021e6443a882267a777f4fcb288121072a28e3c3fb1c2d11b25b4921ae167f', 'captured')
+     'BEA', 'smoke://seed', '{}'::JSONB, '70021e6443a882267a777f4fcb288121072a28e3c3fb1c2d11b25b4921ae167f', 'captured'),
+    ('00000000-0000-4000-9000-000000000e1a', '00000000-0000-4000-8000-000000000e1a',
+     'EIA', 'smoke://seed', '{}'::JSONB, '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -121,6 +148,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000bea', '00000000-0000-4000-9000-000000000bea',
      '00000000-0000-4000-8000-000000000bea', 'BEA', 'smoke://seed', '{}'::JSONB,
      '70021e6443a882267a777f4fcb288121072a28e3c3fb1c2d11b25b4921ae167f', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e1a', '00000000-0000-4000-9000-000000000e1a',
+     '00000000-0000-4000-8000-000000000e1a', 'EIA', 'smoke://seed', '{}'::JSONB,
+     '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -531,6 +562,39 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- EIA weekly retail gasoline -- a state's regular-grade price for one week.
+-- EIA publishes no county, so this is the STATE exception to rule 2. EIA
+-- does not publish Wisconsin; the state is a fixture, like every value here.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.eia_read (
+    run_id, start_week, end_week, page_count, row_total, payload_checksum,
+    parsed_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e1a', '2098-12-29', '2098-12-29', 1, 1,
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.eia_page (run_id, page_index, capture_id, payload_checksum)
+VALUES (
+    '00000000-0000-4000-8000-000000000e1a', 0, '00000000-0000-4000-a000-000000000e1a',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_eia.fact_retail_price (
+    series_id, week_start, capture_id, run_id, retrieved_at, product, duoarea,
+    area_name, geo_type, geo_id, geo_sk, geography_status, value_source, value,
+    value_status, source_record_id
+)
+SELECT 'EMM_EPMR_PTE_SWI_DPG', '2098-12-29', '00000000-0000-4000-a000-000000000e1a', '00000000-0000-4000-8000-000000000e1a',
+       '2098-12-31 00:00:00+00', 'EPMR', 'SWI', 'Wisconsin (smoke fixture)',
+       'state', 'state:55', geo_sk, 'resolved', '3.215', 3.215, 'valid',
+       'a226939d214efafafb13b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -551,7 +615,8 @@ UNION ALL SELECT * FROM gold_pep.metric_publisher
 UNION ALL SELECT * FROM gold_cdc.metric_publisher
 UNION ALL SELECT * FROM gold_fbi.metric_publisher
 UNION ALL SELECT * FROM gold_nass.metric_publisher
-UNION ALL SELECT * FROM gold_bea.metric_publisher;
+UNION ALL SELECT * FROM gold_bea.metric_publisher
+UNION ALL SELECT * FROM gold_eia.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

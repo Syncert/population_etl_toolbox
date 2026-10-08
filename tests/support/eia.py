@@ -81,7 +81,9 @@ class FixtureClient:
         request = httpx.Request("GET", url)
         if self.override is not None:
             return httpx.Response(
-                self.override.status_code, content=self.override.content, request=request
+                self.override.status_code,
+                content=self.override.content,
+                request=request,
             )
         return httpx.Response(
             200,

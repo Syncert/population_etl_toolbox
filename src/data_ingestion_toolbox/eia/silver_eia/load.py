@@ -50,7 +50,9 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             parsed_rows = rejected = 0
             payload_rejected = False
             for capture_id in captures:
-                page = parse_page(load_captured_payload(connection_factory, UUID(capture_id)))
+                page = parse_page(
+                    load_captured_payload(connection_factory, UUID(capture_id))
+                )
                 parsed_rows += page.row_count
                 rejected += sum(1 for q in page.quarantined if q.row_index >= 0)
                 payload_rejected = payload_rejected or any(
@@ -102,7 +104,13 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                         ON CONFLICT (capture_id, row_index, error_code) DO NOTHING
                         """,
                         [
-                            (str(run_id), capture_id, q.row_index, q.error_code, q.error_summary)
+                            (
+                                str(run_id),
+                                capture_id,
+                                q.row_index,
+                                q.error_code,
+                                q.error_summary,
+                            )
                             for q in page.quarantined
                         ],
                     )

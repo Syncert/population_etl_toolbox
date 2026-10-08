@@ -93,7 +93,9 @@ def parse_bls_cpi_areas(payload: bytes) -> list[ProviderArea]:
         raise ValueError("the BLS area list lacks area_code and area_name")
     areas = []
     for row in rows:
-        values = {(key or "").strip(): (value or "").strip() for key, value in row.items()}
+        values = {
+            (key or "").strip(): (value or "").strip() for key, value in row.items()
+        }
         if BLS_CPI_METRO.fullmatch(values["area_code"]):
             areas.append(ProviderArea(values["area_code"], values["area_name"]))
     if not areas:
@@ -114,7 +116,9 @@ def parse_bea_portions(payload: bytes) -> list[ProviderArea]:
     except zipfile.BadZipFile as exc:
         raise ValueError("the BEA file is not a zip") from exc
     members = [
-        name for name in archive.namelist() if name.endswith(".csv") and "__" not in name
+        name
+        for name in archive.namelist()
+        if name.endswith(".csv") and "__" not in name
     ]
     if len(members) != 1:
         raise ValueError("the BEA zip holds no single every-area CSV")
@@ -213,7 +217,9 @@ def provider_area_records(
     """One reference record per area, identified by the provider's code."""
     records = []
     for area in areas:
-        geo_id = canonical_geo_id("provider_area", area_code=area.code, provider=provider)
+        geo_id = canonical_geo_id(
+            "provider_area", area_code=area.code, provider=provider
+        )
         records.append(
             GeographyRecord(
                 "provider_area",
@@ -238,7 +244,10 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
     control = CaptureControl(factory, source_code=area_list.source_code)
     retrieved_at = datetime.now(timezone.utc)
     run_id = control.start_run(
-        watermark={"provider_area_list": provider, "retrieved": retrieved_at.date().isoformat()}
+        watermark={
+            "provider_area_list": provider,
+            "retrieved": retrieved_at.date().isoformat(),
+        }
     )
     try:
         areas: dict[str, ProviderArea] = {}
@@ -247,7 +256,10 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
             follow_redirects=True, timeout=120, headers=dict(area_list.headers)
         ) as client:
             for url in area_list.urls:
-                parameters = {"provider_area_list": provider, "file": url.rsplit("/", 1)[-1]}
+                parameters = {
+                    "provider_area_list": provider,
+                    "file": url.rsplit("/", 1)[-1],
+                }
                 request = control.start_request(
                     run_id=run_id,
                     endpoint=url,
@@ -267,7 +279,9 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
                             response.content,
                         )
                 except BaseException as exc:
-                    control.finish_request(request.request_id, status="failed", error=exc)
+                    control.finish_request(
+                        request.request_id, status="failed", error=exc
+                    )
                     raise
                 capture_id = uuid4()
                 persist_response_capture(
@@ -304,7 +318,9 @@ def sync_provider_areas(provider: str) -> dict[str, int]:
                     raise
                 last_capture = capture_id
         loaded = GeographyRepository(factory).load_attributes(
-            provider_area_records(provider, list(areas.values()), vintage=retrieved_at.year),
+            provider_area_records(
+                provider, list(areas.values()), vintage=retrieved_at.year
+            ),
             capture_id=last_capture,
         )
         control.finish_run(run_id, status="success")
