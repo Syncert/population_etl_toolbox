@@ -47,6 +47,18 @@ for (const example of scenarios) {
       await safety.getByRole("button", { name: "Load Wisconsin state report" }).click();
       await expect(safety.locator("tbody tr")).toHaveCount(6);
       await expect(safety).toContainText("these are not Dane County, Wisconsin figures");
+      // Covers: WEB-124 — the county selection offers the derived roll-up,
+      // explicitly run, labeled derived, with the multi-county agency
+      // counted in full and the non-additivity consequence stated.
+      const rollup = page.getByTestId("county-crime-rollup");
+      await expect(rollup.locator("table")).toHaveCount(0);
+      await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+      await expect(rollup.locator("tbody tr")).toHaveCount(6);
+      await expect(rollup).toContainText("derived sum");
+      await expect(rollup).toContainText("WI0130000, WI0137000, WI0540300");
+      await expect(page.getByTestId("county-rollup-coverage")).toContainText("3 of 3 mapped agencies reported");
+      await expect(page.getByTestId("county-rollup-multi-county")).toContainText("not additive to state totals");
+      await expect(page.getByTestId("county-rollup-caveats")).toContainText("not a provider-published county figure");
     }
     if ([1, 2].includes(example.rank)) {
       await page.getByRole("button", { name: "Run population scenario" }).click();
@@ -181,6 +193,57 @@ test("a housing response for a different metric is refused in both the card and 
   await expect(page.getByTestId("measure-value-median-gross-rent")).not.toContainText("616,000");
   await expect(page.getByTestId("use-case-history-status")).toContainText("different metric");
   await expect(page.getByRole("img", { name: /time-series/ })).toHaveCount(0);
+});
+
+test("county safety rate selection leads to derived counts or the explicitly chosen state rate", async ({ page }) => {
+  // Covers: WEB-123, WEB-124 — reproduce the unsupported county-rate screenshot.
+  await installUseCaseFixtures(page);
+  await page.goto("/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025");
+  const safety = page.getByTestId("source-report-published-rate");
+  const rollup = page.getByTestId("county-crime-rollup");
+  const rate = "FBI_UCR:summarized_violent_crime:V:offense:rate";
+  await safety.getByRole("combobox", { name: "Report measure for published-rate" }).selectOption(rate);
+  await expect(safety.getByRole("status")).toContainText("County rates are not published");
+  await expect(safety.getByRole("status")).not.toContainText("not published at COUNTY");
+  await expect(safety.getByRole("button", { name: "Selected place" })).toHaveCount(0);
+  await expect(safety.getByRole("link", { name: "Open report in source explorer" })).toHaveCount(0);
+  expect(await rollup.evaluate((node) => Boolean(node.compareDocumentPosition(document.querySelector('[data-testid="source-report-published-rate"]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await safety.getByRole("link", { name: "Use derived county counts" }).click();
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(6);
+
+  const stateResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/observations" && url.searchParams.get("geo_id") === "state:55" && url.searchParams.get("metric_code") === rate;
+  });
+  await safety.getByRole("button", { name: "Load Wisconsin state report" }).click();
+  expect((await stateResponsePromise).status()).toBe(200);
+  await expect(safety.getByRole("combobox", { name: "Report measure for published-rate" })).toHaveValue(rate);
+  await expect(safety.locator("tbody tr")).toHaveCount(6);
+  await expect(safety).toContainText("these are not Dane County, Wisconsin figures");
+});
+
+test("county crime pages retain their release and reset when the county changes", async ({ page }) => {
+  // Covers: WEB-124 — all county rows remain reachable and reproducible.
+  await installUseCaseFixtures(page, { rollupRows: 201 });
+  await page.goto("/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025");
+  const rollup = page.getByTestId("county-crime-rollup");
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(200);
+  await expect(rollup.getByRole("button", { name: "Previous page" })).toBeDisabled();
+  await rollup.getByRole("button", { name: "Next page" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(1);
+  await expect(rollup.getByRole("status")).toContainText("201–201 of 201");
+  const reproduce = new URL(await rollup.getByRole("link", { name: "Reproduce this roll-up in the API" }).getAttribute("href"), "http://localhost");
+  expect(reproduce.searchParams.get("offset")).toBe("200");
+  expect(reproduce.searchParams.get("release")).toBe("fixture-release-2025");
+  await expect(rollup.getByRole("button", { name: "Next page" })).toBeDisabled();
+  await rollup.getByRole("button", { name: "Previous page" }).click();
+  await expect(rollup.locator("tbody tr")).toHaveCount(200);
+  await page.getByTestId("profile-place").selectOption("state:55|county:105");
+  await expect(rollup.locator("table")).toHaveCount(0);
+  await rollup.getByRole("button", { name: "Load derived county roll-up" }).click();
+  await expect(rollup.getByRole("status")).toContainText("No law-enforcement agency is mapped");
 });
 
 test("population scenario assumptions reach the API, export, and changing place clears the answer", async ({ page }) => {

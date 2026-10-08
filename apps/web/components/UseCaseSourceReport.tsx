@@ -24,6 +24,9 @@ export default function UseCaseSourceReport({ sectionId, measures, sources, geoI
   const reportGeo = scope === "state" ? state?.geo_id || "" : geoId;
   const reportGrain = scope === "state" ? "STATE" : geoLevel;
   const metric = measures.find((item) => item.metricCode === chosen)?.metric || measures.find((item) => item.metric?.valid_geo_grains?.includes(reportGrain))?.metric || measures[0]?.metric || null;
+  const countyFbiReport = geoLevel === "COUNTY" && metric?.source_code === "FBI_UCR"
+    && Array.isArray(metric.valid_geo_grains) && !metric.valid_geo_grains.includes("COUNTY");
+  const needsCountyChoice = countyFbiReport && scope === "local";
   const source = sources.find((item) => item.sourceCode === metric?.source_code) || null;
   const reading = useMemo(() => buildUseCaseHistory(source, metric, reportGeo, reportGrain), [source, metric, reportGeo, reportGrain]);
   const rows = loaded.filter((row) => row.metric_code === metric?.metric_code && row.geo_id === reportGeo);
@@ -45,15 +48,16 @@ export default function UseCaseSourceReport({ sectionId, measures, sources, geoI
 
   return <div className="use-case-source-report" data-testid={`source-report-${sectionId}`}>
     <h3>Published {metric?.source_code === "CDC" ? "CDC health" : "FBI safety"} reports</h3>
+    {countyFbiReport ? <p>County counts are available as a derived sum of agency reports. County rates are not published by the FBI; a published state rate remains state context.</p> : null}
     <div className="use-case-tool-row">
-      <button type="button" className="button secondary" aria-pressed={scope === "local"} onClick={() => { setScope("local"); setChosen(""); }}>Selected place</button>
-      {state && geoLevel !== "STATE" ? <button type="button" className="button secondary" aria-pressed={scope === "state"} onClick={() => { setScope("state"); setChosen(""); }}>Load {String(state.state_name || state.geo_name || state.geo_id)} state report</button> : null}
+      {countyFbiReport ? <a className="button secondary" href="#county-crime-rollup-title">Use derived county counts</a> : <button type="button" className="button secondary" aria-pressed={scope === "local"} onClick={() => { setScope("local"); setChosen(""); }}>Selected place</button>}
+      {state && geoLevel !== "STATE" ? <button type="button" className="button secondary" aria-pressed={scope === "state"} onClick={() => { setScope("state"); if (!countyFbiReport) setChosen(""); }}>Load {String(state.state_name || state.geo_name || state.geo_id)} state report</button> : null}
       <label>Report measure<select aria-label={`Report measure for ${sectionId}`} value={metric?.metric_code || ""} onChange={(event) => setChosen(event.target.value)}><option value="" disabled>No published measure</option>{measures.map((item) => <option key={item.slot.id} value={item.metricCode}>{item.slot.label}</option>)}</select></label>
     </div>
-    <p><strong>{scope === "state" ? `State context: ${state?.state_name || reportGeo}; these are not ${placeName || "local"} figures.` : `Selected place: ${placeName || reportGeo || "none"}.`}</strong><br />{metric?.metric_code}</p>
-    <p role="status">{status}</p>
+    <p><strong>{scope === "state" ? `State context: ${state?.state_name || reportGeo}; these are not ${placeName || "local"} figures.` : `${needsCountyChoice ? "Selected county" : "Selected place"}: ${placeName || reportGeo || "none"}.`}</strong><br />{metric?.metric_code}</p>
+    <p role="status">{needsCountyChoice ? `County rates are not published. Use derived county counts above${state ? `, or load ${state.state_name || state.geo_name || state.geo_id}'s published state report` : ""}.` : status}</p>
     {rows.length ? <div className="table-wrap use-case-table"><table><caption>{metric?.source_code} report for {reportGeo}. First 30 rows shown; the source explorer exposes the complete publication.</caption><thead><tr><th>Period</th><th>Value / unit</th><th>Published status</th><th>Stratum / reporting subject</th><th>Uncertainty / participation</th></tr></thead><tbody>{rows.slice(0, 30).map((row, index) => <tr key={index}><td>{observationPeriodLabel(row)}</td><td>{row.value == null ? "Value not published" : formatObservationValue(row.value)} {observationUnit(row)}</td><td>{String(row.value_status || "Not published")}</td><td>{JSON.stringify(row.dimensions || {})}</td><td>{observationUncertaintyLabel(row) || "Uncertainty not published"}<br />{OBSERVATION_COVERAGE_FIELDS.map((field) => { const value = observationCoverageValue(row, field); return value ? `${field}: ${value}` : ""; }).filter(Boolean).join(" · ") || "Coverage not published"}</td></tr>)}</tbody></table></div> : null}
     {reading.request ? <a className="text-link" href={buildApiPath(reading.request.resource, reading.request.params)}>Reproduce this report read</a> : null}
-    <a className="text-link" href={explorerHref({ source: source?.key, metric: metric?.metric_code, geoId: reportGeo, geoLevel: reportGrain, stateFips: state?.state_fips || undefined })} target="_blank" rel="noopener noreferrer">Open report in source explorer</a>
+    {!needsCountyChoice ? <a className="text-link" href={explorerHref({ source: source?.key, metric: metric?.metric_code, geoId: reportGeo, geoLevel: reportGrain, stateFips: state?.state_fips || undefined })} target="_blank" rel="noopener noreferrer">Open report in source explorer</a> : null}
   </div>;
 }

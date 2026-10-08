@@ -2517,6 +2517,121 @@ v gold_fbi.agency_observation_area_filter
     body      JOIN silver_fbi.agency_geography_relationship relationship ON relationship.ori = observation.subject_code AND relationship.product_id = observation.product_id AND observation.period_start >= relationship.effective_start AND observation.period_end <= relationship.effective_end
     body   WHERE observation.subject_type = 'agency'::text AND relationship.resolution_status = 'resolved'::text;
 
+v gold_fbi.county_rollup
+    column product_id text
+    column release_key text
+    column refresh_date date
+    column max_data_month text
+    column ucr_program text
+    column offense_code text
+    column offense_label text
+    column measure_id text
+    column measure_form text
+    column counted_entity_basis text
+    column unit text
+    column geo_id text
+    column geo_sk bigint
+    column county_name text
+    column state_fips text
+    column county_fips text
+    column period text
+    column period_start date
+    column period_end date
+    column value numeric
+    column contributing_oris text[]
+    column reporting_agency_count bigint
+    column mapped_agency_count bigint
+    column includes_multi_county_agency boolean
+    column derived boolean
+    column derivation_method text
+    column result_label text
+    column methodology_note text
+    column counted_entity_note text
+    column methodology_url text
+    column documentation_url text
+    body WITH county_link AS (
+    body          SELECT relationship.product_id,
+    body             relationship.ori,
+    body             relationship.geo_id,
+    body             relationship.geo_sk,
+    body             relationship.effective_start,
+    body             relationship.effective_end
+    body            FROM silver_fbi.agency_geography_relationship relationship
+    body           WHERE relationship.relationship_type = 'county'::text AND relationship.resolution_status = 'resolved'::text
+    body         ), contribution AS (
+    body          SELECT DISTINCT observation.product_id,
+    body             observation.release_key,
+    body             observation.measure_id,
+    body             link.geo_id,
+    body             link.geo_sk,
+    body             observation.period,
+    body             observation.period_start,
+    body             observation.period_end,
+    body             observation.subject_code AS ori,
+    body             observation.value,
+    body             observation.value_status,
+    body             ( SELECT count(DISTINCT sibling.geo_id) > 1
+    body                    FROM county_link sibling
+    body                   WHERE sibling.product_id = observation.product_id AND sibling.ori = observation.subject_code AND observation.period_start >= sibling.effective_start AND observation.period_end <= sibling.effective_end) AS is_multi_county
+    body            FROM gold_fbi.crime_observation observation
+    body              JOIN county_link link ON link.product_id = observation.product_id AND link.ori = observation.subject_code AND observation.period_start >= link.effective_start AND observation.period_end <= link.effective_end
+    body           WHERE observation.subject_type = 'agency'::text AND observation.measure_form = 'absolute_total'::text AND (observation.counted_entity_basis = ANY (ARRAY['offense'::text, 'clearance'::text]))
+    body         ), summed AS (
+    body          SELECT contribution.product_id,
+    body             contribution.release_key,
+    body             contribution.measure_id,
+    body             contribution.geo_id,
+    body             contribution.geo_sk,
+    body             contribution.period,
+    body             contribution.period_start,
+    body             contribution.period_end,
+    body             sum(contribution.value) FILTER (WHERE contribution.value_status = 'reported'::text) AS value,
+    body             array_agg(DISTINCT contribution.ori ORDER BY contribution.ori) FILTER (WHERE contribution.value_status = 'reported'::text) AS contributing_oris,
+    body             count(DISTINCT contribution.ori) FILTER (WHERE contribution.value_status = 'reported'::text) AS reporting_agency_count,
+    body             bool_or(contribution.is_multi_county) FILTER (WHERE contribution.value_status = 'reported'::text) AS includes_multi_county_agency
+    body            FROM contribution
+    body           GROUP BY contribution.product_id, contribution.release_key, contribution.measure_id, contribution.geo_id, contribution.geo_sk, contribution.period, contribution.period_start, contribution.period_end
+    body          HAVING count(*) FILTER (WHERE contribution.value_status = 'reported'::text) > 0
+    body         )
+    body  SELECT summed.product_id,
+    body     summed.release_key,
+    body     release.refresh_date,
+    body     release.max_data_month,
+    body     release.ucr_program,
+    body     measure.offense_code,
+    body     measure.offense_label,
+    body     summed.measure_id,
+    body     measure.measure_form,
+    body     measure.counted_entity_basis,
+    body     measure.unit,
+    body     summed.geo_id,
+    body     summed.geo_sk,
+    body     county.county_name,
+    body     county.state_fips,
+    body     county.county_fips,
+    body     summed.period,
+    body     summed.period_start,
+    body     summed.period_end,
+    body     summed.value,
+    body     summed.contributing_oris,
+    body     summed.reporting_agency_count,
+    body     mapped.mapped_agency_count,
+    body     summed.includes_multi_county_agency,
+    body     true AS derived,
+    body     'sum_of_agency_reported_totals'::text AS derivation_method,
+    body     'derived county roll-up of agency-reported totals'::text AS result_label,
+    body     ((('Each mapped agency''s whole published count is summed; an agency '::text || 'serving more than one county is counted in full in each of its '::text) || 'counties, so county values are not additive to state totals. '::text) || 'Agency months the provider did not publish are excluded, never '::text) || 'zero.'::text AS methodology_note,
+    body     release.counted_entity_note,
+    body     release.methodology_url,
+    body     release.documentation_url
+    body    FROM summed
+    body      JOIN silver_fbi.dim_offense_measure measure ON measure.product_id = summed.product_id AND measure.measure_id = summed.measure_id
+    body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = summed.product_id AND release.release_key = summed.release_key
+    body      JOIN silver_ref.dim_geo_current county ON county.geo_id = summed.geo_id
+    body      JOIN LATERAL ( SELECT count(DISTINCT county_link.ori) AS mapped_agency_count
+    body            FROM county_link
+    body           WHERE county_link.product_id = summed.product_id AND county_link.geo_id = summed.geo_id AND summed.period_start >= county_link.effective_start AND summed.period_end <= county_link.effective_end) mapped ON true;
+
 v gold_fbi.crime_observation
     column observation_sk bigint
     column product_id text
@@ -2603,6 +2718,76 @@ v gold_fbi.crime_observation
     body      JOIN silver_fbi.dim_offense_measure measure ON measure.product_id = fact.product_id AND measure.measure_id = fact.measure_id
     body      JOIN silver_fbi.fact_reporting_participation coverage ON coverage.product_id = fact.product_id AND coverage.release_key = fact.release_key AND coverage.subject_type = fact.subject_type AND coverage.subject_code = fact.subject_code AND coverage.period = fact.period
     body   WHERE release.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['ambiguous'::text, 'unsupported'::text]));
+
+v gold_fbi.latest_county_rollup
+    column product_id text
+    column release_key text
+    column refresh_date date
+    column max_data_month text
+    column ucr_program text
+    column offense_code text
+    column offense_label text
+    column measure_id text
+    column measure_form text
+    column counted_entity_basis text
+    column unit text
+    column geo_id text
+    column geo_sk bigint
+    column county_name text
+    column state_fips text
+    column county_fips text
+    column period text
+    column period_start date
+    column period_end date
+    column value numeric
+    column contributing_oris text[]
+    column reporting_agency_count bigint
+    column mapped_agency_count bigint
+    column includes_multi_county_agency boolean
+    column derived boolean
+    column derivation_method text
+    column result_label text
+    column methodology_note text
+    column counted_entity_note text
+    column methodology_url text
+    column documentation_url text
+    body SELECT rollup.product_id,
+    body     rollup.release_key,
+    body     rollup.refresh_date,
+    body     rollup.max_data_month,
+    body     rollup.ucr_program,
+    body     rollup.offense_code,
+    body     rollup.offense_label,
+    body     rollup.measure_id,
+    body     rollup.measure_form,
+    body     rollup.counted_entity_basis,
+    body     rollup.unit,
+    body     rollup.geo_id,
+    body     rollup.geo_sk,
+    body     rollup.county_name,
+    body     rollup.state_fips,
+    body     rollup.county_fips,
+    body     rollup.period,
+    body     rollup.period_start,
+    body     rollup.period_end,
+    body     rollup.value,
+    body     rollup.contributing_oris,
+    body     rollup.reporting_agency_count,
+    body     rollup.mapped_agency_count,
+    body     rollup.includes_multi_county_agency,
+    body     rollup.derived,
+    body     rollup.derivation_method,
+    body     rollup.result_label,
+    body     rollup.methodology_note,
+    body     rollup.counted_entity_note,
+    body     rollup.methodology_url,
+    body     rollup.documentation_url
+    body    FROM gold_fbi.county_rollup rollup
+    body      JOIN ( SELECT dim_ucr_dataset_release.product_id,
+    body             max(dim_ucr_dataset_release.refresh_date) AS refresh_date
+    body            FROM silver_fbi.dim_ucr_dataset_release
+    body           WHERE dim_ucr_dataset_release.status = 'published'::text
+    body           GROUP BY dim_ucr_dataset_release.product_id) latest ON latest.product_id = rollup.product_id AND latest.refresh_date = rollup.refresh_date;
 
 v gold_fbi.latest_release_observation
     column observation_sk bigint
@@ -4717,14 +4902,14 @@ r silver_fbi.agency_geography_relationship
     constraint agency_geography_relationship_evidence_capture_id_fkey FOREIGN KEY (evidence_capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint agency_geography_relationship_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
     constraint agency_geography_relationship_ori_fkey FOREIGN KEY (ori) REFERENCES silver_fbi.dim_agency(ori)
-    constraint agency_geography_relationship_ori_relationship_type_source__key UNIQUE (ori, relationship_type, source_label, geography_vintage, effective_start)
     constraint agency_geography_relationship_pkey PRIMARY KEY (relationship_sk)
     constraint agency_geography_relationship_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['state'::text, 'county'::text, 'place'::text])))
     constraint agency_geography_relationship_resolution_method_check CHECK (((resolution_method IS NULL) OR (resolution_method = ANY (ARRAY['exact_state_code'::text, 'county_label_match'::text, 'reviewed_place_crosswalk'::text]))))
     constraint agency_geography_relationship_resolution_status_check CHECK ((resolution_status = ANY (ARRAY['resolved'::text, 'unresolved'::text, 'ambiguous'::text, 'unsupported'::text])))
-    index agency_geography_relationship_ori_relationship_type_source__key CREATE UNIQUE INDEX agency_geography_relationship_ori_relationship_type_source__key ON silver_fbi.agency_geography_relationship USING btree (ori, relationship_type, source_label, geography_vintage, effective_start)
+    constraint fbi_agency_relationship_product_key UNIQUE (product_id, ori, relationship_type, source_label, geography_vintage, effective_start)
     index agency_geography_relationship_pkey CREATE UNIQUE INDEX agency_geography_relationship_pkey ON silver_fbi.agency_geography_relationship USING btree (relationship_sk)
     index fbi_agency_relationship_geo_idx CREATE INDEX fbi_agency_relationship_geo_idx ON silver_fbi.agency_geography_relationship USING btree (relationship_type, geo_id) WHERE (resolution_status = 'resolved'::text)
+    index fbi_agency_relationship_product_key CREATE UNIQUE INDEX fbi_agency_relationship_product_key ON silver_fbi.agency_geography_relationship USING btree (product_id, ori, relationship_type, source_label, geography_vintage, effective_start)
 
 r silver_fbi.agency_revision
     column capture_id uuid NOT NULL

@@ -51,7 +51,6 @@ grep was looking for.
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`compare-two-places`](to_do/COMPARE_TWO_PLACES_PLAN.md) | medium | `browser` | `place-pages` |
-| [`county-crime-rollup-from-agency-reports`](to_do/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md) | high | `browser` | -- |
 | [`explainer-pages`](to_do/EXPLAINER_PAGES_PLAN.md) | medium | `browser` | -- |
 | [`find-your-place-home`](to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) | medium | `browser` | `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |

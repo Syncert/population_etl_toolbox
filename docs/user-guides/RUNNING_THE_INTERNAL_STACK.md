@@ -144,6 +144,20 @@ the cause directly -- `missing_api_key` is a configuration fault, `HTTP 403`
 after a working key usually means throttling, and a check-constraint violation
 is a defect worth a ticket.
 
+## Reviewing county crime in the web
+
+Open `http://127.0.0.1:3001/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025`
+for Dane County. **Sum this county's agency reports** appears before the
+published FBI report controls. Choose **Load derived county roll-up** to
+read reported agency counts, their contributing ORIs, and coverage.
+
+In a published FBI report, **Use derived county counts** links to that
+panel. County rates are not published by the FBI. To review a published
+rate, choose the rate and then **Load Wisconsin state report**; the choice
+is retained and the result identifies Wisconsin as state context rather
+than a Dane County figure. The source explorer link becomes available for
+that supported state read.
+
 ## The remote warehouse is not this
 
 `192.168.50.16` is a separate, older deployment carrying three of the seven

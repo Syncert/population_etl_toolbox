@@ -154,6 +154,13 @@ If the host cannot reach the database directly, run the same command from a
 host or container that can. It needs the repository and the project's Python;
 the PostgreSQL image carries neither, which is why this is not a `docker exec`.
 
+FBI deployments predating migration 030 must apply the complete manifest
+before using the product-scoped relationship writer. The migration preserves
+existing evidence and widens its uniqueness key; replay captured published
+FBI releases for every product afterwards to rebuild missing relationships
+and repair geography classifications. Values and capture IDs stay intact.
+See [FBI operations](../user-guides/FBI_UCR_PIPELINE_OPERATIONS.md#upgrading-the-agency-relationship-key).
+
 If the API uses its restricted database role, apply
 `sql/bootstrap/001_api_readonly.sql` afterward using the documented provisioning
 environment. Do not grant the API write access as a bootstrap shortcut.

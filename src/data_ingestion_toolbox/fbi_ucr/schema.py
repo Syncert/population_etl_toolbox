@@ -43,6 +43,8 @@ REQUIRED_RELATIONS = (
     "silver_fbi.fact_crime_observation",
     "gold_fbi.crime_observation",
     "gold_fbi.agency_observation_area_filter",
+    "gold_fbi.county_rollup",
+    "gold_fbi.latest_county_rollup",
     "gold_fbi.measure_export",
     "gold_fbi.metric_publisher",
 )

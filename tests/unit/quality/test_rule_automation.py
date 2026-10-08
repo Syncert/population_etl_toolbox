@@ -93,6 +93,12 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-FBI-005",
         "DQ-FBI-006",
         "DQ-FBI-007",
+        # The derived county roll-up (ETL-053). Both relations are
+        # non-materialized views, so the derivation recomputes on every
+        # read; the semantics are pinned by the ETL-053 static contract
+        # tests, and no executor reads the published roll-up back against
+        # an independent recomputation yet.
+        "DQ-FBI-008",
         "DQ-NASS-005",
         "DQ-NASS-006",
     }
@@ -190,7 +196,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 11, unbuilt
+    assert len(unbuilt) == 12, unbuilt
     # The other eleven BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined
