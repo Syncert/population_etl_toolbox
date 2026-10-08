@@ -31,10 +31,10 @@ GUARDED = {
     "cdc_ingest": "require_shared_geography",
     "fbi_ucr_ingest": "require_shared_geography",
     "usda_nass_crop_ingest": "require_shared_geography",
-    "census_saipe_sahie_ingest": "require_shared_geography",
-    "census_building_permits_ingest": "require_shared_geography",
-    "bls_qcew_ingest": "require_shared_geography",
     "bea_regional_ingest": "require_shared_geography",
+    "bls_qcew_ingest": "require_shared_geography",
+    "census_building_permits_ingest": "require_shared_geography",
+    "census_saipe_sahie_ingest": "require_shared_geography",
 }
 
 
