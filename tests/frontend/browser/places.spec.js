@@ -75,6 +75,8 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("place-omissions")).toContainText("Land and Farms: no published values for this place");
 
   await expect(page.getByTestId("depth-living-alone")).toContainText("Universe: households");
+  await expect(page.getByTestId("chapter-people-map")).toHaveAttribute("href", "/map/CENSUS_PEP%3APOPESTIMATE");
+  await expect(page.getByTestId("chapter-safety-map")).toHaveCount(0);
   await expect(page.getByTestId("chapter-people-footer")).toContainText("Source: CENSUS_PEP, CENSUS_ACS");
   const explore = page.getByTestId("chapter-people-explore");
   const href = new URL(await explore.getAttribute("href"), "http://localhost");

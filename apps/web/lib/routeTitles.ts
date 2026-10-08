@@ -132,3 +132,8 @@ export function placeRouteTitle(stateSegment?: string, countySegment?: string): 
   );
   return parts.length ? parts.map(words).join(", ") : STATIC_ROUTE_TITLES["/us"]!;
 }
+
+/** A one-measure map's title: the catalog identity its address names. */
+export function measureMapTitle(metricCode: string): string {
+  return titleOf("Map", [/^[A-Za-z0-9_.:-]{1,200}$/.test(metricCode) ? metricCode : undefined]);
+}

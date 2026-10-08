@@ -657,6 +657,13 @@ function Chapter({
           <strong>Source:</strong> {sourcesShown.join(", ") || "not published"}
         </p>
         <p>{chapter.caveat}</p>
+        {primary?.metric && publishesAt(primary, "COUNTY") ? (
+          <p>
+            <Link className="text-link" href={`/map/${encodeURIComponent(primary.metricCode)}`} data-testid={`chapter-${chapter.id}-map`}>
+              See {primary.measure.label.toLowerCase()} for every county on a map <ArrowRight size={13} />
+            </Link>
+          </p>
+        ) : null}
         {exploreLink ? (
           <p>
             <Link className="text-link" href={exploreLink} data-testid={`chapter-${chapter.id}-explore`}>

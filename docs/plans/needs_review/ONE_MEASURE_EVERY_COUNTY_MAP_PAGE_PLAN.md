@@ -17,12 +17,63 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet. Builds on the map plans now in `needs_review/`
-(`maps-offer-only-what-a-source-publishes`, `no-value-metric-not-mapped`,
-`map-shows-any-published-period`, `every-map-proves-it-displays-its-data`);
-it adds a public page over that behaviour and changes none of it.
+Ready for review, 2026-10-06, on branch `feat/one-measure-map`, stacked on
+`feat/place-pages` (county rows link to place pages), so it merges after
+that one.
+
+### Implementation evidence
+
+- **Route:** `/map/<metric_code>` (`app/map/[metric]/page.js`), the segment
+  checked against the catalog-identity alphabet (anything else is a 404),
+  titled from the identity, with a declared bundle budget. The sitemap lists
+  the map of each place-page headline measure.
+- **One measure:** `lib/oneMeasureMap.ts` builds the view from one response:
+  it throws on any row of another metric, joins the rows to every catalog
+  county, ranks published values highest first, keeps counties without one
+  at the end as "missing" or "withheld (<status>)", and bins the published
+  values into five equal-width bins with counts. The same bins colour the map
+  (`ChoroplethMap` now accepts a `distribution`, which also puts the counts in
+  its legend) and fill the page legend, whose last line is the number of
+  counties without a value.
+- **Period:** the selector lists `/observations/periods` for the measure;
+  the default is the newest. Map, legend and table re-read for the chosen
+  period, which is kept in the address (`?period=`) by `replaceState`.
+- **Table:** the ten highest and ten lowest published values, then every
+  county paged by 50, each with its margin of error or interval where
+  published and a link to its place page. The page copy uses no ordinal rank.
+- **Coverage note:** period, unit, source, measure kind and aggregation
+  characteristic from the catalog, the statement that the catalog publishes
+  no separate denominator, and the source's own documentation link.
+- **Switcher:** a search over `/catalog/metrics` that replaces the page's
+  measure; there is no second layer.
+- **No county values:** a measure without county grain, an unknown measure,
+  or a period with no county value renders an explanation and links to the
+  place pages' county measures, never an empty map.
+- **Links:** every place-page chapter whose headline measure publishes at
+  county grain links to its map. The explainer on "why there is no overall
+  score" does not exist yet, so no link is rendered.
+- **Live check:** against the local stack, median household income painted
+  3,221 counties with 14 stated as having no published value, legend counts
+  summing to the catalog's 3,235 counties.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `npm --prefix apps/web run test:unit`: passed (`one-measure-map.test.js`).
+- `lint`, `typecheck`, `build`, `check:csp`, `check:bundle`: passed.
+- `npx playwright test`: 211 passed on five of six full runs, including
+  `measure-map.spec.js` (desktop and 390px, axe). One run reported one
+  failure whose test was not captured; the following five runs were green.
+  An earlier failure, a missing document title during a server navigation
+  for the period change, was fixed by keeping the period with
+  `history.replaceState` instead of navigating.
+
+### Open items, decided
+
+- The table and map read the same observation response (newest per
+  geography for the period), not the distribution resource, so they cannot
+  disagree.
+- Neighbouring ranks are shown with their intervals and without ordinal
+  language.
 
 ## Why
 
@@ -92,5 +143,4 @@ place page.
 
 ## Checkpoint
 
-Next pickup: read `lib/explorerViewModel.ts` and the legend component,
-write the failing unit test for the one-measure view model, then the route.
+Implementation complete; awaiting human review.
