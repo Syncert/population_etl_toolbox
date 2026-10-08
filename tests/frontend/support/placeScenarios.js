@@ -87,6 +87,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       if (!place) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
       const items = RELATED[geoId] || [];
       return route.fulfill({ json: { geo_id: geoId, geo_level: place.geo_level, total: items.length, items } });
+    }
     if (path === "/api/v1/place/distinctive") {
       const geoId = params.get("geo_id");
       if (![...STATES, ...COUNTIES].some((item) => item.geo_id === geoId)) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });

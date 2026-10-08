@@ -132,6 +132,8 @@ test("a place with no recorded relationships omits the section and says why", as
   await ready(page, "/us/minnesota/hennepin-county");
   await expect(page.getByTestId("place-nearby")).toHaveCount(0);
   await expect(page.getByTestId("place-omissions")).toContainText("Nearby and related: the geography reference records no relationships for this place");
+});
+
 test("what stands out lists the highest and lowest measures apart, with withheld siblings named", async ({ page }) => {
   // Covers: WEB-131 — one measure per row; a withheld sibling is counted, not zero.
   await ready(page, "/us/wisconsin/dane-county");
