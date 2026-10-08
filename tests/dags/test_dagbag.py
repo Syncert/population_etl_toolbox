@@ -49,6 +49,7 @@ EXPECTED_DAG_IDS = {
     "eia_retail_gasoline_ingest",
     "census_cbp_ingest",
     "census_lodes_ingest",
+    "epa_aqs_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -90,6 +91,9 @@ EXPECTED_SCHEDULES = {
     "census_cbp_ingest": "0 13 15 * *",
     # Monthly: LODES vintages arrive about once a year.
     "census_lodes_ingest": "0 14 20 * *",
+    # Monthly: EPA regenerates the files in June and December without a
+    # fixed date, and an unchanged file replays nothing.
+    "epa_aqs_ingest": "0 18 25 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -119,6 +123,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "eia_retail_gasoline_ingest": 2,
     "census_cbp_ingest": 2,
     "census_lodes_ingest": 2,
+    "epa_aqs_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -138,6 +143,7 @@ EXPECTED_INGEST_POOLS = {
     "eia_retail_gasoline_ingest": "eia_api",
     "census_cbp_ingest": "census_cbp_files",
     "census_lodes_ingest": "census_lodes_files",
+    "epa_aqs_ingest": "epa_aqs_files",
 }
 
 

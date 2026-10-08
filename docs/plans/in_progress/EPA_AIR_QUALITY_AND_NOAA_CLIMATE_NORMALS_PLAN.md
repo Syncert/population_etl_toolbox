@@ -15,9 +15,10 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+In progress. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+The EPA half is implemented on branch `feat/epa-air-quality` (from
+`docs/scout-county-sources`); the NOAA climate normals half is not started.
 
 ## Why
 
@@ -106,6 +107,71 @@ The almanac's Land and Environment chapter needs the two place facts people look
 - Connecticut: whether AQS county codes follow the 2022 planning-region equivalents or legacy counties for each year.
 - Which ozone statistic (e.g. fourth-highest daily maximum 8-hour) to publish first, per `Pollutant Standard`.
 
+## Decisions so far (EPA half)
+
+- **AirData bulk files, not the AQS API (open item).** The pre-generated
+  `annual_conc_by_monitor_<YEAR>.zip` files carry State and County FIPS,
+  every monitor and every statistic, need no email or key, and spare the
+  API's rate limit; so `EPA_AQS_EMAIL`/`EPA_AQS_KEY` are not introduced and
+  the limiter and key-hygiene deliverables do not apply. Registered years
+  2020-2024.
+- **County AQI file (open item): not onboarded.** Its layout (checked
+  2026-10-07) is `State, County, Year, Days with AQI, ...` -- names only, no
+  FIPS -- and no authoritative crosswalk is in hand, so it is not read.
+- **Standards.** PM2.5 (88101) under `PM25 Annual 2024`, statistic
+  `Arithmetic Mean`; ozone (44201) under `Ozone 8-hour 2015`, statistic
+  `4th Max Value` (open item resolved). Mexico's monitors (state 80) are out
+  of scope.
+- **County figure (derived).** The highest value among a county's monitors
+  with `Completeness Indicator = Y`, from `No Events` or `Events Included`
+  rows (every measured value), with the monitor, the complete-monitor count
+  and certification on the row; labelled as derived and not an EPA design
+  value. A county with no complete monitor has no row. Monitor-years are
+  published in `gold_epa_aqs.monitor_observation` as lineage; the API has no
+  monitor grain, so monitor rows are not dispatched.
+- **Revisions.** A read whose bytes equal that year's last published
+  capture is `unchanged`; a regenerated file is a new release beside the
+  old, keyed by read time (AirData names no release).
+- **Connecticut (open item).** The 2024 file still carries legacy county
+  codes (`09009`); they resolve only where the shared geography holds them
+  and are recorded unmapped otherwise.
+
+## Evidence so far (EPA half, 2026-10-07, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2182 passed, including
+  `tests/unit/epa_aqs` (3).
+- Database: `tests/integration/database/test_epa_aqs_capture_replay.py`
+  -- 4 passed (three consecutive runs): county figures from the highest
+  complete monitor, Kent's incomplete-only PM2.5 giving no row, New Haven's
+  legacy-code monitors kept and recorded but not served; an unchanged read
+  replays nothing and a regenerated file is a second release; a non-zip
+  fails capture; `DQ-AQS-002`/`DQ-AQS-004` behave and then catch a fault;
+  the schema reapplies; the harvest names both measures.
+- End to end: `tests/e2e/test_epa_aqs_pipeline.py` serves Sussex County's
+  PM2.5 figure with its monitor and basis, and no row for Kent.
+- Live: `tests/external/test_epa_aqs_source_contracts.py` -- 5 passed
+  against aqs.epa.gov; the full 2024 file parses with nothing quarantined
+  (68,956 rows; 3,085 in scope).
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 457 passed, 2 failed: the PEP teardown node (fails on `main`
+  too, fixed on `test/catalog-agreement-fixture-residue`) and the EPA rerun
+  node, whose two reads published within one second and shared a
+  second-resolution release key; the key now carries microseconds and the
+  node passed three runs in a row afterwards.
+- DAG: `tests/dags` in the scheduler container -- 153 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `epa_aqs_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format` clean; schema snapshot, OpenAPI contract,
+  viz coverage and plan environments regenerated.
+
+## Remaining (NOAA half)
+
+NOAA U.S. Climate Normals 1991-2020 (package `noaa_climate_normals`), as
+specified above: station capture, flag handling (`X` distinct from zero,
+`M`/`V`/`Y` null with the flag), point-in-polygon county assignment against
+a recorded boundary vintage, and its own tests, docs and catalog row. The
+plan moves to `needs_review/` when both halves are done.
+
 ## Checkpoint
 
-Next pickup: copy the starter for `epa_aqs`, register for a key, capture one `annualData/byCounty` response as a fixture, record its fields, and write the failing replay test.
+Next: NOAA climate normals on its own branch.

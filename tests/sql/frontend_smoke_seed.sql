@@ -105,7 +105,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-00000000015c', 'IRS_MIGRATION', 'success'),
     ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success'),
     ('00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'success'),
-    ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success')
+    ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success'),
+    ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -139,7 +140,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000cb9', '00000000-0000-4000-8000-000000000cb9',
      'CENSUS_CBP', 'smoke://seed', '{}'::JSONB, '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', 'captured'),
     ('00000000-0000-4000-9000-00000000010d', '00000000-0000-4000-8000-00000000010d',
-     'CENSUS_LODES', 'smoke://seed', '{}'::JSONB, '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', 'captured')
+     'CENSUS_LODES', 'smoke://seed', '{}'::JSONB, '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', 'captured'),
+    ('00000000-0000-4000-9000-000000000e9a', '00000000-0000-4000-8000-000000000e9a',
+     'EPA_AQS', 'smoke://seed', '{}'::JSONB, '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -194,6 +197,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-00000000010d', '00000000-0000-4000-9000-00000000010d',
      '00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'smoke://seed', '{}'::JSONB,
      '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e9a', '00000000-0000-4000-9000-000000000e9a',
+     '00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'smoke://seed', '{}'::JSONB,
+     '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -828,6 +835,35 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- EPA AirData -- one complete monitor's PM2.5 annual mean, which the county
+-- view keeps as the county's highest complete monitor. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.epa_aqs_file (
+    run_id, year, capture_id, payload_checksum, row_count, in_scope_row_count,
+    status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e9a', 2098, '00000000-0000-4000-a000-000000000e9a',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_epa_aqs.monitor_fact (
+    run_id, monitor_id, sample_duration, pollutant_standard, event_type, year,
+    capture_id, source_row_index, measure, parameter_code, poc, site_number,
+    geo_id, geo_sk, geography_status, completeness, certification,
+    observation_count, units, value_source, value, value_status,
+    source_record_id
+)
+SELECT '00000000-0000-4000-8000-000000000e9a', '55025-0041-88101-1', '24 HOUR', 'PM25 Annual 2024',
+       'No Events', 2098, '00000000-0000-4000-a000-000000000e9a', 1, 'pm25_annual_mean', '88101', 1, '0041',
+       'state:55|county:025', geo_sk, 'resolved', 'Y', 'Certified', 120,
+       'Micrograms/cubic meter (LC)', '7.4', 7.4, 'valid',
+       'bdc02e6e7c8b9a0fbecbdfe1f2031425364758697a8b9c0d1e2f3a4b5c6d7e8f'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -855,7 +891,8 @@ UNION ALL SELECT * FROM gold_census_sae.metric_publisher
 UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
 UNION ALL SELECT * FROM gold_eia.metric_publisher
 UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
-UNION ALL SELECT * FROM gold_census_lodes.metric_publisher;
+UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
+UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

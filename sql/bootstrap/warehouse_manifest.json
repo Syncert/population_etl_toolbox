@@ -142,6 +142,11 @@
       "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
     },
     {
+      "id": "silver-epa-aqs",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -257,6 +262,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
+      "id": "gold-epa-aqs",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/gold_epa_aqs.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -295,6 +305,11 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-epa-aqs",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-sae",

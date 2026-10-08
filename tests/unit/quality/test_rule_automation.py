@@ -449,6 +449,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CENSUS_SAIPE_SAHIE",
         "EIA",
         "FBI_UCR",
+        "EPA_AQS",
         "FRED",
         "IRS_MIGRATION",
         "USDA_NASS",

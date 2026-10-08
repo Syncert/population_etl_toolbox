@@ -578,6 +578,32 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="epa_aqs.county_air_quality",
+        source="EPA_AQS",
+        publisher_schema="gold_epa_aqs",
+        datasets=("annual_conc_by_monitor:2024",),
+        fixtures=("tests/fixtures/epa_aqs/annual_conc_by_monitor_2024.zip",),
+        serving_relations=(
+            "gold_epa_aqs.observation_revision",
+            "gold_epa_aqs.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_epa_aqs_pipeline.py::"
+            "test_county_air_quality_reaches_the_neutral_api_as_derived"
+        ),
+        api_absence_reason=(
+            "EPA air quality publishes no source-specific HTTP route: each county "
+            "row is the neutral observation shape with its highest monitor, its "
+            "complete-monitor count and certification as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 
