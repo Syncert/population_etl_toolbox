@@ -74,7 +74,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000fb1', 'FBI_UCR', 'success'),
     ('00000000-0000-4000-8000-000000000a55', 'USDA_NASS', 'success'),
     ('00000000-0000-4000-8000-000000000e70', 'CENSUS_PEP', 'success'),
-    ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success')
+    ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
+    ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -94,7 +95,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000e70', '00000000-0000-4000-8000-000000000e70',
      'CENSUS_PEP', 'smoke://seed', '{}'::JSONB, '3f45d5d8b3eb1261ea67453de9821d7207c2c93db3965bb54a9f853a0073015a', 'captured'),
     ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
-     'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured')
+     'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
+    ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
+     'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB, '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -121,6 +124,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
      '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
      'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000d0d', '00000000-0000-4000-9000-000000000d0d',
+     '00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB,
+     '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -521,6 +528,35 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- HUD Fair Market Rents -- one county's two-bedroom FMR from a published
+-- workbook edition. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.hud_fmr_il_file (
+    run_id, channel, dataset, fiscal_year, edition, effective_date,
+    capture_id, payload_checksum, row_count, county_row_count, status,
+    published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000d0d', 'workbook', 'fmr', 2098, 'original', '2097-10-01', '00000000-0000-4000-a000-000000000d0d',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_hud_fmr_il.fact_observation (
+    measure, geo_id, fiscal_year, capture_id, run_id, dataset, edition,
+    effective_date, retrieved_at, fips_code, geo_type, geo_sk,
+    geography_status, hud_area_code, hud_area_name, metro, value_source,
+    value, value_status, source_record_id
+)
+SELECT 'fmr_2br', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000d0d', '00000000-0000-4000-8000-000000000d0d', 'fmr',
+       'original', '2097-10-01', '2098-12-31 00:00:00+00', '5502599999',
+       'county', geo_sk, 'resolved', 'METRO31540M31540',
+       'Madison, WI MSA (smoke fixture)', TRUE, '1650', 1650, 'valid',
+       'e00471a0bf2cedededf1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -541,7 +577,8 @@ UNION ALL SELECT * FROM gold_pep.metric_publisher
 UNION ALL SELECT * FROM gold_cdc.metric_publisher
 UNION ALL SELECT * FROM gold_fbi.metric_publisher
 UNION ALL SELECT * FROM gold_nass.metric_publisher
-UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher;
+UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
+UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url
