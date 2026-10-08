@@ -206,18 +206,18 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
     assert len(unbuilt) == 12, unbuilt
-    # The other twenty-one BLOCK rules that no executor runs are `enforced`: the
+    # The other twenty-three BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined
     # that set when `enforced` stopped meaning "unique constraint" and started
     # meaning any constraint that refuses the violation outright -- a foreign
     # key and a CHECK refuse a row as completely as a unique index does.
     # DQ-FBI-009 (derived calendar rollups, ADR-0007) and the new sources' rules
-    # made it twenty-one.
+    # made it twenty-three.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 21, enforced
+    assert len(enforced) == 23, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -423,7 +423,6 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     """Covers: DQ-014 — four sources, one declaration of what each records.
 
     The component name decides whether a re-applied DDL is recognised as
-        "IRS_MIGRATION",
     already applied, and it was a literal in each of the four gold
     transforms. `serving_reserve`'s own header says why that shape is worth
     removing: "a second copy of a relation name, a procedure name, or a chunk
@@ -448,6 +447,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS",
     }, (
         "every source that publishes gold declares the component its DDL is "

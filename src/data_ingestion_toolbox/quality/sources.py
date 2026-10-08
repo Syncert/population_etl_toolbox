@@ -1916,8 +1916,6 @@ def bls_derived_annual_reconciliation(
            AND provider.period_start = derived.window_start
          WHERE derived.grain = 'year'
            AND derived.value IS NOT NULL
-    "DQ-IRS-002": irs_migration_file_reconciliation,
-    "DQ-IRS-004": irs_migration_total_reconciliation,
            AND provider.value IS NOT NULL
         """,
     )
@@ -1981,4 +1979,6 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,
     "DQ-BPS-002": bps_file_reconciliation,
+    "DQ-IRS-002": irs_migration_file_reconciliation,
+    "DQ-IRS-004": irs_migration_total_reconciliation,
 }

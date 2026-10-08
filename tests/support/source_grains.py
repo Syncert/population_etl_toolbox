@@ -27,9 +27,9 @@ from __future__ import annotations
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
 #:   ``geo_levels = ["us", "state", "county", "place", "tract"]``; tracts
+#:   from the 5-year estimates only (sub-county-geography).
 #: * ``IRS_MIGRATION`` -- the SOI county files describe counties only; the
 #:   file totals are served for the county each file describes.
-#:   from the 5-year estimates only (sub-county-geography).
 #: * ``CENSUS_BPS`` -- ``census_bps/registry.py`` registers the state file
 #:   (states and the US total), the county files and the place files.
 #: * ``CENSUS_SAIPE_SAHIE`` -- ``census_saipe_sahie/registry.py`` requests
@@ -40,7 +40,6 @@ from __future__ import annotations
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
-    "IRS_MIGRATION": frozenset({"COUNTY"}),
 #: * ``BLS_QCEW`` -- ``bls_qcew/registry.py`` registers aggregation levels
 #:   10-14, 50-54 and 70-74 (national, state, county) and counts every other
 #:   level -- MSAs and the "unknown county" areas -- out of scope.
@@ -61,5 +60,6 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "IRS_MIGRATION": frozenset({"COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
 }
