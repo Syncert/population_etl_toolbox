@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
+In progress. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Deliverables 1 to 5 are on branch `feat/census-building-permits`, cut from
+`main`. Deliverable 6, the Housing chapter card and trend, needs the place
+pages from `feat/place-pages` (WEB-125).
 
 ## Why
 
@@ -89,7 +91,63 @@ rather than completions.
   as the PEP adapter does for its releases.
 - Place files are grouped by region; decide the slice unit for capture.
 
+## Decisions
+
+- **Files, verified 2026-10-06** under `https://www2.census.gov/econ/bps/`:
+  `County/coYYMMc.txt` (month) and `coYY12y.txt` (the December year to
+  date, which is the year); `State/stYYMMc.txt` and `stYY12y.txt`, which
+  carry the `US` total; and `Place/<Region> Region/<rr>YYYYa.txt`, annual
+  only. The county and state layout has been the same since 2000. The place
+  files name places by FIPS from 2007; earlier ones use the Bureau's own
+  IDs, which cannot resolve by code, so places start in 2007. One layout per
+  file family, checked by the two header rows and the column count.
+- **Slice unit** (open item): one run per (frequency, year, month), with
+  one capture per file; an annual run has six files from 2007 (county,
+  state and the four place regions).
+- **Imputation.** The files carry the Bureau's estimate (which imputes for
+  non-reporters) and the "rep" columns, what jurisdictions reported. Both
+  are kept: `value` and `reported_value`.
+- **No zeros.** A jurisdiction missing from a file has no row. A place with
+  `Number of Months Rep` 0 is `not_reported`, with no number, although the
+  file writes zeros.
+- **Units.** The state file's valuation is in thousands of dollars, so the
+  state and national rows publish buildings and units only.
+- **Identity.** A metric is `CENSUS_BPS:<measure>:<structure>:<frequency>`,
+  and its display name ends "(authorized, not started or completed)".
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2187 passed, including
+  `tests/unit/census_bps` (8).
+- Database: `tests/integration/database/test_census_bps_capture_replay.py`
+  -- 5 passed. Covered: month and year to gold with reported figures, the
+  publisher and harvest, rerun and changed file, the quarantined row with
+  `DQ-BPS-002` passing and then failing on a lost row, and the 404 month
+  with the schema reapplied.
+- End to end: `tests/e2e/test_census_bps_pipeline.py` serves a county and a
+  place through `/api/v1/observations`, with the reported figure, the
+  authorization basis and a non-reporting place as `not_reported`.
+- Live: `tests/external/test_census_bps_source_contracts.py` -- 4 passed
+  against www2.census.gov.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 460 passed and 1 failed. The failure is the PEP teardown
+  node, which counts every `CENSUS_PEP` capture and runs after
+  `test_catalog_serving_agreement.py`, whose PEP fixture leaves ten
+  behind; the same thing happens without this change.
+- DAG: `pytest -m dag tests/dags` in the scheduler container -- 155 passed;
+  `test_dag_pipeline_execution.py` on its own -- 4 passed, with
+  `census_building_permits_ingest` in the orchestrated run.
+- `ruff check .` and `ruff format --check .` clean; schema snapshot
+  regenerated; OpenAPI snapshot unchanged (no new route).
+
+## Remaining
+
+- Deliverable 6: the Housing chapter's "Authorized this year" card and
+  monthly trend, with the reported share stated, beside the ACS stock cards.
+  Builds on `feat/place-pages`.
+
 ## Checkpoint
 
-Next pickup: copy the starter, record the verified file pattern and layout
-versions, and write the failing replay test for one monthly county fixture.
+Next pickup: branch from `feat/place-pages`, merge
+`feat/census-building-permits`, and add the permits slots to the Housing
+chapter.

@@ -588,6 +588,37 @@ one from the other or add them.
   interface names no release. A file whose bytes changed is a new release
   beside the old one, readable with `scope=as_released`.
 
+### Reading a permits row: authorized, not built
+
+`CENSUS_BPS` serves the Census Bureau's Building Permits Survey: new privately
+owned housing units authorized by building permits, with the buildings and
+the valuation of construction authorized, for the nation, every state,
+every county and every permit-issuing place. A metric code is
+`CENSUS_BPS:<measure>:<structure type>:<frequency>`. For example,
+`CENSUS_BPS:units:5_plus_units:monthly` is units authorized in buildings of
+five or more units, each month.
+
+- **An authorization is not a start or a completion.** A permitted unit may
+  be built later or never. `dimensions.observation_basis` says so on every
+  row, and FRED's national `HOUST` (starts) is a different quantity.
+- **The value is the Bureau's estimate, which imputes for jurisdictions that
+  did not report.** `dimensions.reported_value` is what jurisdictions
+  reported themselves. The two are kept apart, and nothing here subtracts
+  one from the other.
+- **Monthly and annual are separate metrics.** The annual figure is the
+  Bureau's own (the December year-to-date county and state files and the
+  annual place files), not a sum computed here.
+- **Places are annual only, from 2007, and only permit-issuing ones.** A
+  place that reported no month of the year has `value_status`
+  `not_reported`, a `null` value and `dimensions.months_reported` `0`; its
+  zeros in the file are not served as zeros. Unincorporated remainders and
+  New England towns without a place code are not served.
+- **State and national rows carry buildings and units, not valuation.** The
+  state file states valuation in thousands of dollars, so it is not mixed
+  with the dollars the county and place files use.
+- A jurisdiction missing from a month's file has no row for that month. It
+  is never a zero.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -709,6 +740,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| Census Building Permits | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BLS QCEW | the time the warehouse read the file | **Not a BLS publication.** The open-data interface names no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BEA | the release date | BEA's release date, from the "Last updated" line of the file |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |

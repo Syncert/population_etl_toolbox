@@ -27,6 +27,12 @@
       "STATE",
       "TRACT"
     ],
+    "CENSUS_BPS": [
+      "COUNTY",
+      "NATIONAL",
+      "PLACE",
+      "STATE"
+    ],
     "CENSUS_PEP": [
       "COUNTY",
       "NATIONAL",
@@ -754,6 +760,126 @@
     },
     {
       "datasets": [],
+      "display_name": "Census Bureau Building Permits Survey",
+      "observation_dimensions": [
+        "frequency",
+        "measure_id",
+        "months_reported",
+        "observation_basis",
+        "reported_value",
+        "structure_label",
+        "structure_type",
+        "value_source"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_BPS"
+    },
+    {
+      "datasets": [],
       "display_name": "Census Population Estimates Program",
       "observation_dimensions": [
         "dataset_code",
@@ -1331,6 +1457,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "USDA_NASS"
@@ -1370,6 +1497,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
@@ -1408,6 +1536,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
@@ -1445,6 +1574,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
@@ -1477,6 +1607,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
@@ -1518,6 +1649,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1559,6 +1691,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
@@ -1601,6 +1734,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1644,6 +1778,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1681,6 +1816,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",
@@ -1724,6 +1860,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1766,6 +1903,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1810,6 +1948,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1848,6 +1987,7 @@
         "BLS",
         "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FRED"
       ],
@@ -1888,6 +2028,7 @@
         "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
         "FBI_UCR",
         "FRED",

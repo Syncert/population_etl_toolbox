@@ -365,6 +365,12 @@ registered QCEW period from 2014: about 1,300 slice requests through the
 one-slot `bls_qcew_api` pool
 ([operations](../user-guides/BLS_QCEW_PIPELINE_OPERATIONS.md)).
 
+Trigger `census_building_permits_ingest` with `--conf '{"history": true}'` to
+load every registered permits file from 2000 (places from 2007): two files
+per month and six per year, about 750 requests through the one-slot
+`census_bps_files` pool
+([operations](../user-guides/CENSUS_BUILDING_PERMITS_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

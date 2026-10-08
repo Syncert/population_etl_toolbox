@@ -83,6 +83,12 @@ FACTS = [
         value_column="estimate_value",
     ),
     FactContract(
+        "CENSUS_BPS",
+        SRC / "census_bps/DDL/silver_census_bps.sql",
+        "silver_census_bps.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "CENSUS_PEP",
         SRC / "census_pep/DDL/silver_pep.sql",
         "silver_pep.fact_population_estimate",

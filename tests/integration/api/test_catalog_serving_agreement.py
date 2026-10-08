@@ -32,6 +32,7 @@ from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transfo
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import bea as bea_support
+from tests.support import census_bps as bps_support
 from tests.support import fbi_release
 from tests.support import bls_qcew as qcew_support
 from tests.support import usda_nass as nass_support
@@ -883,6 +884,23 @@ def published_qcew_metric(
     return _one_published_code(factory, "BLS_QCEW")
 
 
+@pytest.fixture
+def published_bps_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the Building Permits metrics through their real pipeline."""
+    from data_ingestion_toolbox.census_bps.registry import ANNUAL, MONTHLY, BpsSlice
+
+    factory = bps_support.reviewed_warehouse(postgres_connection_factory, request)
+    bps_support.run_to_gold(factory, MONTHLY, 2024, 3)
+    bps_support.run_to_gold(
+        factory, ANNUAL, 2024, 12, files=(BpsSlice("place", ANNUAL, 2024, 12, "south"),)
+    )
+    harvest_publisher(factory, Publisher("gold_census_bps"))
+    return _one_published_code(factory, "CENSUS_BPS")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -938,6 +956,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
 ) -> None:
@@ -999,6 +1018,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FRED", published_fred_metric),
         ("CENSUS_PEP", published_pep_metric),
         ("BLS", published_bls_metric),
+        ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
@@ -1140,6 +1160,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_cdc_metric: str,
     published_cdc_county_metric: str,
     published_fred_metric: str,
+    published_bps_metric: str,
     published_pep_metrics: list[str],
     published_bls_metric: str,
     published_qcew_metric: str,

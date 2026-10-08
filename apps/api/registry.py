@@ -1016,6 +1016,48 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="CENSUS_BPS",
+            latest_relation="gold_census_bps.observation_latest",
+            released_relation="gold_census_bps.observation_revision",
+            lineage_schema="gold_census_bps",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>:<structure>:<frequency>`,
+            # the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("structure_type", "structure_type"),
+                ("structure_label", "structure_label"),
+                ("frequency", "frequency"),
+                # "authorized by building permits ... not started or
+                # completed": what keeps a permit from being read as a start.
+                ("observation_basis", "observation_basis"),
+                # What jurisdictions reported themselves, beside the Bureau's
+                # estimate that imputes for those that did not.
+                ("reported_value", "reported_value::TEXT"),
+                ("months_reported", "months_reported::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1262,6 +1304,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             source_code=SERVING_CONTRACTS["pep"].source_code,
             display_name=SERVING_CONTRACTS["pep"].display_name,
             route_segment="pep",
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_BPS",
+            display_name="Census Bureau Building Permits Survey",
+            route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(

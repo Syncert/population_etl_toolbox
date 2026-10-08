@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "CENSUS_BPS",
     "BLS_QCEW",
     "BEA",
 )
@@ -2105,6 +2106,102 @@ _QCEW_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# Census Building Permits Survey.
+# ---------------------------------------------------------------------------
+
+_BPS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_bps_slice",
+        "control",
+        "CENSUS_BPS",
+        grain="run_id, slice_key (one run per frequency, year and month)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in census_bps/registry.py",
+        cadence="monthly; history sweep on request",
+        empty_behavior="a month not yet published (HTTP 404) is status empty",
+    ),
+    _obj(
+        "silver_census_bps.dim_measure",
+        "silver",
+        "CENSUS_BPS",
+        grain="measure_id, structure_type",
+        scope_method="registered measures x structure types",
+        cadence="per Building Permits replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_bps.observation_revision",
+        "silver",
+        "CENSUS_BPS",
+        grain="capture_id, source_row_index, measure_id, structure_type",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per Building Permits replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_bps.observation_quarantine",
+        "silver",
+        "CENSUS_BPS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per Building Permits replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_bps.fact_observation",
+        "silver",
+        "CENSUS_BPS",
+        grain="measure_id, structure_type, frequency, geo_id, period_start, capture_id",
+        lineage="silver_census_bps.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered files x structure types x measures",
+        cadence="per Building Permits replay",
+        empty_behavior="a jurisdiction absent from a file has no row; an unreported place is not_reported, never zero",
+    ),
+    _obj(
+        "gold_census_bps.observation_revision",
+        "gold",
+        "CENSUS_BPS",
+        grain="measure_id, structure_type, frequency, geo_id, period_start, capture_id (published files only)",
+        lineage="silver_census_bps.fact_observation, control.census_bps_slice",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_bps.observation_latest",
+        "gold",
+        "CENSUS_BPS",
+        grain="metric_key, geo_id, period_start (newest capture)",
+        lineage="gold_census_bps.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_bps.measure_export",
+        "publisher",
+        "CENSUS_BPS",
+        grain="source_object_key (measure:structure:frequency)",
+        lineage="silver_census_bps.dim_measure",
+        scope_method="registered measures x structure types x frequencies",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_bps.metric_publisher",
+        "publisher",
+        "CENSUS_BPS",
+        grain="source_object_key (measure:structure:frequency)",
+        lineage="gold_census_bps.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -2117,6 +2214,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
 )
@@ -2500,6 +2598,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fred.metric_publisher",
             "gold_pep.metric_publisher",
             "gold_cdc.metric_publisher",
+            "gold_census_bps.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
             "gold_bea.metric_publisher",
@@ -3831,6 +3930,102 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "asks for a window of recent quarters and records each as "
             "published or empty, but no executor checks the published set "
             "for gaps."
+        ),
+    ),
+    # -- Census Building Permits Survey -------------------------------------
+    _rule(
+        "DQ-BPS-001",
+        "BLOCK",
+        "uniqueness",
+        "Building Permits observations are unique per (measure, structure "
+        "type, frequency, geography, period start, capture): a revised file is "
+        "a second row beside the one it revised.",
+        (
+            "silver_census_bps.fact_observation",
+            "gold_census_bps.observation_revision",
+            "gold_census_bps.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_bps.fact_observation",
+                (
+                    "measure_id",
+                    "structure_type",
+                    "frequency",
+                    "geo_id",
+                    "period_start",
+                    "capture_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BPS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed file accounts for every in-scope captured row, and no "
+        "captured file is left unreplayed.",
+        (
+            "control.census_bps_slice",
+            "silver_census_bps.observation_revision",
+            "silver_census_bps.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-BPS-003",
+        "BLOCK",
+        "conformance",
+        "A place that reported no month is not_reported and carries no "
+        "number; only a valid figure is a number, and the reported figure is "
+        "kept beside the Bureau's estimate.",
+        (
+            "silver_census_bps.fact_observation",
+            "silver_census_bps.observation_revision",
+            "gold_census_bps.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value and any other status with one."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_bps.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bps_fact_unreported_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_bps.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bps_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_bps.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bps_revision_unreported_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BPS-004",
+        "WARN",
+        "temporal_integrity",
+        "Each registered file family's published months are continuous: no "
+        "month between the first and newest published month is missing.",
+        ("control.census_bps_slice",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: period continuity is declared; an ordinary run asks "
+            "for a window of recent months and records each as published or "
+            "empty, but no executor checks the published set for gaps."
         ),
     ),
 )

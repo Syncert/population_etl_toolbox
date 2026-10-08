@@ -27,6 +27,8 @@ from __future__ import annotations
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
 #:   ``geo_levels = ["us", "state", "county", "place", "tract"]``; tracts
+#: * ``CENSUS_BPS`` -- ``census_bps/registry.py`` registers the state file
+#:   (states and the US total), the county files and the place files.
 #:   from the 5-year estimates only (sub-county-geography).
 #: * ``BEA`` -- ``bea/registry.py`` loads the nation, states and counties
 #:   and counts BEA's regions and combined areas out of scope.
@@ -40,6 +42,7 @@ from __future__ import annotations
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
 #:   ``'NATIONAL'`` as literals. FRED is national by construction.
+    "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
