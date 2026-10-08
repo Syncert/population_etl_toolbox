@@ -142,11 +142,6 @@
       "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
     },
     {
-      "id": "silver-census-cbp",
-      "phase": "silver",
-      "path": "src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql"
-    },
-    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -155,6 +150,11 @@
       "id": "silver-irs-migration",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql"
+    },
+    {
+      "id": "silver-census-cbp",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql"
     },
     {
       "id": "silver-eia",
@@ -252,14 +252,14 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
-      "id": "gold-census-cbp",
-      "phase": "gold",
-      "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql"
-    },
-    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
+    },
+    {
+      "id": "gold-census-cbp",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql"
     },
     {
       "id": "publisher-bls",
@@ -285,11 +285,6 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
-    },
-    {
-      "id": "publisher-census-cbp",
-      "phase": "publisher",
-      "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-sae",
@@ -325,6 +320,11 @@
       "id": "publisher-irs-migration",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-cbp",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql"
     },
     {
       "id": "migration-029",

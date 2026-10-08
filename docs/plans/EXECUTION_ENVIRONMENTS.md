@@ -95,11 +95,10 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**12 plans.**
+**11 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`census-county-business-patterns`](to_do/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) | medium | `postgres` | -- |
 | [`census-lehd-lodes`](to_do/CENSUS_LEHD_LODES_PLAN.md) | high | `postgres` | -- |
 | [`epa-aqs-noaa-climate-normals`](to_do/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) | high | `postgres` | -- |
 | [`fcc-broadband-data-collection`](to_do/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) | medium | `postgres` | -- |
