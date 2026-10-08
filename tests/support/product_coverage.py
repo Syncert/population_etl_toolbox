@@ -512,6 +512,38 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="census_cbp.business_patterns",
+        source="CENSUS_CBP",
+        publisher_schema="gold_census_cbp",
+        datasets=("county:2016", "county:2023", "state:2023", "nation:2023"),
+        fixtures=(
+            "tests/fixtures/census_cbp/cbp16co.zip",
+            "tests/fixtures/census_cbp/cbp23co.zip",
+            "tests/fixtures/census_cbp/cbp23st.zip",
+            "tests/fixtures/census_cbp/cbp23us.zip",
+        ),
+        serving_relations=(
+            "gold_census_cbp.observation_revision",
+            "gold_census_cbp.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_cbp_pipeline.py::"
+            "test_business_patterns_reach_the_neutral_api_with_flags_and_coverage"
+        ),
+        api_absence_reason=(
+            "County Business Patterns publishes no source-specific HTTP route: "
+            "each row is the neutral observation shape with its measure, sector, "
+            "coverage statement and withheld cell's size range as declared "
+            "dimensions and its noise flag as uncertainty, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
 )
 
 

@@ -115,6 +115,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "FRED": "gold_ddl_fred",
     "IRS_MIGRATION": "gold_ddl_irs_migration",
     "USDA_NASS": "gold_ddl_nass",
+    "CENSUS_CBP": "gold_ddl_census_cbp",
     "CENSUS_BPS": "gold_ddl_census_bps",
     "BLS_QCEW": "gold_ddl_bls_qcew",
     "BEA": "gold_ddl_bea",

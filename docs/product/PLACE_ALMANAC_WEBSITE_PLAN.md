@@ -214,7 +214,7 @@ finer, openly licensed.
 | Census Building Permits Survey | Housing units authorized by structure type | County and permit-issuing place, monthly | Housing | The one forward-looking local housing signal |
 | IRS county-to-county migration | Where in-movers came from and out-movers went | County pairs, annual | People, Change | Turns PEP net migration into a story with named origins |
 | Census LEHD LODES | Resident-to-workplace commuting flows | County and finer, annual | Work and Money | Explains the gap between residents and jobs |
-| Census County Business Patterns | Establishments, employment, payroll by detailed industry | County and place, annual | Work and Money | The business mix of a town |
+| Census County Business Patterns | Establishments, employment, payroll by industry | County, annual (no place grain) | Work and Money | The business mix of a county |
 | CDC WONDER mortality and natality | Deaths by cause, births, suppression below ten | County, annual | Health, People | Behind every life-expectancy headline; suppression stays visible |
 | NCES Common Core of Data | Schools, districts, enrollment, staffing, lunch eligibility | District and school, mapped to county and place | New chapter: Schools | Families ask about schools first |
 | FHFA House Price Index | Repeat-sales price index | County and ZIP, annual | Housing | Local price change beside ACS values and FRED |
@@ -317,9 +317,19 @@ Warehouse, county and place depth:
 - [`docs/plans/needs_review/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/needs_review/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
 - [`docs/plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
 - [`docs/plans/needs_review/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/needs_review/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
+<<<<<<<
 - [`docs/plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
 - [`docs/plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
 - [`docs/plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+=======
+- [`docs/plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
+- [`docs/plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
+- [`docs/plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+  - [`docs/plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
+  - [`docs/plans/to_do/CENSUS_LEHD_LODES_PLAN.md`](../plans/to_do/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+  - [`docs/plans/to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md`](../plans/to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) — NCES Common Core of Data (a Schools chapter).
+  - [`docs/plans/to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
+>>>>>>>
 - [`docs/plans/needs_review/SUB_COUNTY_GEOGRAPHY_PLAN.md`](../plans/needs_review/SUB_COUNTY_GEOGRAPHY_PLAN.md) — tracts and ZCTAs, after place grain.
 
 ## Decisions only the owner can make

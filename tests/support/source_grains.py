@@ -49,6 +49,9 @@ from __future__ import annotations
 #:   level -- MSAs and the "unknown county" areas -- out of scope.
 #: * ``EIA`` -- ``eia/registry.py`` classifies ``NUS`` as the nation, ``S`` codes
 #:   as states by USPS code, and PADDs and cities as EIA's own provider areas.
+#: * ``CENSUS_CBP`` -- ``census_cbp/registry.py`` reads the nation, state
+#:   and county files and counts each county file's statewide row out of
+#:   scope.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -76,6 +79,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
 }

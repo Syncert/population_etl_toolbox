@@ -568,6 +568,33 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a County Business Patterns row: employer establishments, mid-March
+
+`CENSUS_CBP` serves the Census Bureau's County Business Patterns: employer
+establishments, employment in the pay period including March 12,
+first-quarter payroll and annual payroll, for the nation, every state and
+every county, by two-digit NAICS sector and in total. A metric code is
+`CENSUS_CBP:<measure>:<sector>`, for example `CENSUS_CBP:emp:72` (employees
+in Accommodation and food services) or `CENSUS_CBP:est:total`.
+
+- **It counts employer establishments only.** The self-employed, private
+  households, railroads, crop and animal production and most government
+  employees are out of scope; `dimensions.observation_basis` says so on
+  every row. It is not QCEW's count of covered jobs or the ACS's count of
+  employed residents, and the three are separate metrics.
+- **Payroll is in thousands of dollars**; `unit` says which measure is
+  which.
+- **Employment and payroll carry noise.** The Bureau adds noise to protect
+  establishments; `uncertainty.noise_flag` is `G` (under 2%), `H` (2 to
+  under 5%) or `J` (5% or more). Establishment counts carry none.
+- **A withheld cell is not a zero.** Through 2016 a cell that would
+  disclose an establishment is `D`; it is `value_status: withheld` with a
+  `null` value although the file writes `0`, and
+  `dimensions.employment_range` keeps the Bureau's size-range letter. From
+  2017 a cell of fewer than three establishments is not published at all,
+  so a sector with no row is not published, never zero.
+- **There is no place grain.** CBP publishes counties, not places.
+
 ### Reading a BEA row: current, chained or per capita
 
 `BEA` serves the Bureau of Economic Analysis's regional economic accounts for
@@ -776,7 +803,8 @@ source-scoped routes serve it; that is what they are for.
   Census ACS publishes `margin_of_error` and `margin_of_error_pct`; CDC
   publishes `confidence_lower` and `confidence_upper`; USDA NASS publishes
   `cv_value` with `cv_status` and `cv_symbol`, which is how it says an
-  estimate is unreliable. Read them before treating a value as precise.
+  estimate is unreliable; County Business Patterns publishes `noise_flag`
+  (`G`, `H` or `J`). Read them before treating a value as precise.
 - `coverage` is `null` unless the source publishes a reporting basis. FBI UCR
   does: `participation_status` (a month nobody reported is `not_reported`
   with a `null` value, not zero crime), `coverage_percent` and
@@ -848,6 +876,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | Census Building Permits | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BLS QCEW | the time the warehouse read the file | **Not a BLS publication.** The open-data interface names no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |

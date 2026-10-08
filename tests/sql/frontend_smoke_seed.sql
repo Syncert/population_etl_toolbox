@@ -103,7 +103,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000b95', 'CENSUS_BPS', 'success'),
     ('00000000-0000-4000-8000-0000000005ae', 'CENSUS_SAIPE_SAHIE', 'success'),
     ('00000000-0000-4000-8000-00000000015c', 'IRS_MIGRATION', 'success'),
-    ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success')
+    ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success'),
+    ('00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -133,7 +134,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-00000000015c', '00000000-0000-4000-8000-00000000015c',
      'IRS_MIGRATION', 'smoke://seed', '{}'::JSONB, 'aedef3c58968656b3f72cff6b2b82c475e7a2b68115b0693f74b09ef1eebb376', 'captured'),
     ('00000000-0000-4000-9000-000000000e1a', '00000000-0000-4000-8000-000000000e1a',
-     'EIA', 'smoke://seed', '{}'::JSONB, '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', 'captured')
+     'EIA', 'smoke://seed', '{}'::JSONB, '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', 'captured'),
+    ('00000000-0000-4000-9000-000000000cb9', '00000000-0000-4000-8000-000000000cb9',
+     'CENSUS_CBP', 'smoke://seed', '{}'::JSONB, '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -180,6 +183,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e1a', '00000000-0000-4000-9000-000000000e1a',
      '00000000-0000-4000-8000-000000000e1a', 'EIA', 'smoke://seed', '{}'::JSONB,
      '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000cb9', '00000000-0000-4000-9000-000000000cb9',
+     '00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'smoke://seed', '{}'::JSONB,
+     '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -759,6 +766,31 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Census CBP -- establishments for one county and year, with the noise
+-- flag CBP publishes, served from views over a published file. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_cbp_file (
+    run_id, kind, year, capture_id, captured_row_count, in_scope_row_count,
+    status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000cb9', 'county', 2098, '00000000-0000-4000-a000-000000000cb9', 1, 1, 'published',
+    '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_cbp.fact_observation (
+    measure, naics_key, geo_id, year, capture_id, run_id, naics_code,
+    retrieved_at, geo_sk, geo_type, geography_status, value_source, value,
+    value_status, noise_flag, source_record_id
+)
+SELECT 'est', 'total', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000cb9', '00000000-0000-4000-8000-000000000cb9', '------',
+       '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved', '12345', 12345,
+       'valid', 'G',
+       'acbf1d5d6b7a8f9eadbbcfd0e1f2031425364758697a8192a3b4c5d6e7f8091a'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -784,7 +816,8 @@ UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher
 UNION ALL SELECT * FROM gold_census_bps.metric_publisher
 UNION ALL SELECT * FROM gold_census_sae.metric_publisher
 UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
-UNION ALL SELECT * FROM gold_eia.metric_publisher;
+UNION ALL SELECT * FROM gold_eia.metric_publisher
+UNION ALL SELECT * FROM gold_census_cbp.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

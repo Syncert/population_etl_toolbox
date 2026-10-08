@@ -52,6 +52,12 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "CENSUS_CBP",
+        SRC / "census_cbp/DDL/silver_census_cbp.sql",
+        "silver_census_cbp.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "IRS_MIGRATION",
         SRC / "irs_migration/DDL/silver_irs_migration.sql",
         "silver_irs_migration.fact_flow",

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
@@ -77,6 +78,13 @@ SOURCES = [
         "ingest_batch_",
         eia_schema,
         "EIA",
+    ),
+    (
+        "census_cbp_ingest",
+        "ensure_census_cbp_schema",
+        "ingest_batch_",
+        census_cbp_schema,
+        "CENSUS_CBP",
     ),
 ]
 

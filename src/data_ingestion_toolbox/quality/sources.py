@@ -997,6 +997,75 @@ def bea_price_parity_reference(
     ]
 
 
+def cbp_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-CBP-002 — every in-scope captured row is replayed; no file is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.census_cbp_file")
+    if total == 0:
+        return [RuleOutcome("control.census_cbp_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.kind, file.year, file.status
+          FROM control.census_cbp_file AS file
+          LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT revision.source_row_index) AS rows_replayed
+                  FROM silver_census_cbp.observation_revision AS revision
+                 WHERE revision.capture_id = file.capture_id
+          ) AS parsed ON TRUE
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND parsed.rows_replayed <> file.in_scope_row_count)
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "control.census_cbp_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def cbp_sector_sum(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-CBP-004 — sector establishment counts never sum past their total."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM gold_census_cbp.observation_latest WHERE measure = 'est'",
+    )
+    if total == 0:
+        return [RuleOutcome("gold_census_cbp.observation_latest", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT parts.geo_id, parts.year, parts.total_est, parts.sector_est
+          FROM (
+                SELECT geo_id, year,
+                       MAX(value) FILTER (WHERE naics_key = 'total') AS total_est,
+                       COALESCE(SUM(value) FILTER (WHERE naics_key <> 'total'), 0) AS sector_est
+                  FROM gold_census_cbp.observation_latest
+                 WHERE measure = 'est'
+                 GROUP BY geo_id, year
+          ) AS parts
+         WHERE parts.total_est IS NOT NULL AND parts.sector_est > parts.total_est
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "gold_census_cbp.observation_latest",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2106,6 +2175,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-BEA-005": bea_price_parity_reference,
     "DQ-EIA-002": eia_read_reconciliation,
+    "DQ-CBP-002": cbp_file_reconciliation,
+    "DQ-CBP-004": cbp_sector_sum,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

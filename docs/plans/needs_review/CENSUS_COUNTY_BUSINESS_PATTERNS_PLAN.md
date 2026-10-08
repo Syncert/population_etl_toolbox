@@ -15,9 +15,11 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 by the second-tier source scouting plan from
+Ready for review. Drafted 2026-10-06 by the second-tier source scouting plan from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Implemented on branch `feat/census-county-business-patterns`, which is
+`docs/scout-county-sources` (where this plan was written) with the work on
+top.
 
 ## Why
 
@@ -172,8 +174,61 @@ permitted.
 - API versus bulk ZIP as the primary capture path.
 - Correct the almanac table's "County and place" grain to "County".
 
+## Decisions (open items resolved)
+
+- **Bulk files, not the API.** The county, state and nation zips need no
+  key, return every county in one request, and carry the flags the API
+  splits into `_F` attributes; so there is no `CENSUS_API_KEY` to hold and
+  no external credential to register. The key-hygiene criterion is met by
+  there being no key; the unit test asserts the configuration has no key or
+  token field.
+- **Years and layouts:** 2016-2023, read by column name. 2016-2017 carry
+  `empflag`, the size range of a `D` cell, kept as `employment_range`; 2016
+  has `D` cells (the fixture era with `D`), 2023 has none.
+- **Sectors:** the all-sectors total (`------`) and the two-digit NAICS 2017
+  sectors as the files write them (`31----`, `44----`, `48----` for the
+  ranges); `INDLEVEL` is an API attribute and does not arise. Six-digit and
+  intermediate codes are counted out of scope.
+- **Flags:** `G`/`H`/`J` stay beside the value as `uncertainty.noise_flag`
+  (an additive v1 field); `D` is `withheld` and `S` `suppressed`, both with
+  no value although the file writes `0`. An absent sector is not published,
+  never zero.
+- **Geography:** county code `999` is the statewide row and is counted out
+  of scope; the state and nation files' `lfo` rows other than `-` are out of
+  scope. Counties resolve by code; an unresolved county is `unmapped` in the
+  ledger and not served.
+- **Revisions (open item):** the methodology states no revision policy, so
+  a corrected file is a new capture kept beside the old one, and the newest
+  capture is served.
+- **Almanac table:** corrected to "County, annual (no place grain)".
+- **No derived measure:** average pay per employee stays out of gold.
+
+## Evidence (2026-10-06, Windows host, local Docker test stack)
+
+- Unit: `python -m pytest tests/unit` -- 2186 passed, including
+  `tests/unit/census_cbp` (7).
+- Database: `tests/integration/database/test_census_cbp_capture_replay.py`
+  -- 4 passed: county, state and nation to gold with flags and units;
+  2016's withheld cells and the publisher harvest; rerun and a corrected
+  file kept beside the old; `DQ-CBP-002` and `DQ-CBP-004` passing then
+  failing, a non-zip refused, and the schema reapplied.
+- End to end: `tests/e2e/test_census_cbp_pipeline.py` serves a county's
+  employment with its noise flag and coverage statement, and a withheld
+  2016 cell, through `/api/v1/observations`.
+- Live: `tests/external/test_census_cbp_source_contracts.py` -- 7 passed
+  against www2.census.gov.
+- Integration and end to end: `tests/integration tests/e2e -m "not
+  external"` -- 459 passed, 1 failed: the PEP teardown node, which fails on
+  `main` too (the catalog agreement's PEP fixture leaves captures behind;
+  fixed on `test/catalog-agreement-fixture-residue`).
+- DAG: `tests/dags` in the scheduler container -- 155 passed;
+  `test_dag_pipeline_execution.py` on a fresh database -- 4 passed with
+  `census_cbp_ingest` in the orchestrated run.
+- Deliverable 12's scheduled-credential registration does not apply: the
+  files take no credential.
+- `ruff check .` clean; schema snapshot, OpenAPI contract, viz coverage and
+  plan environments regenerated.
+
 ## Checkpoint
 
-Next pickup: copy the starter into `census_cbp`, capture one state's 2023
-county response with a key, and write the failing replay test asserting flags
-and suppression survive into silver.
+Awaiting human review.

@@ -117,6 +117,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "fbi_ucr_release"),
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
+        ("control", "census_cbp_file"),
         ("control", "irs_migration_file"),
         ("control", "census_sae_slice"),
         ("control", "census_bps_slice"),

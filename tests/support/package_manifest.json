@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql",
+    "data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql",
+    "data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql",
     "data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql",
     "data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql",
     "data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql",

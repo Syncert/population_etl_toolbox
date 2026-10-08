@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "CENSUS_CBP",
     "IRS_MIGRATION",
     "CENSUS_SAIPE_SAHIE",
     "CENSUS_BPS",
@@ -2502,6 +2503,111 @@ _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# Census County Business Patterns.
+# ---------------------------------------------------------------------------
+
+_CBP_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_cbp_file",
+        "control",
+        "CENSUS_CBP",
+        grain="run_id (one run per level and year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in census_cbp/registry.py",
+        cadence="monthly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_cbp.observation_revision",
+        "silver",
+        "CENSUS_CBP",
+        grain="capture_id, source_row_index, measure",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per County Business Patterns replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_cbp.observation_quarantine",
+        "silver",
+        "CENSUS_CBP",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per County Business Patterns replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_cbp.fact_observation",
+        "silver",
+        "CENSUS_CBP",
+        grain="measure, naics_key, geo_id, year, capture_id",
+        lineage="silver_census_cbp.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered files x the total and two-digit sectors x four measures",
+        cadence="per County Business Patterns replay",
+        empty_behavior="a D or S cell keeps its status and no number, never zero; a cell of fewer than three establishments is not published",
+    ),
+    _obj(
+        "gold_census_cbp.measure_definition",
+        "gold",
+        "CENSUS_CBP",
+        grain="measure",
+        scope_method="the four registered measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_census_cbp.sector_definition",
+        "gold",
+        "CENSUS_CBP",
+        grain="naics_key",
+        scope_method="the total and the two-digit NAICS 2017 sectors",
+        cadence="static",
+        empty_behavior="never empty: the sectors are registered",
+    ),
+    _obj(
+        "gold_census_cbp.observation_revision",
+        "gold",
+        "CENSUS_CBP",
+        grain="metric_key, geo_id, year, capture_id (published files only)",
+        lineage="silver_census_cbp.fact_observation, control.census_cbp_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_cbp.observation_latest",
+        "gold",
+        "CENSUS_CBP",
+        grain="metric_key, geo_id, year (newest capture)",
+        lineage="gold_census_cbp.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_cbp.measure_export",
+        "publisher",
+        "CENSUS_CBP",
+        grain="source_object_key (measure:sector)",
+        lineage="gold_census_cbp.measure_definition, gold_census_cbp.sector_definition",
+        scope_method="registered measures x sectors",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_census_cbp.metric_publisher",
+        "publisher",
+        "CENSUS_CBP",
+        grain="source_object_key (measure:sector)",
+        lineage="gold_census_cbp.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -2514,6 +2620,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
     + _SAE_OBJECTS
     + _BPS_OBJECTS
@@ -2908,6 +3015,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.metric_publisher",
             "gold_bea.metric_publisher",
             "gold_eia.metric_publisher",
+            "gold_census_cbp.metric_publisher",
         ),
     ),
     _rule(
@@ -4667,6 +4775,93 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation_note=(
             "`quality.sources.bea_price_parity_reference` reads the newest published release of line 1 (all items) for `us:1` in SARPP, MARPP and PARPP and fails any year whose value is not exactly 100 -- a parity table whose national row is not 100 is not relative to the nation, and every area's level in it would be misread (grocery-and-gasoline-prices)."
         ),
+    ),
+    # -- Census County Business Patterns ------------------------------------
+    _rule(
+        "DQ-CBP-001",
+        "BLOCK",
+        "uniqueness",
+        "County Business Patterns observations are unique per (measure, "
+        "sector, geography, year, capture): a corrected file is a second row "
+        "beside the one it corrected.",
+        (
+            "silver_census_cbp.fact_observation",
+            "gold_census_cbp.observation_revision",
+            "gold_census_cbp.observation_latest",
+            "gold_census_cbp.measure_definition",
+            "gold_census_cbp.sector_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it and over the registered "
+            "measure and sector lists."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_cbp.fact_observation",
+                ("measure", "naics_key", "geo_id", "year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CBP-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed file accounts for every in-scope captured row, and no "
+        "captured file is left unreplayed.",
+        (
+            "control.census_cbp_file",
+            "silver_census_cbp.observation_revision",
+            "silver_census_cbp.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-CBP-003",
+        "BLOCK",
+        "conformance",
+        "A withheld (D) or suppressed (S) cell keeps that status and carries "
+        "no number although the file writes 0; only a valid cell is a number, "
+        "and a noise flag is G, H or J.",
+        (
+            "silver_census_cbp.fact_observation",
+            "silver_census_cbp.observation_revision",
+            "gold_census_cbp.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value and a withheld or suppressed one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_cbp.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cbp_fact_suppressed_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_cbp.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cbp_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_cbp.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cbp_revision_suppressed_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CBP-004",
+        "WARN",
+        "reconciliation",
+        "In the newest published file, a geography's sector establishment "
+        "counts never sum past its own total: establishments carry no noise, "
+        "and an unpublished sector can only make the sum smaller.",
+        ("gold_census_cbp.observation_latest",),
     ),
 )
 
