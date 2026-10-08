@@ -246,3 +246,5 @@
 .source-card dt { color: var(--muted); font-size: 0.78rem; }
 .source-card dd { margin: 0; font-weight: 700; }
 .site-rules li, .refresh-timeline li { margin: 6px 0; }
+/* Studio (studio-video-frames) */
+.studio-preview { display: block; width: 100%; max-width: 960px; height: auto; border: 1px solid var(--line); }
