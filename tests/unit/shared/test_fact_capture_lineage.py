@@ -52,6 +52,14 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "IRS_MIGRATION",
+        SRC / "irs_migration/DDL/silver_irs_migration.sql",
+        "silver_irs_migration.fact_flow",
+        "valid",
+        # Three measures share one status; returns is the one SOI deletes by.
+        value_column="returns",
+    ),
+    FactContract(
         "BEA",
         SRC / "bea/DDL/silver_bea.sql",
         "silver_bea.fact_observation",

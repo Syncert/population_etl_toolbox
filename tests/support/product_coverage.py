@@ -457,6 +457,32 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "registry and a source route would repeat it."
         ),
     ),
+    DataProductE2E(
+        product_id="irs_migration.county_flows",
+        source="IRS_MIGRATION",
+        publisher_schema="gold_irs_migration",
+        datasets=("inflow:2021-2022", "inflow:2022-2023", "outflow:2022-2023"),
+        fixtures=(
+            "tests/fixtures/irs_migration/countyinflow2122.csv",
+            "tests/fixtures/irs_migration/countyinflow2223.csv",
+            "tests/fixtures/irs_migration/countyoutflow2223.csv",
+        ),
+        serving_relations=(
+            "gold_irs_migration.flow_revision",
+            "gold_irs_migration.flow_latest",
+            "gold_irs_migration.total_observation_revision",
+            "gold_irs_migration.total_observation_latest",
+        ),
+        source_api_routes=("/api/v1/migration-flows",),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_irs_migration_pipeline.py::"
+            "test_top_origins_and_destinations_reach_the_api_with_withheld_categories"
+        ),
+    ),
 )
 
 

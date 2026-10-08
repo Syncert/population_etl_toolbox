@@ -423,6 +423,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     """Covers: DQ-014 — four sources, one declaration of what each records.
 
     The component name decides whether a re-applied DDL is recognised as
+        "IRS_MIGRATION",
     already applied, and it was a literal in each of the four gold
     transforms. `serving_reserve`'s own header says why that shape is worth
     removing: "a second copy of a relation name, a procedure name, or a chunk

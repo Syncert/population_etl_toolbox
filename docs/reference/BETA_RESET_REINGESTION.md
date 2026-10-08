@@ -371,6 +371,11 @@ per month and six per year, about 750 requests through the one-slot
 `census_bps_files` pool
 ([operations](../user-guides/CENSUS_BUILDING_PERMITS_PIPELINE_OPERATIONS.md)).
 
+Trigger `irs_migration_ingest` once: every run reads every registered SOI
+county inflow and outflow file, ten files through the one-slot
+`irs_soi_files` pool
+([operations](../user-guides/IRS_MIGRATION_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

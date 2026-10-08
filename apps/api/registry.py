@@ -1103,6 +1103,43 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("estimate_year", "geo_id", "retrieved_at", "capture_id"),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="IRS_MIGRATION",
+            latest_relation="gold_irs_migration.total_observation_latest",
+            released_relation="gold_irs_migration.total_observation_revision",
+            lineage_schema="gold_irs_migration",
+            lineage_relation="total_observation_revision",
+            # The publisher's lineage key is `<direction>:<category>:<measure>`,
+            # the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # SOI names no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("direction", "direction"),
+                ("category", "category"),
+                ("measure", "measure"),
+                # SOI's own label for the pair of filing years: `2022-2023`.
+                ("year_pair", "year_pair"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1350,6 +1387,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment="cdc",
             neutral_paths=DISPATCH_NEUTRAL_PATHS,
             dataset_provider=_cdc_datasets,
+        ),
+        SourceDiscovery(
+            source_code="IRS_MIGRATION",
+            display_name="IRS Statistics of Income county-to-county migration",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["pep"].source_code,

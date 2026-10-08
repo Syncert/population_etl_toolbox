@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql",
+    "data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql",
+    "data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql",
     "data_ingestion_toolbox/bea/DDL/silver_bea.sql",
     "data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql",
     "data_ingestion_toolbox/bea/gold_bea/DDL/publisher.sql",
