@@ -208,18 +208,18 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
     assert len(unbuilt) == 12, unbuilt
-    # The other forty-three BLOCK rules that no executor runs are `enforced`: the
+    # The other forty-five BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined
     # that set when `enforced` stopped meaning "unique constraint" and started
     # meaning any constraint that refuses the violation outright -- a foreign
     # key and a CHECK refuse a row as completely as a unique index does.
     # DQ-FBI-009 (derived calendar rollups, ADR-0007) and the new sources' rules
-    # made it forty-three.
+    # made it forty-five.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 43, enforced
+    assert len(enforced) == 45, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
