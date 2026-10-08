@@ -54,6 +54,16 @@
 }
 
 .within-county-table {
+/* How a figure was counted, where two counts of one subject sit side by side. */
+.place-basis {
+  margin: 6px 0 0;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.place-industry-mix {
   width: 100%;
   border-collapse: collapse;
   margin: 12px 0;
@@ -61,6 +71,7 @@
 }
 
 .within-county-table caption {
+.place-industry-mix caption {
   text-align: left;
   font-weight: 700;
   padding-bottom: 6px;
@@ -68,6 +79,8 @@
 
 .within-county-table th,
 .within-county-table td {
+.place-industry-mix th,
+.place-industry-mix td {
   border-top: 1px solid var(--line);
   padding: 4px 8px 4px 0;
   text-align: left;

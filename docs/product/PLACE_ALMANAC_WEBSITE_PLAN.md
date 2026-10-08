@@ -315,7 +315,7 @@ Warehouse, county and place depth:
 
 - [`docs/plans/needs_review/ACS_AT_PLACE_GRAIN_PLAN.md`](../plans/needs_review/ACS_AT_PLACE_GRAIN_PLAN.md) — unlocks city and town pages.
 - [`docs/plans/to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
-- [`docs/plans/in_progress/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/in_progress/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
+- [`docs/plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
 - [`docs/plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
 - [`docs/plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/to_do/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
 - [`docs/plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/to_do/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.

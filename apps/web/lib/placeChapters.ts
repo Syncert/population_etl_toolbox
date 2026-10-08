@@ -45,6 +45,15 @@ export interface PlaceMeasure {
    */
   universe?: string;
   note?: string;
+  /**
+   * How the figure was counted, when two measures of one subject are counted
+   * differently -- an account of a county's income (BEA) against a survey of
+   * its households (ACS). Shown on the card so neither is read as the other
+   * (bea-regional-accounts).
+   */
+  basis?: string;
+  /** Depth rows rendered together as one table rather than a list. */
+  group?: "bea-earnings";
 }
 
 export interface PlaceChapter {
@@ -65,6 +74,37 @@ export interface PlaceChapter {
    */
   stateContextAtCounty?: boolean;
 }
+
+/** BEA regional accounts: one table and line (bea-regional-accounts). */
+const bea = (table: string, line: string): string[] => [`BEA:${table}:${line}`];
+
+const SURVEY_BASIS = "Survey of households (ACS)";
+const ACCOUNT_BASIS = "BEA personal income account, current dollars";
+
+/** CAINC5N earnings by place of work, by sector, in BEA's order. */
+export const BEA_EARNINGS_SECTORS: readonly (readonly [string, string])[] = [
+  ["81", "Farm"],
+  ["100", "Forestry, fishing, and related activities"],
+  ["200", "Mining, quarrying, and oil and gas extraction"],
+  ["300", "Utilities"],
+  ["400", "Construction"],
+  ["500", "Manufacturing"],
+  ["600", "Wholesale trade"],
+  ["700", "Retail trade"],
+  ["800", "Transportation and warehousing"],
+  ["900", "Information"],
+  ["1000", "Finance and insurance"],
+  ["1100", "Real estate and rental and leasing"],
+  ["1200", "Professional, scientific, and technical services"],
+  ["1300", "Management of companies and enterprises"],
+  ["1400", "Administrative and waste services"],
+  ["1500", "Educational services"],
+  ["1600", "Health care and social assistance"],
+  ["1700", "Arts, entertainment, and recreation"],
+  ["1800", "Accommodation and food services"],
+  ["1900", "Other services"],
+  ["2000", "Government and government enterprises"],
+];
 
 const acs = (variable: string): string[] => [
   `CENSUS_ACS:acs5:${variable}`,
@@ -123,6 +163,21 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         label: "Median household income",
         candidates: acs("B19013_001"),
         note: "In the survey year's inflation-adjusted dollars.",
+        basis: SURVEY_BASIS,
+      },
+      {
+        id: "bea-per-capita-income",
+        label: "Per capita personal income",
+        candidates: bea("CAINC1", "3"),
+        note: "All personal income, including transfer receipts and employer contributions, divided by BEA's own population; not the survey income above.",
+        basis: ACCOUNT_BASIS,
+      },
+      {
+        id: "bea-real-gdp",
+        label: "Gross domestic product, real",
+        candidates: bea("CAGDP1", "1"),
+        note: "Thousands of chained 2017 dollars, so years compare without inflation; never added to current-dollar figures.",
+        basis: "BEA county GDP, chained 2017 dollars",
       },
       {
         id: "unemployment-rate",
@@ -132,7 +187,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       },
     ],
     depth: [
-      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001") },
+      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), basis: SURVEY_BASIS },
       { id: "gini", label: "Gini index of income inequality", candidates: acs("B19083_001"), note: "0 is perfect equality and 1 is one household holding all income." },
       { id: "below-poverty", label: "People with income below the poverty level", candidates: acs("B17001_002"), universe: "people whose poverty status is determined" },
       { id: "households-under-10k", label: "Households with income under $10,000", candidates: acs("B19001_002"), universe: "households" },
@@ -143,9 +198,17 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       { id: "worked-from-home", label: "Workers who worked from home", candidates: acs("B08301_021"), universe: "workers 16 and over" },
       { id: "public-transportation", label: "Workers commuting by public transportation", candidates: acs("B08301_010"), universe: "workers 16 and over" },
       { id: "commute-90-minutes", label: "Workers commuting 90 minutes or more", candidates: acs("B08303_013"), universe: "workers 16 and over who did not work from home" },
+      ...BEA_EARNINGS_SECTORS.map(([line, title]) => ({
+        id: `bea-earnings-${line}`,
+        label: title,
+        candidates: bea("CAINC5N", line),
+        universe: "earnings by place of work",
+        basis: ACCOUNT_BASIS,
+        group: "bea-earnings" as const,
+      })),
     ],
     trend: { measureId: "unemployment-rate", scale: "level" },
-    caveat: `The unemployment rate is BLS's; the survey counts are the ACS's, on a different universe. ${ACS_CAVEAT}`,
+    caveat: `The unemployment rate is BLS's; the survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT}`,
   },
   {
     id: "housing",
