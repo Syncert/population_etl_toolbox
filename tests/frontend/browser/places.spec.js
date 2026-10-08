@@ -90,6 +90,44 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-139 — sub-county-geography: a county page paints one ACS
+// measure over its tracts, counts the tract with no value instead of
+// painting it as zero, and lists every tract in a table.
+test("within this county paints tracts, counts the uncoloured one, and tabulates every tract", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.route(/\/tiles\/tracts$/, (route) =>
+    route.fulfill({
+      json: {
+        name: "tracts",
+        tiles: ["http://internal-martin:3000/tracts/{z}/{x}/{y}"],
+        vector_layers: [{ id: "tracts", fields: { geo_id: "String", geo_level: "String", state_fips: "String", county_fips: "String" } }],
+      },
+    }),
+  );
+  await page.route(/\/tiles\/tracts\/\d+\/\d+\/\d+/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/vnd.mapbox-vector-tile", body: Buffer.alloc(0) }),
+  );
+  await ready(page, "/us/wisconsin/dane-county");
+  const section = page.getByTestId("within-county");
+  await expect(section).toContainText("Within this county");
+  await expect(page.getByTestId("within-county-table").locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByTestId("within-county-row-state:55|county:025|tract:000202")).toContainText("Not published for this tract");
+  await expect(page.getByTestId("within-county-row-state:55|county:025|tract:000100")).toContainText("60,000");
+  await expect(page.getByTestId("within-county-uncoloured")).toHaveText(
+    "1 of 3 tracts have no published value and are left uncoloured, not shown as zero.",
+  );
+  await expect(page.getByTestId("within-county-map")).toHaveAttribute("data-colored-values", "2");
+  await page.getByTestId("within-county-measure").selectOption("CENSUS_ACS:acs5:B25064_001");
+  await expect(page.getByTestId("within-county-table")).toContainText("Median gross rent by Census tract");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a state page has no within-this-county section", async ({ page }) => {
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("within-county")).toHaveCount(0);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);

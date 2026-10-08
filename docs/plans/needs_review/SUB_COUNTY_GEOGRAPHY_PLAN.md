@@ -17,12 +17,13 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review, with one deviation for the reviewer to accept or reject
+(below). Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-Deliverables 1 to 5 are on branch `feat/sub-county-geography`, which is
-`feat/acs-place-grain` (the dependency) with this work on top. Deliverable 6,
-the county page's "Within this county" section, needs the place pages from
-`feat/place-pages` (WEB-125).
+Deliverables 1 to 5 are on `feat/sub-county-geography`, which is
+`feat/acs-place-grain` (the dependency) with this work on top. Deliverable 6
+is on `feat/sub-county-geography-cards`, which is `feat/place-pages`
+(WEB-125) with `feat/sub-county-geography` merged.
 
 ## Why
 
@@ -165,14 +166,32 @@ in the geography layer is what makes it tractable.
   `RUN_MARTIN_TESTS` stack and were not run; the layer is covered by the
   configuration test (MARTIN-011).
 
+- Web (deliverable 6, WEB-139): a county page's "Within this county"
+  section paints one of the five tract measures over the `tracts` layer
+  filtered to the county, lists every catalogued tract in a table with its
+  value and margin of error, and states how many tracts are left uncoloured
+  rather than painting them as zero. `npm --prefix apps/web run test:unit`
+  -- 738 passed; `lint` clean; the whole browser suite -- 209 passed,
+  including the new county scenario (axe, no horizontal scroll) and a state
+  page with no section; `build` and `check:bundle` within budget.
+
+## Deviation for review
+
+"A place page shows the tracts it intersects" is not built. City pages
+exist only on `feat/acs-place-pages` (WEB-134), which is not merged, and
+deliverable 1 asks for county-tract, ZCTA-county and ZCTA-place
+relationships but no tract-place overlap, which that list needs. Building
+it means adding tract-place intersections to `reconcile_sub_county_relationships`
+and a list on the city page once WEB-134 lands. Recorded here rather than
+dropped; reject this plan's review if it must ship together.
+
 ## Remaining
 
-- Deliverable 6: the county page's "Within this county" section, one ACS
-  measure painted over the tracts with the legend counting tracts without a
-  value, and the same values in a table; a place page showing the tracts it
-  intersects. Builds on `feat/place-pages`.
+The deviation above. Merge order: `feat/acs-place-grain`, then
+`feat/sub-county-geography`, then `feat/place-pages`, then
+`feat/sub-county-geography-cards`. Catalog totals on the cards branch count
+WEB-125 and WEB-139; recount when other open branches land first.
 
 ## Checkpoint
 
-Next pickup: branch from `feat/place-pages`, merge
-`feat/sub-county-geography`, and add the section.
+Awaiting human review of both branches.

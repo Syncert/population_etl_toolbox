@@ -11,6 +11,12 @@ export const STATES = [
   { geo_id: "state:55", geo_level: "STATE", geo_name: "Wisconsin", state_fips: "55", state_name: "Wisconsin" },
   { geo_id: "state:27", geo_level: "STATE", geo_name: "Minnesota", state_fips: "27", state_name: "Minnesota" },
 ];
+export const DANE_TRACTS = ["000100", "000201", "000202"].map((tract, index) => ({
+  geo_id: `state:55|county:025|tract:${tract}`, geo_level: "TRACT", state_fips: "55", county_fips: "025",
+  county_name: "Dane County", area_name: ["Census Tract 1", "Census Tract 2.01", "Census Tract 2.02"][index],
+  geo_name: ["Census Tract 1", "Census Tract 2.01", "Census Tract 2.02"][index],
+}));
+
 export const COUNTIES = [
   { geo_id: "state:55|county:025", geo_level: "COUNTY", geo_name: "Dane County", state_fips: "55", county_fips: "025", county_name: "Dane County", state_name: "Wisconsin" },
   { geo_id: "state:55|county:105", geo_level: "COUNTY", geo_name: "Rock County", state_fips: "55", county_fips: "105", county_name: "Rock County", state_name: "Wisconsin" },
@@ -124,6 +130,10 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     }
     if (path === "/api/v1/catalog/geographies") {
       const grain = params.get("geo_level");
+      if (grain === "TRACT") {
+        const tracts = DANE_TRACTS.filter((tract) => params.get("county_fips") === "025" && params.get("state_fips") === "55");
+        return route.fulfill({ json: { total: tracts.length, limit: 1000, offset: 0, items: tracts } });
+      }
       const items = grain === "NATIONAL" ? [NATION] : grain === "STATE" ? STATES
         : grain === "COUNTY" ? COUNTIES.filter((county) => !params.get("state_fips") || county.state_fips === params.get("state_fips"))
         : grain === "PLACE" ? PLACES.filter((place) => !params.get("state_fips") || place.state_fips === params.get("state_fips")) : [];
@@ -144,6 +154,20 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
       return metrics[code] ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
+    }
+    if (path === "/api/v1/observations" && params.get("geo_level") === "TRACT") {
+      // Two of Dane County's three fixture tracts publish a value; the third
+      // publishes none and must be counted, not painted as zero.
+      const code = params.get("metric_code");
+      const items = params.get("county_fips") === "025"
+        ? DANE_TRACTS.slice(0, 2).map((tract, index) => ({
+          metric_code: code, source_code: "CENSUS_ACS", geo_id: tract.geo_id, geo_level: "TRACT",
+          value: String(60000 + index * 5000), value_status: "valid", unit: "dollars",
+          period_start: "2019-01-01", period_end: "2023-12-31", release: "2023", as_of: "2025-09-01",
+          dimensions: {}, uncertainty: { margin_of_error: "4100" }, coverage: null,
+        }))
+        : [];
+      return route.fulfill({ json: { metric_code: code, source_code: "CENSUS_ACS", scope: "latest", total: items.length, offset: 0, limit: 1000, items } });
     }
     if (path === "/api/v1/observations") {
       const code = params.get("metric_code");
