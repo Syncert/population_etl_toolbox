@@ -18,9 +18,56 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Ready for review, 2026-10-06, on branch `feat/compare-two-places`, stacked on
+`feat/place-pages` (it reuses the chapter contract, address rules and trend),
+so it merges after that one.
+
+### Implementation evidence
+
+- **Routes:** the path form, matching the place-page scheme:
+  `/us/<state>/<county>/vs/us/<state>/<county>`, `/us/<state>/vs/us/<state>`,
+  and the two mixed-grain forms, all rendered by
+  `lib/comparePlacesRoute.js`. A segment outside the place vocabulary is a
+  404; the title is built from the segments (`placeRouteTitle`). Pair pages
+  are not listed in the sitemap: there is no finite set to list.
+- **Verdicts:** `lib/placeComparison.ts` `compareMeasure` checks, in order,
+  the preflight verdict (carried through unchanged, refused rules' reasons
+  deduplicated), whether both places published a value, and whether they
+  published it for the same newest period; anything else is listed under
+  "Not comparable here" with the reason. The preflight is asked as the same
+  measure on both sides (`metric_code_a = metric_code_b`), which is how the
+  API's source-readiness, unit, grain and aggregation rules apply to a pair
+  of places.
+- **Rows and marks:** paired bars on one scale from zero, the parents' values
+  for the same period as tick marks (state or states, and the nation), and
+  the marks restated in text. No value is computed beyond formatting and bar
+  length.
+- **Trend:** each chapter's trend measure draws both places and the nation,
+  through the place pages' `buildTrend` (counts indexed to a stated base).
+- **Picker and swap:** "Compare ... with" searches the catalog's counties (or
+  states) and navigates to the pair; "Swap sides" links the reversed pair.
+  Neighbouring counties first waits for `nearby-and-related-places`.
+- **Mixed grains:** a county against a state renders the explanation and
+  offers the county's state against the other state.
+- **Footnote:** no causal reading, no ranking, periods on every row, and a
+  link to the comparison workspace.
+- **Contract:** WEB-129, evidence-map row, budgets for the four routes.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `npm --prefix apps/web run test:unit`: 51 files, 742 tests passed
+  (`place-comparison.test.js`, 5).
+- `lint`, `typecheck`, `build`, `check:csp`, `check:bundle`: passed.
+- `npx playwright test`: 211 passed, including `compare-places.spec.js`
+  (desktop and 390px with axe, a preflight refusal, a missing value, swap,
+  mixed grains).
+
+### Open items, decided
+
+- Path segments, not a query parameter: shareable and consistent with the
+  place pages.
+- State pairs ship with county pairs, through the same route family; nation
+  pairs do not exist (there is one nation).
 
 ## Why
 
@@ -83,5 +130,4 @@ page only offers pairs that pass its preflight.
 
 ## Checkpoint
 
-Next pickup: read `lib/comparison.ts`, write the failing unit test that a
-preflight failure becomes a "Not comparable here" row, then the route.
+Implementation complete; awaiting human review.

@@ -308,7 +308,7 @@ Web, over the published API:
 - [`docs/plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md`](../plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) — operator-only frame renderer and script notes.
 - [`docs/plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md`](../plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) — the home page and the public data page.
 - [`docs/plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md`](../plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) — the measure map and ranked table.
-- [`docs/plans/to_do/COMPARE_TWO_PLACES_PLAN.md`](../plans/to_do/COMPARE_TWO_PLACES_PLAN.md) — the place page folded in half.
+- [`docs/plans/needs_review/COMPARE_TWO_PLACES_PLAN.md`](../plans/needs_review/COMPARE_TWO_PLACES_PLAN.md) — the place page folded in half.
 - [`docs/plans/to_do/MONTHLY_BRIEFINGS_PLAN.md`](../plans/to_do/MONTHLY_BRIEFINGS_PLAN.md) — first consumer of the publishing approval path.
 
 Warehouse, county and place depth:
