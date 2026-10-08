@@ -18,7 +18,7 @@ services:
       - ../../sql/migrations/023_geo_name_vocabulary_early.sql:/docker-entrypoint-initdb.d/015_migration_023.sql:ro
       - ../../sql/migrations/013_data_quality_evidence.sql:/docker-entrypoint-initdb.d/020_migration_013.sql:ro
       - ../../src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql:/docker-entrypoint-initdb.d/025_reference.sql:ro
-      - ../../sql/migrations/030_county_adjacency_relationship.sql:/docker-entrypoint-initdb.d/026_migration_030.sql:ro
+      - ../../sql/migrations/034_county_adjacency_relationship.sql:/docker-entrypoint-initdb.d/026_migration_034.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql:/docker-entrypoint-initdb.d/030_raw_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/DDL/raw_bls.sql:/docker-entrypoint-initdb.d/035_raw_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/DDL/raw_fred.sql:/docker-entrypoint-initdb.d/040_raw_fred.sql:ro

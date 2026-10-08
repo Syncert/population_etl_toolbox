@@ -32,9 +32,9 @@
       "path": "src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql"
     },
     {
-      "id": "migration-030",
+      "id": "migration-034",
       "phase": "reference",
-      "path": "sql/migrations/030_county_adjacency_relationship.sql"
+      "path": "sql/migrations/034_county_adjacency_relationship.sql"
     },
     {
       "id": "raw-census",
