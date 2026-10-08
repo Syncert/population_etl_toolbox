@@ -1188,7 +1188,6 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
-    published_hpi_metric: str,
         ("CENSUS_CBP", published_cbp_metric),
         ("CENSUS_LODES", published_lodes_metric),
         ("NOAA_NORMALS", published_normals_metric),
