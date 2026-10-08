@@ -117,14 +117,14 @@
       "path": "src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql"
     },
     {
-      "id": "silver-census-sae",
-      "phase": "silver",
-      "path": "src/data_ingestion_toolbox/census_saipe_sahie/DDL/silver_census_sae.sql"
-    },
-    {
       "id": "silver-nass",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql"
+    },
+    {
+      "id": "silver-census-sae",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_saipe_sahie/DDL/silver_census_sae.sql"
     },
     {
       "id": "silver-bls-qcew",
@@ -172,11 +172,6 @@
       "path": "sql/migrations/032_acs_tract_grain.sql"
     },
     {
-      "id": "gold-census-sae",
-      "phase": "gold",
-      "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/gold_census_sae.sql"
-    },
-    {
       "id": "gold-census",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"
@@ -207,14 +202,14 @@
       "path": "src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql"
     },
     {
-      "id": "publisher-census-sae",
-      "phase": "publisher",
-      "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/publisher.sql"
-    },
-    {
       "id": "gold-nass",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql"
+    },
+    {
+      "id": "gold-census-sae",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/gold_census_sae.sql"
     },
     {
       "id": "gold-bls-qcew",
@@ -260,6 +255,11 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-sae",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/publisher.sql"
     },
     {
       "id": "publisher-bls-qcew",
