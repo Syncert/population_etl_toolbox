@@ -942,7 +942,7 @@ INSERT INTO silver_noaa_normals.station_normal (
     value_status, completeness_flag, years, source_record_id
 ) VALUES (
     '00000000-0000-4000-8000-0000000000aa', 'USW00014837', 'ANN-TAVG-NORMAL', 'annual_mean_temperature',
-    '00000000-0000-4000-a000-0000000000aa', '46.6', 46.6, 'valid', 'S', 30, 'ced13f7f8d9cab1acfdce0f2031425360'
+    '00000000-0000-4000-a000-0000000000aa', '46.6', 46.6, 'valid', 'S', 30, 'ced13f7f8d9cab1acfdce0f203142536'
 ) ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -1029,8 +1029,8 @@ INSERT INTO silver_fhfa_hpi.fact_observation (
     fips_code, geo_sk, geography_status, value_source, value, value_status,
     source_record_id
 )
-SELECT 'hpi', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-8000-000000000f4f', '2098-11-30',
-       '2098-12-31 00:00:00+00', '55025', geo_sk, 'resolved', '412.34', 412.34,
+SELECT 'hpi_base_2000', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-8000-000000000f4f', '2098-11-30',
+       '2098-12-31 00:00:00+00', '55025', geo_sk, 'resolved', '312.34', 312.34,
        'valid',
        'dff3609fae1bdcdcedf0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
