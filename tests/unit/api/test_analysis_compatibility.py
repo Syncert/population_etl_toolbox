@@ -87,14 +87,57 @@ def test_unpublished_units_are_unknown_with_a_caveat_not_a_rejection() -> None:
     assert any("units" in caveat for caveat in decision.caveats)
 
 
-def test_disjoint_time_grains_are_incompatible() -> None:
-    """Covers: API-049 — an annual and a monthly metric never compare."""
+@pytest.mark.parametrize(
+    ("grains_a", "grains_b", "coarser", "finer"),
+    [
+        (["ANNUAL"], ["MONTHLY"], "ANNUAL", "MONTHLY"),
+        (["MONTHLY"], ["ANNUAL"], "ANNUAL", "MONTHLY"),
+        (["QUARTERLY"], ["MONTHLY"], "QUARTERLY", "MONTHLY"),
+        (["ANNUAL"], ["WEEKLY"], "ANNUAL", "WEEKLY"),
+    ],
+)
+def test_a_year_or_quarter_beside_a_finer_grain_compares_with_the_caveat(
+    grains_a: list[str], grains_b: list[str], coarser: str, finer: str
+) -> None:
+    """Covers: API-049 — the owner's WT-4 decision: an annual value beside a
+    monthly one compares, read as the annual value held across its year, and
+    the caveat says it is repeated rather than measured monthly."""
     decision = evaluate_comparison(
-        _metric(valid_time_grains=["ANNUAL"]),
-        _metric(valid_time_grains=["MONTHLY"]),
+        _metric(valid_time_grains=grains_a),
+        _metric(valid_time_grains=grains_b),
+    )
+    assert decision.comparable is True
+    finding = _finding(decision, RULE_TIME_GRAINS)
+    assert finding.status == STATUS_PASS
+    assert f"the {coarser} value holds" in finding.reason
+    assert any(
+        f"{coarser} beside {finer}" in caveat and "repeated" in caveat
+        for caveat in decision.caveats
+    )
+
+
+@pytest.mark.parametrize(
+    ("grains_a", "grains_b"),
+    [
+        # A week does not sit inside one month, and only a year or a quarter
+        # is held: anything that does not nest still disagrees.
+        (["MONTHLY"], ["WEEKLY"]),
+        # A word outside the calendar vocabulary is never guessed at.
+        (["ANNUAL"], ["NATIONAL"]),
+        (["FIVE_YEAR"], ["ANNUAL"]),
+    ],
+)
+def test_time_grains_that_do_not_nest_are_incompatible(
+    grains_a: list[str], grains_b: list[str]
+) -> None:
+    """Covers: API-049 — disjoint grains that do not nest never compare."""
+    decision = evaluate_comparison(
+        _metric(valid_time_grains=grains_a),
+        _metric(valid_time_grains=grains_b),
     )
     assert decision.comparable is False
     assert _finding(decision, RULE_TIME_GRAINS).status == STATUS_FAIL
+    assert not any("repeated" in caveat for caveat in decision.caveats)
 
 
 def test_disjoint_geo_grains_are_incompatible() -> None:
@@ -207,7 +250,8 @@ def test_preflight_explains_an_incompatible_pair_with_every_rule() -> None:
             metric_code="CDC:cdi:X:crude",
             source_code="CDC",
             units="cases",
-            valid_time_grains=["ANNUAL"],
+            # Weekly beside monthly does not nest, so the time rule fails too.
+            valid_time_grains=["WEEKLY"],
         ),
         "FRED:UNRATE": _metric(),
     }

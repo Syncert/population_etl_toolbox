@@ -20,7 +20,8 @@ Ready for review (2026-10-07). Split out of
 [`TIME_WINDOWS_AND_ROLLUPS_PLAN.md`](TIME_WINDOWS_AND_ROLLUPS_PLAN.md) RU-7.
 WT-1..WT-4 are implemented and tested (WEB-141). The owner decided WT-4 on
 2026-10-07: compatibility keeps refusing a monthly and an annual measure,
-and on a chart the annual value is repeated across its year.
+and on a chart the annual value is repeated across its year; later the
+same day the comparison was opened to such pairs with the same caveat.
 
 ## Why
 
@@ -52,6 +53,11 @@ workbench cannot ask.
   on the same chart level across each period it published
   (`seriesHeldAcrossPeriods`, `pointPeriodEnd`) and says so under the chart.
   A span period ("2024-01-01 – 2024-12-31") is placed at its start.
+  Revised the same day: the owner asked that the comparison also allow an
+  annual measure beside a monthly one with the same caveat. Compatibility
+  now passes a year or quarter beside a finer calendar grain, with a caveat
+  that the coarser value is one value repeated across its period (API-049,
+  API-053); grains that do not nest still fail.
 
 ## Decisions
 
