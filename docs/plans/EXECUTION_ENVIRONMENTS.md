@@ -99,7 +99,7 @@ make test-web-smoke        # the live-stack frontend smoke
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`bea-regional-accounts`](to_do/BEA_REGIONAL_ACCOUNTS_PLAN.md) | high | `postgres` | -- |
+| [`bea-regional-accounts`](in_progress/BEA_REGIONAL_ACCOUNTS_PLAN.md) | high | `postgres` | -- |
 | [`bls-qcew-county-wages`](to_do/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) | high | `postgres` | -- |
 | [`census-building-permits`](to_do/CENSUS_BUILDING_PERMITS_PLAN.md) | medium | `postgres` | -- |
 | [`census-saipe-sahie`](to_do/CENSUS_SAIPE_AND_SAHIE_PLAN.md) | medium | `postgres` | -- |

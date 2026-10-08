@@ -72,6 +72,8 @@ REGISTERED = (
 #: DQ-017 by being implemented.
 UNIMPLEMENTED_RULES = frozenset(
     {
+        # Declared; the parser loads every year, nothing checks for gaps.
+        "DQ-BEA-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
         "DQ-REF-004",
@@ -197,17 +199,18 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
     assert len(unbuilt) == 12, unbuilt
-    # The other twelve BLOCK rules that no executor runs are `enforced`: the
+    # The other fourteen BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined
     # that set when `enforced` stopped meaning "unique constraint" and started
     # meaning any constraint that refuses the violation outright -- a foreign
     # key and a CHECK refuse a row as completely as a unique index does.
-    # DQ-FBI-009 (derived calendar rollups, ADR-0007) made it twelve.
+    # DQ-FBI-009 (derived calendar rollups, ADR-0007) and BEA's two made it
+    # fourteen.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 12, enforced
+    assert len(enforced) == 14, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -427,6 +430,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         f"a gold component name is spelled outside the one declaration: {literals}"
     )
     assert set(SOURCE_SCHEMA_COMPONENTS) == {
+        "BEA",
         "BLS",
         "CDC",
         "CENSUS_ACS",

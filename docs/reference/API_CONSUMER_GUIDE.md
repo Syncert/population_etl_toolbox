@@ -526,6 +526,37 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a BEA row: current, chained or per capita
+
+`BEA` serves the Bureau of Economic Analysis's regional economic accounts for
+the nation, every state and every county: personal income in total and per
+capita, its major components, earnings by industry, and county GDP. A
+metric code is `BEA:<table>:<line>`. For example, `BEA:CAINC1:3` is per
+capita personal income and `BEA:CAGDP1:1` is real GDP.
+
+- **Read `dimensions.dollar_basis` before comparing two rows.** It is
+  `current_dollars`, `chained_dollars` (real, in chained 2017 dollars),
+  `per_capita_current_dollars` or `persons`. Real and current-dollar GDP are
+  separate metrics and nothing here mixes them. Most dollar lines are in
+  thousands of dollars; `unit` says which.
+- **Per capita income uses BEA's own population** (`BEA:CAINC1:2`), not the
+  ACS or PEP figure, so dividing personal income by another source's
+  population will not reproduce it.
+- **This is not ACS income.** ACS median household income is a survey of
+  residents; BEA personal income is an account that includes transfer
+  receipts and employer contributions. The two are separate metrics and are
+  never combined.
+- **BEA revises earlier years with every release.** Each row's release is
+  BEA's release date, read from the file. `scope=as_released` lists each
+  release beside the one it revised.
+- **A withheld cell is not a zero.** `(D)` (withheld to avoid disclosing an
+  individual business), `(NA)`, `(NM)` and `(L)` are `withheld`,
+  `not_available`, `not_meaningful` and `below_threshold`, with a `null`
+  value; `dimensions.value_source` keeps the code.
+- BEA's regions and its combined areas, such as the Virginia independent
+  cities merged with their surrounding county, are not served: they are not
+  counties.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -647,6 +678,7 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| BEA | the release date | BEA's release date, from the "Last updated" line of the file |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 

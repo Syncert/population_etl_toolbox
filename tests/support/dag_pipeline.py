@@ -40,6 +40,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "bea_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -731,6 +732,26 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed BEA zips: every registered table has one."""
+    from data_ingestion_toolbox.bea import capture as bea_capture
+    from data_ingestion_toolbox.bea.client import BeaFile
+
+    def fetch(table: Any, **_kwargs: Any) -> BeaFile:
+        path = FIXTURE_ROOT / "bea" / f"{table.code}.zip"
+        if not path.is_file():
+            raise AssertionError(f"no BEA fixture for {table.code}")
+        return BeaFile(
+            table.path,
+            {"table": table.code},
+            path.read_bytes(),
+            {"content-type": "application/zip"},
+            200,
+        )
+
+    monkeypatch.setattr(bea_capture, "fetch_table", fetch)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1167,6 +1188,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("bea", stub_bea_regional),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

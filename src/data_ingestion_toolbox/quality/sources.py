@@ -651,6 +651,41 @@ def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome
     ]
 
 
+def bea_table_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BEA-002 — every in-scope captured row is replayed; no table is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.bea_table_capture")
+    if total == 0:
+        return [RuleOutcome("control.bea_table_capture", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT capture.run_id, capture.table_code, capture.status
+          FROM control.bea_table_capture AS capture
+          LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT revision.source_row_index) AS rows_replayed
+                  FROM silver_bea.observation_revision AS revision
+                 WHERE revision.capture_id = capture.capture_id
+          ) AS parsed ON TRUE
+         WHERE capture.status = 'captured'
+            OR (capture.status IN ('silver_ready', 'published')
+                AND parsed.rows_replayed <> capture.in_scope_row_count)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.bea_table_capture",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1755,6 +1790,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-BEA-002": bea_table_reconciliation,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

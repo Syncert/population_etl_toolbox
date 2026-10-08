@@ -66,6 +66,7 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "BEA",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1902,6 +1903,102 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# BEA regional economic accounts.
+# ---------------------------------------------------------------------------
+
+_BEA_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.bea_table_capture",
+        "control",
+        "BEA",
+        grain="run_id (one run per registered table)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered tables in bea/registry.py",
+        cadence="weekly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_bea.dim_line",
+        "silver",
+        "BEA",
+        grain="table_code, line_code",
+        scope_method="registered tables x registered lines",
+        cadence="per BEA replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_bea.observation_revision",
+        "silver",
+        "BEA",
+        grain="capture_id, source_row_index, year",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per BEA replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_bea.observation_quarantine",
+        "silver",
+        "BEA",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per BEA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_bea.fact_observation",
+        "silver",
+        "BEA",
+        grain="table_code, line_code, geo_id, year, capture_id",
+        lineage="silver_bea.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered tables x registered lines x nation, states and counties",
+        cadence="per BEA replay",
+        empty_behavior="a withheld or unavailable cell keeps its status and no number, never zero",
+    ),
+    _obj(
+        "gold_bea.observation_revision",
+        "gold",
+        "BEA",
+        grain="metric_key, geo_id, year, capture_id (published tables only)",
+        lineage="silver_bea.fact_observation, control.bea_table_capture",
+        scope_method="published tables; every release kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published table",
+    ),
+    _obj(
+        "gold_bea.observation_latest",
+        "gold",
+        "BEA",
+        grain="metric_key, geo_id, year (newest release)",
+        lineage="gold_bea.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published table",
+    ),
+    _obj(
+        "gold_bea.measure_export",
+        "publisher",
+        "BEA",
+        grain="source_object_key (table:line)",
+        lineage="silver_bea.dim_line",
+        scope_method="registered tables x registered lines",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_bea.metric_publisher",
+        "publisher",
+        "BEA",
+        grain="source_object_key (table:line)",
+        lineage="gold_bea.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published table",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1914,6 +2011,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _BEA_OBJECTS
 )
 
 
@@ -2297,6 +2395,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_bea.metric_publisher",
         ),
     ),
     _rule(
@@ -3436,6 +3535,94 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation_note=(
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
+        ),
+    ),
+    # -- BEA regional economic accounts --------------------------------------
+    _rule(
+        "DQ-BEA-001",
+        "BLOCK",
+        "uniqueness",
+        "BEA observations are unique per (table, line, geography, year, "
+        "capture): a new release is a second row beside the one it revised.",
+        (
+            "silver_bea.fact_observation",
+            "gold_bea.observation_revision",
+            "gold_bea.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bea.fact_observation",
+                ("table_code", "line_code", "geo_id", "year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BEA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed table accounts for every in-scope captured row, and no "
+        "captured table is left unreplayed.",
+        (
+            "control.bea_table_capture",
+            "silver_bea.observation_revision",
+            "silver_bea.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-BEA-003",
+        "BLOCK",
+        "conformance",
+        "A withheld (D), unavailable (NA), not meaningful (NM) or below "
+        "threshold (L) cell keeps that status and carries no number; only a "
+        "valid figure is a number.",
+        (
+            "silver_bea.fact_observation",
+            "silver_bea.observation_revision",
+            "gold_bea.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value and any other status with one."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bea.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bea_fact_code_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_bea.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bea_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_bea.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bea_revision_code_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BEA-004",
+        "WARN",
+        "temporal_integrity",
+        "Each published line's years are continuous for every geography: no "
+        "year between its first and newest published year is missing.",
+        ("silver_bea.fact_observation",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: year continuity is declared; the parser loads every "
+            "year column the file carries, but no executor checks the published "
+            "years for gaps."
         ),
     ),
 )
