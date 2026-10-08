@@ -41,7 +41,7 @@ def test_every_publisher_derives_grains_from_published_values_only() -> None:
         for path in PUBLISHERS
     }
 
-    assert len(aggregates) == 18
+    assert len(aggregates) == 19
     assert all(aggregates.values()), aggregates
     unfiltered = {
         path: [alias for alias, found in matches if not found]

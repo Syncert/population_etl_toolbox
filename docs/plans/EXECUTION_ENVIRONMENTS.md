@@ -95,11 +95,10 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**8 plans.**
+**7 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`fema-nri-declarations`](to_do/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) | medium | `postgres` | -- |
 | [`fhfa-house-price-index`](to_do/FHFA_HOUSE_PRICE_INDEX_PLAN.md) | medium | `postgres` | -- |
 | [`hud-fair-market-rents-and-income-limits`](to_do/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) | medium | `postgres` | -- |
 | [`nces-common-core-of-data`](to_do/NCES_COMMON_CORE_OF_DATA_PLAN.md) | high | `postgres` | -- |
