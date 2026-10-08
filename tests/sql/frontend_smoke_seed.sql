@@ -112,7 +112,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
     ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
-    ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success')
+    ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
+    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -160,7 +161,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
      'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB, '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', 'captured'),
     ('00000000-0000-4000-9000-000000000ce5', '00000000-0000-4000-8000-000000000ce5',
-     'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured')
+     'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured'),
+    ('00000000-0000-4000-9000-000000000e45', '00000000-0000-4000-8000-000000000e45',
+     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -243,6 +246,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000ce5', '00000000-0000-4000-9000-000000000ce5',
      '00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'smoke://seed', '{}'::JSONB,
      '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-9000-000000000e45',
+     '00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'smoke://seed', '{}'::JSONB,
+     '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1103,6 +1110,33 @@ INSERT INTO silver_nces_ccd.school_count (
 ) ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- USDA ERS -- one county's Rural-Urban Continuum Code from a published
+-- edition. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.usda_ers_file (
+    run_id, product, edition, capture_id, payload_checksum, row_count,
+    in_scope_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e45', 'rucc', '2098', '00000000-0000-4000-a000-000000000e45',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_usda_ers.fact_observation (
+    attribute, geo_id, capture_id, run_id, product, edition, measure, year,
+    retrieved_at, fips_code, geo_sk, geography_status, value_source, value,
+    value_status, code_label, source_record_id
+)
+SELECT 'RUCC_2098', 'state:55|county:025', '00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-8000-000000000e45', 'rucc', '2098',
+       'rural_urban_continuum_code', 2098, '2098-12-31 00:00:00+00', '55025',
+       geo_sk, 'resolved', '2', 2, 'valid',
+       'Metro - Counties in metro areas of 250,000 to 1 million population',
+       'f11582b1c03dfefefe02a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1137,7 +1171,8 @@ UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
 UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
 UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
-UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher;
+UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher
+UNION ALL SELECT * FROM gold_usda_ers.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

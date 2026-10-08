@@ -7,6 +7,9 @@
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [
+    "data_ingestion_toolbox/usda_ers/DDL/silver_usda_ers.sql",
+    "data_ingestion_toolbox/usda_ers/gold_usda_ers/DDL/gold_usda_ers.sql",
+    "data_ingestion_toolbox/usda_ers/gold_usda_ers/DDL/publisher.sql",
     "data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql",
     "data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql",
     "data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/publisher.sql",

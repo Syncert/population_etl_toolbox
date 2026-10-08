@@ -363,7 +363,7 @@ Warehouse, county and place depth:
   - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
   - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
   - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
-  - [`docs/plans/to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+  - [`docs/plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
 >>>>>>>
 <<<<<<<
   - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
@@ -371,8 +371,15 @@ Warehouse, county and place depth:
 =======
   - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
   - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+<<<<<<<
 >>>>>>>
-  - [`docs/plans/to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/to_do/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+  - [`docs/plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+=======
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+  - [`docs/plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+>>>>>>>
   - Declined: [CDC WONDER mortality and natality](declined_sources/cdc-wonder.md) — the API answers vital statistics nationally only, and county files need an NCHS data use agreement.
 >>>>>>>
 >>>>>>>

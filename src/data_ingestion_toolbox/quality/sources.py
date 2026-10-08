@@ -1674,6 +1674,80 @@ def ccd_placement_and_plausibility(
     ]
 
 
+def ers_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-ERS-002 — no file left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.usda_ers_file")
+    if total == 0:
+        return [RuleOutcome("control.usda_ers_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.product, file.edition, file.status
+          FROM control.usda_ers_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.in_scope_row_count > (
+                    SELECT COUNT(*) FROM silver_usda_ers.observation_quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_usda_ers.fact_observation AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.usda_ers_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def ers_county_coverage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-ERS-004 — published county rows resolve; RUCC codes carry their label."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_usda_ers.fact_observation AS fact
+        JOIN control.usda_ers_file AS file USING (run_id)
+        WHERE file.status = 'published'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_usda_ers.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.attribute, fact.geography_status, fact.code_label
+          FROM silver_usda_ers.fact_observation AS fact
+          JOIN control.usda_ers_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (
+                fact.geography_status <> 'resolved'
+                OR (fact.attribute = 'RUCC_2023' AND fact.value_status = 'valid'
+                    AND COALESCE(fact.code_label, '') = '')
+           )
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_usda_ers.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2779,6 +2853,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-ERS-002": ers_file_reconciliation,
+    "DQ-ERS-004": ers_county_coverage,
     "DQ-NCES-002": ccd_file_reconciliation,
     "DQ-NCES-004": ccd_placement_and_plausibility,
     "DQ-HPI-002": hpi_file_reconciliation,

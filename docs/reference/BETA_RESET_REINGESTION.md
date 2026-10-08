@@ -434,6 +434,11 @@ files and EDGE
 school geocodes through the one-slot `nces_ccd_files` pool
 ([operations](../user-guides/NCES_CCD_PIPELINE_OPERATIONS.md)).
 
+Trigger `usda_ers_ingest` once after the shared geography loads: it reads
+the registered RUCC, Typology and Food Environment Atlas files through the
+one-slot `usda_ers_files` pool
+([operations](../user-guides/USDA_ERS_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

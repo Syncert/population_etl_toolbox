@@ -40,6 +40,7 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "cdc_ingest",
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
+    "usda_ers_ingest",
     "nces_ccd_ingest",
     "fhfa_hpi_ingest",
     "hud_fmr_il_ingest",

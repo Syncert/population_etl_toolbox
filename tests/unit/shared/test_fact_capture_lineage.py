@@ -52,6 +52,12 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "USDA_ERS",
+        SRC / "usda_ers/DDL/silver_usda_ers.sql",
+        "silver_usda_ers.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "NCES_CCD",
         SRC / "nces_ccd/DDL/silver_nces_ccd.sql",
         "silver_nces_ccd.school_count",

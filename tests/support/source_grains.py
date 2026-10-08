@@ -69,6 +69,8 @@ from __future__ import annotations
 #:   rows are held, not published as their county.
 #: * ``NCES_CCD`` -- county and state sums of the schools NCES's EDGE
 #:   geocodes place there; no nation row.
+#: * ``USDA_ERS`` -- county files only; ERS publishes no national or state
+#:   row for these measures.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -96,6 +98,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "USDA_ERS": frozenset({"COUNTY"}),
     "NCES_CCD": frozenset({"STATE", "COUNTY"}),
     "HUD_FMR_IL": frozenset({"COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),

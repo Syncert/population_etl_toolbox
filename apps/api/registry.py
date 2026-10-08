@@ -1567,6 +1567,50 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("year", "geo_id", "release_key", "run_id"),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="USDA_ERS",
+            latest_relation="gold_usda_ers.observation_latest",
+            released_relation="gold_usda_ers.observation_revision",
+            lineage_schema="gold_usda_ers",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `<product>:<edition>:<read time>`: ERS replaces files in place
+            # and names no release, so the read distinguishes a replacement.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                # "a code, not a quantity ... not comparable to earlier
+                # editions", with ERS's credit.
+                ("observation_basis", "observation_basis"),
+                # ERS's label for a code (RUCC), and why a value is absent.
+                ("code_label", "code_label"),
+                ("missing_reason", "missing_reason"),
+                ("edition", "edition"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "USDA ERS publishes county classifications -- rural-urban codes "
+                "and typology flags -- that an aligned analysis would average or "
+                "correlate as if they were quantities; query /observations instead"
+            ),
+        ),
     )
 }
 
@@ -1857,6 +1901,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="USDA_ERS",
+            display_name="USDA Economic Research Service county classifications and Food Environment Atlas",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
         ),
         SourceDiscovery(
             source_code="NCES_CCD",

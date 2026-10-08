@@ -47,6 +47,7 @@ from tests.support import fema_nri as fema_support
 from tests.support import fhfa_hpi as hpi_support
 from tests.support import hud_fmr_il as hud_support
 from tests.support import nces_ccd as ccd_support
+from tests.support import usda_ers as ers_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -1075,6 +1076,18 @@ def published_ccd_metric(
     return _one_published_code(factory, "NCES_CCD")
 
 
+@pytest.fixture
+def published_ers_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish every registered ERS file's county measures."""
+    factory = ers_support.reviewed_warehouse(postgres_connection_factory, request)
+    ers_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_usda_ers"))
+    return _one_published_code(factory, "USDA_ERS")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1130,6 +1143,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_ers_metric: str,
     published_ccd_metric: str,
     published_hpi_metric: str,
     published_hud_metric: str,
@@ -1210,11 +1224,13 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FBI_UCR", published_fbi_metric),
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
+        ("USDA_ERS", published_ers_metric),
         ("NCES_CCD", published_ccd_metric),
         ("FHFA_HPI", published_hpi_metric),
         ("HUD_FMR_IL", published_hud_metric),
         ("FEMA_NRI", published_fema_metric),
         ("FCC_BDC", published_bdc_metric),
+    published_ers_metric: str,
         ("EPA_AQS", published_aqs_metric),
     published_ccd_metric: str,
         ("BEA", published_bea_metric),

@@ -75,7 +75,7 @@ BEGIN
         'gold_census_lodes', 'gold_census_sae', 'gold_eia', 'gold_epa_aqs',
         'gold_fbi', 'gold_fcc_bdc', 'gold_fema_nri', 'gold_fhfa_hpi',
         'gold_fred', 'gold_hud_fmr_il', 'gold_irs_migration', 'gold_nass',
-        'gold_nces_ccd', 'gold_noaa_normals', 'gold_pep'
+        'gold_nces_ccd', 'gold_noaa_normals', 'gold_pep', 'gold_usda_ers'
     ]
     LOOP
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = _schema) THEN

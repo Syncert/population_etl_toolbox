@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.usda_ers import schema as usda_ers_schema
 from data_ingestion_toolbox.nces_ccd import schema as nces_ccd_schema
 from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
 from data_ingestion_toolbox.hud_fmr_il import schema as hud_fmr_il_schema
@@ -149,6 +150,13 @@ SOURCES = [
         "ingest_batch_",
         nces_ccd_schema,
         "NCES_CCD",
+    ),
+    (
+        "usda_ers_ingest",
+        "ensure_usda_ers_schema",
+        "ingest_batch_",
+        usda_ers_schema,
+        "USDA_ERS",
     ),
 ]
 
