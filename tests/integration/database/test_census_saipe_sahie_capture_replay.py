@@ -151,6 +151,23 @@ def test_publisher_states_the_model_based_basis_and_harvests(
     assert harvested == [(7,)]
 
 
+def test_the_publish_event_finds_its_publisher_without_a_prior_harvest(
+    sae_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-054 -- the event reaches the catalog though the schema does not spell the source.
+
+    `gold_census_sae` publishes CENSUS_SAIPE_SAHIE, so a lookup by schema
+    suffix found nothing and the event failed "publisher not found" on the
+    first real load. The event harvests by the code the publisher's rows name.
+    """
+    census_sae.run_to_gold(sae_warehouse, SAIPE)
+    assert process_pending_events(sae_warehouse) >= 1
+    assert _rows(
+        sae_warehouse,
+        "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'CENSUS_SAIPE_SAHIE'",
+    ) == [(5,)]
+
+
 def test_rerun_is_idempotent_and_a_changed_response_keeps_both_checksums(
     sae_warehouse: Callable[[], connection],
 ) -> None:
