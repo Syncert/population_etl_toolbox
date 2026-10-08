@@ -1312,6 +1312,52 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("year", "geo_id", "release_key", "run_id"),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="NOAA_NORMALS",
+            latest_relation="gold_noaa_normals.observation_latest",
+            released_relation="gold_noaa_normals.observation_revision",
+            lineage_schema="gold_noaa_normals",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `Normals 1991-2020 <archive version> read <time>`: one period,
+            # and NCEI names a new archive for a new version.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "a 30-year normal, not the value of any one year ... the
+                # unweighted mean of the stations it places inside the county".
+                ("observation_basis", "observation_basis"),
+                # Which stations, how many, and the county boundary vintage
+                # they were placed with.
+                ("station_ids", "station_ids"),
+                ("station_count", "station_count::TEXT"),
+                ("boundary_vintage", "boundary_vintage::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "NOAA climate normals are 30-year averages (1991-2020), not "
+                "values of any one year, so a year-aligned analysis would pair "
+                "them with other sources' annual values; query /observations "
+                "instead"
+            ),
+        ),
     )
 }
 
@@ -1639,6 +1685,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name="U.S. Energy Information Administration retail gasoline prices",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="NOAA_NORMALS",
+            display_name="NOAA U.S. Climate Normals 1991-2020",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

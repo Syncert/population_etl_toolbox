@@ -41,6 +41,7 @@ from tests.support import census_bps as bps_support
 from tests.support import fbi_release
 from tests.support import bls_qcew as qcew_support
 from tests.support import epa_aqs as aqs_support
+from tests.support import noaa_normals as normals_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -997,6 +998,18 @@ def published_aqs_metric(
     return _one_published_code(factory, "EPA_AQS")
 
 
+@pytest.fixture
+def published_normals_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NOAA county climate normals."""
+    factory = normals_support.reviewed_warehouse(postgres_connection_factory, request)
+    normals_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_noaa_normals"))
+    return _one_published_code(factory, "NOAA_NORMALS")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1053,6 +1066,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_aqs_metric: str,
+    published_normals_metric: str,
     published_lodes_metric: str,
     published_cbp_metric: str,
     published_irs_migration_metric: str,
@@ -1131,6 +1145,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("EIA", published_eia_metric),
         ("CENSUS_CBP", published_cbp_metric),
         ("CENSUS_LODES", published_lodes_metric),
+        ("NOAA_NORMALS", published_normals_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1277,6 +1292,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_aqs_metric: str,
+    published_normals_metric: str,
     published_bea_metric: str,
     published_eia_metric: str,
     published_cbp_metric: str,

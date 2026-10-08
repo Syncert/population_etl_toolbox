@@ -118,6 +118,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
         ("control", "epa_aqs_file"),
+        ("control", "noaa_normals_file"),
         ("control", "census_lodes_slice"),
         ("control", "census_lodes_file"),
         ("control", "census_cbp_file"),

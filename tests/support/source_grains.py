@@ -56,6 +56,9 @@ from __future__ import annotations
 #:   counties and the state; no national figure is published.
 #: * ``EPA_AQS`` -- a county figure derived from its highest complete
 #:   monitor; counties without a complete monitor have no row.
+#: * ``NOAA_NORMALS`` -- a county figure derived from the stations placed
+#:   inside the county; counties without a standard or representative
+#:   station have no row.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -83,6 +86,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "NOAA_NORMALS": frozenset({"COUNTY"}),
     "EPA_AQS": frozenset({"COUNTY"}),
     "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
     "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),

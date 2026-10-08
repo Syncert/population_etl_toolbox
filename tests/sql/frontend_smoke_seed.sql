@@ -106,7 +106,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success'),
     ('00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'success'),
     ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success'),
-    ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success')
+    ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
+    ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -142,7 +143,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-00000000010d', '00000000-0000-4000-8000-00000000010d',
      'CENSUS_LODES', 'smoke://seed', '{}'::JSONB, '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', 'captured'),
     ('00000000-0000-4000-9000-000000000e9a', '00000000-0000-4000-8000-000000000e9a',
-     'EPA_AQS', 'smoke://seed', '{}'::JSONB, '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', 'captured')
+     'EPA_AQS', 'smoke://seed', '{}'::JSONB, '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', 'captured'),
+    ('00000000-0000-4000-9000-0000000000aa', '00000000-0000-4000-8000-0000000000aa',
+     'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -201,6 +204,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e9a', '00000000-0000-4000-9000-000000000e9a',
      '00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'smoke://seed', '{}'::JSONB,
      '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000000aa', '00000000-0000-4000-9000-0000000000aa',
+     '00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB,
+     '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -864,6 +871,39 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- NOAA Climate Normals -- one standard-flagged station inside the county,
+-- whose 1991-2020 normal the county view averages. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.noaa_normals_file (
+    run_id, archive_version, capture_id, payload_checksum, station_file_count,
+    station_count, boundary_vintage, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000000aa', 'smoke-2098', '00000000-0000-4000-a000-0000000000aa',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    2098, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_normals.station (
+    run_id, station_id, capture_id, source_row_index, latitude, longitude,
+    elevation_m, station_name, geo_id, geo_sk, boundary_vintage,
+    geography_status
+)
+SELECT '00000000-0000-4000-8000-0000000000aa', 'USW00014837', '00000000-0000-4000-a000-0000000000aa', 1, 43.14, -89.35, 262.1,
+       'MADISON DANE CO RGNL AP (smoke fixture)', 'state:55|county:025', geo_sk,
+       2098, 'resolved'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_normals.station_normal (
+    run_id, station_id, variable, measure, capture_id, value_source, value,
+    value_status, completeness_flag, years, source_record_id
+) VALUES (
+    '00000000-0000-4000-8000-0000000000aa', 'USW00014837', 'ANN-TAVG-NORMAL', 'annual_mean_temperature',
+    '00000000-0000-4000-a000-0000000000aa', '46.6', 46.6, 'valid', 'S', 30, 'ced13f7f8d9cab1acfdce0f2031425360'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -892,7 +932,8 @@ UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
 UNION ALL SELECT * FROM gold_eia.metric_publisher
 UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
 UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
-UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher;
+UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
+UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

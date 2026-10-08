@@ -67,6 +67,7 @@ SOURCES: tuple[str, ...] = (
     "FBI_UCR",
     "USDA_NASS",
     "EPA_AQS",
+    "NOAA_NORMALS",
     "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
@@ -2812,6 +2813,112 @@ _AQS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# NOAA U.S. Climate Normals 1991-2020 (annual/seasonal, by station).
+# ---------------------------------------------------------------------------
+
+_NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.noaa_normals_file",
+        "control",
+        "NOAA_NORMALS",
+        grain="run_id (one run per read of the archive)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered 1991-2020 annual/seasonal archive",
+        cadence="quarterly; a read whose bytes equal the last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_noaa_normals.quarantine",
+        "silver",
+        "NOAA_NORMALS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated station file; populated only on failure",
+        cadence="per normals replay",
+        empty_behavior="empty when every station file conformed",
+    ),
+    _obj(
+        "silver_noaa_normals.station",
+        "silver",
+        "NOAA_NORMALS",
+        grain="run_id, station_id",
+        lineage="control.noaa_normals_file, silver_ref.dim_geo_geometry_version",
+        scope_method="every station of every replayed archive, with its assigned county and boundary vintage",
+        cadence="per normals replay",
+        empty_behavior="a station outside every county is kept, unmapped with its reason",
+    ),
+    _obj(
+        "silver_noaa_normals.station_normal",
+        "silver",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable",
+        lineage="silver_noaa_normals.station",
+        scope_method="every registered annual normal a station publishes",
+        cadence="per normals replay",
+        empty_behavior="a withheld normal is missing or not applicable, never 0",
+    ),
+    _obj(
+        "gold_noaa_normals.measure_definition",
+        "gold",
+        "NOAA_NORMALS",
+        grain="measure",
+        scope_method="the six published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_noaa_normals.station_observation",
+        "gold",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable",
+        lineage="silver_noaa_normals.station_normal, silver_noaa_normals.station, control.noaa_normals_file",
+        scope_method="published station normals: the lineage of every county figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published archive",
+    ),
+    _obj(
+        "gold_noaa_normals.observation_revision",
+        "gold",
+        "NOAA_NORMALS",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_noaa_normals.station_observation",
+        scope_method="the mean of standard or representative stations per county and read",
+        cadence="per publication",
+        empty_behavior="a county with no such station has no row",
+    ),
+    _obj(
+        "gold_noaa_normals.observation_latest",
+        "gold",
+        "NOAA_NORMALS",
+        grain="metric_key, geo_id, year (newest read)",
+        lineage="gold_noaa_normals.observation_revision",
+        scope_method="newest-read projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published archive",
+    ),
+    _obj(
+        "gold_noaa_normals.measure_export",
+        "publisher",
+        "NOAA_NORMALS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_normals.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_noaa_normals.metric_publisher",
+        "publisher",
+        "NOAA_NORMALS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_normals.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published archive",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -2825,6 +2932,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _FBI_OBJECTS
     + _NASS_OBJECTS
     + _AQS_OBJECTS
+    + _NORMALS_OBJECTS
     + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
@@ -3225,6 +3333,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census_lodes.metric_publisher",
             "gold_bls_qcew.metric_publisher",
             "gold_epa_aqs.metric_publisher",
+            "gold_noaa_normals.metric_publisher",
         ),
     ),
     _rule(
@@ -5236,6 +5345,89 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "In every published file, no statistic is negative and every monitor's "
         "county resolved to the shared geography.",
         ("silver_epa_aqs.monitor_fact", "control.epa_aqs_file"),
+    ),
+    # -- NOAA U.S. Climate Normals 1991-2020 -----------------------------------
+    _rule(
+        "DQ-NOAA-001",
+        "BLOCK",
+        "uniqueness",
+        "A station is unique per read, and a normal is unique per (read, "
+        "station, variable): a repeated station file is quarantined.",
+        (
+            "silver_noaa_normals.station",
+            "silver_noaa_normals.station_normal",
+            "gold_noaa_normals.station_observation",
+            "gold_noaa_normals.observation_revision",
+            "gold_noaa_normals.observation_latest",
+            "gold_noaa_normals.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the station and normal "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_noaa_normals.station", ("run_id", "station_id")),
+            EnforcedGrain(
+                "silver_noaa_normals.station_normal",
+                ("run_id", "station_id", "variable"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NOAA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured archive is left unreplayed, and every replayed archive "
+        "reached its stations.",
+        (
+            "control.noaa_normals_file",
+            "silver_noaa_normals.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-NOAA-003",
+        "BLOCK",
+        "conformance",
+        "A withheld normal (M, V, Y) carries no number, and a valid one always "
+        "does: no withheld value becomes a zero.",
+        (
+            "silver_noaa_normals.station_normal",
+            "gold_noaa_normals.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "normal without a value and a withheld one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_normals.station_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_withheld_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NOAA-004",
+        "WARN",
+        "referential_integrity",
+        "In every published archive, no precipitation or degree-day normal is "
+        "negative, no station sits on a county boundary, and every station "
+        "NCEI codes to the United States (GHCN country US) falls inside a "
+        "county of the recorded boundary vintage.",
+        (
+            "silver_noaa_normals.station",
+            "silver_noaa_normals.station_normal",
+            "control.noaa_normals_file",
+        ),
     ),
 )
 

@@ -50,6 +50,7 @@ EXPECTED_DAG_IDS = {
     "census_cbp_ingest",
     "census_lodes_ingest",
     "epa_aqs_ingest",
+    "noaa_normals_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -94,6 +95,11 @@ EXPECTED_SCHEDULES = {
     # Monthly: EPA regenerates the files in June and December without a
     # fixed date, and an unchanged file replays nothing.
     "epa_aqs_ingest": "0 18 25 * *",
+    # Monthly: EPA regenerates the files in June and December without a
+    # fixed date, and an unchanged file replays nothing.
+    # Quarterly: the 1991-2020 normals change only by a new archive version,
+    # and an unchanged archive replays nothing.
+    "noaa_normals_ingest": "0 19 2 1,4,7,10 *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -124,6 +130,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_cbp_ingest": 2,
     "census_lodes_ingest": 2,
     "epa_aqs_ingest": 2,
+    "noaa_normals_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -144,6 +151,7 @@ EXPECTED_INGEST_POOLS = {
     "census_cbp_ingest": "census_cbp_files",
     "census_lodes_ingest": "census_lodes_files",
     "epa_aqs_ingest": "epa_aqs_files",
+    "noaa_normals_ingest": "noaa_normals_files",
 }
 
 
