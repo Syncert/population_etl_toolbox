@@ -142,11 +142,6 @@
       "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
     },
     {
-      "id": "silver-nces-ccd",
-      "phase": "silver",
-      "path": "src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql"
-    },
-    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
@@ -205,6 +200,11 @@
       "id": "silver-noaa-normals",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
+    },
+    {
+      "id": "silver-nces-ccd",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql"
     },
     {
       "id": "migration-027",
@@ -292,11 +292,6 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
-      "id": "gold-nces-ccd",
-      "phase": "gold",
-      "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql"
-    },
-    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -342,6 +337,11 @@
       "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql"
     },
     {
+      "id": "gold-nces-ccd",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql"
+    },
+    {
       "id": "gold-fcc-bdc",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/gold_fcc_bdc.sql"
@@ -365,11 +365,6 @@
       "id": "publisher-nass",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
-    },
-    {
-      "id": "publisher-nces-ccd",
-      "phase": "publisher",
-      "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-sae",
@@ -455,6 +450,11 @@
       "id": "publisher-noaa-normals",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-nces-ccd",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/publisher.sql"
     },
     {
       "id": "migration-016",
