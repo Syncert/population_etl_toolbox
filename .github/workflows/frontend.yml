@@ -50,7 +50,10 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - name: Audit production dependency graph
-        run: npm audit --omit=dev --audit-level=high
+        # Runs `npm audit --omit=dev --audit-level=high` and exits with its
+        # status; on failure it also prints where each package is pinned and
+        # how to move it (WEB-007).
+        run: npm run check:audit
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:unit

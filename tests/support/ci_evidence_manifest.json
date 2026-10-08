@@ -98,6 +98,11 @@
       "workflow": "live-deployment-smoke.yml",
       "job": "live-deployment",
       "name": "Live deployment smoke"
+    },
+    {
+      "workflow": "web-audit.yml",
+      "job": "audit",
+      "name": "Scheduled production dependency audit"
     }
   ],
   "architecture_path_owners": {

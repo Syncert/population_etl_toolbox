@@ -333,3 +333,51 @@ def test_the_product_end_to_end_tier_runs_on_push_and_pull_request() -> None:
         "these per-change end-to-end runs are not graded against the product "
         f"inventory: {sorted(ungraded)}"
     )
+
+
+def test_the_scheduled_audit_runs_against_main_and_gates_nothing() -> None:
+    """Covers: WEB-007 — an advisory fails on main first, not on a stray PR.
+
+    The production audit ran only when a commit landed, so a registry
+    advisory was first reported by whichever pull request next touched a
+    frontend path. The scheduled job asks on its own; it carries no push
+    filter (so the plan-branch prefix check above is unaffected) and no
+    pull-request trigger, because a registry change is nothing a branch can fix.
+    """
+    workflow = _workflow("web-audit.yml")
+    trigger = workflow["on"]
+    assert set(trigger) == {"schedule", "workflow_dispatch"}
+    assert trigger["schedule"], "the audit declares no schedule"
+
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert {
+        "workflow": "web-audit.yml",
+        "job": "audit",
+        "name": "Scheduled production dependency audit",
+    } in manifest["release"]
+
+    job = workflow["jobs"]["audit"]
+    checkout = next(
+        step for step in job["steps"] if "checkout" in str(step.get("uses"))
+    )
+    assert checkout["with"]["ref"] == "main"
+    commands = "\n".join(str(step.get("run") or "") for step in job["steps"])
+    assert "node scripts/check-audit.mjs" in commands
+    assert "npm install" not in commands and "audit fix" not in commands
+    assert workflow["permissions"] == {"contents": "read", "issues": "write"}
+
+
+def test_the_pull_request_audit_gate_runs_the_explaining_script() -> None:
+    """Covers: WEB-007 — the gate keeps its command and says how to fix it."""
+    steps = _workflow("frontend.yml")["jobs"]["frontend"]["steps"]
+    [audit] = [
+        step
+        for step in steps
+        if step.get("name") == "Audit production dependency graph"
+    ]
+    assert audit["run"] == "npm run check:audit"
+    scripts = json.loads((ROOT / "apps/web/package.json").read_text(encoding="utf-8"))[
+        "scripts"
+    ]
+    assert scripts["check:audit"] == "node scripts/check-audit.mjs"
+    assert _workflow("frontend.yml")["permissions"] == {"contents": "read"}
