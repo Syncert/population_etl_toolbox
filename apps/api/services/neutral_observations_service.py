@@ -101,7 +101,9 @@ TIME_GRAINS = frozenset({TIME_GRAIN_NATIVE, *CALENDAR_GRAINS})
 #: The filters a serving window can honour: its geography.
 WINDOW_FILTERS = frozenset({"geo_id", "geo_level", "subject_code"})
 #: The filters a calendar window can honour: its geography and its years.
-CALENDAR_FILTERS = frozenset({"geo_id", "geo_level", "subject_code", "year_from", "year_to"})
+CALENDAR_FILTERS = frozenset(
+    {"geo_id", "geo_level", "subject_code", "year_from", "year_to"}
+)
 
 
 class NeutralQueryError(ValueError):

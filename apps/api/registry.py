@@ -963,18 +963,22 @@ def observation_dispatch(source_code: str) -> ObservationDispatch:
 #: Every relation the observation endpoints may read, for the privilege and
 #: allowlist assertions. A relation absent from this set must never appear in a
 #: generated query.
-ALLOWED_OBSERVATION_RELATIONS: frozenset[str] = frozenset(
-    relation
-    for contract in SERVING_CONTRACTS.values()
-    for relation in (contract.latest_relation, contract.history_relation)
-) | frozenset(
-    relation
-    for dispatch in OBSERVATION_DISPATCH.values()
-    for relation in (dispatch.latest_relation, dispatch.released_relation)
-) | frozenset(
-    dispatch.calendar_relation
-    for dispatch in OBSERVATION_DISPATCH.values()
-    if dispatch.calendar_relation is not None
+ALLOWED_OBSERVATION_RELATIONS: frozenset[str] = (
+    frozenset(
+        relation
+        for contract in SERVING_CONTRACTS.values()
+        for relation in (contract.latest_relation, contract.history_relation)
+    )
+    | frozenset(
+        relation
+        for dispatch in OBSERVATION_DISPATCH.values()
+        for relation in (dispatch.latest_relation, dispatch.released_relation)
+    )
+    | frozenset(
+        dispatch.calendar_relation
+        for dispatch in OBSERVATION_DISPATCH.values()
+        if dispatch.calendar_relation is not None
+    )
 )
 
 

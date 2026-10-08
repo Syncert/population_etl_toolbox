@@ -1701,7 +1701,10 @@ def test_a_calendar_grain_reads_the_calendar_relation(
     try:
         response = client.get(
             "/api/v1/observations",
-            params={"metric_code": _BLS_METRIC["metric_code"], "time_grain": time_grain},
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "time_grain": time_grain,
+            },
         )
     finally:
         _clear_overrides()
@@ -1727,7 +1730,8 @@ def test_a_calendar_grain_reads_the_calendar_relation(
     for sql in queries:
         assert _relations_in(sql) == {"gold_bls.calendar_window_observation"}, sql
     calendar_reads = [
-        bound for bound, sql in zip(session.parameters, session.statements)
+        bound
+        for bound, sql in zip(session.parameters, session.statements)
         if "calendar_window_observation" in sql
     ]
     assert calendar_reads and all(bound["grain"] == grain for bound in calendar_reads)
@@ -1759,7 +1763,10 @@ def test_a_metric_with_no_window_is_refused_not_answered_empty() -> None:
     try:
         response = client.get(
             "/api/v1/observations",
-            params={"metric_code": _BLS_METRIC["metric_code"], "time_grain": "quarterly"},
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "time_grain": "quarterly",
+            },
         )
     finally:
         _clear_overrides()
@@ -1864,9 +1871,11 @@ def _approve(monkeypatch: pytest.MonkeyPatch, code: str, method: str = "mean") -
     monkeypatch.setattr(
         service,
         "authorized_method",
-        lambda metric: TimeMethod(metric, method, "approved", "Nick", 1)
-        if metric == code
-        else None,
+        lambda metric: (
+            TimeMethod(metric, method, "approved", "Nick", 1)
+            if metric == code
+            else None
+        ),
     )
 
 

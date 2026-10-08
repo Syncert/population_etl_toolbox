@@ -94,12 +94,19 @@ def test_bls_windows_are_derived_only_when_every_month_is_reported(
         connection_ = postgres_connection_factory()
         try:
             first = refresh_calendar_rollups(connection_, "BLS", registry)
-            rows = _rollups(postgres_connection_factory, "gold_bls.derived_calendar_rollup", METRIC)
+            rows = _rollups(
+                postgres_connection_factory, "gold_bls.derived_calendar_rollup", METRIC
+            )
             # Replaying over the same served rows writes the same rows.
             assert refresh_calendar_rollups(connection_, "BLS", registry) == first
-            assert _rollups(
-                postgres_connection_factory, "gold_bls.derived_calendar_rollup", METRIC
-            ) == rows
+            assert (
+                _rollups(
+                    postgres_connection_factory,
+                    "gold_bls.derived_calendar_rollup",
+                    METRIC,
+                )
+                == rows
+            )
         finally:
             connection_.close()
 
@@ -135,7 +142,11 @@ def test_bls_windows_are_derived_only_when_every_month_is_reported(
         with writer.cursor() as cursor:
             _seed_time(cursor, 20950101, "2095-01-01")
             geo_sk = seed_geography(
-                cursor, geo_type="state", state_fips="94", vintage=2095, name="Test State"
+                cursor,
+                geo_type="state",
+                state_fips="94",
+                vintage=2095,
+                name="Test State",
             )
             capture_id = seed_capture(cursor, "BLS")
             cursor.execute(
@@ -173,9 +184,12 @@ def test_bls_windows_are_derived_only_when_every_month_is_reported(
             assert refresh_calendar_rollups(connection_, "BLS", {}) == 0
         finally:
             connection_.close()
-        assert _rollups(
-            postgres_connection_factory, "gold_bls.derived_calendar_rollup", METRIC
-        ) == []
+        assert (
+            _rollups(
+                postgres_connection_factory, "gold_bls.derived_calendar_rollup", METRIC
+            )
+            == []
+        )
     finally:
         cleanup = postgres_connection_factory()
         try:

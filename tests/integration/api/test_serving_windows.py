@@ -53,9 +53,11 @@ def test_windows_end_at_the_anchor_and_refuse_a_gap(
     monkeypatch.setattr(
         service,
         "authorized_method",
-        lambda code: TimeMethod(code, "mean", "approved", "Nick", 1)
-        if code == published_bls_metric
-        else None,
+        lambda code: (
+            TimeMethod(code, "mean", "approved", "Nick", 1)
+            if code == published_bls_metric
+            else None
+        ),
     )
     writer = postgres_connection_factory()
     try:
@@ -107,7 +109,10 @@ def test_windows_end_at_the_anchor_and_refuse_a_gap(
     assert Decimal(row["value"]) == Decimal("110")
     assert row["derivation"]["kind"] == "derived"
     assert row["derivation"]["method"] == "mean"
-    assert (row["derivation"]["expected_periods"], row["derivation"]["present_periods"]) == (3, 3)
+    assert (
+        row["derivation"]["expected_periods"],
+        row["derivation"]["present_periods"],
+    ) == (3, 3)
 
     (row,) = ytd.json()["items"]
     assert (row["period_start"], row["period_end"]) == ("2096-01-01", "2096-06-30")
@@ -119,4 +124,3 @@ def test_windows_end_at_the_anchor_and_refuse_a_gap(
     assert row["derivation"]["refusal_reason"] == (
         "incomplete_window: 11 of 12 periods reported"
     )
-
