@@ -135,10 +135,10 @@ def test_guide_analysis_claims_match_the_capability_registry() -> None:
         for code, dispatch in OBSERVATION_DISPATCH.items()
         if not dispatch.analysis_ready
     }
-    assert declined == {"CDC", "USDA_NASS", "FBI_UCR", "NOAA_NORMALS"}
+    assert declined == {"CDC", "USDA_NASS", "FBI_UCR", "NOAA_NORMALS", "USDA_ERS"}
 
     analysis_section = text.split("## Analysis", 1)[1].split("##", 1)[0]
-    for name in ("CDC", "USDA NASS", "FBI UCR", "NOAA climate normals"):
+    for name in ("CDC", "USDA NASS", "FBI UCR", "NOAA climate normals", "USDA ERS"):
         assert name in analysis_section, (
             f"{name} is declined by the registry but the guide does not say so"
         )

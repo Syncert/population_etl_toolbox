@@ -1413,16 +1413,11 @@ air quality.** CDC, USDA NASS, and FBI UCR are declined with a stated reason:
 they publish stratified, multi-dimensional, or agency-grain observations that
 an aligned one-value-per-geography analysis would silently collapse. NOAA
 climate normals are declined because a 30-year normal is not the value of any
-one year, so aligning it by year with annual values would mislead. Query them
-through `/observations` with the appropriate stratum, domain, or subject
-filters.
-**The analysis routes answer for Census ACS, BLS, FRED, and Census PEP.** CDC,
-USDA NASS, and FBI UCR are declined with a stated reason: they publish
-stratified, multi-dimensional, or agency-grain observations that an aligned
-one-value-per-geography analysis would silently collapse. USDA ERS is declined
-because it publishes classifications -- rural-urban codes and typology flags --
-that an analysis would average or correlate as quantities. Query them through
-`/observations` with the appropriate stratum, domain, or subject filters.
+one year, so aligning it by year with annual values would mislead. USDA ERS
+is declined because it publishes classifications -- rural-urban codes and
+typology flags -- that an analysis would average or correlate as quantities.
+Query them through `/observations` with the appropriate stratum, domain, or
+subject filters.
 
 All four analysis routes — `/comparison`, `/comparison/preflight`,
 `/comparison/correlation`, `/comparison/matrix` — and `/distribution/bins`
@@ -1441,8 +1436,7 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS, FBI UCR and NOAA climate normals.
-restriction for CDC, USDA NASS, FBI UCR and USDA ERS.
+restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals and USDA ERS.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -1532,8 +1526,7 @@ each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
 measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR,
-NOAA climate normals),
-measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR, USDA ERS),
+NOAA climate normals, USDA ERS),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined

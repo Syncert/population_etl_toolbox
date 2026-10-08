@@ -84,7 +84,7 @@ so silver must read it as text and left-pad to five digits, quarantining any
 code that does not resolve. The file uses the Connecticut planning regions
 and the post-2019 Alaska code `02063` (Chugach); resolution must use a
 geography vintage that contains them, never a remap to legacy counties. ZIP5, ZIP3, and tract files are out of scope until the
-[sub-county geography plan](../to_do/SUB_COUNTY_GEOGRAPHY_PLAN.md) supplies ZCTA and
+[sub-county geography plan](SUB_COUNTY_GEOGRAPHY_PLAN.md) supplies ZCTA and
 tract identities; USPS ZIP codes are not ZCTAs and must not be joined as if
 they were.
 
