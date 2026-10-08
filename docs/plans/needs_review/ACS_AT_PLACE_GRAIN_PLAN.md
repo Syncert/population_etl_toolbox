@@ -15,12 +15,14 @@ verify:
 
 ## Status
 
-In progress. Drafted 2026-10-06 from
+Ready for review. Drafted 2026-10-06 from
 [`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-Deliverables 1 to 5 (warehouse, serving, operations) are implemented on
-branch `feat/acs-place-grain`, cut from `main`. Deliverable 6, the place
-pages, needs the county pages from `feat/place-pages` (WEB-125), which is not
-on `main` yet.
+Deliverables 1 to 5 (warehouse, serving, operations) are on branch
+`feat/acs-place-grain`, cut from `main`. Deliverable 6, the city and town
+pages, is on `feat/acs-place-pages`. That branch is built on
+`feat/nearby-places`, whose relationship resource gives the cross-county
+note and which includes `feat/place-pages` and `feat/compare-two-places`,
+and it merges `feat/acs-place-grain`. Merge those first.
 
 ## Why
 
@@ -162,15 +164,27 @@ rather than a new source.
 - `ruff check .` clean; OpenAPI snapshot unchanged (no new route); schema
   snapshot regenerated.
 
-## Remaining
+### City and town pages (WEB-134, `feat/acs-place-pages`)
 
-- Deliverable 6: place pages at `/us/<state>/<place-slug>` through the
-  place-pages chapter contract, with the cross-county note from the
-  intersection bridge, and Safety and Land and Farms omitted at place grain
-  with the reason. They build on `feat/place-pages`.
+- `/us/<state>/<segment>` resolves a county first and otherwise a place in
+  that state, by the name's slug or by the seven-digit FIPS, and settles on
+  the canonical address. A county keeps its slug. A place whose slug a
+  county or another place already holds takes its FIPS: Baltimore city, the
+  county equivalent, keeps `baltimore-city`, and the place is `2404000`.
+- A city page reads the shared chapters at place grain, with three-level
+  cards for the place, its state and the nation. It says "Not published at
+  city or town grain" for a measure no source publishes there. It omits
+  Safety and Land and Farms with the reason, because no source publishes
+  them for places.
+- The counties a place lies in come from the relationship resource's
+  intersection overlap weights. For example: "Crossing city crosses county
+  lines: it lies in Dane County (60%) and Rock County (40%)". A county page's
+  places within it now link to their pages.
+- Evidence: `npm --prefix apps/web run test:unit` -- 751 passed; `lint`
+  clean; `test:browser` -- 216 passed, including the two new city scenarios
+  in `places.spec.js`; `check:bundle` keeps every route within its budget.
 
 ## Checkpoint
 
-Next pickup: branch from `feat/place-pages`, merge `feat/acs-place-grain`,
-and settle the slug rule for a place whose name matches a county
-equivalent's (Baltimore city is both).
+Implementation complete; awaiting human review of `feat/acs-place-grain`,
+then `feat/acs-place-pages`.

@@ -17,10 +17,18 @@ export const COUNTIES = [
   { geo_id: "state:27|county:053", geo_level: "COUNTY", geo_name: "Hennepin County", state_fips: "27", county_fips: "053", county_name: "Hennepin County", state_name: "Minnesota" },
 ];
 
+// Cities and towns (acs-place-grain). "Crossing city" spans Dane and Rock
+// counties; the ACS and PEP publish places, nothing else here does.
+export const PLACES = [
+  { geo_id: "state:55|place:99999", geo_level: "PLACE", geo_name: "Crossing city", state_fips: "55", place_fips: "99999", place_name: "Crossing city", state_name: "Wisconsin" },
+  { geo_id: "state:55|place:48000", geo_level: "PLACE", geo_name: "Madison city", state_fips: "55", place_fips: "48000", place_name: "Madison city", state_name: "Wisconsin" },
+];
+
 function grainsFor(code) {
   if (code.startsWith("BLS:")) return ["COUNTY", "STATE"];
   if (code.startsWith("CDC:")) return ["COUNTY", "NATIONAL"];
   if (code.startsWith("FBI_UCR:")) return ["AGENCY", "STATE", "NATIONAL"];
+  if (code.startsWith("CENSUS_ACS:") || code.startsWith("CENSUS_PEP:POPESTIMATE")) return ["PLACE", "COUNTY", "STATE", "NATIONAL"];
   return ["COUNTY", "STATE", "NATIONAL"];
 }
 
@@ -43,13 +51,13 @@ const metrics = Object.fromEntries(codes.map((code) => [code, {
   publication_time: "2026-09-01T00:00:00Z", harvested_at: "2026-09-02T00:00:00Z", source_watermark: "fixture-2026-09", publisher_contract_version: "v1",
 }]));
 
-const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2 };
+const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5 };
 const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R/;
 
 // Relationships as the reference would record them. "Crossing city" spans
 // Dane and Rock counties: 60% of its area in Dane, 40% in Rock.
-const CROSSING = { geo_id: "state:55|place:99999", geo_level: "PLACE", geo_name: "Crossing city", state_fips: "55" };
-const link = (relationship, place, extra = {}) => ({ relationship, geo_id: place.geo_id, geo_level: place.geo_level, geo_name: place.county_name || place.state_name || place.geo_name, state_fips: place.state_fips || null,
+const CROSSING = PLACES[0];
+const link = (relationship, place, extra = {}) => ({ relationship, geo_id: place.geo_id, geo_level: place.geo_level, geo_name: place.place_name || place.county_name || place.state_name || place.geo_name, state_fips: place.state_fips || null,
   geography_vintage: 2025, evidence_source: relationship === "adjacent" ? "census_boundary_adjacency" : relationship === "intersects" ? "census_boundary_intersection" : "exact_census_code_hierarchy",
   overlap_area_m2: null, overlap_weight: null, ...extra });
 export const RELATED = {
@@ -67,6 +75,15 @@ export const RELATED = {
     link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
   ],
   "state:27|county:053": [],
+  "state:55|place:99999": [
+    link("intersects", COUNTIES[0], { overlap_weight: 0.6, overlap_area_m2: 6e6 }),
+    link("intersects", COUNTIES[1], { overlap_weight: 0.4, overlap_area_m2: 4e6 }),
+    link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
+  ],
+  "state:55|place:48000": [
+    link("intersects", COUNTIES[0], { overlap_weight: 1, overlap_area_m2: 2e8 }),
+    link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
+  ],
 };
 
 export async function installPlaceFixtures(page, { nationLagsMedianAge = true } = {}) {
@@ -83,7 +100,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     })) } });
     if (path.startsWith("/api/v1/catalog/geographies/") && path.endsWith("/related")) {
       const geoId = decodeURIComponent(path.slice("/api/v1/catalog/geographies/".length, -"/related".length));
-      const place = [NATION, ...STATES, ...COUNTIES].find((item) => item.geo_id === geoId);
+      const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geoId);
       if (!place) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
       const items = RELATED[geoId] || [];
       return route.fulfill({ json: { geo_id: geoId, geo_level: place.geo_level, total: items.length, items } });
@@ -108,7 +125,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     if (path === "/api/v1/catalog/geographies") {
       const grain = params.get("geo_level");
       const items = grain === "NATIONAL" ? [NATION] : grain === "STATE" ? STATES
-        : grain === "COUNTY" ? COUNTIES.filter((county) => !params.get("state_fips") || county.state_fips === params.get("state_fips")) : [];
+        : grain === "COUNTY" ? COUNTIES.filter((county) => !params.get("state_fips") || county.state_fips === params.get("state_fips"))
+        : grain === "PLACE" ? PLACES.filter((place) => !params.get("state_fips") || place.state_fips === params.get("state_fips")) : [];
       return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
     }
     if (path === "/api/v1/comparison/preflight") {
@@ -131,7 +149,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       const code = params.get("metric_code");
       const metric = metrics[code];
       const geo = params.get("geo_id");
-      const place = [NATION, ...STATES, ...COUNTIES].find((item) => item.geo_id === geo);
+      const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geo);
       if (!metric || !place) return route.fulfill({ status: 404, json: { detail: "No reviewed fixture" } });
       // NASS publishes no cell for Dane County in this fixture: the Land and
       // Farms chapter must be omitted there and named in the footer.

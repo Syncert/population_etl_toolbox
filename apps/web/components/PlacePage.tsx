@@ -47,9 +47,12 @@ import {
   chapterHasValues,
   countyName,
   countySegment,
+  cityName,
+  citySegment,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
+  resolveCitySegment,
   resolveCountySegment,
   resolvePlaceChapters,
   resolveStateSegment,
@@ -64,7 +67,7 @@ import type {
   ResolvedChapter,
   ResolvedPlaceMeasure,
 } from "../lib/placeChapters";
-import { groupNearby, isEmpty, relatedPath, shareText } from "../lib/placeRelationships";
+import { crossCountyNote, groupNearby, isEmpty, relatedPath, shareText } from "../lib/placeRelationships";
 import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
 import { rankSentence, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
@@ -81,6 +84,7 @@ const LEVEL_WORDS: Record<PlaceLevel, string> = {
   NATIONAL: "Nation",
   STATE: "State",
   COUNTY: "County",
+  PLACE: "City or town",
 };
 
 type Resolution =
@@ -113,6 +117,7 @@ const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}
 function placeTitle(place: GeographySummary | null, level: PlaceLevel, state: GeographySummary | null): string {
   if (!place) return "";
   if (level === "COUNTY") return `${countyName(place)}, ${state ? stateName(state) : String(place.state_name || "")}`.replace(/, $/, "");
+  if (level === "PLACE") return `${cityName(place)}, ${state ? stateName(state) : String(place.state_name || "")}`.replace(/, $/, "");
   if (level === "STATE") return stateName(place);
   return "United States";
 }
@@ -125,7 +130,10 @@ export default function PlacePage({
   countySegment?: string;
 }) {
   const router = useRouter();
-  const level: PlaceLevel = requestedCounty ? "COUNTY" : requestedState ? "STATE" : "NATIONAL";
+  // The third segment names a county or, failing that, a city or town; which
+  // one is known once the address resolves (acs-place-grain).
+  const [localLevel, setLocalLevel] = useState<"COUNTY" | "PLACE">("COUNTY");
+  const level: PlaceLevel = requestedCounty ? localLevel : requestedState ? "STATE" : "NATIONAL";
 
   const [resolution, setResolution] = useState<Resolution>({ state: "loading" });
   const [nation, setNation] = useState<GeographySummary | null>(null);
@@ -133,6 +141,7 @@ export default function PlacePage({
   const [state, setState] = useState<GeographySummary | null>(null);
   const [counties, setCounties] = useState<GeographySummary[]>([]);
   const [county, setCounty] = useState<GeographySummary | null>(null);
+  const [city, setCity] = useState<GeographySummary | null>(null);
   const [sources, setSources] = useState<ExplorerSource[]>([]);
   const [metricsByCode, setMetricsByCode] = useState<Map<string, MetricSummary>>(new Map());
   const [catalogStatus, setCatalogStatus] = useState({ state: "loading", message: "resolving published measures" });
@@ -198,9 +207,32 @@ export default function PlacePage({
         }
         const countyMatch = resolveCountySegment(requestedCounty || "", ownCounties);
         if (!countyMatch.place) {
-          setResolution({ state: "not-found", within: stateMatch.place });
+          const placeItems = await fetchAllPages<GeographySummary>("/catalog/geographies", {
+            params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "PLACE", state_fips: String(stateMatch.place.state_fips || "") },
+            pageSize: CATALOG_PAGE_SIZE,
+            signal,
+          });
+          if (signal.aborted) return;
+          const ownPlaces = placeItems.filter((item) => item.state_fips === stateMatch.place!.state_fips);
+          const cityMatch = resolveCitySegment(requestedCounty || "", ownPlaces, ownCounties);
+          if (!cityMatch.place) {
+            setResolution({ state: "not-found", within: stateMatch.place });
+            return;
+          }
+          setCity(cityMatch.place);
+          setLocalLevel("PLACE");
+          if (stateMatch.canonical || cityMatch.canonical) {
+            router.replace(
+              placePath(
+                stateSegment(stateMatch.place, sortedStates),
+                citySegment(cityMatch.place, ownPlaces, ownCounties),
+              ),
+            );
+          }
+          setResolution({ state: "found" });
           return;
         }
+        setLocalLevel("COUNTY");
         setCounty(countyMatch.place);
         if (stateMatch.canonical || countyMatch.canonical) {
           router.replace(
@@ -216,7 +248,9 @@ export default function PlacePage({
       }
     })();
     return () => controller.abort();
-  }, [level, requestedState, requestedCounty, router]);
+    // `level` follows the resolution; the address alone decides what to fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedState, requestedCounty, router]);
 
   // The sources' declared access shapes, and the chapters' candidate
   // identities. A 404 is the API's answer for "not published".
@@ -256,7 +290,7 @@ export default function PlacePage({
     return () => controller.abort();
   }, []);
 
-  const place = level === "COUNTY" ? county : level === "STATE" ? state : nation;
+  const place = level === "PLACE" ? city : level === "COUNTY" ? county : level === "STATE" ? state : nation;
   const title = placeTitle(place, level, state);
 
   // What this place contains, borders and is part of, as the reference
@@ -295,11 +329,12 @@ export default function PlacePage({
 
   const levels = useMemo((): LevelPlace[] => {
     const chain: LevelPlace[] = [];
+    if (city && level === "PLACE") chain.push({ level: "PLACE", geoId: city.geo_id, name: cityName(city), role: "this place" });
     if (county) chain.push({ level: "COUNTY", geoId: county.geo_id, name: countyName(county), role: "this place" });
     if (state && level !== "NATIONAL") chain.push({ level: "STATE", geoId: state.geo_id, name: stateName(state), role: level === "STATE" ? "this place" : "parent" });
     if (nation) chain.push({ level: "NATIONAL", geoId: nation.geo_id, name: "United States", role: level === "NATIONAL" ? "this place" : "parent" });
     return chain;
-  }, [county, state, nation, level]);
+  }, [city, county, state, nation, level]);
 
   const { shown, omitted } = useMemo(
     () => (metricsByCode.size ? resolvePlaceChapters(level, metricsByCode) : { shown: [], omitted: [] }),
@@ -473,6 +508,7 @@ export default function PlacePage({
             <li><Link href="/us">United States</Link></li>
             {state && level !== "NATIONAL" ? <li><Link href={placePath(stateSegment(state, states))}>{stateName(state)}</Link></li> : null}
             {county ? <li aria-current="page">{countyName(county)}</li> : null}
+            {city && level === "PLACE" ? <li aria-current="page">{cityName(city)}</li> : null}
           </ol>
         </nav>
         <p>
@@ -514,6 +550,12 @@ export default function PlacePage({
         />
       ))}
 
+      {level === "PLACE" && city && nearby?.counties.length ? (
+        <p className="place-cross-county" data-testid="place-cross-county">
+          {crossCountyNote(cityName(city), nearby.counties)}
+        </p>
+      ) : null}
+
       {nearby && !isEmpty(nearby) ? (
         <section className="analysis-panel place-nearby" aria-labelledby="place-nearby-heading" data-testid="place-nearby">
           <h2 id="place-nearby-heading">Nearby and related</h2>
@@ -524,7 +566,7 @@ export default function PlacePage({
               <ul className="place-index">
                 {nearby.within.map((entry) => (
                   <li key={entry.geoId} data-geo-id={entry.geoId}>
-                    <Link href={explorerHref({ geoId: entry.geoId, geoLevel: "PLACE", stateFips: county?.state_fips || undefined })}>{entry.name}</Link>
+                    {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
                     {entry.share !== null ? <span className="subtle"> · {shareText(entry)}</span> : null}
                   </li>
                 ))}
@@ -541,6 +583,19 @@ export default function PlacePage({
               </ul>
             </div>
           ) : null}
+          {nearby.counties.length ? (
+            <div data-testid="place-nearby-counties">
+              <h3>Counties it lies in</h3>
+              <ul className="place-index">
+                {nearby.counties.map((entry) => (
+                  <li key={entry.geoId}>
+                    {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
+                    {entry.share !== null ? <span className="subtle"> · {Math.round(entry.share * 100)}% of this place</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {nearby.partOf.length ? (
             <div data-testid="place-nearby-part-of">
               <h3>Part of</h3>
@@ -552,12 +607,12 @@ export default function PlacePage({
             </div>
           ) : null}
           <p className="subtle">
-            From the Census geography reference, vintage {[...new Set([...nearby.within, ...nearby.neighbours, ...nearby.partOf].map((entry) => entry.vintage))].join(", ")}.
+            From the Census geography reference, vintage {[...new Set([...nearby.within, ...nearby.neighbours, ...nearby.partOf, ...nearby.counties].map((entry) => entry.vintage))].join(", ")}.
           </p>
         </section>
       ) : null}
 
-      {level !== "COUNTY" && resolution.state === "found" ? (
+      {(level === "NATIONAL" || level === "STATE") && resolution.state === "found" ? (
         <section className="analysis-panel place-children" aria-labelledby="place-children-heading">
           <h2 id="place-children-heading">{level === "NATIONAL" ? "States" : `Counties in ${stateName(state!)}`}</h2>
           <ul className="place-index" data-testid="place-children">
