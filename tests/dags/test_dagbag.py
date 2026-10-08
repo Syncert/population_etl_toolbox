@@ -36,15 +36,15 @@ EXPECTED_DAG_IDS = {
     "cdc_ingest",
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
-    "census_saipe_sahie_ingest",
-    "census_building_permits_ingest",
-    "bls_qcew_ingest",
-    "bea_regional_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
     "warehouse_data_quality",
     "serving_full_reserve",
     "raw_capture_export",
+    "bea_regional_ingest",
+    "bls_qcew_ingest",
+    "census_building_permits_ingest",
+    "census_saipe_sahie_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -58,17 +58,9 @@ EXPECTED_SCHEDULES = {
     "fbi_ucr_ingest": "0 10 * * 1",
     # Weekdays *and* the first of the month: cron takes the union when
     # day-of-month and day-of-week are both restricted, and the monthly
-    # Monthly: SAIPE publishes each December and SAHIE each spring.
-    "census_saipe_sahie_ingest": "0 6 15 * *",
     # full-history sweep needs a logical date on the first whatever day it
-    # Monthly, after the Bureau's mid-month release.
-    "census_building_permits_ingest": "0 13 25 * *",
     # falls on (DAG-018).
-    # Monthly: QCEW publishes one quarter at a time.
-    "bls_qcew_ingest": "0 12 20 * *",
     "usda_nass_crop_ingest": "0 10 1 * 1-5",
-    # Weekly: county income lands in November and county GDP in December.
-    "bea_regional_ingest": "0 14 * * 3",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
@@ -77,22 +69,26 @@ EXPECTED_SCHEDULES = {
     "raw_capture_export": "0 3 * * *",
     # Operator-triggered only: a full re-serve must never happen on a schedule.
     "serving_full_reserve": None,
+    # Weekly: county income lands in November and county GDP in December.
+    "bea_regional_ingest": "0 14 * * 3",
+    # Monthly: QCEW publishes one quarter at a time.
+    "bls_qcew_ingest": "0 12 20 * *",
+    # Monthly, after the Bureau's mid-month release.
+    "census_building_permits_ingest": "0 13 25 * *",
+    # Monthly: SAIPE publishes each December and SAHIE each spring.
+    "census_saipe_sahie_ingest": "0 6 15 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
-    "census_saipe_sahie_ingest": 2,
 EXPECTED_DEFAULT_RETRIES = {
     "silver_ref": 2,
     "acs_ingest": 3,
-    "census_building_permits_ingest": 2,
     "bls_ingest": 3,
     "fred_ingest": 3,
     "census_pep_ingest": 2,
-    "bls_qcew_ingest": 2,
     "cdc_ingest": 2,
     "fbi_ucr_ingest": 2,
     "usda_nass_crop_ingest": 2,
-    "bea_regional_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
@@ -100,23 +96,27 @@ EXPECTED_DEFAULT_RETRIES = {
     # Three, not one, because this task runs for hours and resumes: a
     # restart picks up at the year it stopped on. One retry was
     # consumed by the same scheduler sweep that killed the task, and a
-    # One host and one key with the ACS, so one rate limit.
-    "census_saipe_sahie_ingest": "census_api",
     # five-hour ACS re-serve ended at chunk 13 of 20 (DAG-008).
     "serving_full_reserve": 3,
+    "bea_regional_ingest": 2,
+    "bls_qcew_ingest": 2,
+    "census_building_permits_ingest": 2,
+    "census_saipe_sahie_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
 EXPECTED_INGEST_POOLS = {
-    "census_building_permits_ingest": "census_bps_files",
     "acs_ingest": "census_api",
     "bls_ingest": "bls_api",
-    "bls_qcew_ingest": "bls_qcew_api",
     "fred_ingest": "fred_api",
     "cdc_ingest": "cdc_api",
     "fbi_ucr_ingest": "fbi_cde_api",
     "usda_nass_crop_ingest": "usda_nass_api",
     "bea_regional_ingest": "bea_files",
+    "bls_qcew_ingest": "bls_qcew_api",
+    "census_building_permits_ingest": "census_bps_files",
+    # One host and one key with the ACS, so one rate limit.
+    "census_saipe_sahie_ingest": "census_api",
 }
 
 
