@@ -1,10 +1,11 @@
 # ADR-0007: Derived time aggregates
 
-- **Status:** Proposed; human acceptance required before provider-aggregate ingestion
+- **Status:** Accepted by the repository owner (Nick) on 2026-10-07. Proposed
+  2026-09-28.
 - **Date:** 2026-09-28
 - **Decision owners:** Repository owner and data-product maintainers
-- **Related work:** [Time windows and rollups](../plans/in_progress/TIME_WINDOWS_AND_ROLLUPS_PLAN.md)
-- **Amends on acceptance:** [ADR-0001](0001-data-layer-boundaries.md) and the
+- **Related work:** [Time windows and rollups](../plans/needs_review/TIME_WINDOWS_AND_ROLLUPS_PLAN.md)
+- **Amends:** [ADR-0001](0001-data-layer-boundaries.md) and the
   [workbench plan](../plans/completed/ANALYTICS_WORKBENCH_PLAN.md) time-rollup
   non-goal. It does not amend the refusal of geographic rollups.
 
@@ -76,13 +77,13 @@ different operations.
 
 ## Consequences and acceptance gate
 
-The workbench's older blanket time-rollup non-goal will be narrowed only
-after this ADR is accepted. Its per-series request and geographic-alignment
-contract remain intact. The semantic registry and contract tests may be
-built while this proposal is under review, but provider-aggregate ingestion
-and any serving of derived values wait for human acceptance. No proposed
-method is treated as approved merely because it appears in a fixture or a
-source's native metadata.
+Accepted on 2026-10-07. The workbench's older blanket time-rollup non-goal is
+narrowed to geographic rollups and unreviewed time rollups; its per-series
+request and geographic-alignment contract remain intact. Provider-aggregate
+ingestion may proceed. Serving a derived value still needs, per metric, an
+*approved* method in the semantic registry: accepting this decision approves
+no method, and no proposed method is treated as approved merely because it
+appears in a fixture or a source's native metadata.
 
 The first release is deliberately limited to the native subannual sources
 and reviewed methods above. Change-over-window statistics, seasonal

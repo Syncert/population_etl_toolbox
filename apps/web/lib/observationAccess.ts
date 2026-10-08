@@ -25,6 +25,8 @@ import type { QueryParams } from "./api/client";
 import type { ExplorerSource } from "./explorerSources";
 import { NEUTRAL_OBSERVATIONS_PATH, PERIODS_PATH, RELEASES_PATH } from "./explorerSources";
 import type { ObservationRow } from "./explorerViewModel";
+import { NATIVE_TIME_VIEW, timeViewParams } from "./timeViews";
+import type { TimeView } from "./timeViews";
 
 export interface ObservationRequest {
   resource: string;
@@ -68,6 +70,8 @@ export interface LatestObservationQuery extends ScopedQuery {
   newestPerGeography?: boolean;
   /** Selected values for the source's own declared dimension filters. */
   dimensions?: Record<string, string>;
+  /** A calendar grain or window (ADR-0007); native when absent. */
+  timeView?: TimeView;
 }
 
 export interface HistoryObservationQuery extends ScopedQuery {
@@ -75,6 +79,32 @@ export interface HistoryObservationQuery extends ScopedQuery {
   geoId: string;
   limit?: string | number;
   dimensions?: Record<string, string>;
+  /** A calendar grain or window (ADR-0007); native when absent. */
+  timeView?: TimeView;
+}
+
+/**
+ * A calendar-grain or window read. It always goes to the neutral resource,
+ * always at `scope=latest`, and carries only the geography: the resource
+ * filters a window by geography and refuses a release pin, a reduction, a
+ * dimension or a state filter with a 422, so none is sent.
+ */
+function timeViewRequest(
+  source: ExplorerSource,
+  metricCode: string,
+  view: TimeView,
+  geography: QueryParams,
+  limit: string | number | undefined,
+): ObservationRequest {
+  return {
+    resource: NEUTRAL_OBSERVATIONS_PATH,
+    params: {
+      metric_code: metricCode,
+      ...timeViewParams(view),
+      limit,
+      ...declaredOnly(source, geography, source.neutralFilters),
+    },
+  };
 }
 
 export interface ReleaseListQuery {
@@ -277,6 +307,15 @@ export function buildLatestObservationRequest(
   source: ExplorerSource,
   query: LatestObservationQuery,
 ): ObservationRequest {
+  if (query.timeView && query.timeView !== NATIVE_TIME_VIEW) {
+    return timeViewRequest(
+      source,
+      query.metricCode,
+      query.timeView,
+      { geo_level: query.geoLevel },
+      query.limit,
+    );
+  }
   const shared: QueryParams = {
     geo_level: query.geoLevel,
     state_fips: query.stateFips,
@@ -324,6 +363,15 @@ export function buildHistoryObservationRequest(
   source: ExplorerSource,
   query: HistoryObservationQuery,
 ): ObservationRequest {
+  if (query.timeView && query.timeView !== NATIVE_TIME_VIEW) {
+    return timeViewRequest(
+      source,
+      query.metricCode,
+      query.timeView,
+      { geo_id: query.geoId },
+      query.limit,
+    );
+  }
   const released = asReleased(source, query);
 
   if (source.accessShape === "source-scoped" && !released) {

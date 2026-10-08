@@ -47,6 +47,8 @@ REQUIRED_RELATIONS = (
     "gold_fbi.latest_county_rollup",
     "gold_fbi.measure_export",
     "gold_fbi.metric_publisher",
+    "gold_fbi.derived_calendar_rollup",
+    "gold_fbi.calendar_window_observation",
 )
 
 

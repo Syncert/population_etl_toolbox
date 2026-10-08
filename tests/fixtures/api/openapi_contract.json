@@ -1524,6 +1524,29 @@
         },
         {
           "constraints": {
+            "default": "native",
+            "enum": [
+              "native",
+              "quarterly",
+              "annual"
+            ]
+          },
+          "in": "query",
+          "name": "time_grain",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "window",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
             "maximum": 2200,
             "minimum": 1700
           },
@@ -3173,6 +3196,8 @@
         "source_object_type": "string | null",
         "source_run_id": "any | null",
         "source_watermark": "string | null",
+        "time_grains": "array<string>",
+        "time_windows": "array<string>",
         "units": "string | null",
         "valid_geo_grains": "array<string> | null",
         "valid_time_grains": "array<string> | null"
@@ -3518,6 +3543,7 @@
         "as_of": "string | null",
         "capture_id": "string | null",
         "coverage": "ObservationCoverage | null",
+        "derivation": "ObservationDerivation | null",
         "dimensions": "object",
         "geo_id": "string | null",
         "geo_level": "string | null",
@@ -3547,7 +3573,9 @@
         "release": "string | null",
         "scope": "string",
         "source_code": "string",
-        "total": "integer"
+        "time_grain": "string",
+        "total": "integer",
+        "window": "string | null"
       },
       "required": [
         "items",
@@ -3612,6 +3640,20 @@
         "vintage_year": "integer | null"
       },
       "required": []
+    },
+    "ObservationDerivation": {
+      "properties": {
+        "component_releases": "array<string>",
+        "expected_periods": "integer | null",
+        "kind": "string",
+        "method": "string | null",
+        "method_version": "integer | null",
+        "present_periods": "integer | null",
+        "refusal_reason": "string | null"
+      },
+      "required": [
+        "kind"
+      ]
     },
     "ObservationListResponse": {
       "properties": {
@@ -3888,7 +3930,8 @@
         "publishes_value_status": "boolean",
         "route_segment": "string | null",
         "served_by_neutral_routes": "boolean",
-        "source_code": "string"
+        "source_code": "string",
+        "time_grains": "array<string>"
       },
       "required": [
         "datasets",

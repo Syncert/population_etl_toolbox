@@ -192,6 +192,8 @@ def fetch_bls_api(
         "seriesid": series_ids,
         "startyear": str(start_year),
         "endyear": str(end_year),
+        # BLS's own annual averages (`M13`), kept as provider facts (ADR-0007).
+        "annualaverage": True,
         "registrationkey": CONFIG.bls_api_key,
     }
 
@@ -204,6 +206,7 @@ def fetch_bls_api(
         "seriesid_sample": series_ids[:5],
         "startyear": str(start_year),
         "endyear": str(end_year),
+        "annualaverage": True,
         "registrationkey": "***",
     }
     logger.info(

@@ -293,6 +293,12 @@ class ObservationDispatch:
     #: envelope then carries ``null``, which is distinguishable from ``valid``.
     value_status_column: str | None = None
     unit_expression: str = "units"
+    #: The relation answering ``time_grain=quarterly|annual`` (ADR-0007): one
+    #: row per metric, geography, grain and calendar window, each either the
+    #: provider's own figure or a value derived by an approved method, in one
+    #: neutral shape every source shares. ``None`` when the source has no
+    #: calendar figures at all.
+    calendar_relation: str | None = None
     #: ``(name, expression)`` pairs served verbatim under ``dimensions``.
     dimension_expressions: tuple[tuple[str, str], ...] = ()
     #: Source-published uncertainty fields; ``None``-like when absent.
@@ -542,6 +548,9 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("observation_date", "geo_id", "as_of_date", "series_id"),
             analysis_ready=True,
             publishes_geo_attribution=True,
+            # BLS's own annual averages (`M13`, requested with
+            # `annualaverage=true`) and the derived calendar rollups.
+            calendar_relation="gold_bls.calendar_window_observation",
         ),
         ObservationDispatch(
             source_code="CENSUS_ACS",
@@ -769,6 +778,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "subject_code",
                 "observation_sk",
             ),
+            calendar_relation="gold_fbi.calendar_window_observation",
             analysis_restriction=(
                 "FBI UCR publishes agency-grain, participation-qualified "
                 "monthly counts whose subjects are not canonical geographies; "
@@ -953,14 +963,22 @@ def observation_dispatch(source_code: str) -> ObservationDispatch:
 #: Every relation the observation endpoints may read, for the privilege and
 #: allowlist assertions. A relation absent from this set must never appear in a
 #: generated query.
-ALLOWED_OBSERVATION_RELATIONS: frozenset[str] = frozenset(
-    relation
-    for contract in SERVING_CONTRACTS.values()
-    for relation in (contract.latest_relation, contract.history_relation)
-) | frozenset(
-    relation
-    for dispatch in OBSERVATION_DISPATCH.values()
-    for relation in (dispatch.latest_relation, dispatch.released_relation)
+ALLOWED_OBSERVATION_RELATIONS: frozenset[str] = (
+    frozenset(
+        relation
+        for contract in SERVING_CONTRACTS.values()
+        for relation in (contract.latest_relation, contract.history_relation)
+    )
+    | frozenset(
+        relation
+        for dispatch in OBSERVATION_DISPATCH.values()
+        for relation in (dispatch.latest_relation, dispatch.released_relation)
+    )
+    | frozenset(
+        dispatch.calendar_relation
+        for dispatch in OBSERVATION_DISPATCH.values()
+        if dispatch.calendar_relation is not None
+    )
 )
 
 

@@ -1629,3 +1629,357 @@ def test_reference_period_is_refused_where_a_source_does_not_declare_it() -> Non
     assert response.status_code == 422
     assert "reference_period_desc" in response.text
     assert not _dispatched(session)
+
+
+# ---------------------------------------------------------------------------
+# API-168 — time_grain=quarterly|annual serves calendar windows
+# ---------------------------------------------------------------------------
+
+
+class _CalendarSession(_DispatchSession):
+    """A dispatch session whose calendar relation holds the metric (or not)."""
+
+    def __init__(self, *args: Any, published: bool = True, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._published = published
+
+    def execute(self, query, params=None):
+        rendered = str(query)
+        if rendered.lstrip().startswith("SELECT EXISTS"):
+            self.statements.append(rendered)
+            self.parameters.append(dict(params or {}))
+            return _FakeResult(scalar_value=self._published)
+        return super().execute(query, params)
+
+
+_PROVIDER_ROW = {
+    "geo_id": "us:1",
+    "geo_level": "NATIONAL",
+    "subject_code": None,
+    "unit": "index",
+    "period_start": "2024-01-01",
+    "period_end": "2024-12-31",
+    "as_of": "2025-01-15",
+    "value": "313.689",
+    "value_status": "valid",
+    "derivation_kind": "provider_published",
+    "method": None,
+    "method_version": None,
+    "expected_periods": None,
+    "present_periods": None,
+    "refusal_reason": None,
+    "component_releases": None,
+}
+
+_REFUSED_ROW = {
+    **_PROVIDER_ROW,
+    "period_start": "2025-01-01",
+    "period_end": "2025-12-31",
+    "value": None,
+    "value_status": "incomplete_window",
+    "derivation_kind": "derived",
+    "method": "mean",
+    "method_version": 1,
+    "expected_periods": 12,
+    "present_periods": 8,
+    "refusal_reason": "incomplete_window: 8 of 12 periods reported",
+    "component_releases": ["2025-09-11"],
+}
+
+
+@pytest.mark.parametrize(
+    ("time_grain", "grain"), [("annual", "year"), ("quarterly", "quarter")]
+)
+def test_a_calendar_grain_reads_the_calendar_relation(
+    time_grain: str, grain: str
+) -> None:
+    """Covers: API-168 — a BLS metric's calendar windows come from the calendar relation, labelled."""
+    session = _CalendarSession(
+        metric_row=dict(_BLS_METRIC), rows=[_PROVIDER_ROW, _REFUSED_ROW], total=2
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "time_grain": time_grain,
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["time_grain"] == time_grain and body["total"] == 2
+    provider, refused = body["items"]
+    assert provider["value"] == "313.689"
+    assert provider["derivation"]["kind"] == "provider_published"
+    assert refused["value"] is None
+    assert refused["derivation"] == {
+        "kind": "derived",
+        "method": "mean",
+        "method_version": 1,
+        "expected_periods": 12,
+        "present_periods": 8,
+        "refusal_reason": "incomplete_window: 8 of 12 periods reported",
+        "component_releases": ["2025-09-11"],
+    }
+    queries = _dispatched(session)
+    assert queries
+    for sql in queries:
+        assert _relations_in(sql) == {"gold_bls.calendar_window_observation"}, sql
+    calendar_reads = [
+        bound
+        for bound, sql in zip(session.parameters, session.statements)
+        if "calendar_window_observation" in sql
+    ]
+    assert calendar_reads and all(bound["grain"] == grain for bound in calendar_reads)
+    assert session.parameters[-1]["metric_code"] == _BLS_METRIC["metric_code"]
+
+
+def test_native_grain_is_the_default_and_unchanged() -> None:
+    """Covers: API-168 — without time_grain a read answers the source's own periods, with no derivation."""
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _BLS_METRIC["metric_code"]},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["time_grain"] == "native"
+    for sql in _dispatched(session):
+        assert "calendar_window_observation" not in sql
+
+
+def test_a_metric_with_no_window_is_refused_not_answered_empty() -> None:
+    """Covers: API-168 — no provider figure and no approved method is a 422 naming ADR-0007."""
+    session = _CalendarSession(metric_row=dict(_BLS_METRIC), published=False)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "time_grain": "quarterly",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert "ADR-0007" in str(response.json())
+
+
+def test_a_source_without_calendar_windows_derives_nothing() -> None:
+    """Covers: API-168 — FRED declares no calendar relation, so a year is refused before any query."""
+    session = _CalendarSession(metric_row=dict(_FRED_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _FRED_METRIC["metric_code"], "time_grain": "annual"},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert "ADR-0007" in str(response.json())
+    assert _dispatched(session) == []
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"scope": "as_released"},
+        {"newest_per_geography": "true"},
+        {"time_grain": "monthly"},
+        {"adjustment_status": "SA"},
+    ],
+)
+def test_a_calendar_grain_refuses_what_it_cannot_answer(params: dict[str, str]) -> None:
+    """Covers: API-168 — no release history, reduction, unknown grain or native-only filter."""
+    session = _CalendarSession(metric_row=dict(_BLS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "time_grain": "annual",
+                **params,
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert _dispatched(session) == []
+
+
+@pytest.mark.parametrize("source_code", sorted(OBSERVATION_DISPATCH))
+def test_capabilities_publish_exactly_the_grains_the_route_serves(
+    source_code: str,
+) -> None:
+    """Covers: API-168 — a source lists calendar grains only when its dispatch declares a calendar relation."""
+    client = TestClient(app)
+    payload = client.get("/api/v1/catalog/capabilities").json()
+    entry = next(
+        (item for item in payload["items"] if item["source_code"] == source_code),
+        None,
+    )
+    if entry is None:
+        pytest.fail(f"{source_code} has a dispatch entry but no capability entry")
+    dispatch = OBSERVATION_DISPATCH[source_code]
+    expected = (
+        ["native", "quarterly", "annual"] if dispatch.calendar_relation else ["native"]
+    )
+    assert entry["time_grains"] == expected
+    if dispatch.calendar_relation is not None:
+        assert dispatch.calendar_relation in ALLOWED_OBSERVATION_RELATIONS
+        assert dispatch.calendar_relation.startswith(f"{dispatch.lineage_schema}.")
+
+
+# ---------------------------------------------------------------------------
+# API-169 — trailing and year-to-date windows, computed on request
+# ---------------------------------------------------------------------------
+
+
+_WINDOW_ROW = {
+    "geo_id": "us:1",
+    "geo_level": "NATIONAL",
+    "subject_code": None,
+    "unit": "index",
+    "period_start": "2025-07-01",
+    "period_end": "2025-09-30",
+    "expected_periods": 3,
+    "present_periods": 3,
+    "value": "321.5",
+    "refusal_reason": None,
+    "component_releases": ["2025-10-15"],
+}
+
+
+def _approve(monkeypatch: pytest.MonkeyPatch, code: str, method: str = "mean") -> None:
+    import apps.api.services.neutral_observations_service as service
+    from data_ingestion_toolbox.semantics.time_aggregation import TimeMethod
+
+    monkeypatch.setattr(
+        service,
+        "authorized_method",
+        lambda metric: (
+            TimeMethod(metric, method, "approved", "Nick", 1)
+            if metric == code
+            else None
+        ),
+    )
+
+
+def test_a_window_is_computed_with_the_approved_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-169 — one derived row per geography, bound anchor and span, labelled."""
+    _approve(monkeypatch, _BLS_METRIC["metric_code"])
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC), rows=[_WINDOW_ROW])
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "window": "trailing_3",
+                "period_start": "2025-09-01",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["window"] == "trailing_3" and body["total"] == 1
+    (row,) = body["items"]
+    assert row["value"] == "321.5"
+    assert row["derivation"]["kind"] == "derived"
+    assert row["derivation"]["method"] == "mean"
+    (sql,) = _dispatched(session)
+    assert "gold_bls.rpt_bls_observations" in sql
+    assert "%(" not in sql
+    bound = session.parameters[-1]
+    assert bound["anchor"] == "2025-09-01" and bound["span"] == 3
+    assert bound["metric_codes"] == [_BLS_METRIC["metric_code"]]
+
+
+def test_year_to_date_binds_no_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Covers: API-169 — YTD runs from January to the anchor, so its span is the anchor's month."""
+    _approve(monkeypatch, _BLS_METRIC["metric_code"])
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC), rows=[])
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _BLS_METRIC["metric_code"], "window": "ytd"},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert session.parameters[-1]["span"] is None
+    assert session.parameters[-1]["anchor"] is None
+
+
+def test_a_metric_without_an_approved_method_has_no_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-169 — no approved method is a 422 naming ADR-0007, before any query."""
+    _approve(monkeypatch, "BLS:SOMETHING_ELSE")
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _BLS_METRIC["metric_code"], "window": "trailing_12"},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert "ADR-0007" in str(response.json())
+    assert _dispatched(session) == []
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"time_grain": "annual"},
+        {"scope": "as_released"},
+        {"newest_per_geography": "true"},
+        {"period_start": "2025-09-15"},
+        {"year_from": "2020"},
+        {"window": "trailing_6"},
+    ],
+)
+def test_a_window_refuses_what_it_cannot_answer(
+    monkeypatch: pytest.MonkeyPatch, params: dict[str, str]
+) -> None:
+    """Covers: API-169 — no calendar grain, history, reduction, mid-month anchor, year filter or unknown window."""
+    _approve(monkeypatch, _BLS_METRIC["metric_code"])
+    session = _DispatchSession(metric_row=dict(_BLS_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _BLS_METRIC["metric_code"],
+                "window": "trailing_3",
+                **params,
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert _dispatched(session) == []

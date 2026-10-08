@@ -121,6 +121,14 @@ def _replay_registered_product(capture: dict[str, Any]) -> dict[str, Any]:
     return {**capture, "silver_row_count": count, "publication_required": True}
 
 
+def _refresh_time_rollups() -> int:
+    """Derive quarters and years of the FBI UCR counts with an approved method."""
+    from data_ingestion_toolbox.semantics.rollups import refresh_calendar_rollups
+
+    with _get_postgres_hook().get_conn() as conn:
+        return refresh_calendar_rollups(conn, "FBI_UCR")
+
+
 def _publish_registered_product(replay: dict[str, Any]) -> dict[str, Any]:
     if not replay["publication_required"]:
         return {**replay, "published_row_count": 0}
@@ -154,6 +162,13 @@ with DAG(
         python_callable=_require_shared_geography,
     )
 
+    # Derived from every product's latest published release, so it waits for
+    # every publication in the run.
+    time_rollups = PythonOperator(
+        task_id="refresh_time_rollups",
+        python_callable=_refresh_time_rollups,
+    )
+
     for registered_product in enabled_products():
         capture = PythonOperator(
             task_id=f"ingest_batch_{registered_product.product_id}",
@@ -172,3 +187,4 @@ with DAG(
             op_kwargs={"replay": replay.output},
         )
         ensure_schema >> require_shared_geography >> capture >> replay >> publish
+        publish >> time_rollups

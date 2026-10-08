@@ -35,6 +35,9 @@ _REQUIRED_RELATIONS = (
     "gold_bls.mv_bls_latest",
     "gold_bls.measure_export",
     "gold_bls.metric_publisher",
+    "gold_bls.provider_annual_average",
+    "gold_bls.derived_calendar_rollup",
+    "gold_bls.calendar_window_observation",
 )
 _REQUIRED_PROCEDURES = (
     "gold_bls.refresh_rpt_bls_observations(date,date)",
