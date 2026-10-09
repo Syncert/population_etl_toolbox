@@ -152,6 +152,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql"
     },
     {
+      "id": "silver-eia",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/eia/DDL/silver_eia.sql"
+    },
+    {
       "id": "migration-025",
       "phase": "source-fix",
       "path": "sql/migrations/025_county_label_is_not_reviewed.sql"
@@ -227,6 +232,11 @@
       "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql"
     },
     {
+      "id": "gold-eia",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/eia/gold_eia/DDL/gold_eia.sql"
+    },
+    {
       "id": "gold-bea",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql"
@@ -280,6 +290,11 @@
       "id": "publisher-census-bps",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-eia",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/eia/gold_eia/DDL/publisher.sql"
     },
     {
       "id": "publisher-bea",

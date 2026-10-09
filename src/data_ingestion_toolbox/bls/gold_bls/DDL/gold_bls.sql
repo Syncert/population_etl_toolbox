@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     measure_category           TEXT NOT NULL CHECK (
         measure_category IN (
             'EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'POPULATION',
-            'EARNINGS', 'HOURS', 'PRICE_INDEX', 'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS',
-            'OTHER'
+            'EARNINGS', 'HOURS', 'PRICE_INDEX', 'AVERAGE_PRICE', 'OPENINGS', 'HIRES', 'QUITS',
+            'LAYOFFS', 'SEPARATIONS', 'OTHER'
         )
     ),
     unit_of_measure            TEXT,
@@ -45,6 +45,32 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     semantic_notes             TEXT,
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Average prices (grocery-and-gasoline-prices) are a measure category of
+-- their own. A warehouse created before them carries the category CHECK
+-- without it; re-applying this file replaces that CHECK, under the name
+-- Postgres gave it, only while its definition does not yet name it. Every
+-- existing row satisfies both definitions.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'gold_bls.dim_bls_series'::regclass
+          AND conname = 'dim_bls_series_measure_category_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%AVERAGE_PRICE%'
+    ) THEN
+        ALTER TABLE gold_bls.dim_bls_series
+            DROP CONSTRAINT dim_bls_series_measure_category_check;
+        ALTER TABLE gold_bls.dim_bls_series
+            ADD CONSTRAINT dim_bls_series_measure_category_check CHECK (
+                measure_category IN (
+                    'EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'POPULATION',
+                    'EARNINGS', 'HOURS', 'PRICE_INDEX', 'AVERAGE_PRICE', 'OPENINGS', 'HIRES', 'QUITS',
+                    'LAYOFFS', 'SEPARATIONS', 'OTHER'
+                )
+            );
+    END IF;
+END $$;
 
 -- LAUS codes a program, an area, and a measure into every series id, so a
 -- series-level catalog gives one metric per place and no BLS metric spans

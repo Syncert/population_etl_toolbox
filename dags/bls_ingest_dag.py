@@ -44,6 +44,7 @@ from data_ingestion_toolbox.silver_ref.geography_guard import (
 )
 from data_ingestion_toolbox import bls as bls_package
 from data_ingestion_toolbox.bls.config import CONFIG, LAUS_COUNTY_PARENT_FIPS
+from data_ingestion_toolbox.bls.price_series import PRICE_ITEMS, read_price_series
 from data_ingestion_toolbox.bls.metadata import (
     sync_bls_series_metadata,
     sync_bls_datasets_table,
@@ -100,6 +101,13 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
     Returns: (hash_digest, series_count)
     """
     series_list = get_curated_series_for_program(program)
+    if program in PRICE_ITEMS:
+        # A price program's series come from BLS's own series list.
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            series_list = sorted(
+                set(series_list) | set(read_price_series(cur, program))
+            )
     if not series_list:
         return "", 0
 
