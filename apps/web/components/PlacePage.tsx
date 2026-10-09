@@ -79,6 +79,7 @@ import type { GeoLevel } from "../lib/urlState";
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
+const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
 
 const CATALOG_PAGE_SIZE = 1000;
 /** How many observation requests one page keeps in flight at once. */
@@ -154,6 +155,7 @@ export default function PlacePage({
   const [observationStatus, setObservationStatus] = useState({ state: "idle", message: "waiting for the place" });
   const [search, setSearch] = useState("");
   const [nearby, setNearby] = useState<NearbyGroups | null>(null);
+  const [related, setRelated] = useState<RelatedResponse | null>(null);
   const [nearbyNote, setNearbyNote] = useState("");
   const [distinctive, setDistinctive] = useState<DistinctiveResponse | null>(null);
   const [distinctiveNote, setDistinctiveNote] = useState("");
@@ -305,6 +307,7 @@ export default function PlacePage({
     apiFetch<RelatedResponse>(relatedPath(place.geo_id), { signal: controller.signal })
       .then((payload) => {
         if (controller.signal.aborted) return;
+        setRelated(payload);
         const groups = groupNearby(payload, states, counties);
         setNearby(groups);
         setNearbyNote(isEmpty(groups) ? "Nearby and related: the geography reference records no relationships for this place" : "");
@@ -554,6 +557,10 @@ export default function PlacePage({
           sourceFor={sourceFor}
         />
       ))}
+
+      {level !== "PLACE" && place && related?.geo_id === place.geo_id ? (
+        <GroceriesAndGas level={level} place={place} related={related} sources={sources} />
+      ) : null}
 
       {level === "PLACE" && city && nearby?.counties.length ? (
         <p className="place-cross-county" data-testid="place-cross-county">
