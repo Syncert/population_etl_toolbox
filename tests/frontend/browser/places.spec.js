@@ -90,6 +90,44 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-139 — sub-county-geography: a county page paints one ACS
+// measure over its tracts, counts the tract with no value instead of
+// painting it as zero, and lists every tract in a table.
+test("within this county paints tracts, counts the uncoloured one, and tabulates every tract", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.route(/\/tiles\/tracts$/, (route) =>
+    route.fulfill({
+      json: {
+        name: "tracts",
+        tiles: ["http://internal-martin:3000/tracts/{z}/{x}/{y}"],
+        vector_layers: [{ id: "tracts", fields: { geo_id: "String", geo_level: "String", state_fips: "String", county_fips: "String" } }],
+      },
+    }),
+  );
+  await page.route(/\/tiles\/tracts\/\d+\/\d+\/\d+/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/vnd.mapbox-vector-tile", body: Buffer.alloc(0) }),
+  );
+  await ready(page, "/us/wisconsin/dane-county");
+  const section = page.getByTestId("within-county");
+  await expect(section).toContainText("Within this county");
+  await expect(page.getByTestId("within-county-table").locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByTestId("within-county-row-state:55|county:025|tract:000202")).toContainText("Not published for this tract");
+  await expect(page.getByTestId("within-county-row-state:55|county:025|tract:000100")).toContainText("60,000");
+  await expect(page.getByTestId("within-county-uncoloured")).toHaveText(
+    "1 of 3 tracts have no published value and are left uncoloured, not shown as zero.",
+  );
+  await expect(page.getByTestId("within-county-map")).toHaveAttribute("data-colored-values", "2");
+  await page.getByTestId("within-county-measure").selectOption("CENSUS_ACS:acs5:B25064_001");
+  await expect(page.getByTestId("within-county-table")).toContainText("Median gross rent by Census tract");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a state page has no within-this-county section", async ({ page }) => {
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("within-county")).toHaveCount(0);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);
@@ -125,6 +163,51 @@ test("nearby and related: a place crossing two counties is noted on both pages",
 
   await ready(page, "/us/wisconsin/rock-county");
   await expect(page.getByTestId("place-nearby-within")).toContainText("40% of it lies in this county; the rest is in another county");
+});
+
+// Covers: WEB-134 — acs-place-grain: a city or town has its own page in the
+// same chapters, read at place grain, with the counties it lies in.
+test("a city page reads its own figures, notes the counties it crosses, and omits what no source publishes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/crossing-city");
+  await expect(page.locator("main")).toHaveCount(1);
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-level", "PLACE");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-geo-id", "state:55|place:99999");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Crossing city, Wisconsin");
+  await expect(page.locator(".section-kicker").first()).toHaveText("City or town");
+
+  // Three levels: the place, its state, the nation.
+  const income = page.getByTestId("card-median-household-income");
+  await expect(income.locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByTestId("card-median-household-income-place")).toContainText("Crossing city");
+  await expect(page.getByTestId("card-median-household-income-place")).toContainText("margin of error");
+  // BLS publishes no place: said in the card, not borrowed from a county.
+  await expect(page.getByTestId("card-unemployment-rate-place")).toContainText("Not published at city or town grain");
+
+  await expect(page.getByTestId("place-cross-county")).toHaveText(
+    "Crossing city crosses county lines: it lies in Dane County (60%) and Rock County (40%). A county's figures describe the whole county, not this place.",
+  );
+  const counties = page.getByTestId("place-nearby-counties");
+  await expect(counties.getByRole("link", { name: "Dane County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/dane-county");
+
+  await expect(page.getByTestId("chapter-safety")).toHaveCount(0);
+  await expect(page.getByTestId("chapter-land-farms")).toHaveCount(0);
+  await expect(page.getByTestId("place-omissions")).toContainText("Safety: no published city or town values for this place");
+  await expect(page.getByTestId("place-omissions")).toContainText("Land and Farms: no published city or town values for this place");
+  await expect(page.getByTestId("place-children")).toHaveCount(0);
+
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a city addressed by its FIPS settles on its name, and a county links to it", async ({ page }) => {
+  // Covers: WEB-134 — the seven-digit address the county page links with.
+  await ready(page, "/us/wisconsin/5599999");
+  await expect(page).toHaveURL(/\/us\/wisconsin\/crossing-city$/);
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-nearby-within").getByRole("link", { name: "Crossing city, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/5599999");
+  await ready(page, "/us/wisconsin/madison-city");
+  await expect(page.getByTestId("place-cross-county")).toHaveText("Madison city lies in Dane County.");
 });
 
 test("a place with no recorded relationships omits the section and says why", async ({ page }) => {

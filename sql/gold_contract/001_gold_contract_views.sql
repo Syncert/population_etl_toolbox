@@ -292,6 +292,19 @@ WHERE geo_level IN (
   AND geography_state = 'current'
   AND geo_geom IS NOT NULL;
 
+-- Census tracts, as their own tile layer (sub-county-geography). Tracts are
+-- about 85,000 small polygons, so they are not in `tile_boundary`: the state
+-- and county layer stays the size DB-053 measured it at, and the client asks
+-- for tracts only when a page draws inside one county. `county_name` is the
+-- tract's county; `area_name` is the tract's own name.
+CREATE OR REPLACE VIEW gold.tile_tract AS
+SELECT geo_id, geo_level, state_fips, county_fips, county_name, area_name,
+       latitude, longitude, geo_geom, boundary_vintage
+FROM gold_glossary.dim_geo_latest
+WHERE geo_level = gold_glossary.geo_grain('tract')
+  AND geography_state = 'current'
+  AND geo_geom IS NOT NULL;
+
 CREATE OR REPLACE VIEW gold.dim_metric AS
 SELECT * FROM gold_glossary.dim_metric;
 

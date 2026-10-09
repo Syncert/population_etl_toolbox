@@ -18,7 +18,7 @@ import { publishedNumber } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
 /** The grains a place page exists for, broadest first. */
-export const PLACE_LEVELS = ["NATIONAL", "STATE", "COUNTY"] as const;
+export const PLACE_LEVELS = ["NATIONAL", "STATE", "COUNTY", "PLACE"] as const;
 export type PlaceLevel = (typeof PLACE_LEVELS)[number];
 
 /**
@@ -343,6 +343,40 @@ export function countySegment(county: GeographySummary, counties: readonly Geogr
   return slug && !clash ? slug : `${county.state_fips || ""}${county.county_fips || ""}`;
 }
 
+/** A city, town, village or census-designated place, as the catalog names it. */
+export function cityName(place: GeographySummary): string {
+  return String(place.place_name || place.geo_name || place.geo_id);
+}
+
+/**
+ * The address segment of a city or town (acs-place-grain).
+ *
+ * Its name's slug, unless that slug is taken in its state -- by another place
+ * or by a county's own segment, because the two share `/us/<state>/<segment>`
+ * and a county keeps the plain slug it already had. Baltimore city is both a
+ * county equivalent and a place. A taken slug falls back to the seven-digit
+ * state-and-place FIPS, which cannot meet a county's five-digit one.
+ */
+export function citySegment(
+  place: GeographySummary,
+  places: readonly GeographySummary[],
+  counties: readonly GeographySummary[],
+): string {
+  const slug = placeSlug(cityName(place));
+  const fallback = `${place.state_fips || ""}${place.place_fips || ""}`;
+  if (!slug) return fallback;
+  const placeClash = places.some(
+    (other) =>
+      other.geo_id !== place.geo_id &&
+      other.state_fips === place.state_fips &&
+      placeSlug(cityName(other)) === slug,
+  );
+  const countyClash = counties.some(
+    (county) => county.state_fips === place.state_fips && countySegment(county, counties) === slug,
+  );
+  return placeClash || countyClash ? fallback : slug;
+}
+
 export interface SegmentMatch {
   place: GeographySummary | null;
   /** The canonical segment, when the address used another accepted form. */
@@ -381,6 +415,21 @@ export function resolveCountySegment(
   return { place: found, canonical: canonical === segment ? null : canonical };
 }
 
+/** Resolve a city or town segment: its slug, or its seven-digit FIPS. */
+export function resolveCitySegment(
+  segment: string,
+  places: readonly GeographySummary[],
+  counties: readonly GeographySummary[],
+): SegmentMatch {
+  const found =
+    places.find((place) => citySegment(place, places, counties) === segment) ||
+    places.find((place) => `${place.state_fips}${place.place_fips}` === segment) ||
+    null;
+  if (!found) return { place: null, canonical: null };
+  const canonical = citySegment(found, places, counties);
+  return { place: found, canonical: canonical === segment ? null : canonical };
+}
+
 export function placePath(stateSeg?: string | null, countySeg?: string | null): string {
   if (!stateSeg) return "/us";
   return countySeg ? `/us/${stateSeg}/${countySeg}` : `/us/${stateSeg}`;
@@ -415,6 +464,7 @@ const GRAIN_WORDS: Record<PlaceLevel, string> = {
   NATIONAL: "national",
   STATE: "state",
   COUNTY: "county",
+  PLACE: "city or town",
 };
 
 function resolveMeasure(

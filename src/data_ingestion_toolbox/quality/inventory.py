@@ -697,6 +697,11 @@ _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
             "geo_id (STATE and COUNTY, current, with geometry)",
             "gold_glossary.dim_geo_latest",
         ),
+        (
+            "tile_tract",
+            "geo_id (TRACT, current, with geometry)",
+            "gold_glossary.dim_geo_latest",
+        ),
         ("dim_geography", "geo_id (projection)", "gold_glossary.dim_geography"),
         (
             "fact_observation",

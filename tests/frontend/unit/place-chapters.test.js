@@ -6,10 +6,12 @@ import {
   buildTrend,
   chapterHasValues,
   countySegment,
+  citySegment,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
   placeSlug,
+  resolveCitySegment,
   resolveCountySegment,
   resolvePlaceChapters,
   resolveStateSegment,
@@ -247,3 +249,64 @@ describe("place titles", () => {
     expect(placeRouteTitle("<script>")).toBe("United States");
   });
 });
+
+// Covers: WEB-134 — acs-place-grain: a city or town shares the county's
+// address space, so a county keeps its slug and a clashing place takes its
+// seven-digit FIPS; chapters no source publishes for places are omitted.
+describe("cities and towns", () => {
+  const maryland = [
+    { geo_id: "state:24|county:005", geo_level: "COUNTY", state_fips: "24", county_fips: "005", county_name: "Baltimore County" },
+    { geo_id: "state:24|county:510", geo_level: "COUNTY", state_fips: "24", county_fips: "510", county_name: "Baltimore city" },
+  ];
+  const places = [
+    { geo_id: "state:24|place:04000", geo_level: "PLACE", state_fips: "24", place_fips: "04000", place_name: "Baltimore city" },
+    { geo_id: "state:24|place:01600", geo_level: "PLACE", state_fips: "24", place_fips: "01600", place_name: "Annapolis city" },
+    { geo_id: "state:24|place:31175", geo_level: "PLACE", state_fips: "24", place_fips: "31175", place_name: "Glen Burnie CDP" },
+  ];
+
+  it("gives a place its name's slug unless a county or another place holds it", () => {
+    expect(citySegment(places[1], places, maryland)).toBe("annapolis-city");
+    expect(citySegment(places[2], places, maryland)).toBe("glen-burnie-cdp");
+    // Baltimore city, the county equivalent, keeps `baltimore-city`.
+    expect(citySegment(places[0], places, maryland)).toBe("2404000");
+  });
+
+  it("resolves a place by slug or seven-digit code, and names the canonical form", () => {
+    expect(resolveCitySegment("annapolis-city", places, maryland)).toEqual({ place: places[1], canonical: null });
+    expect(resolveCitySegment("2401600", places, maryland)).toEqual({ place: places[1], canonical: "annapolis-city" });
+    expect(resolveCitySegment("2404000", places, maryland)).toEqual({ place: places[0], canonical: null });
+    expect(resolveCitySegment("atlantis-city", places, maryland)).toEqual({ place: null, canonical: null });
+  });
+
+  it("omits the chapters no source publishes for places, with the reason", () => {
+    const published = new Map([
+      metric("CENSUS_ACS:acs5:B19013_001", ["PLACE", "COUNTY", "STATE", "NATIONAL"]),
+      metric("CENSUS_PEP:POPESTIMATE", ["PLACE", "COUNTY", "STATE", "NATIONAL"]),
+      metric("FBI_UCR:summarized_violent_crime:V:offense:rate", ["AGENCY", "STATE", "NATIONAL"]),
+      metric("BLS:LAU:UNEMP_RATE", ["COUNTY", "STATE"]),
+    ]);
+    const { shown, omitted } = resolvePlaceChapters("PLACE", published);
+    expect(shown.map((resolved) => resolved.chapter.id)).toEqual(["people", "work-money"]);
+    const safety = omitted.find((entry) => entry.chapter.id === "safety");
+    expect(omissionLine(safety)).toBe("Safety: no published city or town values for this place");
+    expect(shown.every((resolved) => !resolved.stateContext)).toBe(true);
+  });
+});
+// Covers: WEB-139 — sub-county-geography: the tract measures are the
+// tables the warehouse loads at tract grain, and the legend says how many
+// tracts are left uncoloured rather than painting them as zero.
+describe("within this county", () => {
+  it("offers only the tract tables and states the uncoloured count", async () => {
+    const { TRACT_MEASURES, uncolouredSentence } = await import("../../../apps/web/components/WithinCounty.tsx");
+    expect(TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0])).toEqual([
+      "B19013",
+      "B01003",
+      "B17001",
+      "B25064",
+      "B25077",
+    ]);
+    expect(uncolouredSentence(3, 2)).toBe("1 of 3 tracts have no published value and are left uncoloured, not shown as zero.");
+    expect(uncolouredSentence(4, 4)).toBe("All 4 tracts have a published value.");
+  });
+});
+

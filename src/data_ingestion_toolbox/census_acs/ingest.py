@@ -33,7 +33,7 @@ from data_ingestion_toolbox.capture import (
 from data_ingestion_toolbox.census_acs.silver_census.replay import (
     replay_census_capture,
 )
-from .config import CONFIG
+from .config import CONFIG, place_parent_fips, tract_parent_fips
 
 CENSUS_NULL_SENTINELS = {
     "-222222222",
@@ -102,10 +102,13 @@ def _get_pg_connection():
     return psycopg2.connect(**details.psycopg_kwargs())
 
 
-def get_curated_variables(year: int, dataset: str) -> List[str]:
+def get_curated_variables(
+    year: int, dataset: str, tables: Optional[List[str]] = None
+) -> List[str]:
     """
     Return the list of variable names (including E/M suffixes) for the given
-    year+dataset, restricted to curated tables.
+    year+dataset, restricted to curated tables -- or to ``tables`` when given,
+    which is how a tract slice asks for its smaller set.
     """
 
     sql = """
@@ -119,7 +122,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
 
     with _get_pg_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (dataset, year, CONFIG.curated_tables))
+            cur.execute(sql, (dataset, year, list(tables or CONFIG.curated_tables)))
             rows = cur.fetchall()
     return [r[0] for r in rows]
 
@@ -130,10 +133,16 @@ def chunked(iterable: List[str], n: int) -> Iterable[List[str]]:
 
 
 def build_geo_params(
-    geo_level: str, state_fips: Optional[str] = None
+    geo_level: str,
+    state_fips: Optional[str] = None,
+    dataset: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Build the 'for' and 'in' query params for the ACS API, given geo_level.
+
+    A place request is sliced by state, as counties are, and is refused for a
+    state outside the dataset's declared place scope (``ACS_PLACE_PARENT_FIPS``)
+    rather than sent and answered empty.
     """
     if geo_level == "us":
         return {"for": "us:1"}
@@ -143,6 +152,24 @@ def build_geo_params(
         if not state_fips:
             raise ValueError("state_fips required for county-level requests")
         return {"for": "county:*", "in": f"state:{state_fips}"}
+    elif geo_level == "place":
+        if not state_fips:
+            raise ValueError("state_fips required for place-level requests")
+        if dataset is None or state_fips not in place_parent_fips(dataset):
+            raise ValueError(
+                f"{dataset or 'unknown dataset'} publishes no places for state {state_fips}"
+            )
+        return {"for": "place:*", "in": f"state:{state_fips}"}
+    elif geo_level == "tract":
+        # Every tract in every county of one state: the API takes the county
+        # wildcard inside `in` (sub-county-geography).
+        if not state_fips:
+            raise ValueError("state_fips required for tract-level requests")
+        if dataset is None or state_fips not in tract_parent_fips(dataset):
+            raise ValueError(
+                f"{dataset or 'unknown dataset'} publishes no tracts for state {state_fips}"
+            )
+        return {"for": "tract:*", "in": f"state:{state_fips} county:*"}
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
 
@@ -176,7 +203,7 @@ def fetch_acs_api(
         "get": ",".join(variables),
         "key": CONFIG.require_api_key(),
     }
-    params.update(build_geo_params(geo_level, state_fips))
+    params.update(build_geo_params(geo_level, state_fips, dataset))
 
     # Small jitter even under lock to avoid rhythmic bursts on retries
     time.sleep(0.2 + random.random() * 0.4)
@@ -259,6 +286,8 @@ def rows_to_polars(
         "us": {"us"},
         "state": {"state"},
         "county": {"state", "county"},
+        "place": {"state", "place"},
+        "tract": {"state", "county", "tract"},
     }
     if geo_level not in expected_geo_columns:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -271,7 +300,9 @@ def rows_to_polars(
     df = pl.DataFrame(records, schema=[str(h) for h in header], orient="row")
 
     # Determine which columns are variables and which are geos
-    geo_cols = [c for c in df.columns if c in ("us", "state", "county")]
+    geo_cols = [
+        c for c in df.columns if c in ("us", "state", "county", "place", "tract")
+    ]
     var_cols = [c for c in df.columns if c not in geo_cols]
 
     # For US-level, there will be 'us' as the geo; for state/county, there will be 'state', 'county'
@@ -295,6 +326,29 @@ def rows_to_polars(
                     pl.col("state"),
                     pl.lit("|county:"),
                     pl.col("county"),
+                ]
+            ),
+            state_fips=pl.col("state"),
+            county_fips=pl.col("county"),
+        )
+    elif geo_level == "place":
+        df = df.with_columns(
+            geo_id=pl.concat_str(
+                [pl.lit("state:"), pl.col("state"), pl.lit("|place:"), pl.col("place")]
+            ),
+            state_fips=pl.col("state"),
+            county_fips=pl.lit(None, dtype=pl.Utf8),
+        )
+    elif geo_level == "tract":
+        df = df.with_columns(
+            geo_id=pl.concat_str(
+                [
+                    pl.lit("state:"),
+                    pl.col("state"),
+                    pl.lit("|county:"),
+                    pl.col("county"),
+                    pl.lit("|tract:"),
+                    pl.col("tract"),
                 ]
             ),
             state_fips=pl.col("state"),
@@ -382,7 +436,13 @@ def ingest_slice(
         (2022, 'acs5', 'state')
         (2022, 'acs5', 'county', '55')  # WI counties
     """
-    variables = get_curated_variables(year, dataset)
+    # A tract slice asks for the tract tables only; every other level for
+    # the whole curated list.
+    variables = (
+        get_curated_variables(year, dataset, CONFIG.tract_tables)
+        if geo_level == "tract"
+        else get_curated_variables(year, dataset)
+    )
     if not variables:
         # nothing to ingest for this year+dataset
         return 0
@@ -433,7 +493,7 @@ def _ingest_capture_chunks(
                 "year": year,
                 "geo_level": geo_level,
             }
-            parameters.update(build_geo_params(geo_level, state_fips))
+            parameters.update(build_geo_params(geo_level, state_fips, dataset))
             request = control.start_request(
                 run_id=run_id,
                 endpoint=endpoint,
