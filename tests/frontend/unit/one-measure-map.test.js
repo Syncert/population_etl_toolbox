@@ -48,3 +48,35 @@ describe("the one-measure view model", () => {
     expect(rankedPage(view, 1, 2).map((entry) => entry.county.county_fips)).toEqual(["005", "025"]);
   });
 });
+
+describe("equal-count bands", () => {
+  // Covers: WEB-142 — a skewed measure still spreads counties across colours.
+  it("gives each band about the same number of counties when a few are huge", async () => {
+    const { equalCountBins } = await import("../../../apps/web/lib/oneMeasureMap");
+    const values = [...Array.from({ length: 97 }, (_, index) => 100 + index), 50_000, 900_000, 1_200_000];
+    const bins = equalCountBins(values, 5);
+    expect(bins).toHaveLength(5);
+    expect(bins.map((bin) => bin.count)).toEqual([20, 20, 20, 20, 20]);
+    expect(bins[0].lowerBound).toBe(100);
+    expect(bins[4].upperBound).toBe(1_200_000);
+    expect(bins.reduce((total, bin) => total + bin.count, 0)).toBe(values.length);
+  });
+
+  it("counts a value by the rule the map colours it, and never splits a tie", async () => {
+    const { equalCountBins } = await import("../../../apps/web/lib/oneMeasureMap");
+    const { colorForDistributionValue } = await import("../../../apps/web/lib/explorerViewModel");
+    const values = [1, 1, 1, 1, 1, 1, 2, 3, 4, 5];
+    const bins = equalCountBins(values, 5);
+    for (let index = 1; index < bins.length; index += 1) {
+      expect(bins[index].lowerBound).toBeGreaterThan(bins[index - 1].lowerBound);
+    }
+    const coloured = bins.map((bin, index) => ({ ...bin, color: `c${index}` }));
+    const byColour = {};
+    for (const value of values) {
+      const colour = colorForDistributionValue(value, coloured);
+      byColour[colour] = (byColour[colour] || 0) + 1;
+    }
+    expect(bins.map((bin, index) => byColour[`c${index}`] || 0)).toEqual(bins.map((bin) => bin.count));
+    expect(equalCountBins([7, 7])).toEqual([{ binIndex: 1, lowerBound: 7, upperBound: 7, count: 2 }]);
+  });
+});
