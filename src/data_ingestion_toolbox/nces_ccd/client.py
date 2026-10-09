@@ -114,11 +114,31 @@ class _Deflate64Member(io.RawIOBase):
         return count
 
 
+def _find_member(archive: zipfile.ZipFile, name: str) -> zipfile.ZipInfo:
+    """The member named ``name``, at the root or inside the zip's one folder.
+
+    The 2024-25 geocode zip keeps its files at the root; the 2023-24 one keeps
+    them under ``EDGE_GEOCODE_PUBLICSCH_2324/``. Only a single match by file
+    name is accepted, so a zip holding two such files is still refused.
+    """
+    try:
+        return archive.getinfo(name)
+    except KeyError:
+        nested = [
+            info
+            for info in archive.infolist()
+            if not info.is_dir() and info.filename.rsplit("/", 1)[-1] == name
+        ]
+        if len(nested) != 1:
+            raise
+        return nested[0]
+
+
 def open_member(raw_bytes: bytes, item: SchoolFile) -> IO[bytes]:
     """The registered member as a binary stream, whatever its compression."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(raw_bytes))
-        info = archive.getinfo(item.member)
+        info = _find_member(archive, item.member)
         if info.compress_type == _DEFLATE64:
             return io.BufferedReader(
                 _Deflate64Member(raw_bytes, info, item.path), _CHUNK

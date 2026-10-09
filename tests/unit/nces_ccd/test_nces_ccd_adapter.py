@@ -271,3 +271,26 @@ def test_server_errors_retry_and_client_errors_do_not() -> None:
         )
     assert (raised.value.code, raised.value.status) == ("non_retryable_http", 404)
     assert "https://" not in str(raised.value)
+
+
+def test_a_geocode_member_inside_the_zips_folder_is_found() -> None:
+    """Covers: ETL-070 — the 2023-24 EDGE zip nests its TXT in a folder; a duplicate is refused."""
+    # Imported here: another test in this file reloads the client module.
+    from data_ingestion_toolbox.nces_ccd import client
+
+    item = next(
+        f for f in registered_files() if f.stem == "EDGE_GEOCODE_PUBLICSCH_2324"
+    )
+    nested = io.BytesIO()
+    with zipfile.ZipFile(nested, "w") as archive:
+        archive.writestr(f"{item.stem}/", b"")
+        archive.writestr(f"{item.stem}/{item.member}", b"010000500870|row\n")
+        archive.writestr(f"{item.stem}/{item.stem}.xlsx", b"x")
+    assert client.open_member(nested.getvalue(), item).read() == b"010000500870|row\n"
+
+    twice = io.BytesIO()
+    with zipfile.ZipFile(twice, "w") as archive:
+        archive.writestr(f"a/{item.member}", b"1")
+        archive.writestr(f"b/{item.member}", b"2")
+    with pytest.raises(client.CcdPayloadError):
+        client.open_member(twice.getvalue(), item)
