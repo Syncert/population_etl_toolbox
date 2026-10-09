@@ -1,5 +1,7 @@
 """Every configured BLS program reaches silver.
 
+Covers: ETL-078
+
 The DAG ingests every program in ``CONFIG.programs`` but expands the silver
 transform over its own list. When average prices (``ap``) joined the config,
 that list kept the five older programs, so the price rows reached
@@ -51,6 +53,7 @@ def _names_config_programs(node: ast.expr) -> bool:
 
 
 def test_silver_transform_expands_over_every_configured_program() -> None:
+    """Covers: ETL-078 — the transform list is the configured programs, `ap` included."""
     expansion = _transform_expansion()
     if isinstance(expansion, ast.List):
         listed = {ast.literal_eval(item) for item in expansion.elts}
@@ -63,4 +66,5 @@ def test_silver_transform_expands_over_every_configured_program() -> None:
 
 
 def test_average_prices_are_a_configured_program() -> None:
+    """Covers: ETL-078 — average prices are configured, so the expansion carries them."""
     assert "ap" in CONFIG.programs

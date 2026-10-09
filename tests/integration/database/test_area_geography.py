@@ -146,6 +146,18 @@ def test_a_county_resolves_to_its_region_division_and_metro(
                 "SELECT area_code, geo_type FROM silver_ref.dim_geo_entity WHERE geo_id = 'cbsa:31540'"
             )
             assert cursor.fetchone() == ("31540", "metro")
+            # An area has no state, county or place name of its own, so its
+            # name is `area_name`; without it the served catalog names the
+            # area by its id ("cbsa:31540"), which a page cannot show.
+            cursor.execute(
+                "SELECT geo_id, area_name FROM silver_ref.dim_geo_current "
+                "WHERE geo_id IN ('cbsa:31540', 'region:2', 'division:3') ORDER BY geo_id"
+            )
+            assert cursor.fetchall() == [
+                ("cbsa:31540", "Madison, WI"),
+                ("division:3", "East North Central"),
+                ("region:2", "Midwest Region"),
+            ]
             cursor.execute(
                 "SELECT COUNT(*) FROM silver_ref.dim_geo_entity_version AS v "
                 "JOIN silver_ref.dim_geo_entity AS e USING (geo_sk) WHERE e.geo_id = ANY(%s)",
