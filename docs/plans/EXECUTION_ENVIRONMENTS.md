@@ -50,7 +50,7 @@ grep was looking for.
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`groceries-and-gas-cards`](to_do/GROCERIES_AND_GAS_CARDS_PLAN.md) | medium | `browser` | `grocery-and-gasoline-prices`, `place-pages` |
+| [`groceries-and-gas-cards`](needs_review/GROCERIES_AND_GAS_CARDS_PLAN.md) | medium | `browser` | `grocery-and-gasoline-prices`, `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 

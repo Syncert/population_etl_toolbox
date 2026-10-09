@@ -356,3 +356,41 @@ test("a place with no ranked measure omits What stands out and says why", async 
   await expect(page.getByTestId("place-standout")).toHaveCount(0);
   await expect(page.getByTestId("place-omissions")).toContainText("What stands out: no measure could be ranked for this place");
 });
+
+// Covers: WEB-143 — groceries-and-gas-cards: each figure on the card names
+// the larger area and source it describes, falls through to a larger area
+// with the reason stated, and reads the CPI only as a change over a year.
+test("a county's groceries and gas card names the area behind every figure", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const card = page.getByTestId("place-groceries-gas");
+  await expect(card).toContainText("No source publishes grocery or gas prices for a county");
+  const gas = page.getByTestId("place-cost-gas");
+  await expect(gas).toHaveAttribute("data-area", "region:2");
+  await expect(gas).toContainText("$3.05 a gallon");
+  await expect(gas).toContainText("Midwest Region figure");
+  await expect(gas).toContainText("Bureau of Labor Statistics");
+  await expect(gas).toContainText("Wisconsin (EIA): no value published for this area.");
+  const food = page.getByTestId("place-cost-food");
+  await expect(food).toHaveAttribute("data-area", "region:2");
+  await expect(food).toContainText("up 3.2% over the year");
+  await expect(food).toContainText("2025-08 is not published");
+  await expect(food).not.toContainText("index 1982-84");
+  const parity = page.getByTestId("place-cost-parity");
+  await expect(parity).toHaveAttribute("data-area", "cbsa:31540");
+  await expect(parity).toContainText("97.4 (nation = 100)");
+  await expect(parity).toContainText("Madison, WI figure");
+  await expect(parity).toContainText("Bureau of Economic Analysis");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("the nation's groceries and gas card is its own, with parity 100 by definition", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us");
+  await expect(page.getByTestId("place-cost-no-local")).toHaveCount(0);
+  await expect(page.getByTestId("place-cost-gas")).toContainText("$3.18 a gallon · United States,");
+  await expect(page.getByTestId("place-cost-gas")).toContainText("U.S. Energy Information Administration");
+  await expect(page.getByTestId("place-cost-food")).toContainText("up 2.0% over the year");
+  await expect(page.getByTestId("place-cost-parity")).toContainText("100 by definition");
+});
