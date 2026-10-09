@@ -5,11 +5,14 @@
 // resolves for itself.
 
 import { EXPLAINER_INDEX } from "./explainerIndex";
+import { PLACE_CHAPTERS } from "./placeChapters";
 import { useCasePages } from "./useCasePages";
 
 /** Routes a crawler may index. */
 export const PUBLIC_ROUTES: readonly string[] = [
   "/",
+  "/us",
+  "/data",
   "/catalog",
   "/explore",
   "/compare",
@@ -21,6 +24,9 @@ export const PUBLIC_ROUTES: readonly string[] = [
   "/articles",
   "/explain",
   ...EXPLAINER_INDEX.map((entry) => `/explain/${entry.slug}`),
+  // The one-measure map of each place-page headline measure (one-measure-map).
+  ...PLACE_CHAPTERS.flatMap((chapter) => chapter.headline)
+    .map((measure) => `/map/${encodeURIComponent(measure.candidates[0]!)}`),
 ];
 
 /**
@@ -30,7 +36,7 @@ export const PUBLIC_ROUTES: readonly string[] = [
  * evidence packet. Excluding them is a statement about the published surface,
  * not the control that protects them -- that is the API's token check.
  */
-export const PRIVATE_ROUTES: readonly string[] = ["/saved", "/builder"];
+export const PRIVATE_ROUTES: readonly string[] = ["/saved", "/builder", "/studio"];
 
 /**
  * The origin the sitemap's absolute URLs are built from.

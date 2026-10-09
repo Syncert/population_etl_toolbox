@@ -38,6 +38,7 @@ from apps.api.routers import (
     health,
     identity,
     observations,
+    place,
     population,
     saved_analysis,
     usda_nass,
@@ -68,6 +69,7 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     observations.router,
     distribution.router,
     comparison.router,
+    place.router,
     population.router,
     # The derived FBI county roll-up (ETL-053): a warehouse-published
     # derived aggregate, cacheable like every other public warehouse read.

@@ -119,8 +119,9 @@ list.
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `q`, `active_only`) — see below |
+| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
-| `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
+| `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
 `valid_geo_grains` on a metric distinguishes an explicit empty list from an
 absent or null field. `[]` means the metric is discoverable but has no
@@ -213,6 +214,31 @@ answered under its own name here and under its state's name on
 two responses.
 
 ## Observations
+
+### Derived within-parent percentile ranks
+
+`GET /api/v1/place/distinctive?geo_id=…` is an API-derived reading of where
+one county stands among the other counties of its state, or one state among
+the states, **one measure at a time**. It publishes no warehouse fact and no
+score. For each measure in a reviewed list (medians, rates, shares, indices
+and per-person values; a count would rank a county by its size), the API reads
+the newest published value per geography through the source's own aligned
+reduction and returns, per measure: `value`, `period_start`, `units`,
+`siblings_with_value`, `siblings_withheld` (a row with no number),
+`siblings_missing` (no row at all), `siblings_below`, `siblings_tied`, and
+`percentile_rank` = `siblings_below / siblings_with_value`, with the
+`request` it read and the source's uncertainty caveat. Withheld and missing
+siblings are counted, never ranked as zero.
+
+A measure is listed in `not_ranked` with its reason, never dropped, when it is
+not published in the catalog or at the grain, when its source is declined for
+aligned analysis, when this geography has no value, when its siblings' newest
+values come from different periods (a rank across periods is not published),
+or when fewer than `minimum_siblings` (10) siblings have a value. The
+response carries `derived: true` and `method`, has no field that combines two
+measures, and orders `ranked` by `percentile_rank`, highest first. A nation
+has no siblings, so every measure is `not_ranked`. An unknown geography
+answers `404 {"detail": "geo_id not found"}`.
 
 ### Derived population planning scenario
 
@@ -1382,6 +1408,7 @@ status code on the one class of error the API can explain.
 | --- | --- |
 | `/catalog/metrics` | `metric_code` — the catalog's own unique key, so no two rows can tie |
 | `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
+| `/catalog/geographies/{geo_id}/related` | `relationship`, then `geo_id` |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |

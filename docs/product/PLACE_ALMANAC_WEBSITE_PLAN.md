@@ -75,7 +75,7 @@ Read from the source configs and registries.
 | USDA NASS | Corn, soybeans, wheat, hay acreage, yield, production; census-of-agriculture county corn | Nation, state, county | Annual and in-season | Suppressed cells stay suppressed; combined counties are not counties |
 
 Two gaps shape the plan. Safety at county grain depends on
-`docs/plans/to_do/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md`; until then
+`docs/plans/needs_review/COUNTY_CRIME_ROLLUP_FROM_AGENCY_REPORTS_PLAN.md`; until then
 the county Safety chapter shows the state with a label, as the use-case pages
 already do. Cities and towns have identities in the geography master data, but
 ACS is ingested at county and above, so places are a later phase.
@@ -301,14 +301,14 @@ the build order above.
 
 Web, over the published API:
 
-- [`docs/plans/to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md`](../plans/to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) — the product; every other web plan depends on its route and chapter contract.
-- [`docs/plans/to_do/NEARBY_AND_RELATED_PLACES_PLAN.md`](../plans/to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) — geography relationships served and shown.
-- [`docs/plans/to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md`](../plans/to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) — per-measure percentile rank among peers, API-derived, never summed.
+- [`docs/plans/needs_review/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md`](../plans/needs_review/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) — the product; every other web plan depends on its route and chapter contract.
+- [`docs/plans/needs_review/NEARBY_AND_RELATED_PLACES_PLAN.md`](../plans/needs_review/NEARBY_AND_RELATED_PLACES_PLAN.md) — geography relationships served and shown.
+- [`docs/plans/needs_review/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md`](../plans/needs_review/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) — per-measure percentile rank among peers, API-derived, never summed.
 - [`docs/plans/needs_review/EXPLAINER_PAGES_PLAN.md`](../plans/needs_review/EXPLAINER_PAGES_PLAN.md) — the first twelve explainers and their linking contract.
-- [`docs/plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md`](../plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) — operator-only frame renderer and script notes.
-- [`docs/plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md`](../plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) — the home page and the public data page.
-- [`docs/plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md`](../plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) — the measure map and ranked table.
-- [`docs/plans/to_do/COMPARE_TWO_PLACES_PLAN.md`](../plans/to_do/COMPARE_TWO_PLACES_PLAN.md) — the place page folded in half.
+- [`docs/plans/needs_review/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md`](../plans/needs_review/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) — operator-only frame renderer and script notes.
+- [`docs/plans/needs_review/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md`](../plans/needs_review/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) — the home page and the public data page.
+- [`docs/plans/needs_review/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md`](../plans/needs_review/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) — the measure map and ranked table.
+- [`docs/plans/needs_review/COMPARE_TWO_PLACES_PLAN.md`](../plans/needs_review/COMPARE_TWO_PLACES_PLAN.md) — the place page folded in half.
 - [`docs/plans/to_do/MONTHLY_BRIEFINGS_PLAN.md`](../plans/to_do/MONTHLY_BRIEFINGS_PLAN.md) — first consumer of the publishing approval path.
 
 Warehouse, county and place depth:

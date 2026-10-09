@@ -3805,6 +3805,30 @@ r gold_glossary.dim_source_system
     index dim_source_system_pkey CREATE UNIQUE INDEX dim_source_system_pkey ON gold_glossary.dim_source_system USING btree (source_system_sk)
     index dim_source_system_source_code_key CREATE UNIQUE INDEX dim_source_system_source_code_key ON gold_glossary.dim_source_system USING btree (source_code)
 
+v gold_glossary.geo_relationship
+    column geo_id text
+    column related_geo_id text
+    column relationship_type text
+    column geography_vintage integer
+    column overlap_area_m2 numeric
+    column overlap_weight numeric
+    column evidence_source text
+    body SELECT parent.geo_id,
+    body     related.geo_id AS related_geo_id,
+    body     relationship.relationship_type,
+    body     relationship.geography_vintage,
+    body     relationship.overlap_area_m2,
+    body     relationship.overlap_weight,
+    body     relationship.evidence_source
+    body    FROM silver_ref.bridge_geo_relationship_version relationship
+    body      JOIN silver_ref.dim_geo_entity parent_entity ON parent_entity.geo_sk = relationship.parent_geo_sk
+    body      JOIN silver_ref.dim_geo_entity related_entity ON related_entity.geo_sk = relationship.related_geo_sk
+    body      JOIN gold_glossary.dim_geo_latest parent ON parent.geo_id = parent_entity.geo_id AND parent.geography_state = 'current'::text
+    body      JOIN gold_glossary.dim_geo_latest related ON related.geo_id = related_entity.geo_id AND related.geography_state = 'current'::text
+    body   WHERE (relationship.relationship_type = ANY (ARRAY['contains'::text, 'intersects'::text, 'adjacent'::text])) AND relationship.geography_vintage = (( SELECT max(newest.geography_vintage) AS max
+    body            FROM silver_ref.bridge_geo_relationship_version newest
+    body           WHERE newest.parent_geo_sk = relationship.parent_geo_sk AND newest.relationship_type = relationship.relationship_type));
+
 r gold_glossary.publisher_harvest_state
     column source_code text NOT NULL
     column publisher_contract_version text NOT NULL
@@ -5951,7 +5975,7 @@ r silver_ref.bridge_geo_relationship_version
     constraint bridge_geo_relationship_version_parent_geo_sk_fkey FOREIGN KEY (parent_geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
     constraint bridge_geo_relationship_version_pkey PRIMARY KEY (relationship_sk)
     constraint bridge_geo_relationship_version_related_geo_sk_fkey FOREIGN KEY (related_geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
-    constraint bridge_geo_relationship_version_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['contains'::text, 'intersects'::text, 'serves'::text, 'provider_crosswalk'::text])))
+    constraint bridge_geo_relationship_version_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['contains'::text, 'intersects'::text, 'adjacent'::text, 'serves'::text, 'provider_crosswalk'::text])))
     constraint bridge_geo_relationship_version_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES raw_capture.response_capture(capture_id)
     index bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key CREATE UNIQUE INDEX bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key ON silver_ref.bridge_geo_relationship_version USING btree (parent_geo_sk, related_geo_sk, relationship_type, geography_vintage)
     index bridge_geo_relationship_version_pkey CREATE UNIQUE INDEX bridge_geo_relationship_version_pkey ON silver_ref.bridge_geo_relationship_version USING btree (relationship_sk)

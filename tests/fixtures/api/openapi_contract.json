@@ -371,6 +371,30 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/geographies/{geo_id}/related": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "path",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographyRelatedResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/metrics": {
       "parameters": [
         {
@@ -1936,6 +1960,30 @@
         "census-pep"
       ]
     },
+    "GET /api/v1/place/distinctive": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:DistinctiveResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "place"
+      ]
+    },
     "GET /api/v1/population/scenario": {
       "parameters": [
         {
@@ -2932,6 +2980,55 @@
         "value"
       ]
     },
+    "DistinctiveMeasure": {
+      "properties": {
+        "caveats": "array<string>",
+        "metric_code": "string",
+        "metric_display_name": "string | null",
+        "percentile_rank": "number",
+        "period_start": "string | null",
+        "request": "string",
+        "siblings_below": "integer",
+        "siblings_missing": "integer",
+        "siblings_tied": "integer",
+        "siblings_with_value": "integer",
+        "siblings_withheld": "integer",
+        "source_code": "string | null",
+        "units": "string | null",
+        "value": "number"
+      },
+      "required": [
+        "caveats",
+        "metric_code",
+        "percentile_rank",
+        "request",
+        "siblings_below",
+        "siblings_missing",
+        "siblings_tied",
+        "siblings_with_value",
+        "siblings_withheld",
+        "value"
+      ]
+    },
+    "DistinctiveResponse": {
+      "properties": {
+        "derived": "boolean",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "method": "string",
+        "minimum_siblings": "integer",
+        "not_ranked": "array<NotRankedMeasure>",
+        "parent_scope": "string | null",
+        "ranked": "array<DistinctiveMeasure>"
+      },
+      "required": [
+        "geo_id",
+        "method",
+        "minimum_siblings",
+        "not_ranked",
+        "ranked"
+      ]
+    },
     "DistributionBin": {
       "properties": {
         "bin_index": "integer",
@@ -3105,6 +3202,38 @@
         "limit",
         "offset",
         "total"
+      ]
+    },
+    "GeographyRelatedResponse": {
+      "properties": {
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "items": "array<GeographyRelationship>",
+        "total": "integer"
+      },
+      "required": [
+        "geo_id",
+        "items",
+        "total"
+      ]
+    },
+    "GeographyRelationship": {
+      "properties": {
+        "evidence_source": "string",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "geography_vintage": "integer",
+        "overlap_area_m2": "number | null",
+        "overlap_weight": "number | null",
+        "relationship": "string",
+        "state_fips": "string | null"
+      },
+      "required": [
+        "evidence_source",
+        "geo_id",
+        "geography_vintage",
+        "relationship"
       ]
     },
     "HTTPValidationError": {
@@ -3589,6 +3718,16 @@
         "total"
       ]
     },
+    "NotRankedMeasure": {
+      "properties": {
+        "metric_code": "string",
+        "reason": "string"
+      },
+      "required": [
+        "metric_code",
+        "reason"
+      ]
+    },
     "ObservationCoverage": {
       "properties": {
         "coverage_basis": "string | null",
@@ -3971,6 +4110,7 @@
     "SourceFreshness": {
       "properties": {
         "current_count": "integer",
+        "geo_grains": "array<string>",
         "latest_harvested_at": "string(date-time) | null",
         "latest_publication_time": "string(date-time) | null",
         "metric_count": "integer",

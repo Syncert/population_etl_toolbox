@@ -30,6 +30,9 @@ _GLOSSARY_CONTRACTS = frozenset(
         "gold_glossary.dim_source_system",
         "gold_glossary.dim_metric",
         "gold_glossary.dim_geography",
+        # The relationship projection beside the geography it relates
+        # (nearby-and-related-places).
+        "gold_glossary.geo_relationship",
     }
 )
 
@@ -130,7 +133,7 @@ def _relations_in(sql: str) -> set[str]:
 
 
 def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
-    """Covers: API-037 — the reviewed allowlist is exactly the glossary trio."""
+    """Covers: API-037 — the reviewed allowlist is exactly the glossary contracts."""
     assert catalog_queries.CATALOG_RELATIONS == _GLOSSARY_CONTRACTS
 
     metrics_list, metrics_count, _ = catalog_queries.build_metrics_queries(
@@ -150,6 +153,8 @@ def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
             geo_list,
             geo_count,
             detail,
+            catalog_queries.GEOGRAPHY_RELATED_QUERY,
+            catalog_queries.GEOGRAPHY_EXISTS_QUERY,
         )
     ]
     for sql in rendered:
@@ -485,6 +490,7 @@ def test_freshness_reports_the_published_state_per_source() -> None:
             "retired_count": 0,
             "latest_publication_time": datetime(2026, 8, 1, tzinfo=timezone.utc),
             "latest_harvested_at": datetime(2026, 8, 2, tzinfo=timezone.utc),
+            "geo_grains": ["COUNTY", "STATE"],
         },
         {
             "source_code": "CDC",
@@ -508,8 +514,13 @@ def test_freshness_reports_the_published_state_per_source() -> None:
     assert payload["items"][0]["source_code"] == "BLS"
     assert payload["items"][0]["stale_count"] == 2
     assert payload["items"][1]["latest_publication_time"] is None
+    assert payload["items"][0]["geo_grains"] == ["COUNTY", "STATE"]
+    # A row the rollup reports without grains reads as none, never as all.
+    assert payload["items"][1]["geo_grains"] == []
 
     rendered = str(catalog_queries.SOURCE_FRESHNESS_QUERY)
+    assert "UNNEST(covered.valid_geo_grains)" in rendered
+    assert "covered.freshness_state IS DISTINCT FROM 'retired'" in rendered
     assert "GROUP BY source_code" in rendered
     assert "ORDER BY source_code" in rendered
     for state in ("current", "stale", "retired"):

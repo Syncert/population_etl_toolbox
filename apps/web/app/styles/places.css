@@ -1,0 +1,250 @@
+/* Place pages (place-pages): the nation, a state, a county. */
+.place-breadcrumbs ol,
+.chapter-rail ol,
+.place-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place-breadcrumbs li + li::before {
+  content: "›";
+  margin-right: 8px;
+  color: var(--muted);
+}
+
+.chapter-rail {
+  margin: 18px 0;
+  border-block: 1px solid var(--line);
+  background: var(--bg-0);
+  padding: 8px 0;
+}
+
+.chapter-rail a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.place-chapter {
+  scroll-margin-top: 56px;
+}
+
+.place-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.place-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px;
+  min-width: 0;
+}
+
+.place-card h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.place-card .subtle,
+.place-depth .subtle,
+.place-universe,
+.place-role {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.place-card-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.place-card-table th,
+.place-card-table td {
+  white-space: normal;
+  border-top: 1px solid var(--line);
+  padding: 6px 4px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.place-card-table td:first-of-type {
+  font-weight: 700;
+}
+
+.place-depth {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px 18px;
+  margin: 16px 0;
+}
+
+.place-depth > div {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  min-width: 0;
+}
+
+.place-depth dt {
+  font-size: 0.85rem;
+}
+
+.place-depth dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.place-trend {
+  margin: 16px 0;
+  min-width: 0;
+}
+
+.place-trend svg[role="img"] {
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
+
+.place-trend-axis {
+  stroke: var(--line);
+}
+
+.place-trend-tick {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.place-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.place-trend-legend svg {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.place-trend-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.place-trend-table th,
+.place-trend-table td {
+  border-top: 1px solid var(--line);
+  padding: 4px 10px 4px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.place-chapter-footer {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.place-footer {
+  margin: 24px 0;
+  color: var(--muted);
+}
+
+.place-footer h2 {
+  font-size: 1rem;
+}
+
+.place-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+  font-weight: 700;
+}
+
+.place-search input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+.place-index {
+  margin: 12px 0;
+}
+
+@media (max-width: 520px) {
+  .place-cards,
+  .place-depth {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .place-card-table tr,
+  .place-card-table th,
+  .place-card-table td {
+    display: block;
+    white-space: normal;
+  }
+
+  .place-card-table td {
+    border-top: 0;
+    padding-top: 0;
+  }
+}
+
+/* Compare two places (compare-two-places) */
+.paired-row { border-top: 1px solid var(--line); padding: 12px 0; }
+.paired-row h3 { margin: 0; font-size: 1rem; }
+.paired-bar { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) minmax(0, 9rem); align-items: center; gap: 10px; margin: 6px 0; }
+.paired-name, .paired-value { overflow-wrap: anywhere; font-size: 0.88rem; }
+.paired-value { font-weight: 700; }
+.paired-track { position: relative; height: 14px; border-radius: 4px; background: var(--bg-2); }
+.paired-fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
+.paired-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); }
+.not-comparable { margin-top: 12px; color: var(--muted); }
+@media (max-width: 520px) {
+  .paired-bar { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+/* What stands out (what-makes-this-place-distinctive) */
+.place-standout-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.place-standout-groups ul { margin: 0; padding: 0; list-style: none; }
+.place-standout-groups li { border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+/* Home finder and public data page (find-your-place-home) */
+.place-finder { margin-top: 18px; max-width: 640px; }
+.place-finder-label { display: block; margin-bottom: 6px; font-weight: 700; }
+.place-finder-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.place-finder-row input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; }
+.place-finder-results { margin: 6px 0 0; padding: 0; list-style: none; border-radius: 6px; background: white; }
+.place-finder-results li { padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.place-finder-results li.active { background: var(--accent-soft); }
+.home-map, .home-featured, .home-tools { margin: 28px 0; }
+.source-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.source-card { border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 14px; min-width: 0; overflow-wrap: anywhere; }
+.source-card dl { display: grid; gap: 6px; margin: 8px 0; }
+.source-card dt { color: var(--muted); font-size: 0.78rem; }
+.source-card dd { margin: 0; font-weight: 700; }
+.site-rules li, .refresh-timeline li { margin: 6px 0; }
+/* Studio (studio-video-frames) */
+.studio-preview { display: block; width: 100%; max-width: 960px; height: auto; border: 1px solid var(--line); }

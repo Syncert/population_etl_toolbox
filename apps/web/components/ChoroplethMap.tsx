@@ -22,6 +22,7 @@ import ChoroplethLegend from "./ChoroplethLegend";
 import { useMapLibre } from "./useMapLibre";
 import { buildChoroplethModel, tileFilterForGeoLevel } from "../lib/explorerViewModel";
 import type { ObservationRow } from "../lib/explorerViewModel";
+import type { DistributionResponse } from "../lib/api/types";
 import {
   COMPARISON_LAYER,
   COMPARISON_SOURCE,
@@ -40,6 +41,9 @@ export default function ChoroplethMap({
   legendTitle,
   missingLabel = "Not published on both sides",
   testId = "comparison-map",
+  distribution = null,
+  ariaLabel,
+  onFeatureClick,
 }: {
   rows: ObservationRow[];
   tileMetadata: TileMetadata | null;
@@ -47,13 +51,19 @@ export default function ChoroplethMap({
   legendTitle: string;
   missingLabel?: string;
   testId?: string;
+  /** Bins to colour by, in the distribution resource's shape; their counts reach the legend. */
+  distribution?: DistributionResponse | null;
+  /** Replaces the comparison's description for a map with another job. */
+  ariaLabel?: string;
+  /** Called with a clicked boundary's tile properties. */
+  onFeatureClick?: (properties: Record<string, unknown>) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { mapRef, ready, loadFailed } = useMapLibre(containerRef, true);
 
   const model = useMemo(
-    () => buildChoroplethModel(rows, tileMetadata?.joinKey || "geo_id", null, missingLabel),
-    [rows, tileMetadata, missingLabel],
+    () => buildChoroplethModel(rows, tileMetadata?.joinKey || "geo_id", distribution, missingLabel),
+    [rows, tileMetadata, missingLabel, distribution],
   );
 
   useEffect(() => {
@@ -92,6 +102,27 @@ export default function ChoroplethMap({
     );
   }, [mapRef, ready, tileMetadata, model, geoLevel]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !tileMetadata || !onFeatureClick) {
+      return;
+    }
+    const handleClick = (event: { features?: { properties?: Record<string, unknown> | null }[] }) => {
+      const properties = event.features?.[0]?.properties;
+      if (properties) onFeatureClick(properties);
+    };
+    const pointer = () => { map.getCanvas().style.cursor = "pointer"; };
+    const reset = () => { map.getCanvas().style.cursor = ""; };
+    map.on("click", COMPARISON_LAYER, handleClick);
+    map.on("mouseenter", COMPARISON_LAYER, pointer);
+    map.on("mouseleave", COMPARISON_LAYER, reset);
+    return () => {
+      map.off("click", COMPARISON_LAYER, handleClick);
+      map.off("mouseenter", COMPARISON_LAYER, pointer);
+      map.off("mouseleave", COMPARISON_LAYER, reset);
+    };
+  }, [mapRef, ready, tileMetadata, onFeatureClick]);
+
   if (loadFailed) {
     // The library's chunk did not arrive. An empty rectangle labelled as a
     // map would be worse than a sentence, and the caller always renders a
@@ -113,7 +144,7 @@ export default function ChoroplethMap({
         data-colored-values={model.valueCount}
         ref={containerRef}
         role="region"
-        aria-label={`${legendTitle}. The comparison table lists every value, including the geographies this map leaves uncoloured.`}
+        aria-label={ariaLabel || `${legendTitle}. The comparison table lists every value, including the geographies this map leaves uncoloured.`}
       />
       <ChoroplethLegend
         title={legendTitle}
