@@ -247,6 +247,10 @@ export default function MeasureMapPage({ metricCode, requestedPeriod }: { metric
             ) : (
               <p className="subtle" role="status">The map is not available here; every value is in the table below.</p>
             )}
+            <p className="subtle" data-testid="measure-map-banding">
+              Each colour holds about the same number of counties, so the bands show where a county
+              stands among the others rather than how far apart the values are.
+            </p>
             <ul className="measure-legend" data-testid="measure-map-legend" aria-label="Legend">
               {view.bins.map((bin) => (
                 <li key={bin.binIndex} data-count={bin.count}>
