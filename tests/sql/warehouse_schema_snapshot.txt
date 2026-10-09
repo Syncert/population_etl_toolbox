@@ -11696,7 +11696,7 @@ v silver_ref.dim_geo_current
     body     entity.tract_code,
     body     entity.zcta_code,
     body         CASE
-    body             WHEN entity.geo_type = ANY (ARRAY['tract'::text, 'zcta'::text]) THEN attribute.name
+    body             WHEN entity.geo_type = ANY (ARRAY['tract'::text, 'zcta'::text, 'census_region'::text, 'census_division'::text, 'metro'::text, 'provider_area'::text]) THEN attribute.name
     body             ELSE NULL::text
     body         END AS area_name
     body    FROM silver_ref.dim_geo_entity entity

@@ -46,11 +46,10 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**3 plans.**
+**2 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`groceries-and-gas-cards`](needs_review/GROCERIES_AND_GAS_CARDS_PLAN.md) | medium | `browser` | `grocery-and-gasoline-prices`, `place-pages` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 
