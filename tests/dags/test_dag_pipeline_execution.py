@@ -40,6 +40,7 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "cdc_ingest",
     "fbi_ucr_ingest",
     "usda_nass_crop_ingest",
+    "irs_migration_ingest",
     "census_pep_ingest",
     "glossary_reconciliation",
     "warehouse_data_quality",
@@ -47,6 +48,10 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     # wrote, so running it here proves the export against a warehouse that
     # has something in it rather than an empty one (ADR-0006, DB-046).
     "raw_capture_export",
+    "bea_regional_ingest",
+    "bls_qcew_ingest",
+    "census_building_permits_ingest",
+    "census_saipe_sahie_ingest",
 )
 
 #: DAGs this suite deliberately does not execute, and why. An operator-

@@ -331,6 +331,158 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"
         ),
     ),
+    DataProductE2E(
+        product_id="bea.regional_income_and_gdp",
+        source="BEA",
+        publisher_schema="gold_bea",
+        datasets=("CAINC1", "CAGDP1", "CAGDP2"),
+        fixtures=(
+            "tests/fixtures/bea/CAINC1.zip",
+            "tests/fixtures/bea/CAGDP1.zip",
+            "tests/fixtures/bea/CAGDP2.zip",
+        ),
+        serving_relations=(
+            "gold_bea.observation_revision",
+            "gold_bea.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_bea_pipeline.py::"
+            "test_income_and_gdp_reach_the_neutral_api_with_their_dollar_basis"
+        ),
+        api_absence_reason=(
+            "BEA regional accounts publish no source-specific HTTP route: each "
+            "row is the neutral observation shape with its table, line, dollar "
+            "basis and provider cell code as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="bls_qcew.county_employment_and_wages",
+        source="BLS_QCEW",
+        publisher_schema="gold_bls_qcew",
+        datasets=("10", "62"),
+        fixtures=(
+            "tests/fixtures/bls_qcew/2024_1_industry_10.csv",
+            "tests/fixtures/bls_qcew/2024_1_industry_62.csv",
+            "tests/fixtures/bls_qcew/2023_a_industry_10.csv",
+        ),
+        serving_relations=(
+            "gold_bls_qcew.observation_revision",
+            "gold_bls_qcew.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_bls_qcew_pipeline.py::"
+            "test_qcew_reaches_the_neutral_api_with_industry_ownership_and_basis"
+        ),
+        api_absence_reason=(
+            "BLS QCEW publishes no source-specific HTTP route: each row is the "
+            "neutral observation shape with its industry, ownership and basis "
+            "as declared dimensions, so `/api/v1/observations` serves it through "
+            "the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="census_bps.housing_units_authorized",
+        source="CENSUS_BPS",
+        publisher_schema="gold_census_bps",
+        datasets=("county", "state", "place:south"),
+        fixtures=(
+            "tests/fixtures/census_bps/County_co2403c.txt",
+            "tests/fixtures/census_bps/County_co2412y.txt",
+            "tests/fixtures/census_bps/State_st2403c.txt",
+            "tests/fixtures/census_bps/Place_South_so2024a.txt",
+        ),
+        serving_relations=(
+            "gold_census_bps.observation_revision",
+            "gold_census_bps.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_bps_pipeline.py::"
+            "test_permits_reach_the_neutral_api_as_authorizations_for_a_county_and_a_place"
+        ),
+        api_absence_reason=(
+            "The Building Permits Survey publishes no source-specific HTTP route: "
+            "each row is the neutral observation shape with its structure type, "
+            "frequency, reported figure and authorization basis as declared "
+            "dimensions, so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="census_saipe_sahie.estimate",
+        source="CENSUS_SAIPE_SAHIE",
+        publisher_schema="gold_census_sae",
+        datasets=("saipe", "sahie"),
+        fixtures=(
+            "tests/fixtures/census_saipe_sahie/saipe_2023_us.json",
+            "tests/fixtures/census_saipe_sahie/saipe_2023_state.json",
+            "tests/fixtures/census_saipe_sahie/saipe_2023_county.json",
+            "tests/fixtures/census_saipe_sahie/sahie_2023_us.json",
+            "tests/fixtures/census_saipe_sahie/sahie_2023_state.json",
+            "tests/fixtures/census_saipe_sahie/sahie_2023_county.json",
+        ),
+        serving_relations=(
+            "gold_census_sae.estimate_revision",
+            "gold_census_sae.estimate_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_saipe_sahie_pipeline.py::"
+            "test_saipe_and_sahie_reach_the_neutral_api_with_their_intervals"
+        ),
+        api_absence_reason=(
+            "Census SAIPE and SAHIE publish no source-specific HTTP route: "
+            "their rows are the neutral observation shape with an interval, "
+            "so `/api/v1/observations` serves them through the dispatch "
+            "registry and a source route would repeat it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="irs_migration.county_flows",
+        source="IRS_MIGRATION",
+        publisher_schema="gold_irs_migration",
+        datasets=("inflow:2021-2022", "inflow:2022-2023", "outflow:2022-2023"),
+        fixtures=(
+            "tests/fixtures/irs_migration/countyinflow2122.csv",
+            "tests/fixtures/irs_migration/countyinflow2223.csv",
+            "tests/fixtures/irs_migration/countyoutflow2223.csv",
+        ),
+        serving_relations=(
+            "gold_irs_migration.flow_revision",
+            "gold_irs_migration.flow_latest",
+            "gold_irs_migration.total_observation_revision",
+            "gold_irs_migration.total_observation_latest",
+        ),
+        source_api_routes=("/api/v1/migration-flows",),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_irs_migration_pipeline.py::"
+            "test_top_origins_and_destinations_reach_the_api_with_withheld_categories"
+        ),
+    ),
 )
 
 

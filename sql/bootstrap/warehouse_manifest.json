@@ -122,9 +122,34 @@
       "path": "src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql"
     },
     {
+      "id": "silver-census-sae",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_saipe_sahie/DDL/silver_census_sae.sql"
+    },
+    {
+      "id": "silver-bls-qcew",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
+    },
+    {
+      "id": "silver-census-bps",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_bps/DDL/silver_census_bps.sql"
+    },
+    {
+      "id": "silver-bea",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/bea/DDL/silver_bea.sql"
+    },
+    {
       "id": "migration-019",
       "phase": "source-fix",
       "path": "sql/migrations/019_stratum_shape_contract.sql"
+    },
+    {
+      "id": "silver-irs-migration",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql"
     },
     {
       "id": "migration-025",
@@ -187,6 +212,31 @@
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql"
     },
     {
+      "id": "gold-census-sae",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/gold_census_sae.sql"
+    },
+    {
+      "id": "gold-bls-qcew",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
+    },
+    {
+      "id": "gold-census-bps",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql"
+    },
+    {
+      "id": "gold-bea",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql"
+    },
+    {
+      "id": "gold-irs-migration",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -217,9 +267,34 @@
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
     },
     {
+      "id": "publisher-census-sae",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-bls-qcew",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-bps",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-bea",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/publisher.sql"
+    },
+    {
       "id": "migration-028",
       "phase": "publisher",
       "path": "sql/migrations/028_serving_publishes_a_withheld_value.sql"
+    },
+    {
+      "id": "publisher-irs-migration",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql"
     },
     {
       "id": "migration-029",

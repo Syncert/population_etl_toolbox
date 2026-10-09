@@ -70,8 +70,9 @@ DECLARE
     );
 BEGIN
     FOREACH _schema IN ARRAY ARRAY[
-        'gold', 'gold_glossary', 'gold_bls', 'gold_cdc', 'gold_census',
-        'gold_fbi', 'gold_fred', 'gold_nass', 'gold_pep'
+        'gold', 'gold_glossary', 'gold_bea', 'gold_bls', 'gold_bls_qcew',
+        'gold_cdc', 'gold_census', 'gold_census_bps', 'gold_census_sae',
+        'gold_fbi', 'gold_fred', 'gold_irs_migration', 'gold_nass', 'gold_pep'
     ]
     LOOP
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = _schema) THEN

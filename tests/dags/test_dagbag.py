@@ -41,6 +41,11 @@ EXPECTED_DAG_IDS = {
     "warehouse_data_quality",
     "serving_full_reserve",
     "raw_capture_export",
+    "bea_regional_ingest",
+    "bls_qcew_ingest",
+    "census_building_permits_ingest",
+    "census_saipe_sahie_ingest",
+    "irs_migration_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -65,6 +70,16 @@ EXPECTED_SCHEDULES = {
     "raw_capture_export": "0 3 * * *",
     # Operator-triggered only: a full re-serve must never happen on a schedule.
     "serving_full_reserve": None,
+    # Weekly: county income lands in November and county GDP in December.
+    "bea_regional_ingest": "0 14 * * 3",
+    # Monthly: QCEW publishes one quarter at a time.
+    "bls_qcew_ingest": "0 12 20 * *",
+    # Monthly, after the Bureau's mid-month release.
+    "census_building_permits_ingest": "0 13 25 * *",
+    # Monthly: SAIPE publishes each December and SAHIE each spring.
+    "census_saipe_sahie_ingest": "0 6 15 * *",
+    # Monthly: SOI publishes a new pair of filing years about once a year.
+    "irs_migration_ingest": "0 15 5 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -86,6 +101,11 @@ EXPECTED_DEFAULT_RETRIES = {
     # consumed by the same scheduler sweep that killed the task, and a
     # five-hour ACS re-serve ended at chunk 13 of 20 (DAG-008).
     "serving_full_reserve": 3,
+    "bea_regional_ingest": 2,
+    "bls_qcew_ingest": 2,
+    "census_building_permits_ingest": 2,
+    "census_saipe_sahie_ingest": 2,
+    "irs_migration_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -96,6 +116,12 @@ EXPECTED_INGEST_POOLS = {
     "cdc_ingest": "cdc_api",
     "fbi_ucr_ingest": "fbi_cde_api",
     "usda_nass_crop_ingest": "usda_nass_api",
+    "bea_regional_ingest": "bea_files",
+    "bls_qcew_ingest": "bls_qcew_api",
+    "census_building_permits_ingest": "census_bps_files",
+    # One host and one key with the ACS, so one rate limit.
+    "census_saipe_sahie_ingest": "census_api",
+    "irs_migration_ingest": "irs_soi_files",
 }
 
 

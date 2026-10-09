@@ -119,6 +119,26 @@ test("within this county paints tracts, counts the uncoloured one, and tabulates
   await expect(page.getByTestId("within-county-map")).toHaveAttribute("data-colored-values", "2");
   await page.getByTestId("within-county-measure").selectOption("CENSUS_ACS:acs5:B25064_001");
   await expect(page.getByTestId("within-county-table")).toContainText("Median gross rent by Census tract");
+});
+
+// Covers: WEB-137 — bea-regional-accounts: BEA per capita income and real GDP
+// sit beside the ACS income, each labelled with how it was counted, and the
+// earnings table states a withheld sector.
+test("BEA income and GDP sit beside the survey income, labelled apart, with earnings by industry", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-bea-per-capita-income")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-bea-per-capita-income-basis")).toHaveText("BEA personal income account, current dollars");
+  await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("card-bea-real-gdp-basis")).toHaveText("BEA county GDP, chained 2017 dollars");
+  await expect(page.getByTestId("card-median-household-income")).not.toContainText("BEA:");
+
+  const earnings = page.getByTestId("bea-earnings");
+  await expect(earnings.locator("tbody tr")).toHaveCount(21);
+  await expect(page.getByTestId("bea-earnings-basis")).toContainText("BEA personal income account");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-1600")).toContainText("Health care and social assistance");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toContainText("Published without a value: withheld");
+  await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never combined with the survey's income");
   await noViolations(page);
   await noHorizontalScroll(page);
 });
@@ -126,6 +146,105 @@ test("within this county paints tracts, counts the uncoloured one, and tabulates
 test("a state page has no within-this-county section", async ({ page }) => {
   await ready(page, "/us/wisconsin");
   await expect(page.getByTestId("within-county")).toHaveCount(0);
+});
+
+// Covers: WEB-135 — bls-qcew-county-wages: the county page shows jobs located
+// here beside residents who work, each labelled with how it was counted, and
+// an industry mix of private jobs that states a withheld sector.
+test("jobs located here sit beside residents who work, labelled apart, with an industry mix", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-qcew-jobs")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-qcew-jobs-basis")).toHaveText("Jobs located here, counted by employers (QCEW)");
+  await expect(page.getByTestId("card-unemployment-rate-basis")).toHaveText("Residents who work, counted where they live (LAUS)");
+  await expect(page.getByTestId("card-qcew-jobs")).toContainText("BLS_QCEW:employment:10:0");
+  await expect(page.getByTestId("card-qcew-jobs-county")).toContainText("jobs");
+  await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
+
+  const mix = page.getByTestId("industry-mix");
+  await expect(mix.locator("tbody tr")).toHaveCount(21);
+  await expect(page.getByTestId("industry-mix-basis")).toContainText("counted by employers (QCEW)");
+  await expect(page.getByTestId("industry-mix-qcew-sector-62")).toContainText("Health care and social assistance");
+  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toContainText("Published without a value: withheld");
+  await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never added or subtracted");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-136 — census-building-permits: homes authorized sit beside the
+// housing stock, labelled as authorizations, with what was reported directly
+// and a monthly trend.
+test("homes authorized are labelled as authorizations, with what was reported and a monthly trend", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const card = page.getByTestId("card-bps-single-family-year");
+  await expect(card).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-bps-single-family-year-basis")).toHaveText("Authorized by building permits, not started or completed");
+  await expect(page.getByTestId("card-bps-single-family-year-reported")).toContainText("Reported directly by permit offices");
+  await expect(page.getByTestId("card-bps-single-family-year-reported")).toContainText("the Bureau estimates the rest");
+  await expect(page.getByTestId("card-median-gross-rent")).not.toContainText("Authorized");
+  await expect(page.getByTestId("chapter-housing-trend")).toBeVisible();
+  await expect(page.getByTestId("chapter-housing-trend-bps-single-family-month")).toBeVisible();
+  await expect(page.getByTestId("chapter-housing-footer")).toContainText("not started or completed");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-133 — census-saipe-sahie: the county page shows the SAIPE and
+// SAHIE cards beside the ACS cards, each labelled with how it was made, with
+// its interval, and neither one standing in for the other.
+test("model-based SAIPE and SAHIE cards sit beside the survey cards with their own labels", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+
+  const survey = page.getByTestId("card-median-household-income");
+  const model = page.getByTestId("card-saipe-median-household-income");
+  await expect(survey).toHaveAttribute("data-available", "true");
+  await expect(model).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("card-saipe-median-household-income-basis")).toHaveText("Model-based annual estimate (SAIPE)");
+  await expect(model).toContainText("CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
+  await expect(survey).not.toContainText("CENSUS_SAIPE_SAHIE");
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("margin of error");
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("confidence lower");
+  await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
+  await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
+  await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");
+
+  await expect(page.getByTestId("card-sahie-uninsured-rate-basis")).toHaveText("Model-based annual estimate (SAHIE)");
+  await expect(page.getByTestId("card-sahie-uninsured-rate-county")).toContainText("confidence upper");
+  await expect(page.getByTestId("depth-uninsured-35-64-basis")).toContainText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("chapter-work-money-footer")).toContainText("CENSUS_SAIPE_SAHIE");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a SAIPE slot the catalog does not publish says so and borrows no ACS figure", async ({ page }) => {
+  await installPlaceFixtures(page, { withoutSource: "CENSUS_SAIPE_SAHIE" });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("card-saipe-median-household-income")).toHaveAttribute("data-available", "false");
+  await expect(page.getByTestId("card-saipe-median-household-income")).toContainText("Not published by this warehouse");
+  await expect(page.getByTestId("card-median-household-income")).toHaveAttribute("data-available", "true");
+});
+
+// Covers: WEB-138 — irs-county-migration: the People chapter lists where
+// people came from and went, states SOI's withheld category, and the Change
+// chapter says beside PEP net migration that the two count different
+// populations.
+test("migration lists name origins and destinations and say the populations differ", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const inflow = page.getByTestId("migration-inflow");
+  await expect(inflow).toContainText("Where people came from");
+  await expect(inflow.locator("ol li")).toHaveCount(3);
+  await expect(page.getByTestId("migration-inflow-state:27|county:053")).toContainText("Hennepin County");
+  await expect(page.getByTestId("migration-outflow")).toContainText("Where people went");
+  await expect(page.getByTestId("migration-inflow-withheld")).toContainText("Foreign, other flows is withheld by SOI to protect taxpayers, not zero");
+  await expect(page.getByTestId("change-migration-note")).toContainText("The two measure different populations");
+  await expect(page.getByTestId("migration-population-note")).toContainText("no net figure is computed");
+  await noViolations(page);
+  await noHorizontalScroll(page);
 });
 
 test("an address by FIPS settles on the named address", async ({ page }) => {

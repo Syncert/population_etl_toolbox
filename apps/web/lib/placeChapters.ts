@@ -45,6 +45,21 @@ export interface PlaceMeasure {
    */
   universe?: string;
   note?: string;
+  /**
+   * How the figure was counted, when two measures of one subject are counted
+   * differently -- an account of a county's income (BEA) against a survey of
+   * its households (ACS). Shown on the card so neither is read as the other
+   * (bea-regional-accounts).
+   */
+  basis?: string;
+  /** Depth rows rendered together as one table rather than a list. */
+  group?: "bea-earnings" | "industry-mix";
+  /**
+   * The card also states what was reported directly, read from the row's
+   * `reported_value` dimension, beside an estimate that imputes for
+   * non-reporters (census-building-permits).
+   */
+  showReported?: boolean;
 }
 
 export interface PlaceChapter {
@@ -57,6 +72,8 @@ export interface PlaceChapter {
   depth: PlaceMeasure[];
   /** The headline measure the chapter's trend draws. */
   trend: { measureId: string; scale: TrendScale };
+  /** Further headline measures drawn as their own trend, after the first. */
+  moreTrends?: { measureId: string; scale: TrendScale }[];
   /** The caveat every footer repeats, in the source's own terms. */
   caveat: string;
   /**
@@ -66,10 +83,116 @@ export interface PlaceChapter {
   stateContextAtCounty?: boolean;
 }
 
+/** BEA regional accounts: one table and line (bea-regional-accounts). */
+const bea = (table: string, line: string): string[] => [`BEA:${table}:${line}`];
+
+// One wording for an ACS figure wherever it is labelled, matching `measureBasis`.
+const SURVEY_BASIS = "Survey estimate (American Community Survey)";
+const ACCOUNT_BASIS = "BEA personal income account, current dollars";
+
+/** CAINC5N earnings by place of work, by sector, in BEA's order. */
+export const BEA_EARNINGS_SECTORS: readonly (readonly [string, string])[] = [
+  ["81", "Farm"],
+  ["100", "Forestry, fishing, and related activities"],
+  ["200", "Mining, quarrying, and oil and gas extraction"],
+  ["300", "Utilities"],
+  ["400", "Construction"],
+  ["500", "Manufacturing"],
+  ["600", "Wholesale trade"],
+  ["700", "Retail trade"],
+  ["800", "Transportation and warehousing"],
+  ["900", "Information"],
+  ["1000", "Finance and insurance"],
+  ["1100", "Real estate and rental and leasing"],
+  ["1200", "Professional, scientific, and technical services"],
+  ["1300", "Management of companies and enterprises"],
+  ["1400", "Administrative and waste services"],
+  ["1500", "Educational services"],
+  ["1600", "Health care and social assistance"],
+  ["1700", "Arts, entertainment, and recreation"],
+  ["1800", "Accommodation and food services"],
+  ["1900", "Other services"],
+  ["2000", "Government and government enterprises"],
+];
+
+/** QCEW: one measure for one industry and ownership (bls-qcew-county-wages). */
+const qcew = (measure: string, industry: string, ownership: string): string[] => [
+  `BLS_QCEW:${measure}:${industry}:${ownership}`,
+];
+
+const ESTABLISHMENT_BASIS = "Jobs located here, counted by employers (QCEW)";
+const HOUSEHOLD_BASIS = "Residents who work, counted where they live (LAUS)";
+
+/** The NAICS sectors of the industry-mix table, in QCEW's order. */
+export const INDUSTRY_MIX_SECTORS: readonly (readonly [string, string])[] = [
+  ["11", "Agriculture, forestry, fishing and hunting"],
+  ["21", "Mining, quarrying, and oil and gas extraction"],
+  ["22", "Utilities"],
+  ["23", "Construction"],
+  ["31-33", "Manufacturing"],
+  ["42", "Wholesale trade"],
+  ["44-45", "Retail trade"],
+  ["48-49", "Transportation and warehousing"],
+  ["51", "Information"],
+  ["52", "Finance and insurance"],
+  ["53", "Real estate and rental and leasing"],
+  ["54", "Professional, scientific, and technical services"],
+  ["55", "Management of companies and enterprises"],
+  ["56", "Administrative and waste services"],
+  ["61", "Educational services"],
+  ["62", "Health care and social assistance"],
+  ["71", "Arts, entertainment, and recreation"],
+  ["72", "Accommodation and food services"],
+  ["81", "Other services"],
+  ["92", "Public administration"],
+  ["99", "Unclassified"],
+];
+
+/** Building Permits Survey: one measure, structure type and frequency. */
+const bps = (measure: string, structure: string, frequency: string): string[] => [
+  `CENSUS_BPS:${measure}:${structure}:${frequency}`,
+];
+
+const AUTHORIZED_BASIS = "Authorized by building permits, not started or completed";
+
+/**
+ * Said wherever IRS migration flows sit near PEP net migration
+ * (irs-county-migration): the two count different populations.
+ */
+export const MIGRATION_POPULATION_NOTE =
+  "IRS migration counts tax returns whose address changed between two filing years; the Population Estimates Program's net migration estimates residents. The two measure different populations, so neither is the other's breakdown and no net figure is computed from these lists.";
+
 const acs = (variable: string): string[] => [
   `CENSUS_ACS:acs5:${variable}`,
   `CENSUS_ACS:acs1:${variable}`,
 ];
+
+/**
+ * Census SAIPE and SAHIE: model-based annual estimates for every county
+ * (census-saipe-sahie). They resemble ACS figures and are a different method,
+ * so they are their own slots with their own candidates -- never an ACS
+ * slot's fallback, and never replaced by one.
+ */
+const saipe = (measure: string): string[] => [`CENSUS_SAIPE_SAHIE:saipe:${measure}`];
+const sahie = (measure: string): string[] => [`CENSUS_SAIPE_SAHIE:sahie:${measure}`];
+
+/**
+ * How a published figure was made, in the reader's terms, from the identity
+ * that answered. A survey estimate and a model-based estimate of the same
+ * quantity sit side by side on a place page; this label is what keeps a
+ * reader from taking one for the other. `null` for a source whose method the
+ * card's own note already states.
+ */
+export function measureBasis(metricCode: string | null | undefined): string | null {
+  if (!metricCode) return null;
+  if (metricCode.startsWith("CENSUS_ACS:")) return "Survey estimate (American Community Survey)";
+  if (metricCode.startsWith("CENSUS_SAIPE_SAHIE:saipe:")) return "Model-based annual estimate (SAIPE)";
+  if (metricCode.startsWith("CENSUS_SAIPE_SAHIE:sahie:")) return "Model-based annual estimate (SAHIE)";
+  return null;
+}
+
+const SAE_CAVEAT =
+  "SAIPE and SAHIE figures are the Census Bureau's model-based estimates for a single year, shown with their 90 percent interval; they are not the survey estimates beside them and are never substituted for them.";
 
 const ACS_CAVEAT =
   "American Community Survey estimates carry a margin of error, shown beside each value. A value labelled with its universe counts that universe only; no share is computed here.";
@@ -123,18 +246,61 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         label: "Median household income",
         candidates: acs("B19013_001"),
         note: "In the survey year's inflation-adjusted dollars.",
+        basis: SURVEY_BASIS,
+      },
+      {
+        id: "bea-per-capita-income",
+        label: "Per capita personal income",
+        candidates: bea("CAINC1", "3"),
+        note: "All personal income, including transfer receipts and employer contributions, divided by BEA's own population; not the survey income above.",
+        basis: ACCOUNT_BASIS,
+      },
+      {
+        id: "bea-real-gdp",
+        label: "Gross domestic product, real",
+        candidates: bea("CAGDP1", "1"),
+        note: "Thousands of chained 2017 dollars, so years compare without inflation; never added to current-dollar figures.",
+        basis: "BEA county GDP, chained 2017 dollars",
       },
       {
         id: "unemployment-rate",
         label: "Unemployment rate",
         candidates: ["BLS:LAU:UNEMP_RATE"],
         note: "Local Area Unemployment Statistics, a different universe from the survey counts below.",
+        basis: HOUSEHOLD_BASIS,
+      },
+      {
+        id: "qcew-jobs",
+        label: "Jobs located here",
+        candidates: qcew("employment", "10", "0"),
+        note: "Every covered job at an employer in this place, wherever its worker lives; not the residents who work.",
+        basis: ESTABLISHMENT_BASIS,
+      },
+      {
+        id: "saipe-median-household-income",
+        label: "Median household income, single year",
+        candidates: saipe("SAEMHI"),
+        note: "The Bureau's one-year model-based figure, beside the survey estimate.",
+      },
+      {
+        id: "qcew-weekly-wage",
+        label: "Average weekly wage of jobs located here",
+        candidates: qcew("avg_weekly_wage", "10", "0"),
+        basis: ESTABLISHMENT_BASIS,
+      },
+      {
+        id: "saipe-poverty-rate",
+        label: "People in poverty, all ages",
+        candidates: saipe("SAEPOVRTALL"),
+        universe: "people whose poverty status is determined",
       },
     ],
     depth: [
-      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001") },
+      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), basis: SURVEY_BASIS },
       { id: "gini", label: "Gini index of income inequality", candidates: acs("B19083_001"), note: "0 is perfect equality and 1 is one household holding all income." },
       { id: "below-poverty", label: "People with income below the poverty level", candidates: acs("B17001_002"), universe: "people whose poverty status is determined" },
+      { id: "saipe-poverty-count", label: "People in poverty, all ages, single year", candidates: saipe("SAEPOVALL"), universe: "people whose poverty status is determined" },
+      { id: "saipe-child-poverty-rate", label: "Children under 18 in poverty", candidates: saipe("SAEPOVRT0_17"), universe: "related children and others under 18" },
       { id: "households-under-10k", label: "Households with income under $10,000", candidates: acs("B19001_002"), universe: "households" },
       { id: "households-200k-plus", label: "Households with income of $200,000 or more", candidates: acs("B19001_017"), universe: "households" },
       { id: "labor-force", label: "People in the labor force", candidates: acs("B23025_002"), universe: "people 16 and over" },
@@ -143,9 +309,25 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       { id: "worked-from-home", label: "Workers who worked from home", candidates: acs("B08301_021"), universe: "workers 16 and over" },
       { id: "public-transportation", label: "Workers commuting by public transportation", candidates: acs("B08301_010"), universe: "workers 16 and over" },
       { id: "commute-90-minutes", label: "Workers commuting 90 minutes or more", candidates: acs("B08303_013"), universe: "workers 16 and over who did not work from home" },
+      ...BEA_EARNINGS_SECTORS.map(([line, title]) => ({
+        id: `bea-earnings-${line}`,
+        label: title,
+        candidates: bea("CAINC5N", line),
+        universe: "earnings by place of work",
+        basis: ACCOUNT_BASIS,
+        group: "bea-earnings" as const,
+      })),
+      ...INDUSTRY_MIX_SECTORS.map(([code, title]) => ({
+        id: `qcew-sector-${code}`,
+        label: title,
+        candidates: qcew("employment", code, "5"),
+        universe: "private jobs located here",
+        basis: ESTABLISHMENT_BASIS,
+        group: "industry-mix" as const,
+      })),
     ],
     trend: { measureId: "unemployment-rate", scale: "level" },
-    caveat: `The unemployment rate is BLS's; the survey counts are the ACS's, on a different universe. ${ACS_CAVEAT}`,
+    caveat: `The unemployment rate is BLS's count of residents; the jobs and the industry mix are QCEW's count of jobs located here, by employer, and the two are never added or subtracted. The survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT} ${SAE_CAVEAT}`,
   },
   {
     id: "housing",
@@ -164,6 +346,27 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: acs("B25077_001"),
         note: "The owner's own estimate, which is what the ACS asks.",
       },
+      {
+        id: "bps-single-family-year",
+        label: "Single-family homes authorized, newest year",
+        candidates: bps("units", "1_unit", "annual"),
+        basis: AUTHORIZED_BASIS,
+        showReported: true,
+      },
+      {
+        id: "bps-multifamily-year",
+        label: "Homes in buildings of 5 or more units authorized, newest year",
+        candidates: bps("units", "5_plus_units", "annual"),
+        basis: AUTHORIZED_BASIS,
+        showReported: true,
+      },
+      {
+        id: "bps-single-family-month",
+        label: "Single-family homes authorized, by month",
+        candidates: bps("units", "1_unit", "monthly"),
+        basis: AUTHORIZED_BASIS,
+        showReported: true,
+      },
     ],
     depth: [
       { id: "housing-units", label: "Housing units", candidates: acs("B25001_001"), universe: "housing units" },
@@ -177,7 +380,8 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       { id: "no-internet", label: "Households with no internet access", candidates: acs("B28002_013"), universe: "households" },
     ],
     trend: { measureId: "median-gross-rent", scale: "level" },
-    caveat: ACS_CAVEAT,
+    moreTrends: [{ measureId: "bps-single-family-month", scale: "level" }],
+    caveat: `${ACS_CAVEAT} Permit figures count homes authorized, not started or completed; the Bureau's estimate imputes for jurisdictions that did not report, and what was reported directly is stated beside it.`,
   },
   {
     id: "health",
@@ -194,16 +398,23 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         label: "Diagnosed diabetes among adults (age-adjusted)",
         candidates: ["CDC:places_county:DIABETES:AgeAdjPrv"],
       },
+      {
+        id: "sahie-uninsured-rate",
+        label: "Uninsured people under 65",
+        candidates: sahie("PCTUI"),
+        universe: "people under 65, all incomes",
+      },
     ],
     depth: [
       { id: "uninsured-under-19", label: "People under 19 with no health insurance", candidates: acs("B27010_017"), universe: "civilian noninstitutionalized people" },
       { id: "uninsured-19-34", label: "People 19 to 34 with no health insurance", candidates: acs("B27010_033"), universe: "civilian noninstitutionalized people" },
       { id: "uninsured-35-64", label: "People 35 to 64 with no health insurance", candidates: acs("B27010_050"), universe: "civilian noninstitutionalized people" },
       { id: "uninsured-65-plus", label: "People 65 and over with no health insurance", candidates: acs("B27010_066"), universe: "civilian noninstitutionalized people" },
+      { id: "sahie-uninsured-count", label: "Uninsured people under 65, single year", candidates: sahie("NUI"), universe: "people under 65, all incomes" },
     ],
     trend: { measureId: "obesity", scale: "level" },
     caveat:
-      "CDC PLACES values are model-based estimates among adults with a published confidence interval, not clinical counts. Insurance counts are ACS estimates with a margin of error.",
+      `CDC PLACES values are model-based estimates among adults with a published confidence interval, not clinical counts. Insurance counts are ACS estimates with a margin of error. ${SAE_CAVEAT}`,
   },
   {
     id: "safety",

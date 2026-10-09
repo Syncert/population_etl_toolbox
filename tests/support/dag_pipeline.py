@@ -40,6 +40,10 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "irs_soi_files",
+    "census_bps_files",
+    "bls_qcew_api",
+    "bea_files",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -731,6 +735,150 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
+def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed BEA zips: every registered table has one."""
+    from data_ingestion_toolbox.bea import capture as bea_capture
+    from data_ingestion_toolbox.bea.client import BeaFile
+
+    def fetch(table: Any, **_kwargs: Any) -> BeaFile:
+        path = FIXTURE_ROOT / "bea" / f"{table.code}.zip"
+        if not path.is_file():
+            raise AssertionError(f"no BEA fixture for {table.code}")
+        return BeaFile(
+            table.path,
+            {"table": table.code},
+            path.read_bytes(),
+            {"content-type": "application/zip"},
+            200,
+        )
+
+    monkeypatch.setattr(bea_capture, "fetch_table", fetch)
+
+
+def stub_bls_qcew(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed QCEW slices; a period with no fixture answers 404.
+
+    The fixtures are one quarter and one annual average. Every other period
+    the DAG asks for is the interface's own "not published" answer, which is
+    a recorded empty slice rather than a failure.
+    """
+    from data_ingestion_toolbox.bls_qcew import capture as qcew_capture
+    from data_ingestion_toolbox.bls_qcew.client import QcewSlice
+
+    def fetch(year: int, period: str, industry: Any, **_kwargs: Any) -> QcewSlice:
+        parameters = {
+            "year": str(year),
+            "period": period,
+            "industry_code": industry.code,
+        }
+        path = (
+            FIXTURE_ROOT
+            / "bls_qcew"
+            / f"{year}_{period}_industry_{industry.slice_code}.csv"
+        )
+        endpoint = f"/{year}/{period}/industry/{industry.slice_code}.csv"
+        if not path.is_file():
+            return QcewSlice(endpoint, parameters, b"", {}, 404)
+        return QcewSlice(
+            endpoint, parameters, path.read_bytes(), {"content-type": "text/csv"}, 200
+        )
+
+    monkeypatch.setattr(qcew_capture, "fetch_slice", fetch)
+    monkeypatch.setattr(qcew_capture, "pause", lambda _seconds: None)
+
+
+def stub_census_building_permits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Building Permits files; any other file answers 404."""
+    from data_ingestion_toolbox.census_bps import capture as bps_capture
+    from data_ingestion_toolbox.census_bps.client import BpsFile
+
+    fixtures = {
+        "/County/co2403c.txt": "County_co2403c.txt",
+        "/County/co2412y.txt": "County_co2412y.txt",
+        "/State/st2403c.txt": "State_st2403c.txt",
+        "/Place/South Region/so2024a.txt": "Place_South_so2024a.txt",
+    }
+
+    def fetch(item: Any, **_kwargs: Any) -> BpsFile:
+        parameters = {
+            "slice": item.slice_key,
+            "frequency": item.frequency,
+            "year": str(item.year),
+            "month": str(item.month),
+        }
+        name = fixtures.get(item.path)
+        if name is None:
+            return BpsFile(item.path, parameters, b"", {}, 404)
+        payload = (FIXTURE_ROOT / "census_bps" / name).read_bytes()
+        return BpsFile(
+            item.path, parameters, payload, {"content-type": "text/plain"}, 200
+        )
+
+    monkeypatch.setattr(bps_capture, "fetch_file", fetch)
+    monkeypatch.setattr(bps_capture, "pause", lambda _seconds: None)
+
+
+def stub_census_saipe_sahie(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the checked-in SAIPE/SAHIE responses; other years answer 204.
+
+    The fixtures are one estimate year. A year the DAG asks for that has no
+    fixture is the API's own "not published" answer, which is a recorded
+    empty slice rather than a failure.
+    """
+    from data_ingestion_toolbox.census_saipe_sahie import capture as sae_capture
+    from data_ingestion_toolbox.census_saipe_sahie.client import SaeSlice
+
+    def fetch(dataset: Any, *, year: int, geo_level: str, **_kwargs: Any) -> SaeSlice:
+        parameters = dataset.request_parameters(year=year, geo_level=geo_level)
+        path = (
+            FIXTURE_ROOT
+            / "census_saipe_sahie"
+            / f"{dataset.dataset_id}_{year}_{geo_level}.json"
+        )
+        if not path.is_file():
+            return SaeSlice(dataset.api_path, parameters, b"", {}, 204)
+        return SaeSlice(
+            dataset.api_path,
+            parameters,
+            path.read_bytes(),
+            {"content-type": "application/json;charset=utf-8"},
+            200,
+        )
+
+    monkeypatch.setattr(sae_capture, "fetch_slice", fetch)
+
+
+def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware SOI files.
+
+    Three of the ten registered files have fixtures. The others answer with
+    their registered header and no rows, so the run captures, replays and
+    publishes every file without a network call.
+    """
+    from data_ingestion_toolbox.irs_migration import capture as irs_capture
+    from data_ingestion_toolbox.irs_migration.client import (
+        MigrationResponse,
+        expected_header,
+    )
+
+    def fetch(item: Any, **_kwargs: Any) -> MigrationResponse:
+        path = FIXTURE_ROOT / "irs_migration" / item.path.lstrip("/")
+        payload = (
+            path.read_bytes()
+            if path.is_file()
+            else (",".join(expected_header(item)) + "\n").encode("ascii")
+        )
+        return MigrationResponse(
+            item.path,
+            {"direction": item.direction, "year_pair": item.year_pair},
+            payload,
+            {"content-type": "text/csv"},
+            200,
+        )
+
+    monkeypatch.setattr(irs_capture, "fetch_file", fetch)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1165,8 +1313,13 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("census_acs", stub_census_acs),
         ("bls", stub_bls),
         ("fred", stub_fred),
+        ("irs_migration", stub_irs_migration),
+        ("census_saipe_sahie", stub_census_saipe_sahie),
+        ("census_bps", stub_census_building_permits),
+        ("bls_qcew", stub_bls_qcew),
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
+        ("bea", stub_bea_regional),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

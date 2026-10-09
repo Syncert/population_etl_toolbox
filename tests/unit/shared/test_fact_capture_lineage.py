@@ -52,9 +52,29 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "IRS_MIGRATION",
+        SRC / "irs_migration/DDL/silver_irs_migration.sql",
+        "silver_irs_migration.fact_flow",
+        "valid",
+        # Three measures share one status; returns is the one SOI deletes by.
+        value_column="returns",
+    ),
+    FactContract(
+        "BEA",
+        SRC / "bea/DDL/silver_bea.sql",
+        "silver_bea.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "BLS",
         SRC / "bls/DDL/silver_bls.sql",
         "silver_bls.fact_labor_statistics",
+        "valid",
+    ),
+    FactContract(
+        "BLS_QCEW",
+        SRC / "bls_qcew/DDL/silver_bls_qcew.sql",
+        "silver_bls_qcew.fact_observation",
         "valid",
     ),
     FactContract(
@@ -71,11 +91,23 @@ FACTS = [
         value_column="estimate_value",
     ),
     FactContract(
+        "CENSUS_BPS",
+        SRC / "census_bps/DDL/silver_census_bps.sql",
+        "silver_census_bps.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "CENSUS_PEP",
         SRC / "census_pep/DDL/silver_pep.sql",
         "silver_pep.fact_population_estimate",
         "valid",
         can_withhold=False,
+    ),
+    FactContract(
+        "CENSUS_SAIPE_SAHIE",
+        SRC / "census_saipe_sahie/DDL/silver_census_sae.sql",
+        "silver_census_sae.fact_estimate",
+        "valid",
     ),
     FactContract(
         "FBI_UCR",

@@ -1,6 +1,16 @@
 {
   "advertised_geo_grains": {
+    "BEA": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
     "BLS": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
+    "BLS_QCEW": [
       "COUNTY",
       "NATIONAL",
       "STATE"
@@ -17,10 +27,21 @@
       "STATE",
       "TRACT"
     ],
+    "CENSUS_BPS": [
+      "COUNTY",
+      "NATIONAL",
+      "PLACE",
+      "STATE"
+    ],
     "CENSUS_PEP": [
       "COUNTY",
       "NATIONAL",
       "PLACE",
+      "STATE"
+    ],
+    "CENSUS_SAIPE_SAHIE": [
+      "COUNTY",
+      "NATIONAL",
       "STATE"
     ],
     "FBI_UCR": [
@@ -31,6 +52,9 @@
     "FRED": [
       "NATIONAL"
     ],
+    "IRS_MIGRATION": [
+      "COUNTY"
+    ],
     "USDA_NASS": [
       "COUNTY",
       "NATIONAL",
@@ -38,6 +62,129 @@
     ]
   },
   "capabilities": [
+    {
+      "datasets": [],
+      "display_name": "Bureau of Economic Analysis regional economic accounts",
+      "observation_dimensions": [
+        "description",
+        "dollar_basis",
+        "line_code",
+        "observation_basis",
+        "table_code",
+        "value_source"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "BEA",
+      "time_grains": [
+        "native"
+      ]
+    },
     {
       "datasets": [],
       "display_name": "Bureau of Labor Statistics",
@@ -201,6 +348,155 @@
         "native",
         "quarterly",
         "annual"
+      ]
+    },
+    {
+      "datasets": [
+        "10",
+        "11",
+        "21",
+        "22",
+        "23",
+        "31-33",
+        "42",
+        "44-45",
+        "48-49",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "61",
+        "62",
+        "71",
+        "72",
+        "81",
+        "92",
+        "99"
+      ],
+      "display_name": "Bureau of Labor Statistics Quarterly Census of Employment and Wages",
+      "observation_dimensions": [
+        "disclosure_code",
+        "industry_code",
+        "industry_title",
+        "measure_id",
+        "observation_basis",
+        "own_code",
+        "ownership_title",
+        "period_kind",
+        "value_source"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "BLS_QCEW",
+      "time_grains": [
+        "native"
       ]
     },
     {
@@ -472,6 +768,131 @@
     },
     {
       "datasets": [],
+      "display_name": "Census Bureau Building Permits Survey",
+      "observation_dimensions": [
+        "frequency",
+        "measure_id",
+        "months_reported",
+        "observation_basis",
+        "reported_value",
+        "structure_label",
+        "structure_type",
+        "value_source"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_BPS",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
       "display_name": "Census Population Estimates Program",
       "observation_dimensions": [
         "dataset_code",
@@ -608,6 +1029,132 @@
       "route_segment": "pep",
       "served_by_neutral_routes": true,
       "source_code": "CENSUS_PEP",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [
+        "saipe",
+        "sahie"
+      ],
+      "display_name": "Census Bureau Small Area Income and Poverty Estimates and Small Area Health Insurance Estimates",
+      "observation_dimensions": [
+        "dataset_id",
+        "estimate_method",
+        "measure_id",
+        "measure_label",
+        "universe",
+        "value_source"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_SAIPE_SAHIE",
       "time_grains": [
         "native"
       ]
@@ -871,6 +1418,128 @@
       ]
     },
     {
+      "datasets": [],
+      "display_name": "IRS Statistics of Income county-to-county migration",
+      "observation_dimensions": [
+        "category",
+        "direction",
+        "measure",
+        "value_source",
+        "year_pair"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "IRS_MIGRATION",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
       "datasets": [
         "corn_survey_annual",
         "soybeans_survey_annual",
@@ -1044,11 +1713,16 @@
       "requires_drawable_grain": true,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.map",
@@ -1081,12 +1755,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.trend",
@@ -1117,12 +1796,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.table",
@@ -1152,12 +1836,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": true,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.export",
@@ -1182,12 +1871,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.quality",
@@ -1222,10 +1916,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "explorer.distribution",
       "title": "the explorer's distribution histogram and legend bins",
@@ -1260,12 +1959,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "explorer.as_released",
@@ -1301,10 +2005,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "explorer.settled_history",
       "title": "the explorer's settled trend",
@@ -1342,10 +2051,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "comparison.workspace",
       "title": "the comparison workspace's scatter, table, map and export",
@@ -1376,12 +2090,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "workbench.series",
@@ -1418,10 +2137,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.cross_section",
       "title": "the workbench's cross-sectional scatter",
@@ -1458,10 +2182,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.heatmap",
       "title": "the workbench's geography-by-period heatmap",
@@ -1500,10 +2229,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.correlation",
       "title": "the workbench's correlation panel",
@@ -1536,10 +2270,15 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
-        "FRED"
+        "CENSUS_SAIPE_SAHIE",
+        "FRED",
+        "IRS_MIGRATION"
       ],
       "surface_id": "workbench.matrix",
       "title": "the workbench's correlation matrix",
@@ -1573,12 +2312,17 @@
       "requires_drawable_grain": false,
       "requires_published_dimensions": false,
       "served_sources": [
+        "BEA",
         "BLS",
+        "BLS_QCEW",
         "CDC",
         "CENSUS_ACS",
+        "CENSUS_BPS",
         "CENSUS_PEP",
+        "CENSUS_SAIPE_SAHIE",
         "FBI_UCR",
         "FRED",
+        "IRS_MIGRATION",
         "USDA_NASS"
       ],
       "surface_id": "profiles.product",
