@@ -914,8 +914,10 @@ def bls_ingest():
     raw_ingest = ingest_batch.expand(batch=plan)
 
     silver_schema = ensure_silver_schema()
+    # Every configured program, so a program added to the config (average
+    # prices, `ap`) reaches silver instead of stopping at the revision ledger.
     silver_transforms = transform_to_silver_by_program.expand(
-        program=["la", "ln", "ce", "cu", "jt"]
+        program=list(CONFIG.programs)
     )
 
     raw_ingest >> silver_schema >> silver_transforms
