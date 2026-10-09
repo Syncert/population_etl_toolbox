@@ -38,6 +38,15 @@
       "PLACE",
       "STATE"
     ],
+    "CENSUS_CBP": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
+    "CENSUS_LODES": [
+      "COUNTY",
+      "STATE"
+    ],
     "CENSUS_PEP": [
       "COUNTY",
       "NATIONAL",
@@ -54,15 +63,43 @@
       "PROVIDER_AREA",
       "STATE"
     ],
+    "EPA_AQS": [
+      "COUNTY"
+    ],
     "FBI_UCR": [
       "AGENCY",
       "NATIONAL",
       "STATE"
     ],
+    "FCC_BDC": [
+      "COUNTY",
+      "NATIONAL",
+      "PLACE",
+      "STATE"
+    ],
+    "FEMA_NRI": [
+      "COUNTY"
+    ],
+    "FHFA_HPI": [
+      "COUNTY"
+    ],
     "FRED": [
       "NATIONAL"
     ],
+    "HUD_FMR_IL": [
+      "COUNTY"
+    ],
     "IRS_MIGRATION": [
+      "COUNTY"
+    ],
+    "NCES_CCD": [
+      "COUNTY",
+      "STATE"
+    ],
+    "NOAA_NORMALS": [
+      "COUNTY"
+    ],
+    "USDA_ERS": [
       "COUNTY"
     ],
     "USDA_NASS": [
@@ -903,6 +940,248 @@
     },
     {
       "datasets": [],
+      "display_name": "Census Bureau County Business Patterns",
+      "observation_dimensions": [
+        "employment_range",
+        "measure",
+        "naics_key",
+        "naics_label",
+        "observation_basis",
+        "value_source"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_CBP",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "Census Bureau LEHD Origin-Destination Employment Statistics",
+      "observation_dimensions": [
+        "measure",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_LODES",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
       "display_name": "Census Population Estimates Program",
       "observation_dimensions": [
         "dataset_code",
@@ -1293,6 +1572,128 @@
       ]
     },
     {
+      "datasets": [],
+      "display_name": "EPA Air Quality System (AirData annual monitor files)",
+      "observation_dimensions": [
+        "certification",
+        "complete_monitors",
+        "highest_monitor",
+        "measure",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "EPA_AQS",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
       "datasets": [
         "summarized_violent_crime",
         "summarized_assault",
@@ -1385,6 +1786,370 @@
         "native",
         "quarterly",
         "annual"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "FCC National Broadband Map (fixed broadband availability)",
+      "observation_dimensions": [
+        "as_of_date",
+        "measure",
+        "observation_basis",
+        "residential_units",
+        "revision"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "FCC_BDC",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "FEMA National Risk Index and Disaster Declarations",
+      "observation_dimensions": [
+        "declarations",
+        "measure",
+        "missing_reason",
+        "observation_basis",
+        "rating"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "FEMA_NRI",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "Federal Housing Finance Agency House Price Index",
+      "observation_dimensions": [
+        "measure",
+        "missing_reason",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "FHFA_HPI",
+      "time_grains": [
+        "native"
       ]
     },
     {
@@ -1552,6 +2317,129 @@
     },
     {
       "datasets": [],
+      "display_name": "HUD Fair Market Rents and Section 8 Income Limits",
+      "observation_dimensions": [
+        "edition",
+        "effective_date",
+        "hud_area_code",
+        "hud_area_name",
+        "measure",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "HUD_FMR_IL",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
       "display_name": "IRS Statistics of Income county-to-county migration",
       "observation_dimensions": [
         "category",
@@ -1668,6 +2556,277 @@
       "route_segment": null,
       "served_by_neutral_routes": true,
       "source_code": "IRS_MIGRATION",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "NCES Common Core of Data (public schools)",
+      "observation_dimensions": [
+        "ccd_file",
+        "completeness",
+        "geocode_file",
+        "measure",
+        "observation_basis",
+        "school_year",
+        "schools_with_value",
+        "schools_without_value"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "NCES_CCD",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "NOAA U.S. Climate Normals 1991-2020",
+      "observation_dimensions": [
+        "boundary_vintage",
+        "measure",
+        "observation_basis",
+        "station_count",
+        "station_ids"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "NOAA_NORMALS",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
+      "display_name": "USDA Economic Research Service county classifications and Food Environment Atlas",
+      "observation_dimensions": [
+        "code_label",
+        "edition",
+        "measure",
+        "missing_reason",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "USDA_ERS",
       "time_grains": [
         "native"
       ]
@@ -1852,11 +3011,21 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.map",
@@ -1895,12 +3064,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.trend",
@@ -1937,12 +3116,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.table",
@@ -1978,12 +3167,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.export",
@@ -2014,12 +3213,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.quality",
@@ -2040,6 +3249,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)"
       },
       "page": "/explore",
@@ -2059,11 +3270,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "explorer.distribution",
       "title": "the explorer's distribution histogram and legend bins",
@@ -2104,12 +3323,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "explorer.as_released",
@@ -2129,6 +3358,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata"
       },
       "page": "/explore",
@@ -2150,11 +3381,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "explorer.settled_history",
       "title": "the explorer's settled trend",
@@ -2174,6 +3413,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)"
       },
       "page": "/compare",
@@ -2197,11 +3438,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "comparison.workspace",
       "title": "the comparison workspace's scatter, table, map and export",
@@ -2238,12 +3487,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "workbench.series",
@@ -2264,6 +3523,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata"
       },
       "page": "/workbench",
@@ -2285,11 +3546,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "workbench.cross_section",
       "title": "the workbench's cross-sectional scatter",
@@ -2309,6 +3578,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata"
       },
       "page": "/workbench",
@@ -2331,11 +3602,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "workbench.heatmap",
       "title": "the workbench's geography-by-period heatmap",
@@ -2356,6 +3635,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)"
       },
       "page": "/workbench",
@@ -2379,11 +3660,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "workbench.correlation",
       "title": "the workbench's correlation panel",
@@ -2403,6 +3692,8 @@
       "declined_sources": {
         "CDC": "source 'CDC' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
+        "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
+        "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)"
       },
       "page": "/workbench",
@@ -2421,11 +3712,19 @@
         "BLS_QCEW",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
-        "IRS_MIGRATION"
+        "HUD_FMR_IL",
+        "IRS_MIGRATION",
+        "NCES_CCD"
       ],
       "surface_id": "workbench.matrix",
       "title": "the workbench's correlation matrix",
@@ -2465,12 +3764,22 @@
         "CDC",
         "CENSUS_ACS",
         "CENSUS_BPS",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
         "EIA",
+        "EPA_AQS",
         "FBI_UCR",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
         "FRED",
+        "HUD_FMR_IL",
         "IRS_MIGRATION",
+        "NCES_CCD",
+        "NOAA_NORMALS",
+        "USDA_ERS",
         "USDA_NASS"
       ],
       "surface_id": "profiles.product",

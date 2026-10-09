@@ -47,6 +47,16 @@ EXPECTED_DAG_IDS = {
     "census_saipe_sahie_ingest",
     "irs_migration_ingest",
     "eia_retail_gasoline_ingest",
+    "census_cbp_ingest",
+    "census_lodes_ingest",
+    "epa_aqs_ingest",
+    "noaa_normals_ingest",
+    "fcc_bdc_ingest",
+    "fema_nri_ingest",
+    "fhfa_hpi_ingest",
+    "hud_fmr_il_ingest",
+    "nces_ccd_ingest",
+    "usda_ers_ingest",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -84,6 +94,38 @@ EXPECTED_SCHEDULES = {
     # Weekly: county income lands in November and county GDP in December.
     # Tuesdays: EIA publishes Monday's prices on Monday afternoon.
     "eia_retail_gasoline_ingest": "0 15 * * 2",
+    # Monthly: the Bureau publishes one year of County Business Patterns a year.
+    "census_cbp_ingest": "0 13 15 * *",
+    # Monthly: LODES vintages arrive about once a year.
+    "census_lodes_ingest": "0 14 20 * *",
+    # Monthly: EPA regenerates the files in June and December without a
+    # fixed date, and an unchanged file replays nothing.
+    "epa_aqs_ingest": "0 18 25 * *",
+    # Monthly: EPA regenerates the files in June and December without a
+    # fixed date, and an unchanged file replays nothing.
+    # Quarterly: the 1991-2020 normals change only by a new archive version,
+    # and an unchanged archive replays nothing.
+    "noaa_normals_ingest": "0 19 2 1,4,7,10 *",
+    # Monthly: the FCC republishes vintages under new revision dates as
+    # challenges and corrections land, and an unchanged read replays nothing.
+    "fcc_bdc_ingest": "0 21 12 * *",
+    # Daily: OpenFEMA refreshes declarations every twenty minutes, and an
+    # unchanged NRI read replays nothing.
+    "fema_nri_ingest": "0 6 * * *",
+    # Monthly: FHFA revises the annual workbook without a published
+    # calendar, and an unchanged file replays nothing.
+    "fhfa_hpi_ingest": "0 15 25 * *",
+    # Monthly: FHFA revises the annual workbook without a published
+    # calendar, and an unchanged file replays nothing.
+    # Monthly: HUD reissues FMRs within a fiscal year without a calendar, and
+    # an unchanged workbook replays nothing.
+    "hud_fmr_il_ingest": "0 16 25 * *",
+    # Quarterly: NCES releases a school year's files once or twice a year
+    # under new names, and an unchanged file replays nothing.
+    "nces_ccd_ingest": "0 20 3 1,4,7,10 *",
+    # Monthly: ERS replaces files in place without a calendar, and an
+    # unchanged file replays nothing.
+    "usda_ers_ingest": "0 17 25 * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -111,6 +153,16 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_saipe_sahie_ingest": 2,
     "irs_migration_ingest": 2,
     "eia_retail_gasoline_ingest": 2,
+    "census_cbp_ingest": 2,
+    "census_lodes_ingest": 2,
+    "epa_aqs_ingest": 2,
+    "noaa_normals_ingest": 2,
+    "fcc_bdc_ingest": 2,
+    "fema_nri_ingest": 2,
+    "fhfa_hpi_ingest": 2,
+    "hud_fmr_il_ingest": 2,
+    "nces_ccd_ingest": 2,
+    "usda_ers_ingest": 2,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -128,6 +180,16 @@ EXPECTED_INGEST_POOLS = {
     "census_saipe_sahie_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
     "eia_retail_gasoline_ingest": "eia_api",
+    "census_cbp_ingest": "census_cbp_files",
+    "census_lodes_ingest": "census_lodes_files",
+    "epa_aqs_ingest": "epa_aqs_files",
+    "noaa_normals_ingest": "noaa_normals_files",
+    "fcc_bdc_ingest": "fcc_bdc_api",
+    "fema_nri_ingest": "fema_files",
+    "fhfa_hpi_ingest": "fhfa_hpi_files",
+    "hud_fmr_il_ingest": "hud_fmr_il_files",
+    "nces_ccd_ingest": "nces_ccd_files",
+    "usda_ers_ingest": "usda_ers_files",
 }
 
 

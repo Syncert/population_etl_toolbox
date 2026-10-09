@@ -12,6 +12,9 @@ authors = [{ name = "data_ingestion_toolbox contributors" }]
 license = "LicenseRef-Proprietary"
 dependencies = [
   "httpx>=0.27,<1.0",
+  # Deflate64 (zip method 9): NCES compresses its multi-gigabyte CCD
+  # membership files with it, and the standard library cannot read it.
+  "inflate64>=1.0,<2.0",
   "polars>=0.20,<2.0",
   "psycopg2-binary>=2.9,<3.0",
   "pydantic>=2.6,<3.0",

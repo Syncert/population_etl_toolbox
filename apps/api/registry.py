@@ -1193,6 +1193,424 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="CENSUS_CBP",
+            latest_relation="gold_census_cbp.observation_latest",
+            released_relation="gold_census_cbp.observation_revision",
+            lineage_schema="gold_census_cbp",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>:<sector>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The files name no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                ("naics_key", "naics_key"),
+                ("naics_label", "naics_label"),
+                # "employer establishments ... excludes the self-employed":
+                # what keeps a CBP count from being read as all employment.
+                ("observation_basis", "observation_basis"),
+                # The employment-size range of a withheld cell, through 2017.
+                ("employment_range", "employment_range"),
+                ("value_source", "value_source"),
+            ),
+            # The Bureau's noise flag: G under 2%, H 2 to under 5%, J 5% or more.
+            uncertainty_expressions=(("noise_flag", "noise_flag"),),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CENSUS_LODES",
+            latest_relation="gold_census_lodes.observation_latest",
+            released_relation="gold_census_lodes.observation_revision",
+            lineage_schema="gold_census_lodes",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The state's data vintage, `YYYYMMDD_HHMM`, which sorts as text.
+            release_expression="release_key",
+            release_order_expression="release_key",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                # "summed from census blocks by this warehouse ... a protected
+                # estimate": what keeps a LODES count from being read as a
+                # published county figure.
+                ("observation_basis", "observation_basis"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="EPA_AQS",
+            latest_relation="gold_epa_aqs.observation_latest",
+            released_relation="gold_epa_aqs.observation_revision",
+            lineage_schema="gold_epa_aqs",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `AirData <year> read <time>`: EPA names no release, so the read
+            # distinguishes a regenerated file; ordered by publication.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "the highest value among the county's monitors with a
+                # complete year ... not an EPA design value".
+                ("observation_basis", "observation_basis"),
+                # Which monitor it is, how many complete monitors there were,
+                # and that monitor's certification.
+                ("highest_monitor", "highest_monitor"),
+                ("complete_monitors", "complete_monitors::TEXT"),
+                ("certification", "certification"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="NOAA_NORMALS",
+            latest_relation="gold_noaa_normals.observation_latest",
+            released_relation="gold_noaa_normals.observation_revision",
+            lineage_schema="gold_noaa_normals",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `Normals 1991-2020 <archive version> read <time>`: one period,
+            # and NCEI names a new archive for a new version.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "a 30-year normal, not the value of any one year ... the
+                # unweighted mean of the stations it places inside the county".
+                ("observation_basis", "observation_basis"),
+                # Which stations, how many, and the county boundary vintage
+                # they were placed with.
+                ("station_ids", "station_ids"),
+                ("station_count", "station_count::TEXT"),
+                ("boundary_vintage", "boundary_vintage::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "NOAA climate normals are 30-year averages (1991-2020), not "
+                "values of any one year, so a year-aligned analysis would pair "
+                "them with other sources' annual values; query /observations "
+                "instead"
+            ),
+        ),
+        ObservationDispatch(
+            source_code="FCC_BDC",
+            latest_relation="gold_fcc_bdc.observation_latest",
+            released_relation="gold_fcc_bdc.observation_revision",
+            lineage_schema="gold_fcc_bdc",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `BDC <as-of> rev <revision> read <time>`: the FCC republishes a
+            # vintage under a new revision date; ordered by publication.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "what providers report they could serve, not what households
+                # subscribe to and not a measured speed".
+                ("observation_basis", "observation_basis"),
+                # The vintage, the FCC's revision date, and the shares'
+                # denominator.
+                ("as_of_date", "as_of_date"),
+                ("revision", "revision"),
+                ("residential_units", "total_units::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="FEMA_NRI",
+            latest_relation="gold_fema_nri.observation_latest",
+            released_relation="gold_fema_nri.observation_revision",
+            lineage_schema="gold_fema_nri",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The NRI version ("December 2025") or the OpenFEMA refresh read;
+            # releases are ordered by when the warehouse published them.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "a modelled estimate for planning, not a measurement", or
+                # how a declaration count was counted, with FEMA's notice.
+                ("observation_basis", "observation_basis"),
+                # FEMA's rating for the hazard, why a value is absent, and the
+                # declarations a count is made of.
+                ("rating", "rating"),
+                ("missing_reason", "missing_reason"),
+                ("declarations", "declarations"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="FHFA_HPI",
+            latest_relation="gold_fhfa_hpi.observation_latest",
+            released_relation="gold_fhfa_hpi.observation_revision",
+            lineage_schema="gold_fhfa_hpi",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The workbook's own "Last updated" date, `YYYY-MM-DD`, which
+            # sorts as text; a second file of the same date gains `.2`.
+            release_expression="release_key",
+            release_order_expression="release_key",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                # "a repeat-sales index ... not a price level", with FHFA's
+                # required notice.
+                ("observation_basis", "observation_basis"),
+                # Why a value is absent: provider_missing,
+                # first_recorded_year or prior_year_missing.
+                ("missing_reason", "missing_reason"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="HUD_FMR_IL",
+            latest_relation="gold_hud_fmr_il.observation_latest",
+            released_relation="gold_hud_fmr_il.observation_revision",
+            lineage_schema="gold_hud_fmr_il",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `FY2026` or `FY2026-revised`; the revised edition sorts after
+            # the original it reissued.
+            release_expression="release_key",
+            release_order_expression="release_key",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                # "an area value repeated for each county, not a county
+                # estimate": what keeps an FMR from being read as this
+                # county's rent.
+                ("observation_basis", "observation_basis"),
+                # The HUD FMR or income-limit area whose value this is.
+                ("hud_area_code", "hud_area_code"),
+                ("hud_area_name", "hud_area_name"),
+                # When the edition took effect, and which edition it is.
+                ("effective_date", "effective_date::TEXT"),
+                ("edition", "edition"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="NCES_CCD",
+            latest_relation="gold_nces_ccd.observation_latest",
+            released_relation="gold_nces_ccd.observation_revision",
+            lineage_schema="gold_nces_ccd",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `CCD <school year> v<release> read <time>`: NCES names the
+            # release in the file name; ordered by release, then publication.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "the sum over the public schools that NCES's EDGE geocode
+                # file places in the county ... counting only values NCES
+                # flags Reported".
+                ("observation_basis", "observation_basis"),
+                ("school_year", "school_year"),
+                # How many placed schools had a value and how many had none,
+                # so a partial sum is never silent.
+                ("schools_with_value", "schools_with_value::TEXT"),
+                ("schools_without_value", "schools_without_value::TEXT"),
+                ("completeness", "completeness"),
+                ("ccd_file", "ccd_file"),
+                ("geocode_file", "geocode_file"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="USDA_ERS",
+            latest_relation="gold_usda_ers.observation_latest",
+            released_relation="gold_usda_ers.observation_revision",
+            lineage_schema="gold_usda_ers",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # `<product>:<edition>:<read time>`: ERS replaces files in place
+            # and names no release, so the read distinguishes a replacement.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "measure"),
+                # "a code, not a quantity ... not comparable to earlier
+                # editions", with ERS's credit.
+                ("observation_basis", "observation_basis"),
+                # ERS's label for a code (RUCC), and why a value is absent.
+                ("code_label", "code_label"),
+                ("missing_reason", "missing_reason"),
+                ("edition", "edition"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "USDA ERS publishes county classifications -- rural-urban codes "
+                "and typology flags -- that an aligned analysis would average or "
+                "correlate as if they were quantities; query /observations instead"
+            ),
+        ),
     )
 }
 
@@ -1485,6 +1903,60 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             neutral_paths=UNION_NEUTRAL_PATHS,
         ),
         SourceDiscovery(
+            source_code="USDA_ERS",
+            display_name="USDA Economic Research Service county classifications and Food Environment Atlas",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="NCES_CCD",
+            display_name="NCES Common Core of Data (public schools)",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="HUD_FMR_IL",
+            display_name="HUD Fair Market Rents and Section 8 Income Limits",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="FHFA_HPI",
+            display_name="Federal Housing Finance Agency House Price Index",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="FEMA_NRI",
+            display_name="FEMA National Risk Index and Disaster Declarations",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="FCC_BDC",
+            display_name="FCC National Broadband Map (fixed broadband availability)",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="EPA_AQS",
+            display_name="EPA Air Quality System (AirData annual monitor files)",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_LODES",
+            display_name="Census Bureau LEHD Origin-Destination Employment Statistics",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_CBP",
+            display_name="Census Bureau County Business Patterns",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
             source_code="BLS_QCEW",
             display_name="Bureau of Labor Statistics Quarterly Census of Employment and Wages",
             route_segment=None,
@@ -1502,6 +1974,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name="U.S. Energy Information Administration retail gasoline prices",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="NOAA_NORMALS",
+            display_name="NOAA U.S. Climate Normals 1991-2020",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

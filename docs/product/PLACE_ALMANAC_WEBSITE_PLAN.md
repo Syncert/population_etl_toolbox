@@ -214,11 +214,11 @@ finer, openly licensed.
 | Census Building Permits Survey | Housing units authorized by structure type | County and permit-issuing place, monthly | Housing | The one forward-looking local housing signal |
 | IRS county-to-county migration | Where in-movers came from and out-movers went | County pairs, annual | People, Change | Turns PEP net migration into a story with named origins |
 | Census LEHD LODES | Resident-to-workplace commuting flows | County and finer, annual | Work and Money | Explains the gap between residents and jobs |
-| Census County Business Patterns | Establishments, employment, payroll by detailed industry | County and place, annual | Work and Money | The business mix of a town |
+| Census County Business Patterns | Establishments, employment, payroll by industry | County, annual (no place grain) | Work and Money | The business mix of a county |
 | CDC WONDER mortality and natality | Deaths by cause, births, suppression below ten | County, annual | Health, People | Behind every life-expectancy headline; suppression stays visible |
 | NCES Common Core of Data | Schools, districts, enrollment, staffing, lunch eligibility | District and school, mapped to county and place | New chapter: Schools | Families ask about schools first |
-| FHFA House Price Index | Repeat-sales price index | County and ZIP, annual | Housing | Local price change beside ACS values and FRED |
-| HUD Fair Market Rents and income limits | Reference rent and income thresholds | County and metro, annual | Housing | A reference point readers recognize |
+| FHFA House Price Index | Repeat-sales price index | County, annual (ZIP and tract later) | Housing | Local price change beside ACS values and FRED |
+| HUD Fair Market Rents and income limits | Reference rent and income thresholds | County (the HUD area's value), annual | Housing | A reference point readers recognize |
 | FEMA National Risk Index and declarations | Expected annual loss by hazard, declared disasters | County and tract | New chapter: Land and Environment | Floods, tornadoes, wildfire are place facts |
 | EPA AQS and NOAA climate normals | Air quality summaries; thirty-year normals | Monitor and station, mapped to county | Land and Environment | Weather is the most-searched local fact |
 | FCC Broadband Data Collection | Availability by speed tier | Location, aggregated to county and place | Housing or People | Pairs ACS "has a subscription" with "could get one" |
@@ -317,9 +317,72 @@ Warehouse, county and place depth:
 - [`docs/plans/needs_review/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md`](../plans/needs_review/BLS_QCEW_COUNTY_EMPLOYMENT_AND_WAGES_PLAN.md) — jobs and wages by industry where the job is.
 - [`docs/plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md`](../plans/needs_review/BEA_REGIONAL_ACCOUNTS_PLAN.md) — county personal income and GDP.
 - [`docs/plans/needs_review/CENSUS_SAIPE_AND_SAHIE_PLAN.md`](../plans/needs_review/CENSUS_SAIPE_AND_SAHIE_PLAN.md) — annual every-county poverty, income, and uninsured estimates.
+<<<<<<<
 - [`docs/plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
 - [`docs/plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
-- [`docs/plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/to_do/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+- [`docs/plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+<<<<<<<
+=======
+  - [`docs/plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
+  - [`docs/plans/needs_review/CENSUS_LEHD_LODES_PLAN.md`](../plans/needs_review/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+  - [`docs/plans/needs_review/NCES_COMMON_CORE_OF_DATA_PLAN.md`](../plans/needs_review/NCES_COMMON_CORE_OF_DATA_PLAN.md) — NCES Common Core of Data (a Schools chapter).
+  - [`docs/plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
+  - [`docs/plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+>>>>>>>
+=======
+- [`docs/plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md`](../plans/needs_review/CENSUS_BUILDING_PERMITS_PLAN.md) — housing units authorized.
+- [`docs/plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md`](../plans/needs_review/IRS_COUNTY_TO_COUNTY_MIGRATION_PLAN.md) — where people came from and went.
+- [`docs/plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md`](../plans/needs_review/SCOUT_THE_SECOND_TIER_COUNTY_SOURCES_PLAN.md) — research that produces one plan per remaining source.
+<<<<<<<
+  - [`docs/plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
+  - [`docs/plans/needs_review/CENSUS_LEHD_LODES_PLAN.md`](../plans/needs_review/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+=======
+  - [`docs/plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md`](../plans/needs_review/CENSUS_COUNTY_BUSINESS_PATTERNS_PLAN.md) — Census County Business Patterns (counties, not places: CBP publishes no place grain).
+  - [`docs/plans/needs_review/CENSUS_LEHD_LODES_PLAN.md`](../plans/needs_review/CENSUS_LEHD_LODES_PLAN.md) — Census LEHD LODES commuting and workplace jobs.
+>>>>>>>
+  - [`docs/plans/needs_review/NCES_COMMON_CORE_OF_DATA_PLAN.md`](../plans/needs_review/NCES_COMMON_CORE_OF_DATA_PLAN.md) — NCES Common Core of Data (a Schools chapter).
+<<<<<<<
+  - [`docs/plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
+<<<<<<<
+=======
+  - [`docs/plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+>>>>>>>
+<<<<<<<
+=======
+=======
+  - [`docs/plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md`](../plans/needs_review/FHFA_HOUSE_PRICE_INDEX_PLAN.md) — FHFA House Price Index.
+>>>>>>>
+  - [`docs/plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md`](../plans/needs_review/HUD_FAIR_MARKET_RENTS_AND_INCOME_LIMITS_PLAN.md) — HUD Fair Market Rents and income limits.
+<<<<<<<
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+=======
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+  - [`docs/plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+>>>>>>>
+<<<<<<<
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+=======
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+<<<<<<<
+>>>>>>>
+  - [`docs/plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+=======
+  - [`docs/plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md`](../plans/needs_review/FEMA_NATIONAL_RISK_INDEX_AND_DECLARATIONS_PLAN.md) — FEMA National Risk Index components and disaster declarations.
+  - [`docs/plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md`](../plans/needs_review/EPA_AIR_QUALITY_AND_NOAA_CLIMATE_NORMALS_PLAN.md) — EPA Air Quality System and NOAA climate normals.
+  - [`docs/plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md`](../plans/needs_review/FCC_BROADBAND_DATA_COLLECTION_PLAN.md) — FCC Broadband Data Collection.
+  - [`docs/plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md`](../plans/needs_review/USDA_ERS_COUNTY_CODES_AND_ATLASES_PLAN.md) — USDA ERS rural-urban codes, typology codes and the Food Environment Atlas.
+>>>>>>>
+  - Declined: [CDC WONDER mortality and natality](declined_sources/cdc-wonder.md) — the API answers vital statistics nationally only, and county files need an NCHS data use agreement.
+>>>>>>>
+>>>>>>>
 - [`docs/plans/needs_review/SUB_COUNTY_GEOGRAPHY_PLAN.md`](../plans/needs_review/SUB_COUNTY_GEOGRAPHY_PLAN.md) — tracts and ZCTAs, after place grain.
 
 ## Decisions only the owner can make

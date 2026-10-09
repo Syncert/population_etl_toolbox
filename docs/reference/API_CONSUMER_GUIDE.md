@@ -568,6 +568,258 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a USDA ERS row: a classification is a code, not a quantity
+
+`USDA_ERS` serves three USDA Economic Research Service county products:
+the 2023 Rural-Urban Continuum Code (`USDA_ERS:rural_urban_continuum_code`,
+1-3 metro by metro-area size, 4-9 nonmetro by urban population and metro
+adjacency), the 2025 County Typology Codes (twelve flags such as
+`USDA_ERS:farming_dependent` and `USDA_ERS:persistent_poverty`, and the
+`USDA_ERS:industry_dependence` code), and four Food Environment Atlas
+indicators (`USDA_ERS:snap_authorized_stores`, its rate per 1,000 people,
+and SNAP households with low access to a store, as a count and a percent).
+
+- **A code or a flag is not a quantity.** `unit` says `code (1-9)`,
+  `code (0-5)` or `flag (0/1)`; `dimensions.code_label` carries ERS's label
+  for a RUCC code. Averaging or correlating codes is meaningless, so the
+  aligned-analysis routes decline this source.
+- **`0` is a real "no".** A Typology flag of `0` means the county is not
+  flagged. A flag ERS did not set is `not_applicable` with no value:
+  `not_computed_for_geography` where ERS computed the attribute for the other
+  of Connecticut's two county sets, `not_determined` where ERS wrote `-1`.
+- **Atlas gaps keep their reason.** `-9999` is `not_available`, `-8888`
+  `county_did_not_exist` (that year), `N/A` `incomplete_data`, an empty cell
+  `blank`; each is `missing` with a `null` value, never zero.
+- **Editions are not comparable.** ERS says its RUCC and Typology editions
+  differ in method; each row names its edition.
+
+### Reading an NCES schools row: a county or state sum of schools
+
+`NCES_CCD` serves county and state figures from NCES's Common Core of Data,
+each summed over the public schools NCES's EDGE geocode file places there:
+`operating_schools` and `charter_schools` (schools), `student_membership` (students enrolled on or
+about October 1), `teacher_fte`
+(full-time-equivalent teachers), and `frpl_eligible`, `free_lunch_eligible`,
+`reduced_price_lunch_eligible` and `direct_certification` (students). Rows are
+labelled with the school year's fall (`year` 2024 is 2024-25, `period_start`
+2024-07-01, `period_end` 2025-06-30).
+
+- **It is summed from schools.** NCES publishes schools, not counties. A
+  school is placed by EDGE's five-digit county code and its physical state;
+  Bureau of Indian Education (operating code 59) and DoDEA (63) schools are
+  placed where they stand, never as a state of their own.
+- **A partial sum says so.** `dimensions.schools_with_value` and
+  `dimensions.schools_without_value` count the placed schools that did and
+  did not report, and `dimensions.completeness` is `complete` or `partial`.
+  Where no placed school reported, the row has no value and status
+  `missing` -- never a zero.
+- **Free or reduced-price lunch and direct certification are different
+  measures.** Since 2016-17 a state may report either or both; Delaware, for
+  example, reports only direct certification. One is never substituted for
+  the other, and Community Eligibility Provision schools may report every
+  student as free-eligible.
+
+### Reading an FHFA House Price Index row: an index, not a price
+
+`FHFA_HPI` serves the Federal Housing Finance Agency's annual
+all-transactions House Price Index for counties:
+`FHFA_HPI:annual_change_pct` (percent change from the previous year) and
+`FHFA_HPI:hpi_base_2000` (the index, 2000 = 100).
+
+- **It is an index, not a price level.** It tracks repeat sales and
+  refinance appraisals of the same houses, on conventional single-family
+  mortgages bought or guaranteed by Fannie Mae and Freddie Mac; jumbo,
+  FHA/VA, condominium and multi-unit loans are out of scope, so a high-cost
+  or rental-heavy county may be thinly covered. It is nominal and not
+  seasonally adjusted, and FHFA calls these annual indexes developmental.
+  It is not the ACS median home value.
+- **A missing index is `missing`, never zero.** FHFA leaves a cell empty
+  where a county's sample is too thin; the row says `value_status:
+  missing` with a `null` value and `dimensions.missing_reason`
+  (`provider_missing`, or `base_year_unavailable` when the county was not
+  indexed in 2000). The annual change in a county's first recorded year, or
+  after a missing year, is `not_applicable`.
+- **The release is the workbook's own "Last updated" date.** FHFA revises
+  every year's index in each new file, so a new file is a new release beside
+  the old one, and `observation_latest` serves the newest.
+- **Required notice:** This product uses FHFA data but is neither endorsed
+  nor certified by FHFA. `dimensions.observation_basis` carries it on every
+  row.
+
+### Reading a HUD Fair Market Rent or income-limit row: an area's reference value
+
+`HUD_FMR_IL` serves the Department of Housing and Urban Development's Fair
+Market Rents (`HUD_FMR_IL:fmr_0br` to `HUD_FMR_IL:fmr_4br`, dollars per
+month, efficiency to four bedrooms) and Section 8 income limits
+(`HUD_FMR_IL:median_family_income` and the four-person
+`income_limit_30_4p`, `income_limit_50_4p` and `income_limit_80_4p`,
+dollars per year) for counties.
+
+- **It is the HUD area's value, not the county's.** HUD sets one figure per
+  FMR area (a metro area, a HUD metro subdivision or a nonmetropolitan
+  county) and repeats it for each county in the area;
+  `dimensions.hud_area_code` and `hud_area_name` say which area. It is a
+  program reference value, not the ACS median rent or income.
+- **`year` is HUD's fiscal year.** `period_start` is October 1 of the year
+  before; `dimensions.effective_date` is when that edition took effect
+  (income limits take effect on their own date, after October 1).
+- **A reissued year is a second release.** When HUD revises a fiscal year's
+  FMRs, the revised edition is the release `FY2026-revised` beside
+  `FY2026`; `observation_latest` serves the revision, and
+  `dimensions.edition` says which edition a row is.
+- **The area code is not always there.** HUD's API names an area code for
+  metro areas only, so a nonmetropolitan county's row carries its area's
+  name and no `hud_area_code`. Rows read through the HUD User API carry
+  HUD's required notice in `observation_basis`: "This product uses the HUD
+  User Data API but is not endorsed or certified by HUD User."
+- **New England towns are not counties.** HUD publishes Connecticut,
+  Maine, Massachusetts, New Hampshire, Rhode Island and Vermont by town, and
+  a county's towns can sit in different HUD areas, so those rows are not
+  served as county values.
+
+### Reading a FEMA row: a modelled loss, or a count of declarations
+
+`FEMA_NRI` serves two FEMA products for counties. From the National Risk
+Index: `FEMA_NRI:expected_annual_loss` (all hazards), eighteen per-hazard
+losses such as `FEMA_NRI:expected_annual_loss_inland_flooding`, and the
+annualized frequency of inland flooding, tornado, wildfire, hurricane and
+heat wave. From OpenFEMA: `FEMA_NRI:major_disaster_declarations`,
+`FEMA_NRI:emergency_declarations` and `FEMA_NRI:fire_management_declarations`
+per county and calendar year.
+
+- **Expected annual loss is a model, not a measurement.** FEMA multiplies
+  annualized frequency, exposure and a historic loss ratio; the unit is
+  dollars per year, there is no margin of error, and methods change between
+  versions. The release is the NRI version (`December 2025`).
+- **A hazard that cannot happen has no number.** Where FEMA rates a hazard
+  `Not Applicable`, `Insufficient Data` or `Data Unavailable`, the row is
+  `not_applicable` or `missing` with `dimensions.rating` and no value.
+- **The NRI's scores and ratings are not served.** Risk scores, social
+  vulnerability and resilience are relative ranks, not measures.
+- **A declaration count is this warehouse's count.** It counts distinct
+  declarations of the type that designated the county in the calendar year
+  of the declaration date; `dimensions.declarations` lists them. Statewide
+  and tribal-area designations are not counted toward a county, and a year
+  with no declaration has no row. OpenFEMA still designates Connecticut's
+  legacy counties, which the shared geography may not hold.
+- **Required notice:** This product uses the Federal Emergency Management
+  Agency's OpenFEMA API, but is not endorsed by FEMA.
+
+### Reading an FCC broadband row: reported availability, not subscription
+
+`FCC_BDC` serves the FCC National Broadband Map's own fixed-broadband
+availability summaries for the nation, states, counties and places, for
+residential units: `share_any_25_3`, `share_any_100_20`,
+`share_any_1000_100` (any technology), `share_terrestrial_100_20`,
+`share_wired_100_20` (shares of units, 0 to 1) and `residential_units`.
+
+- **It is what providers report they could serve.** Not what households
+  subscribe to (that is the ACS broadband subscription measure, a different
+  metric) and not a measured speed.
+- **`period_start` and `period_end` are the as-of date.** Only December 31
+  vintages are served, so `year` has one value per year;
+  `dimensions.as_of_date` names it and `dimensions.revision` names the FCC's
+  revision of that vintage (`29sep2026`). The FCC republishes a vintage as
+  challenges land; each revision is a new release.
+- **No units, no share.** Where a geography has no residential units the
+  shares are `missing` with no value; a `0` is a reported zero.
+
+### Reading an EPA air quality row: a county figure derived from monitors
+
+`EPA_AQS` serves two county air-quality figures from EPA's AirData annual
+monitor files: `EPA_AQS:pm25_annual_mean` (micrograms per cubic meter, under
+the 2024 annual PM2.5 standard) and `EPA_AQS:ozone_8hour_4th_max` (parts per
+million, the year's fourth-highest daily maximum 8-hour average under the
+2015 ozone standard).
+
+- **It is derived, and it is not a design value.** EPA publishes monitors,
+  not counties. Each county row is this warehouse's highest value among the
+  county's monitors with a complete year, from every measured value with
+  exceptional events included. It is not an EPA design value or an
+  attainment determination. `dimensions.highest_monitor`,
+  `dimensions.complete_monitors` and `dimensions.certification` say which
+  monitor and how many.
+- **No complete monitor, no row.** A county without a monitor, or whose
+  monitors all had an incomplete year, has no row -- never a zero.
+- **EPA revises old years.** Each read of a regenerated file is a new
+  release (`AirData <year> read <time>`) beside the earlier one.
+
+### Reading a NOAA climate normals row: a 30-year normal, placed by coordinates
+
+`NOAA_NORMALS` serves six county figures from NCEI's U.S. Climate Normals
+1991-2020 (annual/seasonal, by station): `annual_mean_temperature`,
+`annual_mean_maximum_temperature` and `annual_mean_minimum_temperature`
+(degrees Fahrenheit), `annual_precipitation` (inches), and
+`annual_heating_degree_days` and `annual_cooling_degree_days` (degree days,
+base 65 F).
+
+- **It is a normal, not a year.** Each row covers 1991-01-01 to 2020-12-31
+  and is labelled year 2020; it is not the value of 2020 or of any year, and
+  the analysis routes decline it so it is never aligned with annual values.
+- **It is derived from stations.** NCEI publishes stations with coordinates,
+  not counties. This warehouse places each station in the county boundary
+  that contains it, from the boundary vintage named in
+  `dimensions.boundary_vintage`, and serves the unweighted mean of the
+  county's stations that NCEI flags standard (S) or representative (R) for
+  that element. `dimensions.station_ids` and `dimensions.station_count` say
+  which.
+- **No eligible station, no row.** A county with no S or R station for an
+  element has no row, never a zero. A withheld station normal (NCEI flags
+  `M`, `V`, `Y`) carries no number; an `X` normal is NCEI's rounded zero and
+  keeps its flag.
+
+### Reading a LEHD LODES row: jobs where people live and where they work
+
+`CENSUS_LODES` serves the Census Bureau's LEHD Origin-Destination Employment
+Statistics (LODES8) for every county and state: `CENSUS_LODES:resident_workers`
+(jobs held by people living there), `CENSUS_LODES:jobs` (jobs located there),
+`CENSUS_LODES:live_and_work`, `CENSUS_LODES:inbound` (jobs there held by
+people living elsewhere) and, for counties, `CENSUS_LODES:outbound_in_state`
+(jobs elsewhere in the state held by people living there). The unit is
+`jobs`, counting all jobs (`JT00`), not people: one person can hold two.
+
+- **It is this warehouse's sum, not a Bureau county figure.** LODES
+  publishes census blocks only; each county and state value is the sum of
+  the state's block rows, and `dimensions.observation_basis` says so. The
+  Bureau protects those blocks (noise for workplaces, synthesized residence
+  locations), so every value is a protected estimate.
+- **`live_and_work + inbound = jobs`** for a county. A state's
+  `live_and_work` is every in-state commute and its `inbound` the jobs held
+  by people living in another state. Out-of-state outflow is not served.
+- **A state-year with no workplace file has no workplace row**, never a
+  zero: Alaska publishes none from 2017 and Michigan none for 2022-2023, so
+  those years serve `resident_workers` only.
+- **The release is the state's data vintage** (`YYYYMMDD_HHMM`). A newer
+  vintage is a new release beside the old one, and `observation_latest`
+  serves the newest.
+
+### Reading a County Business Patterns row: employer establishments, mid-March
+
+`CENSUS_CBP` serves the Census Bureau's County Business Patterns: employer
+establishments, employment in the pay period including March 12,
+first-quarter payroll and annual payroll, for the nation, every state and
+every county, by two-digit NAICS sector and in total. A metric code is
+`CENSUS_CBP:<measure>:<sector>`, for example `CENSUS_CBP:emp:72` (employees
+in Accommodation and food services) or `CENSUS_CBP:est:total`.
+
+- **It counts employer establishments only.** The self-employed, private
+  households, railroads, crop and animal production and most government
+  employees are out of scope; `dimensions.observation_basis` says so on
+  every row. It is not QCEW's count of covered jobs or the ACS's count of
+  employed residents, and the three are separate metrics.
+- **Payroll is in thousands of dollars**; `unit` says which measure is
+  which.
+- **Employment and payroll carry noise.** The Bureau adds noise to protect
+  establishments; `uncertainty.noise_flag` is `G` (under 2%), `H` (2 to
+  under 5%) or `J` (5% or more). Establishment counts carry none.
+- **A withheld cell is not a zero.** Through 2016 a cell that would
+  disclose an establishment is `D`; it is `value_status: withheld` with a
+  `null` value although the file writes `0`, and
+  `dimensions.employment_range` keeps the Bureau's size-range letter. From
+  2017 a cell of fewer than three establishments is not published at all,
+  so a sector with no row is not published, never zero.
+- **There is no place grain.** CBP publishes counties, not places.
+
 ### Reading a BEA row: current, chained or per capita
 
 `BEA` serves the Bureau of Economic Analysis's regional economic accounts for
@@ -776,7 +1028,8 @@ source-scoped routes serve it; that is what they are for.
   Census ACS publishes `margin_of_error` and `margin_of_error_pct`; CDC
   publishes `confidence_lower` and `confidence_upper`; USDA NASS publishes
   `cv_value` with `cv_status` and `cv_symbol`, which is how it says an
-  estimate is unreliable. Read them before treating a value as precise.
+  estimate is unreliable; County Business Patterns publishes `noise_flag`
+  (`G`, `H` or `J`). Read them before treating a value as precise.
 - `coverage` is `null` unless the source publishes a reporting basis. FBI UCR
   does: `participation_status` (a month nobody reported is `not_reported`
   with a `null` value, not zero crime), `coverage_percent` and
@@ -848,6 +1101,16 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| USDA ERS | the product, edition and the time the warehouse read the file | **Not an ERS release identity.** ERS replaces files in place and names no release, so a replaced file is a new release beside the old one |
+| NCES schools | `CCD <school year> v<release> read <time>` | NCES's release (`1a`, `2a`) from the file name plus the read; a later release supersedes an earlier one for the same school year |
+| HUD Fair Market Rents and income limits | the fiscal year and edition (`FY2026`, `FY2026-revised`) | HUD's own fiscal-year label; a reissued year is a second release beside the first |
+| FHFA House Price Index | the workbook's "Last updated" date | FHFA's own date in the file; a second file of the same date with different bytes is that date with `.2` |
+| FEMA National Risk Index | the NRI version (`December 2025`) | FEMA's own version label; declaration counts take the date of the OpenFEMA refresh the warehouse read |
+| FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
+| EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
+| NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
+| Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
+| Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | Census Building Permits | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
 | BLS QCEW | the time the warehouse read the file | **Not a BLS publication.** The open-data interface names no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
@@ -1145,11 +1408,16 @@ with its published semantics and no routes — is declined by `/observations`
 and `/distribution/bins` with the same `422` naming the source and pointing
 here, never a `500`.
 
-**The analysis routes answer for Census ACS, BLS, FRED, and Census PEP.** CDC,
-USDA NASS, and FBI UCR are declined with a stated reason: they publish
-stratified, multi-dimensional, or agency-grain observations that an aligned
-one-value-per-geography analysis would silently collapse. Query them through
-`/observations` with the appropriate stratum, domain, or subject filters.
+**The analysis routes answer for Census ACS, BLS, FRED, Census PEP, and EPA
+air quality.** CDC, USDA NASS, and FBI UCR are declined with a stated reason:
+they publish stratified, multi-dimensional, or agency-grain observations that
+an aligned one-value-per-geography analysis would silently collapse. NOAA
+climate normals are declined because a 30-year normal is not the value of any
+one year, so aligning it by year with annual values would mislead. USDA ERS
+is declined because it publishes classifications -- rural-urban codes and
+typology flags -- that an analysis would average or correlate as quantities.
+Query them through `/observations` with the appropriate stratum, domain, or
+subject filters.
 
 All four analysis routes — `/comparison`, `/comparison/preflight`,
 `/comparison/correlation`, `/comparison/matrix` — and `/distribution/bins`
@@ -1168,7 +1436,7 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS and FBI UCR.
+restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals and USDA ERS.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -1257,7 +1525,8 @@ each measure's own coverage is `metrics[].geographies`. Read the two against
 each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
-measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR),
+measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR,
+NOAA climate normals, USDA ERS),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined

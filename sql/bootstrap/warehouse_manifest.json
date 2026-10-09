@@ -152,9 +152,29 @@
       "path": "src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql"
     },
     {
+      "id": "silver-census-cbp",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql"
+    },
+    {
       "id": "silver-eia",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/eia/DDL/silver_eia.sql"
+    },
+    {
+      "id": "silver-census-lodes",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql"
+    },
+    {
+      "id": "silver-fhfa-hpi",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/fhfa_hpi/DDL/silver_fhfa_hpi.sql"
+    },
+    {
+      "id": "silver-hud-fmr-il",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/hud_fmr_il/DDL/silver_hud_fmr_il.sql"
     },
     {
       "id": "migration-025",
@@ -162,14 +182,44 @@
       "path": "sql/migrations/025_county_label_is_not_reviewed.sql"
     },
     {
+      "id": "silver-usda-ers",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/usda_ers/DDL/silver_usda_ers.sql"
+    },
+    {
+      "id": "silver-fema-nri",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/fema_nri/DDL/silver_fema_nri.sql"
+    },
+    {
       "id": "migration-030",
       "phase": "source-fix",
       "path": "sql/migrations/030_fbi_relationship_product_scope.sql"
     },
     {
+      "id": "silver-epa-aqs",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql"
+    },
+    {
+      "id": "silver-noaa-normals",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
+    },
+    {
+      "id": "silver-nces-ccd",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql"
+    },
+    {
       "id": "migration-027",
       "phase": "source-fix",
       "path": "sql/migrations/027_acs_bls_fact_lineage.sql"
+    },
+    {
+      "id": "silver-fcc-bdc",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/fcc_bdc/DDL/silver_fcc_bdc.sql"
     },
     {
       "id": "migration-031",
@@ -252,9 +302,59 @@
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
     },
     {
+      "id": "gold-census-cbp",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql"
+    },
+    {
+      "id": "gold-census-lodes",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/gold_census_lodes.sql"
+    },
+    {
+      "id": "gold-fhfa-hpi",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/gold_fhfa_hpi.sql"
+    },
+    {
+      "id": "gold-hud-fmr-il",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/hud_fmr_il/gold_hud_fmr_il/DDL/gold_hud_fmr_il.sql"
+    },
+    {
+      "id": "gold-usda-ers",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/usda_ers/gold_usda_ers/DDL/gold_usda_ers.sql"
+    },
+    {
       "id": "publisher-bls",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql"
+    },
+    {
+      "id": "gold-fema-nri",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/gold_fema_nri.sql"
+    },
+    {
+      "id": "gold-epa-aqs",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/gold_epa_aqs.sql"
+    },
+    {
+      "id": "gold-noaa-normals",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql"
+    },
+    {
+      "id": "gold-nces-ccd",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql"
+    },
+    {
+      "id": "gold-fcc-bdc",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/gold_fcc_bdc.sql"
     },
     {
       "id": "publisher-fred",
@@ -312,9 +412,19 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql"
     },
     {
+      "id": "publisher-census-cbp",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql"
+    },
+    {
       "id": "migration-029",
       "phase": "source-fix",
       "path": "sql/migrations/029_nass_combined_counties_are_not_counties.sql"
+    },
+    {
+      "id": "publisher-census-lodes",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/publisher.sql"
     },
     {
       "id": "migration-033",
@@ -322,14 +432,54 @@
       "path": "sql/migrations/033_bls_annual_average_identity.sql"
     },
     {
+      "id": "publisher-fhfa-hpi",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/fhfa_hpi/gold_fhfa_hpi/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-hud-fmr-il",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/hud_fmr_il/gold_hud_fmr_il/DDL/publisher.sql"
+    },
+    {
       "id": "glossary-schema",
       "phase": "glossary",
       "path": "sql/gold_contract/002_gold_glossary_schema.sql"
     },
     {
+      "id": "publisher-usda-ers",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/usda_ers/gold_usda_ers/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-fema-nri",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-epa-aqs",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-noaa-normals",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-nces-ccd",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/publisher.sql"
+    },
+    {
       "id": "migration-016",
       "phase": "glossary",
       "path": "sql/migrations/016_publisher_harvest_fingerprint.sql"
+    },
+    {
+      "id": "publisher-fcc-bdc",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/publisher.sql"
     },
     {
       "id": "migration-017",

@@ -384,6 +384,61 @@ county inflow and outflow file, ten files through the one-slot
 `irs_soi_files` pool
 ([operations](../user-guides/IRS_MIGRATION_PIPELINE_OPERATIONS.md)).
 
+Trigger `census_cbp_ingest` once: every run reads every registered County
+Business Patterns file, three a year from 2016, through the one-slot
+`census_cbp_files` pool
+([operations](../user-guides/CENSUS_CBP_PIPELINE_OPERATIONS.md)).
+
+Trigger `census_lodes_ingest` once after the shared geography loads: it
+captures the newest registered LODES year for every state, four files each,
+through the one-slot `census_lodes_files` pool; earlier years are captured
+as the [operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md)
+describes.
+
+Trigger `epa_aqs_ingest` once after the shared geography loads: it reads
+every registered year's AirData annual monitor file through the one-slot
+`epa_aqs_files` pool
+([operations](../user-guides/EPA_AQS_PIPELINE_OPERATIONS.md)).
+
+Trigger `noaa_normals_ingest` once after county boundaries load: it reads
+the 1991-2020 normals archive through the one-slot `noaa_normals_files` pool
+and places each station in the newest county boundary vintage loaded
+([operations](../user-guides/NOAA_NORMALS_PIPELINE_OPERATIONS.md)).
+
+Trigger `fcc_bdc_ingest` once after the shared geography loads (it needs
+`FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN`): it reads each registered
+December vintage's national and per-state place summaries through the
+one-slot `fcc_bdc_api` pool, about seven minutes a vintage at the API's 10
+calls a minute
+([operations](../user-guides/FCC_BDC_PIPELINE_OPERATIONS.md)).
+
+Trigger `fema_nri_ingest` once after the shared geography loads: it reads
+the National Risk Index county layer and every OpenFEMA declaration through
+the one-slot `fema_files` pool
+([operations](../user-guides/FEMA_NRI_PIPELINE_OPERATIONS.md)).
+
+Trigger `fhfa_hpi_ingest` once after the shared geography loads: it reads
+FHFA's annual county workbook, every county and year in one file, through the
+one-slot `fhfa_hpi_files` pool
+([operations](../user-guides/FHFA_HPI_PIPELINE_OPERATIONS.md)).
+
+Trigger `hud_fmr_il_ingest` once after the shared geography loads: it reads
+every registered HUD User API read (it needs `HUD_USER_API_TOKEN`; the
+income-limit read takes about an hour) through the one-slot
+`hud_fmr_il_files` pool
+([operations](../user-guides/HUD_FMR_IL_PIPELINE_OPERATIONS.md)).
+
+Trigger `nces_ccd_ingest` once after the shared geography loads: it reads
+each registered school year's CCD directory, membership, staff and lunch
+files and EDGE
+school geocodes through the one-slot `nces_ccd_files` pool
+([operations](../user-guides/NCES_CCD_PIPELINE_OPERATIONS.md)).
+
+Trigger `usda_ers_ingest` once after the shared geography loads: it reads
+the registered RUCC, Typology and Food Environment Atlas files through the
+one-slot `usda_ers_files` pool
+([operations](../user-guides/USDA_ERS_PIPELINE_OPERATIONS.md)).
+
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography

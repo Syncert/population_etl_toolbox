@@ -103,7 +103,17 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000b95', 'CENSUS_BPS', 'success'),
     ('00000000-0000-4000-8000-0000000005ae', 'CENSUS_SAIPE_SAHIE', 'success'),
     ('00000000-0000-4000-8000-00000000015c', 'IRS_MIGRATION', 'success'),
-    ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success')
+    ('00000000-0000-4000-8000-000000000e1a', 'EIA', 'success'),
+    ('00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'success'),
+    ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success'),
+    ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
+    ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
+    ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
+    ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
+    ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
+    ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
+    ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
+    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -133,7 +143,27 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-00000000015c', '00000000-0000-4000-8000-00000000015c',
      'IRS_MIGRATION', 'smoke://seed', '{}'::JSONB, 'aedef3c58968656b3f72cff6b2b82c475e7a2b68115b0693f74b09ef1eebb376', 'captured'),
     ('00000000-0000-4000-9000-000000000e1a', '00000000-0000-4000-8000-000000000e1a',
-     'EIA', 'smoke://seed', '{}'::JSONB, '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', 'captured')
+     'EIA', 'smoke://seed', '{}'::JSONB, '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', 'captured'),
+    ('00000000-0000-4000-9000-000000000cb9', '00000000-0000-4000-8000-000000000cb9',
+     'CENSUS_CBP', 'smoke://seed', '{}'::JSONB, '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', 'captured'),
+    ('00000000-0000-4000-9000-00000000010d', '00000000-0000-4000-8000-00000000010d',
+     'CENSUS_LODES', 'smoke://seed', '{}'::JSONB, '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', 'captured'),
+    ('00000000-0000-4000-9000-000000000e9a', '00000000-0000-4000-8000-000000000e9a',
+     'EPA_AQS', 'smoke://seed', '{}'::JSONB, '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', 'captured'),
+    ('00000000-0000-4000-9000-0000000000aa', '00000000-0000-4000-8000-0000000000aa',
+     'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured'),
+    ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
+     'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
+    ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
+     'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured'),
+    ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
+     'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
+    ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
+     'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB, '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', 'captured'),
+    ('00000000-0000-4000-9000-000000000ce5', '00000000-0000-4000-8000-000000000ce5',
+     'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured'),
+    ('00000000-0000-4000-9000-000000000e45', '00000000-0000-4000-8000-000000000e45',
+     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -180,6 +210,46 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e1a', '00000000-0000-4000-9000-000000000e1a',
      '00000000-0000-4000-8000-000000000e1a', 'EIA', 'smoke://seed', '{}'::JSONB,
      '8447b6d38eee7a283fe6b223ff8dcb0db2edfab3a68f1ad98688d41cb6b5761c', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000cb9', '00000000-0000-4000-9000-000000000cb9',
+     '00000000-0000-4000-8000-000000000cb9', 'CENSUS_CBP', 'smoke://seed', '{}'::JSONB,
+     '144b212f4b341dba2dbac560053bbe034400e22d73b0645bf57ba10c2412bfd1', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000010d', '00000000-0000-4000-9000-00000000010d',
+     '00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'smoke://seed', '{}'::JSONB,
+     '233c3cf1bc8f809c7efc13a8effbc7e6731dbb1ed773de6f7b20cfb7a7a6734e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e9a', '00000000-0000-4000-9000-000000000e9a',
+     '00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'smoke://seed', '{}'::JSONB,
+     '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000000aa', '00000000-0000-4000-9000-0000000000aa',
+     '00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB,
+     '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000fcc', '00000000-0000-4000-9000-000000000fcc',
+     '00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'smoke://seed', '{}'::JSONB,
+     '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000fe1', '00000000-0000-4000-9000-000000000fe1',
+     '00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'smoke://seed', '{}'::JSONB,
+     '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
+     '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
+     'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000d0d', '00000000-0000-4000-9000-000000000d0d',
+     '00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'smoke://seed', '{}'::JSONB,
+     '866992fcfcf7a06d7c71f9bce906dfd29eb07ffecdaa0ffad9632968d455b120', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000ce5', '00000000-0000-4000-9000-000000000ce5',
+     '00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'smoke://seed', '{}'::JSONB,
+     '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-9000-000000000e45',
+     '00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'smoke://seed', '{}'::JSONB,
+     '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -759,6 +829,314 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Census CBP -- establishments for one county and year, with the noise
+-- flag CBP publishes, served from views over a published file. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_cbp_file (
+    run_id, kind, year, capture_id, captured_row_count, in_scope_row_count,
+    status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000cb9', 'county', 2098, '00000000-0000-4000-a000-000000000cb9', 1, 1, 'published',
+    '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_cbp.fact_observation (
+    measure, naics_key, geo_id, year, capture_id, run_id, naics_code,
+    retrieved_at, geo_sk, geo_type, geography_status, value_source, value,
+    value_status, noise_flag, source_record_id
+)
+SELECT 'est', 'total', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000cb9', '00000000-0000-4000-8000-000000000cb9', '------',
+       '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved', '12345', 12345,
+       'valid', 'G',
+       'acbf1d5d6b7a8f9eadbbcfd0e1f2031425364758697a8192a3b4c5d6e7f8091a'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Census LEHD LODES -- workplace jobs summed from census blocks to one
+-- county, served from views over a published state slice.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_lodes_slice (
+    run_id, state, year, data_vintage, format_version, version_capture_id,
+    checksum_capture_id, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-00000000010d', 'wi', 2098, '20981231', 'LODES8', '00000000-0000-4000-a000-00000000010d', '00000000-0000-4000-a000-00000000010d', 'published',
+    '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.census_lodes_file (
+    run_id, family, file_name, capture_id, listed_sha256, status, row_count
+) VALUES (
+    '00000000-0000-4000-8000-00000000010d', 'wac', 'wi_wac_S000_JT00_2098.csv.gz', '00000000-0000-4000-a000-00000000010d',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'captured', 1
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_lodes.fact_area (
+    run_id, family, column_code, geo_id, year, capture_id, geo_sk,
+    geography_status, block_count, value_source, value, value_status
+)
+SELECT '00000000-0000-4000-8000-00000000010d', 'wac', 'C000', 'state:55|county:025', 2098, '00000000-0000-4000-a000-00000000010d', geo_sk,
+       'resolved', 1, '345678', 345678, 'valid'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- EPA AirData -- one complete monitor's PM2.5 annual mean, which the county
+-- view keeps as the county's highest complete monitor. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.epa_aqs_file (
+    run_id, year, capture_id, payload_checksum, row_count, in_scope_row_count,
+    status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e9a', 2098, '00000000-0000-4000-a000-000000000e9a',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_epa_aqs.monitor_fact (
+    run_id, monitor_id, sample_duration, pollutant_standard, event_type, year,
+    capture_id, source_row_index, measure, parameter_code, poc, site_number,
+    geo_id, geo_sk, geography_status, completeness, certification,
+    observation_count, units, value_source, value, value_status,
+    source_record_id
+)
+SELECT '00000000-0000-4000-8000-000000000e9a', '55025-0041-88101-1', '24 HOUR', 'PM25 Annual 2024',
+       'No Events', 2098, '00000000-0000-4000-a000-000000000e9a', 1, 'pm25_annual_mean', '88101', 1, '0041',
+       'state:55|county:025', geo_sk, 'resolved', 'Y', 'Certified', 120,
+       'Micrograms/cubic meter (LC)', '7.4', 7.4, 'valid',
+       'bdc02e6e7c8b9a0fbecbdfe1f2031425364758697a8b9c0d1e2f3a4b5c6d7e8f'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- NOAA Climate Normals -- one standard-flagged station inside the county,
+-- whose 1991-2020 normal the county view averages. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.noaa_normals_file (
+    run_id, archive_version, capture_id, payload_checksum, station_file_count,
+    station_count, boundary_vintage, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000000aa', 'smoke-2098', '00000000-0000-4000-a000-0000000000aa',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    2098, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_normals.station (
+    run_id, station_id, capture_id, source_row_index, latitude, longitude,
+    elevation_m, station_name, geo_id, geo_sk, boundary_vintage,
+    geography_status
+)
+SELECT '00000000-0000-4000-8000-0000000000aa', 'USW00014837', '00000000-0000-4000-a000-0000000000aa', 1, 43.14, -89.35, 262.1,
+       'MADISON DANE CO RGNL AP (smoke fixture)', 'state:55|county:025', geo_sk,
+       2098, 'resolved'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_normals.station_normal (
+    run_id, station_id, variable, measure, capture_id, value_source, value,
+    value_status, completeness_flag, years, source_record_id
+) VALUES (
+    '00000000-0000-4000-8000-0000000000aa', 'USW00014837', 'ANN-TAVG-NORMAL', 'annual_mean_temperature',
+    '00000000-0000-4000-a000-0000000000aa', '46.6', 46.6, 'valid', 'S', 30, 'ced13f7f8d9cab1acfdce0f203142536'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- FCC Broadband Data Collection -- one county's availability shares for
+-- one technology, served from views over a published read. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.fcc_bdc_read (
+    run_id, as_of_date, listing_capture_id, payload_checksum, file_count,
+    row_count, kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000fcc', '2098-06-30', '00000000-0000-4000-a000-000000000fcc',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.fcc_bdc_file (
+    run_id, slice_key, subcategory, file_id, file_name, revision, capture_id,
+    payload_checksum
+) VALUES (
+    '00000000-0000-4000-8000-000000000fcc', 'other_geographies', 'other_geographies', 1,
+    'bdc_us_fixed_broadband_summary_by_geography_J98.csv', '1', '00000000-0000-4000-a000-000000000fcc',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_fcc_bdc.availability_row (
+    run_id, geo_id, technology, capture_id, source_row_index, geography_type,
+    geography_id, geo_sk, geography_status, total_units, speed_02_02,
+    speed_10_1, speed_25_3, speed_100_20, speed_250_25, speed_1000_100,
+    value_source, value_status
+)
+SELECT '00000000-0000-4000-8000-000000000fcc', 'state:55|county:025', 'Any Technology', '00000000-0000-4000-a000-000000000fcc', 1, 'county',
+       '55025', geo_sk, 'resolved', 250000, 0.999, 0.998, 0.995, 0.962, 0.901,
+       0.655, 'smoke fixture', 'valid'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- FEMA National Risk Index -- one county's composite expected annual loss
+-- from a published NRI run. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.fema_nri_run (
+    run_id, stream, status, run_checksum, nri_version, page_count,
+    record_count, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000fe1', 'nri', 'published',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'November 2098', 1, 1, '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.fema_nri_page (run_id, page_index, capture_id, record_count)
+VALUES ('00000000-0000-4000-8000-000000000fe1', 0, '00000000-0000-4000-a000-000000000fe1', 1)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_fema_nri.nri_fact (
+    run_id, geo_id, field, measure, capture_id, stcofips, county_type,
+    nri_version, geo_sk, geography_status, value_source, value, value_status,
+    rating, source_record_id
+)
+SELECT '00000000-0000-4000-8000-000000000fe1', 'state:55|county:025', 'EAL_VALT', 'expected_annual_loss',
+       '00000000-0000-4000-a000-000000000fe1', '55025', 'County', 'November 2098', geo_sk, 'resolved',
+       '12345678.9', 12345678.9, 'valid', 'Relatively Low',
+       'cee25f8f9d0cabcbdcfe0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- FHFA House Price Index -- one county's annual index from a published
+-- county workbook. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.fhfa_hpi_file (
+    run_id, kind, capture_id, payload_checksum, provider_vintage, row_count,
+    county_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000f4f', 'county', '00000000-0000-4000-a000-000000000f4f',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    '2098-11-30', 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_fhfa_hpi.fact_observation (
+    measure, geo_id, year, capture_id, run_id, provider_vintage, retrieved_at,
+    fips_code, geo_sk, geography_status, value_source, value, value_status,
+    source_record_id
+)
+SELECT 'hpi_base_2000', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-8000-000000000f4f', '2098-11-30',
+       '2098-12-31 00:00:00+00', '55025', geo_sk, 'resolved', '312.34', 312.34,
+       'valid',
+       'dff3609fae1bdcdcedf0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- HUD Fair Market Rents -- one county's two-bedroom FMR from a published
+-- workbook edition. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.hud_fmr_il_file (
+    run_id, channel, dataset, fiscal_year, edition, effective_date,
+    capture_id, payload_checksum, row_count, county_row_count, status,
+    published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000d0d', 'workbook', 'fmr', 2098, 'original', '2097-10-01', '00000000-0000-4000-a000-000000000d0d',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_hud_fmr_il.fact_observation (
+    measure, geo_id, fiscal_year, capture_id, run_id, dataset, edition,
+    effective_date, retrieved_at, fips_code, geo_type, geo_sk,
+    geography_status, hud_area_code, hud_area_name, metro, value_source,
+    value, value_status, source_record_id
+)
+SELECT 'fmr_2br', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000d0d', '00000000-0000-4000-8000-000000000d0d', 'fmr',
+       'original', '2097-10-01', '2098-12-31 00:00:00+00', '5502599999',
+       'county', geo_sk, 'resolved', 'METRO31540M31540',
+       'Madison, WI MSA (smoke fixture)', TRUE, '1650', 1650, 'valid',
+       'e00471a0bf2cedededf1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- NCES Common Core of Data -- one school's membership, placed in the county
+-- by the geocode file and summed to it. Two files, so a second run carries
+-- the geocode file; both cite the same seeded capture. COUNTY only (the
+-- state roll-up needs a state identity this seed does not publish).
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.ingestion_run (run_id, source_code, status)
+VALUES ('00000000-0000-4000-8000-000000001ce5', 'NCES_CCD', 'success')
+ON CONFLICT (run_id) DO NOTHING;
+
+INSERT INTO control.nces_ccd_file (
+    run_id, component, school_year, file_stem, release_version, version_rank,
+    capture_id, payload_checksum, row_count, kept_row_count, status,
+    published_at
+) VALUES
+    ('00000000-0000-4000-8000-000000001ce5', 'geocode', '2097-2098',
+     'EDGE_GEOCODE_PUBLICSCH_2098', '1a', 1, '00000000-0000-4000-a000-000000000ce5',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+     'published', '2098-12-31 00:00:00+00'),
+    ('00000000-0000-4000-8000-000000000ce5', 'membership', '2097-2098', 'ccd_sch_052_2098', '1a', 1,
+     '00000000-0000-4000-a000-000000000ce5', '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+     1, 1, 'published', '2098-12-31 00:00:00+00')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ccd.school_location (
+    run_id, ncessch, leaid, capture_id, source_row_index, operating_state_fips,
+    state_fips, county_fips, latitude, longitude, geo_id, geo_sk,
+    geography_status
+)
+SELECT '00000000-0000-4000-8000-000000001ce5', '550852001234', '5508520',
+       '00000000-0000-4000-a000-000000000ce5', 1, '55', '55', '55025', 43.07, -89.40, 'state:55|county:025',
+       geo_sk, 'resolved'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ccd.school_count (
+    run_id, ncessch, measure, leaid, capture_id, source_row_index,
+    operating_state_fips, value_source, value, value_status, dms_flag
+) VALUES (
+    '00000000-0000-4000-8000-000000000ce5', '550852001234', 'student_membership', '5508520', '00000000-0000-4000-a000-000000000ce5', 1,
+    '55', '512', 512, 'valid', 'Reported'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- USDA ERS -- one county's Rural-Urban Continuum Code from a published
+-- edition. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.usda_ers_file (
+    run_id, product, edition, capture_id, payload_checksum, row_count,
+    in_scope_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e45', 'rucc', '2098', '00000000-0000-4000-a000-000000000e45',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_usda_ers.fact_observation (
+    attribute, geo_id, capture_id, run_id, product, edition, measure, year,
+    retrieved_at, fips_code, geo_sk, geography_status, value_source, value,
+    value_status, code_label, source_record_id
+)
+SELECT 'RUCC_2098', 'state:55|county:025', '00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-8000-000000000e45', 'rucc', '2098',
+       'rural_urban_continuum_code', 2098, '2098-12-31 00:00:00+00', '55025',
+       geo_sk, 'resolved', '2', 2, 'valid',
+       'Metro - Counties in metro areas of 250,000 to 1 million population',
+       'f11582b1c03dfefefe02a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -784,7 +1162,17 @@ UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher
 UNION ALL SELECT * FROM gold_census_bps.metric_publisher
 UNION ALL SELECT * FROM gold_census_sae.metric_publisher
 UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
-UNION ALL SELECT * FROM gold_eia.metric_publisher;
+UNION ALL SELECT * FROM gold_eia.metric_publisher
+UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
+UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
+UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
+UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
+UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
+UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
+UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
+UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
+UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher
+UNION ALL SELECT * FROM gold_usda_ers.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

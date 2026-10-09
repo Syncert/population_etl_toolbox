@@ -66,6 +66,16 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "USDA_ERS",
+    "NCES_CCD",
+    "FHFA_HPI",
+    "HUD_FMR_IL",
+    "FEMA_NRI",
+    "FCC_BDC",
+    "EPA_AQS",
+    "NOAA_NORMALS",
+    "CENSUS_LODES",
+    "CENSUS_CBP",
     "IRS_MIGRATION",
     "CENSUS_SAIPE_SAHIE",
     "CENSUS_BPS",
@@ -2502,6 +2512,1075 @@ _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# Census County Business Patterns.
+# ---------------------------------------------------------------------------
+
+_CBP_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_cbp_file",
+        "control",
+        "CENSUS_CBP",
+        grain="run_id (one run per level and year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in census_cbp/registry.py",
+        cadence="monthly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_cbp.observation_revision",
+        "silver",
+        "CENSUS_CBP",
+        grain="capture_id, source_row_index, measure",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per County Business Patterns replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_cbp.observation_quarantine",
+        "silver",
+        "CENSUS_CBP",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per County Business Patterns replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_cbp.fact_observation",
+        "silver",
+        "CENSUS_CBP",
+        grain="measure, naics_key, geo_id, year, capture_id",
+        lineage="silver_census_cbp.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered files x the total and two-digit sectors x four measures",
+        cadence="per County Business Patterns replay",
+        empty_behavior="a D or S cell keeps its status and no number, never zero; a cell of fewer than three establishments is not published",
+    ),
+    _obj(
+        "gold_census_cbp.measure_definition",
+        "gold",
+        "CENSUS_CBP",
+        grain="measure",
+        scope_method="the four registered measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_census_cbp.sector_definition",
+        "gold",
+        "CENSUS_CBP",
+        grain="naics_key",
+        scope_method="the total and the two-digit NAICS 2017 sectors",
+        cadence="static",
+        empty_behavior="never empty: the sectors are registered",
+    ),
+    _obj(
+        "gold_census_cbp.observation_revision",
+        "gold",
+        "CENSUS_CBP",
+        grain="metric_key, geo_id, year, capture_id (published files only)",
+        lineage="silver_census_cbp.fact_observation, control.census_cbp_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_cbp.observation_latest",
+        "gold",
+        "CENSUS_CBP",
+        grain="metric_key, geo_id, year (newest capture)",
+        lineage="gold_census_cbp.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_cbp.measure_export",
+        "publisher",
+        "CENSUS_CBP",
+        grain="source_object_key (measure:sector)",
+        lineage="gold_census_cbp.measure_definition, gold_census_cbp.sector_definition",
+        scope_method="registered measures x sectors",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_census_cbp.metric_publisher",
+        "publisher",
+        "CENSUS_CBP",
+        grain="source_object_key (measure:sector)",
+        lineage="gold_census_cbp.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Census LEHD LODES.
+# ---------------------------------------------------------------------------
+
+_LODES_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_lodes_slice",
+        "control",
+        "CENSUS_LODES",
+        grain="run_id (one run per state and year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered states x the configured newest years",
+        cadence="monthly; an unchanged vintage fetches only its version and checksum list",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.census_lodes_file",
+        "control",
+        "CENSUS_LODES",
+        grain="run_id, family",
+        lineage="control.census_lodes_slice, raw_capture.response_capture",
+        scope_method="the four registered files of each state-year",
+        cadence="per capture",
+        empty_behavior="a run whose vintage is unchanged records no file",
+    ),
+    _obj(
+        "silver_census_lodes.quarantine",
+        "silver",
+        "CENSUS_LODES",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable block row; populated only on failure",
+        cadence="per LODES replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_lodes.fact_area",
+        "silver",
+        "CENSUS_LODES",
+        grain="run_id, family, column_code, geo_id",
+        lineage="control.census_lodes_file, silver_ref.dim_geo_entity",
+        scope_method="residence and workplace columns summed from blocks to counties",
+        cadence="per LODES replay",
+        empty_behavior="a column the Bureau does not publish for the year or job type is not_available, never 0",
+    ),
+    _obj(
+        "silver_census_lodes.fact_flow",
+        "silver",
+        "CENSUS_LODES",
+        grain="run_id, part, home_geo_id, work_geo_id",
+        lineage="control.census_lodes_file",
+        scope_method="origin-destination block pairs summed to county pairs",
+        cadence="per LODES replay",
+        empty_behavior="a county pair with no jobs has no row",
+    ),
+    _obj(
+        "gold_census_lodes.measure_definition",
+        "gold",
+        "CENSUS_LODES",
+        grain="measure",
+        scope_method="the five registered measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_census_lodes.observation_revision",
+        "gold",
+        "CENSUS_LODES",
+        grain="metric_key, geo_id, year, run_id (published vintages only)",
+        lineage="silver_census_lodes.fact_area, silver_census_lodes.fact_flow",
+        scope_method="published state-years; every vintage kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published state-year",
+    ),
+    _obj(
+        "gold_census_lodes.observation_latest",
+        "gold",
+        "CENSUS_LODES",
+        grain="metric_key, geo_id, year (newest vintage)",
+        lineage="gold_census_lodes.observation_revision",
+        scope_method="newest-vintage projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published state-year",
+    ),
+    _obj(
+        "gold_census_lodes.measure_export",
+        "publisher",
+        "CENSUS_LODES",
+        grain="source_object_key (measure)",
+        lineage="gold_census_lodes.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_census_lodes.metric_publisher",
+        "publisher",
+        "CENSUS_LODES",
+        grain="source_object_key (measure)",
+        lineage="gold_census_lodes.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published state-year",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# EPA air quality (AirData annual monitor files).
+# ---------------------------------------------------------------------------
+
+_AQS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.epa_aqs_file",
+        "control",
+        "EPA_AQS",
+        grain="run_id (one run per read of a year's file)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered AirData annual monitor years",
+        cadence="monthly; a read whose bytes equal the year's last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_epa_aqs.quarantine",
+        "silver",
+        "EPA_AQS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated monitor row; populated only on failure",
+        cadence="per EPA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_epa_aqs.monitor_fact",
+        "silver",
+        "EPA_AQS",
+        grain="run_id, monitor_id, sample_duration, pollutant_standard, event_type",
+        lineage="control.epa_aqs_file, silver_ref.dim_geo_entity",
+        scope_method="every in-scope monitor-year row of every replayed file",
+        cadence="per EPA replay",
+        empty_behavior="an empty statistic is missing, never 0",
+    ),
+    _obj(
+        "gold_epa_aqs.measure_definition",
+        "gold",
+        "EPA_AQS",
+        grain="measure",
+        scope_method="the two published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_epa_aqs.monitor_observation",
+        "gold",
+        "EPA_AQS",
+        grain="run_id, monitor_id, sample_duration, pollutant_standard, event_type",
+        lineage="silver_epa_aqs.monitor_fact, control.epa_aqs_file",
+        scope_method="published monitor-year rows: the lineage of every county figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_epa_aqs.observation_revision",
+        "gold",
+        "EPA_AQS",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_epa_aqs.monitor_observation",
+        scope_method="the highest complete monitor per county, year and read",
+        cadence="per publication",
+        empty_behavior="a county with no complete monitor has no row",
+    ),
+    _obj(
+        "gold_epa_aqs.observation_latest",
+        "gold",
+        "EPA_AQS",
+        grain="metric_key, geo_id, year (newest read)",
+        lineage="gold_epa_aqs.observation_revision",
+        scope_method="newest-read projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_epa_aqs.measure_export",
+        "publisher",
+        "EPA_AQS",
+        grain="source_object_key (measure)",
+        lineage="gold_epa_aqs.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_epa_aqs.metric_publisher",
+        "publisher",
+        "EPA_AQS",
+        grain="source_object_key (measure)",
+        lineage="gold_epa_aqs.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# NOAA U.S. Climate Normals 1991-2020 (annual/seasonal, by station).
+# ---------------------------------------------------------------------------
+
+_NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.noaa_normals_file",
+        "control",
+        "NOAA_NORMALS",
+        grain="run_id (one run per read of the archive)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered 1991-2020 annual/seasonal archive",
+        cadence="quarterly; a read whose bytes equal the last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_noaa_normals.quarantine",
+        "silver",
+        "NOAA_NORMALS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated station file; populated only on failure",
+        cadence="per normals replay",
+        empty_behavior="empty when every station file conformed",
+    ),
+    _obj(
+        "silver_noaa_normals.station",
+        "silver",
+        "NOAA_NORMALS",
+        grain="run_id, station_id",
+        lineage="control.noaa_normals_file, silver_ref.dim_geo_geometry_version",
+        scope_method="every station of every replayed archive, with its assigned county and boundary vintage",
+        cadence="per normals replay",
+        empty_behavior="a station outside every county is kept, unmapped with its reason",
+    ),
+    _obj(
+        "silver_noaa_normals.station_normal",
+        "silver",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable",
+        lineage="silver_noaa_normals.station",
+        scope_method="every registered annual normal a station publishes",
+        cadence="per normals replay",
+        empty_behavior="a withheld normal is missing or not applicable, never 0",
+    ),
+    _obj(
+        "gold_noaa_normals.measure_definition",
+        "gold",
+        "NOAA_NORMALS",
+        grain="measure",
+        scope_method="the six published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_noaa_normals.station_observation",
+        "gold",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable",
+        lineage="silver_noaa_normals.station_normal, silver_noaa_normals.station, control.noaa_normals_file",
+        scope_method="published station normals: the lineage of every county figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published archive",
+    ),
+    _obj(
+        "gold_noaa_normals.observation_revision",
+        "gold",
+        "NOAA_NORMALS",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_noaa_normals.station_observation",
+        scope_method="the mean of standard or representative stations per county and read",
+        cadence="per publication",
+        empty_behavior="a county with no such station has no row",
+    ),
+    _obj(
+        "gold_noaa_normals.observation_latest",
+        "gold",
+        "NOAA_NORMALS",
+        grain="metric_key, geo_id, year (newest read)",
+        lineage="gold_noaa_normals.observation_revision",
+        scope_method="newest-read projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published archive",
+    ),
+    _obj(
+        "gold_noaa_normals.measure_export",
+        "publisher",
+        "NOAA_NORMALS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_normals.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_noaa_normals.metric_publisher",
+        "publisher",
+        "NOAA_NORMALS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_normals.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published archive",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# FCC Broadband Data Collection (fixed availability summaries).
+# ---------------------------------------------------------------------------
+
+_BDC_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fcc_bdc_read",
+        "control",
+        "FCC_BDC",
+        grain="run_id (one run per read of a registered vintage)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered December 31 availability vintages",
+        cadence="monthly; a read whose files equal the vintage's last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.fcc_bdc_file",
+        "control",
+        "FCC_BDC",
+        grain="run_id, slice_key (one row per downloaded file)",
+        lineage="control.fcc_bdc_read, raw_capture.response_capture",
+        scope_method="each read's national other-geographies summary and each state's place summary",
+        cadence="monthly, with each read",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_fcc_bdc.quarantine",
+        "silver",
+        "FCC_BDC",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated row; populated only on failure",
+        cadence="per FCC replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_fcc_bdc.availability_row",
+        "silver",
+        "FCC_BDC",
+        grain="run_id, geo_id, technology",
+        lineage="control.fcc_bdc_file, silver_ref.dim_geo_entity",
+        scope_method="total-area residential rows for the registered technologies at the nation, states, counties and places",
+        cadence="per FCC replay",
+        empty_behavior="a share with no units is missing (no_units), never 0",
+    ),
+    _obj(
+        "gold_fcc_bdc.measure_definition",
+        "gold",
+        "FCC_BDC",
+        grain="measure",
+        scope_method="the six published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_fcc_bdc.availability_observation",
+        "gold",
+        "FCC_BDC",
+        grain="run_id, geo_id, technology",
+        lineage="silver_fcc_bdc.availability_row, control.fcc_bdc_read, control.fcc_bdc_file",
+        scope_method="published rows with their file revision: the lineage of every served figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published vintage",
+    ),
+    _obj(
+        "gold_fcc_bdc.observation_revision",
+        "gold",
+        "FCC_BDC",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_fcc_bdc.availability_observation",
+        scope_method="every published read's measures by geography",
+        cadence="per publication",
+        empty_behavior="empty only before the first published vintage",
+    ),
+    _obj(
+        "gold_fcc_bdc.observation_latest",
+        "gold",
+        "FCC_BDC",
+        grain="metric_key, geo_id, year (newest read)",
+        lineage="gold_fcc_bdc.observation_revision",
+        scope_method="newest-read projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published vintage",
+    ),
+    _obj(
+        "gold_fcc_bdc.measure_export",
+        "publisher",
+        "FCC_BDC",
+        grain="source_object_key (measure)",
+        lineage="gold_fcc_bdc.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_fcc_bdc.metric_publisher",
+        "publisher",
+        "FCC_BDC",
+        grain="source_object_key (measure)",
+        lineage="gold_fcc_bdc.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published vintage",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# FEMA National Risk Index and disaster declarations.
+# ---------------------------------------------------------------------------
+
+_FEMA_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fema_nri_run",
+        "control",
+        "FEMA_NRI",
+        grain="run_id (one run per read of a stream)",
+        lineage="control.ingestion_run",
+        scope_method="the two FEMA streams: the NRI county layer and OpenFEMA declarations",
+        cadence="daily; an NRI read whose pages match the last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.fema_nri_page",
+        "control",
+        "FEMA_NRI",
+        grain="run_id, page_index",
+        lineage="control.fema_nri_run, raw_capture.response_capture",
+        scope_method="every committed page of every read",
+        cadence="per capture",
+        empty_behavior="a run with no page failed and was withdrawn",
+    ),
+    _obj(
+        "silver_fema_nri.quarantine",
+        "silver",
+        "FEMA_NRI",
+        grain="capture_id, record_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated record; populated only on failure",
+        cadence="per FEMA replay",
+        empty_behavior="empty when every record conformed",
+    ),
+    _obj(
+        "silver_fema_nri.nri_fact",
+        "silver",
+        "FEMA_NRI",
+        grain="run_id, geo_id, field",
+        lineage="control.fema_nri_page, silver_ref.dim_geo_entity",
+        scope_method="every registered NRI field of every county of a replayed read",
+        cadence="per FEMA replay",
+        empty_behavior="a field whose rating is not a measurement carries its status and no number",
+    ),
+    _obj(
+        "silver_fema_nri.declaration_revision",
+        "silver",
+        "FEMA_NRI",
+        grain="declaration_id, revision_hash",
+        lineage="control.fema_nri_page, silver_ref.dim_geo_entity",
+        scope_method="every revision of every declaration area row read",
+        cadence="per FEMA replay",
+        empty_behavior="a statewide or tribal-area row is kept as an area, never a county",
+    ),
+    _obj(
+        "gold_fema_nri.measure_definition",
+        "gold",
+        "FEMA_NRI",
+        grain="measure",
+        scope_method="the twenty-seven published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_fema_nri.nri_observation",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, run_id (published NRI reads)",
+        lineage="silver_fema_nri.nri_fact, control.fema_nri_run",
+        scope_method="published NRI reads; every version kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published NRI read",
+    ),
+    _obj(
+        "gold_fema_nri.declaration_count",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year",
+        lineage="silver_fema_nri.declaration_revision, control.fema_nri_run",
+        scope_method="distinct declarations per county, year and type from the newest revision of each row",
+        cadence="per publication",
+        empty_behavior="a county-year with no declaration has no row",
+    ),
+    _obj(
+        "gold_fema_nri.observation_revision",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_fema_nri.nri_observation, gold_fema_nri.declaration_count",
+        scope_method="both streams in the observation shape",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_fema_nri.observation_latest",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year (newest release)",
+        lineage="gold_fema_nri.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_fema_nri.measure_export",
+        "publisher",
+        "FEMA_NRI",
+        grain="source_object_key (measure)",
+        lineage="gold_fema_nri.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_fema_nri.metric_publisher",
+        "publisher",
+        "FEMA_NRI",
+        grain="source_object_key (measure)",
+        lineage="gold_fema_nri.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# FHFA annual House Price Index.
+# ---------------------------------------------------------------------------
+
+_HPI_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fhfa_hpi_file",
+        "control",
+        "FHFA_HPI",
+        grain="run_id (one run per read of a registered workbook)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered workbooks (the county file)",
+        cadence="monthly; a read whose bytes equal the last published file's is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_fhfa_hpi.observation_revision",
+        "silver",
+        "FHFA_HPI",
+        grain="capture_id, source_row_index, measure",
+        lineage="control.fhfa_hpi_file, raw_capture.response_capture",
+        scope_method="every county-year row of every replayed workbook, four measures each",
+        cadence="per FHFA replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_fhfa_hpi.observation_quarantine",
+        "silver",
+        "FHFA_HPI",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated workbook row; populated only on failure",
+        cadence="per FHFA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_fhfa_hpi.fact_observation",
+        "silver",
+        "FHFA_HPI",
+        grain="measure, geo_id, year, capture_id",
+        lineage="silver_fhfa_hpi.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="conformed county-year observations of every replayed workbook",
+        cadence="per FHFA replay",
+        empty_behavior="a missing index is missing with a reason, never 0",
+    ),
+    _obj(
+        "gold_fhfa_hpi.measure_definition",
+        "gold",
+        "FHFA_HPI",
+        grain="measure",
+        scope_method="the two published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_fhfa_hpi.observation_revision",
+        "gold",
+        "FHFA_HPI",
+        grain="metric_key, geo_id, year, run_id (published vintages only)",
+        lineage="silver_fhfa_hpi.fact_observation, control.fhfa_hpi_file",
+        scope_method="published workbooks; every vintage kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published workbook",
+    ),
+    _obj(
+        "gold_fhfa_hpi.observation_latest",
+        "gold",
+        "FHFA_HPI",
+        grain="metric_key, geo_id, year (newest vintage)",
+        lineage="gold_fhfa_hpi.observation_revision",
+        scope_method="newest-vintage projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published workbook",
+    ),
+    _obj(
+        "gold_fhfa_hpi.measure_export",
+        "publisher",
+        "FHFA_HPI",
+        grain="source_object_key (measure)",
+        lineage="gold_fhfa_hpi.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_fhfa_hpi.metric_publisher",
+        "publisher",
+        "FHFA_HPI",
+        grain="source_object_key (measure)",
+        lineage="gold_fhfa_hpi.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published workbook",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# HUD Fair Market Rents and income limits.
+# ---------------------------------------------------------------------------
+
+_HUD_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.hud_fmr_il_file",
+        "control",
+        "HUD_FMR_IL",
+        grain="run_id (one run per read of a registered edition or API read)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered FMR and income-limit editions (fiscal year, original or revised) and HUD User API reads",
+        cadence="monthly; a read whose bytes equal the edition's last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.hud_fmr_il_api_capture",
+        "control",
+        "HUD_FMR_IL",
+        grain="run_id, slice_key (one row per API answer)",
+        lineage="control.hud_fmr_il_file, raw_capture.response_capture",
+        scope_method="every HUD User API answer of an API read: state lists, county lists, state FMRs, county income limits",
+        cadence="monthly, with each API read",
+        empty_behavior="empty when only workbooks were read",
+    ),
+    _obj(
+        "silver_hud_fmr_il.observation_revision",
+        "silver",
+        "HUD_FMR_IL",
+        grain="capture_id, source_row_index, measure",
+        lineage="control.hud_fmr_il_file, raw_capture.response_capture",
+        scope_method="every county and New England town row of every replayed edition, each measure",
+        cadence="per HUD replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_hud_fmr_il.observation_quarantine",
+        "silver",
+        "HUD_FMR_IL",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated workbook row; populated only on failure",
+        cadence="per HUD replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_hud_fmr_il.fact_observation",
+        "silver",
+        "HUD_FMR_IL",
+        grain="measure, geo_id, fiscal_year, capture_id",
+        lineage="silver_hud_fmr_il.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="conformed observations of every replayed edition; town rows held as unsupported",
+        cadence="per HUD replay",
+        empty_behavior="an empty cell is missing with a reason, never 0",
+    ),
+    _obj(
+        "gold_hud_fmr_il.measure_definition",
+        "gold",
+        "HUD_FMR_IL",
+        grain="measure",
+        scope_method="the nine published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_hud_fmr_il.observation_revision",
+        "gold",
+        "HUD_FMR_IL",
+        grain="metric_key, geo_id, year, run_id (published editions only)",
+        lineage="silver_hud_fmr_il.fact_observation, control.hud_fmr_il_file",
+        scope_method="published county rows of every edition; originals and revisions kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published edition",
+    ),
+    _obj(
+        "gold_hud_fmr_il.observation_latest",
+        "gold",
+        "HUD_FMR_IL",
+        grain="metric_key, geo_id, year (edition in force)",
+        lineage="gold_hud_fmr_il.observation_revision",
+        scope_method="revised edition over the original, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published edition",
+    ),
+    _obj(
+        "gold_hud_fmr_il.measure_export",
+        "publisher",
+        "HUD_FMR_IL",
+        grain="source_object_key (measure)",
+        lineage="gold_hud_fmr_il.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_hud_fmr_il.metric_publisher",
+        "publisher",
+        "HUD_FMR_IL",
+        grain="source_object_key (measure)",
+        lineage="gold_hud_fmr_il.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published edition",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# NCES Common Core of Data (public schools, placed by EDGE geocodes).
+# ---------------------------------------------------------------------------
+
+_CCD_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.nces_ccd_file",
+        "control",
+        "NCES_CCD",
+        grain="run_id (one run per read of a registered file)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered CCD school-universe and EDGE geocode files per school year",
+        cadence="quarterly; a read whose bytes equal the file's last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_nces_ccd.quarantine",
+        "silver",
+        "NCES_CCD",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated row; populated only on failure",
+        cadence="per NCES replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_nces_ccd.school_location",
+        "silver",
+        "NCES_CCD",
+        grain="run_id, ncessch",
+        lineage="control.nces_ccd_file, silver_ref.dim_geo_entity",
+        scope_method="every school of every replayed EDGE geocode file, with its county resolved by code",
+        cadence="per NCES replay",
+        empty_behavior="a county code the shared geography lacks is unmapped, never matched by name",
+    ),
+    _obj(
+        "silver_nces_ccd.school_directory",
+        "silver",
+        "NCES_CCD",
+        grain="run_id, ncessch",
+        lineage="control.nces_ccd_file",
+        scope_method="every school of every replayed directory file",
+        cadence="per NCES replay",
+        empty_behavior="empty only before the first directory replay",
+    ),
+    _obj(
+        "silver_nces_ccd.school_count",
+        "silver",
+        "NCES_CCD",
+        grain="run_id, ncessch, measure",
+        lineage="control.nces_ccd_file",
+        scope_method="every registered school count of every replayed membership, staff and lunch file",
+        cadence="per NCES replay",
+        empty_behavior="a count NCES did not report is missing or suppressed, never 0",
+    ),
+    _obj(
+        "gold_nces_ccd.measure_definition",
+        "gold",
+        "NCES_CCD",
+        grain="measure",
+        scope_method="the eight published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_nces_ccd.school_placement",
+        "gold",
+        "NCES_CCD",
+        grain="school_year, ncessch",
+        lineage="silver_nces_ccd.school_location, control.nces_ccd_file",
+        scope_method="the newest published geocode file per school year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published geocode file",
+    ),
+    _obj(
+        "gold_nces_ccd.school_observation",
+        "gold",
+        "NCES_CCD",
+        grain="run_id, ncessch, measure",
+        lineage="silver_nces_ccd.school_count, silver_nces_ccd.school_directory, gold_nces_ccd.school_placement",
+        scope_method="published school values: the lineage of every county and state figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ccd.observation_revision",
+        "gold",
+        "NCES_CCD",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_nces_ccd.school_observation",
+        scope_method="county and state sums of placed schools per file and read",
+        cadence="per publication",
+        empty_behavior="a grain where no placed school reported has a row with no value, never 0",
+    ),
+    _obj(
+        "gold_nces_ccd.observation_latest",
+        "gold",
+        "NCES_CCD",
+        grain="metric_key, geo_id, year (newest release and read)",
+        lineage="gold_nces_ccd.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ccd.measure_export",
+        "publisher",
+        "NCES_CCD",
+        grain="source_object_key (measure)",
+        lineage="gold_nces_ccd.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_nces_ccd.metric_publisher",
+        "publisher",
+        "NCES_CCD",
+        grain="source_object_key (measure)",
+        lineage="gold_nces_ccd.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# USDA ERS county codes and atlases.
+# ---------------------------------------------------------------------------
+
+_ERS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.usda_ers_file",
+        "control",
+        "USDA_ERS",
+        grain="run_id (one run per read of a registered file)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered RUCC, Typology and Food Environment Atlas files",
+        cadence="monthly; a read whose bytes equal the file's last published capture is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_usda_ers.observation_revision",
+        "silver",
+        "USDA_ERS",
+        grain="capture_id, source_row_index",
+        lineage="control.usda_ers_file, raw_capture.response_capture",
+        scope_method="every registered attribute of every replayed file, one row per county",
+        cadence="per ERS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_usda_ers.observation_quarantine",
+        "silver",
+        "USDA_ERS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable, out-of-domain or repeated row; populated only on failure",
+        cadence="per ERS replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_usda_ers.fact_observation",
+        "silver",
+        "USDA_ERS",
+        grain="attribute, geo_id, capture_id",
+        lineage="silver_usda_ers.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="conformed county observations of every replayed file",
+        cadence="per ERS replay",
+        empty_behavior="a sentinel or an unset flag carries its reason and no number, never 0",
+    ),
+    _obj(
+        "gold_usda_ers.measure_definition",
+        "gold",
+        "USDA_ERS",
+        grain="measure",
+        scope_method="the eighteen published measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_usda_ers.observation_revision",
+        "gold",
+        "USDA_ERS",
+        grain="metric_key, geo_id, year, run_id (published captures only)",
+        lineage="silver_usda_ers.fact_observation, control.usda_ers_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_usda_ers.observation_latest",
+        "gold",
+        "USDA_ERS",
+        grain="metric_key, geo_id, year (newest capture)",
+        lineage="gold_usda_ers.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_usda_ers.measure_export",
+        "publisher",
+        "USDA_ERS",
+        grain="source_object_key (measure)",
+        lineage="gold_usda_ers.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_usda_ers.metric_publisher",
+        "publisher",
+        "USDA_ERS",
+        grain="source_object_key (measure)",
+        lineage="gold_usda_ers.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -2514,6 +3593,16 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _ERS_OBJECTS
+    + _CCD_OBJECTS
+    + _HPI_OBJECTS
+    + _HUD_OBJECTS
+    + _FEMA_OBJECTS
+    + _BDC_OBJECTS
+    + _AQS_OBJECTS
+    + _NORMALS_OBJECTS
+    + _LODES_OBJECTS
+    + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
     + _SAE_OBJECTS
     + _BPS_OBJECTS
@@ -2908,6 +3997,17 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.metric_publisher",
             "gold_bea.metric_publisher",
             "gold_eia.metric_publisher",
+            "gold_census_cbp.metric_publisher",
+            "gold_census_lodes.metric_publisher",
+            "gold_bls_qcew.metric_publisher",
+            "gold_epa_aqs.metric_publisher",
+            "gold_noaa_normals.metric_publisher",
+            "gold_fcc_bdc.metric_publisher",
+            "gold_fema_nri.metric_publisher",
+            "gold_fhfa_hpi.metric_publisher",
+            "gold_hud_fmr_il.metric_publisher",
+            "gold_nces_ccd.metric_publisher",
+            "gold_usda_ers.metric_publisher",
         ),
     ),
     _rule(
@@ -4667,6 +5767,839 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation_note=(
             "`quality.sources.bea_price_parity_reference` reads the newest published release of line 1 (all items) for `us:1` in SARPP, MARPP and PARPP and fails any year whose value is not exactly 100 -- a parity table whose national row is not 100 is not relative to the nation, and every area's level in it would be misread (grocery-and-gasoline-prices)."
         ),
+    ),
+    # -- Census County Business Patterns ------------------------------------
+    _rule(
+        "DQ-CBP-001",
+        "BLOCK",
+        "uniqueness",
+        "County Business Patterns observations are unique per (measure, "
+        "sector, geography, year, capture): a corrected file is a second row "
+        "beside the one it corrected.",
+        (
+            "silver_census_cbp.fact_observation",
+            "gold_census_cbp.observation_revision",
+            "gold_census_cbp.observation_latest",
+            "gold_census_cbp.measure_definition",
+            "gold_census_cbp.sector_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it and over the registered "
+            "measure and sector lists."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_cbp.fact_observation",
+                ("measure", "naics_key", "geo_id", "year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CBP-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed file accounts for every in-scope captured row, and no "
+        "captured file is left unreplayed.",
+        (
+            "control.census_cbp_file",
+            "silver_census_cbp.observation_revision",
+            "silver_census_cbp.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-CBP-003",
+        "BLOCK",
+        "conformance",
+        "A withheld (D) or suppressed (S) cell keeps that status and carries "
+        "no number although the file writes 0; only a valid cell is a number, "
+        "and a noise flag is G, H or J.",
+        (
+            "silver_census_cbp.fact_observation",
+            "silver_census_cbp.observation_revision",
+            "gold_census_cbp.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value and a withheld or suppressed one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_cbp.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cbp_fact_suppressed_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_cbp.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cbp_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_cbp.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cbp_revision_suppressed_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CBP-004",
+        "WARN",
+        "reconciliation",
+        "In the newest published file, a geography's sector establishment "
+        "counts never sum past its own total: establishments carry no noise, "
+        "and an unpublished sector can only make the sum smaller.",
+        ("gold_census_cbp.observation_latest",),
+    ),
+    # -- Census LEHD LODES ---------------------------------------------------
+    _rule(
+        "DQ-LODES-001",
+        "BLOCK",
+        "uniqueness",
+        "LODES county sums are unique per (run, file family, column, county) "
+        "and flows per (run, part, home county, work county): a new vintage "
+        "is a second run beside the one it revised.",
+        (
+            "silver_census_lodes.fact_area",
+            "silver_census_lodes.fact_flow",
+            "gold_census_lodes.observation_revision",
+            "gold_census_lodes.observation_latest",
+            "gold_census_lodes.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the two fact tables' primary "
+            "keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_lodes.fact_area",
+                ("run_id", "family", "column_code", "geo_id"),
+            ),
+            EnforcedGrain(
+                "silver_census_lodes.fact_flow",
+                ("run_id", "part", "home_geo_id", "work_geo_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-LODES-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured state-year is left unreplayed, and every captured file "
+        "with readable rows reached its county sums.",
+        (
+            "control.census_lodes_slice",
+            "control.census_lodes_file",
+            "silver_census_lodes.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-LODES-003",
+        "BLOCK",
+        "conformance",
+        "A column the Bureau publishes as zero because it publishes none for "
+        "the year or job type is not_available with no number; only an "
+        "available column is a number.",
+        (
+            "silver_census_lodes.fact_area",
+            "gold_census_lodes.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid sum "
+            "without a value and an unavailable one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_lodes.fact_area",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="lodes_area_unavailable_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_lodes.fact_area",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="lodes_area_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-LODES-004",
+        "WARN",
+        "reconciliation",
+        "For every published state-year, the origin-destination jobs worked "
+        "in each county (main and aux) equal the workplace file's total for "
+        "that county.",
+        ("silver_census_lodes.fact_flow", "silver_census_lodes.fact_area"),
+    ),
+    # -- EPA air quality (AirData annual monitor files) ------------------------
+    _rule(
+        "DQ-AQS-001",
+        "BLOCK",
+        "uniqueness",
+        "A monitor-year row is unique per (read, monitor, sample duration, "
+        "standard, event type): a repeat is quarantined, and a regenerated "
+        "file is a second read beside the first.",
+        (
+            "silver_epa_aqs.monitor_fact",
+            "gold_epa_aqs.monitor_observation",
+            "gold_epa_aqs.observation_revision",
+            "gold_epa_aqs.observation_latest",
+            "gold_epa_aqs.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the monitor fact's primary "
+            "key; the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_epa_aqs.monitor_fact",
+                (
+                    "run_id",
+                    "monitor_id",
+                    "sample_duration",
+                    "pollutant_standard",
+                    "event_type",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-AQS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and every replayed file with "
+        "in-scope rows reached its monitor facts.",
+        (
+            "control.epa_aqs_file",
+            "silver_epa_aqs.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-AQS-003",
+        "BLOCK",
+        "conformance",
+        "An empty monitor statistic carries no number, and a valid one always "
+        "does: no gap becomes a zero.",
+        (
+            "silver_epa_aqs.monitor_fact",
+            "gold_epa_aqs.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "statistic without a value and a missing one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_epa_aqs.monitor_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="epa_aqs_monitor_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_epa_aqs.monitor_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="epa_aqs_monitor_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-AQS-004",
+        "WARN",
+        "referential_integrity",
+        "In every published file, no statistic is negative and every monitor's "
+        "county resolved to the shared geography.",
+        ("silver_epa_aqs.monitor_fact", "control.epa_aqs_file"),
+    ),
+    # -- NOAA U.S. Climate Normals 1991-2020 -----------------------------------
+    _rule(
+        "DQ-NOAA-001",
+        "BLOCK",
+        "uniqueness",
+        "A station is unique per read, and a normal is unique per (read, "
+        "station, variable): a repeated station file is quarantined.",
+        (
+            "silver_noaa_normals.station",
+            "silver_noaa_normals.station_normal",
+            "gold_noaa_normals.station_observation",
+            "gold_noaa_normals.observation_revision",
+            "gold_noaa_normals.observation_latest",
+            "gold_noaa_normals.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the station and normal "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_noaa_normals.station", ("run_id", "station_id")),
+            EnforcedGrain(
+                "silver_noaa_normals.station_normal",
+                ("run_id", "station_id", "variable"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NOAA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured archive is left unreplayed, and every replayed archive "
+        "reached its stations.",
+        (
+            "control.noaa_normals_file",
+            "silver_noaa_normals.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-NOAA-003",
+        "BLOCK",
+        "conformance",
+        "A withheld normal (M, V, Y) carries no number, and a valid one always "
+        "does: no withheld value becomes a zero.",
+        (
+            "silver_noaa_normals.station_normal",
+            "gold_noaa_normals.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "normal without a value and a withheld one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_normals.station_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_withheld_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NOAA-004",
+        "WARN",
+        "referential_integrity",
+        "In every published archive, no precipitation or degree-day normal is "
+        "negative, no station sits on a county boundary, and every station "
+        "NCEI codes to the United States (GHCN country US) falls inside a "
+        "county of the recorded boundary vintage.",
+        (
+            "silver_noaa_normals.station",
+            "silver_noaa_normals.station_normal",
+            "control.noaa_normals_file",
+        ),
+    ),
+    # -- FCC Broadband Data Collection (fixed availability) --------------------
+    _rule(
+        "DQ-FCC-001",
+        "BLOCK",
+        "uniqueness",
+        "A summary row is unique per (read, geography, technology): a repeat "
+        "is quarantined, and a new FCC revision is a second read.",
+        (
+            "silver_fcc_bdc.availability_row",
+            "gold_fcc_bdc.availability_observation",
+            "gold_fcc_bdc.observation_revision",
+            "gold_fcc_bdc.observation_latest",
+            "gold_fcc_bdc.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the availability row's "
+            "primary key; the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row", ("run_id", "geo_id", "technology")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FCC-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured vintage is left unreplayed, and every replayed vintage "
+        "reached its rows.",
+        (
+            "control.fcc_bdc_read",
+            "control.fcc_bdc_file",
+            "silver_fcc_bdc.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-FCC-003",
+        "BLOCK",
+        "conformance",
+        "Every share lies in 0..1, a valid row carries all six shares, and a "
+        "geography with no units carries none: no undefined share becomes a "
+        "zero.",
+        (
+            "silver_fcc_bdc.availability_row",
+            "gold_fcc_bdc.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a share "
+            "outside 0..1, a valid row missing a share, and a share on a "
+            "geography with no units."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row",
+                ("speed_02_02", "speed_1000_100"),
+                kind="check",
+                constraint_name="fcc_bdc_row_shares_in_range",
+            ),
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row",
+                ("value_status", "speed_02_02"),
+                kind="check",
+                constraint_name="fcc_bdc_row_valid_shares_present",
+            ),
+            EnforcedGrain(
+                "silver_fcc_bdc.availability_row",
+                ("missing_reason", "total_units"),
+                kind="check",
+                constraint_name="fcc_bdc_row_no_units_no_shares",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FCC-004",
+        "WARN",
+        "plausibility",
+        "In every published vintage, each row's shares do not rise with speed "
+        "(0.2/0.2 at least 10/1, down to 1000/100), and every state and county "
+        "row resolved to the shared geography.",
+        ("silver_fcc_bdc.availability_row", "control.fcc_bdc_read"),
+    ),
+    # -- FEMA National Risk Index and disaster declarations --------------------
+    _rule(
+        "DQ-FEMA-001",
+        "BLOCK",
+        "uniqueness",
+        "An NRI fact is unique per (read, county, field) and a declaration "
+        "revision per (id, hash): a repeated county is quarantined, and a new "
+        "hash for a declaration is a second revision beside the first.",
+        (
+            "silver_fema_nri.nri_fact",
+            "silver_fema_nri.declaration_revision",
+            "gold_fema_nri.nri_observation",
+            "gold_fema_nri.declaration_count",
+            "gold_fema_nri.observation_revision",
+            "gold_fema_nri.observation_latest",
+            "gold_fema_nri.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the two silver tables' "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_fema_nri.nri_fact", ("run_id", "geo_id", "field")),
+            EnforcedGrain(
+                "silver_fema_nri.declaration_revision",
+                ("declaration_id", "revision_hash"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FEMA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured read is left unreplayed, and every replayed NRI read with "
+        "readable records reached its facts.",
+        (
+            "control.fema_nri_run",
+            "control.fema_nri_page",
+            "silver_fema_nri.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-FEMA-003",
+        "BLOCK",
+        "conformance",
+        "An NRI field whose rating says it is not a measurement, or whose cell "
+        "is empty, carries no number; a valid field always does.",
+        (
+            "silver_fema_nri.nri_fact",
+            "gold_fema_nri.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "field without a value and a non-measure one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fema_nri.nri_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fema_nri_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_fema_nri.nri_fact",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fema_nri_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-FEMA-004",
+        "WARN",
+        "referential_integrity",
+        "In every published read, no expected annual loss or frequency is "
+        "negative, and every NRI county and every county-designated "
+        "declaration resolved to the shared geography.",
+        (
+            "silver_fema_nri.nri_fact",
+            "silver_fema_nri.declaration_revision",
+            "control.fema_nri_run",
+        ),
+    ),
+    # -- FHFA annual House Price Index ----------------------------------------
+    _rule(
+        "DQ-HPI-001",
+        "BLOCK",
+        "uniqueness",
+        "An FHFA observation is unique per (measure, county, year, capture): "
+        "a repeated county-year row is quarantined, and a new vintage is a "
+        "second capture beside the one it revised.",
+        (
+            "silver_fhfa_hpi.observation_revision",
+            "silver_fhfa_hpi.fact_observation",
+            "gold_fhfa_hpi.observation_revision",
+            "gold_fhfa_hpi.observation_latest",
+            "gold_fhfa_hpi.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact's primary key, the "
+            "parser quarantines a repeated county-year, and the gold relations "
+            "are views over the fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fhfa_hpi.fact_observation",
+                ("measure", "geo_id", "year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HPI-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured workbook is left unreplayed, and every replayed workbook "
+        "with readable rows reached its conformed facts.",
+        (
+            "control.fhfa_hpi_file",
+            "silver_fhfa_hpi.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-HPI-003",
+        "BLOCK",
+        "conformance",
+        "A missing or not-applicable index cell carries no number, and a valid "
+        "one always does: an empty workbook cell is never a zero.",
+        (
+            "silver_fhfa_hpi.fact_observation",
+            "gold_fhfa_hpi.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "observation without a value and a missing one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fhfa_hpi.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fhfa_hpi_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_fhfa_hpi.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fhfa_hpi_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HPI-004",
+        "WARN",
+        "plausibility",
+        "In every published workbook, no index value is zero or negative, the "
+        "2000-based index is 100 in 2000 wherever it is published, and every "
+        "county code resolved to the shared geography.",
+        ("silver_fhfa_hpi.fact_observation", "control.fhfa_hpi_file"),
+    ),
+    # -- HUD Fair Market Rents and income limits ------------------------------
+    _rule(
+        "DQ-HUD-001",
+        "BLOCK",
+        "uniqueness",
+        "A HUD observation is unique per (measure, county or town, fiscal year, "
+        "capture): a repeated fips is quarantined, and a revised edition is a "
+        "second capture beside the original.",
+        (
+            "silver_hud_fmr_il.observation_revision",
+            "silver_hud_fmr_il.fact_observation",
+            "gold_hud_fmr_il.observation_revision",
+            "gold_hud_fmr_il.observation_latest",
+            "gold_hud_fmr_il.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact's primary key, the "
+            "parser quarantines a repeated fips, and the gold relations are views "
+            "over the fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hud_fmr_il.fact_observation",
+                ("measure", "geo_id", "fiscal_year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HUD-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured edition is left unreplayed, and every replayed edition "
+        "with readable rows reached its conformed facts.",
+        (
+            "control.hud_fmr_il_file",
+            "silver_hud_fmr_il.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-HUD-003",
+        "BLOCK",
+        "conformance",
+        "A missing cell carries no number and a valid one always does, and a "
+        "New England town row is never conformed as its county.",
+        (
+            "silver_hud_fmr_il.fact_observation",
+            "gold_hud_fmr_il.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid cell "
+            "without a value, a missing one with a value, and a town that is not "
+            "held as unsupported."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hud_fmr_il.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hud_fmr_il_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_hud_fmr_il.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hud_fmr_il_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HUD-004",
+        "WARN",
+        "plausibility",
+        "In every published edition, Fair Market Rents do not fall as bedrooms "
+        "are added, the four-person 30% limit does not exceed the 50% limit or "
+        "the 50% the 80%, and every whole-county row resolved to the shared "
+        "geography.",
+        ("silver_hud_fmr_il.fact_observation", "control.hud_fmr_il_file"),
+    ),
+    # -- NCES Common Core of Data (public schools) -----------------------------
+    _rule(
+        "DQ-NCES-001",
+        "BLOCK",
+        "uniqueness",
+        "A school is unique per read in a geocode or directory file, and a "
+        "school count is unique per (read, school, measure): a repeat is "
+        "quarantined.",
+        (
+            "silver_nces_ccd.school_location",
+            "silver_nces_ccd.school_directory",
+            "silver_nces_ccd.school_count",
+            "gold_nces_ccd.school_placement",
+            "gold_nces_ccd.school_observation",
+            "gold_nces_ccd.observation_revision",
+            "gold_nces_ccd.observation_latest",
+            "gold_nces_ccd.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the silver primary keys; "
+            "the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_nces_ccd.school_location", ("run_id", "ncessch")),
+            EnforcedGrain("silver_nces_ccd.school_directory", ("run_id", "ncessch")),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count", ("run_id", "ncessch", "measure")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NCES-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and every replayed file with "
+        "kept rows reached silver.",
+        (
+            "control.nces_ccd_file",
+            "silver_nces_ccd.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-NCES-003",
+        "BLOCK",
+        "conformance",
+        "A school count NCES did not report carries no number, a Reported one "
+        "always does, and none is negative: no gap becomes a zero.",
+        (
+            "silver_nces_ccd.school_count",
+            "gold_nces_ccd.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "count without a value, a withheld one with a value, and a "
+            "negative value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_nces_ccd.school_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ccd_count_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ccd_count_withheld_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_nces_ccd.school_count",
+                ("value",),
+                kind="check",
+                constraint_name="nces_ccd_count_not_negative",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NCES-004",
+        "WARN",
+        "referential_integrity",
+        "In every published school year, every school with a published value "
+        "is placed by that year's geocode file in a county the shared "
+        "geography holds, and no school's free or reduced-price lunch count "
+        "exceeds its membership.",
+        (
+            "gold_nces_ccd.school_observation",
+            "silver_nces_ccd.school_location",
+            "control.nces_ccd_file",
+        ),
+    ),
+    # -- USDA ERS county codes and atlases -------------------------------------
+    _rule(
+        "DQ-ERS-001",
+        "BLOCK",
+        "uniqueness",
+        "A USDA ERS observation is unique per (attribute, county, capture): a "
+        "repeated county and attribute is quarantined, and a replaced file is a "
+        "second capture beside the one it replaced.",
+        (
+            "silver_usda_ers.observation_revision",
+            "silver_usda_ers.fact_observation",
+            "gold_usda_ers.observation_revision",
+            "gold_usda_ers.observation_latest",
+            "gold_usda_ers.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact's primary key, the "
+            "parser quarantines a repeated county and attribute, and the gold "
+            "relations are views over the fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usda_ers.fact_observation",
+                ("attribute", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ERS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and every replayed file with "
+        "in-scope rows reached its conformed facts.",
+        (
+            "control.usda_ers_file",
+            "silver_usda_ers.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-ERS-003",
+        "BLOCK",
+        "conformance",
+        "An Atlas sentinel or an unset Typology flag carries its reason and no "
+        "number, and a valid cell always carries one: no sentinel becomes a zero.",
+        (
+            "silver_usda_ers.fact_observation",
+            "gold_usda_ers.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid cell "
+            "without a value and a missing or unset one with a value; the parser "
+            "quarantines a code or flag outside its domain."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usda_ers.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="usda_ers_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_usda_ers.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="usda_ers_fact_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ERS-004",
+        "WARN",
+        "referential_integrity",
+        "In every published file, each county row resolved to the shared "
+        "geography, and each RUCC code carries ERS's label.",
+        ("silver_usda_ers.fact_observation", "control.usda_ers_file"),
     ),
 )
 

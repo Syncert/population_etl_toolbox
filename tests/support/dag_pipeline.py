@@ -40,6 +40,16 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "cdc_api",
     "fbi_cde_api",
     "usda_nass_api",
+    "usda_ers_files",
+    "nces_ccd_files",
+    "fhfa_hpi_files",
+    "hud_fmr_il_files",
+    "fema_files",
+    "fcc_bdc_api",
+    "epa_aqs_files",
+    "noaa_normals_files",
+    "census_lodes_files",
+    "census_cbp_files",
     "irs_soi_files",
     "census_bps_files",
     "bls_qcew_api",
@@ -918,6 +928,221 @@ def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(irs_capture, "fetch_file", fetch)
 
 
+def stub_census_cbp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware County Business Patterns zips.
+
+    Four of the registered files have fixtures. The others answer with the
+    2023 file of their level, so every registered file captures, replays
+    and publishes without a network call.
+    """
+    from data_ingestion_toolbox.census_cbp import capture as cbp_capture
+    from data_ingestion_toolbox.census_cbp.client import CbpResponse
+
+    def fetch(item: Any, **_kwargs: Any) -> CbpResponse:
+        reviewed = (
+            FIXTURE_ROOT / "census_cbp" / f"cbp{item.year % 100:02d}{item.suffix}.zip"
+        )
+        path = (
+            reviewed
+            if reviewed.is_file()
+            else FIXTURE_ROOT / "census_cbp" / f"cbp23{item.suffix}.zip"
+        )
+        payload = path.read_bytes()
+        if not reviewed.is_file():
+            import io
+            import zipfile
+
+            source = zipfile.ZipFile(io.BytesIO(payload))
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w") as target:
+                target.writestr(item.member, source.read(source.namelist()[0]))
+            payload = out.getvalue()
+        return CbpResponse(
+            item.path,
+            {"kind": item.kind, "year": str(item.year)},
+            payload,
+            {"content-type": "application/zip"},
+            200,
+        )
+
+    monkeypatch.setattr(cbp_capture, "fetch_file", fetch)
+
+
+def stub_census_lodes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware LODES files; every other state publishes none.
+
+    Delaware answers with its trimmed files and their checksum list. Any
+    other state answers with Delaware's version and a checksum list naming
+    no registered file, so its run records every file as not published
+    rather than reaching the network.
+    """
+    from data_ingestion_toolbox.census_lodes import capture as lodes_capture
+    from data_ingestion_toolbox.census_lodes.client import LodesResponse
+
+    root = FIXTURE_ROOT / "census_lodes"
+
+    def fetch(path: str, **_kwargs: Any) -> LodesResponse:
+        state, name = path.strip("/").split("/", 1)[0], path.rsplit("/", 1)[1]
+        if name == "version.txt":
+            payload = (root / "version.txt").read_bytes()
+        elif name.endswith(".sha256sum"):
+            payload = (
+                (root / "lodes_de.sha256sum").read_bytes()
+                if state == "de"
+                else b"0" * 64 + b"  unregistered.csv" + bytes([10])
+            )
+        else:
+            payload = (root / name).read_bytes()
+        return LodesResponse(
+            path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(lodes_capture, "fetch", fetch)
+
+
+def stub_epa_aqs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed 2024 monitor file; every other year is header-only."""
+    import io
+    import zipfile
+
+    from data_ingestion_toolbox.epa_aqs import capture as aqs_capture
+    from data_ingestion_toolbox.epa_aqs.client import AqsResponse
+
+    reviewed = (
+        FIXTURE_ROOT / "epa_aqs" / "annual_conc_by_monitor_2024.zip"
+    ).read_bytes()
+    header = (
+        zipfile.ZipFile(io.BytesIO(reviewed))
+        .read("annual_conc_by_monitor_2024.csv")
+        .split(bytes([10]), 1)[0]
+    )
+
+    def fetch_file(item: Any, **_kwargs: Any) -> AqsResponse:
+        if item.year == 2024:
+            payload = reviewed
+        else:
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr(item.member, header + bytes([10]))
+            payload = buffer.getvalue()
+        return AqsResponse(item.path, payload, {"content-type": "application/zip"}, 200)
+
+    monkeypatch.setattr(aqs_capture, "fetch_file", fetch_file)
+
+
+def stub_noaa_normals(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed eleven-station normals archive."""
+    from data_ingestion_toolbox.noaa_normals import capture as normals_capture
+    from data_ingestion_toolbox.noaa_normals.client import NormalsResponse
+    from data_ingestion_toolbox.noaa_normals.registry import ARCHIVE_PATH
+
+    reviewed = (
+        FIXTURE_ROOT / "noaa_normals" / "annualseasonal_by_station.tar.gz"
+    ).read_bytes()
+
+    def fetch_archive(**_kwargs: Any) -> NormalsResponse:
+        return NormalsResponse(
+            ARCHIVE_PATH, reviewed, {"content-type": "application/gzip"}, 200
+        )
+
+    monkeypatch.setattr(normals_capture, "fetch_archive", fetch_archive)
+
+
+def stub_fcc_bdc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer the FCC broadband map API from the recorded fixtures, with stand-in credentials."""
+    from data_ingestion_toolbox.fcc_bdc import capture as bdc_capture
+    from tests.support.fcc_bdc import FixtureClient, fixture_config
+
+    real_client = bdc_capture.BdcClient
+
+    def client(config: Any, **_kwargs: Any) -> Any:
+        return real_client(fixture_config(), client=FixtureClient())
+
+    monkeypatch.setattr(bdc_capture, "BdcClient", client)
+
+
+def stub_fema_nri(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed NRI and declaration pages in place of FEMA's services."""
+    from data_ingestion_toolbox.fema_nri import capture as fema_capture
+    from data_ingestion_toolbox.fema_nri.client import FemaPage, read_page
+
+    root = FIXTURE_ROOT / "fema_nri"
+
+    def fetch_page(stream: str, page_index: int, **_kwargs: Any) -> FemaPage:
+        name = "nri_counties.json" if stream == "nri" else "declarations.json"
+        payload = (root / name).read_bytes()
+        records, _more = read_page(
+            stream, payload, f"{stream}:page:{page_index}", page_size=10**6
+        )
+        return FemaPage(
+            name, {"page": str(page_index)}, payload, records, False, {}, 200
+        )
+
+    monkeypatch.setattr(fema_capture, "fetch_page", fetch_page)
+
+
+def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed county workbook in place of FHFA's download."""
+    from data_ingestion_toolbox.fhfa_hpi import capture as hpi_capture
+    from data_ingestion_toolbox.fhfa_hpi.client import HpiResponse
+
+    payload = (FIXTURE_ROOT / "fhfa_hpi" / "hpi_at_county.xlsx").read_bytes()
+
+    def fetch_file(item: Any, **_kwargs: Any) -> HpiResponse:
+        return HpiResponse(
+            item.path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(hpi_capture, "fetch_file", fetch_file)
+
+
+def stub_hud_fmr_il(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve HUD User API answers from the recorded fixtures, with a stand-in token."""
+    from data_ingestion_toolbox.hud_fmr_il import api_capture as hud_api_capture
+    from tests.support.hud_fmr_il import FIXTURE_TOKEN, ApiFixtureClient
+
+    real_client = hud_api_capture.HudApiClient
+
+    def client(config: Any, **_kwargs: Any) -> Any:
+        return real_client(
+            config.model_copy(
+                update={
+                    "hud_user_api_token": FIXTURE_TOKEN,
+                    "api_min_spacing_seconds": 0,
+                }
+            ),
+            client=ApiFixtureClient(),
+        )
+
+    monkeypatch.setattr(hud_api_capture, "HudApiClient", client)
+
+
+def stub_nces_ccd(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed 2024-25 fixtures; every other file answers its header only."""
+    from data_ingestion_toolbox.nces_ccd import capture as ccd_capture
+    from tests.support.nces_ccd import fixture_response
+
+    monkeypatch.setattr(
+        ccd_capture, "fetch_file", lambda item, **_kwargs: fixture_response(item)
+    )
+
+
+def stub_usda_ers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve each registered ERS file's reviewed fixture in place of ERS's."""
+    from data_ingestion_toolbox.usda_ers import capture as ers_capture
+    from data_ingestion_toolbox.usda_ers.client import ErsResponse
+
+    root = FIXTURE_ROOT / "usda_ers"
+
+    def fetch_file(item: Any, **_kwargs: Any) -> ErsResponse:
+        payload = (root / item.path.rsplit("/", 1)[1]).read_bytes()
+        return ErsResponse(
+            item.path, payload, {"content-type": "application/octet-stream"}, 200
+        )
+
+    monkeypatch.setattr(ers_capture, "fetch_file", fetch_file)
+
+
 def build_pep_release_csv(url: str) -> bytes:
     """Generate a production-shaped PEP release for one registered URL.
 
@@ -1376,6 +1601,16 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("usda_nass", stub_usda_nass_quick_stats),
         ("bea", stub_bea_regional),
         ("eia", stub_eia),
+        ("census_cbp", stub_census_cbp),
+        ("census_lodes", stub_census_lodes),
+        ("epa_aqs", stub_epa_aqs),
+        ("noaa_normals", stub_noaa_normals),
+        ("fcc_bdc", stub_fcc_bdc),
+        ("fema_nri", stub_fema_nri),
+        ("fhfa_hpi", stub_fhfa_hpi),
+        ("hud_fmr_il", stub_hud_fmr_il),
+        ("nces_ccd", stub_nces_ccd),
+        ("usda_ers", stub_usda_ers),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )
