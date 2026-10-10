@@ -302,7 +302,7 @@ def test_silver_task_callable_forwards_declared_source_scope(
 
     assert callable_(*arguments) == 17
     if dag_id == "acs_ingest":
-        assert calls == [((), {})]
+        assert calls == [((), {"resume_key": None})]
     elif dag_id == "bls_ingest":
         assert calls == [((), {"program": "la"})]
     else:

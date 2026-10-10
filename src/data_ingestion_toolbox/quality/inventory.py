@@ -806,6 +806,16 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first ACS capture",
     ),
     _obj(
+        "silver_census.transform_checkpoint",
+        "silver",
+        "CENSUS_ACS",
+        grain="resume_key, year, slice_key",
+        lineage="silver_census.observation_revision",
+        scope_method="one row per transform slice finished under an Airflow run",
+        cadence="per ACS silver transform",
+        empty_behavior="empty before the first DAG-driven ACS transform",
+    ),
+    _obj(
         "silver_census.fact_demographics",
         "silver",
         "CENSUS_ACS",

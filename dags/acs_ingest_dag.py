@@ -671,9 +671,13 @@ def acs_ingest():
             conn.commit()
 
     @task(trigger_rule="none_failed")
-    def transform_to_silver() -> int:
-        """Transform ALL raw Census data to silver (full load)."""
-        return transform_census_to_silver()
+    def transform_to_silver(run_id: str | None = None) -> int:
+        """Transform ALL raw Census data to silver (full load).
+
+        Airflow injects ``run_id``. It keys the transform's slice checkpoints,
+        so a retry or a cleared task resumes after the last finished slice.
+        """
+        return transform_census_to_silver(resume_key=run_id)
 
     # -----------------------------
     # DAG wiring

@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-081 | None |
+| ETL and shared units | ETL-001–ETL-082 | None |
 | Database integration | DB-001–DB-062 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **621 of 621** | **0 of 621** |
+| **Total** | **622 of 622** | **0 of 622** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 621-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 622-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -551,6 +551,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-079 | P0 | Contract + database / `unit integration database` | Regional price parities are price levels against the nation, for the areas BEA publishes | The BEA adapter registers `SARPP`, `MARPP` and `PARPP` (all items, goods, housing, utilities, other services, basis `price_level_us_100`); states resolve by FIPS, metros by OMB CBSA code to `cbsa:` (the July 2023 delineation, the same the reference loads), and the nation's and each state's metropolitan and nonmetropolitan portions to BEA's own provider areas, loaded from the price-parity files themselves; the nation's all-items parity is 100 in every year and DQ-BEA-005 fails a table where it is not; a portion that does not exist (`0.000` for Delaware's nonmetropolitan portion) is `not_meaningful` with no value, never a price level of zero; each line states that it is comparable across areas within a year, is not inflation, and that food is inside goods (grocery-and-gasoline-prices, deliverable 4) | A parity served as inflation, a missing portion served as 0, or a metro matched by name |
 | ETL-080 | P0 | Contract + database + DAG + E2E / `unit integration database dag e2e` | EIA weekly retail gasoline reaches the API by grade and area, and the key goes nowhere | The `eia` adapter reads API v2 `petroleum/pri/gnd` for regular, midgrade, premium and all-grades gasoline (diesel out of scope): every page is captured before it is parsed, sorted by week and series, and a total that changes while paging or a short read fails the run; the key is read only from `EIA_API_KEY`, travels only as a query parameter, and is absent from every recorded endpoint, request parameter, error, retry and repr, and an answer that echoes it is refused; an area is the nation (`NUS`), a state by the USPS code the reference's Gazetteer carries, or an EIA PADD or city as a provider area loaded from EIA's own facet by the EIA DAG; a state the reference cannot resolve is ledgered `unmapped` and not served; a week with no price is `missing` with no number, and a zero, an unreadable week (strict `YYYY-MM-DD`), an unknown area, unit or grade is set aside with its reason; a reread keeps every reading and the latest view one per series and week; `EIA:<product>` answers through `/api/v1/observations` at `NATIONAL`, `STATE` and `PROVIDER_AREA` in U.S. dollars per gallon; DQ-EIA-002 reconciles every read; the DAG runs Tuesdays through the `eia_api` pool, reading the whole history once and eight weeks after (grocery-and-gasoline-prices, deliverable 3) | The key in a stored request, a city price assigned to a CBSA, a missing week served as zero, or a paged read silently short |
 | ETL-081 | P1 | Contract + database / `integration database` | An every-other-month CPI metro keeps BLS's cadence | DQ-BLS-009 reads the monthly CPI series of every BLS metro other than New York, Chicago and Los Angeles and warns on each pair of consecutive months that both hold a value, naming the series and the later month; a metro published every other month passes (grocery-and-gasoline-prices, deliverable 7) | A bimonthly metro's off-month value served as if BLS published it |
+| ETL-082 | P0 | Contract + database / `unit dag integration database` | The ACS silver transform reads a large year in slices and resumes where it stopped | A year above `_YEAR_SLICE_ROW_THRESHOLD` revision rows is read one (dataset, geo level, state) slice at a time through a server-side cursor, and produces exactly the facts the whole-year read produces, because every natural key and E/M pair lies inside one slice; the slice filters sit inside the revision ranking, on columns it partitions by. The DAG passes its Airflow `run_id` as the resume key; each finished slice is recorded in `silver_census.transform_checkpoint`, and a later attempt under the same key reads none of the recorded slices and changes nothing they wrote, while an interrupted slice is read again in full. Without a key nothing is recorded or skipped, so a new run replays every year | A 190-million-row year read into one Python list until the Docker VM ran out of memory and froze, and every retry re-reading nineteen finished years before reaching the one that failed |
 
 ### PostgreSQL Integration Tests
 

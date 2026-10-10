@@ -9628,6 +9628,16 @@ r silver_census.observation_revision
     index census_observation_revision_slice_idx CREATE INDEX census_observation_revision_slice_idx ON silver_census.observation_revision USING btree (dataset, year, geo_level, state_fips_source, county_fips_source)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census.observation_revision USING btree (capture_id, source_row_index, source_column_index)
 
+r silver_census.transform_checkpoint
+    column resume_key text NOT NULL
+    column year integer NOT NULL
+    column slice_key text NOT NULL
+    column rows_changed bigint NOT NULL
+    column completed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint transform_checkpoint_pkey PRIMARY KEY (resume_key, year, slice_key)
+    constraint transform_checkpoint_rows_changed_check CHECK ((rows_changed >= 0))
+    index transform_checkpoint_pkey CREATE UNIQUE INDEX transform_checkpoint_pkey ON silver_census.transform_checkpoint USING btree (resume_key, year, slice_key)
+
 r silver_census_bps.dim_measure
     column measure_id text NOT NULL
     column structure_type text NOT NULL

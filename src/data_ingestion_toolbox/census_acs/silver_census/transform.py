@@ -434,8 +434,83 @@ def _get_approx_row_count(hook: PostgresHook) -> int:
     return int(row[0]) if row else 0
 
 
-def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
-    sql = """
+@dataclass(frozen=True)
+class RawSlice:
+    """One part of a year's revisions that the transform holds in memory at once.
+
+    ``dataset``/``geo_level`` of ``None`` mean every value. ``state_fips`` is
+    only read when ``geo_level`` is set; a ``None`` there selects the rows that
+    carry no state, which is the ``us`` level.
+    """
+
+    dataset: str | None = None
+    geo_level: str | None = None
+    state_fips: str | None = None
+
+    @property
+    def key(self) -> str:
+        if self.geo_level is None:
+            return "*"
+        return f"{self.dataset}/{self.geo_level}/{self.state_fips or '-'}"
+
+
+WHOLE_YEAR = RawSlice()
+
+#: A year with more revision rows than this is read one (dataset, geo level,
+#: state) slice at a time. Every fact's natural key and every E/M pair lies
+#: inside one such slice, so the grouping and the de-duplication below are
+#: unchanged by it. 2024 brought place and tract grains: 190M rows, eleven
+#: times any earlier year, and read whole it outgrew the 96 GB Docker VM.
+_YEAR_SLICE_ROW_THRESHOLD = 20_000_000
+
+#: Rows pulled per round trip from the server-side cursor. Each batch becomes
+#: a typed polars frame straight away, so the Python tuples never accumulate.
+_FETCH_BATCH_ROWS = 500_000
+
+#: Column names and types of the frame the raw read produces.
+_RAW_FRAME_SCHEMA = {
+    "dataset": pl.Utf8,
+    "estimate_year": pl.Int64,
+    "geo_level": pl.Utf8,
+    "state_fips": pl.Utf8,
+    "county_fips": pl.Utf8,
+    "place_fips": pl.Utf8,
+    "tract_code": pl.Utf8,
+    "table_id": pl.Utf8,
+    "variable_name": pl.Utf8,
+    "measure_type": pl.Utf8,
+    "value": pl.Float64,
+    "capture_id": pl.Utf8,
+    "value_status": pl.Utf8,
+    "source_value": pl.Utf8,
+}
+
+
+def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
+    """SQL for the latest revision of every cell in ``year``/``raw_slice``.
+
+    The filters sit inside the ranking CTE. Every one of them is a column the
+    window partitions by, so filtering before ranking gives the same rows as
+    filtering after, and lets the slice index narrow the scan.
+    """
+    filters: list[str] = []
+    params: list[object] = []
+    if year is not None:
+        filters.append("observation.year = %s")
+        params.append(int(year))
+    if raw_slice.dataset is not None:
+        filters.append("observation.dataset = %s")
+        params.append(raw_slice.dataset)
+    if raw_slice.geo_level is not None:
+        filters.append("observation.geo_level = %s")
+        params.append(raw_slice.geo_level)
+        if raw_slice.state_fips is None:
+            filters.append("observation.state_fips_source IS NULL")
+        else:
+            filters.append("observation.state_fips_source = %s")
+            params.append(raw_slice.state_fips)
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    sql = f"""
         WITH captured_ranked AS (
             SELECT
                 observation.dataset,
@@ -469,45 +544,97 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
                 ) AS revision_rank
             FROM silver_census.observation_revision AS observation
             JOIN raw_capture.response_capture AS capture USING (capture_id)
-        ),
-        observations AS (
-            SELECT dataset, year, geo_level, state_fips, county_fips, place_fips,
-                   tract_code, table_id, variable_name, measure_type, value,
-                   capture_id, value_status, value_source
-            FROM captured_ranked
-            WHERE revision_rank = 1
+            {where}
         )
-        SELECT
-            dataset,
-            year,
-            geo_level,
-            state_fips,
-            county_fips,
-            place_fips,
-            tract_code,
-            table_id,
-            variable_name,
-            measure_type,
-            value,
-            capture_id,
-            value_status,
-            value_source
-        FROM observations
+        SELECT dataset, year, geo_level, state_fips, county_fips, place_fips,
+               tract_code, table_id, variable_name, measure_type, value,
+               capture_id, value_status, value_source
+        FROM captured_ranked
+        WHERE revision_rank = 1;
     """
-    params: list[object] = []
-    if year is not None:
-        sql += " WHERE year = %s"
-        params.append(int(year))
-    sql += ";"
+    return sql, tuple(params)
 
+
+def _fetch_raw_frame(
+    hook: PostgresHook, year: int, raw_slice: RawSlice = WHOLE_YEAR
+) -> pl.DataFrame:
+    """Read a year or slice through a server-side cursor into a typed frame.
+
+    A list of tuples costs several times the frame it becomes; holding a whole
+    year that way is what pushed the scheduler past its memory.
+    """
+    sql, params = _raw_rows_sql(year, raw_slice)
+    frames: list[pl.DataFrame] = []
+    conn = hook.get_conn()
+    try:
+        with conn.cursor(name=f"acs_raw_{uuid.uuid4().hex}") as cur:
+            cur.itersize = _FETCH_BATCH_ROWS
+            cur.execute(sql, params)
+            while True:
+                batch = cur.fetchmany(_FETCH_BATCH_ROWS)
+                if not batch:
+                    break
+                frames.append(
+                    pl.DataFrame(batch, orient="row", schema=_RAW_FRAME_SCHEMA)
+                )
+        conn.commit()
+    finally:
+        conn.close()
+    if not frames:
+        return pl.DataFrame(schema=_RAW_FRAME_SCHEMA)
+    return pl.concat(frames, rechunk=True)
+
+
+def _plan_year_slices(hook: PostgresHook, year: int, row_count: int) -> list[RawSlice]:
+    """Split a year too large to hold at once into (dataset, level, state) slices."""
+    if row_count <= _YEAR_SLICE_ROW_THRESHOLD:
+        return [WHOLE_YEAR]
+    sql = """
+        SELECT DISTINCT dataset, geo_level, state_fips_source
+        FROM silver_census.observation_revision
+        WHERE year = %s
+        ORDER BY dataset, geo_level, state_fips_source NULLS FIRST;
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, tuple(params))
-        return cur.fetchall()
+        cur.execute(sql, (int(year),))
+        rows = cur.fetchall()
+    return [RawSlice(dataset=r[0], geo_level=r[1], state_fips=r[2]) for r in rows]
+
+
+def _completed_slice_keys(
+    hook: PostgresHook, resume_key: str | None, year: int
+) -> set[str]:
+    """Slices of ``year`` an earlier attempt of this run already finished."""
+    if resume_key is None:
+        return set()
+    sql = """
+        SELECT slice_key FROM silver_census.transform_checkpoint
+        WHERE resume_key = %s AND year = %s;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (resume_key, int(year)))
+        return {row[0] for row in cur.fetchall()}
+
+
+def _record_slice_complete(
+    hook: PostgresHook, resume_key: str | None, year: int, slice_key: str, changed: int
+) -> None:
+    if resume_key is None:
+        return
+    sql = """
+        INSERT INTO silver_census.transform_checkpoint
+            (resume_key, year, slice_key, rows_changed)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (resume_key, year, slice_key) DO NOTHING;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (resume_key, int(year), slice_key, int(changed)))
+        conn.commit()
 
 
 def _transform_rows_to_silver_df(
     hook: PostgresHook,
-    rows: list[tuple],
+    rows: list[tuple] | pl.DataFrame,
     metrics: TransformMetrics | None = None,
     meta_df: pl.DataFrame | None = None,
     time_df: pl.DataFrame | None = None,
@@ -520,29 +647,14 @@ def _transform_rows_to_silver_df(
     meta_df, time_df, geo_df : optional pre-loaded dimension DataFrames.
         When supplied the function skips per-chunk DB round-trips.
     """
-    if not rows:
-        return pl.DataFrame()
-
-    df = pl.DataFrame(
-        rows,
-        orient="row",
-        schema={
-            "dataset": pl.Utf8,
-            "estimate_year": pl.Int64,
-            "geo_level": pl.Utf8,
-            "state_fips": pl.Utf8,
-            "county_fips": pl.Utf8,
-            "place_fips": pl.Utf8,
-            "tract_code": pl.Utf8,
-            "table_id": pl.Utf8,
-            "variable_name": pl.Utf8,
-            "measure_type": pl.Utf8,
-            "value": pl.Float64,
-            "capture_id": pl.Utf8,
-            "value_status": pl.Utf8,
-            "source_value": pl.Utf8,
-        },
-    )
+    if isinstance(rows, pl.DataFrame):
+        if rows.is_empty():
+            return pl.DataFrame()
+        df = rows
+    else:
+        if not rows:
+            return pl.DataFrame()
+        df = pl.DataFrame(rows, orient="row", schema=_RAW_FRAME_SCHEMA)
 
     df = df.with_columns(
         [
@@ -1321,17 +1433,22 @@ def _upsert_silver_rows(
     return affected_rows
 
 
-def transform_census_to_silver() -> int:
+def transform_census_to_silver(resume_key: str | None = None) -> int:
     """Transform ALL Census ACS raw data to silver layer.
 
     Processes captured observation revisions in memory-safe year chunks and upserts
-    ``silver_census.fact_demographics``. Census errata on an existing natural
-    key propagate, while equivalent replays report zero changed rows.
+    ``silver_census.fact_demographics``. A year larger than
+    ``_YEAR_SLICE_ROW_THRESHOLD`` is read one (dataset, geo level, state)
+    slice at a time. Census errata on an existing natural key propagate, while
+    equivalent replays report zero changed rows.
 
     Partial-load resilience
     -----------------------
     If a prior run was interrupted mid-year, replay inserts missing rows,
-    updates revised rows, and leaves equivalent rows unchanged.
+    updates revised rows, and leaves equivalent rows unchanged. With a
+    ``resume_key`` (the DAG passes its Airflow run id), each finished slice is
+    recorded in ``silver_census.transform_checkpoint`` and a later attempt
+    under the same key skips it, so a retry resumes where the last one stopped.
     """
     hook = _get_hook()
     metrics = TransformMetrics(dataset_name="CENSUS_ACS")
@@ -1405,41 +1522,64 @@ def transform_census_to_silver() -> int:
 
     # ── process each year ─────────────────────────────────────────────
     for y in years:
-        rows = _fetch_raw_rows(hook, year=y)
-        if not rows:
-            continue
+        raw_slices = _plan_year_slices(hook, y, metrics.raw_rows_by_year[y])
+        done = _completed_slice_keys(hook, resume_key, y)
+        if raw_slices != [WHOLE_YEAR]:
+            logger.info(
+                "[CENSUS_ACS CHUNK] Year=%s has %s raw rows; reading it in %s slices",
+                y,
+                f"{metrics.raw_rows_by_year[y]:,}",
+                len(raw_slices),
+            )
+        for raw_slice in raw_slices:
+            if raw_slice.key in done:
+                logger.info(
+                    "[CENSUS_ACS CHUNK] Year=%s slice=%s already finished in this "
+                    "run (resume key %s); skipping",
+                    y,
+                    raw_slice.key,
+                    resume_key,
+                )
+                continue
 
-        metrics.log_chunk_start(y, len(rows))
+            raw = _fetch_raw_frame(hook, y, raw_slice)
+            changed = 0
+            if not raw.is_empty():
+                metrics.log_chunk_start(y, raw.height)
+                df_silver = _transform_rows_to_silver_df(
+                    hook,
+                    raw,
+                    metrics,
+                    meta_df=meta_df,
+                    time_df=time_df,
+                    geo_df=geo_df,
+                )
+                metrics.total_processed += raw.height
+                if not df_silver.is_empty():
+                    transformed_count = df_silver.height
 
-        df_silver = _transform_rows_to_silver_df(
-            hook,
-            rows,
-            metrics,
-            meta_df=meta_df,
-            time_df=time_df,
-            geo_df=geo_df,
-        )
-        if df_silver.is_empty():
-            continue
+                    # Upsert every transformed row so source errata propagate
+                    # while an identical replay remains a zero-change operation.
+                    insert_start = datetime.now(timezone.utc)
+                    changed = _upsert_silver_rows(
+                        hook, df_silver, load_batch_id, ingested_at
+                    )
+                    insert_duration = (
+                        datetime.now(timezone.utc) - insert_start
+                    ).total_seconds()
 
-        transformed_count = df_silver.height
-
-        # Upsert every transformed row so source errata propagate while an
-        # identical replay remains a zero-change operation.
-        insert_start = datetime.now(timezone.utc)
-        changed = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
-        insert_duration = (datetime.now(timezone.utc) - insert_start).total_seconds()
-
-        already_existed = transformed_count - changed
-        metrics.rows_already_existed += already_existed
-        metrics.rows_net_new += changed
-        metrics.chunk_output_rows = transformed_count
-        metrics.log_chunk_complete(y)
-        metrics.log_insert_complete(changed, insert_duration)
-        inserted_total += changed
-        metrics.total_inserted += changed
-
-        metrics.total_processed += len(rows)
+                    already_existed = transformed_count - changed
+                    metrics.rows_already_existed += already_existed
+                    metrics.rows_net_new += changed
+                    metrics.chunk_output_rows = transformed_count
+                    metrics.log_chunk_complete(y)
+                    metrics.log_insert_complete(changed, insert_duration)
+                    inserted_total += changed
+                    metrics.total_inserted += changed
+                # Let the slice go before the next one is read.
+                df_silver = None
+            raw = None
+            _record_slice_complete(hook, resume_key, y, raw_slice.key, changed)
 
     metrics.log_transform_summary()
     logger.info("Inserted %s Census silver rows total", inserted_total)
