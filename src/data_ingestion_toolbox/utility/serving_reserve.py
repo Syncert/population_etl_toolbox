@@ -120,8 +120,12 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     report_procedure="gold_census.refresh_rpt_acs_observations",
     latest_procedure="gold_census.refresh_mv_acs_latest",
     latest_table="gold_census.mv_acs_latest",
-    statement_timeout="90min",
-    full_statement_timeout="120min",
+    # A chunk is one calendar year, and ACS years are not alike: 2024 carries
+    # the place and tract grains, about 86 million facts against 4 to 8
+    # million in an earlier year, and its report refresh alone runs for hours
+    # on the internal stack. A 90-minute limit failed that year every time.
+    statement_timeout="600min",
+    full_statement_timeout="600min",
 )
 
 FRED_CHUNK_CONFIG = ServingRefreshChunkConfig(

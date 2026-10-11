@@ -125,3 +125,29 @@ the new code (try 4). This first attempt under the run key has no checkpoints
 yet, so it re-checks 2005–2023 once (about 1.7 hours). Any later retry of this
 run starts at the slice it stopped on. Seeding checkpoints for the
 already-verified years was considered and not done without Nick's OK.
+
+## Follow-up: publishing ACS to the site (2026-10-11)
+
+After the transform finished, `refresh_gold_census_serving_layer` failed at
+09:24 UTC on 2026-10-11, on chunk 9 (2013), with `canceling statement due to
+statement timeout`. The cause was inside `gold_census.refresh_mv_acs_latest`.
+A year carries 4 to 8 million keys. The planner read the three-column key join
+as matching a few thousand rows, so it probed an index once per key. Measured
+against one partition, that took 749 seconds, where a hash join over a
+sequential scan took 56. Each year's chunk visits a dozen newer partitions, so
+every year from 2013 ran past the 90-minute limit.
+
+- **Fix 1 (commit 44cc211b).** Above 100,000 keys, the procedure turns off
+  nested-loop and merge joins for itself and restores them before it returns.
+  2013 then took 28 minutes, against the 115 minutes it ran before being
+  killed. A test was added under DB-060.
+- **Fix 2.** The ACS chunk limit is raised from 90/120 minutes to 600 minutes.
+  The 2024 chunk holds about 86 million facts, roughly eighteen times an
+  earlier year. Its report refresh alone runs for hours, so no 90-minute limit
+  could pass it.
+- While a chunk runs, its year partition is held under `ACCESS EXCLUSIVE`. An
+  API read of 2024 waits for the 2024 chunk. That was already true; it now
+  lasts longer.
+- Not related to the reload: the API retries a login as `api_app_writer`
+  about every 8 seconds and fails, because the role is not provisioned on this
+  stack (`scripts/provision_app_api.py --apply-schema` has never been run).
