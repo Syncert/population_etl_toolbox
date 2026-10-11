@@ -588,6 +588,10 @@ DECLARE
     v_inserted_rows BIGINT;
     v_resolved_rows BIGINT;
     v_source RECORD;
+    v_key_count BIGINT;
+    v_hash_plans BOOLEAN := FALSE;
+    v_prev_nestloop TEXT;
+    v_prev_mergejoin TEXT;
 BEGIN
     RAISE NOTICE '[ACS LATEST CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
 
@@ -611,6 +615,24 @@ BEGIN
     -- key cardinality keeps the delete and per-key latest lookups predictable
     -- for large ACS annual chunks.
     ANALYZE gold_acs_affected_keys;
+
+    -- A year's chunk carries millions of keys, and the planner reads the
+    -- three-column key join as matching a few thousand rows. It then probes an
+    -- index once per key, a random read each: measured on the internal stack,
+    -- 749 seconds to resolve 4.4 million keys against one year partition,
+    -- where a hash join over a sequential scan of the same partition took 56.
+    -- Across a dozen partitions per chunk that exceeded the 90-minute chunk
+    -- timeout from 2013 on. A small incremental chunk keeps the index probes,
+    -- which are right for it; the planner settings revert at the end of this
+    -- procedure, or with the transaction if it fails.
+    SELECT count(*) INTO v_key_count FROM gold_acs_affected_keys;
+    IF v_key_count > 100000 THEN
+        v_hash_plans := TRUE;
+        v_prev_nestloop := current_setting('enable_nestloop');
+        v_prev_mergejoin := current_setting('enable_mergejoin');
+        PERFORM set_config('enable_nestloop', 'off', true);
+        PERFORM set_config('enable_mergejoin', 'off', true);
+    END IF;
 
     DELETE FROM gold_census.mv_acs_latest m
     USING gold_acs_affected_keys k
@@ -710,12 +732,18 @@ BEGIN
         v_inserted_rows := v_inserted_rows + v_resolved_rows;
     END LOOP;
 
+    IF v_hash_plans THEN
+        PERFORM set_config('enable_nestloop', v_prev_nestloop, true);
+        PERFORM set_config('enable_mergejoin', v_prev_mergejoin, true);
+    END IF;
+
     RAISE NOTICE
-        '[ACS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',
+        '[ACS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% hash_plans=% duration_ms=%',
         p_start_date,
         p_end_date,
         v_deleted_rows,
         v_inserted_rows,
+        v_hash_plans,
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
