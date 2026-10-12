@@ -2809,14 +2809,19 @@ def bls_derived_annual_reconciliation(
     nothing to reconcile, which is the common case for seasonally adjusted
     series, which BLS publishes no annual average for.
 
-    The tolerance is half a unit in the last place BLS published the annual
-    average to, read from its own text. BLS averages the months and rounds to
-    the precision the series is published at, and that precision is not one
-    number: CPI indexes before 2007 carry one decimal (130.7 for CPI-U 1990,
-    whose twelve published months average 130.658), current ones three, and
-    CES employment one. A fixed third-decimal tolerance read every one-decimal
-    year as a disagreement it was not. A difference larger than BLS's own
-    rounding is still a finding.
+    The tolerance is one unit in the last place BLS published the annual
+    average to, read from its own text. That precision is not one number: CPI
+    indexes before 2007 carry one decimal (130.7 for CPI-U 1990, whose twelve
+    published months average 130.658), current ones three, and CES
+    employment one. Two roundings sit between the sides, each worth half a
+    unit: BLS averages its unrounded months and rounds the average, while the
+    derived year averages the months as BLS rounded them for publication. So
+    a CPI-U year published as 218.1 can sit 0.05 or a little more from the
+    mean of its published months without either side being wrong. A
+    difference larger than those two roundings is still a finding.
+
+    The rule's severity is WARN, so a disagreement is recorded as ``warn``
+    for review, never as a ``fail``.
     """
     del scope
     compared = _count(
@@ -2849,7 +2854,7 @@ def bls_derived_annual_reconciliation(
            AND derived.value IS NOT NULL
            AND provider.value IS NOT NULL
            AND ABS(derived.value - provider.value) > GREATEST(
-                   0.5 * POWER(10::NUMERIC, -COALESCE(
+                   POWER(10::NUMERIC, -COALESCE(
                        LENGTH(SUBSTRING(provider.source_value
                                         FROM '^-?[0-9]*[.]([0-9]+)$')),
                        0
@@ -2862,7 +2867,7 @@ def bls_derived_annual_reconciliation(
     return [
         RuleOutcome(
             "gold_bls.derived_calendar_rollup",
-            "fail" if disagreements else "pass",
+            "warn" if disagreements else "pass",
             observed_count=total,
             expected_count=0,
             evidence=disagreements[:EVIDENCE_LIMIT],
