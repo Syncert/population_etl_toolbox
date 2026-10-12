@@ -62,13 +62,29 @@ def _code(text: str) -> str:
     return text.strip().strip('"').strip()
 
 
-def _geography(code: str) -> tuple[str, str] | None:
+def _geography(code: str, kind: str = "county") -> tuple[str, str] | None:
     """(geo_type, canonical geo_id), or None for BEA's own geographies."""
     if not re.fullmatch(r"\d{5}", code):
         raise ValueError(f"GeoFIPS {code!r} is not five digits")
     if code == "00000":
         return "nation", "us:1"
+    if kind == "metro":
+        # The nation's nonmetropolitan portion is BEA's own area; every other
+        # code in the metro table is the CBSA's OMB code.
+        if code == "00999":
+            return "provider_area", f"area:bea:{code}"
+        return "metro", f"cbsa:{code}"
     state, rest = code[:2], code[2:]
+    if kind == "portion":
+        # `ss998` and `ss999` are a state's metropolitan and nonmetropolitan
+        # portions, which BEA defines; nothing else is in the table.
+        if rest in {"998", "999"} and not state.startswith("9"):
+            return "provider_area", f"area:bea:{code}"
+        return None
+    if kind == "state":
+        if rest == "000" and not state.startswith("9"):
+            return "state", f"state:{state}"
+        return None
     if state.startswith("9"):
         return None
     if rest == "000":
@@ -144,7 +160,7 @@ def parse_table(payload: bytes, *, table: BeaTable) -> ParsedTable:
             out_of_scope += 1
             continue
         try:
-            geography = _geography(_code(row[0]))
+            geography = _geography(_code(row[0]), table.geography)
         except ValueError as exc:
             quarantined.append(BeaQuarantine(index, "unreadable_geography", str(exc)))
             continue
@@ -156,6 +172,9 @@ def parse_table(payload: bytes, *, table: BeaTable) -> ParsedTable:
         for column, year in year_columns:
             text = row[column].strip()
             status = CELL_CODES.get(text)
+            if table.absent_area_value is not None and text == table.absent_area_value:
+                # BEA's mark for a portion with no counties, not a price level.
+                status = "not_meaningful"
             if status:
                 value = None
             else:

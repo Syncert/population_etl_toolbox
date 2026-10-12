@@ -118,6 +118,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "CENSUS_BPS": "gold_ddl_census_bps",
     "BLS_QCEW": "gold_ddl_bls_qcew",
     "BEA": "gold_ddl_bea",
+    "EIA": "gold_ddl_eia",
 }
 
 

@@ -22,7 +22,9 @@ from __future__ import annotations
 #: * ``BLS`` -- ``bls/geography.py`` parses a LAUS area code to ``state`` or
 #:   ``county`` and to nothing else ("LAUS has no national series"); the
 #:   national CPS/CES series carry ``us:1``, which
-#:   ``gold_bls.fact_bls_observation`` reads as ``NATIONAL``.
+#:   ``gold_bls.fact_bls_observation`` reads as ``NATIONAL``; the CPI and
+#:   average-price series carry a Census region or division or a BLS metro
+#:   (``silver_bls/geography_parser.py``, grocery-and-gasoline-prices).
 #: * ``CDC`` -- ``cdc/registry.py`` declares ``geography_levels`` per asset:
 #:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
@@ -36,13 +38,17 @@ from __future__ import annotations
 #:   ``us``, ``state`` and ``county`` only, and ``silver_census_sae`` closes
 #:   ``geo_type`` to ``nation``, ``state`` and ``county``.
 #: * ``BEA`` -- ``bea/registry.py`` loads the nation, states and counties
-#:   and counts BEA's regions and combined areas out of scope.
+#:   and counts BEA's regions and combined areas out of scope; its price
+#:   parities add CBSAs and BEA's own state metropolitan and nonmetropolitan
+#:   portions (grocery-and-gasoline-prices).
 #: * ``CENSUS_PEP`` -- ``silver_pep/transform.py`` maps summary levels 010,
 #:   040, 050 and 162 to nation, state, county and place, and every other
 #:   level to ``unsupported``, which reaches no served row.
 #: * ``BLS_QCEW`` -- ``bls_qcew/registry.py`` registers aggregation levels
 #:   10-14, 50-54 and 70-74 (national, state, county) and counts every other
 #:   level -- MSAs and the "unknown county" areas -- out of scope.
+#: * ``EIA`` -- ``eia/registry.py`` classifies ``NUS`` as the nation, ``S`` codes
+#:   as states by USPS code, and PADDs and cities as EIA's own provider areas.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -50,14 +56,24 @@ from __future__ import annotations
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
-    "BEA": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "BEA": frozenset({"NATIONAL", "STATE", "METRO", "COUNTY", "PROVIDER_AREA"}),
+    "BLS": frozenset(
+        {
+            "NATIONAL",
+            "CENSUS_REGION",
+            "CENSUS_DIVISION",
+            "STATE",
+            "COUNTY",
+            "PROVIDER_AREA",
+        }
+    ),
     "BLS_QCEW": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),

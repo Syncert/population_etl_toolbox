@@ -483,6 +483,35 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "test_top_origins_and_destinations_reach_the_api_with_withheld_categories"
         ),
     ),
+    DataProductE2E(
+        product_id="eia.retail_gasoline",
+        source="EIA",
+        publisher_schema="gold_eia",
+        datasets=("petroleum/pri/gnd",),
+        fixtures=(
+            "tests/fixtures/eia/weekly_2026-08-31_2026-09-07.json",
+            "tests/fixtures/eia/duoarea_facet.json",
+        ),
+        serving_relations=(
+            "gold_eia.observation_revision",
+            "gold_eia.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_eia_pipeline.py::"
+            "test_weekly_gasoline_reaches_the_neutral_api_at_every_area_kind"
+        ),
+        api_absence_reason=(
+            "EIA retail gasoline publishes no source-specific HTTP route: each "
+            "row is the neutral observation shape with its grade, EIA series id, "
+            "area code and name as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
 )
 
 

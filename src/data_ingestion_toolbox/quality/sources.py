@@ -869,6 +869,134 @@ def irs_migration_total_reconciliation(
     ]
 
 
+def bls_bimonthly_cadence(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-BLS-009 — an every-other-month CPI metro has no two consecutive months."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_bls.fact_labor_statistics
+         WHERE program = 'cu' AND geo_level = 'provider_area'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_bls.fact_labor_statistics", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT later.series_id, later.duration_start
+          FROM silver_bls.fact_labor_statistics AS later
+          JOIN silver_bls.fact_labor_statistics AS earlier
+            ON earlier.series_id = later.series_id
+           AND earlier.duration_start = (later.duration_start - INTERVAL '1 month')::DATE
+           AND earlier.period ~ '^M(0[1-9]|1[0-2])$'
+         WHERE later.program = 'cu'
+           AND later.geo_level = 'provider_area'
+           AND later.period ~ '^M(0[1-9]|1[0-2])$'
+           AND SUBSTRING(later.series_id FROM 5 FOR 4) NOT IN ('S12A', 'S23A', 'S49A')
+           AND later.value IS NOT NULL
+           AND earlier.value IS NOT NULL
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_bls.fact_labor_statistics",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def eia_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-EIA-002 — every captured row is replayed; no read is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.eia_read")
+    if total == 0:
+        return [RuleOutcome("control.eia_read", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT read.run_id, read.status, read.row_total, replayed.rows_kept
+          FROM control.eia_read AS read
+          LEFT JOIN LATERAL (
+                SELECT (SELECT COUNT(*) FROM silver_eia.price_revision AS revision
+                         WHERE revision.run_id = read.run_id)
+                     + (SELECT COUNT(*) FROM silver_eia.observation_quarantine AS rejected
+                         WHERE rejected.run_id = read.run_id AND rejected.row_index >= 0)
+                       AS rows_kept
+          ) AS replayed ON TRUE
+         WHERE read.status = 'captured'
+            OR (read.status IN ('silver_ready', 'published')
+                AND replayed.rows_kept <> read.row_total)
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.eia_read",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bea_price_parity_reference(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BEA-005 — the nation's all-items price parity is 100 in every year."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_bea.fact_observation
+         WHERE table_code IN ('SARPP', 'MARPP', 'PARPP')
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_bea.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.table_code, fact.year, fact.value_source
+          FROM silver_bea.fact_observation AS fact
+          JOIN control.bea_table_capture AS capture
+            ON capture.capture_id = fact.capture_id
+         WHERE fact.table_code IN ('SARPP', 'MARPP', 'PARPP')
+           AND fact.line_code = '1'
+           AND fact.geo_id = 'us:1'
+           AND capture.status = 'published'
+           -- The newest published release of each table's year.
+           AND fact.retrieved_at = (
+                SELECT MAX(other.retrieved_at)
+                  FROM silver_bea.fact_observation AS other
+                  JOIN control.bea_table_capture AS other_capture
+                    ON other_capture.capture_id = other.capture_id
+                 WHERE other.table_code = fact.table_code
+                   AND other.line_code = '1'
+                   AND other.geo_id = 'us:1'
+                   AND other.year = fact.year
+                   AND other_capture.status = 'published'
+           )
+           AND fact.value IS DISTINCT FROM 100
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_bea.fact_observation",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1958,6 +2086,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BLS-004": bls_geography_accountability,
     "DQ-BLS-007": bls_contract_conformance,
     "DQ-BLS-008": bls_derived_annual_reconciliation,
+    "DQ-BLS-009": bls_bimonthly_cadence,
     "DQ-FRED-002": fred_slice_reconciliation,
     "DQ-FRED-003": fred_missing_marker_and_series_ownership,
     "DQ-FRED-004": fred_observation_dates_within_the_published_range,
@@ -1975,6 +2104,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-BEA-002": bea_table_reconciliation,
     "DQ-QCEW-002": qcew_slice_reconciliation,
+    "DQ-BEA-005": bea_price_parity_reference,
+    "DQ-EIA-002": eia_read_reconciliation,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

@@ -74,14 +74,16 @@ class GeographyRecord:
     longitude: float | None = None
     tract_code: str | None = None
     zcta_code: str | None = None
+    #: A region, division, CBSA or provider-area code (grocery-and-gasoline-prices).
+    area_code: str | None = None
 
     @property
     def attribute_checksum(self) -> str:
         fields = asdict(self)
-        # The two sub-county codes are left out when absent, so every
+        # The sub-county and area codes are left out when absent, so every
         # nation, state, county and place keeps the checksum it had before
         # they existed and a replay writes no spurious new version.
-        for name in ("tract_code", "zcta_code"):
+        for name in ("tract_code", "zcta_code", "area_code"):
             if fields[name] is None:
                 del fields[name]
         payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
@@ -479,6 +481,7 @@ class GeographyRepository:
                     row.geography_vintage,
                     row.tract_code,
                     row.zcta_code,
+                    row.area_code,
                 ]
                 continue
             existing[6] = min(existing[6], row.geography_vintage)
@@ -490,7 +493,7 @@ class GeographyRepository:
             INSERT INTO silver_ref.dim_geo_entity (
                 geo_id, geo_type, census_geoid, state_fips, county_fips,
                 place_fips, first_seen_version, last_seen_version,
-                tract_code, zcta_code
+                tract_code, zcta_code, area_code
             ) VALUES %s
             ON CONFLICT (geo_id) DO UPDATE SET
                 first_seen_version = LEAST(
@@ -505,7 +508,7 @@ class GeographyRepository:
             list(merged.values()),
             template=(
                 "(%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,"
-                "%s::INTEGER,%s::INTEGER,%s::TEXT,%s::TEXT)"
+                "%s::INTEGER,%s::INTEGER,%s::TEXT,%s::TEXT,%s::TEXT)"
             ),
             page_size=WRITE_PAGE_SIZE,
         )

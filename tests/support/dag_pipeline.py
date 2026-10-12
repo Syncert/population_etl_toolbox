@@ -44,6 +44,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "census_bps_files",
     "bls_qcew_api",
     "bea_files",
+    "eia_api",
 )
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
@@ -340,6 +341,7 @@ FIXTURE_CREDENTIALS: dict[str, str] = {
     "CDC_SOCRATA_APP_TOKEN": "fixture-cdc-token",
     "FBI_CDE_API_KEY": "fixture-fbi-cde-key",
     "USDA_NASS_API_KEY": "FIXTURE-USDA-NASS-KEY-0000-1111-2222",
+    "EIA_API_KEY": "fixture-eia-key",
 }
 
 
@@ -478,6 +480,9 @@ def assert_dag_run_succeeded(dag_run: Any, dag_id: str) -> dict[str, str]:
     return states
 
 
+AREA_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "silver_ref" / "area"
+
+
 def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace the TIGER/Gazetteer downloads with one bounded fixture vintage.
 
@@ -502,11 +507,29 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
         "resolve_historical_county_years",
         lambda *_args, **_kwargs: [FIXTURE_GEOGRAPHY_VINTAGE],
     )
-    monkeypatch.setattr(
-        geography_pipeline,
-        "_download_with_retry",
-        lambda client, url, **_kwargs: stub_response(url.encode(), url=url),
-    )
+
+    def download(client: Any, url: str, **_kwargs: Any) -> Any:
+        # The region and CBSA files are parsed for real, from the reviewed
+        # excerpts (grocery-and-gasoline-prices); every other asset's parser
+        # is replaced below.
+        for name in ("NST-EST2024-ALLDATA", "cbsa-est2024-alldata"):
+            if url.endswith(f"{name}.csv"):
+                return stub_response(
+                    (AREA_FIXTURES / f"{name}.excerpt.csv").read_bytes(), url=url
+                )
+        if url.startswith("https://apps.bea.gov/regional/zip/"):
+            name = url.rsplit("/", 1)[-1]
+            return stub_response(
+                (AREA_FIXTURES.parents[1] / "bea" / name).read_bytes(), url=url
+            )
+        if url.endswith("/cu/cu.area"):
+            return stub_response(
+                (AREA_FIXTURES.parent / "provider_areas" / "bls_cu.area").read_bytes(),
+                url=url,
+            )
+        return stub_response(url.encode(), url=url)
+
+    monkeypatch.setattr(geography_pipeline, "_download_with_retry", download)
 
     def parse_attributes(
         _payload: bytes, *, geo_type: str, geography_vintage: int
@@ -733,6 +756,22 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(nass_capture, "fetch_slice_count", count)
     monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
+
+
+def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed EIA answers: the gasoline window and the area facet."""
+    from data_ingestion_toolbox.eia import client as eia_client
+
+    window = (FIXTURE_ROOT / "eia" / "weekly_2026-08-31_2026-09-07.json").read_bytes()
+    facet = (FIXTURE_ROOT / "eia" / "duoarea_facet.json").read_bytes()
+
+    def get(self: Any, route: str, params: Any, **_kwargs: Any) -> Any:
+        payload = facet if route.endswith("facet/duoarea/") else window
+        return eia_client.EiaResponse(
+            route, payload, {"content-type": "application/json"}, 200
+        )
+
+    monkeypatch.setattr(eia_client.EiaClient, "get", get)
 
 
 def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1095,6 +1134,9 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
 BLS_FIXTURE_AREA = {"area_code": "ST1100000000000", "area_text": "District of Columbia"}
 
 
+PRICE_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "bls" / "price"
+
+
 def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed BLS fixtures instead of the live provider.
 
@@ -1168,7 +1210,20 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     }
 
+    # The price programs' series lists are BLS's own excerpts, so the
+    # orchestrated run selects the regional and metro series from them as
+    # production does (grocery-and-gasoline-prices).
+    price_lists = {
+        "/cu/cu.series": "cu.series.excerpt",
+        "/ap/ap.series": "ap.series.excerpt",
+    }
+
     def read_tsv(url: str) -> Any:
+        for suffix, name in price_lists.items():
+            if str(url).endswith(suffix):
+                return pl.read_csv(
+                    PRICE_FIXTURES / name, separator="	", infer_schema_length=0
+                )
         for suffix, frame in catalogues.items():
             if str(url).endswith(suffix):
                 return frame
@@ -1320,6 +1375,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("cdc", stub_cdc_socrata),
         ("usda_nass", stub_usda_nass_quick_stats),
         ("bea", stub_bea_regional),
+        ("eia", stub_eia),
         ("census_pep", stub_census_pep_downloads),
         ("fbi_ucr", stub_fbi_cde),
     )

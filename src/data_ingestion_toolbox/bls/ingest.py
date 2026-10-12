@@ -126,6 +126,21 @@ def get_curated_series_for_program(program: str) -> List[str]:
     return CONFIG.curated_by_program.get(program, [])
 
 
+def series_for_program(program: str) -> List[str]:
+    """Every full series id requested for a non-LAUS program."""
+    from .price_series import PRICE_ITEMS, read_price_series
+
+    series = list(get_curated_series_for_program(program))
+    if program in PRICE_ITEMS:
+        conn = _get_pg_connection()
+        try:
+            with conn.cursor() as cursor:
+                series.extend(read_price_series(cursor, program))
+        finally:
+            conn.close()
+    return sorted(dict.fromkeys(series))
+
+
 def expand_laus_series_ids(
     measure_codes: List[str],
     geo_level: str,
@@ -474,8 +489,10 @@ def ingest_slice(
             seasonal="U",  # Counties are typically not seasonally adjusted
         )
     else:
-        # Other programs use full series IDs
-        series_ids = get_curated_series_for_program(program)
+        # Other programs use full series IDs: the curated ones, and for a
+        # price program the ones BLS's series list publishes for its items
+        # in the price areas (grocery-and-gasoline-prices).
+        series_ids = series_for_program(program)
         if not series_ids:
             logger.info(f"No curated series for program {program}")
             return 0

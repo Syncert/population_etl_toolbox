@@ -32,6 +32,7 @@ from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transfo
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
 from tests.support import bea as bea_support
+from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
@@ -723,6 +724,11 @@ BLS_GRAIN_ROWS: tuple[tuple[str, str, int], ...] = (
     ("us:1", "NATIONAL", 1234),
     ("state:93", "STATE", 567),
     ("state:93|county:001", "COUNTY", 89),
+    # The grains BLS publishes its regional and metro prices at
+    # (grocery-and-gasoline-prices), swept like every other grain.
+    ("region:2", "CENSUS_REGION", 321),
+    ("division:3", "CENSUS_DIVISION", 432),
+    ("area:bls_cpi:S35A", "PROVIDER_AREA", 543),
 )
 
 
@@ -865,11 +871,32 @@ def published_bea_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
 ) -> str:
-    """Publish the BEA personal income lines through their real pipeline."""
+    """Publish the BEA personal income lines and metro price parities through their real pipeline.
+
+    The metro parities are what reach the `METRO` and `PROVIDER_AREA` grains
+    (grocery-and-gasoline-prices).
+    """
     factory = bea_support.reviewed_warehouse(postgres_connection_factory, request)
     bea_support.run_to_gold(factory, "CAINC1")
+    bea_support.run_to_gold(factory, "MARPP")
     harvest_publisher(factory, Publisher("gold_bea"))
     return _one_published_code(factory, "BEA")
+
+
+@pytest.fixture
+def published_eia_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish EIA's weekly gasoline grades through their real pipeline.
+
+    The fixture window reaches the nation, two states and EIA's PADDs and
+    cities, so it publishes every grain EIA can (grocery-and-gasoline-prices).
+    """
+    factory = eia_support.reviewed_warehouse(postgres_connection_factory, request)
+    eia_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_eia"))
+    return _one_published_code(factory, "EIA")
 
 
 @pytest.fixture
@@ -990,6 +1017,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
+    published_eia_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -1056,6 +1084,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
         ("BEA", published_bea_metric),
+        ("EIA", published_eia_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1202,6 +1231,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_bea_metric: str,
+    published_eia_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

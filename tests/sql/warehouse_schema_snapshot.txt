@@ -53,7 +53,7 @@ r control.bea_table_capture
     constraint bea_table_capture_pkey PRIMARY KEY (run_id)
     constraint bea_table_capture_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint bea_table_capture_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
-    constraint bea_table_capture_table_code_check CHECK ((table_code ~ '^CA[A-Z0-9]+$'::text))
+    constraint bea_table_capture_table_code_check CHECK ((table_code ~ '^(CA|SA|MA|PA)[A-Z0-9]+$'::text))
     index bea_table_capture_capture_idx CREATE INDEX bea_table_capture_capture_idx ON control.bea_table_capture USING btree (capture_id)
     index bea_table_capture_pkey CREATE UNIQUE INDEX bea_table_capture_pkey ON control.bea_table_capture USING btree (run_id)
 
@@ -366,6 +366,43 @@ v control.data_quality_source_status
     body            FROM control.data_quality_run latest
     body           WHERE latest.source_code = run.source_code))
     body   GROUP BY run.source_code, run.quality_run_id;
+
+r control.eia_page
+    column run_id uuid NOT NULL
+    column page_index integer NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    constraint eia_page_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint eia_page_capture_id_key UNIQUE (capture_id)
+    constraint eia_page_page_index_check CHECK ((page_index >= 0))
+    constraint eia_page_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint eia_page_pkey PRIMARY KEY (run_id, page_index)
+    constraint eia_page_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.eia_read(run_id)
+    index eia_page_capture_id_key CREATE UNIQUE INDEX eia_page_capture_id_key ON control.eia_page USING btree (capture_id)
+    index eia_page_pkey CREATE UNIQUE INDEX eia_page_pkey ON control.eia_page USING btree (run_id, page_index)
+
+r control.eia_read
+    column run_id uuid NOT NULL
+    column start_week date NOT NULL
+    column end_week date
+    column page_count integer NOT NULL
+    column row_total integer NOT NULL
+    column payload_checksum text NOT NULL
+    column parsed_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint eia_read_page_count_check CHECK ((page_count >= 1))
+    constraint eia_read_parsed_row_count_check CHECK ((parsed_row_count >= 0))
+    constraint eia_read_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint eia_read_pkey PRIMARY KEY (run_id)
+    constraint eia_read_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint eia_read_row_total_check CHECK ((row_total >= 0))
+    constraint eia_read_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint eia_read_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint eia_read_window_ordered CHECK (((end_week IS NULL) OR (end_week >= start_week)))
+    index eia_read_pkey CREATE UNIQUE INDEX eia_read_pkey ON control.eia_read USING btree (run_id)
 
 r control.fbi_ucr_release
     column run_id uuid NOT NULL
@@ -1657,7 +1694,7 @@ r gold_bls.dim_bls_series
     column semantic_notes text
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     constraint dim_bls_series_bls_survey_sk_fkey FOREIGN KEY (bls_survey_sk) REFERENCES gold_bls.dim_bls_survey(bls_survey_sk)
-    constraint dim_bls_series_measure_category_check CHECK ((measure_category = ANY (ARRAY['EMPLOYMENT'::text, 'UNEMPLOYMENT'::text, 'LABOR_FORCE'::text, 'PARTICIPATION'::text, 'POPULATION'::text, 'EARNINGS'::text, 'HOURS'::text, 'PRICE_INDEX'::text, 'OPENINGS'::text, 'HIRES'::text, 'QUITS'::text, 'LAYOFFS'::text, 'SEPARATIONS'::text, 'OTHER'::text])))
+    constraint dim_bls_series_measure_category_check CHECK ((measure_category = ANY (ARRAY['EMPLOYMENT'::text, 'UNEMPLOYMENT'::text, 'LABOR_FORCE'::text, 'PARTICIPATION'::text, 'POPULATION'::text, 'EARNINGS'::text, 'HOURS'::text, 'PRICE_INDEX'::text, 'AVERAGE_PRICE'::text, 'OPENINGS'::text, 'HIRES'::text, 'QUITS'::text, 'LAYOFFS'::text, 'SEPARATIONS'::text, 'OTHER'::text])))
     constraint dim_bls_series_pkey PRIMARY KEY (bls_series_sk)
     constraint dim_bls_series_series_id_key UNIQUE (series_id)
     constraint dim_bls_series_value_type_check CHECK ((value_type = ANY (ARRAY['LEVEL'::text, 'RATE'::text, 'INDEX'::text, 'PERCENT'::text, 'CURRENCY'::text, 'RATIO'::text, 'OTHER'::text])))
@@ -3477,6 +3514,172 @@ v gold_census_sae.metric_publisher
     body            FROM gold_census_sae.estimate_latest latest
     body              JOIN control.census_sae_slice slice ON slice.capture_id = latest.capture_id
     body           WHERE latest.dataset_id = measure.dataset_id AND latest.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
+
+v gold_eia.measure_export
+    column source_object_key text
+    column product text
+    column unit text
+    body SELECT DISTINCT product AS source_object_key,
+    body     product,
+    body     'U.S. dollars per gallon'::text AS unit
+    body    FROM silver_eia.fact_retail_price fact;
+
+v gold_eia.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'EIA'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     grade || ' retail price, weekly (EIA-878, U.S. dollars per gallon)'::text AS metric_display_name,
+    body     'U.S. dollars per gallon'::text AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     valid_geo_grains,
+    body     ARRAY['WEEKLY'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_eia', 'relation', 'observation_revision', 'key', metric_key) AS physical_lineage,
+    body     source_watermark,
+    body     source_run_id,
+    body     publication_time,
+    body     'U.S. Energy Information Administration, Gasoline and Diesel Fuel Update (EIA-878)'::text AS source_name,
+    body     'government-energy-statistics'::text AS source_type,
+    body     'https://www.eia.gov/petroleum/gasdiesel/'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             min(latest.grade) AS grade,
+    body             max(latest.week_start)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(read.published_at) AS publication_time
+    body            FROM gold_eia.observation_latest latest
+    body              JOIN control.eia_read read ON read.run_id = latest.run_id
+    body           GROUP BY latest.metric_key) served
+    body   WHERE publication_time IS NOT NULL;
+
+v gold_eia.observation_latest
+    column metric_key text
+    column product text
+    column grade text
+    column series_id text
+    column week_start date
+    column period_start date
+    column period_end date
+    column duoarea text
+    column area_name text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column unit text
+    column value_source text
+    column value numeric
+    column value_status text
+    column retrieved_at timestamp with time zone
+    column release_date date
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (series_id, week_start) metric_key,
+    body     product,
+    body     grade,
+    body     series_id,
+    body     week_start,
+    body     period_start,
+    body     period_end,
+    body     duoarea,
+    body     area_name,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     unit,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     retrieved_at,
+    body     release_date,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_eia.observation_revision revision
+    body   ORDER BY series_id, week_start, retrieved_at DESC, capture_id DESC;
+
+v gold_eia.observation_revision
+    column metric_key text
+    column product text
+    column grade text
+    column series_id text
+    column week_start date
+    column period_start date
+    column period_end date
+    column duoarea text
+    column area_name text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column unit text
+    column value_source text
+    column value numeric
+    column value_status text
+    column retrieved_at timestamp with time zone
+    column release_date date
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT fact.product AS metric_key,
+    body     fact.product,
+    body         CASE fact.product
+    body             WHEN 'EPMR'::text THEN 'Regular gasoline'::text
+    body             WHEN 'EPMM'::text THEN 'Midgrade gasoline'::text
+    body             WHEN 'EPMP'::text THEN 'Premium gasoline'::text
+    body             WHEN 'EPM0'::text THEN 'All grades gasoline'::text
+    body             ELSE NULL::text
+    body         END AS grade,
+    body     fact.series_id,
+    body     fact.week_start,
+    body     fact.week_start AS period_start,
+    body     fact.week_start + 6 AS period_end,
+    body     fact.duoarea,
+    body     fact.area_name,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     'U.S. dollars per gallon'::text AS unit,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.retrieved_at,
+    body     fact.retrieved_at::date AS release_date,
+    body     fact.retrieved_at::date::text AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_eia.fact_retail_price fact
+    body      JOIN control.eia_read read ON read.run_id = fact.run_id
+    body   WHERE read.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND fact.geo_id IS NOT NULL;
 
 v gold_fbi.agency_geography
     column relationship_sk bigint
@@ -5996,7 +6199,7 @@ r silver_bea.dim_line
     column methodology_url text NOT NULL
     column parser_contract_version text NOT NULL
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text])))
+    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text, 'price_level_us_100'::text])))
     constraint dim_line_line_code_check CHECK ((line_code ~ '^[0-9]+$'::text))
     constraint dim_line_pkey PRIMARY KEY (table_code, line_code)
     index dim_line_pkey CREATE UNIQUE INDEX dim_line_pkey ON silver_bea.dim_line USING btree (table_code, line_code)
@@ -6021,7 +6224,7 @@ r silver_bea.fact_observation
     constraint bea_fact_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
     constraint bea_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
-    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'metro'::text, 'provider_area'::text])))
     constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
     constraint fact_observation_pkey PRIMARY KEY (table_code, line_code, geo_id, year, capture_id)
     constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
@@ -6066,7 +6269,7 @@ r silver_bea.observation_revision
     constraint bea_revision_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
     constraint bea_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
-    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'metro'::text, 'provider_area'::text])))
     constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, year)
     constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
@@ -6712,6 +6915,89 @@ r silver_census_sae.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index census_sae_revision_run_idx CREATE INDEX census_sae_revision_run_idx ON silver_census_sae.observation_revision USING btree (run_id)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_sae.observation_revision USING btree (capture_id, source_row_index, measure_id)
+
+r silver_eia.fact_retail_price
+    column series_id text NOT NULL
+    column week_start date NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column product text NOT NULL
+    column duoarea text NOT NULL
+    column area_name text
+    column geo_type text NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint eia_fact_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint eia_fact_resolved_has_geography CHECK (((geography_status = 'resolved'::text) = ((geo_sk IS NOT NULL) AND (geo_id IS NOT NULL))))
+    constraint eia_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint fact_retail_price_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_retail_price_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'provider_area'::text])))
+    constraint fact_retail_price_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_retail_price_pkey PRIMARY KEY (series_id, week_start, capture_id)
+    constraint fact_retail_price_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_retail_price_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
+    constraint fact_retail_price_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index eia_fact_lookup_idx CREATE INDEX eia_fact_lookup_idx ON silver_eia.fact_retail_price USING btree (series_id, week_start)
+    index eia_fact_run_idx CREATE INDEX eia_fact_run_idx ON silver_eia.fact_retail_price USING btree (run_id)
+    index fact_retail_price_pkey CREATE UNIQUE INDEX fact_retail_price_pkey ON silver_eia.fact_retail_price USING btree (series_id, week_start, capture_id)
+
+r silver_eia.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_eia.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_row_index_error_code_key UNIQUE (capture_id, row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_row_index_check CHECK ((row_index >= '-1'::integer))
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    index observation_quarantine_capture_id_row_index_error_code_key CREATE UNIQUE INDEX observation_quarantine_capture_id_row_index_error_code_key ON silver_eia.observation_quarantine USING btree (capture_id, row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_eia.observation_quarantine USING btree (quarantine_sk)
+
+r silver_eia.price_revision
+    column capture_id uuid NOT NULL
+    column row_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column series_id text NOT NULL
+    column week_start date NOT NULL
+    column duoarea text NOT NULL
+    column area_name text
+    column product text NOT NULL
+    column product_name text
+    column units text NOT NULL
+    column geo_type text NOT NULL
+    column geo_id text
+    column state_usps text
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint eia_revision_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint eia_revision_state_named CHECK (((geo_type = 'state'::text) = (state_usps IS NOT NULL)))
+    constraint eia_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint price_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint price_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'provider_area'::text])))
+    constraint price_revision_pkey PRIMARY KEY (capture_id, row_index)
+    constraint price_revision_row_index_check CHECK ((row_index >= 0))
+    constraint price_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint price_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint price_revision_state_usps_check CHECK (((state_usps IS NULL) OR (state_usps ~ '^[A-Z]{2}$'::text)))
+    constraint price_revision_units_check CHECK ((units = '$/GAL'::text))
+    constraint price_revision_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
+    constraint price_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index eia_revision_run_idx CREATE INDEX eia_revision_run_idx ON silver_eia.price_revision USING btree (run_id)
+    index price_revision_pkey CREATE UNIQUE INDEX price_revision_pkey ON silver_eia.price_revision USING btree (capture_id, row_index)
 
 r silver_fbi.agency_geography_relationship
     column relationship_sk bigint NOT NULL DEFAULT nextval('silver_fbi.agency_geography_relationship_relationship_sk_seq'::regclass)
@@ -7846,13 +8132,14 @@ r silver_ref.dim_geo_entity
     column place_fips text
     column tract_code text
     column zcta_code text
+    column area_code text
     column provider_agency_code text
     column first_seen_version integer NOT NULL
     column last_seen_version integer NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     constraint dim_geo_entity_check CHECK ((last_seen_version >= first_seen_version))
-    constraint dim_geo_entity_check1 CHECK ((((geo_type = 'nation'::text) AND (geo_id = 'us:1'::text) AND (state_fips IS NULL)) OR ((geo_type = 'state'::text) AND (geo_id = ('state:'::text || state_fips))) OR ((geo_type = 'county'::text) AND (geo_id = ((('state:'::text || state_fips) || '|county:'::text) || county_fips))) OR ((geo_type = 'place'::text) AND (geo_id = ((('state:'::text || state_fips) || '|place:'::text) || place_fips))) OR ((geo_type = 'tract'::text) AND (county_fips IS NOT NULL) AND (tract_code IS NOT NULL) AND (geo_id = ((((('state:'::text || state_fips) || '|county:'::text) || county_fips) || '|tract:'::text) || tract_code))) OR ((geo_type = 'zcta'::text) AND (state_fips IS NULL) AND (zcta_code IS NOT NULL) AND (geo_id = ('zcta:'::text || zcta_code))) OR ((geo_type = 'agency'::text) AND (provider_agency_code IS NOT NULL))))
+    constraint dim_geo_entity_check1 CHECK ((((geo_type = 'nation'::text) AND (geo_id = 'us:1'::text) AND (state_fips IS NULL)) OR ((geo_type = 'state'::text) AND (geo_id = ('state:'::text || state_fips))) OR ((geo_type = 'county'::text) AND (geo_id = ((('state:'::text || state_fips) || '|county:'::text) || county_fips))) OR ((geo_type = 'place'::text) AND (geo_id = ((('state:'::text || state_fips) || '|place:'::text) || place_fips))) OR ((geo_type = 'tract'::text) AND (county_fips IS NOT NULL) AND (tract_code IS NOT NULL) AND (geo_id = ((((('state:'::text || state_fips) || '|county:'::text) || county_fips) || '|tract:'::text) || tract_code))) OR ((geo_type = 'zcta'::text) AND (state_fips IS NULL) AND (zcta_code IS NOT NULL) AND (geo_id = ('zcta:'::text || zcta_code))) OR ((geo_type = 'census_region'::text) AND (state_fips IS NULL) AND (area_code ~ '^[1-4]$'::text) AND (geo_id = ('region:'::text || area_code))) OR ((geo_type = 'census_division'::text) AND (state_fips IS NULL) AND (area_code ~ '^[1-9]$'::text) AND (geo_id = ('division:'::text || area_code))) OR ((geo_type = 'metro'::text) AND (state_fips IS NULL) AND (area_code ~ '^[0-9]{5}$'::text) AND (geo_id = ('cbsa:'::text || area_code))) OR ((geo_type = 'provider_area'::text) AND (state_fips IS NULL) AND (area_code ~ '^[a-z_]+:[A-Za-z0-9._-]+$'::text) AND (geo_id = ('area:'::text || area_code))) OR ((geo_type = 'agency'::text) AND (provider_agency_code IS NOT NULL))))
     constraint dim_geo_entity_county_fips_check CHECK (((county_fips IS NULL) OR (county_fips ~ '^[0-9]{3}$'::text)))
     constraint dim_geo_entity_geo_id_key UNIQUE (geo_id)
     constraint dim_geo_entity_geo_type_fkey FOREIGN KEY (geo_type) REFERENCES silver_ref.dim_geo_type(geo_type)

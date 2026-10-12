@@ -69,13 +69,29 @@ _GDP_SECTOR_LINES = (
 )
 
 
+#: RPP lines: all items, goods, services: housing, services: utilities,
+#: services: other.
+_RPP_LINES = ("1", "2", "3", "4", "5")
+
+
 @dataclass(frozen=True)
 class BeaTable:
     code: str
     title: str
     #: line code -> dollar basis (`current_dollars`, `chained_dollars`,
-    #: `per_capita_current_dollars`, `persons`).
+    #: `per_capita_current_dollars`, `persons`, `price_level_us_100`).
     lines: dict[str, str]
+    #: The areas a row may describe: `county` (the nation, states and
+    #: counties), `state` (the nation and states), `metro` (the nation, the
+    #: nation's nonmetropolitan portion and CBSAs), or `portion` (the nation
+    #: and each state's metropolitan and nonmetropolitan portions).
+    geography: str = "county"
+    #: The every-area CSV's name prefix where it is not `<TABLE>__ALL_AREAS_`.
+    member: str | None = None
+    #: A value BEA writes for an area that does not exist rather than a
+    #: number: a state with no nonmetropolitan county has `0.000` as the
+    #: price level of its nonmetropolitan portion.
+    absent_area_value: str | None = None
 
     @property
     def path(self) -> str:
@@ -84,7 +100,7 @@ class BeaTable:
     @property
     def member_prefix(self) -> str:
         """The every-area CSV inside the zip: `<TABLE>__ALL_AREAS_<first>_<last>.csv`."""
-        return f"{self.code}__ALL_AREAS_"
+        return self.member or f"{self.code}__ALL_AREAS_"
 
 
 TABLES: tuple[BeaTable, ...] = (
@@ -110,6 +126,33 @@ TABLES: tuple[BeaTable, ...] = (
         "CAGDP2",
         "GDP by county and industry, current dollars",
         {line: "current_dollars" for line in _GDP_SECTOR_LINES},
+    ),
+    # Regional price parities (grocery-and-gasoline-prices): the price level
+    # of an area relative to the nation (U.S. = 100) in one year -- all items,
+    # goods, housing, utilities and other services. There is no grocery line;
+    # food is inside goods. Comparable across areas within a year, not a
+    # measure of inflation.
+    BeaTable(
+        "SARPP",
+        "Regional price parities by state",
+        {line: "price_level_us_100" for line in _RPP_LINES},
+        geography="state",
+        member="SARPP_STATE_",
+    ),
+    BeaTable(
+        "MARPP",
+        "Regional price parities by metropolitan statistical area",
+        {line: "price_level_us_100" for line in _RPP_LINES},
+        geography="metro",
+        member="MARPP_MSA_",
+    ),
+    BeaTable(
+        "PARPP",
+        "Regional price parities by state metropolitan and nonmetropolitan portion",
+        {line: "price_level_us_100" for line in _RPP_LINES},
+        geography="portion",
+        member="PARPP_PORT_",
+        absent_area_value="0.000",
     ),
 )
 

@@ -394,18 +394,24 @@ _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
-#: sent straight back as the ``geo_level`` filter. Six words, because that
+#: sent straight back as the ``geo_level`` filter. Ten words, because that
 #: is what the warehouse serves: PLACE is Census PEP's and ACS's, AGENCY is
-#: FBI UCR's, and TRACT is the ACS 5-year estimates' (sub-county-geography).
-#: The reference also holds ZIP Code Tabulation Areas, but no source
-#: publishes at that grain yet, and a grain with no publisher answers every
-#: request empty.
+#: FBI UCR's, TRACT is the ACS 5-year estimates' (sub-county-geography), and
+#: CENSUS_REGION, CENSUS_DIVISION and PROVIDER_AREA are where BLS publishes
+#: its regional and metro prices, and METRO (a CBSA) and PROVIDER_AREA are
+#: where BEA publishes its regional price parities (grocery-and-gasoline-prices).
+#: The reference also holds ZIP Code Tabulation Areas, but no source publishes
+#: at that grain yet, and a grain with no publisher answers every request empty.
 GEO_GRAINS: tuple[str, ...] = (
     "NATIONAL",
+    "CENSUS_REGION",
+    "CENSUS_DIVISION",
     "STATE",
+    "METRO",
     "COUNTY",
     "PLACE",
     "TRACT",
+    "PROVIDER_AREA",
     "AGENCY",
 )
 
@@ -1140,6 +1146,53 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
             analysis_ready=True,
         ),
+        ObservationDispatch(
+            source_code="EIA",
+            latest_relation="gold_eia.observation_latest",
+            released_relation="gold_eia.observation_revision",
+            lineage_schema="gold_eia",
+            lineage_relation="observation_revision",
+            # One metric per grade, keyed by EIA's product code (`EIA:EPMR`
+            # regular), across every area EIA publishes it for
+            # (grocery-and-gasoline-prices).
+            lineage_key_column="metric_key",
+            # EIA publishes no release identity: a read is the day it was
+            # retrieved, and a revised week is a second reading.
+            release_expression="release_key",
+            release_order_expression="release_date",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("product", "product"),
+                ("grade", "grade"),
+                # EIA's own series id and area code and name: a PADD or a
+                # city is EIA's area, not a CBSA.
+                ("series_id", "series_id"),
+                ("duoarea", "duoarea"),
+                ("area_name", "area_name"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "week_start >= MAKE_DATE(:year_from, 1, 1)"),
+                ("year_to", "week_start <= MAKE_DATE(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "week_start"),
+            released_order=(
+                "week_start",
+                "geo_id",
+                "release_date",
+                "retrieved_at",
+                "capture_id",
+            ),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1441,6 +1494,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         SourceDiscovery(
             source_code="BEA",
             display_name="Bureau of Economic Analysis regional economic accounts",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="EIA",
+            display_name="U.S. Energy Information Administration retail gasoline prices",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),

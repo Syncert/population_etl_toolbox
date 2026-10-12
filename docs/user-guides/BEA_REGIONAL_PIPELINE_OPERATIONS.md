@@ -21,9 +21,13 @@ credential, unlike the BEA API, so the adapter holds no key.
 | `CAINC5N` | Earnings by NAICS industry, from 2001 | 81 farm earnings and the NAICS sector lines 100 to 2000 | current dollars |
 | `CAGDP1` | GDP summary, from 2001 | 1 real GDP, 3 current-dollar GDP | chained 2017 dollars, current dollars |
 | `CAGDP2` | GDP by industry, from 2001 | 1 all industries and the NAICS sector lines | current dollars |
+| `SARPP` | Regional price parities by state, from 2008 | 1 all items, 2 goods, 3 housing, 4 utilities, 5 other services | price level, nation = 100 |
+| `MARPP` | Regional price parities by metropolitan area, from 2008 | the same five lines | price level, nation = 100 |
+| `PARPP` | Regional price parities by state metropolitan and nonmetropolitan portion, from 2008 | the same five lines | price level, nation = 100 |
 
 Each zip holds one every-area CSV,
-`<TABLE>__ALL_AREAS_<first>_<last>.csv`, with one column per year and a
+`<TABLE>__ALL_AREAS_<first>_<last>.csv` (the price parity zips:
+`SARPP_STATE_`, `MARPP_MSA_`, `PARPP_PORT_`), with one column per year and a
 footer that states the release (`Last updated: February 5, 2026`). A file
 without that footer is refused whole: its rows are quarantined as
 `release_date_missing` and nothing is published from it.
@@ -45,6 +49,16 @@ Each of these is counted out of scope, not loaded:
 - BEA's combined areas: the Virginia independent cities merged with their
   surrounding county (`51901` to `51958`) and Kalawao merged into Maui
   (`15901`). They are BEA's own geography, not counties.
+
+The price parity tables describe other areas. `MARPP` rows are CBSAs by OMB
+code (`cbsa:<code>`, OMB bulletin 23-01, the delineation the shared
+reference loads), and `PARPP` rows and the nation's nonmetropolitan portion
+(`00999`) are BEA's own areas (`area:bea:<code>`), which the `silver_ref`
+DAG loads from the same two zips (`load_provider_areas`). Run `silver_ref`
+first: a parity whose area the reference does not hold is served
+`unmapped`. In `PARPP`, `0.000` is BEA's mark for a portion with no counties
+(Delaware, the District of Columbia, New Jersey and Rhode Island have no
+nonmetropolitan county): it is `not_meaningful` with no value.
 
 ## Schedule and scope
 
@@ -101,3 +115,5 @@ FROM gold_bea.observation_latest GROUP BY dollar_basis, value_status;
 - `DQ-BEA-002` is the table-ledger reconciliation and runs in the daily
   sweep.
 - `DQ-BEA-004` (year continuity) is declared and not yet executed.
+- `DQ-BEA-005` fails a price parity table whose national all-items parity is
+  not 100 in a published year; it runs in the weekly sweep.

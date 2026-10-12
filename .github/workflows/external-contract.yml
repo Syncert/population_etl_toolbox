@@ -42,6 +42,8 @@ jobs:
       # and Quick Stats refuses an unkeyed request.
       FBI_CDE_API_KEY: ${{ secrets.FBI_CDE_API_KEY }}
       USDA_NASS_API_KEY: ${{ secrets.USDA_NASS_API_KEY }}
+      # EIA API v2 weekly retail gasoline (grocery-and-gasoline-prices).
+      EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
       # Optional: raises CDC Socrata rate limits; anonymous reads still work.
       CDC_SOCRATA_APP_TOKEN: ${{ secrets.CDC_SOCRATA_APP_TOKEN }}
 

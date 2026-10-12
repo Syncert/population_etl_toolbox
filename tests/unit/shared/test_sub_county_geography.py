@@ -144,7 +144,9 @@ def test_existing_records_keep_their_checksums() -> None:
     legacy = {
         key: value
         for key, value in asdict(county).items()
-        if key not in {"tract_code", "zcta_code"}
+        # The fields every pre-sub-county record lacked; `area_code` joined
+        # them with the grocery-and-gasoline-prices areas (ETL-075).
+        if key not in {"tract_code", "zcta_code", "area_code"}
     }
     expected = hashlib.sha256(
         json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()

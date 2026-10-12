@@ -599,6 +599,47 @@ capita personal income and `BEA:CAGDP1:1` is real GDP.
   cities merged with their surrounding county, are not served: they are not
   counties.
 
+### Price levels, regional and metro prices
+
+Three sources describe what things cost below the nation, and none of them
+publishes a county's prices. A county page shows the figure of the area that
+contains it, labelled as that area.
+
+- **BEA regional price parities** (`BEA:SARPP:<line>`, `BEA:MARPP:<line>`,
+  `BEA:PARPP:<line>`, `dimensions.dollar_basis` `price_level_us_100`) are
+  price levels relative to the nation's all-items level, which is 100: line
+  1 all items, 2 goods, 3 housing, 4 utilities, 5 other services. A parity is
+  comparable across areas within one year and is **not inflation**. There is
+  no grocery line; food is inside goods. States are `STATE`, metropolitan
+  areas are `METRO` (`geo_id` `cbsa:<OMB code>`, the July 2023 delineation),
+  and the nation's and each state's metropolitan and nonmetropolitan
+  portions are `PROVIDER_AREA` (`area:bea:<code>`). A portion that does not
+  exist -- Delaware has no nonmetropolitan county -- is `not_meaningful` with
+  a `null` value, never a price level of zero.
+- **BLS regional and metro prices** add the CPI's food at home, gasoline,
+  food and energy indexes, and average prices in dollars (gasoline, eggs,
+  milk, bread, ground beef, chicken, bananas, coffee), for the four Census
+  regions (`CENSUS_REGION`, `region:<1-4>`), nine divisions
+  (`CENSUS_DIVISION`, `division:<1-9>`) and BLS's 23 metro areas
+  (`PROVIDER_AREA`, `area:bls_cpi:<code>`, BLS's own definitions, not
+  matched to a CBSA). Each metric is one series in one area. An area index
+  is relative to its own base period, which `unit` states, so index levels
+  are **not comparable across areas**: compare percent changes. Average
+  prices are dollars and are comparable. Most metros are published every
+  other month; a month BLS does not publish has no row.
+- **EIA weekly retail gasoline** (`EIA:EPMR` regular, `EIA:EPMM` midgrade,
+  `EIA:EPMP` premium, `EIA:EPM0` all grades) is the price in U.S. dollars
+  per gallon for the week starting `period_start` (a Monday), from EIA's
+  EIA-878 survey: the nation (`NATIONAL`), nine states (`STATE`), and EIA's
+  Petroleum Administration for Defense Districts, their sub-districts and ten
+  cities (`PROVIDER_AREA`, `area:eia:<code>`; a city's price is EIA's city,
+  not a metro area). `dimensions.duoarea` and `dimensions.series_id` are
+  EIA's own codes. A week with no reported price is `missing` with a `null`
+  value. EIA publishes no release identity, so `release` is the day the
+  warehouse read the week, and a week EIA later revised is a second reading
+  under `scope=as_released`. Source: U.S. Energy Information Administration,
+  Gasoline and Diesel Fuel Update.
+
 ### Reading a QCEW row: jobs located here, by industry and ownership
 
 `BLS_QCEW` serves the Bureau of Labor Statistics Quarterly Census of

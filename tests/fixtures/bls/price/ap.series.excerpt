@@ -1,0 +1,14 @@
+series_id        	area_code	item_code	series_title	footnote_codes	begin_year	begin_period	end_year	end_period
+APU0000701111    	0000	701111	Flour, white, all purpose, per lb. (453.6 gm) in U.S. city average, average price, not seasonally adjusted		1980	M01	2026	M08
+APU0000708111    	0000	708111	Eggs, grade A, large, per doz. in U.S. city average, average price, not seasonally adjusted		1980	M01	2026	M08
+APU000074714     	0000	74714	Gasoline, unleaded regular, per gallon/3.785 liters in U.S. city average, average price, not seasonally adjusted		1976	M01	2026	M08
+APU0200701111    	0200	701111	Flour, white, all purpose, per lb. (453.6 gm) in Midwest urban, average price, not seasonally adjusted		1980	M01	2025	M10
+APU0200708111    	0200	708111	Eggs, grade A, large, per doz. in Midwest urban, average price, not seasonally adjusted		1980	M01	2025	M10
+APU020074714     	0200	74714	Gasoline, unleaded regular, per gallon/3.785 liters in Midwest urban, average price, not seasonally adjusted		1978	M01	2026	M08
+APU023074714     	0230	74714	Gasoline, unleaded regular, per gallon/3.785 liters in East North Central, average price, not seasonally adjusted		2018	M01	2026	M08
+APU0400701111    	0400	701111	Flour, white, all purpose, per lb. (453.6 gm) in West urban, average price, not seasonally adjusted		1980	M01	2025	M10
+APU040074714     	0400	74714	Gasoline, unleaded regular, per gallon/3.785 liters in West urban, average price, not seasonally adjusted		1978	M01	2026	M08
+APUA10474714     	A104	74714	Gasoline, unleaded regular, per gallon/3.785 liters in Pittsburgh, PA, average price, not seasonally adjusted		1978	M01	1997	M12
+APUN10074714     	N100	74714	Gasoline, unleaded regular, per gallon/3.785 liters in Northeast - Size Class B/C, average price, not seasonally adjusted		1998	M01	2026	M08
+APUS12A74714     	S12A	74714	Gasoline, unleaded regular, per gallon/3.785 liters in New York-Newark-Jersey City, NY-NJ-PA, average price, not seasonally adjusted		1978	M01	2026	M08
+APUS35A74714     	S35A	74714	Gasoline, unleaded regular, per gallon/3.785 liters in Washington-Arlington-Alexandria, DC-VA-MD-WV, average price, not seasonally adjusted		1978	M01	2026	M08

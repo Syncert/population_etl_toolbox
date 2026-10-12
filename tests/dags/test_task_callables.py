@@ -414,7 +414,7 @@ def test_reference_dimension_task_callables_forward_declared_windows(
         (
             "bls_ingest",
             "dags.bls_ingest_dag",
-            ["la", "ln", "ce", "cu", "jt"],
+            ["la", "ln", "ce", "cu", "jt", "ap"],
             "_series_fingerprint",
         ),
         ("fred_ingest", "dags.fred_ingest_dag", ["macro"], "_series_fingerprint"),

@@ -20,6 +20,7 @@ from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
+from data_ingestion_toolbox.eia import schema as eia_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
 from data_ingestion_toolbox.census_bps import schema as bps_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
@@ -69,6 +70,13 @@ SOURCES = [
         "ingest_batch_",
         irs_migration_schema,
         "IRS_MIGRATION",
+    ),
+    (
+        "eia_retail_gasoline_ingest",
+        "ensure_eia_schema",
+        "ingest_batch_",
+        eia_schema,
+        "EIA",
     ),
 ]
 

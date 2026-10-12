@@ -156,6 +156,11 @@ def test_the_annual_grain_answers_the_providers_annual_average(
         "us:1",
         "state:93",
         "state:93|county:001",
+        # The BLS fixture also publishes a region, a division and a CPI area
+        # (grocery-and-gasoline-prices).
+        "region:2",
+        "division:3",
+        "area:bls_cpi:S35A",
     }
     assert all(item["value"] != ANNUAL_VALUE for item in native.json()["items"])
 
