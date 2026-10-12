@@ -31,6 +31,8 @@ from apps.api.registry import OBSERVATION_DISPATCH
 from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transform
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
+from tests.support import census_lodes as lodes_support
+from tests.support import census_cbp as cbp_support
 from tests.support import bea as bea_support
 from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
@@ -38,6 +40,14 @@ from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
 from tests.support import bls_qcew as qcew_support
+from tests.support import epa_aqs as aqs_support
+from tests.support import noaa_normals as normals_support
+from tests.support import fcc_bdc as bdc_support
+from tests.support import fema_nri as fema_support
+from tests.support import fhfa_hpi as hpi_support
+from tests.support import hud_fmr_il as hud_support
+from tests.support import nces_ccd as ccd_support
+from tests.support import usda_ers as ers_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -957,6 +967,127 @@ def published_irs_migration_metric(
     return _one_published_code(factory, "IRS_MIGRATION")
 
 
+@pytest.fixture
+def published_cbp_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the County Business Patterns metrics at all three grains."""
+    factory = cbp_support.reviewed_warehouse(postgres_connection_factory, request)
+    for kind in ("county", "state", "nation"):
+        cbp_support.run_to_gold(factory, kind, 2023)
+    harvest_publisher(factory, Publisher("gold_census_cbp"))
+    return _one_published_code(factory, "CENSUS_CBP")
+
+
+@pytest.fixture
+def published_lodes_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the LODES measures at county and state grains."""
+    factory = lodes_support.reviewed_warehouse(postgres_connection_factory, request)
+    lodes_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_census_lodes"))
+    return _one_published_code(factory, "CENSUS_LODES")
+
+
+@pytest.fixture
+def published_aqs_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the EPA county air quality figures."""
+    factory = aqs_support.reviewed_warehouse(postgres_connection_factory, request)
+    aqs_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_epa_aqs"))
+    return _one_published_code(factory, "EPA_AQS")
+
+
+@pytest.fixture
+def published_normals_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NOAA county climate normals."""
+    factory = normals_support.reviewed_warehouse(postgres_connection_factory, request)
+    normals_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_noaa_normals"))
+    return _one_published_code(factory, "NOAA_NORMALS")
+
+
+@pytest.fixture
+def published_bdc_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the FCC broadband availability summaries."""
+    factory = bdc_support.reviewed_warehouse(postgres_connection_factory, request)
+    bdc_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_fcc_bdc"))
+    return _one_published_code(factory, "FCC_BDC")
+
+
+@pytest.fixture
+def published_fema_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish both FEMA streams' county measures."""
+    factory = fema_support.reviewed_warehouse(postgres_connection_factory, request)
+    fema_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_fema_nri"))
+    return _one_published_code(factory, "FEMA_NRI")
+
+
+@pytest.fixture
+def published_hpi_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the FHFA county index measures."""
+    factory = hpi_support.reviewed_warehouse(postgres_connection_factory, request)
+    hpi_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_fhfa_hpi"))
+    return _one_published_code(factory, "FHFA_HPI")
+
+
+@pytest.fixture
+def published_hud_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish every registered HUD edition's county measures."""
+    factory = hud_support.reviewed_warehouse(postgres_connection_factory, request)
+    hud_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_hud_fmr_il"))
+    return _one_published_code(factory, "HUD_FMR_IL")
+
+
+@pytest.fixture
+def published_ccd_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NCES county and state school figures."""
+    factory = ccd_support.reviewed_warehouse(postgres_connection_factory, request)
+    ccd_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_nces_ccd"))
+    return _one_published_code(factory, "NCES_CCD")
+
+
+@pytest.fixture
+def published_ers_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish every registered ERS file's county measures."""
+    factory = ers_support.reviewed_warehouse(postgres_connection_factory, request)
+    ers_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_usda_ers"))
+    return _one_published_code(factory, "USDA_ERS")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -1012,6 +1143,16 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_ers_metric: str,
+    published_ccd_metric: str,
+    published_hpi_metric: str,
+    published_hud_metric: str,
+    published_fema_metric: str,
+    published_bdc_metric: str,
+    published_aqs_metric: str,
+    published_normals_metric: str,
+    published_lodes_metric: str,
+    published_cbp_metric: str,
     published_irs_migration_metric: str,
     published_sae_metric: str,
     published_bps_metric: str,
@@ -1083,8 +1224,18 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FBI_UCR", published_fbi_metric),
         ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
+        ("USDA_ERS", published_ers_metric),
+        ("NCES_CCD", published_ccd_metric),
+        ("FHFA_HPI", published_hpi_metric),
+        ("HUD_FMR_IL", published_hud_metric),
+        ("FEMA_NRI", published_fema_metric),
+        ("FCC_BDC", published_bdc_metric),
+        ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
+        ("CENSUS_CBP", published_cbp_metric),
+        ("CENSUS_LODES", published_lodes_metric),
+        ("NOAA_NORMALS", published_normals_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1230,8 +1381,18 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_qcew_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_fema_metric: str,
+    published_bdc_metric: str,
+    published_aqs_metric: str,
+    published_normals_metric: str,
     published_bea_metric: str,
     published_eia_metric: str,
+    published_cbp_metric: str,
+    published_lodes_metric: str,
+    published_hud_metric: str,
+    published_hpi_metric: str,
+    published_ccd_metric: str,
+    published_ers_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

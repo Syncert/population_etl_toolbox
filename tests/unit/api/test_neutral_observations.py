@@ -756,6 +756,9 @@ def test_suppressed_values_stay_null_with_their_published_status() -> None:
         "cv_value": None,
         "cv_status": None,
         "cv_symbol": None,
+        # County Business Patterns' field (census-county-business-patterns):
+        # additive, and null for every other source.
+        "noise_flag": None,
     }
     assert item["coverage"] is None, "CDC publishes no participation coverage"
     assert item["source_record_id"] == "row-1"

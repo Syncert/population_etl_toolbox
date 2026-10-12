@@ -1,0 +1,313 @@
+"""Replay one captured HUD workbook or API read into silver, reconcile it, and publish it.
+
+Everything here reads the committed capture, never the network. One
+transaction per run: the parsed cells, the quarantine, the geography
+resolution ledger and the conformed facts land together or not at all, and
+the run is only marked ready when the counts reconcile. A run the capture
+found ``unchanged`` replays nothing. An API read replays each of its
+answers -- a state's FMRs or a county's income limits -- with that answer's
+capture as the lineage of its rows.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+from uuid import UUID
+
+from psycopg2.extras import execute_values
+
+from data_ingestion_toolbox.capture import load_captured_payload
+
+from ..config import SOURCE_CODE
+from ..registry import FMR, get_file
+from .parse import HudObservation, HudQuarantine, ParsedFile, parse_file
+
+
+class _Combined:
+    """Every answer's rows, each with the capture it came from."""
+
+    def __init__(self, parts: list[tuple[str, ParsedFile]]) -> None:
+        self.observations: list[tuple[str, HudObservation]] = [
+            (capture, obs) for capture, part in parts for obs in part.observations
+        ]
+        self.quarantined: list[tuple[str, HudQuarantine]] = [
+            (capture, q) for capture, part in parts for q in part.quarantined
+        ]
+        self.row_count = sum(part.row_count for _capture, part in parts)
+        self.county_row_count = sum(part.county_row_count for _capture, part in parts)
+
+
+def _combine(parts: list[tuple[str, ParsedFile]]) -> _Combined:
+    return _Combined(parts)
+
+
+def _parse_api_read(
+    connection_factory: Callable[[], Any],
+    cursor: Any,
+    run_id: UUID,
+    dataset: str,
+    fiscal_year: int,
+) -> list[tuple[str, ParsedFile]]:
+    from ..api import get_read, parse_fmr_state, parse_il_county
+
+    read = get_read(f"api:{dataset}:fy{fiscal_year}")
+    cursor.execute(
+        """
+        SELECT slice_key, capture_id::TEXT FROM control.hud_fmr_il_api_capture
+        WHERE run_id = %s AND slice_key NOT LIKE 'list:%%' ORDER BY slice_key
+        """,
+        (str(run_id),),
+    )
+    parts: list[tuple[str, ParsedFile]] = []
+    for slice_key, capture_id in cursor.fetchall():
+        raw = load_captured_payload(connection_factory, UUID(capture_id))
+        if dataset == FMR:
+            parts.append((capture_id, parse_fmr_state(raw, read=read)))
+        else:
+            parts.append(
+                (
+                    capture_id,
+                    parse_il_county(raw, read=read, fips=slice_key.split(":", 1)[1]),
+                )
+            )
+    return parts
+
+
+class HudReconciliationError(RuntimeError):
+    """A replayed run does not account for every parsed cell."""
+
+
+class HudPublicationError(RuntimeError):
+    """A run has not reached the silver publication gate."""
+
+
+def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
+    """Parse and conform a captured workbook; return the fact count."""
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT dataset || ':fy' || fiscal_year::TEXT || ':' || edition, capture_id::TEXT, status,
+                       channel, dataset, fiscal_year
+                FROM control.hud_fmr_il_file WHERE run_id = %s
+                """,
+                (str(run_id),),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise HudReconciliationError("run has no captured HUD workbook")
+            key, capture_id, status, channel, dataset, fiscal_year = row
+            if status == "unchanged":
+                connection.commit()
+                return 0
+            if channel == "api":
+                parts = _parse_api_read(
+                    connection_factory, cursor, run_id, dataset, fiscal_year
+                )
+            else:
+                parts = [
+                    (
+                        capture_id,
+                        parse_file(
+                            load_captured_payload(connection_factory, UUID(capture_id)),
+                            item=get_file(key),
+                        ),
+                    )
+                ]
+            parsed = _combine(parts)
+            if parsed.observations:
+                execute_values(
+                    cursor,
+                    """
+                    INSERT INTO silver_hud_fmr_il.observation_revision (
+                        capture_id, source_row_index, measure, run_id, fips_code, geo_type, geo_id,
+                        hud_area_code, hud_area_name, metro, value_source, value, value_status,
+                        missing_reason, source_record_id
+                    ) VALUES %s
+                    ON CONFLICT (capture_id, source_row_index, measure) DO NOTHING
+                    """,
+                    [
+                        (
+                            obs_capture,
+                            obs.source_row_index,
+                            obs.measure,
+                            str(run_id),
+                            obs.fips_code,
+                            obs.geo_type,
+                            obs.geo_id,
+                            obs.hud_area_code,
+                            obs.hud_area_name,
+                            obs.metro,
+                            obs.value_source,
+                            obs.value,
+                            obs.value_status,
+                            obs.missing_reason,
+                            obs.source_record_id,
+                        )
+                        for obs_capture, obs in parsed.observations
+                    ],
+                    page_size=10000,
+                )
+            if parsed.quarantined:
+                execute_values(
+                    cursor,
+                    """
+                    INSERT INTO silver_hud_fmr_il.observation_quarantine (
+                        run_id, capture_id, source_row_index, error_code, error_summary
+                    ) VALUES %s
+                    ON CONFLICT (capture_id, source_row_index, error_code) DO NOTHING
+                    """,
+                    [
+                        (
+                            str(run_id),
+                            q_capture,
+                            q.source_row_index,
+                            q.error_code,
+                            q.error_summary,
+                        )
+                        for q_capture, q in parsed.quarantined
+                    ],
+                )
+            refused = any(q.source_row_index == 0 for _capture, q in parsed.quarantined)
+            cursor.execute(
+                """
+                UPDATE control.hud_fmr_il_file
+                   SET row_count = %s, county_row_count = %s, status = %s, updated_at = NOW()
+                 WHERE run_id = %s AND status = 'captured'
+                """,
+                (
+                    parsed.row_count,
+                    parsed.county_row_count,
+                    "quarantined" if refused else "silver_ready",
+                    str(run_id),
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.geography_resolution (
+                    provider_source, provider_dataset, source_geo_type,
+                    source_code, source_label, source_vintage, geo_sk,
+                    resolution_method, evidence_capture_id, status, reason_code
+                )
+                SELECT DISTINCT ON (revision.fips_code)
+                       %s, %s, revision.geo_type, revision.fips_code,
+                       NULL, %s, entity.geo_sk,
+                       CASE WHEN entity.geo_sk IS NOT NULL THEN 'exact_code' END,
+                       revision.capture_id,
+                       CASE
+                           WHEN revision.geo_type <> 'county' THEN 'unsupported'
+                           WHEN entity.geo_sk IS NULL THEN 'unmapped'
+                           ELSE 'resolved'
+                       END,
+                       CASE
+                           WHEN revision.geo_type <> 'county' THEN 'town_not_a_county'
+                           WHEN entity.geo_sk IS NULL THEN 'canonical_geography_absent'
+                       END
+                FROM silver_hud_fmr_il.observation_revision AS revision
+                LEFT JOIN silver_ref.dim_geo_entity AS entity
+                       ON entity.geo_id = revision.geo_id AND revision.geo_type = 'county'
+                WHERE revision.run_id = %s
+                ORDER BY revision.fips_code, revision.capture_id
+                ON CONFLICT (provider_source, provider_dataset, source_geo_type, source_code, source_vintage)
+                DO UPDATE SET
+                    geo_sk = EXCLUDED.geo_sk,
+                    resolution_method = EXCLUDED.resolution_method,
+                    evidence_capture_id = EXCLUDED.evidence_capture_id,
+                    status = EXCLUDED.status,
+                    reason_code = EXCLUDED.reason_code,
+                    resolved_at = NOW()
+                """,
+                (SOURCE_CODE, f"hud_{dataset}", fiscal_year, str(run_id)),
+            )
+            cursor.execute(
+                """
+                INSERT INTO silver_hud_fmr_il.fact_observation (
+                    measure, geo_id, fiscal_year, capture_id, run_id, dataset, edition,
+                    effective_date, retrieved_at, fips_code, geo_type, geo_sk, geography_status,
+                    hud_area_code, hud_area_name, metro, value_source, value, value_status,
+                    missing_reason, source_record_id
+                )
+                SELECT revision.measure, revision.geo_id, file.fiscal_year, revision.capture_id,
+                       revision.run_id, file.dataset, file.edition, file.effective_date,
+                       capture.retrieved_at, revision.fips_code, revision.geo_type, entity.geo_sk,
+                       CASE
+                           WHEN revision.geo_type <> 'county' THEN 'unsupported'
+                           WHEN entity.geo_sk IS NULL THEN 'unmapped'
+                           ELSE 'resolved'
+                       END,
+                       revision.hud_area_code, revision.hud_area_name, revision.metro,
+                       revision.value_source, revision.value, revision.value_status,
+                       revision.missing_reason, revision.source_record_id
+                FROM silver_hud_fmr_il.observation_revision AS revision
+                JOIN control.hud_fmr_il_file AS file ON file.run_id = revision.run_id
+                JOIN raw_capture.response_capture AS capture ON capture.capture_id = revision.capture_id
+                LEFT JOIN silver_ref.dim_geo_entity AS entity
+                       ON entity.geo_id = revision.geo_id AND revision.geo_type = 'county'
+                WHERE revision.run_id = %s AND file.status = 'silver_ready'
+                ON CONFLICT (measure, geo_id, fiscal_year, capture_id) DO NOTHING
+                """,
+                (str(run_id),),
+            )
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_hud_fmr_il.observation_revision WHERE run_id = %s",
+                (str(run_id),),
+            )
+            revisions = int(cursor.fetchone()[0])
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_hud_fmr_il.fact_observation WHERE run_id = %s",
+                (str(run_id),),
+            )
+            facts = int(cursor.fetchone()[0])
+            if revisions != len(parsed.observations) or (
+                not refused and facts != revisions
+            ):
+                raise HudReconciliationError(
+                    f"run {run_id} reconciles {revisions} revisions and {facts} facts "
+                    f"against {len(parsed.observations)} parsed"
+                )
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    return facts
+
+
+def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
+    """Expose a reconciled workbook through the gold views."""
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE control.hud_fmr_il_file
+                   SET status = 'published', published_at = NOW(), updated_at = NOW()
+                 WHERE run_id = %s AND status = 'silver_ready'
+                RETURNING run_id
+                """,
+                (str(run_id),),
+            )
+            published = len(cursor.fetchall())
+            cursor.execute(
+                "SELECT status FROM control.hud_fmr_il_file WHERE run_id = %s",
+                (str(run_id),),
+            )
+            row = cursor.fetchone()
+            if row is None or row[0] == "captured":
+                raise HudPublicationError(f"run {run_id} was never replayed")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    if published:
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        emit_latest_publisher_ready(
+            connection_factory, publisher_schema="gold_hud_fmr_il"
+        )
+    return published

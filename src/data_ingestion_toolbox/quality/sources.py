@@ -997,6 +997,757 @@ def bea_price_parity_reference(
     ]
 
 
+def cbp_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-CBP-002 — every in-scope captured row is replayed; no file is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.census_cbp_file")
+    if total == 0:
+        return [RuleOutcome("control.census_cbp_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.kind, file.year, file.status
+          FROM control.census_cbp_file AS file
+          LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT revision.source_row_index) AS rows_replayed
+                  FROM silver_census_cbp.observation_revision AS revision
+                 WHERE revision.capture_id = file.capture_id
+          ) AS parsed ON TRUE
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND parsed.rows_replayed <> file.in_scope_row_count)
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "control.census_cbp_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def cbp_sector_sum(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-CBP-004 — sector establishment counts never sum past their total."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM gold_census_cbp.observation_latest WHERE measure = 'est'",
+    )
+    if total == 0:
+        return [RuleOutcome("gold_census_cbp.observation_latest", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT parts.geo_id, parts.year, parts.total_est, parts.sector_est
+          FROM (
+                SELECT geo_id, year,
+                       MAX(value) FILTER (WHERE naics_key = 'total') AS total_est,
+                       COALESCE(SUM(value) FILTER (WHERE naics_key <> 'total'), 0) AS sector_est
+                  FROM gold_census_cbp.observation_latest
+                 WHERE measure = 'est'
+                 GROUP BY geo_id, year
+          ) AS parts
+         WHERE parts.total_est IS NOT NULL AND parts.sector_est > parts.total_est
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "gold_census_cbp.observation_latest",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def lodes_slice_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-LODES-002 — no state-year left unreplayed; every readable file reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.census_lodes_slice")
+    if total == 0:
+        return [RuleOutcome("control.census_lodes_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.state, slice.year, file.family
+          FROM control.census_lodes_slice AS slice
+          LEFT JOIN control.census_lodes_file AS file
+            ON file.run_id = slice.run_id AND file.status = 'captured'
+         WHERE slice.status = 'captured'
+            OR (slice.status IN ('silver_ready', 'published')
+                AND file.row_count > file.quarantined_count
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_census_lodes.fact_area AS area
+                     WHERE area.run_id = slice.run_id AND area.family = file.family
+                    UNION ALL
+                    SELECT 1 FROM silver_census_lodes.fact_flow AS flow
+                     WHERE flow.run_id = slice.run_id
+                       AND 'od_' || flow.part = file.family
+                ))
+        """,
+        order_by="1, 2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "control.census_lodes_slice",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def lodes_od_workplace_agreement(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-LODES-004 — OD jobs by work county equal the workplace file's total."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_census_lodes.fact_area AS area
+        JOIN control.census_lodes_slice AS slice USING (run_id)
+        WHERE slice.status = 'published' AND area.family = 'wac' AND area.column_code = 'C000'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_census_lodes.fact_flow", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT area.run_id, area.geo_id, area.value AS workplace_jobs,
+               COALESCE(od.jobs, 0) AS od_jobs
+          FROM silver_census_lodes.fact_area AS area
+          JOIN control.census_lodes_slice AS slice USING (run_id)
+          LEFT JOIN LATERAL (
+                SELECT SUM(flow.jobs) AS jobs FROM silver_census_lodes.fact_flow AS flow
+                 WHERE flow.run_id = area.run_id AND flow.work_geo_id = area.geo_id
+          ) AS od ON TRUE
+         WHERE slice.status = 'published' AND area.family = 'wac' AND area.column_code = 'C000'
+           AND EXISTS (
+                SELECT 1 FROM control.census_lodes_file AS file
+                 WHERE file.run_id = area.run_id AND file.family = 'od_main' AND file.status = 'captured'
+           )
+           AND area.value <> COALESCE(od.jobs, 0)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_census_lodes.fact_flow",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def aqs_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-AQS-002 — no file left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.epa_aqs_file")
+    if total == 0:
+        return [RuleOutcome("control.epa_aqs_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.year, file.status, file.in_scope_row_count
+          FROM control.epa_aqs_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.in_scope_row_count > (
+                    SELECT COUNT(*) FROM silver_epa_aqs.quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_epa_aqs.monitor_fact AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.epa_aqs_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def aqs_value_and_geography(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-AQS-004 — no negative statistic; every monitor's county resolved."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.epa_aqs_file WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("silver_epa_aqs.monitor_fact", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.monitor_id, fact.event_type, fact.geography_status
+          FROM silver_epa_aqs.monitor_fact AS fact
+          JOIN control.epa_aqs_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (fact.value < 0 OR fact.geography_status <> 'resolved')
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_epa_aqs.monitor_fact",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def normals_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-NOAA-002 — no archive left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.noaa_normals_file")
+    if total == 0:
+        return [RuleOutcome("control.noaa_normals_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.archive_version, file.status, file.station_file_count
+          FROM control.noaa_normals_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.station_file_count > (
+                    SELECT COUNT(*) FROM silver_noaa_normals.quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_noaa_normals.station AS station
+                     WHERE station.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.noaa_normals_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def normals_value_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-NOAA-004 — no negative accumulation; U.S. stations land in one county."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.noaa_normals_file WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_noaa_normals.station", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT station.run_id, station.station_id, station.geography_status, station.geography_reason
+          FROM silver_noaa_normals.station AS station
+          JOIN control.noaa_normals_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (station.geography_status = 'ambiguous'
+                OR (station.geography_status = 'unmapped' AND LEFT(station.station_id, 2) = 'US')
+                OR EXISTS (
+                    SELECT 1 FROM silver_noaa_normals.station_normal AS normal
+                     WHERE normal.run_id = station.run_id
+                       AND normal.station_id = station.station_id
+                       AND normal.value < 0
+                       AND normal.measure IN (
+                           'annual_precipitation', 'annual_heating_degree_days', 'annual_cooling_degree_days'
+                       )
+                ))
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_noaa_normals.station",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bdc_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-FCC-002 — no vintage left unreplayed; every replayed one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.fcc_bdc_read")
+    if total == 0:
+        return [RuleOutcome("control.fcc_bdc_read", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT read.run_id, read.as_of_date, read.status, read.kept_row_count
+          FROM control.fcc_bdc_read AS read
+         WHERE read.status = 'captured'
+            OR (read.status IN ('silver_ready', 'published')
+                AND read.kept_row_count > 0
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_fcc_bdc.availability_row AS availability
+                     WHERE availability.run_id = read.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.fcc_bdc_read",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bdc_tier_order_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FCC-004 — shares never rise with speed; state and county rows resolve."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.fcc_bdc_read WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("silver_fcc_bdc.availability_row", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT availability.run_id, availability.geo_id, availability.technology,
+               availability.geography_status
+          FROM silver_fcc_bdc.availability_row AS availability
+          JOIN control.fcc_bdc_read AS read USING (run_id)
+         WHERE read.status = 'published'
+           AND ((availability.value_status = 'valid'
+                 AND NOT (availability.speed_02_02 >= availability.speed_10_1
+                          AND availability.speed_10_1 >= availability.speed_25_3
+                          AND availability.speed_25_3 >= availability.speed_100_20
+                          AND availability.speed_100_20 >= availability.speed_250_25
+                          AND availability.speed_250_25 >= availability.speed_1000_100))
+                OR (availability.geography_type IN ('state', 'county')
+                    AND availability.geography_status <> 'resolved'))
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_fcc_bdc.availability_row",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def fema_run_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-FEMA-002 — no read left unreplayed; every readable NRI read reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.fema_nri_run")
+    if total == 0:
+        return [RuleOutcome("control.fema_nri_run", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT run.run_id, run.stream, run.status, run.record_count
+          FROM control.fema_nri_run AS run
+         WHERE run.status IN ('capturing', 'captured')
+            OR (run.stream = 'nri' AND run.status IN ('silver_ready', 'published')
+                AND run.record_count > (
+                    SELECT COUNT(*) FROM silver_fema_nri.quarantine AS quarantine
+                     WHERE quarantine.run_id = run.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_fema_nri.nri_fact AS fact
+                     WHERE fact.run_id = run.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.fema_nri_run",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def fema_value_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FEMA-004 — no negative loss or frequency; published counties resolve."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.fema_nri_run WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("silver_fema_nri.nri_fact", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.field AS item, fact.geography_status
+          FROM silver_fema_nri.nri_fact AS fact
+          JOIN control.fema_nri_run AS run USING (run_id)
+         WHERE run.status = 'published'
+           AND (fact.value < 0 OR fact.geography_status <> 'resolved')
+        UNION ALL
+        SELECT revision.run_id, revision.geo_id, revision.declaration_string, revision.geography_status
+          FROM silver_fema_nri.declaration_revision AS revision
+          JOIN control.fema_nri_run AS run USING (run_id)
+         WHERE run.status = 'published' AND revision.geography_status = 'unmapped'
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_fema_nri.nri_fact",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hpi_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HPI-002 — no workbook left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.fhfa_hpi_file")
+    if total == 0:
+        return [RuleOutcome("control.fhfa_hpi_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.kind, file.status, file.row_count
+          FROM control.fhfa_hpi_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.row_count > (
+                    SELECT COUNT(*) FROM silver_fhfa_hpi.observation_quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_fhfa_hpi.fact_observation AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.fhfa_hpi_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hpi_index_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HPI-004 — positive indexes, 100 in the base year, every county resolved."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_fhfa_hpi.fact_observation AS fact
+        JOIN control.fhfa_hpi_file AS file USING (run_id)
+        WHERE file.status = 'published'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_fhfa_hpi.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.year, fact.measure, fact.value, fact.geography_status
+          FROM silver_fhfa_hpi.fact_observation AS fact
+          JOIN control.fhfa_hpi_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (
+                (fact.measure <> 'annual_change_pct' AND fact.value <= 0)
+                OR (fact.measure = 'hpi_base_2000' AND fact.year = 2000 AND fact.value <> 100)
+                OR fact.geography_status <> 'resolved'
+           )
+        """,
+        order_by="1, 2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "silver_fhfa_hpi.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hud_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HUD-002 — no edition left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.hud_fmr_il_file")
+    if total == 0:
+        return [RuleOutcome("control.hud_fmr_il_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.dataset, file.fiscal_year, file.edition, file.status
+          FROM control.hud_fmr_il_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.row_count > (
+                    SELECT COUNT(*) FROM silver_hud_fmr_il.observation_quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_hud_fmr_il.fact_observation AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.hud_fmr_il_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hud_value_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HUD-004 — rents rise with bedrooms, limits are ordered, counties resolved."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_hud_fmr_il.fact_observation AS fact
+        JOIN control.hud_fmr_il_file AS file USING (run_id)
+        WHERE file.status = 'published'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_hud_fmr_il.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.fiscal_year, fact.measure, fact.value,
+               fact.geography_status
+          FROM silver_hud_fmr_il.fact_observation AS fact
+          JOIN control.hud_fmr_il_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (
+                (fact.geo_type = 'county' AND fact.geography_status <> 'resolved')
+                OR EXISTS (
+                    SELECT 1 FROM silver_hud_fmr_il.fact_observation AS larger
+                     WHERE larger.run_id = fact.run_id AND larger.geo_id = fact.geo_id
+                       AND (
+                            (fact.measure ~ '^fmr_[0-3]br$'
+                             AND larger.measure = 'fmr_' || (SUBSTRING(fact.measure, 5, 1)::INT + 1)::TEXT || 'br')
+                            OR (fact.measure = 'income_limit_30_4p' AND larger.measure = 'income_limit_50_4p')
+                            OR (fact.measure = 'income_limit_50_4p' AND larger.measure = 'income_limit_80_4p')
+                       )
+                       AND larger.value < fact.value
+                )
+           )
+        """,
+        order_by="1, 2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "silver_hud_fmr_il.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def ccd_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-NCES-002 — no file left unreplayed; every file with kept rows reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.nces_ccd_file")
+    if total == 0:
+        return [RuleOutcome("control.nces_ccd_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.file_stem, file.status, file.kept_row_count
+          FROM control.nces_ccd_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.kept_row_count > 0
+                AND NOT EXISTS (SELECT 1 FROM silver_nces_ccd.school_location AS location
+                                 WHERE location.run_id = file.run_id)
+                AND NOT EXISTS (SELECT 1 FROM silver_nces_ccd.school_directory AS directory
+                                 WHERE directory.run_id = file.run_id)
+                AND NOT EXISTS (SELECT 1 FROM silver_nces_ccd.school_count AS count
+                                 WHERE count.run_id = file.run_id))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.nces_ccd_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def ccd_placement_and_plausibility(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-NCES-004 — every valued school placed in a held county; FRPL within membership."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.nces_ccd_file WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("gold_nces_ccd.school_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT school.school_year, school.ncessch, 'unplaced' AS finding
+          FROM gold_nces_ccd.school_observation AS school
+         WHERE school.value_status = 'valid'
+           AND (school.county_status IS NULL OR school.county_status <> 'resolved')
+         GROUP BY school.school_year, school.ncessch
+        UNION ALL
+        SELECT lunch.school_year, lunch.ncessch, 'frpl_above_membership'
+          FROM gold_nces_ccd.school_observation AS lunch
+          JOIN gold_nces_ccd.school_observation AS membership
+            ON membership.school_year = lunch.school_year
+           AND membership.ncessch = lunch.ncessch
+           AND membership.measure = 'student_membership'
+         WHERE lunch.measure = 'frpl_eligible'
+           AND lunch.value > membership.value
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "gold_nces_ccd.school_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def ers_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-ERS-002 — no file left unreplayed; every readable one reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.usda_ers_file")
+    if total == 0:
+        return [RuleOutcome("control.usda_ers_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.product, file.edition, file.status
+          FROM control.usda_ers_file AS file
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND file.in_scope_row_count > (
+                    SELECT COUNT(*) FROM silver_usda_ers.observation_quarantine AS quarantine
+                     WHERE quarantine.run_id = file.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_usda_ers.fact_observation AS fact
+                     WHERE fact.run_id = file.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.usda_ers_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def ers_county_coverage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-ERS-004 — published county rows resolve; RUCC codes carry their label."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_usda_ers.fact_observation AS fact
+        JOIN control.usda_ers_file AS file USING (run_id)
+        WHERE file.status = 'published'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_usda_ers.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.run_id, fact.geo_id, fact.attribute, fact.geography_status, fact.code_label
+          FROM silver_usda_ers.fact_observation AS fact
+          JOIN control.usda_ers_file AS file USING (run_id)
+         WHERE file.status = 'published'
+           AND (
+                fact.geography_status <> 'resolved'
+                OR (fact.attribute = 'RUCC_2023' AND fact.value_status = 'valid'
+                    AND COALESCE(fact.code_label, '') = '')
+           )
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_usda_ers.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -2102,10 +2853,30 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-ERS-002": ers_file_reconciliation,
+    "DQ-ERS-004": ers_county_coverage,
+    "DQ-NCES-002": ccd_file_reconciliation,
+    "DQ-NCES-004": ccd_placement_and_plausibility,
+    "DQ-HPI-002": hpi_file_reconciliation,
+    "DQ-HPI-004": hpi_index_plausibility,
+    "DQ-HUD-002": hud_file_reconciliation,
+    "DQ-HUD-004": hud_value_plausibility,
+    "DQ-FEMA-002": fema_run_reconciliation,
+    "DQ-FEMA-004": fema_value_and_geography,
+    "DQ-FCC-002": bdc_read_reconciliation,
+    "DQ-FCC-004": bdc_tier_order_and_geography,
+    "DQ-AQS-002": aqs_file_reconciliation,
+    "DQ-AQS-004": aqs_value_and_geography,
+    "DQ-NOAA-002": normals_file_reconciliation,
+    "DQ-NOAA-004": normals_value_and_geography,
+    "DQ-LODES-002": lodes_slice_reconciliation,
+    "DQ-LODES-004": lodes_od_workplace_agreement,
     "DQ-BEA-002": bea_table_reconciliation,
     "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-BEA-005": bea_price_parity_reference,
     "DQ-EIA-002": eia_read_reconciliation,
+    "DQ-CBP-002": cbp_file_reconciliation,
+    "DQ-CBP-004": cbp_sector_sum,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,

@@ -162,6 +162,9 @@ services:
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
       USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
+      FCC_BDC_USERNAME: ${FCC_BDC_USERNAME:-}
+      FCC_BDC_API_TOKEN: ${FCC_BDC_API_TOKEN:-}
+      HUD_USER_API_TOKEN: ${HUD_USER_API_TOKEN:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
       # Shared so the webserver reads task logs directly from disk and
@@ -191,6 +194,16 @@ services:
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
+      airflow pools set usda_ers_files 1 'USDA ERS files (serialized)';
+      airflow pools set nces_ccd_files 1 'NCES CCD and EDGE files (serialized)';
+      airflow pools set fhfa_hpi_files 1 'FHFA HPI workbooks (serialized)';
+      airflow pools set hud_fmr_il_files 1 'HUD FMR and income-limit workbooks (serialized)';
+      airflow pools set fema_files 1 'FEMA NRI and OpenFEMA pages (serialized)';
+      airflow pools set fcc_bdc_api 1 'FCC broadband map API (10 calls a minute)';
+      airflow pools set epa_aqs_files 1 'EPA AirData files (serialized)';
+      airflow pools set noaa_normals_files 1 'NOAA climate normals archive (serialized)';
+      airflow pools set census_lodes_files 1 'Census LEHD LODES files (serialized)';
+      airflow pools set census_cbp_files 1 'Census County Business Patterns files (serialized)';
       airflow pools set irs_soi_files 1 'IRS SOI migration files (serialized)';
       airflow pools set census_bps_files 1 'Census Building Permits files (serialized)';
       airflow pools set bls_qcew_api 1 'BLS QCEW open data (serialized: data.bls.gov throttles bursts)';

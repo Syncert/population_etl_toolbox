@@ -522,6 +522,27 @@ def emit_latest_publisher_ready(
     )
 
 
+def _publisher_of(
+    connection_factory: Callable[[], Any],
+    candidates: list[Publisher],
+    source_code: str,
+) -> Publisher | None:
+    """The discovered publisher whose own rows name ``source_code``, if one does."""
+    connection = connection_factory()
+    try:
+        for item in candidates:
+            statement = sql.SQL(
+                "SELECT 1 FROM {}.{} WHERE source_code = %s LIMIT 1"
+            ).format(sql.Identifier(item.schema), sql.Identifier(item.view))
+            with connection.cursor() as cursor:
+                cursor.execute(statement, (source_code,))
+                if cursor.fetchone() is not None:
+                    return item
+    finally:
+        connection.close()
+    return None
+
+
 def process_pending_events(
     connection_factory: Callable[[], Any], *, limit: int = 50
 ) -> int:
@@ -588,6 +609,11 @@ def process_pending_events(
                 ),
                 None,
             )
+            if candidate is None:
+                # A schema need not spell its source code (`gold_census_sae`
+                # publishes CENSUS_SAIPE_SAHIE), so ask each publisher what it
+                # publishes rather than guessing from its name.
+                candidate = _publisher_of(connection_factory, candidates, source_code)
         else:
             candidate = Publisher(registry[0], registry[1])
         event_connection = connection_factory()

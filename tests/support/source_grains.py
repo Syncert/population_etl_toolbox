@@ -49,6 +49,28 @@ from __future__ import annotations
 #:   level -- MSAs and the "unknown county" areas -- out of scope.
 #: * ``EIA`` -- ``eia/registry.py`` classifies ``NUS`` as the nation, ``S`` codes
 #:   as states by USPS code, and PADDs and cities as EIA's own provider areas.
+#: * ``CENSUS_CBP`` -- ``census_cbp/registry.py`` reads the nation, state
+#:   and county files and counts each county file's statewide row out of
+#:   scope.
+#: * ``CENSUS_LODES`` -- the adapter sums each state's blocks to its
+#:   counties and the state; no national figure is published.
+#: * ``EPA_AQS`` -- a county figure derived from its highest complete
+#:   monitor; counties without a complete monitor have no row.
+#: * ``NOAA_NORMALS`` -- a county figure derived from the stations placed
+#:   inside the county; counties without a standard or representative
+#:   station have no row.
+#: * ``FCC_BDC`` -- the FCC's own nation, state, county and place
+#:   availability summaries; CBSA, district and tribal rows are not kept.
+#: * ``FEMA_NRI`` -- the NRI county layer and county declaration counts;
+#:   statewide and tribal-area declarations are not counted toward a county.
+#: * ``FHFA_HPI`` -- the annual county workbook only; the ZIP and tract
+#:   files wait on sub-county identities.
+#: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
+#:   rows are held, not published as their county.
+#: * ``NCES_CCD`` -- county and state sums of the schools NCES's EDGE
+#:   geocodes place there; no nation row.
+#: * ``USDA_ERS`` -- county files only; ERS publishes no national or state
+#:   row for these measures.
 #: * ``FBI_UCR`` -- ``fbi_ucr/registry.py`` closes ``subject_type`` to
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
@@ -76,6 +98,16 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "USDA_ERS": frozenset({"COUNTY"}),
+    "NCES_CCD": frozenset({"STATE", "COUNTY"}),
+    "HUD_FMR_IL": frozenset({"COUNTY"}),
+    "FHFA_HPI": frozenset({"COUNTY"}),
+    "FEMA_NRI": frozenset({"COUNTY"}),
+    "FCC_BDC": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
+    "NOAA_NORMALS": frozenset({"COUNTY"}),
+    "EPA_AQS": frozenset({"COUNTY"}),
+    "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
+    "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
 }

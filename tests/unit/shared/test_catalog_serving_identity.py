@@ -111,6 +111,16 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
     """Covers: ARC-005 — the rule reads real publisher declarations."""
     codes = _publisher_source_codes()
     assert codes == {
+        "gold_usda_ers": "USDA_ERS",
+        "gold_nces_ccd": "NCES_CCD",
+        "gold_fhfa_hpi": "FHFA_HPI",
+        "gold_hud_fmr_il": "HUD_FMR_IL",
+        "gold_fema_nri": "FEMA_NRI",
+        "gold_fcc_bdc": "FCC_BDC",
+        "gold_epa_aqs": "EPA_AQS",
+        "gold_noaa_normals": "NOAA_NORMALS",
+        "gold_census_lodes": "CENSUS_LODES",
+        "gold_census_cbp": "CENSUS_CBP",
         "gold_bea": "BEA",
         "gold_irs_migration": "IRS_MIGRATION",
         "gold_eia": "EIA",

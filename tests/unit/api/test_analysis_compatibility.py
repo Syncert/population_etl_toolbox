@@ -214,6 +214,14 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "CENSUS_SAIPE_SAHIE",
         "IRS_MIGRATION",
         "EIA",
+        "CENSUS_CBP",
+        "CENSUS_LODES",
+        "EPA_AQS",
+        "FCC_BDC",
+        "FEMA_NRI",
+        "FHFA_HPI",
+        "HUD_FMR_IL",
+        "NCES_CCD",
     }
 
 

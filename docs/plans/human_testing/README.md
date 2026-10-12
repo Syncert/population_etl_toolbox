@@ -63,3 +63,4 @@ was run, per *How to use it* above.
 | File | Done | What it recorded |
 |---|---|---|
 | [`completed/RECORD_THE_IDENTITY_GATE_DECISION.md`](completed/RECORD_THE_IDENTITY_GATE_DECISION.md) | 2026-09-20 | The `self-service-identity` gate reads `approved`, decided by Nick |
+| [`completed/REGISTER_A_HUD_USER_API_TOKEN.md`](completed/REGISTER_A_HUD_USER_API_TOKEN.md) | 2026-10-07 | Nick registered a HUD User API token (Fair Market Rent and Income Limits datasets) and put `HUD_USER_API_TOKEN` in `stack.env`; the API answered 200 and the live contract check passed |

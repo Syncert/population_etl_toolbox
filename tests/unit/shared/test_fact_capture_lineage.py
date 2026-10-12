@@ -52,6 +52,63 @@ class FactContract:
 
 FACTS = [
     FactContract(
+        "USDA_ERS",
+        SRC / "usda_ers/DDL/silver_usda_ers.sql",
+        "silver_usda_ers.fact_observation",
+        "valid",
+    ),
+    FactContract(
+        "NCES_CCD",
+        SRC / "nces_ccd/DDL/silver_nces_ccd.sql",
+        "silver_nces_ccd.school_count",
+        "valid",
+    ),
+    FactContract(
+        "FHFA_HPI",
+        SRC / "fhfa_hpi/DDL/silver_fhfa_hpi.sql",
+        "silver_fhfa_hpi.fact_observation",
+        "valid",
+    ),
+    FactContract(
+        "FEMA_NRI",
+        SRC / "fema_nri/DDL/silver_fema_nri.sql",
+        "silver_fema_nri.nri_fact",
+        "valid",
+    ),
+    FactContract(
+        "FCC_BDC",
+        SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
+        "silver_fcc_bdc.availability_row",
+        "valid",
+        # A row carries six shares; the 100/20 share is the one every
+        # published measure's status speaks for.
+        value_column="speed_100_20",
+    ),
+    FactContract(
+        "NOAA_NORMALS",
+        SRC / "noaa_normals/DDL/silver_noaa_normals.sql",
+        "silver_noaa_normals.station_normal",
+        "valid",
+    ),
+    FactContract(
+        "EPA_AQS",
+        SRC / "epa_aqs/DDL/silver_epa_aqs.sql",
+        "silver_epa_aqs.monitor_fact",
+        "valid",
+    ),
+    FactContract(
+        "CENSUS_LODES",
+        SRC / "census_lodes/DDL/silver_census_lodes.sql",
+        "silver_census_lodes.fact_area",
+        "valid",
+    ),
+    FactContract(
+        "CENSUS_CBP",
+        SRC / "census_cbp/DDL/silver_census_cbp.sql",
+        "silver_census_cbp.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "IRS_MIGRATION",
         SRC / "irs_migration/DDL/silver_irs_migration.sql",
         "silver_irs_migration.fact_flow",
@@ -69,6 +126,12 @@ FACTS = [
         "EIA",
         SRC / "eia/DDL/silver_eia.sql",
         "silver_eia.fact_retail_price",
+        "valid",
+    ),
+    FactContract(
+        "HUD_FMR_IL",
+        SRC / "hud_fmr_il/DDL/silver_hud_fmr_il.sql",
+        "silver_hud_fmr_il.fact_observation",
         "valid",
     ),
     FactContract(

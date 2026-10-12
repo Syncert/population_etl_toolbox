@@ -16,6 +16,16 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.usda_ers import schema as usda_ers_schema
+from data_ingestion_toolbox.nces_ccd import schema as nces_ccd_schema
+from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
+from data_ingestion_toolbox.hud_fmr_il import schema as hud_fmr_il_schema
+from data_ingestion_toolbox.fema_nri import schema as fema_nri_schema
+from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
+from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
+from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
+from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
+from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
@@ -77,6 +87,76 @@ SOURCES = [
         "ingest_batch_",
         eia_schema,
         "EIA",
+    ),
+    (
+        "census_cbp_ingest",
+        "ensure_census_cbp_schema",
+        "ingest_batch_",
+        census_cbp_schema,
+        "CENSUS_CBP",
+    ),
+    (
+        "census_lodes_ingest",
+        "ensure_census_lodes_schema",
+        "ingest_batch_",
+        census_lodes_schema,
+        "CENSUS_LODES",
+    ),
+    (
+        "epa_aqs_ingest",
+        "ensure_epa_aqs_schema",
+        "ingest_batch_",
+        epa_aqs_schema,
+        "EPA_AQS",
+    ),
+    (
+        "noaa_normals_ingest",
+        "ensure_noaa_normals_schema",
+        "ingest_batch_",
+        noaa_normals_schema,
+        "NOAA_NORMALS",
+    ),
+    (
+        "fcc_bdc_ingest",
+        "ensure_fcc_bdc_schema",
+        "ingest_batch_",
+        fcc_bdc_schema,
+        "FCC_BDC",
+    ),
+    (
+        "fema_nri_ingest",
+        "ensure_fema_nri_schema",
+        "ingest_batch_",
+        fema_nri_schema,
+        "FEMA_NRI",
+    ),
+    (
+        "fhfa_hpi_ingest",
+        "ensure_fhfa_hpi_schema",
+        "ingest_batch_",
+        fhfa_hpi_schema,
+        "FHFA_HPI",
+    ),
+    (
+        "hud_fmr_il_ingest",
+        "ensure_hud_fmr_il_schema",
+        "ingest_batch_",
+        hud_fmr_il_schema,
+        "HUD_FMR_IL",
+    ),
+    (
+        "nces_ccd_ingest",
+        "ensure_nces_ccd_schema",
+        "ingest_batch_",
+        nces_ccd_schema,
+        "NCES_CCD",
+    ),
+    (
+        "usda_ers_ingest",
+        "ensure_usda_ers_schema",
+        "ingest_batch_",
+        usda_ers_schema,
+        "USDA_ERS",
     ),
 ]
 

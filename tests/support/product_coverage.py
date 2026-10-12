@@ -512,6 +512,313 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "serves it."
         ),
     ),
+    DataProductE2E(
+        product_id="census_cbp.business_patterns",
+        source="CENSUS_CBP",
+        publisher_schema="gold_census_cbp",
+        datasets=("county:2016", "county:2023", "state:2023", "nation:2023"),
+        fixtures=(
+            "tests/fixtures/census_cbp/cbp16co.zip",
+            "tests/fixtures/census_cbp/cbp23co.zip",
+            "tests/fixtures/census_cbp/cbp23st.zip",
+            "tests/fixtures/census_cbp/cbp23us.zip",
+        ),
+        serving_relations=(
+            "gold_census_cbp.observation_revision",
+            "gold_census_cbp.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_cbp_pipeline.py::"
+            "test_business_patterns_reach_the_neutral_api_with_flags_and_coverage"
+        ),
+        api_absence_reason=(
+            "County Business Patterns publishes no source-specific HTTP route: "
+            "each row is the neutral observation shape with its measure, sector, "
+            "coverage statement and withheld cell's size range as declared "
+            "dimensions and its noise flag as uncertainty, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="census_lodes.commuting_counts",
+        source="CENSUS_LODES",
+        publisher_schema="gold_census_lodes",
+        datasets=("de:2023",),
+        fixtures=(
+            "tests/fixtures/census_lodes/version.txt",
+            "tests/fixtures/census_lodes/lodes_de.sha256sum",
+            "tests/fixtures/census_lodes/de_rac_S000_JT00_2023.csv.gz",
+            "tests/fixtures/census_lodes/de_wac_S000_JT00_2023.csv.gz",
+            "tests/fixtures/census_lodes/de_od_main_JT00_2023.csv.gz",
+            "tests/fixtures/census_lodes/de_od_aux_JT00_2023.csv.gz",
+        ),
+        serving_relations=(
+            "gold_census_lodes.observation_revision",
+            "gold_census_lodes.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_lodes_pipeline.py::"
+            "test_commuting_counts_reach_the_neutral_api_with_their_basis"
+        ),
+        api_absence_reason=(
+            "LEHD LODES publishes no source-specific HTTP route: each county "
+            "or state count is the neutral observation shape with its measure "
+            "and the statement that it is this warehouse's sum of protected "
+            "block estimates as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="epa_aqs.county_air_quality",
+        source="EPA_AQS",
+        publisher_schema="gold_epa_aqs",
+        datasets=("annual_conc_by_monitor:2024",),
+        fixtures=("tests/fixtures/epa_aqs/annual_conc_by_monitor_2024.zip",),
+        serving_relations=(
+            "gold_epa_aqs.observation_revision",
+            "gold_epa_aqs.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_epa_aqs_pipeline.py::"
+            "test_county_air_quality_reaches_the_neutral_api_as_derived"
+        ),
+        api_absence_reason=(
+            "EPA air quality publishes no source-specific HTTP route: each county "
+            "row is the neutral observation shape with its highest monitor, its "
+            "complete-monitor count and certification as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="noaa_normals.county_climate_normals",
+        source="NOAA_NORMALS",
+        publisher_schema="gold_noaa_normals",
+        datasets=("normals-annualseasonal:1991-2020",),
+        fixtures=("tests/fixtures/noaa_normals/annualseasonal_by_station.tar.gz",),
+        serving_relations=(
+            "gold_noaa_normals.observation_revision",
+            "gold_noaa_normals.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_noaa_normals_pipeline.py::"
+            "test_county_climate_normals_reach_the_neutral_api_as_derived"
+        ),
+        api_absence_reason=(
+            "NOAA climate normals publish no source-specific HTTP route: each "
+            "county row is the neutral observation shape with its stations, "
+            "station count and boundary vintage as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="fcc_bdc.broadband_availability",
+        source="FCC_BDC",
+        publisher_schema="gold_fcc_bdc",
+        datasets=("availability:2024-12-31", "availability:2025-12-31"),
+        fixtures=(
+            "tests/fixtures/fcc_bdc/listAvailabilityData_2025-12-31.json",
+            "tests/fixtures/fcc_bdc/1820956.zip",
+            "tests/fixtures/fcc_bdc/1820975.zip",
+        ),
+        serving_relations=(
+            "gold_fcc_bdc.observation_revision",
+            "gold_fcc_bdc.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_fcc_bdc_pipeline.py::"
+            "test_county_and_place_availability_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "FCC broadband availability publishes no source-specific HTTP route: "
+            "each row is the neutral observation shape with its as-of date, the "
+            "FCC's revision and the unit denominator as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="fema_nri.risk_and_declarations",
+        source="FEMA_NRI",
+        publisher_schema="gold_fema_nri",
+        datasets=("nri:December 2025", "declarations:openfema-v2"),
+        fixtures=(
+            "tests/fixtures/fema_nri/nri_counties.json",
+            "tests/fixtures/fema_nri/declarations.json",
+        ),
+        serving_relations=(
+            "gold_fema_nri.observation_revision",
+            "gold_fema_nri.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_fema_nri_pipeline.py::"
+            "test_losses_and_declarations_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "FEMA publishes no source-specific HTTP route here: each county row "
+            "is the neutral observation shape with FEMA's rating, missing reason "
+            "and the declarations a count is made of as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="fhfa_hpi.county_annual_index",
+        source="FHFA_HPI",
+        publisher_schema="gold_fhfa_hpi",
+        datasets=("county:2026-03-31",),
+        fixtures=("tests/fixtures/fhfa_hpi/hpi_at_county.xlsx",),
+        serving_relations=(
+            "gold_fhfa_hpi.observation_revision",
+            "gold_fhfa_hpi.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_fhfa_hpi_pipeline.py::"
+            "test_house_price_index_reaches_the_neutral_api_with_its_notice"
+        ),
+        api_absence_reason=(
+            "The FHFA House Price Index publishes no source-specific HTTP route: "
+            "each county-year is the neutral observation shape with its measure, "
+            "its basis and FHFA's notice, and a missing cell's reason as declared "
+            "dimensions, so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="hud_fmr_il.county_reference_values",
+        source="HUD_FMR_IL",
+        publisher_schema="gold_hud_fmr_il",
+        datasets=(
+            "fmr:fy2026:original",
+            "fmr:fy2026:revised",
+            "fmr:fy2027:original",
+            "il:fy2026:original",
+        ),
+        fixtures=(
+            "tests/fixtures/hud_fmr_il/FY26_FMRs.xlsx",
+            "tests/fixtures/hud_fmr_il/FY26_FMRs_revised.xlsx",
+            "tests/fixtures/hud_fmr_il/FY27_FMRs.xlsx",
+            "tests/fixtures/hud_fmr_il/Section8-FY26.xlsx",
+        ),
+        serving_relations=(
+            "gold_hud_fmr_il.observation_revision",
+            "gold_hud_fmr_il.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_hud_fmr_il_pipeline.py::"
+            "test_rents_and_limits_reach_the_neutral_api_with_their_area"
+        ),
+        api_absence_reason=(
+            "HUD Fair Market Rents and income limits publish no source-specific "
+            "HTTP route: each county row is the neutral observation shape with its "
+            "HUD area, edition, effective date and basis as declared dimensions, "
+            "so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="nces_ccd.county_public_schools",
+        source="NCES_CCD",
+        publisher_schema="gold_nces_ccd",
+        datasets=(
+            "geocode:2024-2025",
+            "directory:2024-2025",
+            "membership:2024-2025",
+            "staff:2024-2025",
+            "lunch:2024-2025",
+        ),
+        fixtures=(
+            "tests/fixtures/nces_ccd/EDGE_GEOCODE_PUBLICSCH_2425.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_029_2425_w_1a_073025.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_052_2425_l_1a_073025.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_059_2425_l_1a_073025.zip",
+            "tests/fixtures/nces_ccd/ccd_sch_033_2425_l_2a_073025.zip",
+        ),
+        serving_relations=(
+            "gold_nces_ccd.observation_revision",
+            "gold_nces_ccd.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_nces_ccd_pipeline.py::"
+            "test_county_school_figures_reach_the_neutral_api_as_rollups"
+        ),
+        api_absence_reason=(
+            "NCES public schools publish no source-specific HTTP route: each county "
+            "and state row is the neutral observation shape with its school counts, "
+            "completeness and files as declared dimensions, so "
+            "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="usda_ers.county_codes_and_food_atlas",
+        source="USDA_ERS",
+        publisher_schema="gold_usda_ers",
+        datasets=("rucc:2023", "typology:2025", "fea:2025-07"),
+        fixtures=(
+            "tests/fixtures/usda_ers/2023-rural-urban-continuum-codes.csv",
+            "tests/fixtures/usda_ers/ers-county-typology-codes-2025-edition.csv",
+            "tests/fixtures/usda_ers/food-environment-atlas-csv-files.zip",
+        ),
+        serving_relations=(
+            "gold_usda_ers.observation_revision",
+            "gold_usda_ers.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_usda_ers_pipeline.py::"
+            "test_codes_flags_and_atlas_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "USDA ERS publishes no source-specific HTTP route: each county row is "
+            "the neutral observation shape with its code label, edition and "
+            "missing reason as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
 )
 
 

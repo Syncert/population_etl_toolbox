@@ -22,6 +22,9 @@ def test_scheduled_external_credentials_accept_all_configured_keys() -> None:
             "FBI_CDE_API_KEY": "fbi-secret",
             "USDA_NASS_API_KEY": "nass-secret",
             "EIA_API_KEY": "eia-secret",
+            "FCC_BDC_USERNAME": "fcc-user",
+            "FCC_BDC_API_TOKEN": "fcc-secret",
+            "HUD_USER_API_TOKEN": "hud-secret",
         }
     )
 
@@ -37,6 +40,9 @@ def test_scheduled_external_credentials_name_missing_keys_without_values() -> No
                 "FBI_CDE_API_KEY": "fbi-secret",
                 "USDA_NASS_API_KEY": "nass-secret",
                 "EIA_API_KEY": "eia-secret",
+                "FCC_BDC_USERNAME": "fcc-user",
+                "FCC_BDC_API_TOKEN": "fcc-secret",
+                "HUD_USER_API_TOKEN": "hud-secret",
             }
         )
 
@@ -61,4 +67,7 @@ def test_scheduled_external_credentials_cover_every_credentialed_source() -> Non
         "FBI_CDE_API_KEY",
         "USDA_NASS_API_KEY",
         "EIA_API_KEY",
+        "FCC_BDC_USERNAME",
+        "FCC_BDC_API_TOKEN",
+        "HUD_USER_API_TOKEN",
     }
