@@ -404,8 +404,32 @@ _RELATIONSHIP_COLUMNS = """
 """
 
 
+#: The relationship rows another row of the same product, agency, label and
+#: resolved geography makes redundant: its window contains theirs, and where
+#: the two windows are equal it was written later. Migration 035 runs the same
+#: statement over every product once, for a warehouse that already holds them;
+#: `test_migration_035_*` holds the two to one text.
+SUPERSEDED_RELATIONSHIPS_DELETE = """
+        DELETE FROM silver_fbi.agency_geography_relationship AS narrower
+        USING silver_fbi.agency_geography_relationship AS wider
+        WHERE wider.product_id = narrower.product_id
+          AND wider.ori = narrower.ori
+          AND wider.relationship_type = narrower.relationship_type
+          AND wider.source_label = narrower.source_label
+          AND wider.geo_id IS NOT DISTINCT FROM narrower.geo_id
+          AND wider.relationship_sk <> narrower.relationship_sk
+          AND wider.effective_start <= narrower.effective_start
+          AND wider.effective_end >= narrower.effective_end
+          AND (
+              (wider.effective_start, wider.effective_end)
+                  <> (narrower.effective_start, narrower.effective_end)
+              OR (wider.updated_at, wider.relationship_sk)
+                  > (narrower.updated_at, narrower.relationship_sk)
+          )"""
+
+
 def _supersede_contained_relationships(cursor: Any, *, scope: dict) -> None:
-    """Remove relationship rows a wider effective window fully supersedes.
+    """Remove relationship rows a wider or equal effective window supersedes.
 
     A reviewed period-window widening re-derives each agency relationship with
     broader effectivity (and a new vintage year), so the conflict key keeps the
@@ -413,22 +437,17 @@ def _supersede_contained_relationships(cursor: Any, *, scope: dict) -> None:
     and would double every observation falling inside both ranges in
     ``gold_fbi.agency_observation_area_filter``. Deletion is restricted to rows
     whose identity and resolved geography match the wider row exactly.
+
+    The window can also come out *equal*. A reviewed place mapping effective
+    from 2023 bridges 2023's months whatever the product window, so a release
+    over 2023 and one over 1990-2023 record the same place window under two
+    geography vintages. Requiring a strictly wider window kept both, and the
+    area filter served each of those observations twice (DQ-FBI-004). Between
+    equal windows the row written last is kept.
     """
     cursor.execute(
-        """
-        DELETE FROM silver_fbi.agency_geography_relationship AS narrower
-        USING silver_fbi.agency_geography_relationship AS wider
-        WHERE narrower.product_id = %(product_id)s
-          AND wider.product_id = narrower.product_id
-          AND wider.ori = narrower.ori
-          AND wider.relationship_type = narrower.relationship_type
-          AND wider.source_label = narrower.source_label
-          AND wider.geo_id IS NOT DISTINCT FROM narrower.geo_id
-          AND wider.effective_start <= narrower.effective_start
-          AND wider.effective_end >= narrower.effective_end
-          AND (wider.effective_start, wider.effective_end)
-              <> (narrower.effective_start, narrower.effective_end)
-        """,
+        SUPERSEDED_RELATIONSHIPS_DELETE
+        + "\n          AND narrower.product_id = %(product_id)s",
         scope,
     )
 
