@@ -27,7 +27,11 @@ jobs:
   coverage:
     name: Unit + database coverage gates (Python 3.11)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The warehouse step alone runs 10-19 minutes on a hosted runner (the FBI
+    # all-offense replay is three of them), so 20 cancelled roughly every
+    # other run on claude/project-thread-ypfqia with no test failing. 35 keeps
+    # a hung run bounded without cancelling a passing one.
+    timeout-minutes: 35
 
     services:
       postgres:
