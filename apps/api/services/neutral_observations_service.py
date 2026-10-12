@@ -52,6 +52,7 @@ from apps.api.schemas import (
 )
 from apps.api.services.contracts import (
     ServingContractUnavailable,
+    relation_is_absent,
     require_relation,
     session_memo,
 )
@@ -63,6 +64,8 @@ from data_ingestion_toolbox.semantics.rollups import (
 )
 from data_ingestion_toolbox.semantics.time_aggregation import authorized_method
 from data_ingestion_toolbox.sql.catalog_queries import (
+    GEOGRAPHY_NAMES_QUERY,
+    GEOGRAPHY_RELATION,
     METRIC_RELATION,
     build_metric_detail_query,
     build_metric_details_query,
@@ -501,7 +504,70 @@ def _newest_release_per_period_source(
         )"""
 
 
+def _named(
+    db: Session, response: Optional[NeutralObservationListResponse]
+) -> Optional[NeutralObservationListResponse]:
+    """Each row's catalog name, read by id in one statement per page.
+
+    A served relation stops its attribution at county, and many carry none,
+    so a city row named nothing and every view built on this resource showed
+    its id. The name is the geography catalog's, never matched by text; a
+    geography the catalog does not hold keeps ``geo_name`` null, and a
+    warehouse without the catalog serves the rows unnamed rather than not at
+    all.
+    """
+    if response is None or not response.items:
+        return response
+    geo_ids = sorted({item.geo_id for item in response.items if item.geo_id})
+    if not geo_ids or relation_is_absent(db, GEOGRAPHY_RELATION):
+        return response
+    names = {
+        str(row["geo_id"]): row.get("geo_name")
+        for row in db.execute(GEOGRAPHY_NAMES_QUERY, {"geo_ids": geo_ids})
+        .mappings()
+        .all()
+    }
+    for item in response.items:
+        name = names.get(str(item.geo_id))
+        item.geo_name = None if name is None or name == item.geo_id else str(name)
+    return response
+
+
 def list_neutral_observations(
+    db: Session,
+    metric_code: str,
+    scope: str,
+    release: Optional[str],
+    filters: Mapping[str, Any],
+    limit: int,
+    offset: int,
+    newest_per_geography: bool = False,
+    newest_release_per_period: bool = False,
+    period_start: Optional[str] = None,
+    time_grain: str = TIME_GRAIN_NATIVE,
+    window: Optional[str] = None,
+) -> Optional[NeutralObservationListResponse]:
+    """One metric's observations, each row named by the geography catalog."""
+    return _named(
+        db,
+        _list_neutral_observations(
+            db,
+            metric_code,
+            scope,
+            release,
+            filters,
+            limit,
+            offset,
+            newest_per_geography=newest_per_geography,
+            newest_release_per_period=newest_release_per_period,
+            period_start=period_start,
+            time_grain=time_grain,
+            window=window,
+        ),
+    )
+
+
+def _list_neutral_observations(
     db: Session,
     metric_code: str,
     scope: str,
@@ -1007,7 +1073,9 @@ def list_metric_releases(
         SELECT
             {dispatch.release_expression} AS release,
             MAX({dispatch.as_of_expression or "NULL::TEXT"}) AS as_of,
-            COUNT(*)::INT AS observation_count
+            COUNT(*)::INT AS observation_count,
+            MAX({dispatch.period_start_expression}) AS newest_period_start,
+            MAX({dispatch.period_end_expression}) AS newest_period_end
         FROM {relation}
         WHERE {where_sql}
         GROUP BY 1
@@ -1032,6 +1100,8 @@ def list_metric_releases(
                 release=str(row["release"]),
                 as_of=_text_or_none(row.get("as_of")),
                 observation_count=int(row["observation_count"]),
+                newest_period_start=_text_or_none(row.get("newest_period_start")),
+                newest_period_end=_text_or_none(row.get("newest_period_end")),
             )
             for row in rows
         ],

@@ -364,7 +364,12 @@ Reading a flow row:
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
 BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS, IRS SOI migration). The metric resolves to its
 owning source through the published glossary and is read from that source's
-own serving relations, so its semantics survive.
+own serving relations, so its semantics survive. Every row also carries
+`geo_name`, the geography catalog's name for its `geo_id`, read by id (never
+matched by text) for the page's geographies; it is `null` where the catalog
+holds none. A source's `state_name`/`county_name` attribution stops at
+county, and many sources carry none, so `geo_name` is the only name a city,
+town or tract row has.
 
 - `metric_code` (required), `limit`, `offset`.
 - `scope=latest` (default) — the source's own latest publication.
@@ -446,7 +451,11 @@ resource too, for the reason `publishes_value_status` is.
 
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what
-`release=` accepts.
+`release=` accepts. Each release also names the newest period it published,
+`newest_period_start` and `newest_period_end` (the 2023 ACS 5-year release is
+`2019-01-01` to `2023-12-31`), so a reader can offer a release by what it
+covers. A release identity is not a period: it is the source's own name for
+the publication.
 
 `GET /api/v1/observations/periods?metric_code=...` lists the distinct
 non-null `(period_start, period_end)` pairs in that metric's latest

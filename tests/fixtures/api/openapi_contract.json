@@ -3487,6 +3487,8 @@
     "MetricRelease": {
       "properties": {
         "as_of": "string | null",
+        "newest_period_end": "string | null",
+        "newest_period_start": "string | null",
         "observation_count": "integer",
         "release": "string"
       },
@@ -3815,6 +3817,7 @@
         "dimensions": "object",
         "geo_id": "string | null",
         "geo_level": "string | null",
+        "geo_name": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
         "period_end": "string | null",

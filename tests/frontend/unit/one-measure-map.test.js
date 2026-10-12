@@ -91,6 +91,14 @@ describe("earlier releases on the map", () => {
       { value: "release:2023", label: "2023 release, as published" },
       { value: "release:2022", label: "2022 release, as published" },
     ]);
+    expect(earlierReleaseChoices([
+      { release: "2024", newest_period_start: "2020-01-01", newest_period_end: "2024-12-31" },
+      { release: "2023", newest_period_start: "2019-01-01", newest_period_end: "2023-12-31" },
+      { release: "2023.1", newest_period_start: "2023-07-01", newest_period_end: "2023-07-01" },
+    ])).toEqual([
+      { value: "release:2023", label: "2019-01-01 – 2023-12-31 (2023 release, as published)" },
+      { value: "release:2023.1", label: "2023-07-01 (2023.1 release, as published)" },
+    ]);
     expect(earlierReleaseChoices([{ release: "2024" }])).toEqual([]);
     expect(earlierReleaseChoices([])).toEqual([]);
   });

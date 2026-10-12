@@ -41,7 +41,7 @@ async function install(page, { releases = false } = {}) {
       { period_start: "2024-01-01", period_end: "2024-12-31", observation_count: 4 }, { period_start: "2023-01-01", period_end: "2023-12-31", observation_count: 4 },
     ] } });
     if (path === "/api/v1/observations/releases") return route.fulfill({ json: { metric_code: INCOME, total: 2, limit: 200, offset: 0, items: [
-      { release: "2024", as_of: null, observation_count: 4 }, { release: "2022", as_of: null, observation_count: 4 },
+      { release: "2024", as_of: null, observation_count: 4 }, { release: "2022", as_of: null, observation_count: 4, newest_period_start: "2018-01-01", newest_period_end: "2022-12-31" },
     ] } });
     if (path === "/api/v1/observations" && params.get("scope") === "as_released") {
       // The 2022 release: a period no county's latest row holds any more.
@@ -100,7 +100,7 @@ test("a period every county has a newer estimate for is offered by its release",
   await page.goto(`/map/${encodeURIComponent(INCOME)}`);
   await expect(page.getByTestId("measure-map")).toHaveAttribute("data-period", "2024-01-01 – 2024-12-31");
   await expect(page.getByTestId("measure-map-period").locator("option")).toHaveText([
-    "2024-01-01 – 2024-12-31", "2023-01-01 – 2023-12-31", "2022 release, as published",
+    "2024-01-01 – 2024-12-31", "2023-01-01 – 2023-12-31", "2018-01-01 – 2022-12-31 (2022 release, as published)",
   ]);
   await page.getByTestId("measure-map-period").selectOption("release:2022");
   await expect(page.getByTestId("measure-map")).toHaveAttribute("data-period", "2018-01-01 – 2022-12-31");

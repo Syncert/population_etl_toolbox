@@ -173,6 +173,9 @@ export interface MapRelease {
   release: string;
   as_of?: string | null;
   observation_count?: number | null;
+  /** The newest period the release published, as the API names it. */
+  newest_period_start?: string | null;
+  newest_period_end?: string | null;
 }
 
 /** A map choice that names a release rather than a period of the latest publication. */
@@ -187,16 +190,24 @@ export const RELEASE_CHOICE_PREFIX = "release:";
  * is out) is in no county's latest row and `/observations/periods` cannot list
  * it. Those periods are still published, in the release that published them,
  * so each release but the newest (whose periods the latest publication
- * already offers) is a choice. The API lists releases newest first; that
- * order is kept.
+ * already offers) is a choice, labelled by the newest period it published.
+ * The API lists releases newest first; that order is kept.
  */
 export function earlierReleaseChoices(
   releases: readonly MapRelease[],
 ): { value: string; label: string }[] {
-  return releases.slice(1).map((item) => ({
-    value: `${RELEASE_CHOICE_PREFIX}${item.release}`,
-    label: `${item.release} release, as published`,
-  }));
+  return releases.slice(1).map((item) => {
+    const start = item.newest_period_start || "";
+    const end = item.newest_period_end || "";
+    const span = start ? (end && end !== start ? `${start} – ${end}` : start) : "";
+    const release = `${item.release} release, as published`;
+    return {
+      value: `${RELEASE_CHOICE_PREFIX}${item.release}`,
+      // Named by the period it covers, the way the latest periods are, so
+      // the 2023 ACS release reads as 2019–2023 rather than as "2023".
+      label: span ? `${span} (${release})` : release,
+    };
+  });
 }
 
 /** The release a choice names, or null for a period of the latest publication. */

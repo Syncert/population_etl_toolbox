@@ -337,6 +337,13 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
     """
 )
 
+#: The catalog's names for a page of geographies, by id. An observation row
+#: carries its geography's identity only; a city row has no state- or
+#: county-level attribution to fall back on, so this is the one name it has.
+GEOGRAPHY_NAMES_QUERY: TextClause = text(
+    f"SELECT geo_id, geo_name FROM {GEOGRAPHY_RELATION} WHERE geo_id = ANY(:geo_ids)"
+)
+
 #: Whether the catalog serves a geography at all, for the route's 404.
 GEOGRAPHY_EXISTS_QUERY: TextClause = text(
     f"SELECT geo_id, geo_level FROM {GEOGRAPHY_RELATION} WHERE geo_id = :geo_id"
