@@ -626,15 +626,33 @@ export function resolveCountySegment(
   return { place: found, canonical: canonical === segment ? null : canonical };
 }
 
-/** Resolve a city or town segment: its slug, or its seven-digit FIPS. */
+/**
+ * The Census legal or statistical description a place name ends with
+ * ("Seattle city", "Glen Burnie CDP"). It stays in the canonical segment, so
+ * two places that differ only by it keep distinct addresses, but a reader
+ * types the name without it.
+ */
+const PLACE_DESCRIPTION = /\s+(?:city|town|township|village|borough|municipality|CDP|comunidad|zona urbana)$/i;
+
+function shortCitySlug(place: GeographySummary): string {
+  return placeSlug(cityName(place).replace(PLACE_DESCRIPTION, ""));
+}
+
+/**
+ * Resolve a city or town segment: its slug, its seven-digit FIPS, or its name
+ * without the Census description (`seattle` for Seattle city) when exactly one
+ * place in the state answers to it. That last form is never canonical.
+ */
 export function resolveCitySegment(
   segment: string,
   places: readonly GeographySummary[],
   counties: readonly GeographySummary[],
 ): SegmentMatch {
+  const byShortName = places.filter((place) => shortCitySlug(place) === segment);
   const found =
     places.find((place) => citySegment(place, places, counties) === segment) ||
     places.find((place) => `${place.state_fips}${place.place_fips}` === segment) ||
+    (byShortName.length === 1 ? byShortName[0] : null) ||
     null;
   if (!found) return { place: null, canonical: null };
   const canonical = citySegment(found, places, counties);
