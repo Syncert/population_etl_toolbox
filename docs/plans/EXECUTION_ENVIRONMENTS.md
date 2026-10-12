@@ -98,7 +98,7 @@ make test-web-smoke        # the live-stack frontend smoke
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`acs-place-tract-history-backfill`](to_do/ACS_PLACE_AND_TRACT_HISTORY_BACKFILL_PLAN.md) | high | `postgres` | `acs-place-grain`, `sub-county-geography` |
+| [`acs-place-tract-history-backfill`](in_progress/ACS_PLACE_AND_TRACT_HISTORY_BACKFILL_PLAN.md) | high | `postgres` | `acs-place-grain`, `sub-county-geography` |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |

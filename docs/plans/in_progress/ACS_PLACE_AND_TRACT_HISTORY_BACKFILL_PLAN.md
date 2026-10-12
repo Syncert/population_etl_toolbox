@@ -17,8 +17,19 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-12 at Nick's request ("the ultimate intent would be
-to have every available year at that granularity"). No implementation yet.
+In progress since 2026-10-12. Decisions Nick made on 2026-10-12:
+
+- **Docker moved to E:** (Crucial T705, PCIe 5 NVMe, 1.17 TB free before the
+  move). Docker's 665 GB image now lives at `E:\DockerDesktop\wsl`, reached
+  through the `%LOCALAPPDATA%\Docker\wsl` junction; the G: copy is kept as a
+  backup until E: is verified under load.
+- **Scope ("the recommended approach").** Tracts for every 5-year year,
+  2009–2023, on the five `tract_tables`. Places for every year, but only on
+  those same five tables (B01003, B19013, B17001, B25064, B25077); 2024 keeps
+  the full curated place table list it already has. Measured on 2026-10-12, a
+  full-list place year costs about 136 GB (2024: +60 GB serving table, about
+  46 GB silver facts, about 40 GB revision rows), so every year at the full
+  list (about 2 TB) does not fit; the five-table scope is about 300 GB in all.
 
 This plan builds on work that is not on `main` yet:
 
