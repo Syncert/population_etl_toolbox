@@ -229,8 +229,12 @@ def test_a_city_row_carries_its_catalog_name() -> None:
     dropped from the alignment.
     """
     rows = {
-        "CENSUS_ACS:acs5:B19013_001": _metric("CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS"),
-        "CENSUS_ACS:acs5:B01003_001": _metric("CENSUS_ACS:acs5:B01003_001", "CENSUS_ACS"),
+        "CENSUS_ACS:acs5:B19013_001": _metric(
+            "CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS"
+        ),
+        "CENSUS_ACS:acs5:B01003_001": _metric(
+            "CENSUS_ACS:acs5:B01003_001", "CENSUS_ACS"
+        ),
     }
     city = {
         **_JOINED_ROW,

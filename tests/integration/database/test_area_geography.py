@@ -211,7 +211,11 @@ def test_a_city_names_its_metro_through_the_counties_it_lies_in(
     try:
         with writer.cursor() as cursor:
             seed_geography(
-                cursor, geo_type="state", state_fips="55", vintage=2023, name="Wisconsin"
+                cursor,
+                geo_type="state",
+                state_fips="55",
+                vintage=2023,
+                name="Wisconsin",
             )
             dane = seed_geography(
                 cursor,
