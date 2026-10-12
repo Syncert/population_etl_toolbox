@@ -320,7 +320,7 @@ def run_pipeline(
 def seed_reviewed_geographies(
     connection_factory: Callable[[], connection],
 ) -> set[str]:
-    """Seed the reviewed sample's geographies; return the ones already present."""
+    """Seed missing sample geographies without rewriting existing evidence."""
     reader = connection_factory()
     try:
         with reader.cursor() as cursor:
@@ -335,7 +335,12 @@ def seed_reviewed_geographies(
     writer = connection_factory()
     try:
         with writer.cursor() as cursor:
-            for entry in SEEDED_GEOGRAPHIES:
+            for geo_id, entry in zip(SEEDED_GEO_IDS, SEEDED_GEOGRAPHIES, strict=True):
+                # Re-seeding an existing identity creates a new capture even
+                # when its version checksum conflicts. Cleanup preserves that
+                # shared identity, leaving an orphan capture graph each run.
+                if geo_id in preexisting:
+                    continue
                 seed_geography(cursor, vintage=2023, **entry)  # type: ignore[arg-type]
         writer.commit()
     except BaseException:

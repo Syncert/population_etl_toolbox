@@ -52,7 +52,18 @@ arson, and the rape definition changed in 2013.
 - A county or place filter selects agency rows through an evidence-backed
   relationship. `gold_fbi.agency_observation_area_filter` keeps the agency
   observation identity so a multi-county agency deduplicates instead of being
-  counted once per county. There is no county or city total in this contract.
+  counted once per county. No provider-faithful view publishes a county or
+  city total.
+- `gold_fbi.county_rollup` (with `gold_fbi.latest_county_rollup`) is the one
+  **declared-derived** aggregate (ETL-053): it sums reported agency absolute
+  offense/clearance totals per county, measure, and month through the
+  resolved county relationships, served by `/api/v1/crime/county-rollup`.
+  Every row carries `derived`, its contributing ORIs, reporting-versus-
+  mapped coverage, and a multi-county flag. An agency resolved to more than
+  one county counts in full in each, so county values are **not additive to
+  state totals**; a county period with no reporting agency publishes no row
+  rather than a zero; and no rate is derived — the state program rate stays
+  the only published rate.
 - A month the provider did not publish for a subject is `not_reported` with a
   null value. It is never zero, and a published zero stays a published zero.
 - Offenses and clearances are different counted entities, and absolute totals
@@ -89,6 +100,90 @@ summaries: the adapter applies it to the outgoing request only, and the
 captured request identity carries the documented `from`/`to` parameters alone.
 The checked-in Compose files forward an externally supplied value and their
 example environment files keep only an empty placeholder.
+
+## Upgrading the agency relationship key
+
+For a warehouse populated before migration 030, pause FBI ingestion and apply
+the complete warehouse manifest before running the new product-scoped writer.
+Migration 030 widens the relationship uniqueness key to include `product_id`;
+it changes no stored evidence. The previous key let later offense products
+update the first product's mapping evidence and publish no county roll-up.
+
+Replay every captured published product release, oldest first, using the
+registered product and period window that captured it. A scheduled ingestion
+may classify the provider refresh as unchanged and skip this repair, so a
+normal trigger alone is insufficient. Identify the stored runs with:
+
+```sql
+SELECT product_id, run_id, refresh_date, parser_contract_version
+FROM control.fbi_ucr_release
+WHERE status = 'published' AND complete AND decision = 'ingest'
+ORDER BY refresh_date, created_at, product_id;
+```
+
+For each run, use the configured warehouse connection in the ETL environment
+and the adapter's offline production functions:
+
+```python
+from uuid import UUID
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from data_ingestion_toolbox.fbi_ucr.registry import ALL_PRODUCTS
+from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
+    replay_captured_run, persist_replay_result,
+)
+from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import transform_release
+from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import publish_release
+
+factory = PostgresHook(postgres_conn_id="public_data").get_conn
+product = next(p for p in ALL_PRODUCTS if p.product_id == "<product_id>")
+run_id = UUID("<stored run_id>")
+release_key = "<stored refresh_date>"
+result = replay_captured_run(factory, run_id=run_id, product=product,
+                            release_key=release_key)
+persist_replay_result(factory, run_id=run_id, product=product,
+                     release_key=release_key, result=result)
+transform_release(factory, run_id=run_id, product=product,
+                  release_key=release_key)
+publish_release(factory, run_id=run_id, product_id=product.product_id,
+                release_key=release_key)
+```
+
+Replay rebuilds each product's relationships from its own captured directory
+and repairs stale geography classifications. Provider values, capture IDs,
+and release history stay intact. Match older runs to their captured parser
+contract and scope before replay; do not substitute a new period window.
+Use `dataclasses.replace` on the registered product to restore the stored
+`period_start`/`period_end` and the national, state, and agency subjects
+present in that run's captured endpoints. Validate summarized request
+parameters against that window and reject unsupported parser versions.
+Reconciliation checks those captured identities rather than every fact
+under the refresh date, because a later capture may have widened the scope.
+Verify each loaded product appears in `gold_fbi.latest_county_rollup` for
+counties with reported agency totals, then resume ingestion. The disposable
+database tests cover the legacy constraint swap twice, replay repair, all ten
+products, and sums against their actual agency inputs.
+
+## Reviewing the county roll-up in the deployed web app
+
+Deploy the API and web images from the same application revision after the
+warehouse migration and offline replay. On the internal stack, the review
+page is `http://127.0.0.1:3001/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025`.
+Scroll to **Sum this county?s agency reports** and select **Load derived county
+roll-up**. The derived table carries the release, contributing ORIs, reporting
+coverage, and the multi-county caveat; previous/next pages retain that release.
+
+Run the dedicated live deployment checks from PowerShell:
+
+```powershell
+$env:SMOKE_BASE_URL = "http://127.0.0.1:3001"
+npm --prefix apps/web run test:county-rollup:live
+```
+
+This command starts no services and installs no fixtures. It requires the
+replayed Wisconsin FBI captures and their historical depth, and checks the
+Dane County rendering/paging and the explicit refusal for unmapped Los Angeles
+County. It fails when its deployment origin is absent. Its screenshot is
+written under `apps/web/test-results/`; the existing map CI tier is separate.
 
 ## First deployment test
 

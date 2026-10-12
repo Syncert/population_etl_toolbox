@@ -337,10 +337,16 @@ CREATE TABLE IF NOT EXISTS silver_fbi.agency_geography_relationship (
     release_key TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (ori, relationship_type, source_label, geography_vintage, effective_start),
+    CONSTRAINT fbi_agency_relationship_product_key UNIQUE (
+        product_id, ori, relationship_type, source_label,
+        geography_vintage, effective_start
+    ),
     CHECK (resolution_status <> 'resolved' OR geo_id IS NOT NULL),
     CHECK (resolution_status = 'resolved' OR geo_sk IS NULL)
 );
+
+-- Migration 030 widens the legacy cross-product key on populated warehouses.
+-- Replay stored product releases afterwards to recover missing relationships.
 
 CREATE INDEX IF NOT EXISTS fbi_agency_relationship_geo_idx
     ON silver_fbi.agency_geography_relationship (relationship_type, geo_id)

@@ -304,7 +304,7 @@ Web, over the published API:
 - [`docs/plans/to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md`](../plans/to_do/PLACE_PAGES_FOR_COUNTIES_STATES_AND_THE_NATION_PLAN.md) — the product; every other web plan depends on its route and chapter contract.
 - [`docs/plans/to_do/NEARBY_AND_RELATED_PLACES_PLAN.md`](../plans/to_do/NEARBY_AND_RELATED_PLACES_PLAN.md) — geography relationships served and shown.
 - [`docs/plans/to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md`](../plans/to_do/WHAT_MAKES_THIS_PLACE_DISTINCTIVE_PLAN.md) — per-measure percentile rank among peers, API-derived, never summed.
-- [`docs/plans/to_do/EXPLAINER_PAGES_PLAN.md`](../plans/to_do/EXPLAINER_PAGES_PLAN.md) — the first twelve explainers and their linking contract.
+- [`docs/plans/needs_review/EXPLAINER_PAGES_PLAN.md`](../plans/needs_review/EXPLAINER_PAGES_PLAN.md) — the first twelve explainers and their linking contract.
 - [`docs/plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md`](../plans/to_do/THE_STUDIO_RENDERS_VIDEO_FRAMES_PLAN.md) — operator-only frame renderer and script notes.
 - [`docs/plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md`](../plans/to_do/FIND_YOUR_PLACE_HOME_AND_DATA_PAGES_PLAN.md) — the home page and the public data page.
 - [`docs/plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md`](../plans/to_do/ONE_MEASURE_EVERY_COUNTY_MAP_PAGE_PLAN.md) — the measure map and ranked table.

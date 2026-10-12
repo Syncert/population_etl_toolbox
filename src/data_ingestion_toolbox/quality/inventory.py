@@ -1532,14 +1532,16 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "silver_fbi.agency_geography_relationship",
         "silver",
         "FBI_UCR",
-        grain="ori, relationship_type, source_label, geography_vintage, effective_start",
+        grain="product_id, ori, relationship_type, source_label, "
+        "geography_vintage, effective_start",
         lineage="silver_fbi.dim_agency, silver_ref.geography_resolution",
         scope_method=(
-            "exact state codes, reviewed crosswalks, and county label matches "
-            "published as derived"
+            "product-scoped directory evidence: exact state codes, reviewed "
+            "crosswalks, and county label matches published as derived"
         ),
         cadence="per FBI ingestion run",
-        empty_behavior="unresolved agencies carry no relationship rows",
+        empty_behavior="unresolved county labels remain as rows without "
+        "a resolved geography",
     ),
     _obj(
         "silver_fbi.dim_state_code",
@@ -1606,11 +1608,12 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold_fbi.agency_geography",
         "gold",
         "FBI_UCR",
-        grain="ori, relationship_type, geography_vintage (published projection)",
+        grain="relationship_sk (published product-scoped mapping projection)",
         lineage="silver_fbi.agency_geography_relationship",
-        scope_method="resolved and reviewed relationships only",
+        scope_method="published directory relationships retain resolved, "
+        "unresolved, and ambiguous outcomes",
         cadence="per publication",
-        empty_behavior="unresolved agencies are absent by design",
+        empty_behavior="empty before published agency directory evidence",
     ),
     _obj(
         "gold_fbi.agency_observation_area_filter",
@@ -1621,6 +1624,31 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="effective-dated area filter at agency grain",
         cadence="per publication",
         empty_behavior="empty when no agency resolves to the filtered area",
+    ),
+    _obj(
+        "gold_fbi.county_rollup",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period "
+        "(declared-derived aggregate; ETL-053)",
+        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
+        scope_method="derived sum of reported agency absolute totals through "
+        "resolved effective-dated county relationships; a multi-county "
+        "agency counts in full in each of its counties",
+        cadence="per publication",
+        empty_behavior="a county period with no reporting agency publishes "
+        "no row and is never a zero",
+    ),
+    _obj(
+        "gold_fbi.latest_county_rollup",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, measure_id, county geo_id, period "
+        "(latest refresh per product)",
+        lineage="gold_fbi.county_rollup",
+        scope_method="latest-refresh projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
     ),
     _obj(
         "gold_fbi.latest_release_observation",
@@ -3124,6 +3152,37 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "registry's measure definitions, and no executor reads the "
             "published measures back to confirm counted-entity bases never "
             "share one."
+        ),
+    ),
+    _rule(
+        "DQ-FBI-008",
+        "BLOCK",
+        "reconciliation",
+        "The derived county roll-up (ETL-053) sums only reported agency "
+        "absolute totals through resolved effective-dated county "
+        "relationships, states reporting-versus-mapped coverage and its "
+        "contributing ORIs, flags multi-county contributors, publishes no "
+        "row for a county period with no reporting agency, and derives no "
+        "rate.",
+        (
+            "gold_fbi.county_rollup",
+            "gold_fbi.latest_county_rollup",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measured rule: both relations are "
+            "non-materialized views, so every read recomputes the "
+            "derivation from `gold_fbi.crime_observation` and the resolved "
+            "county relationships, and no drift between the sum and its "
+            "inputs can persist between reads. The derivation semantics -- "
+            "reported-only summation, the no-zero rule, the multi-county "
+            "whole-count rule, and the derived labeling -- are pinned by "
+            "the ETL-053 static contract tests in "
+            "tests/unit/fbi_ucr/test_fbi_county_rollup.py and real "
+            "warehouse/API tests in tests/integration/database/"
+            "test_fbi_ucr_pipeline.py and tests/e2e/test_fbi_ucr_pipeline.py; no executor "
+            "reads the published roll-up back against an independent "
+            "recomputation."
         ),
     ),
     # -- USDA NASS ---------------------------------------------------------

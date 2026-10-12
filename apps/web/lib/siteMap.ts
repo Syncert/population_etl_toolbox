@@ -4,6 +4,7 @@
 // sitemap naming a route `robots.txt` disallows is a contradiction a crawler
 // resolves for itself.
 
+import { EXPLAINER_INDEX } from "./explainerIndex";
 import { useCasePages } from "./useCasePages";
 
 /** Routes a crawler may index. */
@@ -18,6 +19,8 @@ export const PUBLIC_ROUTES: readonly string[] = [
   ...useCasePages.map((entry) => entry.href),
   "/quality",
   "/articles",
+  "/explain",
+  ...EXPLAINER_INDEX.map((entry) => `/explain/${entry.slug}`),
 ];
 
 /**

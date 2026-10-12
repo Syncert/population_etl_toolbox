@@ -48,14 +48,22 @@ def test_the_expected_gold_products_exist() -> None:
         "reporting_coverage",
         "agency_geography",
         "agency_observation_area_filter",
+        "county_rollup",
+        "latest_county_rollup",
         "latest_release_observation",
         "measure_export",
         "metric_publisher",
     }
 
 
-def test_no_gold_view_aggregates_observation_values() -> None:
-    """Covers: ETL-042 — agency values are never summed into an area total."""
+def test_no_provider_faithful_view_aggregates_observation_values() -> None:
+    """Covers: ETL-042 — agency values are never summed into an area total.
+
+    ``county_rollup`` is the one declared-derived aggregate the county
+    roll-up plan carved out of this rule; it is checked separately in
+    ``test_fbi_county_rollup.py`` and excluded here so every other view
+    stays provider-faithful.
+    """
     aggregate = re.compile(
         r"\b(SUM|AVG|MIN|MAX)\s*\(\s*[\w.]*\b"
         r"(value|population|participated_population|coverage_percent"
@@ -65,10 +73,20 @@ def test_no_gold_view_aggregates_observation_values() -> None:
     offenders = {
         name: aggregate.findall(body)
         for name, body in _gold_view_bodies().items()
-        if aggregate.search(body)
+        if name != "county_rollup" and aggregate.search(body)
     }
 
     assert offenders == {}
+
+
+def test_the_derived_rollup_sums_only_the_observation_value() -> None:
+    """Covers: ETL-053 — the roll-up sums counts, never a rate or denominator."""
+    body = _gold_view_bodies()["county_rollup"]
+    aggregate = re.compile(r"\b(?:SUM|AVG|MIN|MAX)\s*\(\s*([\w.]+)", re.IGNORECASE)
+
+    assert {match.upper() for match in aggregate.findall(body)} == {
+        "CONTRIBUTION.VALUE"
+    }
 
 
 def test_area_filter_view_declares_agency_grain_and_never_a_total() -> None:

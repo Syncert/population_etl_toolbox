@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from psycopg2.extensions import connection
+from sqlalchemy.dialects import postgresql
 
 from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import (
     FbiPublicationError,
@@ -24,6 +26,7 @@ from tests.support import fbi_release
 from tests.support.capture_seed import delete_geography, seed_geography
 from data_ingestion_toolbox.fbi_ucr.metadata import load_latest_accepted_release
 from data_ingestion_toolbox.fbi_ucr.registry import ALL_PRODUCTS
+from data_ingestion_toolbox.sql.fbi_queries import build_county_mapping_evidence_query
 from data_ingestion_toolbox.fbi_ucr.registry import (
     SUMMARIZED_VIOLENT_CRIME as PRODUCT_V,
 )
@@ -92,6 +95,41 @@ def test_fbi_release_replays_reconciles_and_publishes_idempotently(
                 "WHERE source_code = 'FBI_UCR'"
             )
             assert cursor.fetchone()[0] >= 1
+    finally:
+        reader.close()
+
+
+def test_same_release_replays_original_scope_after_scope_expansion(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-006, ETL-053 — older captures reconcile their own identities."""
+    narrow = replace(PRODUCT, period_start="01-2023", agency_scope=())
+    older = _persist_fixture_release(fbi_warehouse, product=narrow)
+    _run_pipeline(fbi_warehouse, older, narrow)
+    wider = _persist_fixture_release(fbi_warehouse)
+    full_count = len(PRODUCT.subjects) * OBSERVATIONS_PER_SUBJECT
+    assert _run_pipeline(fbi_warehouse, wider) == (full_count, full_count)
+
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT to_jsonb(f) FROM silver_fbi.fact_crime_observation f "
+                "ORDER BY observation_sk"
+            )
+            before = cursor.fetchall()
+        reader.commit()
+        scoped_count = len(narrow.subjects) * 4 * len(narrow.expected_periods)
+        assert _run_pipeline(fbi_warehouse, older, narrow) == (
+            scoped_count,
+            full_count,
+        )
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT to_jsonb(f) FROM silver_fbi.fact_crime_observation f "
+                "ORDER BY observation_sk"
+            )
+            assert cursor.fetchall() == before
     finally:
         reader.close()
 
@@ -742,10 +780,250 @@ def _counts(connection_factory: Callable[[], connection]) -> dict[str, list[tupl
         reader.close()
 
 
+def test_fbi_fixture_reuses_existing_geographies_without_capture_residue(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-024 — reused reference identities create no orphan capture graphs."""
+    query = """
+        SELECT (SELECT COUNT(*) FROM raw_capture.response_capture),
+               (SELECT COUNT(*) FROM control.ingestion_run),
+               (SELECT COUNT(*) FROM control.ingestion_request),
+               (SELECT COUNT(*) FROM silver_ref.dim_geo_entity_version)
+    """
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(query)
+            before = cursor.fetchone()
+        assert fbi_release.seed_reviewed_geographies(fbi_warehouse) == set(
+            fbi_release.SEEDED_GEO_IDS
+        )
+        with reader.cursor() as cursor:
+            cursor.execute(query)
+            assert cursor.fetchone() == before
+    finally:
+        reader.close()
+
+
+def test_county_rollup_retains_reported_zero_and_partial_coverage(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-053 — missing reports stay absent; a reported zero stays zero."""
+    captured = _persist_fixture_release(fbi_warehouse)
+    _run_pipeline(fbi_warehouse, captured)
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_crime_observation
+                SET value = NULL, value_status = 'not_reported'
+                WHERE period = '01-2023' AND subject_type = 'agency'
+                  AND measure_id = 'V:offense:absolute_total'
+                """
+            )
+            query = """
+                SELECT value, contributing_oris, reporting_agency_count,
+                       mapped_agency_count, includes_multi_county_agency
+                FROM gold_fbi.latest_county_rollup
+                WHERE geo_id = 'state:55|county:025' AND period = '01-2023'
+                  AND counted_entity_basis = 'offense'
+            """
+            cursor.execute(query)
+            assert cursor.fetchall() == []
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_crime_observation
+                SET value = 0, value_status = 'reported'
+                WHERE subject_code = 'WI0130000' AND period = '01-2023'
+                  AND measure_id = 'V:offense:absolute_total'
+                """
+            )
+            cursor.execute(query)
+            assert cursor.fetchall() == [(0, ["WI0130000"], 1, 3, False)]
+            # Even a numeric report cannot contribute outside the mapping's
+            # effective window; no current label guesses a historic county.
+            cursor.execute(
+                """
+                UPDATE silver_fbi.agency_geography_relationship
+                SET effective_end = '2022-12-31'
+                WHERE ori = 'WI0130000' AND relationship_type = 'county'
+                """
+            )
+            cursor.execute(query)
+            assert cursor.fetchall() == []
+    finally:
+        reader.rollback()
+        reader.close()
+
+
+def test_relationship_key_upgrade_preserves_evidence_and_is_rerunnable(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-052, ETL-053 — a populated legacy mapping upgrades losslessly."""
+    captured = _persist_fixture_release(fbi_warehouse)
+    _run_pipeline(fbi_warehouse, captured)
+    migration = (
+        Path(__file__).resolve().parents[3]
+        / "sql/migrations/030_fbi_relationship_product_scope.sql"
+    ).read_text(encoding="utf-8")
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM silver_fbi.agency_geography_relationship "
+                "ORDER BY relationship_sk"
+            )
+            before = cursor.fetchall()
+            assert before
+            cursor.execute(
+                """
+                ALTER TABLE silver_fbi.agency_geography_relationship
+                    DROP CONSTRAINT fbi_agency_relationship_product_key;
+                ALTER TABLE silver_fbi.agency_geography_relationship
+                    ADD CONSTRAINT
+                        agency_geography_relationship_ori_relationship_type_source__key
+                    UNIQUE (ori, relationship_type, source_label,
+                            geography_vintage, effective_start);
+                """
+            )
+            for _ in range(2):
+                cursor.execute(migration)
+                cursor.execute(
+                    "SELECT * FROM silver_fbi.agency_geography_relationship "
+                    "ORDER BY relationship_sk"
+                )
+                assert cursor.fetchall() == before
+            cursor.execute(
+                """
+                SELECT pg_get_constraintdef(oid) FROM pg_constraint
+                WHERE conrelid = 'silver_fbi.agency_geography_relationship'::regclass
+                  AND contype = 'u'
+                """
+            )
+            assert cursor.fetchall() == [
+                (
+                    "UNIQUE (product_id, ori, relationship_type, source_label, "
+                    "geography_vintage, effective_start)",
+                )
+            ]
+    finally:
+        reader.rollback()
+        reader.close()
+
+
+def test_county_relationships_and_rollups_survive_two_offense_products(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-053, ETL-052, API-163, DB-006 — product keys preserve mapping evidence."""
+    products = [fbi_release.fixture_scoped(product) for product in ALL_PRODUCTS[:2]]
+    for product in products:
+        captured = _persist_fixture_release(fbi_warehouse, product=product)
+        _run_pipeline(fbi_warehouse, captured, product)
+
+    # Old cross-product conflicts also left later products' facts classified
+    # as agency_only. Stored bytes must repair that classification on replay
+    # without changing provider values or their capture lineage.
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT source_record_id, value, capture_id "
+                "FROM silver_fbi.fact_crime_observation WHERE product_id = %s "
+                "ORDER BY source_record_id",
+                (product.product_id,),
+            )
+            before = cursor.fetchall()
+            for relation in ("fact_crime_observation", "fact_reporting_participation"):
+                cursor.execute(
+                    f"UPDATE silver_fbi.{relation} SET geography_status = 'agency_only' "
+                    "WHERE product_id = %s AND subject_code = 'WI0130000'",
+                    (product.product_id,),
+                )
+        reader.commit()
+    finally:
+        reader.close()
+    _run_pipeline(fbi_warehouse, captured, product)
+
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT source_record_id, value, capture_id "
+                "FROM silver_fbi.fact_crime_observation WHERE product_id = %s "
+                "ORDER BY source_record_id",
+                (product.product_id,),
+            )
+            assert cursor.fetchall() == before
+            for relation in ("fact_crime_observation", "fact_reporting_participation"):
+                cursor.execute(
+                    f"SELECT DISTINCT geography_status FROM silver_fbi.{relation} "
+                    "WHERE product_id = %s AND subject_code = 'WI0130000'",
+                    (product.product_id,),
+                )
+                assert cursor.fetchall() == [("agency_county_bridged",)]
+            cursor.execute(
+                """
+                SELECT product_id, value, reporting_agency_count, mapped_agency_count
+                FROM gold_fbi.latest_county_rollup
+                WHERE geo_id = 'state:55|county:025' AND period = '01-2023'
+                  AND counted_entity_basis = 'offense'
+                ORDER BY product_id
+                """
+            )
+            rows = cursor.fetchall()
+            assert [row[0] for row in rows] == sorted(p.product_id for p in products)
+            assert all(row[2:] == (3, 3) for row in rows)
+            for product_id, value, _, _ in rows:
+                cursor.execute(
+                    """
+                    SELECT SUM(value) FROM gold_fbi.crime_observation
+                    WHERE product_id = %s AND period = '01-2023'
+                      AND subject_code IN ('WI0130000', 'WI0137000', 'WI0540300')
+                      AND measure_form = 'absolute_total'
+                      AND counted_entity_basis = 'offense'
+                    """,
+                    (product_id,),
+                )
+                assert value == cursor.fetchone()[0]
+            # The refusal describes unique provider labels, not the number
+            # of offense products that captured the same directory label.
+            evidence_sql = str(
+                build_county_mapping_evidence_query().compile(
+                    dialect=postgresql.dialect()
+                )
+            )
+            params = {"geo_id": "state:55|county:078", "state_geo_id": "state:55"}
+            cursor.execute(evidence_sql, params)
+            resolved, unresolved = cursor.fetchone()
+            assert resolved == 0
+            cursor.execute(
+                """
+                INSERT INTO silver_fbi.agency_geography_relationship (
+                    ori, relationship_type, source_label,
+                    resolution_status, confidence_class, reason_code,
+                    effective_start, effective_end, geography_vintage,
+                    evidence_source, evidence_capture_id, product_id, release_key
+                )
+                SELECT ori, 'county', 'UNMATCHED COUNTY',
+                       'unresolved', 'unresolved', 'county_label_unmatched',
+                       effective_start, effective_end, geography_vintage,
+                       evidence_source, evidence_capture_id, product_id, release_key
+                FROM silver_fbi.agency_geography_relationship
+                WHERE ori = 'WI0130000' AND relationship_type = 'county'
+                """
+            )
+            assert cursor.rowcount == 2
+            cursor.execute(evidence_sql, params)
+            assert cursor.fetchone() == (0, unresolved + 1)
+    finally:
+        reader.close()
+
+
 def test_every_registered_offense_publishes_as_its_own_product(
     fbi_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: DB-003, DB-006, ETL-052 — ten offenses publish once, idempotently."""
+    """Covers: DB-003, DB-006, ETL-052, ETL-053 — all products retain county sums."""
     products = [fbi_release.fixture_scoped(product) for product in ALL_PRODUCTS]
     captured = {
         product.product_id: _persist_fixture_release(fbi_warehouse, product=product)
@@ -804,6 +1082,16 @@ def test_every_registered_offense_publishes_as_its_own_product(
                 """
             )
             assert cursor.fetchone() == (len(ALL_PRODUCTS), 4 * len(ALL_PRODUCTS))
+            # Directory evidence is ingested per product. A relationship key
+            # that omits product_id silently makes every later offense lose
+            # its mapping, although provider observations still publish.
+            cursor.execute(
+                """
+                SELECT DISTINCT product_id FROM gold_fbi.latest_county_rollup
+                WHERE geo_id = 'state:55|county:025' ORDER BY product_id
+                """
+            )
+            assert cursor.fetchall() == [(product_id,) for product_id in product_ids]
     finally:
         reader.close()
 

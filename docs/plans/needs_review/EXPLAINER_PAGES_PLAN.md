@@ -17,9 +17,61 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Ready for review, 2026-10-06, on branch `feat/explainer-pages`.
+
+### Implementation evidence
+
+- **Content:** twelve Markdown files in `apps/web/content/explainers/`, one
+  per caveat the plan lists, each with frontmatter (question title, summary,
+  `caveat_keys`, `metric_codes`, `sources`, `example_metric`, `reviewed`,
+  `reviewer`, optional `definitions` and `video_url`) and the sections Short
+  answer, What it is not, Worked example, Where it is used. The reviewer
+  field reads "Agent draft; editorial review pending": the text was written
+  by an agent from the use-case guardrails and the providers' published
+  methods, and needs a person's editorial review before it is presented as
+  reviewed. `docs/semantics/` holds no definitions yet, so none is cited; the
+  test checks any that are cited exist.
+- **Format and rendering:** `lib/explainerContent.ts` parses and validates
+  a deliberately small format (paragraphs and lists, no HTML, no inline
+  markup), so rendering needs no Markdown library and nothing in a file
+  reaches the page as markup. Files are read at request time by
+  `lib/explainerFiles.ts`; `outputFileTracingIncludes` in `next.config.mjs`
+  copies them into the standalone build. Every page is server-rendered per
+  request, so the CSP nonce contract is untouched (`check:csp` passes).
+- **Routes:** `/explain` and `/explain/<slug>`, titles and descriptions
+  from the files, sitemap entries for all thirteen addresses, an unknown slug
+  a 404, budgets declared for both routes.
+- **Worked example:** `components/ExplainerExample.tsx` reads the example
+  measure's newest value for the nation and, when `lib/lastPlace.ts` holds a
+  place the reader looked at in this tab (session storage, written by the
+  profile and use-case pages), for that place too. With none, it shows the
+  national value and says so. Nothing is written to the URL. The three-level
+  card from `place-pages` is not on this branch; once both merge, place pages
+  should also remember the last place.
+- **Linking contract:** template slots declare an optional `caveat` key
+  (seventeen do); `components/ProfileProduct.tsx` links each to its
+  explainer through `lib/explainerIndex.ts`, and renders nothing for a key no
+  explainer answers.
+- **Video hook:** `video_url`, rendered only when present.
+- **Contract:** WEB-126, the evidence-map row, catalog total 548. The
+  `/profiles` bundle budget moved from 450 to 456 kB for the caveat links
+  (measured 450.4 kB).
+
+### Validation (local, Windows, 2026-10-06)
+
+- `npm --prefix apps/web run test:unit`: 50 files, 742 tests passed
+  (`explainers.test.js`, 23).
+- `lint`, `typecheck`, `build`, `check:csp` (0 prerendered documents),
+  `check:bundle`: passed.
+- `npx playwright test` (production server): 206 passed, including
+  `explainers.spec.js`.
+- `python -m pytest tests/unit/shared tests/unit/tooling -q`: passed.
+
+### Open items, decided
+
+- Markdown is read at request time, not compiled, and carries no HTML.
+- Authorship review is a frontmatter field; every file currently records
+  that editorial review is pending.
 
 ## Why
 
@@ -97,5 +149,5 @@ diagram is the key frame, the worked example is the payoff.
 
 ## Checkpoint
 
-Next pickup: write the frontmatter schema test and one explainer, then the
-route; add the remaining eleven once the route renders.
+Implementation complete; awaiting human review, including editorial review
+of the twelve texts.

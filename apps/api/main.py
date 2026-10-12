@@ -32,6 +32,7 @@ from apps.api.routers import (
     catalog,
     cdc,
     comparison,
+    crime,
     distribution,
     evidence_packets,
     health,
@@ -68,6 +69,9 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     distribution.router,
     comparison.router,
     population.router,
+    # The derived FBI county roll-up (ETL-053): a warehouse-published
+    # derived aggregate, cacheable like every other public warehouse read.
+    crime.router,
     # Per-source gold schema routers. The observation pairs are generated from
     # the serving registry; CDC and USDA NASS keep hand-written routers because
     # their source-explorer contracts are not the shared observation shape.
