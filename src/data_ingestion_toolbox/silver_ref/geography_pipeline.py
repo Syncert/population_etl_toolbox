@@ -44,6 +44,13 @@ LEGACY_COUNTY_URLS = {
     1990: f"{GAZ_ROOT}/counties.zip",
     2000: f"{GAZ_ROOT}/county2k.zip",
 }
+#: ZCTA boundaries are drawn once a decade; the cartographic boundary file
+#: exists for the 2020 vintage only, and every later Gazetteer's ZCTAs are
+#: the 2020 ZCTAs (sub-county-geography).
+ZCTA_BOUNDARY_VINTAGE = 2020
+#: The snapshot scope of a tract and ZCTA publication (sub-county-geography).
+SUB_COUNTY_SCOPE = "sub_county"
+SUB_COUNTY_GEO_TYPES = frozenset({"tract", "zcta"})
 
 
 @dataclass(frozen=True)
@@ -65,10 +72,19 @@ class GeographyRecord:
     water_area_m2: int | None = None
     latitude: float | None = None
     longitude: float | None = None
+    tract_code: str | None = None
+    zcta_code: str | None = None
 
     @property
     def attribute_checksum(self) -> str:
-        payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+        fields = asdict(self)
+        # The two sub-county codes are left out when absent, so every
+        # nation, state, county and place keeps the checksum it had before
+        # they existed and a replay writes no spurious new version.
+        for name in ("tract_code", "zcta_code"):
+            if fields[name] is None:
+                del fields[name]
+        payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -143,9 +159,23 @@ def parse_gazetteer_capture(
     for row in rows:
         geoid = _first(row, "GEOID")
         name = _first(row, "NAME", "NAME10")
+        tract = zcta = None
+        if geo_type in {"tract", "zcta"} and geoid:
+            # The tract and ZCTA Gazetteers carry no name column; the name is
+            # the one the Bureau's own boundary files print for the code.
+            name = (
+                tract_name(geoid.zfill(11)[5:])
+                if geo_type == "tract"
+                else zcta_name(geoid.zfill(5))
+            )
         if not geoid or not name:
             raise ValueError("gazetteer row is missing GEOID or NAME")
-        if geo_type == "state":
+        if geo_type == "tract":
+            code = geoid.zfill(11)
+            state, county, place, tract = code[:2], code[2:5], None, code[5:]
+        elif geo_type == "zcta":
+            state, county, place, zcta = None, None, None, geoid.zfill(5)
+        elif geo_type == "state":
             state, county, place = geoid.zfill(2), None, None
         elif geo_type == "county":
             code = geoid.zfill(5)
@@ -163,9 +193,13 @@ def parse_gazetteer_capture(
                     state_fips=state,
                     county_fips=county,
                     place_fips=place,
+                    tract_code=tract,
+                    zcta_code=zcta,
                 ),
                 census_geoid=geoid.zfill(
-                    {"state": 2, "county": 5, "place": 7}[geo_type]
+                    {"state": 2, "county": 5, "place": 7, "tract": 11, "zcta": 5}[
+                        geo_type
+                    ]
                 ),
                 state_fips=state,
                 county_fips=county,
@@ -181,11 +215,25 @@ def parse_gazetteer_capture(
                 water_area_m2=_area_m2(row, "AWATER", "AWATER_SQMI"),
                 latitude=_optional_float(_first(row, "INTPTLAT")),
                 longitude=_optional_float(_first(row, "INTPTLONG")),
+                tract_code=tract,
+                zcta_code=zcta,
             )
         )
     if len({record.geo_id for record in records}) != len(records):
         raise ValueError("gazetteer capture contains duplicate canonical identities")
     return records
+
+
+def tract_name(tract_code: str) -> str:
+    """The Bureau's name for a tract code: ``040203`` is "Census Tract 402.03"."""
+    code = tract_code.zfill(6)
+    base, suffix = int(code[:4]), code[4:]
+    return f"Census Tract {base}" + ("" if suffix == "00" else f".{suffix}")
+
+
+def zcta_name(zcta_code: str) -> str:
+    """The Bureau's name for a ZCTA: "ZCTA5 19901"."""
+    return f"ZCTA5 {zcta_code.zfill(5)}"
 
 
 def parse_legacy_county_gazetteer_capture(
@@ -297,7 +345,24 @@ def parse_boundary_capture(
     for shaped in reader.shapeRecords():
         properties = dict(zip(fields, shaped.record))
         state = str(properties.get("STATEFP") or "").zfill(2)
-        if geo_type == "state":
+        tract = zcta = None
+        if geo_type == "tract":
+            county = str(properties.get("COUNTYFP") or "").zfill(3)
+            tract = str(properties.get("TRACTCE") or "").zfill(6)
+            geo_id = canonical_geo_id(
+                "tract", state_fips=state, county_fips=county, tract_code=tract
+            )
+            census_geoid, place = f"{state}{county}{tract}", None
+        elif geo_type == "zcta":
+            zcta = str(
+                properties.get("ZCTA5CE20")
+                or properties.get("ZCTA5CE10")
+                or properties.get("GEOID20")
+                or ""
+            ).zfill(5)
+            geo_id = canonical_geo_id("zcta", zcta_code=zcta)
+            census_geoid, state, county, place = zcta, None, None, None
+        elif geo_type == "state":
             geo_id = canonical_geo_id("state", state_fips=state)
             census_geoid, county, place = state, None, None
         elif geo_type == "county":
@@ -314,6 +379,8 @@ def parse_boundary_capture(
             shaped.shape.__geo_interface__, sort_keys=True, separators=(",", ":")
         )
         name = _first(properties, "NAMELSAD", "NAME")
+        if geo_type == "zcta":
+            name = zcta_name(zcta)
         geography = None
         if name:
             geography = GeographyRecord(
@@ -334,6 +401,8 @@ def parse_boundary_capture(
                 water_area_m2=_area_m2(properties, "AWATER", "AWATER_SQMI"),
                 latitude=_optional_float(_first(properties, "INTPTLAT")),
                 longitude=_optional_float(_first(properties, "INTPTLON", "INTPTLONG")),
+                tract_code=tract,
+                zcta_code=zcta,
             )
         records.append(
             GeometryRecord(
@@ -408,6 +477,8 @@ class GeographyRepository:
                     row.place_fips,
                     row.geography_vintage,
                     row.geography_vintage,
+                    row.tract_code,
+                    row.zcta_code,
                 ]
                 continue
             existing[6] = min(existing[6], row.geography_vintage)
@@ -418,7 +489,8 @@ class GeographyRepository:
             """
             INSERT INTO silver_ref.dim_geo_entity (
                 geo_id, geo_type, census_geoid, state_fips, county_fips,
-                place_fips, first_seen_version, last_seen_version
+                place_fips, first_seen_version, last_seen_version,
+                tract_code, zcta_code
             ) VALUES %s
             ON CONFLICT (geo_id) DO UPDATE SET
                 first_seen_version = LEAST(
@@ -433,7 +505,7 @@ class GeographyRepository:
             list(merged.values()),
             template=(
                 "(%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,"
-                "%s::INTEGER,%s::INTEGER)"
+                "%s::INTEGER,%s::INTEGER,%s::TEXT,%s::TEXT)"
             ),
             page_size=WRITE_PAGE_SIZE,
         )
@@ -812,6 +884,190 @@ class GeographyRepository:
             if owns_connection:
                 connection.close()
 
+    def refuse_tracts_without_county(
+        self,
+        attribute_batches: list[tuple[list[GeographyRecord], UUID]],
+        geometry_batches: list[tuple[list[GeometryRecord], UUID]],
+        *,
+        vintage: int,
+        connection: Any,
+    ) -> tuple[
+        list[tuple[list[GeographyRecord], UUID]],
+        list[tuple[list[GeometryRecord], UUID]],
+        list[GeographyRecord],
+    ]:
+        """Hold back every tract whose county the reference does not hold.
+
+        A tract's county is in its code, so the parent is known exactly; when
+        that county is not an entity, the tract is refused rather than loaded
+        under a guessed parent. Each refusal is recorded in the resolution
+        ledger with the capture that published it.
+        """
+        wanted = {
+            canonical_geo_id(
+                "county", state_fips=record.state_fips, county_fips=record.county_fips
+            )
+            for records, _ in attribute_batches
+            for record in records
+            if record.geo_type == "tract"
+        }
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT geo_id FROM silver_ref.dim_geo_entity WHERE geo_type = 'county' AND geo_id = ANY(%s)",
+                (sorted(wanted),),
+            )
+            counties = {geo_id for (geo_id,) in cursor.fetchall()}
+
+            def orphan(record: GeographyRecord) -> bool:
+                return record.geo_type == "tract" and (
+                    canonical_geo_id(
+                        "county",
+                        state_fips=record.state_fips,
+                        county_fips=record.county_fips,
+                    )
+                    not in counties
+                )
+
+            refused: dict[str, tuple[GeographyRecord, UUID]] = {}
+            kept_attributes: list[tuple[list[GeographyRecord], UUID]] = []
+            for records, capture_id in attribute_batches:
+                for record in records:
+                    if orphan(record):
+                        refused.setdefault(record.geo_id, (record, capture_id))
+                kept_attributes.append(
+                    ([record for record in records if not orphan(record)], capture_id)
+                )
+            kept_geometries = [
+                (
+                    [record for record in records if record.geo_id not in refused],
+                    capture_id,
+                )
+                for records, capture_id in geometry_batches
+            ]
+            if refused:
+                execute_values(
+                    cursor,
+                    """
+                    INSERT INTO silver_ref.geography_resolution (
+                        provider_source, provider_dataset, source_geo_type, source_code,
+                        source_label, source_vintage, geo_sk, resolution_method,
+                        evidence_capture_id, status, reason_code
+                    ) VALUES %s
+                    ON CONFLICT (provider_source, provider_dataset, source_geo_type, source_code, source_vintage)
+                    DO UPDATE SET status = EXCLUDED.status, reason_code = EXCLUDED.reason_code,
+                                  evidence_capture_id = EXCLUDED.evidence_capture_id, resolved_at = NOW()
+                    """,
+                    [
+                        (
+                            SOURCE_CODE,
+                            "tract",
+                            "tract",
+                            record.census_geoid,
+                            record.name,
+                            vintage,
+                            None,
+                            None,
+                            str(capture_id),
+                            "unmapped",
+                            "parent_county_absent",
+                        )
+                        for record, capture_id in refused.values()
+                    ],
+                    page_size=WRITE_PAGE_SIZE,
+                )
+        return (
+            kept_attributes,
+            kept_geometries,
+            [record for record, _ in refused.values()],
+        )
+
+    def reconcile_sub_county_relationships(
+        self,
+        *,
+        vintage: int,
+        zcta_boundary_vintage: int,
+        capture_id: UUID,
+        active_geo_ids: set[str],
+        connection: Any,
+    ) -> None:
+        """County contains tract by code; a ZCTA intersects counties and places by area.
+
+        A tract's county is exact from its code. A ZCTA crosses county and
+        place lines, so each overlap is recorded with its area and the share
+        of the ZCTA's own area it holds (`overlap_weight`), the ZCTA as the
+        parent so the weights of one ZCTA sum to at most one.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.bridge_geo_relationship_version (
+                    parent_geo_sk, related_geo_sk, relationship_type,
+                    geography_vintage, evidence_source, source_snapshot_id
+                )
+                SELECT county.geo_sk, tract.geo_sk, 'contains', %s,
+                       'exact_census_code_hierarchy', %s
+                FROM silver_ref.dim_geo_entity AS tract
+                JOIN silver_ref.dim_geo_entity AS county
+                  ON county.geo_type = 'county'
+                 AND county.state_fips = tract.state_fips
+                 AND county.county_fips = tract.county_fips
+                WHERE tract.geo_type = 'tract' AND tract.geo_id = ANY(%s)
+                ON CONFLICT DO NOTHING
+                """,
+                (vintage, str(capture_id), list(active_geo_ids)),
+            )
+            # The same shape as the county-place overlap: both boundary sets
+            # are materialised first so the GiST index drives one pass, and
+            # each overlap is computed once.
+            cursor.execute(
+                """
+                WITH zcta_boundary AS MATERIALIZED (
+                    SELECT entity.geo_sk, boundary.geom,
+                           ST_Area(boundary.geom::geography) AS zcta_area_m2
+                    FROM silver_ref.dim_geo_entity AS entity
+                    JOIN silver_ref.dim_geo_geometry_version AS boundary
+                         ON boundary.geo_sk = entity.geo_sk
+                        AND boundary.boundary_vintage = %s
+                    WHERE entity.geo_type = 'zcta' AND entity.geo_id = ANY(%s)
+                ),
+                area_boundary AS MATERIALIZED (
+                    SELECT entity.geo_sk, boundary.geom
+                    FROM silver_ref.dim_geo_entity AS entity
+                    JOIN silver_ref.dim_geo_geometry_version AS boundary
+                         ON boundary.geo_sk = entity.geo_sk
+                        AND boundary.boundary_vintage = %s
+                    WHERE entity.geo_type IN ('county', 'place')
+                ),
+                overlap AS MATERIALIZED (
+                    SELECT zcta.geo_sk AS parent_geo_sk,
+                           area.geo_sk AS related_geo_sk,
+                           ST_Area(ST_Intersection(zcta.geom, area.geom)::geography) AS overlap_area_m2,
+                           zcta.zcta_area_m2
+                    FROM zcta_boundary AS zcta
+                    JOIN area_boundary AS area ON ST_Intersects(zcta.geom, area.geom)
+                )
+                INSERT INTO silver_ref.bridge_geo_relationship_version (
+                    parent_geo_sk, related_geo_sk, relationship_type,
+                    geography_vintage, overlap_area_m2, overlap_weight,
+                    evidence_source, source_snapshot_id
+                )
+                SELECT parent_geo_sk, related_geo_sk, 'intersects', %s,
+                       overlap_area_m2,
+                       LEAST(1, overlap_area_m2 / NULLIF(zcta_area_m2, 0)),
+                       'census_boundary_intersection', %s
+                FROM overlap
+                WHERE overlap_area_m2 > 0
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    zcta_boundary_vintage,
+                    list(active_geo_ids),
+                    vintage,
+                    vintage,
+                    str(capture_id),
+                ),
+            )
+
 
 def _get_hook():
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -829,6 +1085,27 @@ def _urls(year: int) -> list[tuple[str, str, str]]:
         ("geometry", "state", f"{genz}/cb_{year}_us_state_500k.zip"),
         ("geometry", "county", f"{genz}/cb_{year}_us_county_500k.zip"),
         ("geometry", "place", f"{genz}/cb_{year}_us_place_500k.zip"),
+    ]
+
+
+def sub_county_urls(year: int) -> list[tuple[str, str, str]]:
+    """The tract and ZCTA assets of one vintage (sub-county-geography).
+
+    ZCTA boundaries come from the 2020 file whatever the vintage: the Bureau
+    draws ZCTAs once a decade and publishes their cartographic boundary for
+    the decennial vintage only.
+    """
+    gaz = f"{GAZ_ROOT}/{year}_Gazetteer"
+    genz = f"{BOUNDARY_ROOT}{year}/shp"
+    return [
+        ("attributes", "tract", f"{gaz}/{year}_Gaz_tracts_national.zip"),
+        ("attributes", "zcta", f"{gaz}/{year}_Gaz_zcta_national.zip"),
+        ("geometry", "tract", f"{genz}/cb_{year}_us_tract_500k.zip"),
+        (
+            "geometry",
+            "zcta",
+            f"{BOUNDARY_ROOT}{ZCTA_BOUNDARY_VINTAGE}/shp/cb_{ZCTA_BOUNDARY_VINTAGE}_us_zcta520_500k.zip",
+        ),
     ]
 
 
@@ -1037,7 +1314,9 @@ def sync_geography_reference(
 
         attribute_batches: list[tuple[list[GeographyRecord], UUID]] = []
         geometry_batches: list[tuple[list[GeometryRecord], UUID]] = []
-        active_geo_ids: set[str] = {"us:1"}
+        active_geo_ids: set[str] = (
+            set() if snapshot_scope == SUB_COUNTY_SCOPE else {"us:1"}
+        )
         for product, geo_type, _, capture_id in captured:
             payload = load_captured_payload(factory, capture_id)
             try:
@@ -1051,7 +1330,7 @@ def sync_geography_reference(
                             payload, geo_type=geo_type, geography_vintage=year
                         )
                     active_geo_ids.update(record.geo_id for record in records)
-                    if geo_type == "state":
+                    if geo_type == "state" and snapshot_scope != SUB_COUNTY_SCOPE:
                         records = [
                             GeographyRecord(
                                 "nation",
@@ -1068,7 +1347,11 @@ def sync_geography_reference(
                     attribute_batches.append((records, capture_id))
                 else:
                     boundary_records = parse_boundary_capture(
-                        payload, geo_type=geo_type, boundary_vintage=year
+                        payload,
+                        geo_type=geo_type,
+                        boundary_vintage=ZCTA_BOUNDARY_VINTAGE
+                        if geo_type == "zcta"
+                        else year,
                     )
                     boundary_only_entities = [
                         record.geography
@@ -1096,6 +1379,17 @@ def sync_geography_reference(
         counts = {"attributes": 0, "geometries": 0}
         publication = factory()
         try:
+            if snapshot_scope == SUB_COUNTY_SCOPE:
+                attribute_batches, geometry_batches, refused = (
+                    repository.refuse_tracts_without_county(
+                        attribute_batches,
+                        geometry_batches,
+                        vintage=year,
+                        connection=publication,
+                    )
+                )
+                active_geo_ids -= {record.geo_id for record in refused}
+                counts["refused"] = len(refused)
             for records, capture_id in attribute_batches:
                 counts["attributes"] += repository.load_attributes(
                     records, capture_id=capture_id, connection=publication
@@ -1111,12 +1405,21 @@ def sync_geography_reference(
                 capture_id=relationship_capture,
                 connection=publication,
             )
-            repository.reconcile_relationships(
-                vintage=year,
-                capture_id=relationship_capture,
-                active_geo_ids=active_geo_ids,
-                connection=publication,
-            )
+            if snapshot_scope == SUB_COUNTY_SCOPE:
+                repository.reconcile_sub_county_relationships(
+                    vintage=year,
+                    zcta_boundary_vintage=ZCTA_BOUNDARY_VINTAGE,
+                    capture_id=relationship_capture,
+                    active_geo_ids=active_geo_ids,
+                    connection=publication,
+                )
+            else:
+                repository.reconcile_relationships(
+                    vintage=year,
+                    capture_id=relationship_capture,
+                    active_geo_ids=active_geo_ids,
+                    connection=publication,
+                )
             publication.commit()
         except BaseException:
             publication.rollback()
@@ -1128,6 +1431,22 @@ def sync_geography_reference(
     except BaseException as exc:
         control.finish_run(run_id, status="failed", error=exc)
         raise
+
+
+def sync_sub_county_geography(source_year: int | None = None) -> dict[str, int]:
+    """Publish one vintage's tracts and ZCTAs after its counties and places.
+
+    Run after `sync_geography_history`: a tract is refused unless its county
+    is already an entity, and the ZCTA overlaps are computed against the
+    vintage's county and place boundaries.
+    """
+    year = source_year or resolve_latest_complete_year()
+    return sync_geography_reference(
+        source_year=year,
+        assets=sub_county_urls(year),
+        retire_geo_types=set(SUB_COUNTY_GEO_TYPES),
+        snapshot_scope=SUB_COUNTY_SCOPE,
+    )
 
 
 def sync_geography_history(

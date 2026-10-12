@@ -140,8 +140,9 @@ Next.js MVP app:
 
 Expected alignment key:
 - `geo_id` from API observation rows should align with geographic identifiers used by Martin-exposed map layers.
-- The explicitly published Martin layer is `counties`, sourced from
-  `gold.tile_boundary.geo_geom`; automatic table publication is disabled.
+- The explicitly published Martin layers are `counties`, sourced from
+  `gold.tile_boundary.geo_geom`, and `tracts`, sourced from
+  `gold.tile_tract.geo_geom`; automatic table publication is disabled.
 
 Centralized API-to-map contract check (with the disposable services running):
 

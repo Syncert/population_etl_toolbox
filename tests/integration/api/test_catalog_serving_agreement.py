@@ -125,6 +125,36 @@ ACS_GRAIN_ROWS: tuple[dict[str, object], ...] = (
         "county_fips": "001",
         "estimate_value": 567,
     },
+    # acs-place-grain: a place is a state sibling of a county, not its child.
+    {
+        "geo_id": "state:93|place:01400",
+        "geo_level": "place",
+        "geography": {
+            "geo_type": "place",
+            "state_fips": "93",
+            "place_fips": "01400",
+            "name": "Catalog agreement grain place",
+        },
+        "state_fips": "93",
+        "county_fips": None,
+        "estimate_value": 89,
+    },
+    # sub-county-geography: a tract is its county's child, named by the
+    # county's code and its own.
+    {
+        "geo_id": "state:93|county:001|tract:000100",
+        "geo_level": "tract",
+        "geography": {
+            "geo_type": "tract",
+            "state_fips": "93",
+            "county_fips": "001",
+            "tract_code": "000100",
+            "name": "Census Tract 1",
+        },
+        "state_fips": "93",
+        "county_fips": "001",
+        "estimate_value": 12,
+    },
 )
 
 FRED_VINTAGE = 2094
@@ -2891,3 +2921,51 @@ def test_a_metric_carries_the_same_value_state_declaration_as_its_source(
         )
         checked += 1
     assert checked, "no sampled metric belonged to a discovered source"
+
+
+def test_a_tract_is_served_named_and_listed_by_its_county(
+    api_client: TestClient,
+    postgres_connection_factory: Callable[[], connection],
+    published_acs_grain_metric: str,
+) -> None:
+    """Covers: API-167 — sub-county-geography: a tract answers at TRACT grain,
+    and the catalog lists one county's tracts under their own names.
+    """
+    tracts = api_client.get(
+        "/api/v1/observations",
+        params={"metric_code": published_acs_grain_metric, "geo_level": "TRACT"},
+    )
+    assert tracts.status_code == 200, tracts.text
+    (row,) = tracts.json()["items"]
+    assert row["geo_id"] == "state:93|county:001|tract:000100"
+    assert row["geo_level"] == "TRACT"
+    assert row["value"] == "12"
+
+    refresher = postgres_connection_factory()
+    try:
+        with refresher.cursor() as cursor:
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+        refresher.commit()
+    finally:
+        refresher.close()
+    listed = api_client.get(
+        "/api/v1/catalog/geographies",
+        params={"geo_level": "TRACT", "state_fips": "93", "county_fips": "001"},
+    )
+    assert listed.status_code == 200, listed.text
+    items = listed.json()["items"]
+    assert [item["geo_id"] for item in items] == ["state:93|county:001|tract:000100"]
+    assert items[0]["area_name"] == "Census Tract 1"
+    assert items[0]["county_name"] == "Catalog agreement grain county"
+    assert items[0]["geo_name"] == "Census Tract 1"
+    other = api_client.get(
+        "/api/v1/catalog/geographies",
+        params={"geo_level": "TRACT", "state_fips": "93", "county_fips": "003"},
+    )
+    assert other.json()["items"] == []
+    assert (
+        api_client.get(
+            "/api/v1/catalog/geographies", params={"county_fips": "1"}
+        ).status_code
+        == 422
+    )

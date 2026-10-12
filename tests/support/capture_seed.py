@@ -56,6 +56,7 @@ def seed_geography(
     county_fips: str | None = None,
     place_fips: str | None = None,
     geo_sk: int | None = None,
+    tract_code: str | None = None,
 ) -> int:
     """Seed a target-model identity/version pair and return its surrogate key."""
     capture_id = seed_capture(db_cursor, "CENSUS_GEO")
@@ -64,6 +65,7 @@ def seed_geography(
         state_fips=state_fips,
         county_fips=county_fips,
         place_fips=place_fips,
+        tract_code=tract_code,
     )
     census_geoid = (
         "1"
@@ -72,9 +74,11 @@ def seed_geography(
         if geo_type == "state"
         else f"{state_fips}{county_fips}"
         if geo_type == "county"
+        else f"{state_fips}{county_fips}{tract_code}"
+        if geo_type == "tract"
         else f"{state_fips}{place_fips}"
     )
-    columns = "geo_id, geo_type, census_geoid, state_fips, county_fips, place_fips, first_seen_version, last_seen_version"
+    columns = "geo_id, geo_type, census_geoid, state_fips, county_fips, place_fips, first_seen_version, last_seen_version, tract_code"
     values = (
         geo_id,
         geo_type,
@@ -84,6 +88,7 @@ def seed_geography(
         place_fips,
         vintage,
         vintage,
+        tract_code,
     )
     if geo_sk is not None:
         columns = "geo_sk, " + columns

@@ -118,7 +118,7 @@ list.
 | `GET /api/v1/catalog/sources` | Every published source system |
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
-| `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `q`, `active_only`) — see below |
+| `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `county_fips`, `q`, `active_only`) — see below |
 | `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
@@ -134,7 +134,7 @@ without drawing a map that cannot colour a value.
 
 **A value outside a closed set is refused, not answered empty.** `geo_level`
 names a grain, and the vocabulary is closed: `NATIONAL`, `STATE`, `COUNTY`,
-`PLACE`, `AGENCY`. A word outside it is a `422` naming the five, on every
+`PLACE`, `TRACT`, `AGENCY`. A word outside it is a `422` naming the six, on every
 route — `geo_level=COUNTRY` is not a grain with no rows, it is not a grain,
 and an empty page would read as an answer about the warehouse. Case does not
 matter and `NATION`/`US` are still accepted for `NATIONAL`, so a grain read
@@ -719,8 +719,9 @@ between them.
 ### The geography vocabulary served rows carry
 
 `geo_level` on a served row is always one of `NATIONAL`, `STATE`, `COUNTY`,
-`PLACE` (Census PEP), or `AGENCY` (FBI UCR), and a metric's
-`valid_geo_grains` in the catalog uses the same five words — so a grain read
+`PLACE` (Census PEP and Census ACS), `TRACT` (Census ACS 5-year), or `AGENCY`
+(FBI UCR), and a metric's `valid_geo_grains` in the catalog uses the same six
+words — so a grain read
 from the catalog can be sent straight back as the `geo_level` filter and
 will answer. A national row answers `geo_level=NATIONAL`. The filter is
 case-insensitive, and it accepts `NATION` as an alias for `NATIONAL` because
@@ -736,6 +737,29 @@ vocabulary words case-insensitively with the same `NATION`/`US` aliases, and
 both refuse an unknown grain by naming the words they publish. The parameter
 names stay as they are — they are the providers' own — but you never have to
 learn a second vocabulary to use them.
+
+**An ACS place is a city, town, village, borough or census-designated
+place,** identified as `state:SS|place:PPPPP` by its Census FIPS codes. A
+place is a sibling of the counties in its state, not one of their children,
+and some places cross county lines. The 5-year estimates publish every place;
+the 1-year estimates publish only places of 65,000 people or more, so a
+1-year metric's `valid_geo_grains` can include `PLACE` while most places have
+no 1-year row. The warehouse loads each dataset's newest year at place grain,
+so an ACS place history starts there rather than where the county history
+does.
+
+**An ACS tract is a Census tract,** identified as
+`state:SS|county:CCC|tract:TTTTTT`: it nests in its county, so
+`/catalog/geographies?geo_level=TRACT&state_fips=SS&county_fips=CCC` lists one
+county's tracts, each with its own name in `area_name` (and `geo_name`) and
+its county's in `county_name`. Only the 5-year estimates publish tracts, and
+the warehouse loads the newest year for a short list of tables (population,
+median household income, poverty status, median gross rent, median home
+value), so a metric outside those tables has no `TRACT` in its
+`valid_geo_grains`. Tract margins of error are wide; read
+`uncertainty.margin_of_error` before comparing two tracts. Tracts are redrawn
+each decade: a tract code names the tract of its decennial vintage, and a
+tract the reference does not hold is not served.
 
 The vocabulary is one warehouse function, `gold_glossary.geo_grain(text)`,
 which the publisher views and the serving routes both go through; a grain

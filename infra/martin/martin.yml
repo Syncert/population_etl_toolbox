@@ -28,3 +28,25 @@ postgres:
         county_name: text
         latitude: float8
         longitude: float8
+    # Census tracts (sub-county-geography), from their own relation so the
+    # county layer does not carry them. Drawn from zoom 6, where one county's
+    # tracts become legible.
+    tracts:
+      layer_id: tracts
+      schema: gold
+      table: tile_tract
+      geometry_column: geo_geom
+      id_column: ~
+      srid: 4326
+      minzoom: 6
+      maxzoom: 14
+      bounds: [-180.0, -90.0, 180.0, 90.0]
+      properties:
+        geo_id: text
+        geo_level: text
+        state_fips: text
+        county_fips: text
+        county_name: text
+        area_name: text
+        latitude: float8
+        longitude: float8

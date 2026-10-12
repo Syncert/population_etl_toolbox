@@ -509,7 +509,10 @@ BEGIN
         gl.county_fips,
         gl.state_name,
         gl.county_name,
-        gl.place_name,
+        -- A tract's own name rides in the place slot, the most specific name
+        -- `gold_glossary.geo_name` reads; a tract has no place, and its
+        -- `county_name` is its county's (sub-county-geography).
+        COALESCE(gl.place_name, gl.area_name) AS place_name,
         gl.latitude,
         gl.longitude,
         -- The catalog is the published discovery surface, and the glossary

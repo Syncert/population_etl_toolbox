@@ -44,6 +44,8 @@ export interface NearbyGroups {
   within: NearbyEntry[];
   neighbours: NearbyEntry[];
   partOf: NearbyEntry[];
+  /** On a city or town's page: the counties it lies in, with its share of each. */
+  counties: NearbyEntry[];
 }
 
 export function relatedPath(geoId: string): string {
@@ -51,6 +53,7 @@ export function relatedPath(geoId: string): string {
 }
 
 const COUNTY_ID = /^state:(\d{2})\|county:(\d{3})$/;
+const PLACE_ID = /^state:(\d{2})\|place:(\d{5})$/;
 
 /**
  * The place-page address of a related geography. A county in this page's own
@@ -66,6 +69,13 @@ function hrefFor(
   if (row.geo_level === "NATIONAL") return "/us";
   const state = states.find((item) => item.state_fips === row.state_fips);
   if (row.geo_level === "STATE") return state ? placePath(stateSegment(state, states)) : null;
+  if (row.geo_level === "PLACE" && state) {
+    // A city or town is addressed by its seven-digit FIPS here; the place
+    // route settles it on its named address, so no list of the state's
+    // places is needed to link to one.
+    const place = PLACE_ID.exec(row.geo_id);
+    return place ? placePath(stateSegment(state, states), `${place[1]}${place[2]}`) : null;
+  }
   if (row.geo_level !== "COUNTY" || !state) return null;
   const own = ownStateCounties.find((county) => county.geo_id === row.geo_id);
   if (own) return placePath(stateSegment(state, states), countySegment(own, ownStateCounties));
@@ -86,7 +96,7 @@ export function groupNearby(
   states: readonly GeographySummary[],
   ownStateCounties: readonly GeographySummary[],
 ): NearbyGroups {
-  const groups: NearbyGroups = { within: [], neighbours: [], partOf: [] };
+  const groups: NearbyGroups = { within: [], neighbours: [], partOf: [], counties: [] };
   for (const row of response?.items || []) {
     const entry: NearbyEntry = {
       geoId: row.geo_id,
@@ -100,6 +110,9 @@ export function groupNearby(
     if (row.relationship === "intersects" && row.geo_level === "PLACE") {
       const share = typeof row.overlap_weight === "number" ? row.overlap_weight : null;
       groups.within.push({ ...entry, share, crossesCounty: share !== null && share < 0.995 });
+    } else if (row.relationship === "intersects" && row.geo_level === "COUNTY") {
+      const share = typeof row.overlap_weight === "number" ? row.overlap_weight : null;
+      groups.counties.push({ ...entry, share, crossesCounty: share !== null && share < 0.995 });
     } else if (row.relationship === "adjacent") {
       groups.neighbours.push(entry);
     } else if (row.relationship === "part_of") {
@@ -108,13 +121,30 @@ export function groupNearby(
   }
   const byName = (left: NearbyEntry, right: NearbyEntry) => left.name.localeCompare(right.name);
   groups.within.sort((left, right) => (right.share ?? 0) - (left.share ?? 0) || byName(left, right));
+  groups.counties.sort((left, right) => (right.share ?? 0) - (left.share ?? 0) || byName(left, right));
   groups.neighbours.sort(byName);
   groups.partOf.sort((left, right) => (left.geoId.startsWith("us") ? 1 : 0) - (right.geoId.startsWith("us") ? 1 : 0));
   return groups;
 }
 
 export function isEmpty(groups: NearbyGroups): boolean {
-  return !groups.within.length && !groups.neighbours.length && !groups.partOf.length;
+  return !groups.within.length && !groups.neighbours.length && !groups.partOf.length && !groups.counties.length;
+}
+
+/**
+ * Which counties a city or town lies in, from the published overlap weights:
+ * "Lies in Kent County." or "Lies in two counties: Kent County (62%) and
+ * Sussex County (38%)." Empty when the reference records none.
+ */
+export function crossCountyNote(name: string, counties: readonly NearbyEntry[]): string {
+  if (!counties.length) return "";
+  const bare = (entry: NearbyEntry) => entry.name.replace(/, [^,]+$/, "");
+  if (counties.length === 1) return `${name} lies in ${bare(counties[0]!)}.`;
+  const parts = counties.map((entry) =>
+    entry.share === null ? bare(entry) : `${bare(entry)} (${Math.round(entry.share * 100)}%)`,
+  );
+  const listed = parts.length === 2 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+  return `${name} crosses county lines: it lies in ${listed}. A county's figures describe the whole county, not this place.`;
 }
 
 /** "62% of Crossing city lies in this county", from the published weight. */

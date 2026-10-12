@@ -473,3 +473,37 @@ export async function loadPreviewTileFeatures(
     features: featuresAtGrain(layer, geoLevel),
   };
 }
+
+
+/** The Census tract tile layer, as its TileJSON publishes it (sub-county-geography). */
+export interface TractTiles {
+  tileTemplate: string;
+  sourceLayer: string;
+}
+
+/**
+ * Read the `tracts` layer's TileJSON, or `null` when the tile server does not
+ * publish one. Tracts are their own layer so the county boundary does not
+ * carry them; a page without them draws its table and says the map is not
+ * available.
+ */
+export async function discoverTractTiles(): Promise<TractTiles | null> {
+  try {
+    const response = await fetch("/tiles/tracts", { cache: "no-store" });
+    if (!response.ok) {
+      releaseBody(response);
+      return null;
+    }
+    const tileJson = await response.json();
+    const template = Array.isArray(tileJson.tiles)
+      ? normalizeTileTemplateFromTileJson(tileJson.tiles[0])
+      : "";
+    const layer =
+      Array.isArray(tileJson.vector_layers) && typeof tileJson.vector_layers[0]?.id === "string"
+        ? (tileJson.vector_layers[0].id as string)
+        : "tracts";
+    return { tileTemplate: template || "/tiles/tracts/{z}/{x}/{y}", sourceLayer: layer };
+  } catch {
+    return null;
+  }
+}

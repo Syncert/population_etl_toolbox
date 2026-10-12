@@ -24,15 +24,34 @@ def canonical_geo_id(
     county_fips: object | None = None,
     place_fips: object | None = None,
     agency_code: object | None = None,
+    tract_code: object | None = None,
+    zcta_code: object | None = None,
 ) -> str:
     """Build a canonical identity only from exact provider codes, never names."""
     kind = geo_type.strip().lower()
     if kind in {"us", "nation", "national"}:
         if any(
-            v is not None for v in (state_fips, county_fips, place_fips, agency_code)
+            v is not None
+            for v in (
+                state_fips,
+                county_fips,
+                place_fips,
+                agency_code,
+                tract_code,
+                zcta_code,
+            )
         ):
             raise ValueError("nation geography cannot include component codes")
         return "us:1"
+
+    if kind == "zcta":
+        # A ZIP Code Tabulation Area crosses state and county lines, so its
+        # identity is its own five digits and nothing else.
+        if any(
+            v is not None for v in (state_fips, county_fips, place_fips, tract_code)
+        ):
+            raise ValueError("a ZCTA nests in no state or county")
+        return f"zcta:{_code(zcta_code, width=5, label='zcta_code')}"
 
     if kind == "agency":
         code = str(agency_code or "").strip()
@@ -55,6 +74,12 @@ def canonical_geo_id(
             raise ValueError("place is a state sibling of county, not its child")
         place = _code(place_fips, width=5, label="place_fips")
         return f"state:{state}|place:{place}"
+    if kind == "tract":
+        if place_fips is not None:
+            raise ValueError("a tract nests in a county, not a place")
+        county = _code(county_fips, width=3, label="county_fips")
+        tract = _code(tract_code, width=6, label="tract_code")
+        return f"state:{state}|county:{county}|tract:{tract}"
     raise ValueError(f"unsupported geography type: {geo_type}")
 
 
@@ -77,14 +102,17 @@ def resolve_provider_geography(
     county_fips: object | None = None,
     place_fips: object | None = None,
     agency_code: object | None = None,
+    tract_code: object | None = None,
 ) -> GeographyResolution:
     """Resolve supported provider codes without fuzzy or name-based matching."""
     source = provider.strip().upper()
     kind = source_geo_type.strip().lower()
     parts = [state_fips, county_fips, place_fips, agency_code]
+    if tract_code is not None:
+        parts.append(tract_code)
     source_code = ":".join("" if value is None else str(value) for value in parts)
     supported = {
-        "CENSUS_ACS": {"nation", "us", "state", "county"},
+        "CENSUS_ACS": {"nation", "us", "state", "county", "place", "tract"},
         "BLS": {"nation", "us", "state", "county"},
         "CENSUS_PEP": {"nation", "us", "state", "county", "place"},
         "CDC": {"nation", "us", "state", "county"},
@@ -102,6 +130,7 @@ def resolve_provider_geography(
             county_fips=county_fips,
             place_fips=place_fips,
             agency_code=agency_code,
+            tract_code=tract_code,
         )
     except ValueError:
         return GeographyResolution(

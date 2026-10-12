@@ -56,7 +56,12 @@ from data_ingestion_toolbox.silver_ref.geography_guard import (
     require_shared_geography_loaded,
 )
 from data_ingestion_toolbox import census_acs as census_acs_package
-from data_ingestion_toolbox.census_acs.config import ACS_COUNTY_PARENT_FIPS, CONFIG
+from data_ingestion_toolbox.census_acs.config import (
+    ACS_COUNTY_PARENT_FIPS,
+    CONFIG,
+    place_parent_fips,
+    tract_parent_fips,
+)
 from data_ingestion_toolbox.census_acs.metadata import (
     sync_acs_dataset_table,
     sync_variable_metadata_for_year,
@@ -432,6 +437,24 @@ def acs_ingest():
             current_hash = varset_meta[(dataset, year)]["variables_hash"]
             return (dataset, year, geo_level, state_fips, current_hash) in completed
 
+        # Place slices are requested for each dataset's newest years only
+        # (`AcsConfig.place_recent_years`), because they are ten times the
+        # counties' volume.
+        place_years_by_dataset = {
+            dataset: CONFIG.place_years(
+                dataset, [year for ds, year in varset_meta if ds == dataset]
+            )
+            for dataset in {ds for ds, _ in varset_meta}
+        }
+        # Tract slices (sub-county-geography): the 5-year estimates' newest
+        # years only (`AcsConfig.tract_recent_years`), for `tract_tables`.
+        tract_years_by_dataset = {
+            dataset: CONFIG.tract_years(
+                dataset, [year for ds, year in varset_meta if ds == dataset]
+            )
+            for dataset in {ds for ds, _ in varset_meta}
+        }
+
         # Build the plan. Include anything not done for current hash.
         plan: list[dict] = []
         for (dataset, year), meta in varset_meta.items():
@@ -476,6 +499,41 @@ def acs_ingest():
                     }
                 )
 
+            # PLACE slices (by state), only for the states whose places the
+            # dataset publishes: the 1-year estimates publish none for
+            # Vermont or West Virginia (`ACS_PLACE_PARENT_FIPS`).
+            if year in place_years_by_dataset.get(dataset, set()):
+                for sf in place_parent_fips(dataset):
+                    if is_done_for_current_varset(dataset, year, "place", sf):
+                        continue
+                    plan.append(
+                        {
+                            "dataset": dataset,
+                            "year": year,
+                            "geo_level": "place",
+                            "state_fips": sf,
+                            "variables_hash": meta["variables_hash"],
+                            "variables_count": meta["variables_count"],
+                        }
+                    )
+
+            # TRACT slices (by state, every county at once), for the datasets
+            # that publish tracts: the 5-year estimates only.
+            if year in tract_years_by_dataset.get(dataset, set()):
+                for sf in tract_parent_fips(dataset):
+                    if is_done_for_current_varset(dataset, year, "tract", sf):
+                        continue
+                    plan.append(
+                        {
+                            "dataset": dataset,
+                            "year": year,
+                            "geo_level": "tract",
+                            "state_fips": sf,
+                            "variables_hash": meta["variables_hash"],
+                            "variables_count": meta["variables_count"],
+                        }
+                    )
+
         # Keep mapping sane: ~50–150 mapped tasks is a happy place.
         # IMPORTANT: return at least one batch so mapped-task retries remain stable.
         # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
@@ -483,7 +541,8 @@ def acs_ingest():
         if not plan:
             return [[]]
 
-        batches = chunk_list(plan, chunk_size=25)  # Currently about 76 mapped tasks.
+        # About 8 batches per (dataset, year) once place slices are planned.
+        batches = chunk_list(plan, chunk_size=25)
         return batches
 
     # -----------------------------

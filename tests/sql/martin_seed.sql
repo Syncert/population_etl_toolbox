@@ -19,6 +19,8 @@ GRANT SELECT ON gold.dim_geo_latest TO martin_test;
 -- granted because the catalog tests read it; this is what the tile layer
 -- selects from, and the stack's healthcheck gates on it for that reason.
 GRANT SELECT ON gold.tile_boundary TO martin_test;
+-- The tract layer (sub-county-geography).
+GRANT SELECT ON gold.tile_tract TO martin_test;
 GRANT SELECT ON gold_glossary.dim_geo_latest TO martin_test;
 
 INSERT INTO gold_glossary.dim_geo_latest (
