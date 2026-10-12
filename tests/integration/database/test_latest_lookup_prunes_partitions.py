@@ -222,3 +222,100 @@ def test_the_refresh_finds_the_newest_vintage_not_the_newest_partition(
         f"vintage; it should be {max(SEEDED_YEARS)}, which is the rule an "
         f"old-year refresh must not break"
     )
+
+
+#: One more than the procedure's threshold for switching to hash joins.
+LARGE_CHUNK_KEYS = 100_001
+
+
+@pytest.fixture
+def a_large_chunk(
+    postgres_connection_factory: Callable[[], connection],
+):
+    """A year whose keys exceed the threshold, half of them also newer."""
+    token = uuid4().hex[:8]
+    prefix = f"test:bulk:{token}:"
+    database = postgres_connection_factory()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            for year, upper in (
+                (2003, LARGE_CHUNK_KEYS),
+                (2004, LARGE_CHUNK_KEYS // 2),
+            ):
+                cursor.execute(
+                    f"""
+                    INSERT INTO {RELATION} (
+                        observation_date, as_of_date, updated_at, geo_id,
+                        geo_level, value, dataset_code, vintage_year, table_id,
+                        variable_code, estimate_value, metric_code
+                    )
+                    SELECT MAKE_DATE(%s, 1, 1), MAKE_DATE(%s, 1, 1),
+                           MAKE_DATE(%s, 1, 1)::TIMESTAMPTZ, %s || n, 'COUNTY',
+                           %s, 'acs5', %s, 'B99999', 'B99999_001', %s,
+                           'CENSUS_ACS:acs5:B99999_001'
+                    FROM generate_series(1, %s) AS n
+                    """,
+                    (year, year, year, prefix, year, year, year, upper),
+                )
+    finally:
+        database.close()
+
+    yield prefix
+
+    cleanup = postgres_connection_factory()
+    cleanup.autocommit = True
+    try:
+        with cleanup.cursor() as cursor:
+            cursor.execute(
+                f"DELETE FROM {RELATION} WHERE geo_id LIKE %s", (prefix + "%",)
+            )
+            cursor.execute(
+                "DELETE FROM gold_census.mv_acs_latest WHERE geo_id LIKE %s",
+                (prefix + "%",),
+            )
+    finally:
+        cleanup.close()
+
+
+def test_a_large_chunk_resolves_with_hash_joins_and_restores_the_planner(
+    postgres_connection_factory: Callable[[], connection],
+    a_large_chunk: str,
+) -> None:
+    """Covers: DB-060 — a year of millions of keys is not probed key by key.
+
+    The planner reads the three-column key join as matching a handful of
+    rows and probes an index per key. On the internal stack that took 749
+    seconds against one partition where a hash join took 56, and pushed every
+    year from 2013 past the chunk timeout. Above the threshold the procedure
+    turns nested-loop and merge joins off for itself, still resolves every
+    key to its newest vintage, and leaves the session's planner as it was.
+    """
+    prefix = a_large_chunk
+    database = postgres_connection_factory()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "CALL gold_census.refresh_mv_acs_latest('2003-01-01', '2003-12-31')"
+            )
+            notices = "".join(database.notices)
+            cursor.execute("SHOW enable_nestloop")
+            nestloop = cursor.fetchone()[0]
+            cursor.execute("SHOW enable_mergejoin")
+            mergejoin = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                SELECT vintage_year, COUNT(*) FROM gold_census.mv_acs_latest
+                WHERE geo_id LIKE %s GROUP BY vintage_year ORDER BY vintage_year
+                """,
+                (prefix + "%",),
+            )
+            by_vintage = cursor.fetchall()
+    finally:
+        database.close()
+
+    assert "hash_plans=t" in notices, notices
+    assert (nestloop, mergejoin) == ("on", "on")
+    newer = LARGE_CHUNK_KEYS // 2
+    assert by_vintage == [(2003, LARGE_CHUNK_KEYS - newer), (2004, newer)]

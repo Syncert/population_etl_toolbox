@@ -302,7 +302,7 @@ def test_silver_task_callable_forwards_declared_source_scope(
 
     assert callable_(*arguments) == 17
     if dag_id == "acs_ingest":
-        assert calls == [((), {})]
+        assert calls == [((), {"resume_key": None})]
     elif dag_id == "bls_ingest":
         assert calls == [((), {"program": "la"})]
     else:
@@ -549,3 +549,69 @@ def test_source_planners_reject_incomplete_metadata(
 
     with pytest.raises(RuntimeError, match=message):
         callable_(planning_input)
+
+
+@pytest.mark.parametrize(
+    ("geo_level", "datasets", "tables"),
+    [
+        ("tract", {"acs5"}, None),
+        ("place", {"acs1", "acs5"}, "history"),
+    ],
+)
+def test_an_acs_backfill_run_plans_one_year_at_one_grain(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+    geo_level: str,
+    datasets: set[str],
+    tables: str | None,
+) -> None:
+    """Covers: ETL-083 — a backfill conf plans that year's slices at that grain only."""
+    database = RecordingDatabase(fetches=[[]])
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    fingerprints: list[tuple[Any, ...]] = []
+    _patch_callable_global(
+        monkeypatch, callable_, "_get_postgres_hook", lambda: database
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_variables_fingerprint",
+        lambda *args: fingerprints.append(args) or ("stable-hash", 3),
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+    config = callable_.__globals__["CONFIG"]
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": geo_level}}
+
+    targets = [
+        {"dataset": "acs1", "year": 2019},
+        {"dataset": "acs1", "year": 2024},
+        {"dataset": "acs5", "year": 2019},
+        {"dataset": "acs5", "year": 2024},
+    ]
+    batches = callable_(targets, dag_run=Run())
+    work_units = [work_unit for batch in batches for work_unit in batch]
+
+    assert work_units
+    assert {unit["geo_level"] for unit in work_units} == {geo_level}
+    assert {unit["year"] for unit in work_units} == {2019}
+    assert {unit["dataset"] for unit in work_units} == datasets
+    expected_tables = config.place_history_tables if tables == "history" else None
+    assert {
+        tuple(unit["tables"]) if unit.get("tables") else None for unit in work_units
+    } == {tuple(expected_tables) if expected_tables else None}
+    if tables == "history":
+        assert (2019, "acs5", config.place_history_tables) in fingerprints
+
+    with pytest.raises(RuntimeError, match="no configured dataset publishes"):
+
+        class Missing:
+            conf = {"acs_backfill": {"year": 2031, "geo_level": geo_level}}
+
+        callable_(targets, dag_run=Missing())

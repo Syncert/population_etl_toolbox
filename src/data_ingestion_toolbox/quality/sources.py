@@ -1577,8 +1577,13 @@ def hud_value_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
                     SELECT 1 FROM silver_hud_fmr_il.fact_observation AS larger
                      WHERE larger.run_id = fact.run_id AND larger.geo_id = fact.geo_id
                        AND (
-                            (fact.measure ~ '^fmr_[0-3]br$'
-                             AND larger.measure = 'fmr_' || (SUBSTRING(fact.measure, 5, 1)::INT + 1)::TEXT || 'br')
+                            -- The cast sits inside CASE: PostgreSQL does not
+                            -- promise to test the pattern first, and it cast
+                            -- 'median_family_income' ('a') and aborted the run.
+                            larger.measure = CASE
+                                WHEN fact.measure ~ '^fmr_[0-3]br$'
+                                THEN 'fmr_' || (SUBSTRING(fact.measure, 5, 1)::INT + 1)::TEXT || 'br'
+                            END
                             OR (fact.measure = 'income_limit_30_4p' AND larger.measure = 'income_limit_50_4p')
                             OR (fact.measure = 'income_limit_50_4p' AND larger.measure = 'income_limit_80_4p')
                        )
@@ -1839,11 +1844,17 @@ def cdc_publisher_export_conformance(
     other way has the same consequence: a product template naming that key
     gets whichever row the planner reaches first.
 
-    **The annual claim.** ``gold_cdc.health_observation`` carries
+    **The time-grain claim.** ``gold_cdc.health_observation`` carries
     ``period_start`` and ``period_end`` as integer years, so an annual
-    observation is one where they are equal. A row spanning more than a year
-    contradicts the ``ANNUAL`` the publisher promises, and a reader asking for
-    an annual series gets a multi-year figure with nothing saying so.
+    observation is one where they are equal and any other spans several
+    years. Every served row's span has to be a grain its measure's publisher
+    row claims: a multi-year figure under a measure published only as
+    ``ANNUAL`` reaches a reader asking for an annual series with nothing
+    saying so. The publisher used to write ``ARRAY['ANNUAL']`` as a literal,
+    and the first weekly run on a loaded warehouse found 40,086 such rows
+    (CDC's Chronic Disease Indicators publish cancer incidence as 2015-2019);
+    it now reads the grain from the rows, and this arm holds it to that.
+    Evidence names each measure and span once rather than once per geography.
     """
     del scope
     # Gated on the export rather than the publisher. `metric_publisher`
@@ -1885,10 +1896,19 @@ def cdc_publisher_export_conformance(
     spanning, spanning_total = _offenders(
         cursor,
         """
-        SELECT asset_id, measure_id, value_type_id,
-               period_start::text, period_end::text
-          FROM gold_cdc.health_observation
-         WHERE period_start IS DISTINCT FROM period_end
+        SELECT DISTINCT observation.asset_id, observation.measure_id,
+               observation.value_type_id,
+               observation.period_start::text, observation.period_end::text
+          FROM gold_cdc.health_observation AS observation
+          LEFT JOIN gold_cdc.metric_publisher AS publisher
+                 ON publisher.source_object_key
+                    = observation.asset_id || ':' || observation.measure_id
+                      || ':' || observation.value_type_id
+         WHERE NOT (
+                   CASE WHEN observation.period_start = observation.period_end
+                        THEN 'ANNUAL' ELSE 'MULTI_YEAR' END
+                   = ANY (COALESCE(publisher.valid_time_grains, ARRAY[]::TEXT[]))
+               )
         """,
         order_by="1, 2, 3, 4",
     )
@@ -2704,6 +2724,12 @@ def bls_contract_conformance(
           LEFT JOIN control.serving_refresh_state r ON r.source_code = 'BLS'
          WHERE s.series_id IS NOT NULL
            AND s.series_id <> ''
+           -- The annual average (`M13`) is a provider fact the serving view
+           -- deliberately does not serve as a month; it is published through
+           -- `gold_bls.provider_annual_average` and reconciled by DQ-BLS-008.
+           -- Counted here it adds a thirteenth row to every series-year BLS
+           -- averages, so every such group reads as unbacked.
+           AND s.period <> 'M13'
          GROUP BY 1, 2
         HAVING MAX(s.ingested_at) <= COALESCE(
                    MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
@@ -2782,6 +2808,15 @@ def bls_derived_annual_reconciliation(
     annual average for the same series and geography: everywhere else there is
     nothing to reconcile, which is the common case for seasonally adjusted
     series, which BLS publishes no annual average for.
+
+    The tolerance is half a unit in the last place BLS published the annual
+    average to, read from its own text. BLS averages the months and rounds to
+    the precision the series is published at, and that precision is not one
+    number: CPI indexes before 2007 carry one decimal (130.7 for CPI-U 1990,
+    whose twelve published months average 130.658), current ones three, and
+    CES employment one. A fixed third-decimal tolerance read every one-decimal
+    year as a disagreement it was not. A difference larger than BLS's own
+    rounding is still a finding.
     """
     del scope
     compared = _count(
@@ -2813,8 +2848,14 @@ def bls_derived_annual_reconciliation(
          WHERE derived.grain = 'year'
            AND derived.value IS NOT NULL
            AND provider.value IS NOT NULL
-           AND ABS(derived.value - provider.value)
-               > GREATEST(0.0005, ABS(provider.value) * 0.000001)
+           AND ABS(derived.value - provider.value) > GREATEST(
+                   0.5 * POWER(10::NUMERIC, -COALESCE(
+                       LENGTH(SUBSTRING(provider.source_value
+                                        FROM '^-?[0-9]*[.]([0-9]+)$')),
+                       0
+                   )),
+                   ABS(provider.value) * 0.000001
+               )
         """,
         order_by="1, 2, 3",
     )

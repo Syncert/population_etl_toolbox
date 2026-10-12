@@ -172,11 +172,34 @@ def test_bls_windows_are_derived_only_when_every_month_is_reported(
                 "WHERE series_id = 'ROLLUPTEST0001'"
             )
             (disagreeing,) = bls_derived_annual_reconciliation(cursor, {})
+            # BLS rounds the average to the precision it publishes the series
+            # at. CPI-U 1990 is 130.7 against twelve one-decimal months that
+            # average 130.658: within half a unit of BLS's last place, so
+            # agreement. The same gap against a three-decimal figure is not.
+            cursor.execute(
+                "UPDATE gold_bls.derived_calendar_rollup SET value = 6.458 "
+                "WHERE metric_code = %s AND grain = 'year' "
+                "AND window_start = '2095-01-01'",
+                (METRIC,),
+            )
+            cursor.execute(
+                "UPDATE silver_bls.fact_labor_statistics "
+                "SET value = 6.5, source_value = '6.5' "
+                "WHERE series_id = 'ROLLUPTEST0001'"
+            )
+            (one_decimal,) = bls_derived_annual_reconciliation(cursor, {})
+            cursor.execute(
+                "UPDATE silver_bls.fact_labor_statistics "
+                "SET source_value = '6.500' WHERE series_id = 'ROLLUPTEST0001'"
+            )
+            (three_decimal,) = bls_derived_annual_reconciliation(cursor, {})
         writer.rollback()
         writer.close()
         assert agreeing.result == "pass"
         assert disagreeing.result == "fail" and disagreeing.observed_count == 1
         assert disagreeing.evidence[0].startswith(f"{METRIC}|state:94|2095-01-01|6.5")
+        assert one_decimal.result == "pass", one_decimal.evidence
+        assert three_decimal.result == "fail" and three_decimal.observed_count == 1
 
         # Withdrawing the approval leaves no derived value behind.
         connection_ = postgres_connection_factory()

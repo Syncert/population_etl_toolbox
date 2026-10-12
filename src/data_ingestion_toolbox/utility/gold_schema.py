@@ -461,6 +461,12 @@ def refresh_serving_layer_in_year_chunks(
                     (config.source_code,),
                 )
                 run_started_at = cur.fetchone()[0]
+        # Planning reads the whole silver fact table: on ACS, 170M rows and
+        # over 100 GB once the place and tract grains landed. Under load that
+        # outran the 10-minute limit the bookkeeping above runs under, so the
+        # plan gets the chunk limit instead.
+        cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
+        if force_full:
             cur.execute(config.all_chunks_sql)
         else:
             cur.execute(config.changed_chunks_sql, (watermark,))

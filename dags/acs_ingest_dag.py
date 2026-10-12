@@ -66,6 +66,7 @@ from data_ingestion_toolbox.census_acs.metadata import (
     sync_acs_dataset_table,
     sync_variable_metadata_for_year,
 )
+from data_ingestion_toolbox.census_acs.backfill import BackfillScope
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
@@ -112,7 +113,9 @@ def _silver_ddl_path() -> Path:
     )
 
 
-def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
+def _variables_fingerprint(
+    year: int, dataset: str, tables: Optional[list[str]] = None
+) -> tuple[str, int]:
     """
     Compute a stable fingerprint of the curated variable list for a (year, dataset).
 
@@ -127,7 +130,7 @@ def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
     - Join them with a delimiter
     - Hash the resulting string with SHA-256
     """
-    vars_ = get_curated_variables(year, dataset) or []
+    vars_ = get_curated_variables(year, dataset, tables) or []
     vars_sorted = sorted(vars_)
     payload = "|".join(vars_sorted).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
@@ -218,8 +221,15 @@ def _run_one_work_unit(work_unit: dict) -> int:
         conn.commit()
 
     try:
+        slice_scope = {}
+        if work_unit.get("tables") is not None:
+            slice_scope["tables"] = work_unit["tables"]
         rows_loaded = ingest_slice(
-            year=year, dataset=dataset, geo_level=geo_level, state_fips=state_fips
+            year=year,
+            dataset=dataset,
+            geo_level=geo_level,
+            state_fips=state_fips,
+            **slice_scope,
         )
 
         finished = datetime.now(timezone.utc)
@@ -372,7 +382,9 @@ def acs_ingest():
     # Task 3: Build ingestion plan (variable-aware skip)
     # -----------------------------
     @task
-    def build_ingestion_plan(targets: list[dict]) -> list[list[dict]]:
+    def build_ingestion_plan(
+        targets: list[dict], dag_run: Optional[object] = None
+    ) -> list[list[dict]]:
         """
         Build a list of work units to ingest and exclude any slice already done
         FOR THE CURRENT VARIABLE SET (variables_hash).
@@ -384,6 +396,25 @@ def acs_ingest():
           variables_hash changes -> previously done slices become stale -> re-run -> backfill.
         """
         hook = _get_postgres_hook()
+
+        # An operator backfill run names one year and one grain
+        # (`census_acs/backfill.py`); it plans that year's slices at that
+        # grain only, whatever the scheduled place and tract years are.
+        scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
+        # Which place years are "newest" is a fact about every published year,
+        # not about the one a backfill run is restricted to.
+        published_years: dict[str, list[int]] = {}
+        for target in targets:
+            published_years.setdefault(str(target["dataset"]), []).append(
+                int(target["year"])
+            )
+        if scope is not None:
+            targets = [t for t in targets if int(t["year"]) == scope.year]
+            if not targets:
+                raise RuntimeError(
+                    f"acs_backfill names {scope.year}, which no configured "
+                    "dataset publishes"
+                )
 
         # ACS county coverage includes the 50 states, DC, and Puerto Rico.
         # Use the explicit Census state/territory codes so gaps in the numeric
@@ -440,26 +471,58 @@ def acs_ingest():
         # Place slices are requested for each dataset's newest years only
         # (`AcsConfig.place_recent_years`), because they are ten times the
         # counties' volume.
-        place_years_by_dataset = {
-            dataset: CONFIG.place_years(
-                dataset, [year for ds, year in varset_meta if ds == dataset]
-            )
+        years_by_dataset = {
+            dataset: [year for ds, year in varset_meta if ds == dataset]
             for dataset in {ds for ds, _ in varset_meta}
+        }
+        place_years_by_dataset = {
+            dataset: CONFIG.place_years(dataset, years)
+            for dataset, years in years_by_dataset.items()
         }
         # Tract slices (sub-county-geography): the 5-year estimates' newest
         # years only (`AcsConfig.tract_recent_years`), for `tract_tables`.
         tract_years_by_dataset = {
-            dataset: CONFIG.tract_years(
-                dataset, [year for ds, year in varset_meta if ds == dataset]
-            )
-            for dataset in {ds for ds, _ in varset_meta}
+            dataset: CONFIG.tract_years(dataset, years)
+            for dataset, years in years_by_dataset.items()
         }
+        if scope is not None:
+            # Only the named grain, and that one whatever the scheduled years.
+            place_years_by_dataset = {
+                dataset: {scope.year} if scope.geo_level == "place" else set()
+                for dataset in years_by_dataset
+            }
+            tract_years_by_dataset = {
+                dataset: {scope.year} if scope.geo_level == "tract" else set()
+                for dataset in years_by_dataset
+            }
+
+        # An older place year is requested for the history tables only
+        # (`AcsConfig.place_tables`); its slices carry that table list and a
+        # fingerprint of it, so widening the list later re-runs them.
+        place_scope: dict[tuple[str, int], dict] = {}
+        for dataset, years in place_years_by_dataset.items():
+            for year in years:
+                tables = CONFIG.place_tables(year, published_years[dataset])
+                if tables is None:
+                    place_scope[(dataset, year)] = {
+                        "tables": None,
+                        **varset_meta[(dataset, year)],
+                    }
+                else:
+                    vhash, vcount = _variables_fingerprint(year, dataset, tables)
+                    place_scope[(dataset, year)] = {
+                        "tables": tables,
+                        "variables_hash": vhash,
+                        "variables_count": vcount,
+                    }
 
         # Build the plan. Include anything not done for current hash.
         plan: list[dict] = []
         for (dataset, year), meta in varset_meta.items():
             # US slice
-            if not is_done_for_current_varset(dataset, year, "us", None):
+            if scope is None and not is_done_for_current_varset(
+                dataset, year, "us", None
+            ):
                 plan.append(
                     {
                         "dataset": dataset,
@@ -472,7 +535,9 @@ def acs_ingest():
                 )
 
             # STATE slice (all states in one call)
-            if not is_done_for_current_varset(dataset, year, "state", None):
+            if scope is None and not is_done_for_current_varset(
+                dataset, year, "state", None
+            ):
                 plan.append(
                     {
                         "dataset": dataset,
@@ -485,7 +550,7 @@ def acs_ingest():
                 )
 
             # COUNTY slices (by state)
-            for sf in state_fips_list:
+            for sf in state_fips_list if scope is None else ():
                 if is_done_for_current_varset(dataset, year, "county", sf):
                     continue
                 plan.append(
@@ -503,8 +568,15 @@ def acs_ingest():
             # dataset publishes: the 1-year estimates publish none for
             # Vermont or West Virginia (`ACS_PLACE_PARENT_FIPS`).
             if year in place_years_by_dataset.get(dataset, set()):
+                place_meta = place_scope[(dataset, year)]
                 for sf in place_parent_fips(dataset):
-                    if is_done_for_current_varset(dataset, year, "place", sf):
+                    if (
+                        dataset,
+                        year,
+                        "place",
+                        sf,
+                        place_meta["variables_hash"],
+                    ) in completed:
                         continue
                     plan.append(
                         {
@@ -512,8 +584,9 @@ def acs_ingest():
                             "year": year,
                             "geo_level": "place",
                             "state_fips": sf,
-                            "variables_hash": meta["variables_hash"],
-                            "variables_count": meta["variables_count"],
+                            "tables": place_meta["tables"],
+                            "variables_hash": place_meta["variables_hash"],
+                            "variables_count": place_meta["variables_count"],
                         }
                     )
 
@@ -671,9 +744,19 @@ def acs_ingest():
             conn.commit()
 
     @task(trigger_rule="none_failed")
-    def transform_to_silver() -> int:
-        """Transform ALL raw Census data to silver (full load)."""
-        return transform_census_to_silver()
+    def transform_to_silver(
+        run_id: str | None = None, dag_run: Optional[object] = None
+    ) -> int:
+        """Transform ALL raw Census data to silver (full load).
+
+        Airflow injects ``run_id``. It keys the transform's slice checkpoints,
+        so a retry or a cleared task resumes after the last finished slice.
+        A backfill run (`census_acs/backfill.py`) transforms its year only.
+        """
+        scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
+        if scope is None:
+            return transform_census_to_silver(resume_key=run_id)
+        return transform_census_to_silver(resume_key=run_id, years=[scope.year])
 
     # -----------------------------
     # DAG wiring

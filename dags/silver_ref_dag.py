@@ -21,7 +21,9 @@ from data_ingestion_toolbox.silver_ref.provider_areas import (
 )
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     sync_geography_history,
+    MIN_SUB_COUNTY_HISTORY_YEAR,
     sync_sub_county_geography,
+    sync_sub_county_history,
 )
 from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 
@@ -73,7 +75,19 @@ def silver_ref():
         # Tracts and ZCTAs for the vintage `load_dim_geo` just published: a
         # tract is refused unless its county is already an entity, and the
         # ZCTA overlaps are computed against that vintage's boundaries.
-        return sync_sub_county_geography(source_year=int(core["latest_vintage"]))
+        counts = sync_sub_county_geography(source_year=int(core["latest_vintage"]))
+        return {**counts, "latest_vintage": int(core["latest_vintage"])}
+
+    @task
+    def load_sub_county_history(sub_county: dict[str, int]) -> dict[str, int]:
+        # Every older vintage's places and tracts, attributes only, so an ACS
+        # year resolves the codes it was published under
+        # (acs-place-tract-history-backfill). Vintages already published are
+        # skipped; the newest is replayed to retire codes that no longer exist.
+        latest = int(sub_county["latest_vintage"])
+        return sync_sub_county_history(
+            list(range(MIN_SUB_COUNTY_HISTORY_YEAR, latest)), latest_year=latest
+        )
 
     @task
     def load_area_geo() -> dict[str, int]:
@@ -99,7 +113,7 @@ def silver_ref():
 
     ddl = ensure_schema()
     geo = load_dim_geo()
-    load_sub_county_geo(geo)
+    load_sub_county_history(load_sub_county_geo(geo))
     areas = load_area_geo()
     provider_areas = load_provider_areas()
     time = load_dim_time()

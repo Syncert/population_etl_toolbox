@@ -134,6 +134,143 @@ def test_same_release_replays_original_scope_after_scope_expansion(
         reader.close()
 
 
+def test_a_widened_window_leaves_one_relationship_per_agency_area_and_period(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DQ-004, ETL-053 — widening the window never doubles the area filter.
+
+    A reviewed place mapping effective from 2023 bridges the same months
+    whatever the product window, so a release over 01-2023..06-2023 and one
+    over 01-1990..06-2023 record the place relationship with the same window
+    and different geography vintages (the vintage follows the window's first
+    year). Only a *strictly* wider window used to supersede, so both rows
+    stayed and every 2023 place observation appeared twice in
+    `gold_fbi.agency_observation_area_filter`: the 96 duplicates the weekly
+    check on the local warehouse reported. Replaying the narrow release after
+    the wide one must not double it either.
+    """
+    from data_ingestion_toolbox.quality.sources import fbi_aggregation_boundary
+
+    narrow = replace(PRODUCT, period_start="01-2023")
+    older = _persist_fixture_release(fbi_warehouse, product=narrow)
+    _run_pipeline(fbi_warehouse, older, narrow)
+    wider = _persist_fixture_release(fbi_warehouse)
+    _run_pipeline(fbi_warehouse, wider)
+
+    def area_filter() -> tuple[str, int, int | None]:
+        reader = fbi_warehouse()
+        try:
+            with reader.cursor() as cursor:
+                outcome = next(
+                    outcome
+                    for outcome in fbi_aggregation_boundary(cursor, {})
+                    if outcome.object_name == "gold_fbi.agency_observation_area_filter"
+                )
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM (
+                        SELECT ori, relationship_type, geo_id
+                          FROM silver_fbi.agency_geography_relationship AS a
+                         WHERE resolution_status = 'resolved'
+                           AND EXISTS (
+                               SELECT 1
+                                 FROM silver_fbi.agency_geography_relationship AS b
+                                WHERE b.product_id = a.product_id
+                                  AND b.ori = a.ori
+                                  AND b.relationship_type = a.relationship_type
+                                  AND b.geo_id = a.geo_id
+                                  AND b.resolution_status = 'resolved'
+                                  AND b.relationship_sk <> a.relationship_sk
+                                  AND b.effective_start <= a.effective_end
+                                  AND a.effective_start <= b.effective_end
+                           )
+                    ) AS overlapping
+                    """
+                )
+                return outcome.result, cursor.fetchone()[0], outcome.observed_count
+        finally:
+            reader.close()
+
+    result, overlapping, rows = area_filter()
+    assert (result, overlapping) == ("pass", 0)
+    assert rows and rows > 0
+
+    _run_pipeline(fbi_warehouse, older, narrow)
+    assert area_filter()[:2] == ("pass", 0)
+
+
+MIGRATION_035 = "sql/migrations/035_fbi_relationship_equal_window.sql"
+
+
+def test_migration_035_removes_an_equal_window_duplicate_and_is_safe_to_rerun(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DQ-004, ETL-053 — a warehouse already holding the duplicate is repaired.
+
+    The transform supersedes per product only when a release is replayed, so a
+    warehouse that took the duplicate before the fix keeps it until migration
+    035 runs. The migration states the transform's statement for every
+    product; the two are held to one text here.
+    """
+    import re
+
+    from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import (
+        SUPERSEDED_RELATIONSHIPS_DELETE,
+    )
+
+    sql = (Path(__file__).resolve().parents[3] / MIGRATION_035).read_text(
+        encoding="utf-8"
+    )
+    statement = sql[sql.index("DELETE FROM") :].rstrip().rstrip(";")
+
+    def normalised(text: str) -> str:
+        return re.sub(r"\s+", " ", text).strip()
+
+    assert normalised(statement) == normalised(SUPERSEDED_RELATIONSHIPS_DELETE)
+
+    captured = _persist_fixture_release(fbi_warehouse)
+    _run_pipeline(fbi_warehouse, captured)
+    writer = fbi_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO silver_fbi.agency_geography_relationship (
+                    product_id, release_key, ori, relationship_type, geo_id,
+                    geo_sk, source_label, resolution_method, resolution_status,
+                    confidence_class, reason_code, effective_start,
+                    effective_end, geography_vintage, evidence_source,
+                    evidence_capture_id, updated_at
+                )
+                SELECT product_id, release_key, ori, relationship_type, geo_id,
+                       geo_sk, source_label, resolution_method,
+                       resolution_status, confidence_class, reason_code,
+                       effective_start, effective_end, geography_vintage + 1,
+                       evidence_source, evidence_capture_id,
+                       updated_at - INTERVAL '1 day'
+                  FROM silver_fbi.agency_geography_relationship
+                 WHERE relationship_type = 'place'
+                   AND resolution_status = 'resolved'
+                RETURNING relationship_sk
+                """
+            )
+            injected = [row[0] for row in cursor.fetchall()]
+            assert injected
+            cursor.execute(sql)
+            assert cursor.rowcount == len(injected)
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_fbi.agency_geography_relationship "
+                "WHERE relationship_sk = ANY(%s)",
+                (injected,),
+            )
+            assert cursor.fetchone() == (0,)
+            cursor.execute(sql)
+            assert cursor.rowcount == 0
+        writer.commit()
+    finally:
+        writer.close()
+
+
 def test_provider_totals_and_agency_grain_stay_separable(
     fbi_warehouse: Callable[[], connection],
 ) -> None:

@@ -40,6 +40,7 @@ import {
   newestPerGeography,
   mapRows,
   selectedMappedObservation,
+  normalizeNeutralObservationRows,
   normalizeObservationRows,
   OBSERVATION_COVERAGE_FIELDS,
   OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
@@ -419,6 +420,21 @@ describe("the neutral envelope maps onto the explorer row shape", () => {
     expect(row.source).toBe("CDC");
     // Nothing invents a margin of error the source did not publish.
     expect(row.margin_of_error).toBeUndefined();
+  });
+
+  test("a direct /observations read keeps its margin of error without a source", () => {
+    // Covers: WEB-139 — the within-county tract table read every margin as
+    // "Not provided" because it had no explorer source to normalize with.
+    const tractRow = {
+      geo_id: "state:53|county:033|tract:000101",
+      value: "69577",
+      uncertainty: { margin_of_error: "21460", margin_of_error_pct: "30.84" },
+    };
+    const [row] = normalizeNeutralObservationRows([tractRow]);
+    expect(row.margin_of_error).toBe("21460");
+    expect(row.margin_of_error_pct).toBe("30.84");
+    expect(row.value).toBe("69577");
+    expect(normalizeNeutralObservationRows(null)).toEqual([]);
   });
 
   test("source-scoped rows pass through untouched", () => {

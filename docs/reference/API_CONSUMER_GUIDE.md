@@ -1339,6 +1339,9 @@ newest published value, and the coarser value is one value held across the
 period it covers, repeated rather than measured at the finer grain. Read
 `period_a` and `period_b` for what was combined. Grains that do not nest
 (weekly beside monthly) or a word outside the calendar vocabulary still fail.
+`MULTI_YEAR` is such a word: a CDC measure whose published figures each span
+several years (cancer incidence for 2015-2019) lists it in
+`valid_time_grains`, and is not compared as if it were one year's value.
 
 Grains are compared in the vocabulary, not by spelling: the geography rule
 reads the same five words and the same `NATION`/`US` aliases as the

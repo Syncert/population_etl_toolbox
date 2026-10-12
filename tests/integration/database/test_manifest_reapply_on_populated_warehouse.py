@@ -232,3 +232,60 @@ def test_a_reapply_that_rewrites_a_served_value_is_caught(
         "a rewritten value left the digest unchanged, so the reapply test "
         "above would not notice a migration that rewrote served data"
     )
+
+
+def test_reapplying_after_tract_rows_exist_keeps_the_tract_constraints(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-052 — 031 re-runs cleanly on a warehouse that took 032.
+
+    031 swapped the revision and slice-ledger constraints to admit places;
+    032 swapped them again to admit tracts. Re-running 031 dropped 032's wider
+    checks and re-added its own, which the first tract row then violated, so
+    the documented upgrade path failed on every warehouse holding tracts.
+    """
+    capture_year = 2088
+    database = postgres_connection_factory()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            capture_id = seed_capture(cursor, "CENSUS_ACS")
+            cursor.execute(
+                """
+                INSERT INTO silver_census.observation_revision (
+                    capture_id, source_row_index, source_column_index,
+                    source_header, dataset, year, geo_level, state_fips_source,
+                    county_fips_source, tract_code_source, variable_name,
+                    table_id, measure_type, value_source, value, value_status
+                ) VALUES (%s, 1, 0, 'B01003_001E', 'acs5', %s, 'tract', '10',
+                          '001', '040100', 'B01003_001E', 'B01003', 'E', '1',
+                          1, 'valid')
+                """,
+                (capture_id, capture_year),
+            )
+        try:
+            apply_manifest(database)
+            with database.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT conname FROM pg_constraint
+                    WHERE conname IN (
+                        'observation_revision_geo_level_tract_check',
+                        'acs_ingestion_slices_geo_level_tract_check'
+                    ) ORDER BY conname
+                    """
+                )
+                kept = [row[0] for row in cursor.fetchall()]
+        finally:
+            with database.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM silver_census.observation_revision WHERE year = %s",
+                    (capture_year,),
+                )
+    finally:
+        database.close()
+
+    assert kept == [
+        "acs_ingestion_slices_geo_level_tract_check",
+        "observation_revision_geo_level_tract_check",
+    ]

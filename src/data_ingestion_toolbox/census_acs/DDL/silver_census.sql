@@ -85,6 +85,20 @@ CREATE INDEX IF NOT EXISTS idx_fact_demo_upsert_key ON silver_census.fact_demogr
 CREATE INDEX IF NOT EXISTS idx_fact_demo_source_year ON silver_census.fact_demographics(source_system, estimate_year);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_ingested_at ON silver_census.fact_demographics(ingested_at);
 
+-- One row per slice of `transform_census_to_silver` that finished under an
+-- Airflow run. A retry or a cleared task of the same run skips the slices it
+-- names, so a failure costs only the slice it interrupted rather than a
+-- re-check of every earlier year. A new run has a new key and replays all of
+-- history, which is what lets errata reach silver.
+CREATE TABLE IF NOT EXISTS silver_census.transform_checkpoint (
+    resume_key   TEXT NOT NULL,
+    year         INTEGER NOT NULL,
+    slice_key    TEXT NOT NULL,
+    rows_changed BIGINT NOT NULL CHECK (rows_changed >= 0),
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (resume_key, year, slice_key)
+);
+
 -- Autovacuum for this high-update table
 ALTER TABLE silver_census.fact_demographics SET (
     autovacuum_vacuum_scale_factor = 0.05,  -- Vacuum when 5% of table updated (default 20%)

@@ -184,6 +184,13 @@ class AcsConfig(BaseModel):
     # How many of the 5-year dataset's newest years are requested at tract
     # grain; the default is the newest, which is what a county page reads.
     tract_recent_years: int = 1
+    # Place years beyond the newest `place_full_table_years` are requested
+    # for `place_history_tables` only (acs-place-tract-history-backfill). A
+    # place year on the whole curated list measured about 136 GB on the
+    # internal stack in 2026-10; a city history on every table would not fit
+    # on its disk, and the city page's history charts read these tables.
+    place_full_table_years: int = 1
+    place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
@@ -229,6 +236,13 @@ class AcsConfig(BaseModel):
             raise ValueError("place_recent_years must not be negative")
         return value
 
+    @field_validator("place_history_tables")
+    @classmethod
+    def validate_place_history_tables(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("place_history_tables must name at least one table")
+        return value
+
     @field_validator("tract_recent_years")
     @classmethod
     def validate_tract_recent_years(cls, value: int) -> int:
@@ -242,6 +256,16 @@ class AcsConfig(BaseModel):
             return set()
         newest = sorted(set(years), reverse=True)
         return set(newest[: self.tract_recent_years])
+
+    def place_tables(self, year: int, years: List[int]) -> List[str] | None:
+        """The tables requested for ``year`` at place grain.
+
+        ``None`` means the whole curated list: the newest
+        `place_full_table_years` of ``years``. Any older year is requested for
+        `place_history_tables` only.
+        """
+        newest = sorted(set(years), reverse=True)[: self.place_full_table_years]
+        return None if year in newest else list(self.place_history_tables)
 
     def place_years(self, dataset: str, years: List[int]) -> set[int]:
         """The years of ``dataset`` requested at place grain: the newest ones."""

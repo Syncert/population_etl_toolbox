@@ -2953,7 +2953,7 @@ v gold_cdc.metric_publisher
     body     measure.unit AS units,
     body     'source_fact'::text AS measure_kind,
     body     measure.valid_geo_grains,
-    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     measure.valid_time_grains,
     body     NULL::text AS aggregation_characteristic,
     body     jsonb_build_object('schema', 'gold_cdc', 'relation', 'health_observation', 'asset_id', measure.asset_id, 'measure_id', measure.measure_id, 'value_type_id', measure.value_type_id) AS physical_lineage,
     body     release.release_watermark AS source_watermark,
@@ -2967,7 +2967,16 @@ v gold_cdc.metric_publisher
     body             measure_1.value_type_id,
     body             measure_1.measure_label,
     body             measure_1.unit,
-    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             array_agg(DISTINCT
+    body                 CASE
+    body                     WHEN fact.period_start = fact.period_end THEN 'ANNUAL'::text
+    body                     ELSE 'MULTI_YEAR'::text
+    body                 END ORDER BY (
+    body                 CASE
+    body                     WHEN fact.period_start = fact.period_end THEN 'ANNUAL'::text
+    body                     ELSE 'MULTI_YEAR'::text
+    body                 END)) AS valid_time_grains
     body            FROM silver_cdc.dim_measure measure_1
     body              JOIN silver_cdc.fact_health_observation fact ON fact.asset_id = measure_1.asset_id AND fact.measure_id = measure_1.measure_id AND fact.value_type_id = measure_1.value_type_id
     body              JOIN silver_cdc.dim_dataset_release release_1 ON release_1.asset_id = fact.asset_id AND release_1.release_watermark = fact.release_watermark
@@ -9627,6 +9636,16 @@ r silver_census.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index census_observation_revision_slice_idx CREATE INDEX census_observation_revision_slice_idx ON silver_census.observation_revision USING btree (dataset, year, geo_level, state_fips_source, county_fips_source)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census.observation_revision USING btree (capture_id, source_row_index, source_column_index)
+
+r silver_census.transform_checkpoint
+    column resume_key text NOT NULL
+    column year integer NOT NULL
+    column slice_key text NOT NULL
+    column rows_changed bigint NOT NULL
+    column completed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint transform_checkpoint_pkey PRIMARY KEY (resume_key, year, slice_key)
+    constraint transform_checkpoint_rows_changed_check CHECK ((rows_changed >= 0))
+    index transform_checkpoint_pkey CREATE UNIQUE INDEX transform_checkpoint_pkey ON silver_census.transform_checkpoint USING btree (resume_key, year, slice_key)
 
 r silver_census_bps.dim_measure
     column measure_id text NOT NULL

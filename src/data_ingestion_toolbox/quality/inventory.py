@@ -806,6 +806,16 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first ACS capture",
     ),
     _obj(
+        "silver_census.transform_checkpoint",
+        "silver",
+        "CENSUS_ACS",
+        grain="resume_key, year, slice_key",
+        lineage="silver_census.observation_revision",
+        scope_method="one row per transform slice finished under an Airflow run",
+        cadence="per ACS silver transform",
+        empty_behavior="empty before the first DAG-driven ACS transform",
+    ),
+    _obj(
         "silver_census.fact_demographics",
         "silver",
         "CENSUS_ACS",
@@ -4380,7 +4390,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="automated",
         automation_note=(
-            "`quality.sources.bls_contract_conformance` is DQ-ACS-007's shape against BLS's identity: a metric code is the series except where a measure-identified programme publishes one metric across every geography it covers, so the published side reads `gold_bls.dim_bls_measure` -- the mapping the refresh itself uses rather than a restatement of its rule. It runs in about a minute. Its first real run failed with 46 groups and the failure was real: the serving contract had been widened to publish a withheld observation and BLS had not been re-served since, so the API advertised `publishes_value_status: true` while its served rows still excluded every withheld value. No other guard could see that -- the schema tests check the columns exist and the capability test checks the flag matches the columns, and only this rule compares served data against published data."
+            "`quality.sources.bls_contract_conformance` is DQ-ACS-007's shape against BLS's identity: a metric code is the series except where a measure-identified programme publishes one metric across every geography it covers, so the published side reads `gold_bls.dim_bls_measure` -- the mapping the refresh itself uses rather than a restatement of its rule. It runs in about a minute. The published side excludes `M13`, the annual average the serving view deliberately does not serve as a month (DQ-BLS-008 reconciles it); counting it read every series-year BLS averages as unbacked, which is how the weekly run of 2026-10-12 failed 3,366 groups. Its first real run failed with 46 groups and the failure was real: the serving contract had been widened to publish a withheld observation and BLS had not been re-served since, so the API advertised `publishes_value_status: true` while its served rows still excluded every withheld value. No other guard could see that -- the schema tests check the columns exist and the capability test checks the flag matches the columns, and only this rule compares served data against published data."
         ),
     ),
     _rule(
@@ -4396,7 +4406,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="automated",
         automation_note=(
-            "`quality.sources.bls_derived_annual_reconciliation` compares each complete derived year with the `M13` annual average BLS published for the same series and geography (ADR-0007: where both exist, a disagreement is a finding). The tolerance is half a unit in the third decimal or a millionth of the value, whichever is larger: BLS averages the published monthly figures and rounds, so a derived mean of those same months can differ by rounding and by nothing else. The completeness half is enforced rather than measured: the table's CHECK refuses a value on a window missing a month and a reason on a complete one."
+            "`quality.sources.bls_derived_annual_reconciliation` compares each complete derived year with the `M13` annual average BLS published for the same series and geography (ADR-0007: where both exist, a disagreement is a finding). The tolerance is half a unit in the last place BLS published the annual average to (read from its source text), or a millionth of the value, whichever is larger: BLS averages the published monthly figures and rounds to the series' published precision, so a derived mean of those same months can differ by rounding and by nothing else. That precision varies -- one decimal for CPI indexes before 2007 and for CES employment, three for current CPI -- and the first weekly run on a full warehouse, with a fixed third-decimal tolerance, reported 289 one-decimal years (CPI-U 1990: 130.658 derived, 130.7 published) that were BLS's rounding, not disagreements. The completeness half is enforced rather than measured: the table's CHECK refuses a value on a window missing a month and a reason on a complete one."
         ),
     ),
     _rule(
@@ -4803,7 +4813,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-CDC-007",
         "BLOCK",
         "conformance",
-        "CDC publisher exports preserve measure identity and the annual time grain.",
+        "CDC publisher exports preserve measure identity, and every served "
+        "observation's span is a time grain its measure publishes.",
         (
             "gold_cdc.measure_export",
             "gold_cdc.metric_publisher",
@@ -4811,12 +4822,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="automated",
         automation_note=(
-            "Measured by `cdc_publisher_export_conformance`, and deliberately "
-            "not by reading the publisher's own literal back: "
-            "`valid_time_grains` is written `ARRAY['ANNUAL']` directly in "
-            "`gold_cdc.metric_publisher`, so a rule reading it would be "
-            "agreeing with a constant. "
-            "The identity arm reads the export instead. `source_object_key` "
+            "Measured by `cdc_publisher_export_conformance`. "
+            "The identity arm reads the export. `source_object_key` "
             "is `asset_id || ':' || measure_id || ':' || value_type_id`, so a "
             "component containing that delimiter makes the key ambiguous -- "
             "`a:b` + `c` and `a` + `b:c` compose to the same string -- and "
@@ -4826,8 +4833,16 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "The grain arm asks whether the data supports the claim: "
             "`gold_cdc.health_observation` carries `period_start` and "
             "`period_end` as integer years, so an annual observation is one "
-            "where they are equal, and a row spanning more contradicts the "
-            "`ANNUAL` every consumer is promised."
+            "where they are equal and any other spans several years "
+            "(`MULTI_YEAR`); each served span must be a grain the measure's "
+            "publisher row claims. The publisher used to write "
+            "`ARRAY['ANNUAL']` as a literal, and the first weekly run on a "
+            "loaded warehouse (2026-10-12) failed 40,086 rows on it: CDC's "
+            "Chronic Disease Indicators publish cancer incidence (`CAN01`) "
+            "as 2015-2019. The publisher now reads the grain from the rows, "
+            "and `MULTI_YEAR`, outside the calendar vocabulary, is refused "
+            "by the comparison check rather than held as one year's value. "
+            "Evidence names each measure and span once, not per geography."
         ),
     ),
     # -- FBI UCR -----------------------------------------------------------

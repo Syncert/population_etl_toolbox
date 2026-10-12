@@ -1304,12 +1304,15 @@ def test_a_cdc_observation_spanning_more_than_a_year_contradicts_the_contract(
 ) -> None:
     """Covers: DQ-022 — the data has to support the claim the contract makes.
 
-    `gold_cdc.metric_publisher` writes `valid_time_grains` as a literal
-    `ARRAY['ANNUAL']`, so reading it back would be a rule agreeing with a
-    constant. `gold_cdc.health_observation` carries `period_start` and
-    `period_end` as integer years, so an annual observation is one where they
-    are equal -- and a row spanning more is a multi-year figure served to a
-    reader who asked for an annual series, with nothing saying so.
+    `gold_cdc.health_observation` carries `period_start` and `period_end` as
+    integer years, so an annual observation is one where they are equal -- and
+    a row spanning more is a multi-year figure. CDC's Chronic Disease
+    Indicators publish such figures (cancer incidence as 2015-2019), so the
+    publisher reads its grain from the rows and says `MULTI_YEAR`; the rule
+    holds every served span to a grain its measure claims. The publisher's old
+    literal `ARRAY['ANNUAL']` is restored inside the transaction to show the
+    rule still refuses a multi-year figure published as annual: that literal
+    is what the weekly check on the local warehouse failed 40,086 rows on.
     """
     source = "CDCPROBE" + uuid4().hex[:8].upper()
     run_id, capture_id = _seed_probe_capture(postgres_connection_factory, source)
@@ -1327,9 +1330,25 @@ def test_a_cdc_observation_spanning_more_than_a_year_contradicts_the_contract(
         _seed_cdc_observation(
             cursor, capture_id, run_id, geo_sk, period_start=2021, period_end=2023
         )
+        cursor.execute(
+            "SELECT valid_time_grains FROM gold_cdc.metric_publisher "
+            "WHERE source_object_key = 'cdi:probe_measure:crude'"
+        )
+        assert cursor.fetchall() == [(["ANNUAL", "MULTI_YEAR"],)]
+        _, grain = cdc_publisher_export_conformance(cursor, {})
+        assert grain.result == "pass", grain.evidence
+
+        cursor.execute("SELECT pg_get_viewdef('gold_cdc.metric_publisher'::regclass)")
+        definition = cursor.fetchone()[0]
+        literal = definition.replace(
+            "measure.valid_time_grains,", "ARRAY['ANNUAL'::text] AS valid_time_grains,"
+        )
+        assert literal != definition
+        cursor.execute(f"CREATE OR REPLACE VIEW gold_cdc.metric_publisher AS {literal}")
         _, grain = cdc_publisher_export_conformance(cursor, {})
         assert grain.result == "fail"
         assert any("2021|2023" in entry for entry in grain.evidence)
+        assert not any("2020|2020" in entry for entry in grain.evidence)
     postgres_connection.rollback()
 
 

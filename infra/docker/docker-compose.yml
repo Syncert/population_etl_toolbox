@@ -1,6 +1,10 @@
 services:
   analytics_postgres:
     image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     # Postgres ships defaults sized for a small database: 128 MB of shared
     # buffers, 4 MB work_mem, 1 GB max_wal_size. This warehouse's ACS serving
     # relation alone is 37 GB of heap and 25 GB of indexes, so stock settings
@@ -64,6 +68,10 @@ services:
 
   service_postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -75,9 +83,17 @@ services:
 
   redis:
     image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
 
   api:
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile.api
@@ -219,6 +235,10 @@ services:
       retries: 30
 
   web:
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile.web
@@ -248,6 +268,17 @@ services:
       - ../airflow/airflow.env.example
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # A running task that misses its heartbeat for this long is killed as a
+      # zombie. The default of 300 s turned every Docker pause or DNS blip
+      # longer than five minutes into a failed multi-hour ACS load (see
+      # docs/incidents/2026-10-09_acs_reload_failures.md). The work itself
+      # resumes from checkpoints, so tolerating a stall costs nothing.
+      AIRFLOW__SCHEDULER__SCHEDULER_ZOMBIE_TASK_THRESHOLD: "1800"
+      # The scheduler resets a running task as orphaned when its own job
+      # heartbeat looks older than this. Under a multi-hour warehouse load
+      # its heartbeat lagged past the 30 s default at 01:40 UTC on
+      # 2026-10-12, and it killed its own 2024 ACS publish 3.5 h in.
+      AIRFLOW__SCHEDULER__SCHEDULER_HEALTH_CHECK_THRESHOLD: "600"
       # All Airflow components must share one webserver secret_key or the UI
       # cannot fetch task logs from the scheduler's log server (403 FORBIDDEN).
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-internal-dev-log-signing-key}
@@ -314,6 +345,10 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     depends_on:
       - airflow-init
       - redis
@@ -323,6 +358,10 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
+    # Come back after a host reboot or a Docker Desktop restart: a
+    # Windows Update reboot on 2026-10-10 left the whole stack down until
+    # someone started it by hand.
+    restart: unless-stopped
     # Stable hostname so served-log URLs stored on task instances stay
     # resolvable across container recreates.
     hostname: airflow-scheduler

@@ -51,6 +51,17 @@ ZCTA_BOUNDARY_VINTAGE = 2020
 #: The snapshot scope of a tract and ZCTA publication (sub-county-geography).
 SUB_COUNTY_SCOPE = "sub_county"
 SUB_COUNTY_GEO_TYPES = frozenset({"tract", "zcta"})
+#: Attribute-only publications of an older vintage's places and tracts
+#: (acs-place-tract-history-backfill), so an ACS year resolves the codes it
+#: was published under. A tract publication is refused a tract whose county is
+#: not an entity, the same as the current sub-county one.
+HISTORICAL_PLACE_SCOPE = "historical_place"
+HISTORICAL_TRACT_SCOPE = "historical_tract"
+TRACT_SCOPES = frozenset({SUB_COUNTY_SCOPE, HISTORICAL_TRACT_SCOPE})
+#: The first vintage with a place and tract Gazetteer: the 2010 Census files,
+#: which also stand for 2011. Annual files start in 2012. The 2009 ACS was
+#: published on Census 2000 tracts, which have no Gazetteer.
+MIN_SUB_COUNTY_HISTORY_YEAR = 2010
 
 
 @dataclass(frozen=True)
@@ -1112,6 +1123,34 @@ def sub_county_urls(year: int) -> list[tuple[str, str, str]]:
     ]
 
 
+def historical_sub_county_asset(year: int, geo_type: str) -> tuple[str, str, str]:
+    """The Gazetteer attributes of one vintage's places or tracts.
+
+    2010 and 2011 read the 2010 Census files; from 2012 the Bureau publishes
+    one file a year.
+    """
+    if geo_type not in {"place", "tract"}:
+        raise ValueError(f"no sub-county history asset for {geo_type!r}")
+    if year < MIN_SUB_COUNTY_HISTORY_YEAR:
+        raise ValueError(
+            f"no {geo_type} Gazetteer for vintage {year}; the first is "
+            f"{MIN_SUB_COUNTY_HISTORY_YEAR}"
+        )
+    if year < 2012:
+        name = (
+            "Gaz_tracts_national.zip"
+            if geo_type == "tract"
+            else "Gaz_places_national.zip"
+        )
+        return ("attributes", geo_type, f"{GAZ_ROOT}/{name}")
+    noun = "tracts" if geo_type == "tract" else "place"
+    return (
+        "attributes",
+        geo_type,
+        f"{GAZ_ROOT}/{year}_Gazetteer/{year}_Gaz_{noun}_national.zip",
+    )
+
+
 def _historical_county_asset(year: int) -> tuple[str, str, str]:
     legacy_url = LEGACY_COUNTY_URLS.get(year)
     if legacy_url:
@@ -1318,7 +1357,9 @@ def sync_geography_reference(
         attribute_batches: list[tuple[list[GeographyRecord], UUID]] = []
         geometry_batches: list[tuple[list[GeometryRecord], UUID]] = []
         active_geo_ids: set[str] = (
-            set() if snapshot_scope == SUB_COUNTY_SCOPE else {"us:1"}
+            set()
+            if snapshot_scope in TRACT_SCOPES | {HISTORICAL_PLACE_SCOPE}
+            else {"us:1"}
         )
         for product, geo_type, _, capture_id in captured:
             payload = load_captured_payload(factory, capture_id)
@@ -1333,7 +1374,7 @@ def sync_geography_reference(
                             payload, geo_type=geo_type, geography_vintage=year
                         )
                     active_geo_ids.update(record.geo_id for record in records)
-                    if geo_type == "state" and snapshot_scope != SUB_COUNTY_SCOPE:
+                    if geo_type == "state" and snapshot_scope not in TRACT_SCOPES:
                         records = [
                             GeographyRecord(
                                 "nation",
@@ -1382,7 +1423,7 @@ def sync_geography_reference(
         counts = {"attributes": 0, "geometries": 0}
         publication = factory()
         try:
-            if snapshot_scope == SUB_COUNTY_SCOPE:
+            if snapshot_scope in TRACT_SCOPES:
                 attribute_batches, geometry_batches, refused = (
                     repository.refuse_tracts_without_county(
                         attribute_batches,
@@ -1408,7 +1449,7 @@ def sync_geography_reference(
                 capture_id=relationship_capture,
                 connection=publication,
             )
-            if snapshot_scope == SUB_COUNTY_SCOPE:
+            if snapshot_scope in TRACT_SCOPES:
                 repository.reconcile_sub_county_relationships(
                     vintage=year,
                     zcta_boundary_vintage=ZCTA_BOUNDARY_VINTAGE,
@@ -1450,6 +1491,66 @@ def sync_sub_county_geography(source_year: int | None = None) -> dict[str, int]:
         retire_geo_types=set(SUB_COUNTY_GEO_TYPES),
         snapshot_scope=SUB_COUNTY_SCOPE,
     )
+
+
+def sync_sub_county_history(
+    years: list[int],
+    *,
+    latest_year: int | None = None,
+) -> dict[str, int]:
+    """Publish older vintages' places and tracts, then re-close them at the newest.
+
+    Each requested vintage is published oldest-first as attributes only: an
+    ACS year resolves a place or tract by the code it was published under,
+    and a code that has since been split, merged or disincorporated becomes
+    an entity rather than an unmapped row. Vintages already published under
+    the historical scopes are skipped. The newest vintage's attributes are
+    then replayed so every code absent from it receives a retirement version,
+    which keeps a code that no longer exists off the current catalog.
+
+    Run after `sync_geography_history` and `sync_sub_county_geography`: a
+    historical tract is refused unless its county is already an entity.
+    """
+    latest = latest_year or resolve_latest_complete_year()
+    wanted = sorted({int(year) for year in years if int(year) < latest})
+    for year in wanted:
+        if year < MIN_SUB_COUNTY_HISTORY_YEAR:
+            raise ValueError(
+                f"no place or tract Gazetteer for vintage {year}; the first is "
+                f"{MIN_SUB_COUNTY_HISTORY_YEAR}"
+            )
+    factory = _get_hook().get_conn
+    totals = {"vintages_synced": 0, "attributes": 0, "retired": 0, "refused": 0}
+    for geo_type, scope in (
+        ("place", HISTORICAL_PLACE_SCOPE),
+        ("tract", HISTORICAL_TRACT_SCOPE),
+    ):
+        completed = successful_geography_vintages(factory, snapshot_scopes=(scope,))
+        for year in [year for year in wanted if year not in completed]:
+            logger.info("[CENSUS_GEO] Publishing %s history vintage %s", geo_type, year)
+            counts = sync_geography_reference(
+                source_year=year,
+                assets=[historical_sub_county_asset(year, geo_type)],
+                retire_geo_types={geo_type},
+                snapshot_scope=scope,
+            )
+            totals["vintages_synced"] += 1
+            for key in ("attributes", "retired", "refused"):
+                totals[key] += counts.get(key, 0)
+        logger.info(
+            "[CENSUS_GEO] Replaying %s vintage %s last to retire older codes",
+            geo_type,
+            latest,
+        )
+        counts = sync_geography_reference(
+            source_year=latest,
+            assets=[historical_sub_county_asset(latest, geo_type)],
+            retire_geo_types={geo_type},
+            snapshot_scope=scope,
+        )
+        for key in ("attributes", "retired", "refused"):
+            totals[key] += counts.get(key, 0)
+    return totals
 
 
 def sync_geography_history(

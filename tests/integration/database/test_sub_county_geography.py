@@ -226,3 +226,131 @@ def test_a_tract_whose_county_is_absent_is_refused_not_guessed(
         factory,
         "SELECT COUNT(*) FROM silver_ref.dim_geo_entity WHERE geo_type = 'tract'",
     ) == [(262 - counts["refused"],)]
+
+
+def _gazetteer_zip(name: str, header: str, rows: list[str]) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, "\n".join([header, *rows]) + "\n")
+    return buffer.getvalue()
+
+
+def _current_activity(
+    factory: Callable[[], connection], geo_ids: list[str]
+) -> dict[str, tuple[bool, int]]:
+    rows = _rows(
+        factory,
+        """
+        SELECT entity.geo_id, current.is_active, current.geography_vintage
+        FROM silver_ref.dim_geo_entity AS entity
+        JOIN LATERAL (
+            SELECT version.is_active, version.geography_vintage
+            FROM silver_ref.dim_geo_entity_version AS version
+            WHERE version.geo_sk = entity.geo_sk
+            ORDER BY version.geography_vintage DESC, version.ingested_at DESC
+            LIMIT 1
+        ) AS current ON TRUE
+        WHERE entity.geo_id = ANY(%s)
+        """,
+        (geo_ids,),
+    )
+    return {geo_id: (active, vintage) for geo_id, active, vintage in rows}
+
+
+def test_an_older_vintage_resolves_its_own_codes_and_they_close_at_the_newest(
+    postgres_connection_factory: Callable[[], connection],
+    delaware,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-084 — a 2010s tract or a disincorporated place is an entity, retired now."""
+    factory = postgres_connection_factory
+    delaware(ALL_COUNTIES)
+    geography_pipeline.sync_sub_county_geography(source_year=VINTAGE)
+
+    import zipfile
+
+    tract_text = (
+        zipfile.ZipFile(FIXTURES / "2024_Gaz_tracts_DE.zip")
+        .read("2024_Gaz_tracts_national.txt")
+        .decode()
+    )
+    tract_header, *tract_rows = [line.rstrip() for line in tract_text.splitlines()]
+    # 2015 is published on 2010 tracts: one tract the 2020 census split
+    # (040100) is absent, and a code only that decade used is present.
+    old_tracts = [row for row in tract_rows if "\t10001040100\t" not in row] + [
+        "DE\t10001049999\t1000\t0\t0.1\t0.\t39.1\t-75.5"
+    ]
+    places = [
+        row[0]
+        for row in _rows(
+            factory,
+            "SELECT census_geoid FROM silver_ref.dim_geo_entity "
+            "WHERE geo_type = 'place' AND state_fips = '10' ORDER BY census_geoid",
+        )
+    ]
+    place_header = "USPS\tGEOID\tNAME"
+    newest_places = [f"DE\t{geoid}\tPlace {geoid}" for geoid in places]
+    old_places = newest_places + ["DE\t1099990\tOldtown town"]
+    assets = {
+        "2015_Gaz_tracts_national.zip": _gazetteer_zip(
+            "2015_Gaz_tracts_national.txt", tract_header, old_tracts
+        ),
+        "2024_Gaz_tracts_national.zip": (
+            FIXTURES / "2024_Gaz_tracts_DE.zip"
+        ).read_bytes(),
+        "2015_Gaz_place_national.zip": _gazetteer_zip(
+            "2015_Gaz_place_national.txt", place_header, old_places
+        ),
+        "2024_Gaz_place_national.zip": _gazetteer_zip(
+            "2024_Gaz_place_national.txt", place_header, newest_places
+        ),
+    }
+
+    def download(_client, url: str, **_kwargs):  # noqa: ANN001, ANN202
+        import httpx
+
+        return httpx.Response(
+            200,
+            content=assets[url.rsplit("/", 1)[1]],
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(geography_pipeline, "_download_with_retry", download)
+
+    counts = geography_pipeline.sync_sub_county_history([2015], latest_year=VINTAGE)
+    assert counts["vintages_synced"] == 2
+    assert counts["refused"] == 0
+
+    old_tract = "state:10|county:001|tract:049999"
+    kept_tract = "state:10|county:001|tract:040201"
+    split_tract = "state:10|county:001|tract:040100"
+    old_place = "state:10|place:99990"
+    activity = _current_activity(
+        factory, [old_tract, kept_tract, split_tract, old_place]
+    )
+    # Codes only an older vintage used exist, so that year's values resolve,
+    # and are closed at the newest vintage, so they are not current places.
+    assert activity[old_tract] == (False, VINTAGE)
+    assert activity[old_place] == (False, VINTAGE)
+    assert activity[kept_tract] == (True, VINTAGE)
+    assert activity[split_tract] == (True, VINTAGE)
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_ref.dim_geo WHERE geo_id = ANY(%s)",
+        ([old_tract, old_place],),
+    ) == [(2,)]
+
+    # Publishing the same history again is a no-op for the old vintage.
+    again = geography_pipeline.sync_sub_county_history([2015], latest_year=VINTAGE)
+    assert again["vintages_synced"] == 0
+
+    cleanup = factory()
+    try:
+        with cleanup.cursor() as cursor:
+            delete_geography(cursor, old_place)
+        cleanup.commit()
+    finally:
+        cleanup.close()
