@@ -22,7 +22,7 @@ import type { GeographySummary, Observation } from "../lib/api/types";
 import { buildChoroplethModel, formatObservationValue, marginOfErrorText } from "../lib/explorerViewModel";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { boundaryTileUrl } from "../lib/mapWiring";
-import { ACTIVE_GEOGRAPHIES_ONLY, normalizeObservationRows } from "../lib/observationAccess";
+import { ACTIVE_GEOGRAPHIES_ONLY, normalizeNeutralObservationRows } from "../lib/observationAccess";
 import { discoverTractTiles } from "../lib/tiles";
 import type { TractTiles } from "../lib/tiles";
 
@@ -173,7 +173,7 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
         if (!cancelled) setLoad({
             state: "ready",
             tracts,
-            rows: normalizeObservationRows(null, observations as unknown as ObservationRow[]),
+            rows: normalizeNeutralObservationRows(observations as unknown as ObservationRow[]),
           });
       })
       .catch((error) => {

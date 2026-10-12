@@ -274,6 +274,11 @@ services:
       # docs/incidents/2026-10-09_acs_reload_failures.md). The work itself
       # resumes from checkpoints, so tolerating a stall costs nothing.
       AIRFLOW__SCHEDULER__SCHEDULER_ZOMBIE_TASK_THRESHOLD: "1800"
+      # The scheduler resets a running task as orphaned when its own job
+      # heartbeat looks older than this. Under a multi-hour warehouse load
+      # its heartbeat lagged past the 30 s default at 01:40 UTC on
+      # 2026-10-12, and it killed its own 2024 ACS publish 3.5 h in.
+      AIRFLOW__SCHEDULER__SCHEDULER_HEALTH_CHECK_THRESHOLD: "600"
       # All Airflow components must share one webserver secret_key or the UI
       # cannot fetch task logs from the scheduler's log server (403 FORBIDDEN).
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-internal-dev-log-signing-key}

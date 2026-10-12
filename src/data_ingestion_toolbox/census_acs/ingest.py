@@ -427,9 +427,14 @@ def ingest_slice(
     dataset: str,
     geo_level: str,
     state_fips: Optional[str] = None,
+    tables: Optional[List[str]] = None,
 ) -> int:
     """
     Ingest one slice: (year, dataset, geo_level[, state_fips]).
+
+    ``tables`` narrows the request to those curated tables, as the planner
+    does for an older place year (`AcsConfig.place_tables`); ``None`` keeps
+    the level's own scope.
 
     For example:
         (2022, 'acs5', 'us')
@@ -438,11 +443,12 @@ def ingest_slice(
     """
     # A tract slice asks for the tract tables only; every other level for
     # the whole curated list.
-    variables = (
-        get_curated_variables(year, dataset, CONFIG.tract_tables)
-        if geo_level == "tract"
-        else get_curated_variables(year, dataset)
-    )
+    if tables is not None:
+        variables = get_curated_variables(year, dataset, tables)
+    elif geo_level == "tract":
+        variables = get_curated_variables(year, dataset, CONFIG.tract_tables)
+    else:
+        variables = get_curated_variables(year, dataset)
     if not variables:
         # nothing to ingest for this year+dataset
         return 0

@@ -197,6 +197,31 @@ def test_a_forced_run_uses_the_every_year_plan() -> None:
     assert not any("changed-plan" in statement for statement in hook.statements)
 
 
+@pytest.mark.parametrize(
+    ("force_full", "plan", "timeout"),
+    [(False, "changed-plan", "10min"), (True, "full-plan", "20min")],
+)
+def test_the_plan_runs_under_the_chunk_limit_not_the_bookkeeping_one(
+    force_full: bool, plan: str, timeout: str
+) -> None:
+    """Covers: ETL-049 — planning reads the whole fact table and gets the chunk's time.
+
+    On ACS the plan aggregates 170 million silver rows. Under load it outran
+    the ten minutes the bookkeeping statements run under and failed the 2024
+    re-serve before a single chunk started.
+    """
+    hook = _Hook()
+    refresh_serving_layer_in_year_chunks(
+        hook=hook, config=_config(), force_full=force_full
+    )
+
+    plan_at = next(i for i, s in enumerate(hook.statements) if plan in s)
+    timeouts = [
+        s for s in hook.statements[:plan_at] if "SET LOCAL statement_timeout" in s
+    ]
+    assert timeouts[-1] == f"SET LOCAL statement_timeout = '{timeout}'"
+
+
 def test_a_source_without_a_forced_plan_refuses_rather_than_silently_degrading() -> (
     None
 ):

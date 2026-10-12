@@ -1577,8 +1577,13 @@ def hud_value_plausibility(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
                     SELECT 1 FROM silver_hud_fmr_il.fact_observation AS larger
                      WHERE larger.run_id = fact.run_id AND larger.geo_id = fact.geo_id
                        AND (
-                            (fact.measure ~ '^fmr_[0-3]br$'
-                             AND larger.measure = 'fmr_' || (SUBSTRING(fact.measure, 5, 1)::INT + 1)::TEXT || 'br')
+                            -- The cast sits inside CASE: PostgreSQL does not
+                            -- promise to test the pattern first, and it cast
+                            -- 'median_family_income' ('a') and aborted the run.
+                            larger.measure = CASE
+                                WHEN fact.measure ~ '^fmr_[0-3]br$'
+                                THEN 'fmr_' || (SUBSTRING(fact.measure, 5, 1)::INT + 1)::TEXT || 'br'
+                            END
                             OR (fact.measure = 'income_limit_30_4p' AND larger.measure = 'income_limit_50_4p')
                             OR (fact.measure = 'income_limit_50_4p' AND larger.measure = 'income_limit_80_4p')
                        )

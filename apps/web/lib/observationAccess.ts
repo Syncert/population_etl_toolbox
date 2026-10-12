@@ -624,7 +624,20 @@ export function normalizeObservationRows(
   if (!source || source.accessShape !== "neutral") {
     return rows;
   }
+  return normalizeNeutralObservationRows(rows);
+}
 
+/**
+ * The same mapping for a caller that read `/observations` directly and has no
+ * explorer source to describe it -- the within-county tract table. Passing it
+ * through `normalizeObservationRows(null, ...)` returned the rows untouched,
+ * so every tract's margin of error stayed inside `uncertainty` and the table
+ * read "Not provided" for values Census publishes.
+ */
+export function normalizeNeutralObservationRows(
+  items: ObservationRow[] | null | undefined,
+): ObservationRow[] {
+  const rows = Array.isArray(items) ? items : [];
   return rows.map((row) => {
     const uncertainty = (row.uncertainty || {}) as Record<string, unknown>;
     const period = observationPeriodLabel(row);

@@ -312,6 +312,16 @@ describe("cities and towns", () => {
     expect(resolveCitySegment("atlantis-city", places, maryland)).toEqual({ place: null, canonical: null });
   });
 
+  it("answers a city's name without its Census description, only when one place has it", () => {
+    expect(resolveCitySegment("annapolis", places, maryland)).toEqual({ place: places[1], canonical: "annapolis-city" });
+    expect(resolveCitySegment("glen-burnie", places, maryland)).toEqual({ place: places[2], canonical: "glen-burnie-cdp" });
+    const twoSprings = [
+      { geo_id: "state:24|place:00001", geo_level: "PLACE", state_fips: "24", place_fips: "00001", place_name: "Springfield town" },
+      { geo_id: "state:24|place:00002", geo_level: "PLACE", state_fips: "24", place_fips: "00002", place_name: "Springfield CDP" },
+    ];
+    expect(resolveCitySegment("springfield", twoSprings, maryland)).toEqual({ place: null, canonical: null });
+  });
+
   it("omits the chapters no source publishes for places, with the reason", () => {
     const published = new Map([
       metric("CENSUS_ACS:acs5:B19013_001", ["PLACE", "COUNTY", "STATE", "NATIONAL"]),
