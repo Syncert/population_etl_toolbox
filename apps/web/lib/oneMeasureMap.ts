@@ -167,3 +167,56 @@ export function buildMeasureMapView(
 export function rankedPage(view: MeasureMapView, page: number, pageSize: number): RankedCounty[] {
   return view.ranked.slice(page * pageSize, (page + 1) * pageSize);
 }
+
+/** One published release of the measure, as `/observations/releases` lists it. */
+export interface MapRelease {
+  release: string;
+  as_of?: string | null;
+  observation_count?: number | null;
+}
+
+/** A map choice that names a release rather than a period of the latest publication. */
+export const RELEASE_CHOICE_PREFIX = "release:";
+
+/**
+ * The earlier releases the period selector offers beside the latest
+ * publication's periods.
+ *
+ * The latest publication holds each county's newest value only, so a period
+ * every county has since been re-estimated for (ACS 2018–2022 once 2020–2024
+ * is out) is in no county's latest row and `/observations/periods` cannot list
+ * it. Those periods are still published, in the release that published them,
+ * so each release but the newest (whose periods the latest publication
+ * already offers) is a choice. The API lists releases newest first; that
+ * order is kept.
+ */
+export function earlierReleaseChoices(
+  releases: readonly MapRelease[],
+): { value: string; label: string }[] {
+  return releases.slice(1).map((item) => ({
+    value: `${RELEASE_CHOICE_PREFIX}${item.release}`,
+    label: `${item.release} release, as published`,
+  }));
+}
+
+/** The release a choice names, or null for a period of the latest publication. */
+export function releaseOfChoice(choice: string): string | null {
+  return choice.startsWith(RELEASE_CHOICE_PREFIX) ? choice.slice(RELEASE_CHOICE_PREFIX.length) || null : null;
+}
+
+/**
+ * One period from a release's rows: the newest it published.
+ *
+ * A release can carry several periods (a population-estimates vintage
+ * re-estimates every year since the census), and the map shows one period;
+ * a release that published one (an ACS 5-year release) is returned whole.
+ * Rows are kept, never merged or averaged.
+ */
+export function newestPeriodOfRelease(rows: readonly ObservationRow[]): ObservationRow[] {
+  let newest = "";
+  for (const row of rows) {
+    const start = String(row.period_start ?? "");
+    if (start > newest) newest = start;
+  }
+  return rows.filter((row) => String(row.period_start ?? "") === newest);
+}

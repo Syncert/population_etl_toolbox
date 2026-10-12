@@ -27,13 +27,16 @@ import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
 import { displayMetricName, formatNumber } from "../lib/format";
-import { buildMeasureMapView, rankedPage } from "../lib/oneMeasureMap";
-import type { RankedCounty } from "../lib/oneMeasureMap";
+import { buildMeasureMapView, earlierReleaseChoices, newestPeriodOfRelease, rankedPage, releaseOfChoice, RELEASE_CHOICE_PREFIX } from "../lib/oneMeasureMap";
+import type { MapRelease, RankedCounty } from "../lib/oneMeasureMap";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
   OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
+  SCOPE_AS_RELEASED,
   buildLatestObservationRequest,
   buildPeriodListRequest,
+  buildReleaseListRequest,
+  servesAsReleased,
   normalizeObservationRows,
   observationUncertaintyLabel,
 } from "../lib/observationAccess";
@@ -63,7 +66,15 @@ function formatBound(value: number): string {
   return formatNumber(value, { maximumFractionDigits: 2 });
 }
 
-export default function MeasureMapPage({ metricCode, requestedPeriod }: { metricCode: string; requestedPeriod?: string }) {
+export default function MeasureMapPage({
+  metricCode,
+  requestedPeriod,
+  requestedRelease,
+}: {
+  metricCode: string;
+  requestedPeriod?: string;
+  requestedRelease?: string;
+}) {
   const [load, setLoad] = useState<Load>({ state: "loading", message: "reading the measure" });
   const [metric, setMetric] = useState<MetricSummary | null>(null);
   const [source, setSource] = useState<ExplorerSource | null>(null);
@@ -71,7 +82,11 @@ export default function MeasureMapPage({ metricCode, requestedPeriod }: { metric
   const [counties, setCounties] = useState<GeographySummary[]>([]);
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [periods, setPeriods] = useState<PeriodItem[]>([]);
-  const [period, setPeriod] = useState(requestedPeriod || "");
+  const [releaseChoices, setReleaseChoices] = useState<{ value: string; label: string }[]>([]);
+  // A period of the latest publication, or `release:<id>` for an earlier release.
+  const [period, setPeriod] = useState(
+    requestedRelease ? `${RELEASE_CHOICE_PREFIX}${requestedRelease}` : requestedPeriod || "",
+  );
   const [rows, setRows] = useState<ObservationRow[]>([]);
   const [rowsComplete, setRowsComplete] = useState(true);
   const [rowsLoaded, setRowsLoaded] = useState(false);
@@ -112,12 +127,28 @@ export default function MeasureMapPage({ metricCode, requestedPeriod }: { metric
         setStates(stateItems);
         setCounties(countyItems);
         const periodRequest = buildPeriodListRequest(explorerSource, { metricCode, limit: 200 });
-        if (periodRequest) {
-          const payload = await apiFetch<{ items?: PeriodItem[] }>(periodRequest.resource, { params: periodRequest.params, signal });
-          const items = Array.isArray(payload.items) ? payload.items : [];
-          setPeriods(items);
-          setPeriod((current) => (current && items.some((item) => item.period_start === current) ? current : items[0]?.period_start || ""));
-        }
+        // The latest publication keeps each county's newest value only, so a
+        // period every county has a newer estimate for is listed by its
+        // release instead, where the source can pin one.
+        const releaseRequest =
+          explorerSource && servesAsReleased(explorerSource) && explorerSource.supportsReleasePin
+            ? buildReleaseListRequest(explorerSource, { metricCode, limit: 200 })
+            : null;
+        const [periodPayload, releasePayload] = await Promise.all([
+          periodRequest ? apiFetch<{ items?: PeriodItem[] }>(periodRequest.resource, { params: periodRequest.params, signal }) : null,
+          releaseRequest
+            ? apiFetch<{ items?: MapRelease[] }>(releaseRequest.resource, { params: releaseRequest.params, signal }).catch(() => null)
+            : null,
+        ]);
+        const items = Array.isArray(periodPayload?.items) ? periodPayload.items : [];
+        const choices = earlierReleaseChoices(Array.isArray(releasePayload?.items) ? releasePayload.items : []);
+        setPeriods(items);
+        setReleaseChoices(choices);
+        setPeriod((current) =>
+          current && (items.some((item) => item.period_start === current) || choices.some((choice) => choice.value === current))
+            ? current
+            : items[0]?.period_start || "",
+        );
         setLoad({ state: "ready", message: "" });
       } catch (error) {
         if (!signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
@@ -133,17 +164,27 @@ export default function MeasureMapPage({ metricCode, requestedPeriod }: { metric
     const controller = new AbortController();
     setRows([]);
     setRowsLoaded(false);
-    const request = buildLatestObservationRequest(source, {
-      metricCode,
-      geoLevel: "COUNTY",
-      periodStart: period || undefined,
-      newestPerGeography: true,
-      limit: "1000",
-    });
-    fetchCollectionPages<Observation>(request.resource, { params: request.params, pageSize: 1000, maxPages: 5, signal: controller.signal })
+    const release = releaseOfChoice(period);
+    const request = release
+      ? buildLatestObservationRequest(source, {
+          metricCode,
+          geoLevel: "COUNTY",
+          scope: SCOPE_AS_RELEASED,
+          release,
+          limit: "1000",
+        })
+      : buildLatestObservationRequest(source, {
+          metricCode,
+          geoLevel: "COUNTY",
+          periodStart: period || undefined,
+          newestPerGeography: true,
+          limit: "1000",
+        });
+    fetchCollectionPages<Observation>(request.resource, { params: request.params, pageSize: 1000, maxPages: release ? 50 : 5, signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
-        setRows(normalizeObservationRows(source, result.items).filter((row) => row.geo_level === undefined || row.geo_level === "COUNTY" || String(row.geo_id).includes("county:")));
+        const countyRows = normalizeObservationRows(source, result.items).filter((row) => row.geo_level === undefined || row.geo_level === "COUNTY" || String(row.geo_id).includes("county:"));
+        setRows(release ? newestPeriodOfRelease(countyRows) : countyRows);
         setRowsComplete(result.complete);
         setRowsLoaded(true);
         setPage(0);
@@ -159,8 +200,11 @@ export default function MeasureMapPage({ metricCode, requestedPeriod }: { metric
   useEffect(() => {
     if (!period) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("period") === period) return;
-    params.set("period", period);
+    const release = releaseOfChoice(period);
+    const [key, value, other] = release ? ["release", release, "period"] : ["period", period, "release"];
+    if (params.get(key) === value && !params.has(other)) return;
+    params.set(key, value);
+    params.delete(other);
     window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
   }, [period]);
 
@@ -209,13 +253,20 @@ export default function MeasureMapPage({ metricCode, requestedPeriod }: { metric
       <section className="profile-controls">
         <label>
           Period
-          <select value={period} onChange={(event) => setPeriod(event.target.value)} disabled={!periods.length} data-testid="measure-map-period">
+          <select value={period} onChange={(event) => setPeriod(event.target.value)} disabled={!periods.length && !releaseChoices.length} data-testid="measure-map-period">
             {periods.length ? null : <option value="">Latest publication</option>}
             {periods.map((item) => (
               <option key={item.period_start} value={item.period_start}>
                 {item.period_end && item.period_end !== item.period_start ? `${item.period_start} – ${item.period_end}` : item.period_start}
               </option>
             ))}
+            {releaseChoices.length ? (
+              <optgroup label="Earlier releases">
+                {releaseChoices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>{choice.label}</option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
         </label>
         <MeasureSwitcher current={metricCode} />
