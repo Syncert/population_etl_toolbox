@@ -3487,6 +3487,8 @@
     "MetricRelease": {
       "properties": {
         "as_of": "string | null",
+        "newest_period_end": "string | null",
+        "newest_period_start": "string | null",
         "observation_count": "integer",
         "release": "string"
       },

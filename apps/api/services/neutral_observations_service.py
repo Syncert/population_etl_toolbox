@@ -1073,7 +1073,9 @@ def list_metric_releases(
         SELECT
             {dispatch.release_expression} AS release,
             MAX({dispatch.as_of_expression or "NULL::TEXT"}) AS as_of,
-            COUNT(*)::INT AS observation_count
+            COUNT(*)::INT AS observation_count,
+            MAX({dispatch.period_start_expression}) AS newest_period_start,
+            MAX({dispatch.period_end_expression}) AS newest_period_end
         FROM {relation}
         WHERE {where_sql}
         GROUP BY 1
@@ -1098,6 +1100,8 @@ def list_metric_releases(
                 release=str(row["release"]),
                 as_of=_text_or_none(row.get("as_of")),
                 observation_count=int(row["observation_count"]),
+                newest_period_start=_text_or_none(row.get("newest_period_start")),
+                newest_period_end=_text_or_none(row.get("newest_period_end")),
             )
             for row in rows
         ],

@@ -888,7 +888,13 @@ def test_empty_result_is_a_stable_page_for_a_known_metric() -> None:
 def test_releases_resource_lists_releases_newest_first() -> None:
     """Covers: API-045 — release identities, counts, deterministic order."""
     rows = [
-        {"release": "1710000000", "as_of": None, "observation_count": 40},
+        {
+            "release": "1710000000",
+            "as_of": None,
+            "observation_count": 40,
+            "newest_period_start": "2022-01-01",
+            "newest_period_end": "2022-12-31",
+        },
         {"release": "1700000000", "as_of": None, "observation_count": 38},
     ]
     session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=rows, total=2)
@@ -910,11 +916,18 @@ def test_releases_resource_lists_releases_newest_first() -> None:
         "1700000000",
     ]
     assert payload["items"][0]["observation_count"] == 40
+    newest, older = payload["items"]
+    assert (newest["newest_period_start"], newest["newest_period_end"]) == (
+        "2022-01-01",
+        "2022-12-31",
+    ), "a release names the newest period it published"
+    assert older["newest_period_start"] is None and older["newest_period_end"] is None
 
     sql = _dispatched(session)[-1]
     assert "FROM gold_cdc.health_observation" in sql
     assert "GROUP BY 1" in sql
     assert "ORDER BY MAX(release_watermark::BIGINT) DESC" in sql
+    assert "AS newest_period_start" in sql and "AS newest_period_end" in sql
 
 
 # ---------------------------------------------------------------------------

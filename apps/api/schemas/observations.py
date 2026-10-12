@@ -318,6 +318,11 @@ class MetricRelease(BaseModel):
     release: str
     as_of: Optional[str] = None
     observation_count: int
+    #: The newest period the release published, so a reader can name the
+    #: release by what it covers (2019-01-01 to 2023-12-31 for the 2023 ACS
+    #: 5-year release) rather than by an identity it must decode.
+    newest_period_start: Optional[str] = None
+    newest_period_end: Optional[str] = None
 
 
 class MetricReleaseListResponse(BaseModel):

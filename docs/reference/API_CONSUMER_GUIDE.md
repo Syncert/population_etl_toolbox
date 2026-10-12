@@ -451,7 +451,11 @@ resource too, for the reason `publishes_value_status` is.
 
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what
-`release=` accepts.
+`release=` accepts. Each release also names the newest period it published,
+`newest_period_start` and `newest_period_end` (the 2023 ACS 5-year release is
+`2019-01-01` to `2023-12-31`), so a reader can offer a release by what it
+covers. A release identity is not a period: it is the source's own name for
+the publication.
 
 `GET /api/v1/observations/periods?metric_code=...` lists the distinct
 non-null `(period_start, period_end)` pairs in that metric's latest
