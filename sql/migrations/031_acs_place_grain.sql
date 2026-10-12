@@ -24,6 +24,23 @@ DO $$
 DECLARE
     _constraint RECORD;
 BEGIN
+    -- `032_acs_tract_grain.sql` widens both checks again to admit tracts. On a
+    -- warehouse that already took 032, re-running this step would drop 032's
+    -- checks and re-add these narrower ones, which the first tract row
+    -- violates, so the manifest re-apply failed here. Leave a later widening
+    -- alone.
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_census.observation_revision'::regclass
+          AND conname = 'observation_revision_geo_level_tract_check'
+    ) AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'control.acs_ingestion_slices'::regclass
+          AND conname = 'acs_ingestion_slices_geo_level_tract_check'
+    ) THEN
+        RETURN;
+    END IF;
+
     -- The original constraints were unnamed, so find them by what they say.
     FOR _constraint IN
         SELECT con.conname
