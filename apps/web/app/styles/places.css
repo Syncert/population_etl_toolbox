@@ -346,3 +346,25 @@
 .place-migration-value {
   font-variant-numeric: tabular-nums;
 }
+
+/* Groceries and gas (groceries-and-gas-cards): one line per measure, each
+   naming the larger area its figure describes. */
+.place-cost-lines {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+.place-cost-lines dt {
+  font-weight: 600;
+}
+.place-cost-lines dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+.place-cost-lines .block {
+  display: block;
+}
+.place-cost-notes {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}

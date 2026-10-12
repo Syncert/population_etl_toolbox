@@ -264,7 +264,13 @@ SELECT entity.geo_sk, entity.geo_type,
     -- Appended (sub-county-geography): `CREATE OR REPLACE VIEW` can only add
     -- columns at the end.
     entity.tract_code, entity.zcta_code,
-    CASE WHEN entity.geo_type IN ('tract', 'zcta') THEN attribute.name END AS area_name
+    -- An area with no state, county or place name of its own is named here:
+    -- a tract or ZCTA, and a region, division, metro or provider area
+    -- (groceries-and-gas-cards), which the served catalog otherwise names by
+    -- its id.
+    CASE WHEN entity.geo_type IN (
+        'tract', 'zcta', 'census_region', 'census_division', 'metro', 'provider_area'
+    ) THEN attribute.name END AS area_name
 FROM silver_ref.dim_geo_entity AS entity
 JOIN attribute_choice AS attribute USING (geo_sk)
 LEFT JOIN silver_ref.dim_geo_entity AS state_entity

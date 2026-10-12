@@ -323,7 +323,7 @@ merge those first).
 - **Deliverable 8 done:** offline fixtures for every source, unit, database,
   DAG, end-to-end and external tests.
 - **Deliverable 9 split** to
-  [`GROCERIES_AND_GAS_CARDS_PLAN.md`](../to_do/GROCERIES_AND_GAS_CARDS_PLAN.md):
+  [`GROCERIES_AND_GAS_CARDS_PLAN.md`](../needs_review/GROCERIES_AND_GAS_CARDS_PLAN.md):
   the cards need `place-pages`, which is not merged.
 - **Evidence:** EIA tier: unit 2280; DAG 165 (container) and orchestrated
   run 3 passed; API integration 191; integration and end to end 484 passed,

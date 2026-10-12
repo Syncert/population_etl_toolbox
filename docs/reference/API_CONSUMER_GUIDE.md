@@ -206,8 +206,10 @@ client resolving geographies here could neither reach nor name. Decide in
 your own client whether to show a retired geography; pass `active_only=true`
 to have the API narrow the page for you, exactly as on `/catalog/metrics`.
 
-`geo_name` is the geography's most specific published name -- its place name,
-else its county name, else its state name, else its `geo_id` -- and it is the
+`geo_name` is the geography's most specific published name -- its own area
+name (a tract, ZCTA, Census region or division, metropolitan area or provider
+area, as in "Madison, WI" or "Midwest Region"), else its place name, else its
+county name, else its state name, else its `geo_id` -- and it is the
 same name here and on every observation route. It was not always: a place
 answered under its own name here and under its state's name on
 `/observations`, which is one geography with two names to anyone joining the

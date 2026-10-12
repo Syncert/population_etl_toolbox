@@ -66,6 +66,53 @@ const metrics = Object.fromEntries(codes.map((code) => [code, {
   publication_time: "2026-09-01T00:00:00Z", harvested_at: "2026-09-02T00:00:00Z", source_watermark: "fixture-2026-09", publisher_contract_version: "v1",
 }]));
 
+// Groceries and gas (groceries-and-gas-cards). EIA publishes nine states and
+// Wisconsin is not one, so a Wisconsin page falls through to BLS's Midwest
+// figure; Dane County is in the Madison metro, Rock County in none here.
+export const AREAS = {
+  metro: { geo_id: "cbsa:31540", geo_level: "METRO", geo_name: "Madison, WI" },
+  division: { geo_id: "division:3", geo_level: "CENSUS_DIVISION", geo_name: "East North Central" },
+  region: { geo_id: "region:2", geo_level: "CENSUS_REGION", geo_name: "Midwest Region" },
+};
+const costMetric = (metric_code, units, valid_geo_grains) => ({ metric_code, metric_display_name: `${metric_code} (UI fixture)`, source_code: metric_code.split(":")[0],
+  units, valid_geo_grains, freshness_state: "fresh", publication_time: "2026-09-01T00:00:00Z", harvested_at: "2026-09-02T00:00:00Z", source_watermark: "fixture-2026-09", publisher_contract_version: "v1" });
+const COST_METRICS = Object.fromEntries([
+  costMetric("EIA:EPMR", "U.S. dollars per gallon", ["NATIONAL", "STATE", "PROVIDER_AREA"]),
+  costMetric("BLS:APU020074714", "U.S. dollars per gallon", ["CENSUS_REGION"]),
+  costMetric("BLS:CUUR0230SAF11", "index 1982-84=100", ["CENSUS_DIVISION"]),
+  costMetric("BLS:CUUR0200SAF11", "index 1982-84=100", ["CENSUS_REGION"]),
+  costMetric("BLS:CUUR0000SAF11", "index 1982-84=100", ["NATIONAL"]),
+  costMetric("BEA:MARPP:1", "price_level_us_100", ["METRO"]),
+  costMetric("BEA:SARPP:1", "price_level_us_100", ["STATE"]),
+].map((metric) => [metric.metric_code, metric]));
+// Which area publishes which cost measure, and its value. The division's
+// food index skips August 2025, so its change over the year cannot be read
+// and the region answers instead.
+const COST_VALUES = {
+  "EIA:EPMR": { "us:1": "3.18" },
+  "BLS:APU020074714": { "region:2": "3.05" },
+  "BLS:CUUR0230SAF11": { "division:3": "monthly-gap" },
+  "BLS:CUUR0200SAF11": { "region:2": "monthly" },
+  "BLS:CUUR0000SAF11": { "us:1": "monthly" },
+  "BEA:MARPP:1": { "cbsa:31540": "97.4" },
+  "BEA:SARPP:1": { "state:55": "93.2" },
+};
+function costRows(code, geo) {
+  const value = COST_VALUES[code]?.[geo];
+  const area = [NATION, ...STATES, ...Object.values(AREAS)].find((item) => item.geo_id === geo);
+  if (!value || !area) return [];
+  const base = { metric_code: code, source_code: code.split(":")[0], geo_id: geo, geo_level: area.geo_level, geo_name: area.geo_name,
+    value_status: "valid", unit: COST_METRICS[code].units, release: "fixture", as_of: "2026-09-01", dimensions: {}, uncertainty: null, coverage: null };
+  if (value.startsWith("monthly")) {
+    return Array.from({ length: 13 }, (_, index) => {
+      const month = new Date(Date.UTC(2025, 7 + index, 1)).toISOString().slice(0, 10);
+      return { ...base, value: String(300 + index * (geo === "us:1" ? 0.5 : 0.8)), period_start: month, period_end: month };
+    }).filter((item) => !(value === "monthly-gap" && item.period_start === "2025-08-01"));
+  }
+  const weekly = code === "EIA:EPMR" || code.startsWith("BLS:APU");
+  return [{ ...base, value, period_start: weekly ? "2026-09-28" : "2024-01-01", period_end: weekly ? "2026-10-04" : "2024-12-31" }];
+}
+
 const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5 };
 const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R|SAEPOVRT|SAEMHI|PCTUI/;
 
@@ -77,12 +124,13 @@ const link = (relationship, place, extra = {}) => ({ relationship, geo_id: place
   overlap_area_m2: null, overlap_weight: null, ...extra });
 export const RELATED = {
   "us:1": [], // the nation's states are listed by the page itself
-  "state:55": [link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" })],
+  "state:55": [link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }), link("part_of", AREAS.division), link("part_of", AREAS.region)],
   "state:27": [link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" })],
   "state:55|county:025": [
     link("adjacent", COUNTIES[1]), link("adjacent", COUNTIES[2]),
     link("intersects", CROSSING, { overlap_weight: 0.6, overlap_area_m2: 6e6 }),
     link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
+    link("part_of", AREAS.metro), link("part_of", AREAS.division), link("part_of", AREAS.region),
   ],
   "state:55|county:105": [
     link("adjacent", COUNTIES[0]),
@@ -107,7 +155,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     const params = url.searchParams;
     const path = url.pathname;
     if (path === "/api/v1/auth/refresh") return route.fulfill({ status: 401, json: { detail: "sign-in could not be completed" } });
-    if (path === "/api/v1/catalog/capabilities") return route.fulfill({ json: { total: sources.length, items: sources.map((source_code) => ({ source_code,
+    if (path === "/api/v1/catalog/capabilities") return route.fulfill({ json: { total: sources.length + 1, items: [...sources, "EIA"].map((source_code) => ({ source_code,
       display_name: source_code, route_segment: null, served_by_neutral_routes: true,
       publishes_value_status: source_code !== "CENSUS_PEP", publishes_aligned_reduction: !["CDC", "FBI_UCR", "USDA_NASS"].includes(source_code),
       observation_filters: ["geo_id", "geo_level", "state_fips"], observation_dimensions: [],
@@ -163,6 +211,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
       const withheld = withoutSource && code.startsWith(`${withoutSource}:`);
+      if (COST_METRICS[code]) return route.fulfill({ json: COST_METRICS[code] });
       return metrics[code] && !withheld ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
     }
     if (path === "/api/v1/observations" && params.get("geo_level") === "TRACT") {
@@ -178,6 +227,12 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
         }))
         : [];
       return route.fulfill({ json: { metric_code: code, source_code: "CENSUS_ACS", scope: "latest", total: items.length, offset: 0, limit: 1000, items } });
+    }
+    if (path === "/api/v1/observations" && COST_METRICS[params.get("metric_code")]) {
+      const code = params.get("metric_code");
+      let items = costRows(code, params.get("geo_id"));
+      if (params.get("limit") === "1" || params.get("newest_per_geography") === "true") items = items.slice(-1);
+      return route.fulfill({ json: { metric_code: code, source_code: code.split(":")[0], scope: params.get("scope") || "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } });
     }
     if (path === "/api/v1/observations") {
       const code = params.get("metric_code");
