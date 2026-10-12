@@ -182,3 +182,102 @@ def test_migration_033_swaps_the_old_key_and_is_safe_to_rerun(
     finally:
         connection_.rollback()
         connection_.close()
+
+
+def test_dq_bls_007_does_not_count_an_annual_average_as_an_unserved_month(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: ETL-072 — DQ-BLS-007 compares served months with published months only.
+
+    The serving view excludes `M13` by design, so a published side that counts
+    it reads every series-year BLS averages as unbacked: the weekly check on
+    the local warehouse failed 3,366 groups such as `BLS:CUUR0000SA0|1990`
+    this way. A served value the warehouse does not hold still fails.
+    """
+    from data_ingestion_toolbox.quality.sources import bls_contract_conformance
+
+    series_id = "CUURDQ0007TEST"
+    metric = "BLS:" + series_id
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            geo_sk = seed_geography(
+                cursor, geo_type="state", state_fips="93", vintage=2093, name="Test"
+            )
+        writer.commit()
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20930101, "2093-01-01")
+            capture_id = seed_capture(cursor, "BLS")
+            for period, start, end, value in (
+                ("M01", "2093-01-01", "2093-01-31", "130.1"),
+                ("M02", "2093-02-01", "2093-02-28", "130.3"),
+                ("M13", "2093-01-01", "2093-12-31", "130.2"),
+            ):
+                cursor.execute(
+                    """
+                    INSERT INTO silver_bls.fact_labor_statistics (
+                        time_sk, geo_sk, duration_start, duration_end, period_date,
+                        series_id, program, geo_level, geo_id, state_fips, value,
+                        source_value, value_status, year, period, period_name,
+                        capture_id, load_batch_id
+                    ) VALUES (
+                        20930101, %s, %s, %s, %s, %s, 'cu', 'STATE', 'state:93',
+                        '93', %s, %s, 'valid', 2093, %s, %s, %s, gen_random_uuid()
+                    )
+                    """,
+                    (
+                        geo_sk,
+                        start,
+                        end,
+                        end,
+                        series_id,
+                        value,
+                        value,
+                        period,
+                        period,
+                        str(capture_id),
+                    ),
+                )
+                if period == "M13":
+                    continue
+                cursor.execute(
+                    """
+                    INSERT INTO gold_bls.rpt_bls_observations (
+                        source_code, observation_date, duration_start, duration_end,
+                        time_sk, as_of_date, updated_at, geo_id, geo_level,
+                        series_id, program_code, series_title, value,
+                        value_status, units, seasonal_adjustment_status,
+                        metric_code, metric_display_name
+                    ) VALUES (
+                        'BLS', %s, %s, %s, 20930101, '2093-03-01', NOW(),
+                        'state:93', 'STATE', %s, 'CU', 'DQ-BLS-007 test', %s,
+                        'valid', 'index', 'Not Seasonally Adjusted', %s,
+                        'DQ-BLS-007 test'
+                    )
+                    """,
+                    (end, start, end, series_id, value, metric),
+                )
+
+            fact, _, _ = bls_contract_conformance(cursor, {})
+            assert not [e for e in fact.evidence if e.startswith(metric + "|")], (
+                fact.evidence
+            )
+
+            cursor.execute(
+                "UPDATE gold_bls.rpt_bls_observations SET value = 131.0 "
+                "WHERE metric_code = %s AND observation_date = '2093-02-28'",
+                (metric,),
+            )
+            fact, _, _ = bls_contract_conformance(cursor, {})
+            assert fact.result == "fail"
+            assert f"{metric}|2093" in fact.evidence
+        writer.rollback()
+    finally:
+        writer.close()
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                delete_geography(cursor, "state:93")
+            cleanup.commit()
+        finally:
+            cleanup.close()

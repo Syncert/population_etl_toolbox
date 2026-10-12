@@ -2709,6 +2709,12 @@ def bls_contract_conformance(
           LEFT JOIN control.serving_refresh_state r ON r.source_code = 'BLS'
          WHERE s.series_id IS NOT NULL
            AND s.series_id <> ''
+           -- The annual average (`M13`) is a provider fact the serving view
+           -- deliberately does not serve as a month; it is published through
+           -- `gold_bls.provider_annual_average` and reconciled by DQ-BLS-008.
+           -- Counted here it adds a thirteenth row to every series-year BLS
+           -- averages, so every such group reads as unbacked.
+           AND s.period <> 'M13'
          GROUP BY 1, 2
         HAVING MAX(s.ingested_at) <= COALESCE(
                    MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
@@ -2787,6 +2793,15 @@ def bls_derived_annual_reconciliation(
     annual average for the same series and geography: everywhere else there is
     nothing to reconcile, which is the common case for seasonally adjusted
     series, which BLS publishes no annual average for.
+
+    The tolerance is half a unit in the last place BLS published the annual
+    average to, read from its own text. BLS averages the months and rounds to
+    the precision the series is published at, and that precision is not one
+    number: CPI indexes before 2007 carry one decimal (130.7 for CPI-U 1990,
+    whose twelve published months average 130.658), current ones three, and
+    CES employment one. A fixed third-decimal tolerance read every one-decimal
+    year as a disagreement it was not. A difference larger than BLS's own
+    rounding is still a finding.
     """
     del scope
     compared = _count(
@@ -2818,8 +2833,14 @@ def bls_derived_annual_reconciliation(
          WHERE derived.grain = 'year'
            AND derived.value IS NOT NULL
            AND provider.value IS NOT NULL
-           AND ABS(derived.value - provider.value)
-               > GREATEST(0.0005, ABS(provider.value) * 0.000001)
+           AND ABS(derived.value - provider.value) > GREATEST(
+                   0.5 * POWER(10::NUMERIC, -COALESCE(
+                       LENGTH(SUBSTRING(provider.source_value
+                                        FROM '^-?[0-9]*[.]([0-9]+)$')),
+                       0
+                   )),
+                   ABS(provider.value) * 0.000001
+               )
         """,
         order_by="1, 2, 3",
     )
