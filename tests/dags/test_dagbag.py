@@ -611,3 +611,13 @@ def test_missing_census_key_fails_at_runtime_not_import(
         ValueError, match=r"^CENSUS_API_KEY required for Census API requests$"
     ):
         ingest.fetch_acs_api.__wrapped__(2024, "acs5", ["B01003_001E"], "state")
+
+
+@pytest.mark.dag
+def test_silver_ref_publishes_place_and_tract_history_after_the_newest_tracts(
+    dagbag,
+) -> None:
+    """Covers: ETL-084 — history waits for the newest tracts, which it re-closes."""
+    dag = dagbag.dags["silver_ref"]
+    history = dag.get_task("load_sub_county_history")
+    assert "load_sub_county_geo" in {t.task_id for t in history.upstream_list}

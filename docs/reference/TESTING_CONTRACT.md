@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-083 | None |
+| ETL and shared units | ETL-001–ETL-084 | None |
 | Database integration | DB-001–DB-062 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **623 of 623** | **0 of 623** |
+| **Total** | **624 of 624** | **0 of 624** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 623-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 624-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -553,6 +553,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-081 | P1 | Contract + database / `integration database` | An every-other-month CPI metro keeps BLS's cadence | DQ-BLS-009 reads the monthly CPI series of every BLS metro other than New York, Chicago and Los Angeles and warns on each pair of consecutive months that both hold a value, naming the series and the later month; a metro published every other month passes (grocery-and-gasoline-prices, deliverable 7) | A bimonthly metro's off-month value served as if BLS published it |
 | ETL-082 | P0 | Contract + database / `unit dag integration database` | The ACS silver transform reads a large year in slices and resumes where it stopped | A year above `_YEAR_SLICE_ROW_THRESHOLD` revision rows is read one (dataset, geo level, state) slice at a time through a server-side cursor, and produces exactly the facts the whole-year read produces, because every natural key and E/M pair lies inside one slice; the slice filters sit inside the revision ranking, on columns it partitions by. The DAG passes its Airflow `run_id` as the resume key; each finished slice is recorded in `silver_census.transform_checkpoint`, and a later attempt under the same key reads none of the recorded slices and changes nothing they wrote, while an interrupted slice is read again in full. Without a key nothing is recorded or skipped, so a new run replays every year | A 190-million-row year read into one Python list until the Docker VM ran out of memory and froze, and every retry re-reading nineteen finished years before reaching the one that failed |
 | ETL-083 | P0 | Contract + DAG + database / `unit dag integration database` | An ACS backfill run loads one year at one grain | A run triggered with `{"acs_backfill": {"year": Y, "geo_level": "tract"}}` (or `"place"`) plans only year Y's slices at that grain -- no nation, state or county slice and no other year -- for every dataset that publishes the grain, and transforms year Y only; a run without it is the scheduled plan unchanged; a malformed request (unknown key, non-integer or pre-2005 year, any other grain) refuses rather than falling back to the full plan; a year the configured datasets do not publish refuses. An older place year is requested for `place_history_tables` only, with that list's own variables fingerprint, while the newest `place_full_table_years` keep the whole curated list, judged against every published year rather than the year the run is restricted to | A city or tract history loaded as one run that loses days of work on one failure, a typo turning a one-year run into the monthly one, or every place year requested at 136 GB a year when the local disk holds the five tables a city's history charts read |
+| ETL-084 | P0 | Contract + DAG + database / `unit dag integration database` | Older vintages' places and tracts resolve their own codes | `sync_sub_county_history` publishes each requested vintage from 2010 as place and tract Gazetteer attributes only -- the vintage's own annual file from 2012, the 2010 Census files for 2010 and 2011 -- oldest first, refusing a tract whose county is not an entity, then replays the newest vintage's attributes so a code absent from it receives a retirement version; a code only an older vintage used is an entity the ACS transform resolves, and is not current; a code present now stays current; vintages already published are skipped; 2009, published on Census 2000 tracts, and any level without a Gazetteer refuse. `silver_ref` runs it after the newest tracts | A 2015 tract value matched to the 2020 tract that reused its code, or left unmapped because the reference only knew the newest vintage; a disincorporated city shown as a current place; or a history load retiring today's tracts |
 
 ### PostgreSQL Integration Tests
 
