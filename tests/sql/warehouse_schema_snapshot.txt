@@ -2953,7 +2953,7 @@ v gold_cdc.metric_publisher
     body     measure.unit AS units,
     body     'source_fact'::text AS measure_kind,
     body     measure.valid_geo_grains,
-    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     measure.valid_time_grains,
     body     NULL::text AS aggregation_characteristic,
     body     jsonb_build_object('schema', 'gold_cdc', 'relation', 'health_observation', 'asset_id', measure.asset_id, 'measure_id', measure.measure_id, 'value_type_id', measure.value_type_id) AS physical_lineage,
     body     release.release_watermark AS source_watermark,
@@ -2967,7 +2967,16 @@ v gold_cdc.metric_publisher
     body             measure_1.value_type_id,
     body             measure_1.measure_label,
     body             measure_1.unit,
-    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(fact.geo_type) ORDER BY (gold_glossary.geo_grain(fact.geo_type))) FILTER (WHERE fact.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             array_agg(DISTINCT
+    body                 CASE
+    body                     WHEN fact.period_start = fact.period_end THEN 'ANNUAL'::text
+    body                     ELSE 'MULTI_YEAR'::text
+    body                 END ORDER BY (
+    body                 CASE
+    body                     WHEN fact.period_start = fact.period_end THEN 'ANNUAL'::text
+    body                     ELSE 'MULTI_YEAR'::text
+    body                 END)) AS valid_time_grains
     body            FROM silver_cdc.dim_measure measure_1
     body              JOIN silver_cdc.fact_health_observation fact ON fact.asset_id = measure_1.asset_id AND fact.measure_id = measure_1.measure_id AND fact.value_type_id = measure_1.value_type_id
     body              JOIN silver_cdc.dim_dataset_release release_1 ON release_1.asset_id = fact.asset_id AND release_1.release_watermark = fact.release_watermark

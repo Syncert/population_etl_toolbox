@@ -287,3 +287,62 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             connection_factory, publisher_schema="gold_noaa_normals"
         )
     return published
+
+
+def settle_unreplayed_runs(connection_factory: Callable[[], Any]) -> list[UUID]:
+    """Finish every captured archive an earlier attempt left unreplayed.
+
+    A run that captured and then failed before replaying (the task retries,
+    the database stops, the machine reboots) stayed ``captured`` for good:
+    each retry read the archive again under a new run, so nothing ever came
+    back for the first one and DQ-NOAA-002 reported it unreplayed. They are
+    settled oldest first, before the next read. A run whose bytes equal the
+    published archive is ``unchanged`` -- what the capture would have
+    recorded had that archive been published when it read -- and any other is
+    replayed and published like a fresh read, so a changed archive is never
+    passed over. Returns the runs settled.
+    """
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT run_id::TEXT, payload_checksum
+                  FROM control.noaa_normals_file
+                 WHERE status = 'captured'
+                 ORDER BY created_at, run_id
+                """
+            )
+            orphans = cursor.fetchall()
+        connection.commit()
+    finally:
+        connection.close()
+
+    settled: list[UUID] = []
+    for run_id, checksum in orphans:
+        connection = connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE control.noaa_normals_file
+                       SET status = 'unchanged', updated_at = NOW()
+                     WHERE run_id = %s
+                       AND status = 'captured'
+                       AND payload_checksum = (
+                           SELECT payload_checksum FROM control.noaa_normals_file
+                            WHERE status = 'published'
+                            ORDER BY published_at DESC LIMIT 1
+                       )
+                    """,
+                    (run_id,),
+                )
+                unchanged = cursor.rowcount == 1
+            connection.commit()
+        finally:
+            connection.close()
+        if not unchanged:
+            replay_run(connection_factory, run_id=UUID(run_id))
+            publish_run(connection_factory, run_id=UUID(run_id))
+        settled.append(UUID(run_id))
+    return settled
