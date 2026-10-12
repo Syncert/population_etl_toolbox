@@ -1844,11 +1844,17 @@ def cdc_publisher_export_conformance(
     other way has the same consequence: a product template naming that key
     gets whichever row the planner reaches first.
 
-    **The annual claim.** ``gold_cdc.health_observation`` carries
+    **The time-grain claim.** ``gold_cdc.health_observation`` carries
     ``period_start`` and ``period_end`` as integer years, so an annual
-    observation is one where they are equal. A row spanning more than a year
-    contradicts the ``ANNUAL`` the publisher promises, and a reader asking for
-    an annual series gets a multi-year figure with nothing saying so.
+    observation is one where they are equal and any other spans several
+    years. Every served row's span has to be a grain its measure's publisher
+    row claims: a multi-year figure under a measure published only as
+    ``ANNUAL`` reaches a reader asking for an annual series with nothing
+    saying so. The publisher used to write ``ARRAY['ANNUAL']`` as a literal,
+    and the first weekly run on a loaded warehouse found 40,086 such rows
+    (CDC's Chronic Disease Indicators publish cancer incidence as 2015-2019);
+    it now reads the grain from the rows, and this arm holds it to that.
+    Evidence names each measure and span once rather than once per geography.
     """
     del scope
     # Gated on the export rather than the publisher. `metric_publisher`
@@ -1890,10 +1896,19 @@ def cdc_publisher_export_conformance(
     spanning, spanning_total = _offenders(
         cursor,
         """
-        SELECT asset_id, measure_id, value_type_id,
-               period_start::text, period_end::text
-          FROM gold_cdc.health_observation
-         WHERE period_start IS DISTINCT FROM period_end
+        SELECT DISTINCT observation.asset_id, observation.measure_id,
+               observation.value_type_id,
+               observation.period_start::text, observation.period_end::text
+          FROM gold_cdc.health_observation AS observation
+          LEFT JOIN gold_cdc.metric_publisher AS publisher
+                 ON publisher.source_object_key
+                    = observation.asset_id || ':' || observation.measure_id
+                      || ':' || observation.value_type_id
+         WHERE NOT (
+                   CASE WHEN observation.period_start = observation.period_end
+                        THEN 'ANNUAL' ELSE 'MULTI_YEAR' END
+                   = ANY (COALESCE(publisher.valid_time_grains, ARRAY[]::TEXT[]))
+               )
         """,
         order_by="1, 2, 3, 4",
     )

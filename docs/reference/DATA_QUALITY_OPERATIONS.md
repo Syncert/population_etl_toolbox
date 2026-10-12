@@ -235,9 +235,12 @@ covers it instead, under one of two states:
     reporting a frequency string it does not recognise rather than skipping
     it, so the arm cannot quietly come to cover nothing.
   - **`DQ-CDC-007`** — measures what the publisher cannot tell you about
-    itself. Its `valid_time_grains` is a literal `ARRAY['ANNUAL']`, so the
-    rule asks the facts whether that is true, and asks the export whether its
-    composed `source_object_key` means one thing.
+    itself. Its `valid_time_grains` was a literal `ARRAY['ANNUAL']`, so the
+    rule asks the facts whether each served span is a grain the measure
+    claims, and asks the export whether its composed `source_object_key`
+    means one thing. The first weekly run on a loaded warehouse proved the
+    literal false (CDC publishes cancer incidence as 2015-2019); the
+    publisher now reads `ANNUAL` or `MULTI_YEAR` from the rows.
 
   Before those, **`DQ-ACS-007`** and **`DQ-BLS-007`** left this set on the
   second attempt. The first compared served rows to published facts one row at

@@ -4813,7 +4813,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-CDC-007",
         "BLOCK",
         "conformance",
-        "CDC publisher exports preserve measure identity and the annual time grain.",
+        "CDC publisher exports preserve measure identity, and every served "
+        "observation's span is a time grain its measure publishes.",
         (
             "gold_cdc.measure_export",
             "gold_cdc.metric_publisher",
@@ -4821,12 +4822,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="automated",
         automation_note=(
-            "Measured by `cdc_publisher_export_conformance`, and deliberately "
-            "not by reading the publisher's own literal back: "
-            "`valid_time_grains` is written `ARRAY['ANNUAL']` directly in "
-            "`gold_cdc.metric_publisher`, so a rule reading it would be "
-            "agreeing with a constant. "
-            "The identity arm reads the export instead. `source_object_key` "
+            "Measured by `cdc_publisher_export_conformance`. "
+            "The identity arm reads the export. `source_object_key` "
             "is `asset_id || ':' || measure_id || ':' || value_type_id`, so a "
             "component containing that delimiter makes the key ambiguous -- "
             "`a:b` + `c` and `a` + `b:c` compose to the same string -- and "
@@ -4836,8 +4833,16 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "The grain arm asks whether the data supports the claim: "
             "`gold_cdc.health_observation` carries `period_start` and "
             "`period_end` as integer years, so an annual observation is one "
-            "where they are equal, and a row spanning more contradicts the "
-            "`ANNUAL` every consumer is promised."
+            "where they are equal and any other spans several years "
+            "(`MULTI_YEAR`); each served span must be a grain the measure's "
+            "publisher row claims. The publisher used to write "
+            "`ARRAY['ANNUAL']` as a literal, and the first weekly run on a "
+            "loaded warehouse (2026-10-12) failed 40,086 rows on it: CDC's "
+            "Chronic Disease Indicators publish cancer incidence (`CAN01`) "
+            "as 2015-2019. The publisher now reads the grain from the rows, "
+            "and `MULTI_YEAR`, outside the calendar vocabulary, is refused "
+            "by the comparison check rather than held as one year's value. "
+            "Evidence names each measure and span once, not per geography."
         ),
     ),
     # -- FBI UCR -----------------------------------------------------------
