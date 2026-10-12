@@ -247,14 +247,18 @@ export function comparisonRequestParams(
   return params;
 }
 
-/** A geography's published name, from the row's own attribution fields. */
+/**
+ * A geography's published name: the catalog's `geo_name` (the only name a
+ * city or town row carries; its attribution stops at the state), else the
+ * county, then its state beside it. A state row's own name is not repeated.
+ */
 export function comparisonRowName(row: ComparisonRow | null | undefined): string {
-  const county = row?.county_name;
+  const name = row?.geo_name && row.geo_name !== row.geo_id ? row.geo_name : row?.county_name;
   const state = row?.state_name;
-  if (county && state) {
-    return `${county}, ${state}`;
+  if (name && state && name !== state) {
+    return `${name}, ${state}`;
   }
-  return String(county || state || row?.geo_id || "");
+  return String(name || state || row?.geo_id || "");
 }
 
 /**

@@ -97,6 +97,8 @@ import {
   pairedGeographiesText,
   selectablePairs,
   heatmapModel,
+  rememberGeographyNames,
+  unnamedGeographies,
   isCrossSectional,
   referenceLineOffer,
   assignValueAxes,
@@ -751,15 +753,12 @@ export default function WorkbenchPage() {
     [plotted],
   );
 
-  const geographyNames = useMemo(() => {
-    const names: Record<string, string> = {};
-    for (const row of [...states, ...geographies]) {
-      if (row?.geo_id) {
-        names[String(row.geo_id)] =
-          String(row.county_name || row.place_name || row.state_name || row.geo_id);
-      }
-    }
-    return names;
+  // Every name read so far, not only the picker's current grain and state:
+  // a city series keeps its name after the reader drafts the next one
+  // elsewhere, rather than falling back to its id.
+  const [geographyNames, setGeographyNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setGeographyNames((known) => rememberGeographyNames(known, [...states, ...geographies]));
   }, [states, geographies]);
 
   // --- The cross-sectional reading (WB-2) -----------------------------------
@@ -1533,6 +1532,40 @@ export default function WorkbenchPage() {
     sources,
     heatmapTracker,
   ]);
+
+  /**
+   * Names for the heatmap's rows. Its read spans a grain the picker may not
+   * have listed (every city in a state while the picker sits on counties),
+   * and the rows carry identities only, so a city read as its id. The catalog
+   * names them by id; a grain that needs a state is read only with one.
+   */
+  useEffect(() => {
+    const grain = heatmapSeries?.series.geoLevel;
+    if (!grain || !heatmapRows.length) return;
+    if (!unnamedGeographies(heatmapRows, geographyNames).length) return;
+    const needsState = grain === "COUNTY" || grain === "PLACE" || grain === "TRACT";
+    if (needsState && !heatmapStateFips) return;
+    let cancelled = false;
+    fetchAllPages<GeographySummary>("/catalog/geographies", {
+      params: {
+        geo_level: grain,
+        ...(needsState ? { state_fips: heatmapStateFips } : {}),
+      },
+      pageSize: CATALOG_PAGE_SIZE,
+    })
+      .then((items) => {
+        if (!cancelled) setGeographyNames((known) => rememberGeographyNames(known, items));
+      })
+      .catch(() => {
+        // Unnamed cells keep their identity; the grid is still read correctly.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `geographyNames` is read, not followed: a read that names the rows
+    // changes it, and following it would ask the catalog again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heatmapRows, heatmapSeries, heatmapStateFips]);
 
   // --- Export (WB-7) --------------------------------------------------------
 

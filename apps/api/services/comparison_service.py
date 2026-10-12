@@ -47,6 +47,7 @@ from apps.api.services.compatibility import (
     evaluate_comparison,
 )
 from apps.api.services.contracts import require_relation
+from data_ingestion_toolbox.sql.catalog_queries import GEOGRAPHY_RELATION
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     _filter_conditions,
@@ -252,13 +253,20 @@ def list_metric_comparison(
     )
     list_query = text(
         base_sql
-        + """
+        + f"""
         SELECT
-            geo_id, geo_level, state_fips, county_fips, state_name,
-            county_name, period_a, period_b, value_a, value_b, difference,
-            ratio
+            joined.geo_id, joined.geo_level, joined.state_fips,
+            joined.county_fips, joined.state_name, joined.county_name,
+            geography.geo_name, joined.period_a, joined.period_b,
+            joined.value_a, joined.value_b, joined.difference, joined.ratio
         FROM joined
-        ORDER BY geo_id
+        -- The catalog's name for the geography, by its id: the attribution
+        -- columns stop at county, so a city row would otherwise carry only
+        -- its state's name. A geography the catalog does not hold keeps a
+        -- NULL name and its row. Joined on the page alone, not the counts.
+        LEFT JOIN {GEOGRAPHY_RELATION} AS geography
+               ON geography.geo_id = joined.geo_id
+        ORDER BY joined.geo_id
         LIMIT :limit OFFSET :offset
         """
     )

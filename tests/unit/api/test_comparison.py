@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
 from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS, OBSERVATION_DISPATCH
+from data_ingestion_toolbox.sql.catalog_queries import GEOGRAPHY_RELATION
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
@@ -218,6 +219,52 @@ def test_comparison_returns_paired_values() -> None:
     assert len(payload["items"]) == 1
 
 
+def test_a_city_row_carries_its_catalog_name() -> None:
+    """Covers: API-015 — a city row is named by the geography catalog.
+
+    The attribution columns stop at county, so a city row carried only its
+    state's name and the workbench labelled every Texas city "Texas". The
+    catalog's ``geo_name`` is joined by ``geo_id`` (never by name) and a
+    geography the catalog does not hold keeps a null name rather than a row
+    dropped from the alignment.
+    """
+    rows = {
+        "CENSUS_ACS:acs5:B19013_001": _metric("CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS"),
+        "CENSUS_ACS:acs5:B01003_001": _metric("CENSUS_ACS:acs5:B01003_001", "CENSUS_ACS"),
+    }
+    city = {
+        **_JOINED_ROW,
+        "geo_id": "state:48|place:05000",
+        "geo_level": "PLACE",
+        "state_fips": "48",
+        "county_fips": None,
+        "state_name": "Texas",
+        "county_name": None,
+        "geo_name": "Austin city",
+    }
+    session = _ComparisonSession(rows, rows=[city], total=1)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/comparison",
+            params={
+                "metric_code_a": "CENSUS_ACS:acs5:B19013_001",
+                "metric_code_b": "CENSUS_ACS:acs5:B01003_001",
+                "geo_level": "PLACE",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    (item,) = response.json()["items"]
+    assert item["geo_name"] == "Austin city"
+    assert item["state_name"] == "Texas"
+    sql = _dispatched(session)[-1]
+    assert f"LEFT JOIN {GEOGRAPHY_RELATION} AS geography" in sql
+    assert "ON geography.geo_id = joined.geo_id" in sql
+
+
 def test_comparable_pair_aligns_one_newest_value_per_geography() -> None:
     """Covers: API-015, API-051 — ranked sides join once per geography.
 
@@ -262,8 +309,10 @@ def test_comparable_pair_aligns_one_newest_value_per_geography() -> None:
         "both sides must reduce to one newest value per geography"
     )
     assert "JOIN side_b USING (geo_id)" in sql
-    assert "ORDER BY geo_id" in sql
-    assert _relations_in(sql) <= ALLOWED_OBSERVATION_RELATIONS
+    assert "ORDER BY joined.geo_id" in sql
+    # The served observation relations, and the geography catalog the row's
+    # name is read from -- nothing a request could name.
+    assert _relations_in(sql) <= ALLOWED_OBSERVATION_RELATIONS | {GEOGRAPHY_RELATION}
 
     bound = session.parameters[-1]
     assert bound["a_metric_code_value"] == "FRED:UNRATE"

@@ -196,7 +196,11 @@ def test_real_catalog_latest_timeseries_distribution_and_comparison(
         params={"metric_code_a": metric_a, "metric_code_b": metric_b},
     )
     assert comparison.status_code == 200
-    assert comparison.json()["items"] == [
+    items = comparison.json()["items"]
+    # The catalog's name, joined by id: null while this shared database's
+    # catalog holds no nation, its catalog name once another test seeds one.
+    assert items[0].pop("geo_name") in (None, "us:1", "United States")
+    assert items == [
         {
             "geo_id": "us:1",
             "geo_level": "NATIONAL",

@@ -298,6 +298,11 @@ describe("published inputs and derived values stay distinct", () => {
     expect(comparisonRowName({ state_name: "Wisconsin" })).toBe("Wisconsin");
     expect(comparisonRowName({ geo_id: "state:55" })).toBe("state:55");
     expect(comparisonRowName(null)).toBe("");
+    // A city row's attribution stops at its state: the catalog's name leads,
+    // so it never reads as the state (WEB-134).
+    expect(comparisonRowName({ geo_id: "state:48|place:05000", geo_level: "PLACE", state_name: "Texas", county_name: null, geo_name: "Austin city" })).toBe("Austin city, Texas");
+    expect(comparisonRowName({ geo_id: "state:48", state_name: "Texas", geo_name: "Texas" })).toBe("Texas");
+    expect(comparisonRowName({ geo_id: "us:1", geo_name: "us:1" })).toBe("us:1");
   });
 });
 

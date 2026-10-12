@@ -19,12 +19,15 @@ import {
   assignValueAxes,
   availablePresentations,
   buildPlottedSeries,
+  catalogGeographyName,
   describeChart,
   describeSeries,
   presentationOffer,
+  rememberGeographyNames,
   sameSeries,
   seriesKey,
   unavailablePresentations,
+  unnamedGeographies,
   unpinnedDimensions,
 } from "../../../apps/web/lib/workbench";
 import { buildExplorerSources } from "../../../apps/web/lib/explorerSources";
@@ -453,4 +456,31 @@ test("an annual series beside a monthly one is held level across its year", asyn
   expect(seriesHeldAcrossPeriods([annual]).size).toBe(0);
   expect(pointPeriodEnd(point("2024-01-01", "2024-01-01"))).toBeNull();
   expect(pointPeriodEnd(annual.points[1])).toBe(Date.parse("2024-12-31"));
+});
+
+// Covers: WEB-134 — a city in the workbench is named by the catalog, and keeps
+// its name after the reader drafts the next series at another grain or state.
+describe("naming the workbench's geographies", () => {
+  const austin = { geo_id: "state:48|place:05000", geo_level: "PLACE", state_name: "Texas", county_name: null, place_name: "Austin city", geo_name: "Austin city" };
+  const travis = { geo_id: "state:48|county:453", geo_level: "COUNTY", state_name: "Texas", county_name: "Travis County", geo_name: "Travis County" };
+  const tract = { geo_id: "state:48|county:453|tract:000101", state_name: "Texas", county_name: "Travis County", geo_name: "Census Tract 1.01" };
+
+  test("a city is its own name, never its state's", () => {
+    expect(catalogGeographyName(austin)).toBe("Austin city");
+    expect(catalogGeographyName({ ...austin, geo_name: null })).toBe("Austin city");
+    expect(catalogGeographyName(tract)).toBe("Census Tract 1.01");
+    expect(catalogGeographyName({ geo_id: "cbsa:12420", geo_name: "cbsa:12420" })).toBe("cbsa:12420");
+  });
+
+  test("names accumulate and are not dropped by the next read", () => {
+    const first = rememberGeographyNames({}, [austin]);
+    const second = rememberGeographyNames(first, [travis]);
+    expect(second).toEqual({ "state:48|place:05000": "Austin city", "state:48|county:453": "Travis County" });
+    expect(rememberGeographyNames(second, [austin, travis, null])).toBe(second);
+  });
+
+  test("the rows no name is known for", () => {
+    const rows = [{ geo_id: "state:48|place:05000" }, { geo_id: "state:48|place:05000" }, { geo_id: "state:48|place:08236" }, { geo_id: null }];
+    expect(unnamedGeographies(rows, { "state:48|place:05000": "Austin city" })).toEqual(["state:48|place:08236"]);
+  });
 });
