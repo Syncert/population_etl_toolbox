@@ -308,6 +308,9 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
   );
   const counties = page.getByTestId("place-nearby-counties");
   await expect(counties.getByRole("link", { name: "Dane County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/dane-county");
+  // Its metro, reached through the counties it lies in, with the share inside.
+  const metro = page.getByTestId("place-nearby-part-of").locator('li[data-geo-id="cbsa:31540"]');
+  await expect(metro).toHaveText("Madison, WI · 60% of this place lies in its counties");
 
   await expect(page.getByTestId("chapter-safety")).toHaveCount(0);
   await expect(page.getByTestId("chapter-land-farms")).toHaveCount(0);

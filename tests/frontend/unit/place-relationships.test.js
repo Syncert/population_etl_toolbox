@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { crossCountyNote, groupNearby, isEmpty, relatedPath, shareText } from "../../../apps/web/lib/placeRelationships";
+import { crossCountyNote, groupNearby, isEmpty, partOfShareText, relatedPath, shareText } from "../../../apps/web/lib/placeRelationships";
 
 // Covers: WEB-130 — the Nearby section's groups, links and overlap wording,
 // all from the relationship rows' own identities.
@@ -79,5 +79,36 @@ describe("a city or town's counties", () => {
       row("intersects", "state:55|place:99999", "PLACE", "Crossing city", "55", { overlap_weight: 0.6 }),
     ] }, states, wisconsin);
     expect(county.within[0].href).toBe("/us/wisconsin/5599999");
+  });
+});
+
+// Covers: WEB-134 — a city or town's page names its metro, reached through the
+// counties it lies in, and the share of the place inside it when not whole.
+describe("a city or town's metro", () => {
+  const city = groupNearby({ geo_id: "state:48|place:05000", total: 4, items: [
+    row("intersects", "cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX", null, { overlap_weight: 1 }),
+    row("part_of", "division:7", "CENSUS_DIVISION", "West South Central", null),
+    row("part_of", "region:3", "CENSUS_REGION", "South Region", null),
+    row("part_of", "us:1", "NATIONAL", "us:1", null),
+  ] }, states, []);
+
+  it("lists the metro with the divisions and regions it is part of", () => {
+    expect(city.partOf.map((entry) => entry.name)).toEqual([
+      "Austin-Round Rock-San Marcos, TX",
+      "West South Central",
+      "South Region",
+      "United States",
+    ]);
+    expect(city.partOf[0].href).toBeNull();
+    expect(partOfShareText(city.partOf[0])).toBe("");
+    expect(partOfShareText(city.partOf[1])).toBe("");
+  });
+
+  it("says how much of the place lies in a metro it only partly reaches", () => {
+    const partly = groupNearby({ geo_id: "state:55|place:99999", total: 1, items: [
+      row("intersects", "cbsa:31540", "METRO", "Madison, WI", null, { overlap_weight: 0.6 }),
+    ] }, states, wisconsin);
+    expect(partOfShareText(partly.partOf[0])).toBe("60% of this place lies in its counties");
+    expect(partly.counties).toEqual([]);
   });
 });

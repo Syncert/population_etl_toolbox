@@ -253,6 +253,14 @@ def build_geographies_queries(
 #: boundary overlaps in either direction, and ``adjacent`` names the counties
 #: sharing a boundary. Every row keeps the vintage and evidence the bridge
 #: recorded; nothing is matched by name.
+#:
+#: A place is in no metro by code: OMB delineates metros from whole counties,
+#: and a place can cross a county line, so the reference records no
+#: place-to-metro edge. The last branch reaches a place's metro through the
+#: counties it intersects, as ``intersects`` rather than ``part_of`` because
+#: nothing makes the place nest in it: ``overlap_weight`` is the share of the
+#: place inside that metro's counties (the sum of its county overlaps) and the
+#: vintage and evidence are the delineation's that put those counties in it.
 GEOGRAPHY_RELATED_QUERY: TextClause = text(
     f"""
     WITH related AS (
@@ -290,6 +298,26 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
             AND ancestor.relationship_type = 'contains'
         WHERE parent_link.related_geo_id = :geo_id
           AND parent_link.relationship_type = 'contains'
+        UNION ALL
+        SELECT metro_link.geo_id,
+               'intersects',
+               MAX(metro_link.geography_vintage),
+               SUM(place_county.overlap_area_m2),
+               SUM(place_county.overlap_weight),
+               MIN(metro_link.evidence_source)
+        FROM {RELATIONSHIP_RELATION} AS place_county
+        JOIN {RELATIONSHIP_RELATION} AS metro_link
+             ON metro_link.related_geo_id = place_county.geo_id
+            AND metro_link.relationship_type = 'contains'
+        JOIN {GEOGRAPHY_RELATION} AS county
+             ON county.geo_id = place_county.geo_id
+            AND county.geo_level = 'COUNTY'
+        JOIN {GEOGRAPHY_RELATION} AS metro
+             ON metro.geo_id = metro_link.geo_id
+            AND metro.geo_level = 'METRO'
+        WHERE place_county.related_geo_id = :geo_id
+          AND place_county.relationship_type = 'intersects'
+        GROUP BY metro_link.geo_id
     )
     SELECT DISTINCT ON (related.relationship, geography.geo_id)
            related.relationship,

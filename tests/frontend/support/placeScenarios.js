@@ -141,6 +141,8 @@ export const RELATED = {
   "state:55|place:99999": [
     link("intersects", COUNTIES[0], { overlap_weight: 0.6, overlap_area_m2: 6e6 }),
     link("intersects", COUNTIES[1], { overlap_weight: 0.4, overlap_area_m2: 4e6 }),
+    // Its metro, through Dane County: Rock County is in no metro here.
+    link("intersects", AREAS.metro, { overlap_weight: 0.6, overlap_area_m2: 6e6 }),
     link("part_of", STATES[0]), link("part_of", { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" }),
   ],
   "state:55|place:48000": [

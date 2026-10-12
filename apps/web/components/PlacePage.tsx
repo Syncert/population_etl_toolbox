@@ -69,7 +69,7 @@ import type {
   ResolvedChapter,
   ResolvedPlaceMeasure,
 } from "../lib/placeChapters";
-import { crossCountyNote, groupNearby, isEmpty, relatedPath, shareText } from "../lib/placeRelationships";
+import { crossCountyNote, groupNearby, isEmpty, partOfShareText, relatedPath, shareText } from "../lib/placeRelationships";
 import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
 import { rankSentence, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
@@ -613,7 +613,10 @@ export default function PlacePage({
               <h3>Part of</h3>
               <ul className="place-index">
                 {nearby.partOf.map((entry) => (
-                  <li key={entry.geoId}>{entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}</li>
+                  <li key={entry.geoId} data-geo-id={entry.geoId}>
+                    {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
+                    {partOfShareText(entry) ? <span className="subtle"> · {partOfShareText(entry)}</span> : null}
+                  </li>
                 ))}
               </ul>
             </div>

@@ -113,6 +113,12 @@ export function groupNearby(
     } else if (row.relationship === "intersects" && row.geo_level === "COUNTY") {
       const share = typeof row.overlap_weight === "number" ? row.overlap_weight : null;
       groups.counties.push({ ...entry, share, crossesCounty: share !== null && share < 0.995 });
+    } else if (row.relationship === "intersects" && row.geo_level === "METRO") {
+      // A city's metro, reached through the counties it lies in: metros are
+      // whole counties, so the reference names none for a place directly.
+      // The weight is the share of the place inside that metro's counties.
+      const share = typeof row.overlap_weight === "number" ? row.overlap_weight : null;
+      groups.partOf.push({ ...entry, share, crossesCounty: share !== null && share < 0.995 });
     } else if (row.relationship === "adjacent") {
       groups.neighbours.push(entry);
     } else if (row.relationship === "part_of") {
@@ -145,6 +151,16 @@ export function crossCountyNote(name: string, counties: readonly NearbyEntry[]):
   );
   const listed = parts.length === 2 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
   return `${name} crosses county lines: it lies in ${listed}. A county's figures describe the whole county, not this place.`;
+}
+
+/**
+ * Beside a metro on a city's page: nothing when the whole place lies in the
+ * metro's counties, else the share that does, so a city that reaches into a
+ * second metro or into a county outside every metro says so.
+ */
+export function partOfShareText(entry: NearbyEntry): string {
+  if (entry.share === null || !entry.crossesCounty) return "";
+  return `${Math.round(entry.share * 100)}% of this place lies in its counties`;
 }
 
 /** "62% of Crossing city lies in this county", from the published weight. */
