@@ -364,7 +364,12 @@ Reading a flow row:
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
 BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS, IRS SOI migration). The metric resolves to its
 owning source through the published glossary and is read from that source's
-own serving relations, so its semantics survive.
+own serving relations, so its semantics survive. Every row also carries
+`geo_name`, the geography catalog's name for its `geo_id`, read by id (never
+matched by text) for the page's geographies; it is `null` where the catalog
+holds none. A source's `state_name`/`county_name` attribution stops at
+county, and many sources carry none, so `geo_name` is the only name a city,
+town or tract row has.
 
 - `metric_code` (required), `limit`, `offset`.
 - `scope=latest` (default) — the source's own latest publication.

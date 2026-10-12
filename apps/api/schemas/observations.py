@@ -266,6 +266,9 @@ class NeutralObservation(BaseModel):
     metric_display_name: Optional[str] = None
     geo_id: Optional[str] = None
     geo_level: Optional[str] = None
+    #: The geography catalog's name for ``geo_id`` (joined by id, ``null``
+    #: where the catalog holds none): a city row's only name. Additive in v1.
+    geo_name: Optional[str] = None
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     release: Optional[str] = None

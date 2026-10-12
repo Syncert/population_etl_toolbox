@@ -256,7 +256,7 @@ export function observationToFeature(
       geo_level: item.geo_level,
       metric_code: item.metric_code,
       value: item.value,
-      name: item.county_name || item.state_name || item.geo_id,
+      name: item.geo_name || item.county_name || item.state_name || item.geo_id,
     },
     geometry: {
       type: "Point",

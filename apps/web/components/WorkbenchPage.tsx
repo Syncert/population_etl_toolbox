@@ -98,6 +98,7 @@ import {
   selectablePairs,
   heatmapModel,
   rememberGeographyNames,
+  rememberObservationNames,
   unnamedGeographies,
   isCrossSectional,
   referenceLineOffer,
@@ -1535,14 +1536,17 @@ export default function WorkbenchPage() {
 
   /**
    * Names for the heatmap's rows. Its read spans a grain the picker may not
-   * have listed (every city in a state while the picker sits on counties),
-   * and the rows carry identities only, so a city read as its id. The catalog
-   * names them by id; a grain that needs a state is read only with one.
+   * have listed (every city in a state while the picker sits on counties).
+   * The rows carry the catalog's own `geo_name`, so they name themselves;
+   * only a row still unnamed sends the catalog a read, by id, and a grain
+   * that needs a state is read only with one.
    */
   useEffect(() => {
     const grain = heatmapSeries?.series.geoLevel;
     if (!grain || !heatmapRows.length) return;
-    if (!unnamedGeographies(heatmapRows, geographyNames).length) return;
+    const named = rememberObservationNames(geographyNames, heatmapRows);
+    if (named !== geographyNames) setGeographyNames(named);
+    if (!unnamedGeographies(heatmapRows, named).length) return;
     const needsState = grain === "COUNTY" || grain === "PLACE" || grain === "TRACT";
     if (needsState && !heatmapStateFips) return;
     let cancelled = false;

@@ -24,6 +24,7 @@ import {
   describeSeries,
   presentationOffer,
   rememberGeographyNames,
+  rememberObservationNames,
   sameSeries,
   seriesKey,
   unavailablePresentations,
@@ -477,6 +478,17 @@ describe("naming the workbench's geographies", () => {
     const second = rememberGeographyNames(first, [travis]);
     expect(second).toEqual({ "state:48|place:05000": "Austin city", "state:48|county:453": "Travis County" });
     expect(rememberGeographyNames(second, [austin, travis, null])).toBe(second);
+  });
+
+  test("an observation page names its own rows by geo_name, never by county attribution", () => {
+    const rows = [
+      { geo_id: "state:48|place:05000", geo_name: "Austin city", county_name: "Travis County", value: "93658" },
+      { geo_id: "state:48|place:08236", geo_name: null, county_name: "Travis County", value: "1" },
+    ];
+    const named = rememberObservationNames({}, rows);
+    expect(named).toEqual({ "state:48|place:05000": "Austin city" });
+    expect(unnamedGeographies(rows, named)).toEqual(["state:48|place:08236"]);
+    expect(rememberObservationNames(named, rows)).toBe(named);
   });
 
   test("the rows no name is known for", () => {

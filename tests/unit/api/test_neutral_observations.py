@@ -143,9 +143,15 @@ class _DispatchSession:
         self._total = total
         self.statements: list[str] = []
         self.parameters: list[dict[str, Any]] = []
+        self.geo_names: list[dict[str, Any]] = []
+        self.name_lookups: list[tuple[str, dict[str, Any]]] = []
 
     def execute(self, query, params=None):
         rendered = str(query)
+        if "gold_glossary.dim_geography" in rendered:
+            # The page's names lookup, kept apart from the dispatched reads.
+            self.name_lookups.append((rendered, dict(params or {})))
+            return _FakeResult(rows=list(self.geo_names))
         self.statements.append(rendered)
         self.parameters.append(dict(params or {}))
         if "gold_glossary.dim_metric" in rendered:
@@ -1986,3 +1992,31 @@ def test_a_window_refuses_what_it_cannot_answer(
 
     assert response.status_code == 422
     assert _dispatched(session) == []
+
+
+def test_every_row_carries_the_catalog_name_read_by_id() -> None:
+    """Covers: API-042 — a city row is named by the catalog, never by its id."""
+    city = {**_PROVIDER_ROW, "geo_id": "place:4805000", "geo_level": "PLACE"}
+    unnamed = {**_PROVIDER_ROW, "geo_id": "place:9999999", "geo_level": "PLACE"}
+    session = _DispatchSession(
+        metric_row=dict(_ACS_METRIC), rows=[city, unnamed], total=2
+    )
+    session.geo_names = [{"geo_id": "place:4805000", "geo_name": "Austin city, Texas"}]
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _ACS_METRIC["metric_code"]},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200, response.text
+    named, missing = response.json()["items"]
+    assert named["geo_name"] == "Austin city, Texas"
+    assert missing["geo_name"] is None, "a geography the catalog lacks stays unnamed"
+    lookups = session.name_lookups
+    assert len(lookups) == 1, "one names statement per page"
+    sql, bound = lookups[0]
+    assert "geo_id = ANY(:geo_ids)" in sql
+    assert bound == {"geo_ids": ["place:4805000", "place:9999999"]}

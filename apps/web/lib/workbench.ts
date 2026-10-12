@@ -1010,6 +1010,24 @@ export function rememberGeographyNames(
   return next || known;
 }
 
+/**
+ * Names an observation page carries for its own rows.
+ *
+ * `/observations` names every row by the catalog's `geo_name`, so a page
+ * names its cities without a catalog read. Only that field is taken: a city
+ * row's `county_name` is attribution, and naming the city by it would call
+ * Austin "Travis County".
+ */
+export function rememberObservationNames(
+  known: Record<string, string>,
+  rows: readonly (ObservationRow | null | undefined)[],
+): Record<string, string> {
+  return rememberGeographyNames(
+    known,
+    rows.map((row) => (row ? { geo_id: row.geo_id, geo_name: row.geo_name as string | null | undefined } : null)),
+  );
+}
+
 /** The identities a set of rows carries that no name is known for. */
 export function unnamedGeographies(
   rows: readonly ObservationRow[],
