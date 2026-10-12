@@ -1,0 +1,119 @@
+name: web-audit
+
+# Does `main`'s production dependency graph still pass the audit gate?
+#
+# The pull-request gate (WEB-007, `frontend.yml`) runs the same audit, but only
+# when a commit lands. A registry advisory pushes no commit, so before this job
+# a new advisory was found by whichever pull request next touched a frontend
+# path -- on 2026-10-06 a documentation change -- while `main` stayed silently
+# vulnerable. This asks the question on a schedule, against `main`, so the
+# failure lands on `main` first and visibly.
+#
+# It reports and never edits: on failure it opens one issue (or updates the
+# open one) with the audit output and the remediation the gate script prints,
+# and it closes that issue when a later run passes. The fix is a reviewed
+# change to `apps/web/package.json` and its lockfile, made by a person; the
+# procedure is in `apps/web/README.md`, "The dependency audit gate". It is
+# release-freshness evidence, not a required check, and it has no push or
+# pull-request trigger: a red run means the registry moved, which no branch
+# can fix.
+
+on:
+  schedule:
+    # Mondays, before the week's pull requests would trip over it.
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  ISSUE_TITLE_PREFIX: "Production dependency audit fails on main"
+
+jobs:
+  audit:
+    name: Scheduled production dependency audit
+    # Covers: WEB-007 — the production audit runs against main on a schedule.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install the locked production graph
+        working-directory: apps/web
+        run: npm ci
+      - name: Audit production dependency graph
+        id: audit
+        working-directory: apps/web
+        run: |
+          set -o pipefail
+          status=0
+          node scripts/check-audit.mjs | tee "${RUNNER_TEMP}/audit.txt" || status=$?
+          echo "status=${status}" >> "${GITHUB_OUTPUT}"
+          npm audit --omit=dev --audit-level=high --json > "${RUNNER_TEMP}/audit.json" || true
+          node -e '
+            const report = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const rank = { high: 3, critical: 4 };
+            const names = Object.entries(report.vulnerabilities ?? {})
+              .filter(([, v]) => rank[v.severity])
+              .map(([name]) => name)
+              .sort();
+            console.log(names.join(", "));
+          ' "${RUNNER_TEMP}/audit.json" > "${RUNNER_TEMP}/packages.txt"
+      - name: Open or update the audit issue
+        if: steps.audit.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          README_URL: ${{ github.server_url }}/${{ github.repository }}/blob/main/apps/web/README.md#the-dependency-audit-gate
+        run: |
+          set -euo pipefail
+          packages="$(cat "${RUNNER_TEMP}/packages.txt")"
+          title="${ISSUE_TITLE_PREFIX}: ${packages:-see the run}"
+          {
+            echo "The scheduled production audit failed on \`main\` ([run](${RUN_URL}))."
+            echo
+            echo "The procedure is in [apps/web/README.md](${README_URL})."
+            echo
+            echo '```text'
+            cat "${RUNNER_TEMP}/audit.txt"
+            echo '```'
+          } > "${RUNNER_TEMP}/body.md"
+          existing="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open \
+            --search "in:title \"${ISSUE_TITLE_PREFIX}\"" --json number,title \
+            --jq "map(select(.title | startswith(\"${ISSUE_TITLE_PREFIX}\"))) | .[0].number // empty")"
+          if [ -n "${existing}" ]; then
+            gh issue edit "${existing}" --repo "${GITHUB_REPOSITORY}" \
+              --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" \
+              --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
+          fi
+      - name: Close the audit issue once the audit passes
+        if: steps.audit.outputs.status == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh issue list --repo "${GITHUB_REPOSITORY}" --state open \
+            --search "in:title \"${ISSUE_TITLE_PREFIX}\"" --json number,title \
+            --jq ".[] | select(.title | startswith(\"${ISSUE_TITLE_PREFIX}\")) | .number" |
+            while read -r number; do
+              gh issue close "${number}" --repo "${GITHUB_REPOSITORY}" \
+                --comment "The scheduled production audit passes on \`main\` again ([run](${RUN_URL}))."
+            done
+      - name: Fail the run when the audit fails
+        if: steps.audit.outputs.status != '0'
+        run: exit 1

@@ -1,0 +1,83 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "sharp": {
+      "name": "sharp",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1000001,
+          "name": "sharp",
+          "dependency": "sharp",
+          "title": "sharp heap buffer overflow when decoding a crafted image",
+          "url": "https://github.com/advisories/GHSA-0000-0000-0000",
+          "severity": "high",
+          "cwe": ["CWE-122"],
+          "cvss": { "score": 7.5, "vectorString": null },
+          "range": "<0.35.5"
+        }
+      ],
+      "effects": ["next"],
+      "range": "<0.35.5",
+      "nodes": ["node_modules/sharp"],
+      "fixAvailable": false
+    },
+    "next": {
+      "name": "next",
+      "severity": "high",
+      "isDirect": true,
+      "via": ["sharp"],
+      "effects": [],
+      "range": "*",
+      "nodes": ["node_modules/next"],
+      "fixAvailable": false
+    },
+    "source-map-js": {
+      "name": "source-map-js",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1000002,
+          "name": "source-map-js",
+          "dependency": "source-map-js",
+          "title": "source-map-js prototype pollution through a crafted source map",
+          "url": "https://github.com/advisories/GHSA-1111-1111-1111",
+          "severity": "high",
+          "cwe": ["CWE-1321"],
+          "cvss": { "score": 7.3, "vectorString": null },
+          "range": ">=1.0.0 <=1.2.1"
+        }
+      ],
+      "effects": ["postcss"],
+      "range": "1.0.0 - 1.2.1",
+      "nodes": ["node_modules/source-map-js"],
+      "fixAvailable": true
+    },
+    "nanoid": {
+      "name": "nanoid",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1000003,
+          "name": "nanoid",
+          "dependency": "nanoid",
+          "title": "A moderate advisory below the gate",
+          "url": "https://github.com/advisories/GHSA-2222-2222-2222",
+          "severity": "moderate",
+          "range": "<3.3.8"
+        }
+      ],
+      "effects": [],
+      "range": "<3.3.8",
+      "nodes": ["node_modules/nanoid"],
+      "fixAvailable": true
+    }
+  },
+  "metadata": {
+    "vulnerabilities": { "info": 0, "low": 0, "moderate": 1, "high": 3, "critical": 0, "total": 4 },
+    "dependencies": { "prod": 120, "dev": 0, "optional": 30, "peer": 0, "peerOptional": 0, "total": 150 }
+  }
+}

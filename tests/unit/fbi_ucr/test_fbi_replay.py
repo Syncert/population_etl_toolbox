@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hashlib
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from data_ingestion_toolbox.fbi_ucr.registry import (
     FbiUcrProduct,
     agency_directory_endpoint,
 )
+from data_ingestion_toolbox.fbi_ucr.silver_fbi.models import ReplayResult
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     CapturedSlice,
     FbiReplayError,
@@ -86,12 +88,24 @@ def _slices(product: FbiUcrProduct = PRODUCT) -> dict[str, CapturedSlice]:
     }
 
 
+@functools.cache
+def _replayed(product_id: str) -> tuple[dict[str, CapturedSlice], ReplayResult]:
+    """Replay a product's complete release once per module, with its slices.
+
+    The tests below only read the result; replaying it for each one doubled
+    the module's runtime under coverage (PERF-001).
+    """
+    product = next(item for item in FIXTURE_PRODUCTS if item.product_id == product_id)
+    slices = _slices(product)
+    return slices, replay_slices(product, slices, release_key=RELEASE)
+
+
 @pytest.mark.parametrize("product", FIXTURE_PRODUCTS, ids=lambda item: item.product_id)
 def test_complete_release_replays_without_network_access(
     product: FbiUcrProduct,
 ) -> None:
     """Covers: ETL-040 — a full release rebuilds from stored bytes alone."""
-    result = replay_slices(product, _slices(product), release_key=RELEASE)
+    _, result = _replayed(product.product_id)
 
     subjects = len(product.subjects)
     assert len(result.observations) + len(result.participation) + len(
@@ -118,8 +132,7 @@ def test_every_replayed_row_carries_its_capture_lineage(
     product: FbiUcrProduct,
 ) -> None:
     """Covers: ETL-040 — each silver row points at the bytes it came from."""
-    slices = _slices(product)
-    result = replay_slices(product, slices, release_key=RELEASE)
+    slices, result = _replayed(product.product_id)
 
     national = slices[f"/summarized/national/{product.offense_code}"].capture_id
     national_rows = [

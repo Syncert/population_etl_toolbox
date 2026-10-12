@@ -186,9 +186,22 @@ test("a housing response for a different metric is refused in both the card and 
 test("population scenario assumptions reach the API, export, and changing place clears the answer", async ({ page }) => {
   await installUseCaseFixtures(page);
   await page.goto("/use-cases/population-growth?place=state%3A55%7Ccounty%3A025");
-  await page.getByRole("spinbutton", { name: "Assumed annual population change (%)" }).fill("-1");
-  await page.getByRole("spinbutton", { name: "Years after baseline" }).fill("20");
-  await page.getByRole("button", { name: "Run population scenario" }).click();
+  // The controls are server-rendered, so a fill can land before hydration
+  // and be reset to the component's default; the run then answers 1% and
+  // the assertion below fails intermittently. The run button enables only
+  // once the client has resolved the measure, so it marks a hydrated panel,
+  // and each value is confirmed to have stuck before the run.
+  const rate = page.getByRole("spinbutton", { name: "Assumed annual population change (%)" });
+  const horizon = page.getByRole("spinbutton", { name: "Years after baseline" });
+  const runScenario = page.getByRole("button", { name: "Run population scenario" });
+  await expect(runScenario).toBeEnabled();
+  await expect(async () => {
+    await rate.fill("-1");
+    await horizon.fill("20");
+    await expect(rate).toHaveValue("-1", { timeout: 500 });
+    await expect(horizon).toHaveValue("20", { timeout: 500 });
+  }).toPass();
+  await runScenario.click();
   const scenario = page.getByTestId("population-scenario");
   await expect(scenario.locator("tbody tr")).toHaveCount(20);
   await expect(scenario).toContainText("2044");

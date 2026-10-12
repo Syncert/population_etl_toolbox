@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from decimal import Decimal
@@ -17,6 +18,7 @@ from data_ingestion_toolbox.fbi_ucr.registry import (
     FbiUcrProduct,
     agency_directory_endpoint,
 )
+from data_ingestion_toolbox.fbi_ucr.silver_fbi.models import ReplayResult
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     CapturedSlice,
     replay_slices,
@@ -56,6 +58,17 @@ def _slices(
     return slices
 
 
+@functools.cache
+def _replayed(product_id: str) -> ReplayResult:
+    """Replay a product's unmodified release once per module.
+
+    Several tests read the same release; replaying it for each one multiplied
+    the module's runtime under coverage (PERF-001). Tests only read the result.
+    """
+    product = next(item for item in FIXTURE_PRODUCTS if item.product_id == product_id)
+    return replay_slices(product, _slices(product), release_key=RELEASE)
+
+
 def _published_measures(product: FbiUcrProduct) -> set[str]:
     return {
         product.measure_id(basis, measure_form)
@@ -69,7 +82,7 @@ def test_each_product_emits_exactly_the_measures_its_provider_publishes(
     product: FbiUcrProduct,
 ) -> None:
     """Covers: ETL-052 — each offense emits its own four published measures."""
-    result = replay_slices(product, _slices(product), release_key=RELEASE)
+    result = _replayed(product.product_id)
 
     # Every captured offense publishes actuals and rates for offenses and
     # clearances at every grain (SOURCE_NOTES.md), so all four are present.
@@ -94,7 +107,7 @@ def test_each_product_publishes_its_own_provider_values(
     document = load_payload(observation_fixture(product, national))
     expected = document["offenses"]["actuals"]["United States Offenses"]["01-2023"]
 
-    result = replay_slices(product, _slices(product), release_key=RELEASE)
+    result = _replayed(product.product_id)
     [observation] = [
         item
         for item in result.observations
@@ -111,7 +124,7 @@ def test_no_two_products_share_a_record_or_a_value_series() -> None:
     record_ids: dict[str, str] = {}
     national_series: dict[str, tuple] = {}
     for product in FIXTURE_PRODUCTS:
-        result = replay_slices(product, _slices(product), release_key=RELEASE)
+        result = _replayed(product.product_id)
         for item in result.observations:
             assert record_ids.setdefault(item.source_record_id, product.product_id) == (
                 product.product_id
@@ -165,7 +178,7 @@ def test_states_beyond_wisconsin_resolve_by_their_own_contract(
     Islands territory published no month in the window, so every one of its
     observations is ``not_reported`` with a null value -- never a zero.
     """
-    result = replay_slices(product, _slices(product), release_key=RELEASE)
+    result = _replayed(product.product_id)
     state_rows = [item for item in result.observations if item.subject_type == "state"]
 
     assert {(item.subject_code, item.subject_label) for item in state_rows} == {

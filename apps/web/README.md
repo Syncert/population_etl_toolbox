@@ -114,6 +114,55 @@ npm run check:bundle:update   # rewrite the baseline, deliberately
 with no declared budget fails the check rather than passing silently, so a
 new route cannot grow unnoticed.
 
+## The dependency audit gate
+
+The first frontend CI gate is the production audit (WEB-007):
+
+```bash
+npm run check:audit   # npm audit --omit=dev --audit-level=high, explained
+```
+
+`scripts/check-audit.mjs` runs exactly that audit and exits with its status.
+When it fails, it also prints each package at or above `high`, where its
+version is decided (an `overrides` entry, a direct dependency, or transitive),
+and the command that moves it. The scheduled `web-audit` workflow runs the same
+script against `main` every Monday and opens an issue when it fails, so a new
+advisory lands on `main` first rather than on the next unrelated pull request.
+
+**Why pins live in `overrides`.** A vulnerable package that arrives through
+another package (`sharp` through `next`, for example) can only be moved by
+that parent's release, or by an `overrides` entry in `package.json` that
+forces the version everywhere in the tree. The entries there are the fixes
+already taken for advisories the parents had not yet absorbed.
+
+**What `EOVERRIDE` means.** `npm audit fix` will not change a version that an
+override decides; it stops with `EOVERRIDE`, which does not name the override.
+The fix is to edit the override itself.
+
+**Raising a pin.**
+
+1. In `package.json`, raise the package's `overrides` entry (or its
+   `dependencies` entry, if it is direct) to the first release outside the
+   advisory's range. For a transitive package with no pin, `npm audit fix`
+   (never `--force`) is enough when the gate says so.
+2. Run `npm install` here, so `package-lock.json` follows, and read the
+   lockfile diff: it should move the one package.
+3. Validate, in this order, before pushing:
+
+```bash
+npm run check:audit
+npm run lint
+npm run typecheck
+npm run test:unit
+npm run build
+npm run check:bundle
+npm run check:csp
+npm run test:browser
+```
+
+Remove an override once every parent depends on a fixed release by itself;
+an override nobody needs is a version nobody reviews.
+
 ## Maps
 
 Both maps — the explorer's and the comparison workspace's — are one MapLibre

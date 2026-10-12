@@ -14,8 +14,64 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from CI evidence gathered while driving PR #73.
-No implementation yet.
+Ready for review, 2026-10-06, on branch `fix/audit-gate-main-first`.
+
+### Implementation evidence
+
+- **Scheduled audit:** `.github/workflows/web-audit.yml`, job `audit`
+  ("Scheduled production dependency audit"), Mondays 05:41 UTC and
+  `workflow_dispatch`, checks out `main`, runs the gate script, and on
+  failure opens or updates one issue titled
+  "Production dependency audit fails on main: <packages>" with the output
+  and a link to the README procedure; a passing run closes it. It never runs
+  `npm install` or `npm audit fix`. `issues: write` is granted to this
+  workflow only; `frontend.yml` keeps `contents: read`. Registered in the
+  manifest's `release` section, beside the other scheduled observers.
+- **Explaining gate:** `apps/web/scripts/check-audit.mjs` (`npm run
+  check:audit`) runs `npm audit --omit=dev --audit-level=high` with its
+  output passed through and exits with its status; on failure it reads the
+  `--json` report and prints each package at or above `high`, its pin
+  location (`overrides`, direct dependency, transitive), the command that
+  moves it, and the validation sequence. An unreadable JSON report still
+  exits with the audit's status. `frontend.yml`'s audit step now runs it.
+- **Procedure:** `apps/web/README.md`, "The dependency audit gate".
+- **Contracts:** WEB-007's row, the "Scheduled and Manual Jobs" table, and a
+  new `CI_EVIDENCE_MAP.md` row name the scheduled job and the script.
+
+### Tests
+
+- `tests/frontend/unit/check-audit.test.js` (8 tests) over
+  `tests/frontend/support/npm-audit/override-pinned.json` and `clean.json`:
+  the exact gate command runs first and its output is kept; a clean run adds
+  nothing and exits 0; an override-pinned `sharp` is reported as
+  `overrides` with the raise-the-override step and `EOVERRIDE`, exiting 1;
+  transitive and direct packages get their own commands; advisories below
+  `high` are left out; an unreadable report never masks the failure.
+- `tests/unit/shared/test_ci_evidence_manifest.py`: the scheduled job's
+  identity is in the manifest, its triggers are exactly `schedule` and
+  `workflow_dispatch` (no push filter, so the plan-branch prefix test is
+  unaffected), it checks out `main`, runs the script, never edits the
+  lockfile, and holds `issues: write`; the PR gate runs `npm run
+  check:audit` under `contents: read`.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `npm --prefix apps/web run lint`: passed.
+- `npm --prefix apps/web run test:unit`: 50 files, 727 tests passed.
+- `python -m pytest tests/unit/shared -q` (with `tests/unit/tooling`): 395
+  passed.
+- `ruff check .` and `ruff format --check .`: passed.
+- `node apps/web/scripts/check-audit.mjs` against the real tree: "found 0
+  vulnerabilities", exit 0.
+- Not run: the scheduled workflow itself, which needs a push to `main` before
+  it can be dispatched.
+
+### Open items, decided or recorded
+
+- Dependency-update bot: recorded as an owner choice (a repository setting);
+  not enabled here.
+- Issue permissions: `issues: write` on `web-audit.yml` only.
+- `pip-audit` on the same schedule: out of scope, left for a follow-up plan.
 
 ## Why
 
@@ -97,6 +153,4 @@ the fix slower than it should have been:
 
 ## Checkpoint
 
-Next pickup: write the unit test for `check-audit.mjs` over a captured
-`npm audit --json` fixture with an override-pinned package, then the
-script, then the scheduled workflow and the README section.
+Implementation complete; awaiting human review.

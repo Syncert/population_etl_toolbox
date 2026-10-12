@@ -8,6 +8,7 @@ import json
 import tempfile
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -69,10 +70,35 @@ def _network_error(target: object) -> RuntimeError:
     )
 
 
-def _guard_socket_connect(real_connect, sock, address):  # noqa: ANN001
+def integration_service_ports() -> frozenset[int]:
+    """Return the loopback ports the integration tiers' services listen on.
+
+    CI jobs that also run the database tiers export these variables for the
+    whole job, with PostgreSQL and Redis listening on loopback. Loopback stays
+    open for Windows' private socketpair, so without this a unit test could
+    reach a real service there and wait on it.
+    """
+    ports: set[int] = set()
+    postgres_port = os.environ.get("TEST_POSTGRES_PORT", "").strip()
+    if postgres_port.isdigit():
+        ports.add(int(postgres_port))
+    redis_url = os.environ.get("TEST_REDIS_URL", "").strip()
+    if redis_url:
+        try:
+            redis_port = urlsplit(redis_url).port
+        except ValueError:
+            redis_port = None
+        ports.add(redis_port or 6379)
+    return frozenset(ports)
+
+
+def _guard_socket_connect(  # noqa: ANN001
+    real_connect, sock, address, service_ports: frozenset[int] = frozenset()
+):
     """Block external sockets while allowing Windows' private socketpair."""
     host = address[0] if isinstance(address, tuple) and address else None
-    if host in {"127.0.0.1", "::1"}:
+    port = address[1] if isinstance(address, tuple) and len(address) > 1 else None
+    if host in {"127.0.0.1", "::1"} and port not in service_ports:
         return real_connect(sock, address)
     raise _network_error(address)
 
@@ -123,13 +149,16 @@ def _deny_network_in_unit_tests(
     import requests
 
     real_connect = socket.socket.connect
+    service_ports = integration_service_ports()
     real_httpx_send = httpx.Client.send
     real_httpx_async_send = httpx.AsyncClient.send
 
     monkeypatch.setattr(
         socket.socket,
         "connect",
-        lambda sock, address: _guard_socket_connect(real_connect, sock, address),
+        lambda sock, address: _guard_socket_connect(
+            real_connect, sock, address, service_ports
+        ),
     )
     monkeypatch.setattr(requests.Session, "send", _guard_requests_send)
     monkeypatch.setattr(

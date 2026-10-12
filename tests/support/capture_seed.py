@@ -103,9 +103,17 @@ def seed_geography(
         INSERT INTO silver_ref.dim_geo_entity_version (
             geo_sk, geography_vintage, source_snapshot_id, name, attribute_checksum
         ) VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING
+        RETURNING geo_sk
         """,
         (resolved_geo_sk, vintage, capture_id, name, checksum),
     )
+    if db_cursor.fetchone() is None:
+        # The geography already had this vintage, so nothing cites the capture
+        # just seeded as its evidence. Left in place it outlived every
+        # teardown -- `delete_geography` removes only the captures a version
+        # row names -- and a later node counting captures read it as its own
+        # residue.
+        delete_seed_captures(db_cursor, [capture_id])
     return resolved_geo_sk
 
 
