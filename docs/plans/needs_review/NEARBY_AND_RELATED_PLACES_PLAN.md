@@ -16,9 +16,68 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Ready for review, 2026-10-06, on branch `feat/nearby-places`, stacked on
+`feat/compare-two-places` (its picker gains the neighbour default), which is
+stacked on `feat/place-pages`; it merges after both.
+
+### Implementation evidence
+
+- **Warehouse:** adjacency is materialised in the existing versioned bridge
+  rather than a new projection, so it is versioned with the geometry:
+  `reconcile_relationships` inserts `adjacent` rows (both directions,
+  evidence `census_boundary_adjacency`) where two counties' boundaries
+  intersect in a line or more, using the GiST index on the geometry table.
+  `silver_ref.sql` declares the widened type check; migration 030 swaps it
+  on an existing warehouse (manifest phase `reference`, compose test
+  bootstrap, migrations README). `gold_glossary.geo_relationship` serves
+  containment, intersection and adjacency between current geographies, each
+  parent's newest vintage per type; registered in the quality inventory and
+  the schema snapshot.
+- **Measured:** on the development warehouse, the 2025 county geometry gives
+  17,960 directed neighbour pairs for 3,214 of 3,235 counties (the rest are
+  islands and territories) in about 20 seconds, run inside a rolled-back
+  transaction; nothing was written there.
+- **API:** `GET /api/v1/catalog/geographies/{geo_id}/related` (route shape
+  beside the geography catalog), additive within `/api/v1`: `contains`,
+  `part_of` (state and nation, the nation reached through the state's own
+  `contains` row), `intersects` (both directions, with `overlap_weight` and
+  `overlap_area_m2`) and `adjacent`, each with its vintage and evidence; a
+  state lists its counties, not its places; unknown geographies are the
+  catalog's stable 404. OpenAPI snapshot, consumer guide (route and ordering
+  rows), catalog relation allowlist, unit tests, and the real-database
+  assertions are in the same change.
+- **Place page:** "Nearby and related" below the chapters: places within a
+  county with the share of each place's area in the county ("60% of it lies
+  in this county; the rest is in another county"), neighbouring counties, and
+  part of (state, nation), with the vintage. Places link to the explorer
+  until `acs-place-grain` gives them pages. An empty answer omits the section
+  and names the reason in the footer.
+- **Compare default:** the compare picker lists the neighbouring counties
+  first, marked as such, before any search.
+- **Out of scope, as the plan says:** land area and density.
+
+### Decisions on the open items
+
+- Adjacency is a new relationship type in the bridge (the preferred option),
+  computed once per vintage by the geography pipeline.
+- The page shows `overlap_weight` as the share of the place's area in the
+  county, labelled; `overlap_area_m2` stays in the response.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `python -m pytest tests/unit -q`: passed (2,178).
+- `tests/integration/database -m "integration and database and not slow"`
+  against the compose PostGIS (recreated so it bootstraps migration 030):
+  247 passed, 1 skipped.
+- `python -m tests.support.schema_snapshot --write` and
+  `python -m tests.support.regenerate_openapi_contract`: regenerated and
+  reviewed.
+- `npm --prefix apps/web run test:unit`, `lint`, `typecheck`, `build`,
+  `check:csp`, `check:bundle`: passed; web unit 52 files, 745 tests;
+  `npx playwright test`: 214 passed.
+- `ruff check .` and `ruff format --check .`: passed.
+- DAG tier inside the running scheduler container (it mounts this
+  working tree): 145 passed, 5 skipped.
 
 ## Why
 
@@ -92,6 +151,4 @@ default pair, with no new source and no new measure.
 
 ## Checkpoint
 
-Next pickup: read the bridge relation and `apps/api/routers` for the
-geography catalog, then write the failing API test for the relationship
-resource against a fixture county.
+Implementation complete; awaiting human review.

@@ -17,10 +17,89 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from the website plan in
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet. This is the first plan of the almanac programme; the
-other almanac plans depend on the route and chapter contract it establishes.
+Ready for review, 2026-10-06, on branch `feat/place-pages`.
+
+### Implementation evidence
+
+- **Routes:** `apps/web/app/us/page.js`, `app/us/[state]/page.js`,
+  `app/us/[state]/[county]/page.js`, all rendering
+  `components/PlacePage.tsx`. The address resolves through
+  `/catalog/geographies` (national, states, and the state's counties by
+  `state_fips`); the identity read is the catalog row's `geo_id`.
+- **Chapter contract:** `lib/placeChapters.ts` -- seven ordered chapters
+  (People, Work and Money, Housing, Health, Safety, Land and Farms, Change),
+  each with headline measures (three-level cards), depth measures (this place,
+  with the Census universe), a trend measure and scale, and a caveat.
+  Visibility, omission lines, the one-period card, and the trend index are
+  pure functions there.
+- **Three-level card:** one period, taken from the first level that
+  answered; a parent whose newest period differs shows no number and says
+  "Not published for <period> (newest published: <period>)"; a grain the
+  measure does not publish says so; a withheld value shows its status, never
+  a zero; ACS margins and CDC intervals are shown on the row.
+- **Trends:** `components/PlaceTrend.tsx`, one per chapter, the place as the
+  primary line and its parents as dashed reference lines; count measures
+  (population estimate, NASS acres) are indexed to the first period every
+  line publishes, and that base is stated; rates and medians are drawn as
+  published. The values drawn are in a table behind a disclosure.
+- **Chapter depth:** commute (worked from home, public transportation, 90+
+  minutes), broadband and no internet, uninsured by age band, veterans,
+  mobility (same house, moved within county), foreign born, units built 2020
+  or later, single-family detached, no vehicle, industry and occupation table
+  total, household income tails, Gini, never married by sex, living alone,
+  and PEP components of change. Each variable's label was checked against
+  the local warehouse's catalog (`/api/v1/catalog/metrics/<code>`) before it
+  was written down; `B24010` and `B24040` are not published there, so
+  `C24050_001` stands for industry and occupation.
+- **Safety at county grain:** `stateContextAtCounty` reads the FBI rates
+  at the state and labels them as state context, with the county row saying
+  "Not published at county grain".
+- **Footers:** period(s), sources, caveat, and an explorer link carrying
+  the chapter's primary metric, source, place, grain and state. No explainer
+  link is rendered, because `explainer-pages` has not shipped.
+- **Navigation, titles, sitemap, budgets:** "Places" in the site header;
+  `placeRouteTitle` builds titles from accepted segments only; `/us` is in
+  `PUBLIC_ROUTES`; budgets declared for the three routes.
+- **Contract:** WEB-125 in `TESTING_CONTRACT.md` (catalog total 548), the
+  evidence-map row, and `AUDITED_COUNTS["WEB"] = 125`.
+
+### Decisions on the open items
+
+- **Address form.** The plan named postal abbreviations (`/us/wi/dane`), but
+  the geography catalog publishes no postal code, and the plan also requires
+  resolution through the API rather than a client-side list. Segments are
+  therefore slugs of the catalog's own names (`/us/wisconsin/dane-county`),
+  with FIPS accepted and redirected to the named address, and FIPS used as
+  the segment wherever two names in one state slug alike (Virginia's
+  independent cities, for example). Postal addresses would need the API to
+  publish `state_postal`; that is an upstream contract change for its own
+  plan, not something to hard-code here.
+- **ACS 1-year or 5-year.** Every slot prefers 5-year and falls back to
+  1-year only when 5-year is unpublished. A card resolves one identity for
+  all its rows, so the two are never mixed in one card, and the identity is
+  printed on the card.
+- **Not found.** A segment outside `[a-z0-9-]` is a server 404 (the site's
+  own not-found page). A well-formed segment that no catalog row answers
+  renders a not-found page with search and no chart, client-side, because
+  the catalog is read in the browser; its HTTP status is 200.
+- **Sitemap.** `/us` is listed. State and county addresses are not, because
+  the sitemap is built without the catalog; listing them needs a server-side
+  catalog read and is left for the plan that adds one.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `npm --prefix apps/web run test:unit`: 50 files, 737 tests passed
+  (`place-chapters.test.js`, 18).
+- `npm --prefix apps/web run lint` and `typecheck`: passed.
+- `npm --prefix apps/web run build`, `check:csp` (0 prerendered documents),
+  `check:bundle` (every route within budget): passed.
+- `npx playwright test` (the full browser tier, production server): 207
+  passed, including `places.spec.js` (nation, state, county at desktop and
+  390px with axe; FIPS redirect; unknown place; malformed segment 404).
+- `python -m pytest tests/unit/shared tests/unit/tooling -q`: passed.
+- Checked by hand against the local stack (`deploy_stack.py --action up`):
+  `/us/wisconsin/dane-county` rendered all seven chapters, 90 of 90
+  candidates published, 91 series read.
 
 ## Why
 
@@ -143,6 +222,4 @@ API already serves with its period, source, and caveats.
 
 ## Checkpoint
 
-Next pickup: claim the plan, read `lib/productTemplates.ts` and
-`lib/useCasePages.ts`, and write the failing unit test for the chapter
-contract module before adding the route.
+Implementation complete; awaiting human review.

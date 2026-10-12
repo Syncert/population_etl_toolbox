@@ -16,9 +16,59 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Ready for review, 2026-10-06, on branch `feat/distinctive-places`, stacked on
+`feat/one-measure-map` (each row links to the measure's map), which is
+stacked on `feat/place-pages`.
+
+### Implementation evidence
+
+- **Derived resource:** `GET /api/v1/place/distinctive?geo_id=` in
+  `apps/api/routers/place.py` and `apps/api/services/distinctive_service.py`,
+  in the manner of `/population/scenario`: `derived: true`, `method`, and per
+  ranked measure the exact observation request it read. Each measure of a
+  reviewed list (`DISTINCTIVE_MEASURES`: ACS medians, per capita income and
+  Gini; BLS unemployment; PEP vital and migration rates; five CDC PLACES
+  prevalences) is ranked on its own through the source's aligned
+  reduction (`ranked_latest_cte`), against the siblings the geography
+  catalog serves. Counts are deliberately absent: a count ranks size.
+- **Refusals stated:** unpublished, not at the grain, declined for aligned
+  analysis (CDC's stratified source is, so its five measures are listed with
+  the API's own reason), no value here, mixed sibling periods, or fewer than
+  `MINIMUM_SIBLINGS` = 10 with a value. A source with no state filter (PEP)
+  is read at the grain and restricted to the catalog's siblings, and its
+  request says so.
+- **Place page:** "What stands out" after the header, highest and lowest as
+  separate lists of single measures, the ranked-measure count, the
+  overlapping-margins caveat, each row's withheld and missing siblings, and a
+  map link. Nothing ranked omits the section with the reason in the footer.
+- **Live check:** against the local stack, Dane County ranked 7 of 16
+  measures (highest: median gross rent, home value, per capita income;
+  lowest: median age); Rock County ranked 11 including the four PEP rates;
+  CDC measures were declined by the API's analysis rule, with that reason.
+- **Contract:** API-165, WEB-131, consumer guide section, platform-owned
+  route registration, OpenAPI snapshot.
+
+### Decisions on the open items
+
+- Sibling minimum: 10 siblings with a value (one sibling moves a rank over a
+  handful of places by more than ten points).
+- States are ranked among the states on the state page in this release.
+- Ties are counted (`siblings_tied`), not split. Margin-of-error overlap is
+  stated as a caveat on the section rather than computed per pair: the API
+  publishes no interval comparison, and computing one in the client would be
+  a new statistic.
+- Explainer link: the peer-percentile explainer is on `feat/explainer-pages`;
+  until that merges the section carries its own one-line caveat.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `python -m pytest tests/unit -q`: passed; `tests/unit/api`:
+  `test_place_distinctive.py` (5).
+- `tests/integration/api/test_place_distinctive_contract.py` against the
+  compose PostgreSQL: passed (a withheld and a missing sibling).
+- Web unit, lint, typecheck, build, `check:csp`, `check:bundle`, and
+  `npx playwright test`: passed.
+- `ruff check .` and `ruff format --check .`: passed.
 
 ## Why
 
@@ -101,6 +151,4 @@ computation is API-owned, explainable, and one measure at a time.
 
 ## Checkpoint
 
-Next pickup: read `apps/api/routers` for the scenario and distribution
-resources, then write the failing API test for a county fixture with one
-withheld sibling.
+Implementation complete; awaiting human review.

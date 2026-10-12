@@ -159,3 +159,7 @@
 .explainer-example table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .explainer-example th, .explainer-example td { border-top: 1px solid var(--line); padding: 6px 4px; text-align: left; white-space: normal; }
 .explainer-footer { max-width: 72ch; border-top: 1px solid var(--line); padding-top: 10px; }
+/* Tools menu (find-your-place-home): the analyst routes, one level down. */
+.tools-dropdown { position: absolute; top: 100%; right: 0; z-index: 20; display: grid; gap: 2px; min-width: 220px; max-width: calc(100vw - 32px); margin: 0; padding: 8px; list-style: none; background: white; border: 1px solid var(--line); border-radius: 0 0 12px 12px; box-shadow: var(--shadow); }
+.tools-dropdown .nav-link { display: flex; }
+@media (max-width: 780px) { .tools-dropdown { right: auto; left: 0; } }

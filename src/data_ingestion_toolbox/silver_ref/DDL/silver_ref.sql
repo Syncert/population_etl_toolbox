@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS silver_ref.bridge_geo_relationship_version (
     parent_geo_sk BIGINT NOT NULL REFERENCES silver_ref.dim_geo_entity(geo_sk),
     related_geo_sk BIGINT NOT NULL REFERENCES silver_ref.dim_geo_entity(geo_sk),
     relationship_type TEXT NOT NULL CHECK (
-        relationship_type IN ('contains', 'intersects', 'serves', 'provider_crosswalk')
+        relationship_type IN ('contains', 'intersects', 'adjacent', 'serves', 'provider_crosswalk')
     ),
     geography_vintage INTEGER NOT NULL,
     overlap_area_m2 NUMERIC,

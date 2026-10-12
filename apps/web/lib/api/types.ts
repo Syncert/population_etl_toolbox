@@ -49,6 +49,9 @@ export interface GeographySummary {
   place_name?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  /** The catalog's internal point for the geography, as `/catalog/geographies` serves it. */
+  geo_latitude?: number | string | null;
+  geo_longitude?: number | string | null;
   [key: string]: unknown;
 }
 
@@ -80,6 +83,8 @@ export interface SourceFreshness {
   retired_count: number;
   latest_publication_time?: string | null;
   latest_harvested_at?: string | null;
+  /** The sorted union of grains the source's non-retired metrics publish. */
+  geo_grains?: string[];
   [key: string]: unknown;
 }
 

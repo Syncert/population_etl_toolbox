@@ -16,6 +16,7 @@
 // saved-analysis name or id, or a token would each be a leak; none of them is
 // in the vocabulary, so none of them can arrive here.
 
+import { PLACE_SEGMENT } from "./placeChapters";
 import {
   parseComparisonState,
   parseExplorerState,
@@ -33,6 +34,8 @@ export const STATIC_ROUTE_TITLES: Readonly<Record<string, string>> = {
   "/builder": "Evidence packet builder",
   "/articles": "Composed article",
   "/explain": "Explainers",
+  "/us": "United States",
+  "/data": "Where the numbers come from",
 };
 
 /**
@@ -110,4 +113,28 @@ export function workbenchTitle(search: Parameters<typeof searchString>[0]): stri
     state.presentation,
     place(state.alignmentGeoLevel, state.stateFips),
   ]);
+}
+
+/**
+ * A place page's title, from its address segments alone.
+ *
+ * The segments are the slugs the place routes accept (`PLACE_SEGMENT`); a
+ * segment outside that vocabulary never reaches a title. The words are the
+ * slug's, capitalised -- the catalog's own spelling of the name is the page's
+ * heading, which needs the catalog; a title is built before it answers.
+ */
+export function placeRouteTitle(stateSegment?: string, countySegment?: string): string {
+  const words = (segment: string) =>
+    /^[0-9]+$/.test(segment)
+      ? segment
+      : segment.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  const parts = [countySegment, stateSegment].filter(
+    (segment): segment is string => Boolean(segment) && PLACE_SEGMENT.test(segment as string),
+  );
+  return parts.length ? parts.map(words).join(", ") : STATIC_ROUTE_TITLES["/us"]!;
+}
+
+/** A one-measure map's title: the catalog identity its address names. */
+export function measureMapTitle(metricCode: string): string {
+  return titleOf("Map", [/^[A-Za-z0-9_.:-]{1,200}$/.test(metricCode) ? metricCode : undefined]);
 }

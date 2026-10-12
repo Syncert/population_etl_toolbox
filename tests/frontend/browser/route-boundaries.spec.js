@@ -97,5 +97,5 @@ test("a route that throws while rendering shows the boundary, and recovers", asy
   });
   await page.getByRole("button", { name: "Try this page again" }).click();
   await expect(boundary).toBeHidden();
-  await expect(page.getByRole("heading", { level: 1, name: "Economic Data Studio" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "What is going on in your place?" })).toBeVisible();
 });

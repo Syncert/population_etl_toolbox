@@ -279,3 +279,42 @@ SELECT
     retired_at,
     geography_state = 'current' AS is_active
 FROM gold_glossary.dim_geo_latest;
+
+-- Geography relationships, as the reference recorded them (nearby-and-related-places).
+--
+-- One row per relationship between two geographies the catalog currently
+-- serves, from each parent's newest geography vintage of that relationship
+-- type, so a reference that redraws a boundary replaces its neighbours rather
+-- than adding to them. Every row carries the type, the vintage and the
+-- evidence source the bridge recorded; nothing here is inferred from a name.
+-- `contains` is the code hierarchy (nation to state, state to county and
+-- place), `intersects` a county and a place whose boundaries overlap, with
+-- the overlap's area and its share of the place, and `adjacent` two counties
+-- that share a boundary.
+CREATE OR REPLACE VIEW gold_glossary.geo_relationship AS
+SELECT
+    parent.geo_id,
+    related.geo_id AS related_geo_id,
+    relationship.relationship_type,
+    relationship.geography_vintage,
+    relationship.overlap_area_m2,
+    relationship.overlap_weight,
+    relationship.evidence_source
+FROM silver_ref.bridge_geo_relationship_version AS relationship
+JOIN silver_ref.dim_geo_entity AS parent_entity
+     ON parent_entity.geo_sk = relationship.parent_geo_sk
+JOIN silver_ref.dim_geo_entity AS related_entity
+     ON related_entity.geo_sk = relationship.related_geo_sk
+JOIN gold_glossary.dim_geo_latest AS parent
+     ON parent.geo_id = parent_entity.geo_id
+    AND parent.geography_state = 'current'
+JOIN gold_glossary.dim_geo_latest AS related
+     ON related.geo_id = related_entity.geo_id
+    AND related.geography_state = 'current'
+WHERE relationship.relationship_type IN ('contains', 'intersects', 'adjacent')
+  AND relationship.geography_vintage = (
+        SELECT MAX(newest.geography_vintage)
+        FROM silver_ref.bridge_geo_relationship_version AS newest
+        WHERE newest.parent_geo_sk = relationship.parent_geo_sk
+          AND newest.relationship_type = relationship.relationship_type
+      );

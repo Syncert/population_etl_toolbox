@@ -765,6 +765,43 @@ class GeographyRepository:
                     """,
                     (vintage, vintage, vintage, str(capture_id)),
                 )
+                # Counties that share a boundary, in both directions, once per
+                # geometry vintage (nearby-and-related-places). A shared
+                # boundary is an intersection of dimension one or more: two
+                # counties meeting only at a corner (the Four Corners) are not
+                # neighbours, and cartographic generalisation can leave a
+                # sliver of overlap where an edge is shared, which still
+                # counts. The candidate side drives the GiST index on the
+                # geometry table rather than a materialised copy of it.
+                cursor.execute(
+                    """
+                    WITH county_boundary AS MATERIALIZED (
+                        SELECT entity.geo_sk, boundary.geom
+                        FROM silver_ref.dim_geo_entity AS entity
+                        JOIN silver_ref.dim_geo_geometry_version AS boundary
+                             ON boundary.geo_sk = entity.geo_sk
+                            AND boundary.boundary_vintage = %s
+                        WHERE entity.geo_type = 'county'
+                    )
+                    INSERT INTO silver_ref.bridge_geo_relationship_version (
+                        parent_geo_sk, related_geo_sk, relationship_type,
+                        geography_vintage, evidence_source, source_snapshot_id
+                    )
+                    SELECT county.geo_sk, neighbour.geo_sk, 'adjacent', %s,
+                           'census_boundary_adjacency', %s
+                    FROM county_boundary AS county
+                    JOIN silver_ref.dim_geo_geometry_version AS candidate
+                         ON candidate.boundary_vintage = %s
+                        AND candidate.geo_sk <> county.geo_sk
+                        AND ST_Intersects(county.geom, candidate.geom)
+                    JOIN silver_ref.dim_geo_entity AS neighbour
+                         ON neighbour.geo_sk = candidate.geo_sk
+                        AND neighbour.geo_type = 'county'
+                    WHERE ST_Dimension(ST_Intersection(county.geom, candidate.geom)) >= 1
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (vintage, vintage, str(capture_id), vintage),
+                )
             if owns_connection:
                 connection.commit()
         except BaseException:

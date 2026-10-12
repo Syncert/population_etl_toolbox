@@ -31,6 +31,8 @@ from apps.api.schemas import (
     FreshnessListResponse,
     GeographyLatest,
     GeographyListResponse,
+    GeographyRelatedResponse,
+    GeographyRelationship,
     MetricCapability,
     MetricCatalog,
     MetricListResponse,
@@ -49,7 +51,10 @@ from data_ingestion_toolbox.semantics.rollups import (
 )
 from data_ingestion_toolbox.semantics.time_aggregation import authorized_method
 from data_ingestion_toolbox.sql.catalog_queries import (
+    GEOGRAPHY_EXISTS_QUERY,
+    GEOGRAPHY_RELATED_QUERY,
     GEOGRAPHY_RELATION,
+    RELATIONSHIP_RELATION,
     METRIC_RELATION,
     SOURCE_FRESHNESS_QUERY,
     SOURCE_RELATION,
@@ -363,3 +368,23 @@ def list_source_freshness(db: Session) -> FreshnessListResponse:
     rows = db.execute(SOURCE_FRESHNESS_QUERY).mappings().all()
     items = [SourceFreshness.model_validate(row) for row in rows]
     return FreshnessListResponse(total=len(items), items=items)
+
+
+def get_geography_related(
+    db: Session, geo_id: str
+) -> Optional[GeographyRelatedResponse]:
+    """Every relationship the reference recorded for one served geography.
+
+    Returns ``None`` for a geography the catalog does not serve; the router
+    owns the 404, in the same shape as an unknown metric's.
+    """
+    require_relation(db, GEOGRAPHY_RELATION)
+    require_relation(db, RELATIONSHIP_RELATION)
+    own = db.execute(GEOGRAPHY_EXISTS_QUERY, {"geo_id": geo_id}).mappings().first()
+    if own is None:
+        return None
+    rows = db.execute(GEOGRAPHY_RELATED_QUERY, {"geo_id": geo_id}).mappings().all()
+    items = [GeographyRelationship.model_validate(row) for row in rows]
+    return GeographyRelatedResponse(
+        geo_id=own["geo_id"], geo_level=own["geo_level"], total=len(items), items=items
+    )

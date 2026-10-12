@@ -18,9 +18,66 @@ verify:
 
 ## Status
 
-To do. Drafted 2026-10-06 from
-[`docs/product/PLACE_ALMANAC_WEBSITE_PLAN.md`](../../product/PLACE_ALMANAC_WEBSITE_PLAN.md).
-No implementation yet.
+Ready for review, 2026-10-06, on branch `feat/studio-frames`, stacked on
+`feat/place-pages` (it uses the chapter contract), so it merges after that one.
+
+### Implementation evidence
+
+- **Route:** `/studio` (`app/studio/page.js`, `components/StudioPage.tsx`):
+  with no credential it renders the sign-in control and no frame; with a
+  session or operator token it renders the picker (state, county, chapter,
+  card, format, theme) and a default frame (Dane County, the first People
+  headline). `/studio` is in `PRIVATE_ROUTES`, so robots disallow it and the
+  sitemap omits it.
+- **Frame renderer:** `lib/studioFrame.ts` `renderFrameSvg(spec)` draws the
+  frame as SVG at the format's exact size with video type, the fixed County,
+  State and Nation colours, bars from zero, and a footer (measure and code,
+  period and source, each level's uncertainty, the chapter caveat, the site
+  name) that the one drawing function always draws: it takes no option, and
+  a spec carrying `footer: false` still draws it. Values are the page's own
+  newest-value responses; a parent whose newest period differs is shown as
+  "not published for <period>".
+- **Exports:** PNG by rasterising that SVG onto a canvas at the declared
+  size (no screenshot service; `img-src blob:` already admits it); CSV
+  through `observationExport`; the frame record as JSON.
+- **Frame record and history:** reuses the saved-analysis resource (the
+  schema fits without change): a `workbench` document with one observations
+  series per level (`newest_per_geography` only where the source declares
+  that reduction) and a `bar` presentation, and in `visualization` the exact
+  request URLs, release pins, format, theme, place, chapter and card. The API
+  accepts it (`test_a_studio_frame_record_is_a_valid_workbench`). Saved
+  records are listed (named `Frame · ...`) and reopen at
+  `/studio?record=<id>`, which replays the stored requests exactly. The
+  token travels only in the Authorization header, and the resource answers
+  `private, no-store`.
+- **Script notes:** read-only: the reviewed definition where one exists,
+  otherwise the harvested label marked `not reviewed`, the chapter and card
+  caveats, the period sentence, and the requests. `docs/semantics/` holds no
+  reviewed definition yet, so every frame reads `not reviewed` today; the
+  registry (`REVIEWED_DEFINITIONS`) is the one place a reviewed definition
+  is added, and the unit tier covers both states. The explainer link waits
+  for `explainer-pages`.
+
+### Decisions on the open items
+
+- PNG through canvas from a blob URL of the frame's own SVG: permitted by
+  the current CSP (`img-src 'self' data: blob:`), and `check:csp` passes.
+- Frame records reuse the saved-analysis resource with the `workbench` kind;
+  no new resource or schema change was needed.
+
+### Validation (local, Windows, 2026-10-06)
+
+- `npm --prefix apps/web run test:unit`: 51 files, 746 tests
+  (`studio-frame.test.js`, 9).
+- `lint`, `typecheck`, `build`, `check:csp`, `check:bundle` (budget
+  declared for `/studio`): passed.
+- `npx playwright test`: passed, including `studio.spec.js` (no credential
+  shows sign-in and no frame; PNG exports measured 1920x1080, 1080x1920 and
+  1080x1080 from the downloaded bytes; save and reopen replays the stored
+  requests; the token never appears in a URL).
+- `python -m pytest tests/unit/api/test_saved_analysis.py`: passed.
+- Frames were also rendered and inspected as images at 16:9 (light) and
+  9:16 (dark).
 
 ## Why
 
@@ -100,5 +157,4 @@ context, which is what protects the channel's credibility.
 
 ## Checkpoint
 
-Next pickup: read `lib/savedCharts.ts` and the evidence envelope, then
-write the failing unit test for the mandatory footer in the frame layout.
+Implementation complete; awaiting human review.

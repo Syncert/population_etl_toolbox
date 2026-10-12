@@ -303,6 +303,10 @@ def test_real_discovery_detail_freshness_and_capabilities(
     assert by_source["FRED"]["metric_count"] >= 2
     assert by_source["FRED"]["current_count"] >= 2
     assert by_source["FRED"]["latest_harvested_at"] is not None
+    assert by_source["FRED"]["geo_grains"] == sorted(
+        set(by_source["FRED"]["geo_grains"])
+    )
+    assert by_source["FRED"]["geo_grains"], "FRED publishes at least one grain"
 
     capabilities = client.get("/api/v1/catalog/capabilities")
     assert capabilities.status_code == 200
