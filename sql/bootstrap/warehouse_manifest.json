@@ -212,6 +212,11 @@
       "path": "sql/migrations/029_nass_combined_counties_are_not_counties.sql"
     },
     {
+      "id": "migration-033",
+      "phase": "source-fix",
+      "path": "sql/migrations/033_bls_annual_average_identity.sql"
+    },
+    {
       "id": "glossary-schema",
       "phase": "glossary",
       "path": "sql/gold_contract/002_gold_glossary_schema.sql"

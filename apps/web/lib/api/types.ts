@@ -318,6 +318,9 @@ export interface SeriesDocument {
   release?: string | null;
   newest_per_geography?: boolean;
   newest_release_per_period?: boolean;
+  /** A calendar grain or serving window (ADR-0007); native when absent. */
+  time_grain?: "native" | "quarterly" | "annual";
+  window?: "trailing_3" | "trailing_12" | "ytd" | null;
   filters?: Record<string, unknown>;
 }
 
@@ -351,6 +354,8 @@ export interface AnalysisDocument {
    */
   newest_per_geography?: boolean;
   newest_release_per_period?: boolean;
+  time_grain?: "native" | "quarterly" | "annual";
+  window?: "trailing_3" | "trailing_12" | "ytd" | null;
   filters?: Record<string, unknown>;
   bin_count?: number | null;
   /**

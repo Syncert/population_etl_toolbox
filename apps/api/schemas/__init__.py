@@ -38,6 +38,7 @@ from apps.api.schemas.observations import (
     NeutralObservationListResponse,
     ObservationCoverage,
     ObservationDashboard,
+    ObservationDerivation,
     ObservationListResponse,
     ObservationUncertainty,
 )
@@ -157,6 +158,7 @@ __all__ = [
     "NeutralObservationListResponse",
     "ObservationCoverage",
     "ObservationDashboard",
+    "ObservationDerivation",
     "ObservationListResponse",
     "ObservationUncertainty",
     "SourceSystem",

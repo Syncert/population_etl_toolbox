@@ -144,6 +144,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -192,7 +194,12 @@
       "publishes_value_status": true,
       "route_segment": "bls",
       "served_by_neutral_routes": true,
-      "source_code": "BLS"
+      "source_code": "BLS",
+      "time_grains": [
+        "native",
+        "quarterly",
+        "annual"
+      ]
     },
     {
       "datasets": [
@@ -264,6 +271,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -291,7 +300,10 @@
       "publishes_value_status": true,
       "route_segment": "cdc",
       "served_by_neutral_routes": true,
-      "source_code": "CDC"
+      "source_code": "CDC",
+      "time_grains": [
+        "native"
+      ]
     },
     {
       "datasets": [],
@@ -401,6 +413,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -449,7 +463,10 @@
       "publishes_value_status": true,
       "route_segment": "census",
       "served_by_neutral_routes": true,
-      "source_code": "CENSUS_ACS"
+      "source_code": "CENSUS_ACS",
+      "time_grains": [
+        "native"
+      ]
     },
     {
       "datasets": [],
@@ -538,6 +555,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -586,7 +605,10 @@
       "publishes_value_status": false,
       "route_segment": "pep",
       "served_by_neutral_routes": true,
-      "source_code": "CENSUS_PEP"
+      "source_code": "CENSUS_PEP",
+      "time_grains": [
+        "native"
+      ]
     },
     {
       "datasets": [
@@ -647,6 +669,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -674,7 +698,12 @@
       "publishes_value_status": true,
       "route_segment": null,
       "served_by_neutral_routes": true,
-      "source_code": "FBI_UCR"
+      "source_code": "FBI_UCR",
+      "time_grains": [
+        "native",
+        "quarterly",
+        "annual"
+      ]
     },
     {
       "datasets": [],
@@ -784,6 +813,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -832,7 +863,10 @@
       "publishes_value_status": false,
       "route_segment": "fred",
       "served_by_neutral_routes": true,
-      "source_code": "FRED"
+      "source_code": "FRED",
+      "time_grains": [
+        "native"
+      ]
     },
     {
       "datasets": [
@@ -895,6 +929,8 @@
             "stratum_id",
             "subject_code",
             "subject_type",
+            "time_grain",
+            "window",
             "year_from",
             "year_to"
           ],
@@ -971,7 +1007,10 @@
       "publishes_value_status": true,
       "route_segment": "usda-nass",
       "served_by_neutral_routes": true,
-      "source_code": "USDA_NASS"
+      "source_code": "USDA_NASS",
+      "time_grains": [
+        "native"
+      ]
     }
   ],
   "drawable_tile_grains": [

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://population-etl.example/schemas/time-aggregation-methods.json",
+  "title": "Per-metric time-aggregation methods (ADR-0007)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "description", "entries"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "description": {"type": "string", "minLength": 1},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "metric_code",
+          "method",
+          "status",
+          "owner",
+          "reviewer",
+          "version",
+          "effective_date",
+          "last_reviewed_date",
+          "rationale",
+          "limitations",
+          "citations"
+        ],
+        "properties": {
+          "metric_code": {"type": "string", "minLength": 1},
+          "method": {"enum": ["sum", "mean", "end_of_period", "recompute_ratio", "not_aggregable"]},
+          "numerator": {"type": "string", "minLength": 1},
+          "denominator": {"type": "string", "minLength": 1},
+          "status": {"enum": ["draft", "approved", "deprecated", "needs_review"]},
+          "owner": {"type": "string", "minLength": 1},
+          "reviewer": {"type": "string", "minLength": 1},
+          "version": {"type": "integer", "minimum": 1},
+          "effective_date": {"type": "string", "format": "date"},
+          "last_reviewed_date": {"type": "string", "format": "date"},
+          "rationale": {"type": "string", "minLength": 1},
+          "limitations": {"type": "array", "items": {"type": "string"}},
+          "citations": {"type": "array", "items": {"type": "string", "format": "uri"}, "minItems": 1}
+        }
+      }
+    }
+  }
+}

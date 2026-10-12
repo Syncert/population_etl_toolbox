@@ -132,3 +132,14 @@ class TestBlsUnknownPeriod:
         _, start, end = parse_bls_period_to_date(2023, "X99")
         assert start == date(2023, 1, 1)
         assert end == date(2023, 12, 31)
+
+
+@pytest.mark.unit
+def test_m13_is_the_annual_average_over_the_calendar_year() -> None:
+    """Covers: ETL-072 — BLS's `M13` annual average spans the year and ends on December 31."""
+    period_date, start, end = parse_bls_period_to_date(2024, "M13")
+    assert (period_date, start, end) == (
+        date(2024, 12, 31),
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+    )

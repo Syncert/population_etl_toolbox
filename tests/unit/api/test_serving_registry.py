@@ -95,7 +95,8 @@ def test_allowlist_is_exactly_the_declared_relations() -> None:
     """Covers: API-034 — no relation reaches SQL without being declared.
 
     Since API-004 the allowlist is the union of the per-source serving
-    contracts and the neutral observation dispatch entries; both registries
+    contracts and the neutral observation dispatch entries (including a
+    calendar relation, API-168); both registries
     are reviewed constants, and nothing outside them may name a relation.
     """
     expected = {
@@ -105,7 +106,12 @@ def test_allowlist_is_exactly_the_declared_relations() -> None:
     } | {
         relation
         for dispatch in OBSERVATION_DISPATCH.values()
-        for relation in (dispatch.latest_relation, dispatch.released_relation)
+        for relation in (
+            dispatch.latest_relation,
+            dispatch.released_relation,
+            dispatch.calendar_relation,
+        )
+        if relation is not None
     }
     assert ALLOWED_OBSERVATION_RELATIONS == expected
     assert all(relation.startswith("gold_") for relation in expected)

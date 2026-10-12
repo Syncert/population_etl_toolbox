@@ -63,6 +63,38 @@ CORRELATION_CAUSATION_CAVEAT = (
 )
 
 
+#: Calendar time grains from finest to coarsest. A year or a quarter is one
+#: published value for the whole span it covers, so beside a finer measure it
+#: is read as that value held across the span -- the owner's decision for
+#: workbench time views WT-4 (2026-10-07). Nothing is aligned or computed: each
+#: side keeps its own newest published value, and the caveat says the coarser
+#: one is repeated rather than measured at the finer grain.
+_NESTED_TIME_GRAINS = ("DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL")
+_HOLDING_TIME_GRAINS = frozenset({"QUARTERLY", "ANNUAL"})
+
+
+def _held_time_grains(
+    grains_a: frozenset[str], grains_b: frozenset[str]
+) -> Optional[tuple[str, str]]:
+    """The (coarser, finer) grains when one side's span holds the other's.
+
+    Both sides must publish only calendar grains, and the coarser side's
+    coarsest grain must be a quarter or a year above the finer side's finest.
+    Anything else -- a word outside the calendar vocabulary, or two grains
+    that do not nest -- stays a disagreement.
+    """
+    rank = {grain: index for index, grain in enumerate(_NESTED_TIME_GRAINS)}
+    if not (grains_a | grains_b) <= set(rank):
+        return None
+    coarse_a, coarse_b = max(grains_a, key=rank.get), max(grains_b, key=rank.get)
+    fine_a, fine_b = min(grains_a, key=rank.get), min(grains_b, key=rank.get)
+    if rank[coarse_a] > rank[fine_b] and coarse_a in _HOLDING_TIME_GRAINS:
+        return coarse_a, fine_b
+    if rank[coarse_b] > rank[fine_a] and coarse_b in _HOLDING_TIME_GRAINS:
+        return coarse_b, fine_a
+    return None
+
+
 def _upper(word: str) -> str:
     """Time grains are published as one word each and have no aliases."""
     return word.strip().upper()
@@ -259,6 +291,25 @@ def evaluate_comparison(
                         STATUS_PASS,
                         f"shared {label}: {', '.join(sorted(shared))}",
                     )
+                )
+            elif rule == RULE_TIME_GRAINS and (
+                held := _held_time_grains(grains_a, grains_b)
+            ):
+                coarser, finer = held
+                findings.append(
+                    RuleFinding(
+                        rule,
+                        STATUS_PASS,
+                        f"different time grains ({', '.join(sorted(grains_a))} vs "
+                        f"{', '.join(sorted(grains_b))}); the {coarser} value "
+                        f"holds for the whole period it covers",
+                    )
+                )
+                caveats.append(
+                    f"time grains differ ({coarser} beside {finer}): the "
+                    f"{coarser} value is one published value repeated across "
+                    f"the period it covers, not a value for every {finer} "
+                    "period; read period_a and period_b for what was combined"
                 )
             else:
                 findings.append(

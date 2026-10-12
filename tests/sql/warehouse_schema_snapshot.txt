@@ -1172,6 +1172,120 @@ v gold.v_metric_timeseries_by_geo
     body     v_metric_timeseries_by_geo.margin_of_error_pct
     body    FROM gold_fred.v_metric_timeseries_by_geo;
 
+v gold_bls.calendar_window_observation
+    column metric_code text
+    column geo_id text
+    column geo_level text
+    column subject_code text
+    column unit text
+    column grain text
+    column period_start date
+    column period_end date
+    column value numeric
+    column value_status text
+    column derivation_kind text
+    column method text
+    column method_version integer
+    column expected_periods integer
+    column present_periods integer
+    column refusal_reason text
+    column component_releases text[]
+    column as_of_date date
+    body WITH served AS (
+    body          SELECT DISTINCT ON (mv_bls_latest.series_id, mv_bls_latest.geo_id) mv_bls_latest.series_id,
+    body             mv_bls_latest.geo_id,
+    body             mv_bls_latest.geo_level,
+    body             mv_bls_latest.units,
+    body             mv_bls_latest.metric_code
+    body            FROM gold_bls.mv_bls_latest
+    body           ORDER BY mv_bls_latest.series_id, mv_bls_latest.geo_id, mv_bls_latest.observation_date DESC
+    body         ), provider AS (
+    body          SELECT served.metric_code,
+    body             served.geo_id,
+    body             served.geo_level,
+    body             served.units,
+    body             annual.period_start,
+    body             annual.period_end,
+    body             annual.value,
+    body             annual.value_status,
+    body             annual.ingested_at
+    body            FROM gold_bls.provider_annual_average annual
+    body              JOIN served ON served.series_id = annual.series_id::text AND served.geo_id = annual.geo_id::text
+    body         )
+    body  SELECT provider.metric_code,
+    body     provider.geo_id,
+    body     provider.geo_level,
+    body     NULL::text AS subject_code,
+    body     provider.units AS unit,
+    body     'year'::text AS grain,
+    body     provider.period_start,
+    body     provider.period_end,
+    body     provider.value,
+    body     provider.value_status,
+    body     'provider_published'::text AS derivation_kind,
+    body     NULL::text AS method,
+    body     NULL::integer AS method_version,
+    body     NULL::integer AS expected_periods,
+    body     NULL::integer AS present_periods,
+    body     NULL::text AS refusal_reason,
+    body     NULL::text[] AS component_releases,
+    body     provider.ingested_at::date AS as_of_date
+    body    FROM provider
+    body UNION ALL
+    body  SELECT derived.metric_code,
+    body     derived.geo_id,
+    body     derived.geo_level,
+    body     derived.subject_code,
+    body     derived.unit,
+    body     derived.grain,
+    body     derived.window_start AS period_start,
+    body     derived.window_end AS period_end,
+    body     derived.value,
+    body         CASE
+    body             WHEN derived.value IS NULL THEN 'incomplete_window'::text
+    body             ELSE 'valid'::text
+    body         END AS value_status,
+    body     'derived'::text AS derivation_kind,
+    body     derived.method,
+    body     derived.method_version,
+    body     derived.expected_periods,
+    body     derived.present_periods,
+    body     derived.refusal_reason,
+    body     derived.component_releases,
+    body     derived.refreshed_at::date AS as_of_date
+    body    FROM gold_bls.derived_calendar_rollup derived
+    body   WHERE NOT (derived.grain = 'year'::text AND (EXISTS ( SELECT 1
+    body            FROM provider
+    body           WHERE provider.metric_code = derived.metric_code AND NOT provider.geo_id IS DISTINCT FROM derived.geo_id AND provider.period_start = derived.window_start)));
+
+r gold_bls.derived_calendar_rollup
+    column metric_code text NOT NULL
+    column geo_id text
+    column geo_level text
+    column subject_code text
+    column unit text
+    column grain text NOT NULL
+    column window_start date NOT NULL
+    column window_end date NOT NULL
+    column method text NOT NULL
+    column method_version integer NOT NULL
+    column expected_periods integer NOT NULL
+    column present_periods integer NOT NULL
+    column value numeric
+    column refusal_reason text
+    column component_releases text[] NOT NULL
+    column derived boolean NOT NULL DEFAULT true
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint bls_rollup_value_or_reason CHECK ((((present_periods = expected_periods) AND (value IS NOT NULL) AND (refusal_reason IS NULL)) OR ((present_periods < expected_periods) AND (value IS NULL) AND (refusal_reason IS NOT NULL))))
+    constraint derived_calendar_rollup_check CHECK ((window_end > window_start))
+    constraint derived_calendar_rollup_check1 CHECK (((present_periods >= 0) AND (present_periods <= expected_periods)))
+    constraint derived_calendar_rollup_derived_check CHECK (derived)
+    constraint derived_calendar_rollup_expected_periods_check CHECK ((expected_periods = ANY (ARRAY[3, 12])))
+    constraint derived_calendar_rollup_grain_check CHECK ((grain = ANY (ARRAY['quarter'::text, 'year'::text])))
+    constraint derived_calendar_rollup_method_check CHECK ((method = ANY (ARRAY['sum'::text, 'mean'::text])))
+    constraint derived_calendar_rollup_method_version_check CHECK ((method_version >= 1))
+    index uq_bls_derived_calendar_rollup CREATE UNIQUE INDEX uq_bls_derived_calendar_rollup ON gold_bls.derived_calendar_rollup USING btree (metric_code, COALESCE(geo_id, ''::text), COALESCE(subject_code, ''::text), grain, window_start)
+
 r gold_bls.dim_bls_measure
     column bls_measure_sk bigint NOT NULL DEFAULT nextval('gold_bls.dim_bls_measure_bls_measure_sk_seq'::regclass)
     column program_code text NOT NULL
@@ -1282,7 +1396,7 @@ v gold_bls.fact_bls_observation
     body    FROM silver_bls.fact_labor_statistics s
     body      JOIN gold_bls.dim_bls_series sr ON sr.series_id = s.series_id::text
     body      JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
-    body   WHERE s.series_id IS NOT NULL AND s.series_id::text <> ''::text;
+    body   WHERE s.series_id IS NOT NULL AND s.series_id::text <> ''::text AND s.period::text <> 'M13'::text;
 
 v gold_bls.fact_observation
     column source_code text
@@ -1488,6 +1602,38 @@ r gold_bls.mv_bls_latest
     index ix_mv_bls_latest_observation_date CREATE INDEX ix_mv_bls_latest_observation_date ON gold_bls.mv_bls_latest USING btree (observation_date)
     index ix_mv_bls_latest_source_metric CREATE INDEX ix_mv_bls_latest_source_metric ON gold_bls.mv_bls_latest USING btree (source_code, metric_code)
     index uq_mv_bls_latest CREATE UNIQUE INDEX uq_mv_bls_latest ON gold_bls.mv_bls_latest USING btree (geo_id, series_id, COALESCE(metric_code, ''::text))
+
+v gold_bls.provider_annual_average
+    column series_id character varying(255)
+    column program_code text
+    column geo_id character varying(255)
+    column geo_sk bigint
+    column year integer
+    column period_start date
+    column period_end date
+    column value numeric
+    column value_status text
+    column source_value text
+    column seasonal_adjustment_status character varying(1)
+    column capture_id uuid
+    column ingested_at timestamp with time zone
+    column time_sk integer
+    body SELECT series_id,
+    body     upper(program::text) AS program_code,
+    body     geo_id,
+    body     geo_sk,
+    body     year,
+    body     duration_start AS period_start,
+    body     duration_end AS period_end,
+    body     value,
+    body     value_status,
+    body     source_value,
+    body     seasonal_adjustment AS seasonal_adjustment_status,
+    body     capture_id,
+    body     ingested_at,
+    body     time_sk
+    body    FROM silver_bls.fact_labor_statistics s
+    body   WHERE period::text = 'M13'::text AND series_id IS NOT NULL AND series_id::text <> ''::text;
 
 r gold_bls.rpt_bls_observations
     column source_code text NOT NULL DEFAULT 'BLS'::text
@@ -2517,6 +2663,48 @@ v gold_fbi.agency_observation_area_filter
     body      JOIN silver_fbi.agency_geography_relationship relationship ON relationship.ori = observation.subject_code AND relationship.product_id = observation.product_id AND observation.period_start >= relationship.effective_start AND observation.period_end <= relationship.effective_end
     body   WHERE observation.subject_type = 'agency'::text AND relationship.resolution_status = 'resolved'::text;
 
+v gold_fbi.calendar_window_observation
+    column metric_code text
+    column geo_id text
+    column geo_level text
+    column subject_code text
+    column unit text
+    column grain text
+    column period_start date
+    column period_end date
+    column value numeric
+    column value_status text
+    column derivation_kind text
+    column method text
+    column method_version integer
+    column expected_periods integer
+    column present_periods integer
+    column refusal_reason text
+    column component_releases text[]
+    column as_of_date date
+    body SELECT metric_code,
+    body     geo_id,
+    body     geo_level,
+    body     subject_code,
+    body     unit,
+    body     grain,
+    body     window_start AS period_start,
+    body     window_end AS period_end,
+    body     value,
+    body         CASE
+    body             WHEN value IS NULL THEN 'incomplete_window'::text
+    body             ELSE 'reported'::text
+    body         END AS value_status,
+    body     'derived'::text AS derivation_kind,
+    body     method,
+    body     method_version,
+    body     expected_periods,
+    body     present_periods,
+    body     refusal_reason,
+    body     component_releases,
+    body     refreshed_at::date AS as_of_date
+    body    FROM gold_fbi.derived_calendar_rollup derived;
+
 v gold_fbi.county_rollup
     column product_id text
     column release_key text
@@ -2718,6 +2906,34 @@ v gold_fbi.crime_observation
     body      JOIN silver_fbi.dim_offense_measure measure ON measure.product_id = fact.product_id AND measure.measure_id = fact.measure_id
     body      JOIN silver_fbi.fact_reporting_participation coverage ON coverage.product_id = fact.product_id AND coverage.release_key = fact.release_key AND coverage.subject_type = fact.subject_type AND coverage.subject_code = fact.subject_code AND coverage.period = fact.period
     body   WHERE release.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['ambiguous'::text, 'unsupported'::text]));
+
+r gold_fbi.derived_calendar_rollup
+    column metric_code text NOT NULL
+    column geo_id text
+    column geo_level text
+    column subject_code text
+    column unit text
+    column grain text NOT NULL
+    column window_start date NOT NULL
+    column window_end date NOT NULL
+    column method text NOT NULL
+    column method_version integer NOT NULL
+    column expected_periods integer NOT NULL
+    column present_periods integer NOT NULL
+    column value numeric
+    column refusal_reason text
+    column component_releases text[] NOT NULL
+    column derived boolean NOT NULL DEFAULT true
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint derived_calendar_rollup_check CHECK ((window_end > window_start))
+    constraint derived_calendar_rollup_check1 CHECK (((present_periods >= 0) AND (present_periods <= expected_periods)))
+    constraint derived_calendar_rollup_derived_check CHECK (derived)
+    constraint derived_calendar_rollup_expected_periods_check CHECK ((expected_periods = ANY (ARRAY[3, 12])))
+    constraint derived_calendar_rollup_grain_check CHECK ((grain = ANY (ARRAY['quarter'::text, 'year'::text])))
+    constraint derived_calendar_rollup_method_check CHECK ((method = ANY (ARRAY['sum'::text, 'mean'::text])))
+    constraint derived_calendar_rollup_method_version_check CHECK ((method_version >= 1))
+    constraint fbi_rollup_value_or_reason CHECK ((((present_periods = expected_periods) AND (value IS NOT NULL) AND (refusal_reason IS NULL)) OR ((present_periods < expected_periods) AND (value IS NULL) AND (refusal_reason IS NOT NULL))))
+    index uq_fbi_derived_calendar_rollup CREATE UNIQUE INDEX uq_fbi_derived_calendar_rollup ON gold_fbi.derived_calendar_rollup USING btree (metric_code, COALESCE(geo_id, ''::text), COALESCE(subject_code, ''::text), grain, window_start)
 
 v gold_fbi.latest_county_rollup
     column product_id text
@@ -4588,9 +4804,9 @@ r silver_bls.fact_labor_statistics
     constraint fact_labor_statistics_published_value_check CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_labor_statistics_time_sk_fkey FOREIGN KEY (time_sk) REFERENCES silver_ref.dim_time(time_sk)
     constraint fact_labor_statistics_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
-    constraint fact_labor_stats_uk UNIQUE (series_id, period_date)
+    constraint fact_labor_stats_uk UNIQUE (series_id, year, period)
     index fact_labor_statistics_pkey CREATE UNIQUE INDEX fact_labor_statistics_pkey ON silver_bls.fact_labor_statistics USING btree (labor_stat_sk)
-    index fact_labor_stats_uk CREATE UNIQUE INDEX fact_labor_stats_uk ON silver_bls.fact_labor_statistics USING btree (series_id, period_date)
+    index fact_labor_stats_uk CREATE UNIQUE INDEX fact_labor_stats_uk ON silver_bls.fact_labor_statistics USING btree (series_id, year, period)
     index idx_fact_labor_geo_sk CREATE INDEX idx_fact_labor_geo_sk ON silver_bls.fact_labor_statistics USING btree (geo_sk)
     index idx_fact_labor_ingested_at CREATE INDEX idx_fact_labor_ingested_at ON silver_bls.fact_labor_statistics USING btree (ingested_at)
     index idx_fact_labor_program CREATE INDEX idx_fact_labor_program ON silver_bls.fact_labor_statistics USING btree (program)

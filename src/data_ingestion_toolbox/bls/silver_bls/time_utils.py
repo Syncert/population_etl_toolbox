@@ -52,6 +52,12 @@ def parse_bls_period_to_date(year: int, period: str) -> tuple[date, date, date]:
     if code == "A01":
         return date(year, 12, 31), date(year, 1, 1), date(year, 12, 31)
 
+    # BLS's annual average of a monthly series, requested with
+    # `annualaverage=true`: a provider-published aggregate over the calendar
+    # year (ADR-0007), distinct from `M12` by its code.
+    if code == "M13":
+        return date(year, 12, 31), date(year, 1, 1), date(year, 12, 31)
+
     logger.warning(
         "Unknown BLS period '%s' for year=%s. Defaulting to annual. See %s",
         period,

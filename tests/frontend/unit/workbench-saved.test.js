@@ -211,3 +211,57 @@ describe("what the library row says about a saved workbench", () => {
     expect(validationState({ valid: true }).state).toBe("ok");
   });
 });
+
+// Covers: WEB-141 — a series' calendar grain or window is part of what is
+// saved and linked: a stored document carries the route's own `time_grain` or
+// `window` (and nothing for a native read), the time view is part of the
+// series' identity, and the document reopens the same view.
+describe("a series' time view", () => {
+  test("is stored as the route's own parameter, and native stores nothing new", async () => {
+    const document = workbenchDocument({
+      series: [
+        { metricCode: "BLS:CUUR0000SA0", geoLevel: "NATIONAL", geoId: "us:1", timeView: "annual" },
+        { metricCode: "BLS:CUUR0000SA0", geoLevel: "NATIONAL", geoId: "us:1", timeView: "trailing_12" },
+        { metricCode: "FRED:UNRATE", geoLevel: "NATIONAL", geoId: "us:1" },
+      ],
+      presentation: "line",
+    });
+    expect(document.series[0]).toMatchObject({ time_grain: "annual", window: null, scope: "latest" });
+    expect(document.series[1]).toMatchObject({ time_grain: "native", window: "trailing_12" });
+    expect(document.series[2].time_grain).toBeUndefined();
+    expect(document.series[2].window).toBeUndefined();
+  });
+
+  test("a time view is a latest read with no release or reduction", () => {
+    const document = workbenchDocument({
+      series: [
+        {
+          metricCode: "BLS:CUUR0000SA0",
+          scope: "as_released",
+          release: "2025-01-15",
+          geoLevel: "NATIONAL",
+          geoId: "us:1",
+          timeView: "quarterly",
+        },
+      ],
+      presentation: "line",
+    });
+    expect(document.series[0]).toMatchObject({
+      scope: "latest",
+      release: null,
+      newest_release_per_period: false,
+      time_grain: "quarterly",
+    });
+  });
+
+  test("reopens the same view through the link", () => {
+    const document = workbenchDocument({
+      series: [{ metricCode: "BLS:CUUR0000SA0", geoLevel: "NATIONAL", geoId: "us:1", timeView: "ytd" }],
+      presentation: "line",
+    });
+    const href = reopenHref(document);
+    expect(href).toContain("tv%3Aytd");
+    const state = parseWorkbenchState(href.slice(href.indexOf("?")));
+    expect(state.series[0].timeView).toBe("ytd");
+  });
+});

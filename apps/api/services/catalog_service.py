@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from apps.api.registry import (
@@ -41,6 +42,12 @@ from apps.api.schemas import (
 from apps.api.services.contracts import require_relation
 from apps.api.services.metric_freshness import is_retired
 from apps.api.versioning import VERSIONED_ROOT
+from data_ingestion_toolbox.semantics.rollups import (
+    ROLLUP_SOURCES,
+    SERVING_WINDOWS,
+    SQL_AGGREGATES,
+)
+from data_ingestion_toolbox.semantics.time_aggregation import authorized_method
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_RELATION,
     METRIC_RELATION,
@@ -201,6 +208,63 @@ def _publishes_aligned_reduction(source_code: str) -> bool:
     return dispatch is not None and dispatch.analysis_ready
 
 
+#: The calendar grains in the order a reader meets them, by the window the
+#: warehouse stores each as.
+_CALENDAR_GRAIN_WORDS = (("quarter", "quarterly"), ("year", "annual"))
+
+
+def _time_grains(source_code: str) -> list[str]:
+    """The ``time_grain`` values ``/observations`` can answer for this source.
+
+    The calendar grains only where the dispatch entry declares a calendar
+    relation: the route serves from that declaration (ADR-0007). Whether one
+    *metric* has figures at a grain is the metric resource's answer.
+    """
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    if dispatch is not None and dispatch.calendar_relation is not None:
+        return ["native", *(word for _, word in _CALENDAR_GRAIN_WORDS)]
+    return ["native"]
+
+
+def _metric_time_windows(source_code: str, metric_code: str) -> list[str]:
+    """The serving windows this metric answers: the route's own check."""
+    method = authorized_method(metric_code)
+    if (
+        method is None
+        or method.method not in SQL_AGGREGATES
+        or source_code not in ROLLUP_SOURCES
+    ):
+        return []
+    return list(SERVING_WINDOWS)
+
+
+def _metric_time_grains(db: Session, source_code: str, metric_code: str) -> list[str]:
+    """The grains this metric has figures at: exactly what the route answers.
+
+    Read from the calendar relation itself, because a metric has a calendar
+    grain only where its provider published the window or an approved method
+    derived it, and the route refuses every other grain.
+    """
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    if dispatch is None or dispatch.calendar_relation is None:
+        return ["native"]
+    require_relation(db, dispatch.calendar_relation)
+    present = {
+        row[0]
+        for row in db.execute(
+            text(
+                f"SELECT DISTINCT grain FROM {dispatch.calendar_relation} "
+                "WHERE metric_code = :metric_code"
+            ),
+            {"metric_code": metric_code},
+        ).all()
+    }
+    return [
+        "native",
+        *(word for grain, word in _CALENDAR_GRAIN_WORDS if grain in present),
+    ]
+
+
 def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListResponse:
     """Every completed source's reviewed capability entry, ordered by code."""
     operations = _versioned_get_operations(openapi_paths)
@@ -221,6 +285,7 @@ def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListRes
             publishes_aligned_reduction=_publishes_aligned_reduction(
                 discovery.source_code
             ),
+            time_grains=_time_grains(discovery.source_code),
         )
         for discovery in sorted(
             SOURCE_DISCOVERY.values(), key=lambda entry: entry.source_code
@@ -269,6 +334,12 @@ def get_metric_capability(
     # retired measure whose history a client still reads.
     capability.publishes_aligned_reduction = _publishes_aligned_reduction(
         discovery.source_code
+    )
+    capability.time_grains = _metric_time_grains(
+        db, discovery.source_code, capability.metric_code
+    )
+    capability.time_windows = _metric_time_windows(
+        discovery.source_code, capability.metric_code
     )
     if is_retired(capability.freshness_state):
         # A retired measure keeps its catalog entry and its history; no route

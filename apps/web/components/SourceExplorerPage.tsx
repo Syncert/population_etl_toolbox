@@ -26,6 +26,7 @@ import {
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
+  getMetric,
   getSources,
   getDistributionBins,
   getHealth,
@@ -159,6 +160,15 @@ import {
 } from "../lib/mapWiring";
 import { tableCaption, tablePageModel, tablePageRows } from "../lib/tablePage";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
+import {
+  NATIVE_TIME_VIEW,
+  TIME_VIEW_LABELS,
+  derivationCaption,
+  mapWindowRows,
+  offeredTimeViews,
+  refusalLabel,
+} from "../lib/timeViews";
+import type { MetricTimeCapability, TimeView } from "../lib/timeViews";
 import type { ExplorerState, ValueScale } from "../lib/urlState";
 
 // The pure view models moved to ../lib/explorerViewModel; existing consumers
@@ -333,6 +343,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // the published releases with one optionally pinned. Both come from the
   // API's declared vocabulary, never from a client-authored list.
   const [observationScope, setObservationScope] = useState<ObservationScope>(DEFAULT_SCOPE);
+  // A calendar grain or window (ADR-0007). Offered only where the selected
+  // metric's capability publishes it, so a view the route refuses is never
+  // on screen (WEB-140).
+  const [timeView, setTimeView] = useState<TimeView>(NATIVE_TIME_VIEW);
+  const [metricTimeCapability, setMetricTimeCapability] = useState<MetricTimeCapability | null>(null);
   const [selectedRelease, setSelectedRelease] = useState("");
   const [selectedPeriod, setSelectedPeriod] = useState("");
   const [periods, setPeriods] = useState<MetricPeriod[]>([]);
@@ -482,6 +497,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       dimensions: Object.fromEntries(
         JSON.parse(dimensionKey) as [string, string][],
       ) as Record<string, string>,
+      timeView,
     }),
     [
       selectedMetric,
@@ -491,8 +507,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       observationScope,
       selectedRelease,
       selectedPeriod,
+      timeView,
     ],
   );
+  const timeViews = useMemo(() => offeredTimeViews(metricTimeCapability), [metricTimeCapability]);
+  const viewsTime = timeView !== NATIVE_TIME_VIEW;
 
   // A stratified source publishes several declared-dimension series per
   // geography. Joining them to one polygon or one line would keep whichever
@@ -510,9 +529,20 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // the legend counts and the coloured polygons describe the same rows.
   // `mapRows` is the one definition of that step; the live map sweep grades
   // it against the rows (WEB-118).
+  // A calendar grain answers several windows per geography; the map keeps
+  // each geography's newest complete window (or its refusal) first.
   const mapView = useMemo(
-    () => mapRows(activeSource, observations, observationScope),
-    [activeSource, observations, observationScope],
+    () =>
+      mapRows(
+        activeSource,
+        viewsTime ? mapWindowRows(observations) : observations,
+        observationScope,
+      ),
+    [activeSource, observations, observationScope, viewsTime],
+  );
+  const derivationNote = useMemo(
+    () => (viewsTime ? derivationCaption(observations) : null),
+    [observations, viewsTime],
   );
   const stratification = mapView.stratification;
   // Only a filter the source declares can narrow the answer; naming a
@@ -1059,6 +1089,26 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     setSelectedPeriod("");
   }, [selectedMetric, selectedPeriod]);
 
+  // The grains and windows the selected metric publishes. A metric changes
+  // what is offered, so the view returns to native until the new metric's
+  // capability says otherwise; a failed read offers native only.
+  useEffect(() => {
+    setTimeView(NATIVE_TIME_VIEW);
+    setMetricTimeCapability(null);
+    if (!selectedMetric) return;
+    let current = true;
+    getMetric(selectedMetric)
+      .then((detail) => {
+        if (current) setMetricTimeCapability(detail as MetricTimeCapability);
+      })
+      .catch(() => {
+        if (current) setMetricTimeCapability(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [selectedMetric]);
+
   useEffect(() => {
     if (!selectedMetric || !activeSource) {
       return;
@@ -1149,9 +1199,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     // metric's latest values. Under an as-released read they would describe
     // a different answer than the one on screen, so the request is not made
     // and the legend says the bins are local to the loaded rows.
-    const servesDistribution = activeSource.servesDistribution && !asReleased;
+    // API bins describe the native publication, so a calendar grain or
+    // window is binned locally over the rows on screen.
+    const servesDistribution = activeSource.servesDistribution && !asReleased && !viewsTime;
     setDistributionStatus(
-      activeSource.servesDistribution && asReleased
+      activeSource.servesDistribution && viewsTime
+        ? {
+            state: "warn",
+            message: `API bins describe the published periods only; local bins over ${TIME_VIEW_LABELS[timeView].toLowerCase()}`,
+          }
+        : activeSource.servesDistribution && asReleased
         ? {
             state: "warn",
             message:
@@ -1268,6 +1325,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     activeSource,
     asReleased,
     selectedPeriod,
+    viewsTime,
+    timeView,
   ]);
 
   // Geographies for a grain the eager state/county read does not cover.
@@ -1363,6 +1422,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           scope: observationScope,
           release: selectedRelease,
           dimensions: effectiveSelections,
+          timeView,
         });
         const pages = await fetchCollectionPages<Observation>(resource, {
           params,
@@ -1378,7 +1438,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         // history comes back as a single point. Every published release is
         // that geography's history; read it and keep the newest release of
         // each period, which is what "latest" means period by period.
-        if (items.length <= 1 && observationScope === SCOPE_LATEST && servesAsReleased(source)) {
+        if (
+          items.length <= 1 &&
+          !viewsTime &&
+          observationScope === SCOPE_LATEST &&
+          servesAsReleased(source)
+        ) {
           // The settled history is the resource's answer where it declares
           // one (API-081): each period as its newest release left it, ranked
           // by the source's own declared release order. Where it does not,
@@ -1449,6 +1514,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     effectiveSelections,
     observationScope,
     selectedRelease,
+    timeView,
+    viewsTime,
   ]);
 
   // The canvas exists only while the boundary can draw the selection, so the
@@ -2367,7 +2434,41 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               </select>
             </div>
 
-            {releasesDeclared ? (
+            {timeViews.length > 1 ? (
+              <div className="control-group">
+                <label htmlFor="time-view-select">Time</label>
+                <select
+                  id="time-view-select"
+                  className="select"
+                  data-testid="time-view-select"
+                  value={timeView}
+                  onChange={(event) => {
+                    const view = event.target.value as TimeView;
+                    setTimeView(view);
+                    if (view !== NATIVE_TIME_VIEW) {
+                      // A calendar grain or window is each window's current
+                      // figure: no release pin and no published period.
+                      setObservationScope(SCOPE_LATEST);
+                      setSelectedRelease("");
+                      setSelectedPeriod("");
+                    }
+                  }}
+                >
+                  {timeViews.map((view) => (
+                    <option value={view} key={view}>
+                      {TIME_VIEW_LABELS[view]}
+                    </option>
+                  ))}
+                </select>
+                {derivationNote ? (
+                  <p className="coverage-note" data-testid="derivation-caption">
+                    {derivationNote}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {releasesDeclared && !viewsTime ? (
               <div className="control-group">
                 <label htmlFor="publication-select">Publication</label>
                 <select
@@ -2413,7 +2514,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               </div>
             ) : null}
 
-            {activeSource?.servesPeriods && observationScope === SCOPE_LATEST ? (
+            {activeSource?.servesPeriods && observationScope === SCOPE_LATEST && !viewsTime ? (
               <div className="control-group">
                 <label htmlFor="period-select">Period</label>
                 <select
@@ -2643,9 +2744,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <div>
                     <dt>{selectedPeriod ? "Selected period value" : "Latest value"}</dt>
                     <dd>
-                      {selectedCountyHasObservation
-                        ? `${formatObservationValue(selectedCounty.value)} ${observationUnit(selectedCounty)}`
-                        : missingValueLabel}
+                      {refusalLabel(selectedCounty) ||
+                        (selectedCountyHasObservation
+                          ? `${formatObservationValue(selectedCounty.value)} ${observationUnit(selectedCounty)}`
+                          : missingValueLabel)}
                     </dd>
                   </div>
                   <div>
@@ -2784,8 +2886,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   </>
                 ) : (
                   <>
-                    <span>{missingValueLabel}</span>
-                    <small>No value was returned for the selected metric and vintage.</small>
+                    <span>{refusalLabel(hoveredCounty.observation) || missingValueLabel}</span>
+                    <small>
+                      {refusalLabel(hoveredCounty.observation)
+                        ? "Not every month in this window was reported, so no value is derived."
+                        : "No value was returned for the selected metric and vintage."}
+                    </small>
                   </>
                 )}
               </div>

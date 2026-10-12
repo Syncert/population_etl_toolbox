@@ -1676,6 +1676,62 @@ def bls_contract_conformance(
     ]
 
 
+def bls_derived_annual_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BLS-008 -- a derived year agrees with BLS's own annual average.
+
+    Only complete derived years are compared, and only where BLS published an
+    annual average for the same series and geography: everywhere else there is
+    nothing to reconcile, which is the common case for seasonally adjusted
+    series, which BLS publishes no annual average for.
+    """
+    del scope
+    compared = _count(
+        cursor,
+        """
+        SELECT COUNT(*)
+          FROM gold_bls.derived_calendar_rollup AS derived
+          JOIN gold_bls.provider_annual_average AS provider
+            ON 'BLS:' || provider.series_id = derived.metric_code
+           AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
+           AND provider.period_start = derived.window_start
+         WHERE derived.grain = 'year'
+           AND derived.value IS NOT NULL
+           AND provider.value IS NOT NULL
+        """,
+    )
+    if compared == 0:
+        return [RuleOutcome("gold_bls.derived_calendar_rollup", "not_applicable")]
+    disagreements, total = _offenders(
+        cursor,
+        """
+        SELECT derived.metric_code, derived.geo_id, derived.window_start,
+               derived.value AS derived_value, provider.value AS provider_value
+          FROM gold_bls.derived_calendar_rollup AS derived
+          JOIN gold_bls.provider_annual_average AS provider
+            ON 'BLS:' || provider.series_id = derived.metric_code
+           AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
+           AND provider.period_start = derived.window_start
+         WHERE derived.grain = 'year'
+           AND derived.value IS NOT NULL
+           AND provider.value IS NOT NULL
+           AND ABS(derived.value - provider.value)
+               > GREATEST(0.0005, ABS(provider.value) * 0.000001)
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "gold_bls.derived_calendar_rollup",
+            "fail" if disagreements else "pass",
+            observed_count=total,
+            expected_count=0,
+            evidence=disagreements[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
     "DQ-ACS-004": acs_published_row_resolution,
@@ -1683,6 +1739,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-BLS-004": bls_geography_accountability,
     "DQ-BLS-007": bls_contract_conformance,
+    "DQ-BLS-008": bls_derived_annual_reconciliation,
     "DQ-FRED-002": fred_slice_reconciliation,
     "DQ-FRED-003": fred_missing_marker_and_series_ownership,
     "DQ-FRED-004": fred_observation_dates_within_the_published_range,

@@ -61,7 +61,10 @@ CREATE TABLE IF NOT EXISTS silver_bls.fact_labor_statistics (
     capture_id UUID REFERENCES raw_capture.response_capture(capture_id),
     load_batch_id UUID NOT NULL,
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT fact_labor_stats_uk UNIQUE (series_id, period_date),
+    -- The period code, not its date: BLS's annual average (`M13`) ends on
+    -- December 31 like `M12`, and the two are different observations
+    -- (ADR-0007: provider aggregates are facts in their own right).
+    CONSTRAINT fact_labor_stats_uk UNIQUE (series_id, year, period),
     CONSTRAINT fact_labor_statistics_published_value_check
         CHECK (value_status <> 'valid' OR value IS NOT NULL)
 );

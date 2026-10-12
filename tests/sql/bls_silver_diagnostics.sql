@@ -70,15 +70,15 @@ SELECT
 FROM silver_bls.fact_labor_statistics
 WHERE labor_stat_sk IS NULL;
 
--- Check unique constraint (series_id, period_date)
+-- Check unique constraint (series_id, year, period)
 SELECT 
-    'Duplicate (series_id, period_date)' AS test_name,
+    'Duplicate (series_id, year, period)' AS test_name,
     COUNT(*) AS violations,
     CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS status
 FROM (
-    SELECT series_id, period_date, COUNT(*) as cnt
+    SELECT series_id, year, period, COUNT(*) as cnt
     FROM silver_bls.fact_labor_statistics
-    GROUP BY series_id, period_date
+    GROUP BY series_id, year, period
     HAVING COUNT(*) > 1
 ) dupes;
 

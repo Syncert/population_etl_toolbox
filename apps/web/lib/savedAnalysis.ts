@@ -18,6 +18,8 @@
 //    the reopen links they produce carry the document's own public
 //    selection, never its name, id, owner, or token.
 
+import { timeViewDocumentFields, timeViewFromDocument } from "./timeViews";
+import type { TimeView } from "./timeViews";
 import type {
   AnalysisDocument,
   ConfigurationValidation,
@@ -147,6 +149,7 @@ export function workbenchDocument(input: {
     geoLevel?: string;
     geoId?: string;
     filters?: Record<string, string>;
+    timeView?: TimeView;
   }[];
   presentation: WorkbenchPresentationWord;
   presentationOptions?: Record<string, unknown>;
@@ -169,10 +172,17 @@ export function workbenchDocument(input: {
         filters[name] = value;
       }
     }
-    const scope = entry.scope || "latest";
+    const timeFields = timeViewDocumentFields(entry.timeView);
+    // A calendar grain or window is a latest read with no release or
+    // reduction: the route refuses any of them beside it.
+    const viewsTime = timeFields.time_grain !== "native" || timeFields.window !== null;
+    const scope = viewsTime ? "latest" : entry.scope || "latest";
     return {
       metric_code: entry.metricCode,
       scope,
+      // Only a time view is written: a native read stores exactly what it
+      // stored before the fields existed.
+      ...(viewsTime ? timeFields : {}),
       release: scope === "as_released" && entry.release ? entry.release : null,
       newest_per_geography: false,
       // The workbench reads a settled history where the resource serves one,
@@ -298,6 +308,7 @@ export function reopenHref(document: AnalysisDocument | null | undefined): strin
               ? (seriesFilters.geo_id as string)
               : undefined,
           filters: Object.keys(dimensions).length > 0 ? dimensions : undefined,
+          timeView: timeViewFromDocument(entry),
         };
       }),
       presentation: document.presentation?.type,

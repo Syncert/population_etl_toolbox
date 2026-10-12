@@ -291,6 +291,19 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
         # Incomplete, not contradictory: stored and reported on read.
         return None
     envelope, document = block.envelope, block.document
+    # An evidence envelope records the published rows a block argued from;
+    # it has no field yet for a derived calendar window, so a block whose
+    # query asks for one could not say what it showed (ADR-0007).
+    reads = [document, *(document.series or [])]
+    if any(
+        (getattr(read, "time_grain", "native") or "native") != "native"
+        or getattr(read, "window", None) is not None
+        for read in reads
+    ):
+        return (
+            f"block '{block.block_id}' asks for a calendar grain or window, "
+            "which an evidence block cannot carry yet"
+        )
     asked = _document_metric_codes(document)
     named = set(envelope.metric_codes)
     stray = sorted(named - asked)

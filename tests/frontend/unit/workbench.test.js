@@ -403,3 +403,54 @@ describe("what the chart and its legend say", () => {
     expect(label).toMatch(/cut short by the page bound/);
   });
 });
+
+test("a time view is part of a series' identity, and native keeps the old key", async () => {
+  // Covers: WEB-141 — the same measure by month and by year are two series.
+  const { seriesKey: key } = await import("../../../apps/web/lib/workbench");
+  const base = {
+    sourceKey: "bls",
+    sourceCode: "BLS",
+    metricCode: "BLS:CUUR0000SA0",
+    scope: "latest",
+    geoLevel: "NATIONAL",
+    geoId: "us:1",
+    filters: {},
+  };
+  expect(key({ ...base, timeView: "native" })).toBe(key(base));
+  expect(key({ ...base, timeView: "annual" })).not.toBe(key(base));
+  expect(key({ ...base, timeView: "annual" })).not.toBe(key({ ...base, timeView: "quarterly" }));
+});
+
+test("a time-view series names whose figures it draws", async () => {
+  // Covers: WEB-141 — the legend words for derived, provider and mixed rows.
+  const { derivationLabel } = await import("../../../apps/web/lib/timeViews");
+  const derived = { derivation: { kind: "derived", method: "mean" } };
+  const provider = { derivation: { kind: "provider_published" } };
+  expect(derivationLabel([derived])).toBe("derived (mean)");
+  expect(derivationLabel([provider])).toBe("provider-published");
+  expect(derivationLabel([provider, derived])).toBe("provider-published and derived (mean)");
+  expect(derivationLabel([{ value: "1" }])).toBeNull();
+});
+
+test("an annual series beside a monthly one is held level across its year", async () => {
+  // Covers: WEB-141 — the owner's WT-4 decision: no alignment through a
+  // rollup; a coarser series is drawn as its published value repeated across
+  // the period it covers, and a chart of one grain is unchanged.
+  const { seriesHeldAcrossPeriods, pointPeriodEnd } = await import(
+    "../../../apps/web/lib/workbench"
+  );
+  const point = (start, end) => ({
+    period: start,
+    time: Date.parse(start),
+    value: 1,
+    row: { period_start: start, period_end: end },
+  });
+  const monthly = { key: "m", points: [point("2024-01-01", "2024-01-31"), point("2024-02-01", "2024-02-29")] };
+  const annual = { key: "a", points: [point("2023-01-01", "2023-12-31"), point("2024-01-01", "2024-12-31")] };
+  const otherMonthly = { key: "m2", points: [point("2024-03-01", "2024-03-31")] };
+  expect([...seriesHeldAcrossPeriods([monthly, annual])]).toEqual(["a"]);
+  expect(seriesHeldAcrossPeriods([monthly, otherMonthly]).size).toBe(0);
+  expect(seriesHeldAcrossPeriods([annual]).size).toBe(0);
+  expect(pointPeriodEnd(point("2024-01-01", "2024-01-01"))).toBeNull();
+  expect(pointPeriodEnd(annual.points[1])).toBe(Date.parse("2024-12-31"));
+});
