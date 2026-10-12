@@ -1,0 +1,12 @@
+Survey,FIPS,FIPS,Region,Division,County,,1-unit,,,2-units,,,3-4 units,,,5+ units,,,1-unit rep,,,2-units rep,,,3-4 units rep,,, 5+units rep
+Date,State,County,Code,Code,Name,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value
+ 
+202403,01,001,3,6,Autauga County                                              ,15,15,5744206,0,0,0,0,0,0,0,0,0,15,15,5744206,0,0,0,0,0,0,0,0,0
+202403,10,001,3,5,Kent County                                                 ,81,81,12451035,4,8,1635000,0,0,0,0,0,0,81,81,12451035,4,8,1635000,0,0,0,0,0,0
+202403,10,003,3,5,New Castle County                                           ,159,159,19767627,0,0,0,0,0,0,1,8,1009428,159,159,19767627,0,0,0,0,0,0,1,8,1009428
+202403,10,005,3,5,Sussex County                                               ,316,316,43164792,6,12,1489332,0,0,0,1,12,1800000,316,316,43164792,6,12,1489332,0,0,0,1,12,1800000
+202403,23,000,1,1,Maine Unorganized Territory                                 ,7,7,929602,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+202403,26,000,2,3,Michigan Balance of State                                   ,6,6,1126518,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+202403,30,000,4,8,Montana Balance of State                                    ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+202403,35,000,4,8,New Mexico Balance of State                                 ,207,207,36102700,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+202403,41,000,4,9,Oregon Balance of State                                     ,17,17,1441000,0,0,0,0,0,0,0,0,0,17,17,1441000,0,0,0,0,0,0,0,0,0

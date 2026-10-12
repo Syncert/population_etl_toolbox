@@ -651,6 +651,224 @@ def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome
     ]
 
 
+def bea_table_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BEA-002 — every in-scope captured row is replayed; no table is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.bea_table_capture")
+    if total == 0:
+        return [RuleOutcome("control.bea_table_capture", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT capture.run_id, capture.table_code, capture.status
+          FROM control.bea_table_capture AS capture
+          LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT revision.source_row_index) AS rows_replayed
+                  FROM silver_bea.observation_revision AS revision
+                 WHERE revision.capture_id = capture.capture_id
+          ) AS parsed ON TRUE
+         WHERE capture.status = 'captured'
+            OR (capture.status IN ('silver_ready', 'published')
+                AND parsed.rows_replayed <> capture.in_scope_row_count)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.bea_table_capture",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def qcew_slice_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-QCEW-002 — every in-scope captured row is a revision or quarantined."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.bls_qcew_slice")
+    if total == 0:
+        return [RuleOutcome("control.bls_qcew_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.industry_code, slice.status
+          FROM control.bls_qcew_slice AS slice
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS revisions
+                  FROM silver_bls_qcew.observation_revision AS revision
+                 WHERE revision.capture_id = slice.capture_id
+          ) AS parsed ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT quarantine.source_row_index) AS rows_set_aside
+                  FROM silver_bls_qcew.observation_quarantine AS quarantine
+                 WHERE quarantine.capture_id = slice.capture_id
+                   AND quarantine.source_row_index > 0
+          ) AS set_aside ON TRUE
+         WHERE slice.status = 'captured'
+            OR (slice.status IN ('silver_ready', 'published')
+                AND parsed.revisions <> (slice.in_scope_row_count - set_aside.rows_set_aside)
+                    * CASE slice.period WHEN 'a' THEN 4 ELSE 6 END)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.bls_qcew_slice",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bps_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-BPS-002 — every in-scope captured row is a revision; no file is left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.census_bps_slice")
+    if total == 0:
+        return [RuleOutcome("control.census_bps_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.slice_key, slice.status
+          FROM control.census_bps_slice AS slice
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS revisions
+                  FROM silver_census_bps.observation_revision AS revision
+                 WHERE revision.capture_id = slice.capture_id
+          ) AS parsed ON TRUE
+         WHERE slice.status = 'captured'
+            OR (slice.status IN ('silver_ready', 'published')
+                AND parsed.revisions <> slice.in_scope_row_count
+                    * CASE WHEN slice.slice_key = 'state' THEN 8 ELSE 12 END)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.census_bps_slice",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def irs_migration_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-IRS-002 — every captured row is a flow, a refusal or quarantined; no file left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.irs_migration_file")
+    if total == 0:
+        return [RuleOutcome("control.irs_migration_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.direction, file.year_pair, file.status
+          FROM control.irs_migration_file AS file
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS rows_replayed
+                  FROM silver_irs_migration.flow_revision AS revision
+                 WHERE revision.capture_id = file.capture_id
+          ) AS parsed ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS flows
+                  FROM silver_irs_migration.fact_flow AS fact
+                 WHERE fact.capture_id = file.capture_id
+          ) AS conformed ON TRUE
+         WHERE file.status = 'captured'
+            OR (file.status IN ('silver_ready', 'published')
+                AND (parsed.rows_replayed <> file.parsed_row_count
+                     OR conformed.flows + file.refused_row_count <> file.parsed_row_count))
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "control.irs_migration_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def irs_migration_total_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-IRS-004 — the parts of a county's migration sum to the file's own total.
+
+    Read from every row the newest published file states, refused or not:
+    the rule checks the file against itself, before conformance.
+    """
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.irs_migration_file WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_irs_migration.flow_revision", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH published AS (
+            SELECT file.direction, file.year_pair, file.capture_id, capture.retrieved_at
+              FROM control.irs_migration_file AS file
+              JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+             WHERE file.status = 'published'
+        ), newest AS (
+            SELECT candidate.capture_id
+              FROM published AS candidate
+             WHERE NOT EXISTS (
+                   SELECT 1 FROM published AS later
+                    WHERE later.direction = candidate.direction
+                      AND later.year_pair = candidate.year_pair
+                      AND (later.retrieved_at, later.capture_id::TEXT)
+                          > (candidate.retrieved_at, candidate.capture_id::TEXT)
+             )
+        ), parts AS (
+            SELECT revision.direction, revision.year_pair, revision.subject_geo_id,
+                   MAX(revision.returns) FILTER (WHERE revision.category = 'total_us_and_foreign')
+                       AS total_returns,
+                   COALESCE(SUM(revision.returns) FILTER (
+                       WHERE revision.category = 'county'
+                          OR LEFT(revision.category, 8) = 'foreign_'
+                          OR revision.category IN ('other_flows_same_state', 'other_flows_different_state')
+                   ), 0) AS part_returns,
+                   COUNT(*) FILTER (WHERE revision.value_status = 'withheld') AS withheld_parts
+              FROM silver_irs_migration.flow_revision AS revision
+              JOIN newest ON newest.capture_id = revision.capture_id
+             GROUP BY revision.direction, revision.year_pair, revision.subject_geo_id
+        )
+        SELECT direction, year_pair, subject_geo_id, total_returns, part_returns, withheld_parts
+          FROM parts
+         WHERE total_returns IS NOT NULL
+           AND (part_returns > total_returns
+                OR (withheld_parts = 0 AND part_returns <> total_returns))
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_irs_migration.flow_revision",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def nass_suppression_vocabulary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1755,7 +1973,12 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
+    "DQ-BEA-002": bea_table_reconciliation,
+    "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-REF-003": reference_resolution_accounting,
     "DQ-REF-005": current_geography_projection,
     "DQ-GLOSSARY-001": publisher_registry_reconciliation,
+    "DQ-BPS-002": bps_file_reconciliation,
+    "DQ-IRS-002": irs_migration_file_reconciliation,
+    "DQ-IRS-004": irs_migration_total_reconciliation,
 }

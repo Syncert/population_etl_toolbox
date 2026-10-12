@@ -317,8 +317,50 @@ latest release, it pins that release for subsequent pages and includes the
 release and page offset in its reproduction link, so a new publication
 cannot mix two releases into the displayed series.
 
+### County migration flows
+
+`GET /api/v1/migration-flows` serves the IRS Statistics of Income
+county-to-county migration files: for one county, one direction and one
+pair of filing years, where its movers came from (`direction=inflow`) or
+went (`direction=outflow`). It is provider-published data, not a
+derivation (`derived: false`), and every row has two geographies, so it is
+its own resource rather than an observation ([ADR-0008](../decisions/0008-origin-destination-flow-facts.md)).
+
+Parameters: `geo_id` (a county, `state:SS|county:CCC`; anything else is
+422), `direction` (`inflow` or `outflow`), `year_pair` (SOI's label, such
+as `2022-2023`; the default is the newest published), `measure` (`returns`,
+`individuals` or `agi`, the ranking; default `returns`), `limit` (1 to 500,
+default 25). A county no published file covers answers 404.
+
+The response carries three lists, never mixed:
+
+- `items`: the county-to-county flows, largest first by `measure`, each with
+  `origin_geo_id` and `destination_geo_id`; `total` is how many the file
+  publishes for this county.
+- `totals`: the file's own totals for the county (US and foreign, US, same
+  state, different state, foreign) and its non-migrants.
+- `categories`: SOI's "Other flows" (same state, different state, by
+  region) and foreign rows. Every flow of fewer than 20 returns is in one
+  of these; nothing redistributes them into counties.
+
+Reading a flow row:
+
+- **Returns are tax filers whose address changed** between the two filing
+  years; `individuals` approximates people (filers and dependents);
+  `agi` is the movers' adjusted gross income on the year-2 return, in
+  thousands of dollars, as text.
+- **A deleted category is withheld.** SOI deletes a category of fewer than
+  20 returns to protect taxpayers; it is `value_status: withheld` with
+  every measure `null`, and `value_source` keeps SOI's `-1,-1,-1`.
+- **This is not PEP net migration.** Tax filers are a different population
+  from the Census Bureau's estimates, and no net figure is computed here.
+- The file totals are also ordinary observations: a metric code is
+  `IRS_MIGRATION:<direction>:<category>:<measure>`, for example
+  `IRS_MIGRATION:inflow:total_us:returns`, with the pair of years in
+  `dimensions.year_pair`.
+
 `GET /api/v1/observations` answers for **every** completed source (Census ACS,
-BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS). The metric resolves to its
+BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS, IRS SOI migration). The metric resolves to its
 owning source through the published glossary and is read from that source's
 own serving relations, so its semantics survive.
 
@@ -526,6 +568,124 @@ by estimation period rather than by year, and its first and last periods
 run 15 and 9 months, which this API's single observation date cannot state
 without misreporting the period they cover.
 
+### Reading a BEA row: current, chained or per capita
+
+`BEA` serves the Bureau of Economic Analysis's regional economic accounts for
+the nation, every state and every county: personal income in total and per
+capita, its major components, earnings by industry, and county GDP. A
+metric code is `BEA:<table>:<line>`. For example, `BEA:CAINC1:3` is per
+capita personal income and `BEA:CAGDP1:1` is real GDP.
+
+- **Read `dimensions.dollar_basis` before comparing two rows.** It is
+  `current_dollars`, `chained_dollars` (real, in chained 2017 dollars),
+  `per_capita_current_dollars` or `persons`. Real and current-dollar GDP are
+  separate metrics and nothing here mixes them. Most dollar lines are in
+  thousands of dollars; `unit` says which.
+- **Per capita income uses BEA's own population** (`BEA:CAINC1:2`), not the
+  ACS or PEP figure, so dividing personal income by another source's
+  population will not reproduce it.
+- **This is not ACS income.** ACS median household income is a survey of
+  residents; BEA personal income is an account that includes transfer
+  receipts and employer contributions. The two are separate metrics and are
+  never combined.
+- **BEA revises earlier years with every release.** Each row's release is
+  BEA's release date, read from the file. `scope=as_released` lists each
+  release beside the one it revised.
+- **A withheld cell is not a zero.** `(D)` (withheld to avoid disclosing an
+  individual business), `(NA)`, `(NM)` and `(L)` are `withheld`,
+  `not_available`, `not_meaningful` and `below_threshold`, with a `null`
+  value; `dimensions.value_source` keeps the code.
+- BEA's regions and its combined areas, such as the Virginia independent
+  cities merged with their surrounding county, are not served: they are not
+  counties.
+
+### Reading a QCEW row: jobs located here, by industry and ownership
+
+`BLS_QCEW` serves the Bureau of Labor Statistics Quarterly Census of
+Employment and Wages for the nation, every state and every county. A metric
+code is `BLS_QCEW:<measure>:<industry>:<ownership>`. For example,
+`BLS_QCEW:employment:10:0` is employment in all industries with total
+covered ownership, and `BLS_QCEW:avg_weekly_wage:62:5` is the average weekly
+wage in private health care and social assistance. Every row carries the
+industry and ownership as `dimensions.industry_code`/`industry_title` and
+`dimensions.own_code`/`ownership_title`, so no row reads without them.
+
+**These are jobs located in the area, not residents who work.** QCEW counts
+employment where the employer reports it, from unemployment-insurance
+records; `dimensions.observation_basis` says so on every row. The `BLS`
+LAUS measures count residents who are employed, wherever they work. A county
+with a large employer and few residents has more QCEW jobs than LAUS
+employed residents. The two are different quantities, so do not subtract
+one from the other or add them.
+
+- `employment` is published per month: a quarter's row is three rows, one
+  for each month, each with its own `period_start` and `period_end`.
+- `establishments`, `total_wages` and `avg_weekly_wage` are quarterly.
+- `annual_avg_*` and `total_annual_wages` are the provider's own annual
+  averages, separate metrics from the quarterly ones and never derived here.
+- A cell QCEW did not disclose has `value_status` `withheld`, a `null`
+  value and `dimensions.disclosure_code` `N`. It is not zero. A
+  `not_published` row (code `-`) is the same.
+- A row's `release` is the time the warehouse read the file, because the
+  interface names no release. A file whose bytes changed is a new release
+| IRS SOI migration | the time the warehouse read the file | **Not an SOI publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
+  beside the old one, readable with `scope=as_released`.
+
+### Reading a permits row: authorized, not built
+
+`CENSUS_BPS` serves the Census Bureau's Building Permits Survey: new privately
+owned housing units authorized by building permits, with the buildings and
+the valuation of construction authorized, for the nation, every state,
+every county and every permit-issuing place. A metric code is
+`CENSUS_BPS:<measure>:<structure type>:<frequency>`. For example,
+`CENSUS_BPS:units:5_plus_units:monthly` is units authorized in buildings of
+five or more units, each month.
+
+- **An authorization is not a start or a completion.** A permitted unit may
+  be built later or never. `dimensions.observation_basis` says so on every
+  row, and FRED's national `HOUST` (starts) is a different quantity.
+- **The value is the Bureau's estimate, which imputes for jurisdictions that
+  did not report.** `dimensions.reported_value` is what jurisdictions
+  reported themselves. The two are kept apart, and nothing here subtracts
+  one from the other.
+- **Monthly and annual are separate metrics.** The annual figure is the
+  Bureau's own (the December year-to-date county and state files and the
+  annual place files), not a sum computed here.
+- **Places are annual only, from 2007, and only permit-issuing ones.** A
+  place that reported no month of the year has `value_status`
+  `not_reported`, a `null` value and `dimensions.months_reported` `0`; its
+  zeros in the file are not served as zeros. Unincorporated remainders and
+  New England towns without a place code are not served.
+- **State and national rows carry buildings and units, not valuation.** The
+  state file states valuation in thousands of dollars, so it is not mixed
+  with the dollars the county and place files use.
+- A jurisdiction missing from a month's file has no row for that month. It
+  is never a zero.
+
+### SAIPE and SAHIE are model-based estimates, not survey estimates
+
+`CENSUS_SAIPE_SAHIE` serves the Census Bureau's Small Area Income and Poverty
+Estimates (`saipe`) and Small Area Health Insurance Estimates (`sahie`):
+poverty rates and counts, median household income, and the uninsured share
+and count of people under 65, for the nation, every state and every county,
+every year. A metric code is `CENSUS_SAIPE_SAHIE:<dataset>:<measure>` -- for
+example `CENSUS_SAIPE_SAHIE:saipe:SAEMHI` for median household income.
+
+They resemble ACS figures and are not ACS figures. Each is a model-based
+annual estimate that combines survey data with administrative records, and
+`dimensions.estimate_method` says so on every row
+(`model-based annual estimate (SAIPE)`). An ACS 5-year estimate describes a
+five-year period; a SAIPE estimate describes one year. Show them side by side
+with their own labels rather than substituting one for the other.
+
+Every row carries the Bureau's 90 percent interval and margin of error under
+`uncertainty` (`confidence_lower`, `confidence_upper`, `margin_of_error`).
+SAHIE rows are the all-incomes, both-sexes, all-races figure for people under
+65; no other SAHIE category is served yet. A row's `release` is the time the
+warehouse read the Bureau's response, because the API names no release; a
+changed response is a new release beside the old one, readable with
+`scope=as_released`.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -647,6 +807,10 @@ prevent:
 | FBI UCR | the release key | The provider's dataset release, with its own refresh date |
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
+| Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
+| Census Building Permits | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
+| BLS QCEW | the time the warehouse read the file | **Not a BLS publication.** The open-data interface names no release, so the identity is the read; a file whose bytes differ from the one held is a new release, and one that matches adds nothing |
+| BEA | the release date | BEA's release date, from the "Last updated" line of the file |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
 | FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
 
@@ -1435,6 +1599,7 @@ status code on the one class of error the API can explain.
 | `/catalog/geographies/{geo_id}/related` | `relationship`, then `geo_id` |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
+| `/migration-flows` | `items` by the chosen measure, largest first, then `counterpart_geo_id`; `totals` in SOI's header order; `categories` by SOI's counterpart code |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
 | `/crime/county-rollup` | `product_id`, `measure_id`, `geo_id`, `period_start`, then `release_key` — the roll-up's own grain, so no two rows can tie |
 | `/analysis-configurations` | `name`, then `configuration_id`. Names are unique per owner, and the id closes the order regardless |

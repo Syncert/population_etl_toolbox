@@ -3,3 +3,7 @@
 # from the LF bytes a Linux deployment applied, and every step then reads as
 # drifted -- or, applied from Windows, records a hash Linux calls drift.
 *.sql text eol=lf
+
+# Provider captures are kept byte for byte, including the CRLF line endings
+# the QCEW open-data files are published with.
+tests/fixtures/bls_qcew/*.csv -text

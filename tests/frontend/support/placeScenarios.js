@@ -4,7 +4,7 @@
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
 import { servedParameters } from "./servedContract.js";
 
-const sources = ["CENSUS_ACS", "CENSUS_PEP", "BLS", "CDC", "FBI_UCR", "USDA_NASS"];
+const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
 
 export const NATION = { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "us:1" };
 export const STATES = [
@@ -41,8 +41,17 @@ function grainsFor(code) {
 function unitFor(code) {
   if (code.startsWith("CENSUS_PEP:R")) return "per_1000_population";
   if (code.startsWith("CENSUS_PEP:")) return "persons";
+  if (code === "BEA:CAINC1:3") return "Dollars";
+  if (code === "BEA:CAGDP1:1") return "Thousands of chained 2017 dollars";
+  if (code.startsWith("BEA:")) return "Thousands of dollars";
+  if (code.startsWith("BLS_QCEW:avg_weekly_wage")) return "dollars per week";
+  if (code.startsWith("BLS_QCEW:")) return "jobs";
+  if (code.startsWith("CENSUS_BPS:")) return "housing units";
   if (code.startsWith("BLS:")) return "Percent";
   if (code.startsWith("CDC:")) return "%";
+  if (/SAEPOVRT|PCTUI/.test(code)) return "percent";
+  if (code.endsWith(":SAEMHI")) return "dollars";
+  if (code.startsWith("CENSUS_SAIPE_SAHIE:")) return "people";
   if (code.startsWith("FBI_UCR:")) return "per_100000_population";
   if (code.startsWith("USDA_NASS:")) return "ACRES";
   if (/B19013|B19301|B25064|B25077/.test(code)) return "dollars";
@@ -58,7 +67,7 @@ const metrics = Object.fromEntries(codes.map((code) => [code, {
 }]));
 
 const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5 };
-const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R/;
+const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R|SAEPOVRT|SAEMHI|PCTUI/;
 
 // Relationships as the reference would record them. "Crossing city" spans
 // Dane and Rock counties: 60% of its area in Dane, 40% in Rock.
@@ -92,7 +101,7 @@ export const RELATED = {
   ],
 };
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true } = {}) {
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -153,7 +162,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
     if (path === "/api/v1/catalog/metrics") return route.fulfill({ json: { total: 0, limit: 6, offset: 0, items: [] } });
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);
-      return metrics[code] ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
+      const withheld = withoutSource && code.startsWith(`${withoutSource}:`);
+      return metrics[code] && !withheld ? route.fulfill({ json: metrics[code] }) : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
     }
     if (path === "/api/v1/observations" && params.get("geo_level") === "TRACT") {
       // Two of Dane County's three fixture tracts publish a value; the third
@@ -180,17 +190,52 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true } 
       const empty = !metric.valid_geo_grains.includes(place.geo_level) || (code.startsWith("USDA_NASS") && geo === "state:55|county:025");
       const newest = params.get("limit") === "1" || params.get("newest_per_geography") === "true";
       const lastYear = nationLagsMedianAge && geo === "us:1" && code.endsWith("B01002_001") ? 2023 : 2024;
+      // BEA withholds mining earnings for Dane County in this fixture, as it
+      // does for a sector that would disclose one employer; QCEW withholds a
+      // sector it cannot disclose, and Mining is withheld here too.
+      const withheld = (code === "BEA:CAINC5N:200" || code === "BLS_QCEW:employment:21:5") && geo === "state:55|county:025";
       let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
         const year = lastYear - 5 + index;
+        const monthly = code.endsWith(":monthly");
         const base = rates.test(code) ? 40 + (scale[geo] || 1) : 1000 * (scale[geo] || 1);
         return { metric_code: code, source_code: metric.source_code, geo_id: geo, geo_level: place.geo_level, geo_name: place.geo_name,
-          value: String(Math.round(base * (1 + index * 0.02) * 100) / 100), value_status: "valid", unit: metric.units,
-          period_start: `${year}-01-01`, period_end: `${year}-12-31`, release: "fixture-release-2025", as_of: "2025-09-01", dimensions: {},
-          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" } : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" } : null,
+          value: withheld ? null : String(Math.round(base * (1 + index * 0.02) * 100) / 100), value_status: withheld ? "withheld" : "valid", unit: metric.units,
+          period_start: monthly ? `2024-${String(index + 1).padStart(2, "0")}-01` : `${year}-01-01`,
+          period_end: monthly ? `2024-${String(index + 1).padStart(2, "0")}-28` : `${year}-12-31`,
+          release: "fixture-release-2025", as_of: "2025-09-01",
+          dimensions: code.startsWith("BEA:")
+            ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "" }
+            : code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
+          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
+            : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
+            : code.startsWith("CENSUS_SAIPE_SAHIE") ? { margin_of_error: "1.4", confidence_lower: "39.6", confidence_upper: "42.4" }
+            : null,
+          ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
           coverage: null };
       });
       if (newest) items = items.slice(-1);
       return route.fulfill({ json: { metric_code: code, source_code: metric.source_code, scope: "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } });
+    }
+    if (path === "/api/v1/migration-flows") {
+      // IRS SOI flows exist for Dane County only; every other county is the
+      // API's 404, which the page answers by showing nothing.
+      if (params.get("geo_id") !== "state:55|county:025") return route.fulfill({ status: 404, json: { detail: "No published SOI file covers this county." } });
+      const inflow = params.get("direction") === "inflow";
+      const counties = inflow
+        ? [["state:27|county:053", "Hennepin County", 412], ["state:55|county:105", "Rock County", 388], ["state:17|county:031", "Cook County", 301]]
+        : [["state:55|county:105", "Rock County", 455], ["state:27|county:053", "Hennepin County", 290]];
+      return route.fulfill({ json: {
+        source_code: "IRS_MIGRATION", derived: false, geo_id: params.get("geo_id"), direction: params.get("direction"),
+        year_pair: "2022-2023", period_start: "2022-01-01", period_end: "2023-12-31", measure: "returns", unit: "returns",
+        release: "2026-10-06T00:00:00Z", caveats: [],
+        totals: [{ category: "total_us_and_foreign", category_label: "Total migration, US and foreign", returns: inflow ? 9210 : 8740, value_status: "valid", value_source: "" }],
+        categories: [
+          { category: "other_flows_same_state", category_label: "Other flows, same state", returns: 1200, value_status: "valid", value_source: "" },
+          { category: "foreign_other_flows", category_label: "Foreign, other flows", returns: null, value_status: "withheld", value_source: "-1,-1,-1" },
+        ],
+        total: counties.length, limit: Number(params.get("limit") || 25),
+        items: counties.map(([geo, name, returns]) => ({ category: "county", category_label: "County-to-county flow", counterpart_geo_id: geo, counterpart_name: name, returns, value_status: "valid", value_source: "" })),
+      } });
     }
     return route.fulfill({ status: 503, json: { detail: "No UI fixture for this resource" } });
   });

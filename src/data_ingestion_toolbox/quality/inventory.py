@@ -66,6 +66,11 @@ SOURCES: tuple[str, ...] = (
     "CDC",
     "FBI_UCR",
     "USDA_NASS",
+    "IRS_MIGRATION",
+    "CENSUS_SAIPE_SAHIE",
+    "CENSUS_BPS",
+    "BLS_QCEW",
+    "BEA",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -1902,6 +1907,507 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+# ---------------------------------------------------------------------------
+# BEA regional economic accounts.
+# ---------------------------------------------------------------------------
+
+_BEA_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.bea_table_capture",
+        "control",
+        "BEA",
+        grain="run_id (one run per registered table)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered tables in bea/registry.py",
+        cadence="weekly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_bea.dim_line",
+        "silver",
+        "BEA",
+        grain="table_code, line_code",
+        scope_method="registered tables x registered lines",
+        cadence="per BEA replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_bea.observation_revision",
+        "silver",
+        "BEA",
+        grain="capture_id, source_row_index, year",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per BEA replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_bea.observation_quarantine",
+        "silver",
+        "BEA",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per BEA replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_bea.fact_observation",
+        "silver",
+        "BEA",
+        grain="table_code, line_code, geo_id, year, capture_id",
+        lineage="silver_bea.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered tables x registered lines x nation, states and counties",
+        cadence="per BEA replay",
+        empty_behavior="a withheld or unavailable cell keeps its status and no number, never zero",
+    ),
+    _obj(
+        "gold_bea.observation_revision",
+        "gold",
+        "BEA",
+        grain="metric_key, geo_id, year, capture_id (published tables only)",
+        lineage="silver_bea.fact_observation, control.bea_table_capture",
+        scope_method="published tables; every release kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published table",
+    ),
+    _obj(
+        "gold_bea.observation_latest",
+        "gold",
+        "BEA",
+        grain="metric_key, geo_id, year (newest release)",
+        lineage="gold_bea.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published table",
+    ),
+    _obj(
+        "gold_bea.measure_export",
+        "publisher",
+        "BEA",
+        grain="source_object_key (table:line)",
+        lineage="silver_bea.dim_line",
+        scope_method="registered tables x registered lines",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_bea.metric_publisher",
+        "publisher",
+        "BEA",
+        grain="source_object_key (table:line)",
+        lineage="gold_bea.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published table",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# BLS QCEW.
+# ---------------------------------------------------------------------------
+
+_QCEW_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.bls_qcew_slice",
+        "control",
+        "BLS_QCEW",
+        grain="run_id, industry_code (one run per year and period)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered industries x periods in bls_qcew/registry.py",
+        cadence="monthly; history sweep on request",
+        empty_behavior="a period QCEW has not published (HTTP 404) is status empty",
+    ),
+    _obj(
+        "silver_bls_qcew.dim_measure",
+        "silver",
+        "BLS_QCEW",
+        grain="measure_id",
+        scope_method="registered measures",
+        cadence="per QCEW replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_bls_qcew.dim_industry",
+        "silver",
+        "BLS_QCEW",
+        grain="industry_code",
+        scope_method="registered industries",
+        cadence="per QCEW replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_bls_qcew.observation_revision",
+        "silver",
+        "BLS_QCEW",
+        grain="capture_id, source_row_index, measure_id, month_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per QCEW replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_bls_qcew.observation_quarantine",
+        "silver",
+        "BLS_QCEW",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per QCEW replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_bls_qcew.fact_observation",
+        "silver",
+        "BLS_QCEW",
+        grain="measure_id, industry_code, own_code, geo_id, period_start, capture_id",
+        lineage="silver_bls_qcew.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered industries x ownerships x grains x periods",
+        cadence="per QCEW replay",
+        empty_behavior="a withheld cell is retained with status withheld, never zero",
+    ),
+    _obj(
+        "gold_bls_qcew.observation_revision",
+        "gold",
+        "BLS_QCEW",
+        grain="measure_id, industry_code, own_code, geo_id, period_start, capture_id (published slices only)",
+        lineage="silver_bls_qcew.fact_observation, control.bls_qcew_slice",
+        scope_method="published slices; every capture of an observation kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_bls_qcew.observation_latest",
+        "gold",
+        "BLS_QCEW",
+        grain="metric_key, geo_id, period_start (newest capture)",
+        lineage="gold_bls_qcew.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_bls_qcew.measure_export",
+        "publisher",
+        "BLS_QCEW",
+        grain="source_object_key (measure:industry:ownership)",
+        lineage="silver_bls_qcew.dim_measure, silver_bls_qcew.dim_industry",
+        scope_method="registered measures x industries x ownerships",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_bls_qcew.metric_publisher",
+        "publisher",
+        "BLS_QCEW",
+        grain="source_object_key (measure:industry:ownership)",
+        lineage="gold_bls_qcew.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Census Building Permits Survey.
+# ---------------------------------------------------------------------------
+
+_BPS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_bps_slice",
+        "control",
+        "CENSUS_BPS",
+        grain="run_id, slice_key (one run per frequency, year and month)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in census_bps/registry.py",
+        cadence="monthly; history sweep on request",
+        empty_behavior="a month not yet published (HTTP 404) is status empty",
+    ),
+    _obj(
+        "silver_census_bps.dim_measure",
+        "silver",
+        "CENSUS_BPS",
+        grain="measure_id, structure_type",
+        scope_method="registered measures x structure types",
+        cadence="per Building Permits replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_bps.observation_revision",
+        "silver",
+        "CENSUS_BPS",
+        grain="capture_id, source_row_index, measure_id, structure_type",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per Building Permits replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_bps.observation_quarantine",
+        "silver",
+        "CENSUS_BPS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per Building Permits replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_bps.fact_observation",
+        "silver",
+        "CENSUS_BPS",
+        grain="measure_id, structure_type, frequency, geo_id, period_start, capture_id",
+        lineage="silver_census_bps.observation_revision, silver_ref.geography_resolution",
+        scope_method="registered files x structure types x measures",
+        cadence="per Building Permits replay",
+        empty_behavior="a jurisdiction absent from a file has no row; an unreported place is not_reported, never zero",
+    ),
+    _obj(
+        "gold_census_bps.observation_revision",
+        "gold",
+        "CENSUS_BPS",
+        grain="measure_id, structure_type, frequency, geo_id, period_start, capture_id (published files only)",
+        lineage="silver_census_bps.fact_observation, control.census_bps_slice",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_bps.observation_latest",
+        "gold",
+        "CENSUS_BPS",
+        grain="metric_key, geo_id, period_start (newest capture)",
+        lineage="gold_census_bps.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_census_bps.measure_export",
+        "publisher",
+        "CENSUS_BPS",
+        grain="source_object_key (measure:structure:frequency)",
+        lineage="silver_census_bps.dim_measure",
+        scope_method="registered measures x structure types x frequencies",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_bps.metric_publisher",
+        "publisher",
+        "CENSUS_BPS",
+        grain="source_object_key (measure:structure:frequency)",
+        lineage="gold_census_bps.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Census SAIPE and SAHIE.
+# ---------------------------------------------------------------------------
+
+_SAE_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_sae_slice",
+        "control",
+        "CENSUS_SAIPE_SAHIE",
+        grain="run_id, geo_level (one run per dataset and estimate year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered datasets x estimate years x us/state/county",
+        cadence="monthly; history sweep on request",
+        empty_behavior="a grain the API does not publish (HTTP 204) is status empty",
+    ),
+    _obj(
+        "silver_census_sae.dim_measure",
+        "silver",
+        "CENSUS_SAIPE_SAHIE",
+        grain="dataset_id, measure_id",
+        scope_method="registered measures in census_saipe_sahie/registry.py",
+        cadence="per SAIPE/SAHIE replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_sae.observation_revision",
+        "silver",
+        "CENSUS_SAIPE_SAHIE",
+        grain="capture_id, source_row_index, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per SAIPE/SAHIE replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_sae.observation_quarantine",
+        "silver",
+        "CENSUS_SAIPE_SAHIE",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per SAIPE/SAHIE replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_sae.fact_estimate",
+        "silver",
+        "CENSUS_SAIPE_SAHIE",
+        grain="dataset_id, measure_id, estimate_year, geo_id, capture_id",
+        lineage="silver_census_sae.observation_revision, "
+        "silver_ref.geography_resolution",
+        scope_method="registered measures x estimate years x grains",
+        cadence="per SAIPE/SAHIE replay",
+        empty_behavior="a missing estimate is retained with status missing, never zero",
+    ),
+    _obj(
+        "gold_census_sae.estimate_revision",
+        "gold",
+        "CENSUS_SAIPE_SAHIE",
+        grain="dataset_id, measure_id, estimate_year, geo_id, capture_id "
+        "(published slices only)",
+        lineage="silver_census_sae.fact_estimate, control.census_sae_slice",
+        scope_method="published slices; every capture of an estimate kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_sae.estimate_latest",
+        "gold",
+        "CENSUS_SAIPE_SAHIE",
+        grain="dataset_id, measure_id, estimate_year, geo_id (newest capture)",
+        lineage="gold_census_sae.estimate_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_sae.measure_export",
+        "publisher",
+        "CENSUS_SAIPE_SAHIE",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_census_sae.dim_measure",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_sae.metric_publisher",
+        "publisher",
+        "CENSUS_SAIPE_SAHIE",
+        grain="source_object_key (dataset:measure)",
+        lineage="gold_census_sae.estimate_latest, silver_census_sae.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# IRS Statistics of Income county-to-county migration.
+# ---------------------------------------------------------------------------
+
+_IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.irs_migration_file",
+        "control",
+        "IRS_MIGRATION",
+        grain="run_id (one run per direction and pair of filing years)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in irs_migration/registry.py",
+        cadence="monthly; an unchanged file adds a capture and no flow",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_migration.flow_revision",
+        "silver",
+        "IRS_MIGRATION",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per SOI migration replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_migration.flow_quarantine",
+        "silver",
+        "IRS_MIGRATION",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or unresolved row; populated only on failure",
+        cadence="per SOI migration replay",
+        empty_behavior="empty when every row conformed and resolved",
+    ),
+    _obj(
+        "silver_irs_migration.fact_flow",
+        "silver",
+        "IRS_MIGRATION",
+        grain="direction, year_pair, subject_geo_id, counterpart_code, capture_id",
+        lineage="silver_irs_migration.flow_revision, silver_ref.dim_geo_entity",
+        scope_method="registered files; county flows with both ends resolved and SOI's own categories",
+        cadence="per SOI migration replay",
+        empty_behavior="a deleted category is withheld with no value, never zero; a flow under 20 returns is in its Other flows category",
+    ),
+    _obj(
+        "gold_irs_migration.flow_revision",
+        "gold",
+        "IRS_MIGRATION",
+        grain="direction, year_pair, subject_geo_id, counterpart_code, capture_id (published files only)",
+        lineage="silver_irs_migration.fact_flow, control.irs_migration_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.flow_latest",
+        "gold",
+        "IRS_MIGRATION",
+        grain="direction, year_pair, subject_geo_id, counterpart_code (newest capture)",
+        lineage="gold_irs_migration.flow_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.total_observation_revision",
+        "gold",
+        "IRS_MIGRATION",
+        grain="metric_key, geo_id, year_pair, capture_id (file totals only)",
+        lineage="gold_irs_migration.flow_revision",
+        scope_method="the six header rows of each county, one row per measure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.total_observation_latest",
+        "gold",
+        "IRS_MIGRATION",
+        grain="metric_key, geo_id, year_pair (newest capture)",
+        lineage="gold_irs_migration.total_observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_migration.measure_export",
+        "publisher",
+        "IRS_MIGRATION",
+        grain="source_object_key (direction:category:measure)",
+        scope_method="registered directions x total categories x measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered, not harvested",
+    ),
+    _obj(
+        "gold_irs_migration.metric_publisher",
+        "publisher",
+        "IRS_MIGRATION",
+        grain="source_object_key (direction:category:measure)",
+        lineage="gold_irs_migration.total_observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     _SHARED_OBJECTS
     + _REFERENCE_OBJECTS
@@ -1914,6 +2420,11 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CDC_OBJECTS
     + _FBI_OBJECTS
     + _NASS_OBJECTS
+    + _IRS_MIGRATION_OBJECTS
+    + _SAE_OBJECTS
+    + _BPS_OBJECTS
+    + _QCEW_OBJECTS
+    + _BEA_OBJECTS
 )
 
 
@@ -2293,10 +2804,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.metric_publisher",
             "gold_bls.metric_publisher",
             "gold_fred.metric_publisher",
+            "gold_irs_migration.metric_publisher",
             "gold_pep.metric_publisher",
+            "gold_census_sae.metric_publisher",
             "gold_cdc.metric_publisher",
+            "gold_census_bps.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
+            "gold_bea.metric_publisher",
         ),
     ),
     _rule(
@@ -3416,6 +3931,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.crop_series",
             "gold_nass.measure_export",
             "gold_nass.metric_publisher",
+            "gold_bls_qcew.metric_publisher",
         ),
         automation="unimplemented",
         automation_note=(
@@ -3437,6 +3953,516 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "Unimplemented: survey revised-until-final expectations and the "
             "recent-window/full-sweep agreement are declared and not evaluated."
         ),
+    ),
+    # -- BEA regional economic accounts --------------------------------------
+    _rule(
+        "DQ-BEA-001",
+        "BLOCK",
+        "uniqueness",
+        "BEA observations are unique per (table, line, geography, year, "
+        "capture): a new release is a second row beside the one it revised.",
+        (
+            "silver_bea.fact_observation",
+            "gold_bea.observation_revision",
+            "gold_bea.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bea.fact_observation",
+                ("table_code", "line_code", "geo_id", "year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BEA-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed table accounts for every in-scope captured row, and no "
+        "captured table is left unreplayed.",
+        (
+            "control.bea_table_capture",
+            "silver_bea.observation_revision",
+            "silver_bea.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-BEA-003",
+        "BLOCK",
+        "conformance",
+        "A withheld (D), unavailable (NA), not meaningful (NM) or below "
+        "threshold (L) cell keeps that status and carries no number; only a "
+        "valid figure is a number.",
+        (
+            "silver_bea.fact_observation",
+            "silver_bea.observation_revision",
+            "gold_bea.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value and any other status with one."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bea.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bea_fact_code_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_bea.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bea_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_bea.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bea_revision_code_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BEA-004",
+        "WARN",
+        "temporal_integrity",
+        "Each published line's years are continuous for every geography: no "
+        "year between its first and newest published year is missing.",
+        ("silver_bea.fact_observation",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: year continuity is declared; the parser loads every "
+            "year column the file carries, but no executor checks the published "
+            "years for gaps."
+        ),
+    ),
+    # -- BLS QCEW --------------------------------------------------------------
+    _rule(
+        "DQ-QCEW-001",
+        "BLOCK",
+        "uniqueness",
+        "QCEW observations are unique per (measure, industry, ownership, "
+        "geography, period start, capture): a revised file is a second row "
+        "beside the one it revised, never an overwrite.",
+        (
+            "silver_bls_qcew.fact_observation",
+            "gold_bls_qcew.observation_revision",
+            "gold_bls_qcew.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary "
+            "key. The gold relations are views over that fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bls_qcew.fact_observation",
+                (
+                    "measure_id",
+                    "industry_code",
+                    "own_code",
+                    "geo_id",
+                    "period_start",
+                    "capture_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-QCEW-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed slice accounts for every in-scope captured row: its "
+        "revisions equal the in-scope rows less the quarantined ones, times "
+        "the values a row carries, and no captured slice is left unreplayed.",
+        (
+            "control.bls_qcew_slice",
+            "silver_bls_qcew.observation_revision",
+            "silver_bls_qcew.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-QCEW-003",
+        "BLOCK",
+        "conformance",
+        "A cell the provider did not disclose is withheld and carries no "
+        "number, with the provider's text kept; only a valid value is a "
+        "number.",
+        (
+            "silver_bls_qcew.fact_observation",
+            "silver_bls_qcew.observation_revision",
+            "gold_bls_qcew.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints on the revision "
+            "and the fact refuse a valid row without a value and any other "
+            "status with one."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bls_qcew.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="qcew_fact_withheld_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_bls_qcew.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="qcew_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_bls_qcew.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="qcew_revision_withheld_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-QCEW-004",
+        "WARN",
+        "temporal_integrity",
+        "Each registered industry's published quarters are continuous: no "
+        "quarter between a slice's first and newest published quarter is "
+        "missing.",
+        ("control.bls_qcew_slice",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: period continuity is declared; an ordinary run "
+            "asks for a window of recent quarters and records each as "
+            "published or empty, but no executor checks the published set "
+            "for gaps."
+        ),
+    ),
+    # -- Census Building Permits Survey -------------------------------------
+    _rule(
+        "DQ-BPS-001",
+        "BLOCK",
+        "uniqueness",
+        "Building Permits observations are unique per (measure, structure "
+        "type, frequency, geography, period start, capture): a revised file is "
+        "a second row beside the one it revised.",
+        (
+            "silver_census_bps.fact_observation",
+            "gold_census_bps.observation_revision",
+            "gold_census_bps.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_bps.fact_observation",
+                (
+                    "measure_id",
+                    "structure_type",
+                    "frequency",
+                    "geo_id",
+                    "period_start",
+                    "capture_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BPS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed file accounts for every in-scope captured row, and no "
+        "captured file is left unreplayed.",
+        (
+            "control.census_bps_slice",
+            "silver_census_bps.observation_revision",
+            "silver_census_bps.observation_quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-BPS-003",
+        "BLOCK",
+        "conformance",
+        "A place that reported no month is not_reported and carries no "
+        "number; only a valid figure is a number, and the reported figure is "
+        "kept beside the Bureau's estimate.",
+        (
+            "silver_census_bps.fact_observation",
+            "silver_census_bps.observation_revision",
+            "gold_census_bps.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value and any other status with one."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_bps.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bps_fact_unreported_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_bps.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bps_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_bps.observation_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="bps_revision_unreported_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-BPS-004",
+        "WARN",
+        "temporal_integrity",
+        "Each registered file family's published months are continuous: no "
+        "month between the first and newest published month is missing.",
+        ("control.census_bps_slice",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: period continuity is declared; an ordinary run asks "
+            "for a window of recent months and records each as published or "
+            "empty, but no executor checks the published set for gaps."
+        ),
+    ),
+    # -- Census SAIPE and SAHIE ---------------------------------------------
+    _rule(
+        "DQ-SAE-001",
+        "BLOCK",
+        "uniqueness",
+        "SAIPE/SAHIE estimates are unique per (dataset, measure, estimate "
+        "year, geography, capture): a revised publication is a second row "
+        "beside the one it revised, never an overwrite.",
+        (
+            "silver_census_sae.fact_estimate",
+            "gold_census_sae.estimate_revision",
+            "gold_census_sae.estimate_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary "
+            "key, so a duplicate is refused at write time. The two gold "
+            "relations are views over that fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_sae.fact_estimate",
+                ("dataset_id", "measure_id", "estimate_year", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-SAE-002",
+        "BLOCK",
+        "conformance",
+        "A valid estimate carries a number and a missing one carries none, "
+        "and a published 90 percent interval is ordered; a non-numeric "
+        "estimate is never coerced to zero.",
+        ("silver_census_sae.fact_estimate", "silver_census_sae.observation_revision"),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints on both the "
+            "revision and the fact refuse a status that disagrees with its "
+            "value and a lower bound above its upper bound."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_sae.fact_estimate",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fact_estimate_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_sae.fact_estimate",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="fact_estimate_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_sae.fact_estimate",
+                ("confidence_lower", "confidence_upper"),
+                kind="check",
+                constraint_name="fact_estimate_bounds_ordered",
+            ),
+            EnforcedGrain(
+                "silver_census_sae.observation_revision",
+                ("confidence_lower", "confidence_upper"),
+                kind="check",
+                constraint_name="observation_revision_bounds_ordered",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-SAE-003",
+        "BLOCK",
+        "referential_integrity",
+        "Every estimate names a registered measure and the capture it was "
+        "parsed from, so the measure export describes every published estimate.",
+        (
+            "silver_census_sae.fact_estimate",
+            "silver_census_sae.dim_measure",
+            "gold_census_sae.measure_export",
+            "raw_capture.response_capture",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: foreign keys from the fact to the measure "
+            "dimension and to the raw capture."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_sae.fact_estimate",
+                ("dataset_id", "measure_id"),
+                kind="foreign_key",
+                constraint_name="fact_estimate_dataset_id_measure_id_fkey",
+                references="silver_census_sae.dim_measure",
+                referenced_columns=("dataset_id", "measure_id"),
+            ),
+            EnforcedGrain(
+                "silver_census_sae.fact_estimate",
+                ("capture_id",),
+                kind="foreign_key",
+                constraint_name="fact_estimate_capture_id_fkey",
+                references="raw_capture.response_capture",
+                referenced_columns=("capture_id",),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-SAE-004",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed slice accounts for every captured row: estimates plus "
+        "quarantined rows equal the captured rows times the registered "
+        "measures, and a slice whose payload is refused is held back from "
+        "publication.",
+        (
+            "control.census_sae_slice",
+            "silver_census_sae.observation_revision",
+            "silver_census_sae.observation_quarantine",
+            "silver_census_sae.fact_estimate",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a sweep: `replay_run` raises "
+            "`SaeReconciliationError` and commits nothing when a run does not "
+            "reconcile, so a mismatch cannot reach gold, but no executor "
+            "re-measures retained runs afterwards."
+        ),
+    ),
+    # -- IRS SOI county migration -------------------------------------------
+    _rule(
+        "DQ-IRS-001",
+        "BLOCK",
+        "uniqueness",
+        "SOI migration rows are unique per (direction, pair of filing years, "
+        "subject county, counterpart, capture): a revised file is a second "
+        "row beside the one it revised.",
+        (
+            "silver_irs_migration.fact_flow",
+            "gold_irs_migration.flow_revision",
+            "gold_irs_migration.flow_latest",
+            "gold_irs_migration.total_observation_revision",
+            "gold_irs_migration.total_observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                (
+                    "direction",
+                    "year_pair",
+                    "subject_geo_id",
+                    "counterpart_code",
+                    "capture_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IRS-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed file accounts for every captured row as a flow, a "
+        "refusal or a quarantined row, and no captured file is left "
+        "unreplayed.",
+        (
+            "control.irs_migration_file",
+            "silver_irs_migration.flow_revision",
+            "silver_irs_migration.flow_quarantine",
+            "silver_irs_migration.fact_flow",
+        ),
+    ),
+    _rule(
+        "DQ-IRS-003",
+        "BLOCK",
+        "conformance",
+        "A county-to-county flow resolves at both ends; an SOI category names "
+        "no county; a deleted category is withheld with no value and only a "
+        "valid row carries numbers.",
+        (
+            "silver_irs_migration.fact_flow",
+            "silver_irs_migration.flow_revision",
+            "gold_irs_migration.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a county "
+            "flow without both resolved keys, a category with one, and a value "
+            "that disagrees with its status."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("category", "origin_geo_sk", "destination_geo_sk"),
+                kind="check",
+                constraint_name="irs_flow_endpoints_resolved",
+            ),
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("category", "origin_geo_id", "destination_geo_id"),
+                kind="check",
+                constraint_name="irs_flow_category_names_no_county",
+            ),
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("value_status", "returns"),
+                kind="check",
+                constraint_name="irs_flow_withheld_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_irs_migration.fact_flow",
+                ("value_status", "returns"),
+                kind="check",
+                constraint_name="irs_flow_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IRS-004",
+        "WARN",
+        "reconciliation",
+        "In the newest published file, a county's flows, Other flows and "
+        "foreign categories sum to the file's own total migration exactly "
+        "when none is withheld, and never exceed it when one is.",
+        ("silver_irs_migration.flow_revision", "control.irs_migration_file"),
     ),
 )
 

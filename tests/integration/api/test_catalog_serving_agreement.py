@@ -31,7 +31,12 @@ from apps.api.registry import OBSERVATION_DISPATCH
 from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transform
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
+from tests.support import bea as bea_support
+from tests.support import irs_migration as irs_support
+from tests.support import census_sae as sae_support
+from tests.support import census_bps as bps_support
 from tests.support import fbi_release
+from tests.support import bls_qcew as qcew_support
 from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import (
     delete_geography,
@@ -855,6 +860,76 @@ def published_nass_metric(
     return _one_published_code(factory, "USDA_NASS")
 
 
+@pytest.fixture
+def published_bea_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the BEA personal income lines through their real pipeline."""
+    factory = bea_support.reviewed_warehouse(postgres_connection_factory, request)
+    bea_support.run_to_gold(factory, "CAINC1")
+    harvest_publisher(factory, Publisher("gold_bea"))
+    return _one_published_code(factory, "BEA")
+
+
+@pytest.fixture
+def published_qcew_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the BLS QCEW metrics through their real pipeline."""
+    from data_ingestion_toolbox.bls_qcew.registry import TOTAL
+
+    factory = qcew_support.reviewed_warehouse(postgres_connection_factory, request)
+    qcew_support.run_to_gold(factory, 2024, "1", (TOTAL,))
+    harvest_publisher(factory, Publisher("gold_bls_qcew"))
+    return _one_published_code(factory, "BLS_QCEW")
+
+
+@pytest.fixture
+def published_bps_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the Building Permits metrics through their real pipeline."""
+    from data_ingestion_toolbox.census_bps.registry import ANNUAL, MONTHLY, BpsSlice
+
+    factory = bps_support.reviewed_warehouse(postgres_connection_factory, request)
+    bps_support.run_to_gold(factory, MONTHLY, 2024, 3)
+    bps_support.run_to_gold(
+        factory, ANNUAL, 2024, 12, files=(BpsSlice("place", ANNUAL, 2024, 12, "south"),)
+    )
+    harvest_publisher(factory, Publisher("gold_census_bps"))
+    return _one_published_code(factory, "CENSUS_BPS")
+
+
+@pytest.fixture
+def published_sae_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the Census SAIPE/SAHIE metrics through their real pipeline."""
+    from data_ingestion_toolbox.census_saipe_sahie.registry import SAHIE, SAIPE
+
+    factory = sae_support.reviewed_warehouse(postgres_connection_factory, request)
+    for dataset in (SAIPE, SAHIE):
+        sae_support.run_to_gold(factory, dataset)
+    harvest_publisher(factory, Publisher("gold_census_sae"))
+    return _one_published_code(factory, "CENSUS_SAIPE_SAHIE")
+
+
+@pytest.fixture
+def published_irs_migration_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the SOI file totals through their real pipeline."""
+    factory = irs_support.reviewed_warehouse(postgres_connection_factory, request)
+    irs_support.run_to_gold(factory, "inflow", "2022-2023")
+    harvest_publisher(factory, Publisher("gold_irs_migration"))
+    return _one_published_code(factory, "IRS_MIGRATION")
+
+
 def _assert_catalog_published(
     factory: Callable[[], connection], source_code: str, source_object_key: str
 ) -> None:
@@ -910,6 +985,11 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_bls_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_irs_migration_metric: str,
+    published_sae_metric: str,
+    published_bps_metric: str,
+    published_qcew_metric: str,
+    published_bea_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -967,10 +1047,15 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CENSUS_ACS", published_acs_metric),
         ("CDC", published_cdc_metric),
         ("FRED", published_fred_metric),
+        ("IRS_MIGRATION", published_irs_migration_metric),
         ("CENSUS_PEP", published_pep_metric),
+        ("CENSUS_SAIPE_SAHIE", published_sae_metric),
         ("BLS", published_bls_metric),
+        ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
+        ("BLS_QCEW", published_qcew_metric),
         ("USDA_NASS", published_nass_metric),
+        ("BEA", published_bea_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1104,14 +1189,19 @@ def _published_grains(client: TestClient, source_code: str) -> dict[str, list[st
 
 def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     api_client: TestClient,
+    published_irs_migration_metric: str,
     published_acs_grain_metric: str,
     published_cdc_metric: str,
+    published_sae_metric: str,
     published_cdc_county_metric: str,
     published_fred_metric: str,
+    published_bps_metric: str,
     published_pep_metrics: list[str],
     published_bls_metric: str,
+    published_qcew_metric: str,
     published_fbi_metric: str,
     published_nass_metric: str,
+    published_bea_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

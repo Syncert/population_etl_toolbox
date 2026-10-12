@@ -16,7 +16,12 @@ from pathlib import Path
 
 import pytest
 
+from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
+from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
+from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
+from data_ingestion_toolbox.bea import schema as bea_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
+from data_ingestion_toolbox.census_bps import schema as bps_schema
 from data_ingestion_toolbox.fbi_ucr import schema as fbi_schema
 from data_ingestion_toolbox.usda_nass import schema as nass_schema
 from data_ingestion_toolbox.utility import gold_schema
@@ -35,6 +40,35 @@ SOURCES = [
         "ingest_batch_",
         nass_schema,
         "USDA_NASS",
+    ),
+    ("bea_regional_ingest", "ensure_bea_schema", "ingest_batch_", bea_schema, "BEA"),
+    (
+        "bls_qcew_ingest",
+        "ensure_bls_qcew_schema",
+        "ingest_batch_",
+        qcew_schema,
+        "BLS_QCEW",
+    ),
+    (
+        "census_building_permits_ingest",
+        "ensure_census_bps_schema",
+        "ingest_batch_",
+        bps_schema,
+        "CENSUS_BPS",
+    ),
+    (
+        "census_saipe_sahie_ingest",
+        "ensure_census_sae_schema",
+        "ingest_batch_",
+        sae_schema,
+        "CENSUS_SAIPE_SAHIE",
+    ),
+    (
+        "irs_migration_ingest",
+        "ensure_irs_migration_schema",
+        "ingest_batch_",
+        irs_migration_schema,
+        "IRS_MIGRATION",
     ),
 ]
 

@@ -1,0 +1,6 @@
+Survey,FIPS,Region,Division,State,,1-unit,,,2-units,,,3-4 units,,,5+ units,,,1-unit rep,,,2-units rep,,,3-4 units rep       ,,,5+ units rep
+Date,State,Code,Code,Name,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,      Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,      Bldgs,Units,Value,Bldgs,Units,Value
+ 
+202403,01,3,6,Alabama,1388,1388,372979,6,12,1875,2,7,1060,4,188,27669,974,974,268466,3,6,751,0,0,0,2,130,17242
+202403,10,3,5,Delaware,556,556,75383,10,20,3124,0,0,0,2,20,2809,556,556,75383,10,20,3124,0,0,0,2,20,2809
+202403,US,0,0,United States,85199,85199,25620605,1387,2774,475872,430,1510,237085,1458,34835,6170867,65757,65757,20170225,1082,2164,382709,299,1083,182507,1009,28520,5245699

@@ -928,6 +928,218 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "query /observations with domain and geography filters instead"
             ),
         ),
+        ObservationDispatch(
+            source_code="BEA",
+            latest_relation="gold_bea.observation_latest",
+            released_relation="gold_bea.observation_revision",
+            lineage_schema="gold_bea",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<table>:<line>`, the same text
+            # the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # BEA's own release date, read from the file's footer.
+            release_expression="release_key",
+            release_order_expression="release_date",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("table_code", "table_code"),
+                ("line_code", "line_code"),
+                ("description", "description"),
+                # current, chained, per-capita current dollars, or persons:
+                # what keeps a chained series from being read as nominal.
+                ("dollar_basis", "dollar_basis"),
+                ("observation_basis", "observation_basis"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=(
+                "year",
+                "geo_id",
+                "release_date",
+                "retrieved_at",
+                "capture_id",
+            ),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="BLS_QCEW",
+            latest_relation="gold_bls_qcew.observation_latest",
+            released_relation="gold_bls_qcew.observation_revision",
+            lineage_schema="gold_bls_qcew",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>:<industry>:<ownership>`,
+            # the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("industry_code", "industry_code"),
+                ("industry_title", "industry_title"),
+                ("own_code", "own_code"),
+                ("ownership_title", "ownership_title"),
+                # "establishment-based: jobs located in the area": what keeps
+                # a QCEW employment row from being read as LAUS's residents.
+                ("observation_basis", "observation_basis"),
+                ("period_kind", "period_kind"),
+                ("disclosure_code", "disclosure_code"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            # One row per (metric, geography, period start) in the latest
+            # view, and the metric is pinned by every query.
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CENSUS_BPS",
+            latest_relation="gold_census_bps.observation_latest",
+            released_relation="gold_census_bps.observation_revision",
+            lineage_schema="gold_census_bps",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>:<structure>:<frequency>`,
+            # the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("structure_type", "structure_type"),
+                ("structure_label", "structure_label"),
+                ("frequency", "frequency"),
+                # "authorized by building permits ... not started or
+                # completed": what keeps a permit from being read as a start.
+                ("observation_basis", "observation_basis"),
+                # What jurisdictions reported themselves, beside the Bureau's
+                # estimate that imputes for those that did not.
+                ("reported_value", "reported_value::TEXT"),
+                ("months_reported", "months_reported::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CENSUS_SAIPE_SAHIE",
+            latest_relation="gold_census_sae.estimate_latest",
+            released_relation="gold_census_sae.estimate_revision",
+            lineage_schema="gold_census_sae",
+            lineage_relation="estimate_revision",
+            # The publisher's lineage key is `<dataset>:<measure>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("universe", "universe"),
+                # "model-based annual estimate": what separates these rows
+                # from the ACS survey estimates they resemble.
+                ("estimate_method", "estimate_method"),
+                ("value_source", "value_source"),
+            ),
+            uncertainty_expressions=(
+                ("confidence_lower", "confidence_lower::TEXT"),
+                ("confidence_upper", "confidence_upper::TEXT"),
+                ("margin_of_error", "margin_of_error::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "estimate_year >= :year_from"),
+                ("year_to", "estimate_year <= :year_to"),
+            ),
+            # One row per (metric, geography, year) in the latest view, and
+            # the metric is pinned by every query.
+            latest_order=("geo_id", "estimate_year"),
+            released_order=("estimate_year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="IRS_MIGRATION",
+            latest_relation="gold_irs_migration.total_observation_latest",
+            released_relation="gold_irs_migration.total_observation_revision",
+            lineage_schema="gold_irs_migration",
+            lineage_relation="total_observation_revision",
+            # The publisher's lineage key is `<direction>:<category>:<measure>`,
+            # the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # SOI names no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("direction", "direction"),
+                ("category", "category"),
+                ("measure", "measure"),
+                # SOI's own label for the pair of filing years: `2022-2023`.
+                ("year_pair", "year_pair"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
     )
 }
 
@@ -1133,6 +1345,18 @@ def _nass_datasets() -> tuple[str, ...]:
     return tuple(product.product_id for product in enabled_products())
 
 
+def _qcew_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.bls_qcew.registry import INDUSTRIES
+
+    return tuple(industry.code for industry in INDUSTRIES)
+
+
+def _sae_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_saipe_sahie.registry import DATASETS
+
+    return tuple(dataset.dataset_id for dataset in DATASETS)
+
+
 def _fbi_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
 
@@ -1165,9 +1389,21 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             dataset_provider=_cdc_datasets,
         ),
         SourceDiscovery(
+            source_code="IRS_MIGRATION",
+            display_name="IRS Statistics of Income county-to-county migration",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
             source_code=SERVING_CONTRACTS["pep"].source_code,
             display_name=SERVING_CONTRACTS["pep"].display_name,
             route_segment="pep",
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_BPS",
+            display_name="Census Bureau Building Permits Survey",
+            route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
@@ -1180,10 +1416,33 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             dataset_provider=_fbi_datasets,
         ),
         SourceDiscovery(
+            source_code="CENSUS_SAIPE_SAHIE",
+            display_name=(
+                "Census Bureau Small Area Income and Poverty Estimates and "
+                "Small Area Health Insurance Estimates"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_sae_datasets,
+        ),
+        SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,
             display_name=SERVING_CONTRACTS["fred"].display_name,
             route_segment="fred",
             neutral_paths=UNION_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="BLS_QCEW",
+            display_name="Bureau of Labor Statistics Quarterly Census of Employment and Wages",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_qcew_datasets,
+        ),
+        SourceDiscovery(
+            source_code="BEA",
+            display_name="Bureau of Economic Analysis regional economic accounts",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

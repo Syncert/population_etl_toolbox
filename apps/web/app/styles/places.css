@@ -274,3 +274,75 @@
 .site-rules li, .refresh-timeline li { margin: 6px 0; }
 /* Studio (studio-video-frames) */
 .studio-preview { display: block; width: 100%; max-width: 960px; height: auto; border: 1px solid var(--line); }
+
+/* How a figure was counted, where two counts of one subject sit side by side. */
+.place-basis {
+  margin: 6px 0 0;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.place-industry-mix {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.85rem;
+}
+
+.place-industry-mix caption {
+  text-align: left;
+  font-weight: 700;
+  padding-bottom: 6px;
+}
+
+.place-industry-mix th,
+.place-industry-mix td {
+  border-top: 1px solid var(--line);
+  padding: 4px 8px 4px 0;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+/* How a figure was made: a survey estimate and a model-based estimate of the
+   same quantity sit side by side, and this line is what tells them apart. */
+.place-basis {
+  margin: 6px 0 0;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.place-migration {
+  margin: 12px 0;
+}
+
+.place-migration-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+
+.place-migration-list h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.place-migration-list ol {
+  margin: 6px 0;
+  padding-left: 1.4em;
+}
+
+.place-migration-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.place-migration-value {
+  font-variant-numeric: tabular-nums;
+}

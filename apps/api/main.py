@@ -37,6 +37,7 @@ from apps.api.routers import (
     evidence_packets,
     health,
     identity,
+    migration,
     observations,
     place,
     population,
@@ -69,6 +70,9 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     observations.router,
     distribution.router,
     comparison.router,
+    # IRS SOI county-to-county flows (ADR-0008): provider-published rows with
+    # two geographies, cacheable like every other public warehouse read.
+    migration.router,
     place.router,
     population.router,
     # The derived FBI county roll-up (ETL-053): a warehouse-published
