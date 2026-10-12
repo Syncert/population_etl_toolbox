@@ -301,3 +301,20 @@ def test_a_small_year_under_a_key_is_one_whole_year_checkpoint(
         "WHERE resume_key = %s AND year = %s",
         ("etl082-whole", YEAR),
     ) == [("*",)]
+
+
+def test_a_backfill_run_transforms_only_its_year(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-083 — a one-year run reads no other year's revisions."""
+    factory = two_slice_year
+    fetched = _record_fetches(monkeypatch)
+    assert transform.transform_census_to_silver(years=[YEAR - 1]) == 0
+    assert fetched == []
+    assert _facts(factory) == []
+
+    assert (
+        transform.transform_census_to_silver(years=[YEAR])
+        == (len(SEEDED_PLACES) + 1) * 2
+    )
+    assert fetched == ["*"]

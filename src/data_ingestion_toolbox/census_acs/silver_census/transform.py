@@ -1433,7 +1433,9 @@ def _upsert_silver_rows(
     return affected_rows
 
 
-def transform_census_to_silver(resume_key: str | None = None) -> int:
+def transform_census_to_silver(
+    resume_key: str | None = None, years: list[int] | None = None
+) -> int:
     """Transform ALL Census ACS raw data to silver layer.
 
     Processes captured observation revisions in memory-safe year chunks and upserts
@@ -1449,6 +1451,9 @@ def transform_census_to_silver(resume_key: str | None = None) -> int:
     ``resume_key`` (the DAG passes its Airflow run id), each finished slice is
     recorded in ``silver_census.transform_checkpoint`` and a later attempt
     under the same key skips it, so a retry resumes where the last one stopped.
+
+    ``years`` limits the pass to those years, as an operator backfill run of
+    one year does; ``None`` is every year the revision relation holds.
     """
     hook = _get_hook()
     metrics = TransformMetrics(dataset_name="CENSUS_ACS")
@@ -1470,10 +1475,11 @@ def transform_census_to_silver(resume_key: str | None = None) -> int:
     sql = """
         SELECT year, COUNT(*)
         FROM silver_census.observation_revision
+        WHERE %(years)s::INT[] IS NULL OR year = ANY(%(years)s::INT[])
         GROUP BY year ORDER BY year;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql, {"years": sorted(set(years)) if years is not None else None})
         for row in cur.fetchall():
             metrics.raw_rows_by_year[int(row[0])] = int(row[1])
 
