@@ -51,6 +51,7 @@ services:
       - ../../src/data_ingestion_toolbox/usda_ers/DDL/silver_usda_ers.sql:/docker-entrypoint-initdb.d/120_silver_usda_ers.sql:ro
       - ../../src/data_ingestion_toolbox/fema_nri/DDL/silver_fema_nri.sql:/docker-entrypoint-initdb.d/121_silver_fema_nri.sql:ro
       - ../../sql/migrations/030_fbi_relationship_product_scope.sql:/docker-entrypoint-initdb.d/122_migration_030.sql:ro
+      - ../../sql/migrations/035_fbi_relationship_equal_window.sql:/docker-entrypoint-initdb.d/122a_migration_035.sql:ro
       - ../../src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql:/docker-entrypoint-initdb.d/122_silver_epa_aqs.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql:/docker-entrypoint-initdb.d/123_silver_noaa_normals.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql:/docker-entrypoint-initdb.d/124_silver_nces_ccd.sql:ro

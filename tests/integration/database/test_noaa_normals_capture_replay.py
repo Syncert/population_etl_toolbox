@@ -271,6 +271,57 @@ def test_a_refused_archive_and_the_rules(normals_warehouse) -> None:
     ) == [(len(REQUIRED_RELATIONS),)]
 
 
+def test_a_capture_left_unreplayed_is_settled_before_the_next_read(
+    normals_warehouse,
+) -> None:
+    """Covers: ETL-069 — a retry finishes the run an earlier attempt left behind.
+
+    The ingest task captures, replays and publishes in one attempt and retries
+    on failure. A failure after the capture left that run `captured` for
+    good, because the retry read the archive again under a new run: the six
+    unreplayed archives the weekly check on the local warehouse reported
+    under DQ-NOAA-002. The rule still fails them; settling replays the oldest
+    and records the identical later read as `unchanged`.
+    """
+    from data_ingestion_toolbox.noaa_normals.capture import capture_archive
+    from data_ingestion_toolbox.noaa_normals.config import NormalsConfig
+    from data_ingestion_toolbox.noaa_normals.silver_noaa_normals.load import (
+        settle_unreplayed_runs,
+    )
+
+    factory = normals_warehouse
+    config = NormalsConfig(min_spacing_seconds=0, max_attempts=1)
+    first, _ = capture_archive(factory, config=config, client=normals.FixtureClient())
+    second, _ = capture_archive(factory, config=config, client=normals.FixtureClient())
+    orphaned = _outcome(factory, normals_file_reconciliation)
+    assert (orphaned.result, orphaned.observed_count) == ("fail", 2)
+
+    assert settle_unreplayed_runs(factory) == [first, second]
+    assert _rows(
+        factory,
+        "SELECT run_id, status FROM control.noaa_normals_file ORDER BY created_at",
+    ) == [(first, "published"), (second, "unchanged")]
+    assert _outcome(factory, normals_file_reconciliation).result == "pass"
+    assert settle_unreplayed_runs(factory) == []
+
+    # A later read of a *changed* archive left unreplayed is replayed, never
+    # waved through as unchanged.
+    changed = _rebuilt_archive(
+        {"CAW00064757.csv": _station_csv("CAW00064757.csv").encode() + b"\n"}
+    )
+    third, status = capture_archive(
+        factory, config=config, client=normals.FixtureClient(changed)
+    )
+    assert status == "captured"
+    assert settle_unreplayed_runs(factory) == [third]
+    assert _rows(
+        factory,
+        "SELECT status FROM control.noaa_normals_file WHERE run_id = %s",
+        (str(third),),
+    ) == [("published",)]
+    assert _outcome(factory, normals_file_reconciliation).result == "pass"
+
+
 def test_a_malformed_station_file_is_quarantined(normals_warehouse) -> None:
     """Covers: ETL-069 — one unreadable station file is quarantined; the rest publish."""
     factory = normals_warehouse

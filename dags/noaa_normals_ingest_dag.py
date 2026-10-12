@@ -24,6 +24,7 @@ from data_ingestion_toolbox.noaa_normals.schema import ensure_noaa_normals_schem
 from data_ingestion_toolbox.noaa_normals.silver_noaa_normals.load import (
     publish_run,
     replay_run,
+    settle_unreplayed_runs,
 )
 from data_ingestion_toolbox.silver_ref.geography_guard import (
     require_shared_geography_loaded,
@@ -72,12 +73,16 @@ def noaa_normals_ingest():
     @task(pool="noaa_normals_files")
     def ingest_batch_archive() -> dict[str, Any]:
         connection_factory = _get_postgres_hook().get_conn
+        # A retry after a failed replay reads the archive again under a new
+        # run; finish the run it left behind first (DQ-NOAA-002).
+        settled = settle_unreplayed_runs(connection_factory)
         run_id, status = capture_archive(connection_factory, config=NormalsConfig())
         normals = replay_run(connection_factory, run_id=UUID(str(run_id)))
         published = publish_run(connection_factory, run_id=UUID(str(run_id)))
         return {
             "run_id": str(run_id),
             "status": status,
+            "settled_runs": [str(settled_run) for settled_run in settled],
             "normals": normals,
             "published": published,
         }

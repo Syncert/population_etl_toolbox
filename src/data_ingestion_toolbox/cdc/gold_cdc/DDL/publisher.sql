@@ -18,7 +18,7 @@ SELECT 'CDC'::TEXT AS source_code,
        measure.unit::TEXT AS units,
        'source_fact'::TEXT AS measure_kind,
        measure.valid_geo_grains,
-       ARRAY['ANNUAL']::TEXT[] AS valid_time_grains,
+       measure.valid_time_grains,
        NULL::TEXT AS aggregation_characteristic,
        JSONB_BUILD_OBJECT(
            'schema', 'gold_cdc',
@@ -44,7 +44,20 @@ FROM (
                    FILTER (WHERE fact.value IS NOT NULL),
                ARRAY[]::TEXT[]
            )::TEXT[]
-               AS valid_geo_grains
+               AS valid_geo_grains,
+           -- The time grain is read from the rows as well. CDC's Chronic
+           -- Disease Indicators publish some measures over several years
+           -- (cancer incidence CAN01 as 2015-2019, YearStart to YearEnd), and
+           -- the literal ARRAY['ANNUAL'] this replaced told every consumer
+           -- such a figure was one year's. `MULTI_YEAR` is outside the
+           -- calendar vocabulary, so the comparison check refuses to pair it
+           -- with an annual or monthly measure rather than holding a
+           -- five-year figure as one year's value (DQ-CDC-007).
+           ARRAY_AGG(DISTINCT CASE WHEN fact.period_start = fact.period_end
+                                   THEN 'ANNUAL' ELSE 'MULTI_YEAR' END
+                     ORDER BY CASE WHEN fact.period_start = fact.period_end
+                                   THEN 'ANNUAL' ELSE 'MULTI_YEAR' END)::TEXT[]
+               AS valid_time_grains
     FROM silver_cdc.dim_measure AS measure
     JOIN silver_cdc.fact_health_observation AS fact
       ON fact.asset_id = measure.asset_id

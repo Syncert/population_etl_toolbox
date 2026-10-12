@@ -265,6 +265,14 @@ row -- `exact` for a state code, `reviewed` for the place crosswalk, `derived`
 for a county label match -- and `DQ-FBI-004` fails the release if a row claims
 one its method did not earn.
 
+`DQ-FBI-004` also fails when the area filter holds more rows than agency
+grains: two relationship rows for one agency, label and area whose windows
+overlap serve each observation twice. Each replay deletes a row another row's
+window contains, or equals and was written after (a 2023-only release and a
+1990-2023 release record the reviewed place window identically under two
+geography vintages). Migration 035 applies the same statement to every
+product on a warehouse that took duplicates before that rule.
+
 Start from what did not resolve:
 
 ```sql

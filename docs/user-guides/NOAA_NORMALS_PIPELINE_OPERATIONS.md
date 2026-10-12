@@ -93,7 +93,13 @@ SELECT metric_key, COUNT(*) FROM gold_noaa_normals.observation_latest GROUP BY 1
   number) are enforced by the station and normal keys and named CHECK
   constraints.
 - `DQ-NOAA-002` fails on a captured archive left unreplayed or a replayed
-  one that reached no station, and runs in the daily sweep.
+  one that reached no station, and runs in the daily sweep. An attempt that
+  fails after its capture leaves that run `captured`, and the retry reads the
+  archive again under a new run, so each ingest first settles the runs left
+  behind, oldest first: one whose bytes equal the published archive becomes
+  `unchanged`, any other is replayed and published. A failing rule clears on
+  the next `noaa_normals_ingest` run; if it does not, the replay itself is
+  failing and its error is in that task's log.
 - `DQ-NOAA-004` warns on a negative precipitation or degree-day normal, a
   station on a county edge, or a station NCEI codes to the United States
   (GHCN country `US`) that falls outside every county.
