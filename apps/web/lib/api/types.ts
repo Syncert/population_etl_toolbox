@@ -258,6 +258,8 @@ export interface ComparisonRow {
   county_fips?: string | null;
   state_name?: string | null;
   county_name?: string | null;
+  /** The catalog's name for the geography; the only name a city row carries. */
+  geo_name?: string | null;
   metric_code_a?: string | null;
   metric_code_b?: string | null;
   period_a?: string | null;

@@ -119,7 +119,7 @@ list.
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `county_fips`, `q`, `active_only`) — see below |
-| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
+| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
@@ -1363,7 +1363,11 @@ to one newest value per geography inside its own relation before the join, so
 a multi-period source cannot create Cartesian rows. Every row carries
 `period_a`/`period_b` — the periods actually combined — and `value_a`/
 `value_b` alongside the API-derived `difference` and `ratio`, which are named
-in `derivations`. An incompatible pair answers `422` with the failed rules.
+in `derivations`. Each row also carries `geo_name`, the geography catalog's
+name for its `geo_id` (joined by id, `null` where the catalog holds none): the
+`state_name`/`county_name` attribution stops at county, so `geo_name` is the
+only name a city or town row has. An incompatible pair answers `422` with the
+failed rules.
 
 Two things about that answer are easy to read past.
 

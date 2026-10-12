@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertOneMeasure, buildMeasureMapView, equalWidthBins, rankedPage } from "../../../apps/web/lib/oneMeasureMap";
+import { assertOneMeasure, buildMeasureMapView, earlierReleaseChoices, equalWidthBins, newestPeriodOfRelease, rankedPage, releaseOfChoice } from "../../../apps/web/lib/oneMeasureMap";
 
 // Covers: WEB-128 — one measure, one period, every county: no second
 // measure, no painted or printed zero, and legend counts that add up.
@@ -78,5 +78,41 @@ describe("equal-count bands", () => {
     }
     expect(bins.map((bin, index) => byColour[`c${index}`] || 0)).toEqual(bins.map((bin) => bin.count));
     expect(equalCountBins([7, 7])).toEqual([{ binIndex: 1, lowerBound: 7, upperBound: 7, count: 2 }]);
+  });
+});
+
+// Covers: WEB-128 — a period every county has a newer estimate for (ACS
+// 2018–2022 once 2020–2024 is out) is in no county's latest row, so it is
+// offered by the release that published it, and one period is mapped.
+describe("earlier releases on the map", () => {
+  it("offers every release but the newest, newest first, as published", () => {
+    const choices = earlierReleaseChoices([{ release: "2024" }, { release: "2023" }, { release: "2022" }]);
+    expect(choices).toEqual([
+      { value: "release:2023", label: "2023 release, as published" },
+      { value: "release:2022", label: "2022 release, as published" },
+    ]);
+    expect(earlierReleaseChoices([{ release: "2024" }])).toEqual([]);
+    expect(earlierReleaseChoices([])).toEqual([]);
+  });
+
+  it("tells a release choice from a period", () => {
+    expect(releaseOfChoice("release:2022")).toBe("2022");
+    expect(releaseOfChoice("2018-01-01")).toBeNull();
+    expect(releaseOfChoice("release:")).toBeNull();
+  });
+
+  it("maps the newest period a release published, rows untouched", () => {
+    const acs = [
+      { geo_id: "state:55|county:025", period_start: "2018-01-01", period_end: "2022-12-31", value: "1" },
+      { geo_id: "state:55|county:021", period_start: "2018-01-01", period_end: "2022-12-31", value: "2" },
+    ];
+    expect(newestPeriodOfRelease(acs)).toEqual(acs);
+    const pep = [
+      { geo_id: "state:55|county:025", period_start: "2022-07-01", value: "10" },
+      { geo_id: "state:55|county:025", period_start: "2023-07-01", value: "11" },
+      { geo_id: "state:55|county:021", period_start: "2023-07-01", value: "12" },
+    ];
+    expect(newestPeriodOfRelease(pep).map((row) => row.value)).toEqual(["11", "12"]);
+    expect(newestPeriodOfRelease([])).toEqual([]);
   });
 });

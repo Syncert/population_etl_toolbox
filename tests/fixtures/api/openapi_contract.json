@@ -2921,6 +2921,7 @@
         "difference": "number | null",
         "geo_id": "string | null",
         "geo_level": "string | null",
+        "geo_name": "string | null",
         "metric_code_a": "string | null",
         "metric_code_b": "string | null",
         "period_a": "string | null",

@@ -28,6 +28,9 @@ class ComparisonRow(BaseModel):
     county_fips: Optional[str] = None
     state_name: Optional[str] = None
     county_name: Optional[str] = None
+    #: The catalog's name for the geography (``gold_glossary.dim_geography``),
+    #: the only name a city or town row carries. Additive in v1.
+    geo_name: Optional[str] = None
     metric_code_a: Optional[str] = None
     metric_code_b: Optional[str] = None
     period_a: Optional[str] = None

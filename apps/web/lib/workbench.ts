@@ -964,6 +964,65 @@ const EMPTY_HEATMAP: HeatmapModel = {
   capNote: "",
 };
 
+/** What a catalog geography row offers to name it. */
+export interface NamedGeography {
+  geo_id?: string | null;
+  geo_name?: string | null;
+  county_name?: string | null;
+  place_name?: string | null;
+  state_name?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * A geography's name as the catalog publishes it: `geo_name` (a city's
+ * "Austin city", a tract's "Census Tract 1.01"), else the most specific
+ * attribution, else its id. A catalog that has not named it answers with its
+ * id, so that is passed over for a real name when one exists.
+ */
+export function catalogGeographyName(row: NamedGeography): string {
+  const named = row.geo_name && row.geo_name !== row.geo_id ? row.geo_name : null;
+  return String(named || row.county_name || row.place_name || row.state_name || row.geo_id || "");
+}
+
+/**
+ * Every name the workbench has read, kept as the reader moves on.
+ *
+ * The geography picker reads one grain in one state at a time, so naming the
+ * plotted series from the picker's current list alone dropped a city's name
+ * (and printed its id) the moment the reader drafted the next series
+ * somewhere else. Names only accumulate; the same object comes back when
+ * nothing new was learned, so a memo keyed on it does not recompute.
+ */
+export function rememberGeographyNames(
+  known: Record<string, string>,
+  rows: readonly (NamedGeography | null | undefined)[],
+): Record<string, string> {
+  let next: Record<string, string> | null = null;
+  for (const row of rows) {
+    if (!row?.geo_id) continue;
+    const geoId = String(row.geo_id);
+    const name = catalogGeographyName(row);
+    if (!name || name === geoId || known[geoId] === name) continue;
+    next ||= { ...known };
+    next[geoId] = name;
+  }
+  return next || known;
+}
+
+/** The identities a set of rows carries that no name is known for. */
+export function unnamedGeographies(
+  rows: readonly ObservationRow[],
+  known: Record<string, string>,
+): string[] {
+  const missing = new Set<string>();
+  for (const row of rows) {
+    const geoId = row?.geo_id ? String(row.geo_id) : "";
+    if (geoId && !known[geoId]) missing.add(geoId);
+  }
+  return [...missing];
+}
+
 /**
  * One measure's settled history laid out as geographies by periods.
  *

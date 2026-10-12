@@ -26,7 +26,9 @@ export async function generateMetadata({ params }) {
 export default async function MeasureMapRoute({ params, searchParams }) {
   const metric = metricFrom((await params).metric);
   if (!metric) notFound();
-  const period = (await searchParams).period;
+  const { period, release } = await searchParams;
   const requested = typeof period === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period) ? period : undefined;
-  return <MeasureMapPage key={metric} metricCode={metric} requestedPeriod={requested} />;
+  // An earlier release, by the identity `/observations/releases` lists.
+  const requestedRelease = typeof release === "string" && /^[A-Za-z0-9._:-]{1,40}$/.test(release) ? release : undefined;
+  return <MeasureMapPage key={metric} metricCode={metric} requestedPeriod={requested} requestedRelease={requestedRelease} />;
 }

@@ -17,6 +17,7 @@ from data_ingestion_toolbox.silver_ref.area_geography import (
     publish_area_snapshot,
 )
 from data_ingestion_toolbox.silver_ref.geography_pipeline import GeographyRepository
+from data_ingestion_toolbox.sql import catalog_queries
 from tests.support.capture_seed import delete_geography, seed_capture, seed_geography
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -43,9 +44,15 @@ def _cleanup(factory: Callable[[], connection]) -> None:
                 "DELETE FROM silver_ref.geography_resolution "
                 "WHERE provider_dataset IN ('census_cbsa_delineation', 'census_region_division_codes')"
             )
+            # The place first: its county overlaps cite the areas' capture.
+            delete_geography(cursor, "state:55|place:48000")
             for geo_id in AREA_IDS:
                 delete_geography(cursor, geo_id)
-            for geo_id in ("state:55|county:025", "state:55"):
+            for geo_id in (
+                "state:55|county:027",
+                "state:55|county:025",
+                "state:55",
+            ):
                 delete_geography(cursor, geo_id)
         cleanup.commit()
     finally:
@@ -184,6 +191,138 @@ def test_a_county_resolves_to_its_region_division_and_metro(
             )
             assert cursor.fetchone()[0] == edges
         writer.commit()
+    finally:
+        writer.close()
+        _cleanup(postgres_connection_factory)
+
+
+def test_a_city_names_its_metro_through_the_counties_it_lies_in(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: API-164 — a place reaches its metro through its counties, weighted.
+
+    OMB delineates metros from whole counties, so the reference holds no
+    place-to-metro edge. The relationship read names the metro of each county
+    the place intersects, with the share of the place inside it, and names no
+    metro for a county that is in none.
+    """
+    _cleanup(postgres_connection_factory)
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="55",
+                vintage=2023,
+                name="Wisconsin",
+            )
+            dane = seed_geography(
+                cursor,
+                geo_type="county",
+                state_fips="55",
+                county_fips="025",
+                vintage=2023,
+                name="Dane County",
+            )
+            # Dodge County is in no CBSA of the excerpt: the share of the
+            # place that lies in it reaches no metro.
+            dodge = seed_geography(
+                cursor,
+                geo_type="county",
+                state_fips="55",
+                county_fips="027",
+                vintage=2023,
+                name="Dodge County",
+            )
+            madison = seed_geography(
+                cursor,
+                geo_type="place",
+                state_fips="55",
+                place_fips="48000",
+                vintage=2023,
+                name="Madison city",
+            )
+            capture_id = seed_capture(cursor, "CENSUS_GEO")
+            for county_sk, weight in ((dane, 0.9), (dodge, 0.1)):
+                cursor.execute(
+                    """
+                    INSERT INTO silver_ref.bridge_geo_relationship_version (
+                        parent_geo_sk, related_geo_sk, relationship_type,
+                        geography_vintage, overlap_area_m2, overlap_weight,
+                        evidence_source, source_snapshot_id
+                    ) VALUES (%s, %s, 'intersects', 2023, %s, %s,
+                              'census_boundary_intersection', %s)
+                    """,
+                    (county_sk, madison, weight * 2.0e8, weight, str(capture_id)),
+                )
+        writer.commit()
+
+        publication = postgres_connection_factory()
+        try:
+            publish_area_snapshot(
+                GeographyRepository(postgres_connection_factory),
+                parse_cbsa_delineation(
+                    (FIXTURES / "cbsa-est2024-alldata.excerpt.csv").read_bytes(),
+                    delineation_vintage=2023,
+                ),
+                capture_id=capture_id,
+                connection=publication,
+            )
+            publication.commit()
+        finally:
+            publication.close()
+
+        with writer.cursor() as cursor:
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            cursor.execute(
+                str(catalog_queries.GEOGRAPHY_RELATED_QUERY).replace(
+                    ":geo_id", "%(geo_id)s"
+                ),
+                {"geo_id": "state:55|place:48000"},
+            )
+            rows = [
+                (row[0], row[1], row[2], round(float(row[7]), 3), row[5], row[8])
+                for row in cursor.fetchall()
+                if row[2] in ("COUNTY", "METRO")
+            ]
+            assert rows == [
+                (
+                    "intersects",
+                    "cbsa:31540",
+                    "METRO",
+                    0.9,
+                    2023,
+                    "census_cbsa_delineation",
+                ),
+                (
+                    "intersects",
+                    "state:55|county:025",
+                    "COUNTY",
+                    0.9,
+                    2023,
+                    "census_boundary_intersection",
+                ),
+                (
+                    "intersects",
+                    "state:55|county:027",
+                    "COUNTY",
+                    0.1,
+                    2023,
+                    "census_boundary_intersection",
+                ),
+            ]
+            # A county reaches its metro by code, as before: no derived row.
+            cursor.execute(
+                str(catalog_queries.GEOGRAPHY_RELATED_QUERY).replace(
+                    ":geo_id", "%(geo_id)s"
+                ),
+                {"geo_id": "state:55|county:025"},
+            )
+            assert ("part_of", "cbsa:31540") in [
+                (row[0], row[1]) for row in cursor.fetchall()
+            ]
+        writer.rollback()
     finally:
         writer.close()
         _cleanup(postgres_connection_factory)

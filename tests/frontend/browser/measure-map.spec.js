@@ -18,7 +18,7 @@ const metrics = {
 };
 const values = { "2024-01-01": { "001": "61000", "003": "52000", "025": null, "105": "70500" }, "2023-01-01": { "001": "60000", "003": "51000", "025": "88000", "105": "69000" } };
 
-async function install(page) {
+async function install(page, { releases = false } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -26,7 +26,7 @@ async function install(page) {
     if (path === "/api/v1/auth/refresh") return route.fulfill({ status: 401, json: { detail: "sign-in could not be completed" } });
     if (path === "/api/v1/catalog/capabilities") return route.fulfill({ json: { total: 2, items: ["CENSUS_ACS", "FBI_UCR"].map((source_code) => ({ source_code, display_name: source_code, route_segment: null, served_by_neutral_routes: true,
       publishes_value_status: true, publishes_aligned_reduction: true, observation_filters: ["geo_id", "geo_level", "state_fips"], observation_dimensions: [],
-      observation_routes: ["/api/v1/observations", "/api/v1/observations/periods"].map((routePath) => ({ path: routePath, parameters: servedParameters(routePath) })) })) } });
+      observation_routes: ["/api/v1/observations", "/api/v1/observations/periods", ...(releases ? ["/api/v1/observations/releases"] : [])].map((routePath) => ({ path: routePath, parameters: servedParameters(routePath) })) })) } });
     if (path === "/api/v1/catalog/sources") return route.fulfill({ json: [{ source_code: "CENSUS_ACS", source_name: "American Community Survey", reference_url: "https://example.org/acs" }] });
     if (path === "/api/v1/catalog/geographies") {
       const items = params.get("geo_level") === "COUNTY" ? counties : params.get("geo_level") === "STATE" ? [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin" }] : [];
@@ -40,6 +40,16 @@ async function install(page) {
     if (path === "/api/v1/observations/periods") return route.fulfill({ json: { metric_code: INCOME, total: 2, limit: 200, offset: 0, items: [
       { period_start: "2024-01-01", period_end: "2024-12-31", observation_count: 4 }, { period_start: "2023-01-01", period_end: "2023-12-31", observation_count: 4 },
     ] } });
+    if (path === "/api/v1/observations/releases") return route.fulfill({ json: { metric_code: INCOME, total: 2, limit: 200, offset: 0, items: [
+      { release: "2024", as_of: null, observation_count: 4 }, { release: "2022", as_of: null, observation_count: 4 },
+    ] } });
+    if (path === "/api/v1/observations" && params.get("scope") === "as_released") {
+      // The 2022 release: a period no county's latest row holds any more.
+      const items = params.get("release") === "2022" ? Object.entries({ "001": "58000", "003": "49000", "025": "84000", "105": "66000", "127": "71000" }).map(([fips, value]) => ({
+        metric_code: INCOME, source_code: "CENSUS_ACS", geo_id: `state:55|county:${fips}`, geo_level: "COUNTY", value, value_status: "valid", unit: "dollars",
+        period_start: "2018-01-01", period_end: "2022-12-31", release: "2022", dimensions: {}, uncertainty: { margin_of_error: "1500" } })) : [];
+      return route.fulfill({ json: { metric_code: INCOME, total: items.length, offset: 0, limit: 1000, items } });
+    }
     if (path === "/api/v1/observations") {
       const period = params.get("period_start") || "2024-01-01";
       const items = Object.entries(values[period] || {}).map(([fips, value]) => ({ metric_code: INCOME, source_code: "CENSUS_ACS", geo_id: `state:55|county:${fips}`, geo_level: "COUNTY",
@@ -83,6 +93,23 @@ test("one measure across every county, with a legend that adds up and no zero fo
   expect(results.violations.map((item) => `${item.id}: ${item.help}`)).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("a period every county has a newer estimate for is offered by its release", async ({ page }) => {
+  await install(page, { releases: true });
+  await page.goto(`/map/${encodeURIComponent(INCOME)}`);
+  await expect(page.getByTestId("measure-map")).toHaveAttribute("data-period", "2024-01-01 – 2024-12-31");
+  await expect(page.getByTestId("measure-map-period").locator("option")).toHaveText([
+    "2024-01-01 – 2024-12-31", "2023-01-01 – 2023-12-31", "2022 release, as published",
+  ]);
+  await page.getByTestId("measure-map-period").selectOption("release:2022");
+  await expect(page.getByTestId("measure-map")).toHaveAttribute("data-period", "2018-01-01 – 2022-12-31");
+  await expect(page).toHaveURL(/release=2022/);
+  await expect(page).not.toHaveURL(/period=/);
+  await expect(page.getByTestId("measure-map-legend").locator("li").last()).toContainText("no published value: 0 counties");
+
+  await page.goto(`/map/${encodeURIComponent(INCOME)}?release=2022`);
+  await expect(page.getByTestId("measure-map")).toHaveAttribute("data-period", "2018-01-01 – 2022-12-31");
 });
 
 test("a measure with no county grain explains itself and draws no map", async ({ page }) => {
