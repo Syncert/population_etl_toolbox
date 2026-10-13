@@ -306,7 +306,10 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
   const absent = current.filter((tract) => !byTract.has(String(tract.geo_id))).length;
   const coloured = current.filter((tract) => hasValue(byTract.get(String(tract.geo_id)))).length;
   const periodLabel = load.state === "ready" ? observationPeriodLabel(load.rows[0]) : "";
-  const uncoloured = load.state === "ready" ? uncolouredSentence(current.length, coloured) : "";
+  // The uncoloured count is over the tracts that existed for the release: a
+  // tract that did not exist then is absent, not unpublished, and the
+  // boundary sentence counts it.
+  const uncoloured = load.state === "ready" ? uncolouredSentence(current.length - absent, coloured) : "";
   const boundary = load.state === "ready" ? boundarySentence(periodLabel, current.length, retired.length, absent) : "";
   const titled = periodLabel ? `${label}, ${periodLabel}` : label;
 
