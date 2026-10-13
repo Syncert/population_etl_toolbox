@@ -412,13 +412,22 @@ export default function PlacePage({
       }
     };
 
+    // Every cell about to be asked for is marked as being read before the
+    // first request leaves, so the page never shows "Not published" for a
+    // value it has simply not received yet (a page under load read as a
+    // place with no data).
+    const pending = new Map<string, LevelAnswer>();
+    const requestNewest = (measure: ResolvedPlaceMeasure, geoId: string) => {
+      pending.set(answerKey(measure.metricCode, geoId), { row: null, pending: true });
+      tasks.push(askNewest(measure, geoId));
+    };
     for (const resolved of shown) {
       const chain = chapterLevels(resolved);
       const own = chain[0];
       for (const measure of resolved.headline) {
         if (!measure.metric) continue;
         for (const entry of chain) {
-          if (publishesAt(measure, entry.level)) tasks.push(askNewest(measure, entry.geoId));
+          if (publishesAt(measure, entry.level)) requestNewest(measure, entry.geoId);
         }
         const trended = [resolved.chapter.trend, ...(resolved.chapter.moreTrends || [])].map((item) => item.measureId);
         if (trended.includes(measure.measure.id)) {
@@ -429,11 +438,12 @@ export default function PlacePage({
       }
       if (own) {
         for (const measure of resolved.depth) {
-          if (measure.metric && publishesAt(measure, own.level)) tasks.push(askNewest(measure, own.geoId));
+          if (measure.metric && publishesAt(measure, own.level)) requestNewest(measure, own.geoId);
         }
       }
     }
 
+    setAnswers(pending);
     setObservationStatus({ state: "loading", message: `asking ${tasks.length} published series` });
     (async () => {
       await inPool(tasks, REQUEST_CONCURRENCY);
@@ -929,11 +939,13 @@ function EarningsByIndustry({
                     ? `Not published at ${place.level.toLowerCase()} grain`
                     : answer?.error
                       ? answer.error
-                      : published
-                        ? formatObservationValue(row!.value)
-                        : row?.value_status
-                          ? `Published without a value: ${String(row.value_status)}`
-                          : "Not published for this place"}
+                      : answer?.pending
+                        ? "Reading…"
+                        : published
+                          ? formatObservationValue(row!.value)
+                          : row?.value_status
+                            ? `Published without a value: ${String(row.value_status)}`
+                            : "Not published for this place"}
                 </td>
               </tr>
             );
@@ -988,11 +1000,13 @@ function IndustryMix({
                     ? `Not published at ${place.level.toLowerCase()} grain`
                     : answer?.error
                       ? answer.error
-                      : published
-                        ? formatObservationValue(row!.value)
-                        : row?.value_status
-                          ? `Published without a value: ${String(row.value_status)}`
-                          : "Not published for this place"}
+                      : answer?.pending
+                        ? "Reading…"
+                        : published
+                          ? formatObservationValue(row!.value)
+                          : row?.value_status
+                            ? `Published without a value: ${String(row.value_status)}`
+                            : "Not published for this place"}
                 </td>
               </tr>
             );
@@ -1052,11 +1066,13 @@ function DepthRow({
             ? `Not published at ${place.level.toLowerCase()} grain`
             : answer?.error
               ? answer.error
-              : published
-                ? `${formatObservationValue(row!.value)} ${publishedUnit(row!)}`.trim()
-                : row?.value_status
-                  ? `Published without a value: ${String(row.value_status)}`
-                  : "Not published for this place"}
+              : answer?.pending
+                ? "Reading…"
+                : published
+                  ? `${formatObservationValue(row!.value)} ${publishedUnit(row!)}`.trim()
+                  : row?.value_status
+                    ? `Published without a value: ${String(row.value_status)}`
+                    : "Not published for this place"}
         {published ? <span className="subtle"> · {observationPeriodLabel(row)}{uncertaintyText(row!) ? ` · ${uncertaintyText(row!)}` : ""}</span> : null}
       </dd>
     </div>
