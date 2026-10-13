@@ -111,12 +111,35 @@ export function compareMeasure(
   };
 }
 
-/** Where a value sits along a bar shared by both places and their ticks, 0-100. */
+/**
+ * Where a value sits along a bar shared by the two places, 0-100, from zero
+ * to the larger of the two. The bar is scaled to the places and not to
+ * their reference marks: scaled to the nation, two counties' populations
+ * were both a sliver, and the comparison the page exists for was invisible.
+ * A reference mark beyond the bar is pinned to its end; the marks' own
+ * values are printed beneath the bar.
+ */
 export function barPosition(value: number, row: ComparedRow): number {
-  const values = [row.a.value, row.b.value, ...row.ticks.map((tick) => tick.value), 0];
+  const values = [row.a.value, row.b.value, 0];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  return max === min ? 100 : ((value - min) / (max - min)) * 100;
+  if (max === min) return 100;
+  return Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
+}
+
+/**
+ * Whether two published values' margin-of-error intervals overlap, so the
+ * page can say the places may not truly differ. Null when either side
+ * publishes no usable margin: silence, not a claim either way.
+ */
+export function intervalsOverlap(a: ObservationRow, b: ObservationRow): boolean | null {
+  const valueA = publishedNumber(a.value);
+  const valueB = publishedNumber(b.value);
+  const marginA = Number(a.margin_of_error);
+  const marginB = Number(b.margin_of_error);
+  if (valueA === null || valueB === null) return null;
+  if (!Number.isFinite(marginA) || !Number.isFinite(marginB) || marginA < 0 || marginB < 0) return null;
+  return Math.abs(valueA - valueB) <= marginA + marginB;
 }
 
 /** The address of a pair, and of the same pair swapped. */
