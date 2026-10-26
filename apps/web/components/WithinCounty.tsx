@@ -302,8 +302,11 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
   const currentIds = new Set(current.map((tract) => String(tract.geo_id)));
   // A tract the release published that today's boundaries no longer hold.
   const retired = load.state === "ready" ? load.rows.filter((row) => !currentIds.has(String(row.geo_id))) : [];
-  // A tract of today that the release has no row for: it did not exist then.
-  const absent = current.filter((tract) => !byTract.has(String(tract.geo_id))).length;
+  // A tract of today that the release has no row for did not exist then --
+  // but only when the release is on another decade's tracts, which shows as
+  // a retired row. On today's boundaries a missing row is unpublished.
+  const redrawn = retired.length > 0;
+  const absent = redrawn ? current.filter((tract) => !byTract.has(String(tract.geo_id))).length : 0;
   const coloured = current.filter((tract) => hasValue(byTract.get(String(tract.geo_id)))).length;
   const periodLabel = load.state === "ready" ? observationPeriodLabel(load.rows[0]) : "";
   // The uncoloured count is over the tracts that existed for the release: a
@@ -389,7 +392,7 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
                           ? formatObservationValue(row!.value)
                           : row?.value_status
                             ? `No value: ${String(row.value_status)}`
-                            : row
+                            : row || !redrawn
                               ? "Not published for this tract"
                               : "Did not exist in this release"}
                       </td>
