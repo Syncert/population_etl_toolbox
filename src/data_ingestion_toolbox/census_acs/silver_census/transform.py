@@ -349,7 +349,7 @@ def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
                     ELSE NULL
                 END AS geo_id
             FROM silver_census.observation_revision AS observation
-            WHERE observation.geo_level NOT IN ('place', 'tract')
+            WHERE observation.geo_level NOT IN ('place', 'tract', 'metro')
         ), missing AS (
             SELECT source.geo_level, source.geo_id
             FROM source_geographies AS source
@@ -477,6 +477,7 @@ _RAW_FRAME_SCHEMA = {
     "county_fips": pl.Utf8,
     "place_fips": pl.Utf8,
     "tract_code": pl.Utf8,
+    "cbsa_code": pl.Utf8,
     "table_id": pl.Utf8,
     "variable_name": pl.Utf8,
     "measure_type": pl.Utf8,
@@ -526,6 +527,7 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
                 observation.county_fips_source AS county_fips,
                 observation.place_fips_source AS place_fips,
                 observation.tract_code_source AS tract_code,
+                observation.cbsa_source AS cbsa_code,
                 observation.table_id,
                 observation.variable_name,
                 observation.measure_type,
@@ -544,6 +546,7 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
                                  observation.county_fips_source,
                                  observation.place_fips_source,
                                  observation.tract_code_source,
+                                 observation.cbsa_source,
                                  observation.variable_name
                     ORDER BY capture.retrieved_at DESC,
                              observation.capture_id DESC
@@ -553,7 +556,7 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
             {where}
         )
         SELECT dataset, year, geo_level, state_fips, county_fips, place_fips,
-               tract_code, table_id, variable_name, measure_type, value,
+               tract_code, cbsa_code, table_id, variable_name, measure_type, value,
                capture_id, value_status, value_source
         FROM captured_ranked
         WHERE revision_rank = 1;
@@ -747,6 +750,7 @@ def _transform_rows_to_silver_df(
             "county_fips",
             "place_fips",
             "tract_code",
+            "cbsa_code",
             "table_id",
             "variable_code",
         ]
@@ -817,6 +821,10 @@ def _transform_rows_to_silver_df(
                 + pl.lit("|tract:")
                 + pl.col("tract_code")
             )
+            # A metro is the Bureau's own CBSA estimate (W-7), keyed as the
+            # shared reference keys it.
+            .when(pl.col("geo_level") == "metro")
+            .then(pl.lit("cbsa:") + pl.col("cbsa_code"))
             .otherwise(pl.lit(None))
             .alias("geo_id"),
         ]

@@ -138,7 +138,7 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     # needed hours, and keeps the 600 minutes. Each step's duration is logged
     # (`step=... duration_seconds=`), and the backfill records them per year.
     grain_steps=(
-        GrainStep("area", ("NATIONAL", "STATE", "COUNTY"), "90min"),
+        GrainStep("area", ("NATIONAL", "STATE", "COUNTY", "METRO"), "90min"),
         GrainStep("tract", ("TRACT",), "120min"),
         GrainStep("place", ("PLACE",), "600min"),
     ),

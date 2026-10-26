@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS silver_census.observation_revision (
     dataset             TEXT NOT NULL,
     year                INTEGER NOT NULL,
     geo_level           TEXT NOT NULL
-        CONSTRAINT observation_revision_geo_level_tract_check
-        CHECK (geo_level IN ('us', 'state', 'county', 'place', 'tract')),
+        CONSTRAINT observation_revision_geo_level_metro_check
+        CHECK (geo_level IN ('us', 'state', 'county', 'place', 'tract', 'metro')),
     us_source           TEXT,
     state_fips_source   TEXT,
     county_fips_source  TEXT,
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS silver_census.observation_revision (
     place_fips_source   TEXT,
     -- Census tract code; set only for `tract` slices (sub-county-geography).
     tract_code_source   TEXT,
+    -- CBSA code; set only for `metro` slices (migration 036).
+    cbsa_source         TEXT,
     variable_name       TEXT NOT NULL,
     table_id            TEXT NOT NULL,
     measure_type        TEXT,

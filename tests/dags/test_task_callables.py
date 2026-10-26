@@ -489,10 +489,11 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "county",
             "place",
             "tract",
+            "metro",
         }
         # us + state + 52 county parents + 52 place parents (ETL-055) + 52
-        # tract parents (ETL-061).
-        assert len(work_units) == 158
+        # tract parents (ETL-061) + one metro slice of every CBSA (ETL-091).
+        assert len(work_units) == 159
         county_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units

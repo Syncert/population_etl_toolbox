@@ -20,7 +20,7 @@ from typing import Any
 
 #: The grains a backfill run may name. County, state and nation are loaded
 #: for every year by the scheduled run already.
-BACKFILL_GEO_LEVELS = frozenset({"place", "tract"})
+BACKFILL_GEO_LEVELS = frozenset({"place", "tract", "metro"})
 
 #: The first year the Data API serves any ACS estimate (the 1-year 2005).
 FIRST_ACS_YEAR = 2005

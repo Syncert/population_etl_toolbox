@@ -489,7 +489,17 @@ def acs_ingest():
             dataset: CONFIG.tract_years(dataset, years)
             for dataset, years in years_by_dataset.items()
         }
+        # Metro slices (W-7): every CBSA of one dataset and year in one
+        # request, for the years `AcsConfig.metro_year_scope` declares.
+        metro_years_by_dataset = {
+            dataset: CONFIG.metro_years(dataset, years)
+            for dataset, years in years_by_dataset.items()
+        }
         if scope is not None:
+            metro_years_by_dataset = {
+                dataset: {scope.year} if scope.geo_level == "metro" else set()
+                for dataset in years_by_dataset
+            }
             # Only the named grain, and that one whatever the scheduled years.
             place_years_by_dataset = {
                 dataset: {scope.year} if scope.geo_level == "place" else set()
@@ -547,6 +557,21 @@ def acs_ingest():
                         "dataset": dataset,
                         "year": year,
                         "geo_level": "state",
+                        "state_fips": None,
+                        "variables_hash": meta["variables_hash"],
+                        "variables_count": meta["variables_count"],
+                    }
+                )
+
+            # METRO slice (every CBSA at once; a CBSA spans states).
+            if year in metro_years_by_dataset.get(
+                dataset, set()
+            ) and not is_done_for_current_varset(dataset, year, "metro", None):
+                plan.append(
+                    {
+                        "dataset": dataset,
+                        "year": year,
+                        "geo_level": "metro",
                         "state_fips": None,
                         "variables_hash": meta["variables_hash"],
                         "variables_count": meta["variables_count"],

@@ -93,6 +93,12 @@ def place_parent_fips(dataset: str) -> tuple[str, ...]:
 ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {"acs5": ACS_COUNTY_PARENT_FIPS}
 
 
+#: The Data API's geography name for a metropolitan or micropolitan
+#: statistical area (CBSA), as a request names it and as the response's
+#: header column carries the five-digit CBSA code (W-7).
+ACS_METRO_GEOGRAPHY = "metropolitan statistical area/micropolitan statistical area"
+
+
 def tract_parent_fips(dataset: str) -> tuple[str, ...]:
     """The states whose tracts ``dataset`` publishes; empty for any other dataset."""
     return ACS_TRACT_PARENT_FIPS.get(dataset, ())
@@ -168,7 +174,7 @@ class AcsConfig(BaseModel):
         "C24050",  # Industry by occupation for the civilian employed population age 16+
     ]
     # geo levels we ingest
-    geo_levels: List[str] = ["us", "state", "county", "place", "tract"]
+    geo_levels: List[str] = ["us", "state", "county", "place", "tract", "metro"]
     # The years requested at place grain, declared (`year_scope.py`):
     # "newest", "newest:N", "YYYY-YYYY", "YYYY" or "none". Places are ten
     # times the counties' volume -- about 62 million 5-year facts for one
@@ -206,6 +212,11 @@ class AcsConfig(BaseModel):
     # holds the whole list with 41% free (2026-10-26).
     place_full_table_year_scope: str = "2005-2024"
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
+    # The years requested at metro (CBSA) grain, declared as for places: the
+    # Bureau's own metro and micro area estimates on the whole curated list,
+    # 1-year from 2005 and 5-year from 2009 (W-7). About 935 areas, under a
+    # third of the counties' volume.
+    metro_year_scope: str = "2005-2024"
     # Free-disk guard for operator backfill runs (`disk_guard.py`). The path
     # must sit on the warehouse's filesystem; on the internal stack every
     # container's `/` is Docker's one data disk. A run refuses when its
@@ -263,7 +274,10 @@ class AcsConfig(BaseModel):
         return value
 
     @field_validator(
-        "place_year_scope", "tract_year_scope", "place_full_table_year_scope"
+        "place_year_scope",
+        "tract_year_scope",
+        "place_full_table_year_scope",
+        "metro_year_scope",
     )
     @classmethod
     def validate_year_scopes(cls, value: str) -> str:
@@ -298,6 +312,12 @@ class AcsConfig(BaseModel):
         """
         full = YearScope.parse(self.place_full_table_year_scope).select(years)
         return None if year in full else list(self.place_history_tables)
+
+    def metro_years(self, dataset: str, years: List[int]) -> set[int]:
+        """The years of ``dataset`` requested at metro grain, by its declared scope."""
+        if "metro" not in self.geo_levels:
+            return set()
+        return YearScope.parse(self.metro_year_scope).select(years)
 
     def place_years(self, dataset: str, years: List[int]) -> set[int]:
         """The years of ``dataset`` requested at place grain, by its declared scope."""
