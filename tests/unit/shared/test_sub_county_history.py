@@ -1,18 +1,23 @@
 """Older vintages' place and tract Gazetteers (acs-place-tract-history-backfill).
 
-Covers: ETL-084, ETL-089
+Covers: ETL-084, ETL-089, ETL-092
 """
 
 from __future__ import annotations
+
+import io
+import zipfile
 
 import pytest
 
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     GAZ_ROOT,
     MIN_SUB_COUNTY_HISTORY_YEAR,
+    PLACE_2000_GAZETTEER_URL,
     TRACT_2000_RELATIONSHIP_URL,
     historical_sub_county_asset,
     history_vintage,
+    parse_place_gazetteer_2000_capture,
     parse_tract_relationship_2000_capture,
 )
 
@@ -46,7 +51,8 @@ def test_2010_and_2011_read_the_2010_census_files() -> None:
 
 
 @pytest.mark.parametrize(
-    ("year", "geo_type"), [(2009, "place"), (1999, "tract"), (2015, "county")]
+    ("year", "geo_type"),
+    [(1999, "place"), (1999, "tract"), (2015, "county")],
 )
 def test_a_vintage_or_level_without_a_gazetteer_refuses(
     year: int, geo_type: str
@@ -74,7 +80,6 @@ RELATIONSHIP_ROWS = (
 def test_census_2000_tracts_come_from_the_relationship_file() -> None:
     """Covers: ETL-089 — the 2009 ACS's tracts get a reference of their own."""
     assert history_vintage(2009, "tract") == 2000
-    assert history_vintage(2009, "place") == 2009
     assert history_vintage(2015, "tract") == 2015
     assert historical_sub_county_asset(2009, "tract") == (
         "attributes",
@@ -100,3 +105,67 @@ def test_a_tract_described_two_ways_refuses() -> None:
     )
     with pytest.raises(ValueError, match="described two ways"):
         parse_tract_relationship_2000_capture(rows.encode())
+
+
+def _place_2000_row(
+    usps: str, code: str, name: str, land: int, water: int, lat: str, lon: str
+) -> str:
+    """One line of the Bureau's fixed-width `places2k.txt`, columns as published."""
+    end = "\r\n"
+    return (
+        f"{usps}{code}{name:<64}{1000:>9}{400:>9}{land:>14}{water:>14}"
+        f"{land / 2589988.11:>12.6f}{water / 2589988.11:>12.6f}{lat:>10}{lon:>11}{end}"
+    )
+
+
+#: Abbeville, Alabama, as the file prints it, and a Puerto Rico name with a
+#: tilde: the file is Latin-1, not UTF-8.
+PLACES_2000 = _place_2000_row(
+    "AL", "0100124", "Abbeville city", 40301945, 120383, "31.566367", "-85.251300"
+) + _place_2000_row(
+    "PR", "7200000", "Cañada CDP", 2000000, 0, "18.000000", "-66.000000"
+)
+
+
+def _zipped(text: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("places2k.txt", text.encode("latin-1"))
+    return buffer.getvalue()
+
+
+def test_census_2000_places_come_from_the_2000_gazetteer() -> None:
+    """Covers: ETL-092 — the 2000 census and 2005-2009 ACS name 2000 places."""
+    for year in (2000, 2005, 2009):
+        assert history_vintage(year, "place") == 2000
+        assert historical_sub_county_asset(year, "place") == (
+            "attributes",
+            "place",
+            PLACE_2000_GAZETTEER_URL,
+        )
+    assert history_vintage(2010, "place") == 2010
+    records = parse_place_gazetteer_2000_capture(_zipped(PLACES_2000))
+    by_id = {record.geo_id: record for record in records}
+    abbeville = by_id["state:01|place:00124"]
+    assert abbeville.name == "Abbeville city"
+    assert abbeville.census_geoid == "0100124"
+    assert abbeville.geography_vintage == 2000
+    assert (abbeville.land_area_m2, abbeville.water_area_m2) == (40301945, 120383)
+    assert (abbeville.latitude, abbeville.longitude) == (31.566367, -85.2513)
+    # The file is Latin-1, not UTF-8: a name with a tilde survives.
+    assert by_id["state:72|place:00000"].name == "Cañada CDP"
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("AL0100124Abbeville city\r\n", "shorter than 164"),
+        (PLACES_2000.replace("0100124", "01XX124"), "invalid state/place"),
+        (PLACES_2000 + PLACES_2000, "duplicate"),
+        ("\r\n", "no records"),
+    ],
+)
+def test_a_malformed_2000_place_gazetteer_refuses(text: str, message: str) -> None:
+    """Covers: ETL-092 — a short, miscoded, repeated or empty file is refused."""
+    with pytest.raises(ValueError, match=message):
+        parse_place_gazetteer_2000_capture(_zipped(text))
