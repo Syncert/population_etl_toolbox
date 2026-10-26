@@ -63,6 +63,11 @@ CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
         "One full dump of the internal warehouse exists on a drive outside H:, "
         "and one restore drill of it passed.",
     ),
+    "hosting-cost-per-user": (
+        COMPOSE,
+        "With the `metering` profile up, one sample per container per minute is "
+        "written, and the replay script runs against the stack.",
+    ),
 }
 
 

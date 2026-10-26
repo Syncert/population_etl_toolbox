@@ -59,9 +59,26 @@ nothing dumped the database.
 ## Evidence
 
 - `pytest tests/unit` (branch, 2026-10-26): 2605 passed.
+- First dump `warehouse-20261026T151539Z` to `E:/population_backups/warehouse`:
+  36 GB from a 756 GB database in 11 minutes. Its restore drill restored
+  correctly (608 GB, 52 minutes) but was marked `fail`: two capture-log tables
+  restored 27 and 21 rows longer than the manifest, because the counts were
+  taken before `pg_dump`'s snapshot and Airflow wrote in between.
+- Fix: the dump now opens a REPEATABLE READ session, exports its snapshot,
+  counts inside it and passes `--snapshot` to `pg_dump`
+  (`SnapshotSession`; unit tests in `test_backup_warehouse.py`; checked live
+  against the warehouse).
+- Second dump `warehouse-20261026T163324Z` (snapshot-consistent): 36.2 GB in
+  699 s. Restore drill: **pass**, 191 tables compared, no mismatches,
+  607.8 GB restored in 3,967 s; scratch database dropped afterwards. The
+  deletion log was not exported (`APP_API_DSN` unset in the drill's shell).
 
 ## Checkpoint
 
-First dump running to `E:/population_backups/warehouse` (started 15:15 UTC).
-Next: record its manifest, run the restore drill, register the task, set the
-capture export target.
+Blocked on a backup destination (Nick, 2026-10-26: "I don't have a way to
+backup at this point so no directory there"). The code, runbook and a
+passing drill are done; the weekly task is not registered and
+`BACKUP_HOST_DIR` / `CAPTURE_EXPORT_ROOT` stay unset. Remaining step for
+Nick once a destination exists: set both in `stack.env` and run
+`scripts/register_backup_task.ps1`. The drill's dump is still on E: (36 GB,
+plus the first 36 GB dump, which can be deleted).
