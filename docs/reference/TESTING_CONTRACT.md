@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-093 | None |
+| ETL and shared units | ETL-001–ETL-094 | None |
 | Database integration | DB-001–DB-062 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **634 of 634** | **0 of 634** |
+| **Total** | **635 of 635** | **0 of 635** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 634-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 635-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -564,6 +564,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-091 | P1 | Unit + database / `unit integration database` | The ACS adapter loads metro (CBSA) estimates as the Bureau publishes them | `build_geo_params("metro", ...)` asks for every metropolitan and micropolitan statistical area in one request per dataset and year, naming no state, and the config's metro year scope admits the requested years; a captured metro response replays one row per CBSA keyed by its code in `cbsa_source` with no state, and a Census sentinel margin stays a sentinel rather than a number; a response without the CBSA geography column refuses; migration 036 adds `cbsa_source` and replaces the geo-level checks on `control.acs_ingestion_slices` and `silver_census.observation_revision` with ones admitting `metro`, and re-applying the manifest on a populated warehouse keeps 036's checks (031 and 032 leave them alone) | Metro figures existed only as roll-ups of counties, which differ from the Bureau's own CBSA estimates and carry no margin, and both relations refused a metro row by CHECK |
 | ETL-092 | P1 | Unit / `unit` | Census 2000 places resolve against the 2000 place Gazetteer | `history_vintage` maps every place and tract year 2000-2009 to the Census 2000 vintage and `historical_sub_county_asset(year, "place")` names the Bureau's fixed-width `places2k.zip` for those years; `parse_place_gazetteer_2000_capture` reads its published columns (USPS, state and place FIPS, name, land and water area in square metres, internal point) into one place record per code under vintage 2000, decodes the Latin-1 file without losing accented names, and refuses a short row, a non-numeric state or place code, a repeated place and an empty file; a place before 2000 refuses rather than borrow the 2000 file | 401 places in the 2009 ACS ceased before 2010 and stayed `unmapped` because no place reference before 2010 was captured, and the 2000 census and 2005-2008 ACS had no place reference at all |
 | ETL-093 | P1 | Unit / `unit` | Each Census dataset is requested from its own Data API path | `CENSUS_DATASETS` names every dataset the adapter reads with its API path, the years it exists for and whether it publishes margins; `census_api_url` returns `acs/acs1` and `acs/acs5` for the ACS and `dec/sf1` and `dec/sf3` for Census 2000 (`dec2000sf1`, `dec2000sf3`), which publish no margins and exist for 2000 alone; a census dataset asked for another year, and a dataset the registry does not name, refuse; the request, the capture endpoint and `variables.json` all read the same URL | The adapter wrote `/acs/{dataset}` into three URLs and refused any dataset but `acs1` and `acs5`, so the 2000 census -- the same API and payload shape, under `dec/` -- could not be requested at all |
+| ETL-094 | P1 | Unit / `unit` | A census variable joins an ACS series only by a declared pairing | `decennial_crosswalk.json` names, per census dataset, each source variable with the ACS estimate it measures, its label, and for money the year its dollars are in; `parse_crosswalk` refuses a dataset that is not a census dataset in `CENSUS_DATASETS`, a target that is a margin or not a curated table's estimate, and two source variables claiming one target; `requested_variables` returns only named variables (none for an ACS dataset) and `acs_variable_for` refuses a variable the crosswalk does not name; the checked-in file loads and pairs `P001001` with `B01003_001E` and SF3 median household income with `B19013_001E` in 1999 dollars | A census table and an ACS table share few identifiers and differ in universe and dollars, so a pairing inferred from labels at load time would silently join unlike things into one series |
 
 ### PostgreSQL Integration Tests
 

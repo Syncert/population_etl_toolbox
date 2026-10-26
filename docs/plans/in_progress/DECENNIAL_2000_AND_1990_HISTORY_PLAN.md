@@ -56,7 +56,7 @@ plan's open item: 401 places in the 2009 ACS ceased before 2010 and stay
    reference vintage and serving are reused rather than copied. Margins are
    absent, not zero: replay records a decennial value with no margin.
 2. **Comparable series are declared, not inferred.** A curated crosswalk
-   (`docs/semantics/decennial_acs_crosswalk.json`) names each decennial
+   (`src/data_ingestion_toolbox/census_acs/decennial_crosswalk.json`) names each decennial
    variable that measures the same thing as an ACS variable (total
    population, households, housing units, occupied/vacant, owner/renter,
    race and Hispanic origin, median household income in its own dollars,
@@ -110,3 +110,7 @@ ordering. The plan is:
 - 2026-10-26: D1 code: `parse_place_gazetteer_2000_capture`, 2000-2009 places
   map to vintage 2000 and `places2k.zip` (ETL-092). All 25,375 rows of the
   real file parse. Live `silver_ref` publication still to run.
+- 2026-10-26: D2 step 1, dataset registry and API paths (ETL-093); D3's
+  crosswalk: 21 pairs (12 SF1, 9 SF3), each checked to exist in the 2000
+  and 2024 ACS 5-year `variables.json` (ETL-094). Next: request only
+  crosswalked variables, translate at replay, widen the dataset CHECKs.
