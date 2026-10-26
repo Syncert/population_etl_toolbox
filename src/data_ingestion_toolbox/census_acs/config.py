@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, List
 
 import os
@@ -91,6 +92,41 @@ def place_parent_fips(dataset: str) -> tuple[str, ...]:
 #: States whose tracts each dataset publishes (sub-county-geography). Only the
 #: 5-year estimates publish tracts; the 1-year estimates publish none.
 ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {"acs5": ACS_COUNTY_PARENT_FIPS}
+
+
+@dataclass(frozen=True)
+class CensusDataset:
+    """Where a dataset the adapter reads lives on the Data API.
+
+    `api_path` follows `/data/{year}/`. `years` is empty for a dataset
+    published every year, or names the only years it exists for: a decennial
+    census exists for its census year alone. `margins` is whether the
+    dataset publishes margins of error (decennial-2000-and-1990-history).
+    """
+
+    api_path: str
+    margins: bool = True
+    years: tuple[int, ...] = ()
+
+
+CENSUS_DATASETS: dict[str, CensusDataset] = {
+    "acs1": CensusDataset("acs/acs1"),
+    "acs5": CensusDataset("acs/acs5"),
+    # Census 2000: Summary File 1 (100-percent counts) and Summary File 3
+    # (the long-form sample). Neither publishes margins.
+    "dec2000sf1": CensusDataset("dec/sf1", margins=False, years=(2000,)),
+    "dec2000sf3": CensusDataset("dec/sf3", margins=False, years=(2000,)),
+}
+
+
+def census_api_url(year: int, dataset: str) -> str:
+    """The Data API endpoint of one dataset's year; refuses one it lacks."""
+    spec = CENSUS_DATASETS.get(dataset)
+    if spec is None:
+        raise ValueError(f"Unsupported dataset: {dataset}")
+    if spec.years and year not in spec.years:
+        raise ValueError(f"{dataset} exists for {list(spec.years)}, not {year}")
+    return f"https://api.census.gov/data/{year}/{spec.api_path}"
 
 
 #: The Data API's geography name for a metropolitan or micropolitan

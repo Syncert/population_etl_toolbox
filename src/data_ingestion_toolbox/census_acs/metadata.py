@@ -17,7 +17,7 @@ from data_ingestion_toolbox.utility.db_connection import (
     warehouse_database,
 )
 
-from .config import CONFIG
+from .config import CONFIG, census_api_url
 
 
 DATA_JSON_URL = "https://api.census.gov/data.json"
@@ -184,12 +184,9 @@ def sync_acs_dataset_table() -> int:
 
 def fetch_variables_json(year: int, dataset: str) -> Dict:
     """
-    Fetch variables.json for a given year and dataset (acs1 or acs5).
+    Fetch variables.json for a given year and dataset (`CENSUS_DATASETS`).
     """
-    if dataset not in ("acs1", "acs5"):
-        raise ValueError(f"Unsupported dataset: {dataset}")
-
-    url = f"https://api.census.gov/data/{year}/acs/{dataset}/variables.json"
+    url = f"{census_api_url(year, dataset)}/variables.json"
     with httpx.Client(timeout=60.0) as client:
         resp = client.get(url, params={"key": CONFIG.require_api_key()})
         resp.raise_for_status()
