@@ -12,7 +12,7 @@ one drive failing loses the volume. This script keeps a copy elsewhere.
     is written under a ``.partial`` name and renamed when ``pg_dump`` exits
     cleanly, so a half-written dump is never mistaken for a backup. A
     ``manifest.json`` beside it records the database size, the dump's size and
-    duration. The account deletion log is exported beside it (ADR-0005 s5),
+    duration, and row counts taken in the snapshot the dump itself reads. The account deletion log is exported beside it (ADR-0005 s5),
     because a restore must re-apply the deletions made after the dump.
 
 ``prune``
@@ -47,6 +47,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,8 +136,15 @@ def prune_plan(target: Path, keep: int) -> list[Path]:
     return stale + partial
 
 
-def pg_dump_command(conn: Connection, mount: Path, name: str, jobs: int) -> list[str]:
-    """`docker run` of the server's image running `pg_dump` into the mount."""
+def pg_dump_command(
+    conn: Connection, mount: Path, name: str, jobs: int, snapshot: str | None = None
+) -> list[str]:
+    """`docker run` of the server's image running `pg_dump` into the mount.
+
+    With `snapshot`, the dump reads the exported snapshot the manifest's row
+    counts were taken in, so a write landing between the two cannot make a
+    sound restore look short.
+    """
     return [
         "docker",
         "run",
@@ -161,6 +169,7 @@ def pg_dump_command(conn: Connection, mount: Path, name: str, jobs: int) -> list
         f"--jobs={jobs}",
         "--compress=zstd:3",
         "--no-sync",
+        *([f"--snapshot={snapshot}"] if snapshot else []),
         "--file",
         f"/backup/{name}{PARTIAL_SUFFIX}",
     ]
@@ -249,14 +258,93 @@ ORDER BY 1
 """
 
 
-def table_counts(conn: Connection, database: str | None = None) -> dict[str, int]:
-    """Exact row counts of every table small enough to count quickly."""
+def counts_from(query: Callable[[str], str]) -> dict[str, int]:
+    """Exact row counts of every table small enough to count quickly.
+
+    `query` runs one statement and returns psql's unaligned output, so the
+    same counting serves a one-shot `psql` and a held snapshot session.
+    """
     counts: dict[str, int] = {}
-    for line in psql(conn, TABLES_SQL, database).splitlines():
+    for line in query(TABLES_SQL).splitlines():
         name, size = line.split("\t")
         if int(size) <= EXACT_COUNT_MAX_BYTES:
-            counts[name] = int(psql(conn, f"SELECT count(*) FROM {name}", database))
+            counts[name] = int(query(f"SELECT count(*) FROM {name}"))
     return counts
+
+
+def table_counts(conn: Connection, database: str | None = None) -> dict[str, int]:
+    return counts_from(lambda sql: psql(conn, sql, database))
+
+
+#: Printed after every statement in a held session to mark where its output ends.
+END_MARKER = "__backup_warehouse_end__"
+
+
+class SnapshotSession:
+    """One open REPEATABLE READ transaction whose snapshot `pg_dump` shares.
+
+    The manifest's counts and the dump must see the same rows: counted
+    beforehand, a table Airflow writes to in between restores longer than the
+    manifest says, and the drill fails a sound backup. The session exports its
+    snapshot, counts inside it, and stays open until `pg_dump` exits.
+    """
+
+    def __init__(self, conn: Connection) -> None:
+        self._process = subprocess.Popen(
+            [
+                "docker",
+                "exec",
+                "-i",
+                "-e",
+                f"PGPASSWORD={conn.password}",
+                conn.container,
+                "psql",
+                "-U",
+                conn.user,
+                "-d",
+                conn.database,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-X",
+                "-q",
+                "-tA",
+                "-F",
+                "\t",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        self.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        self.snapshot = self.query("SELECT pg_export_snapshot()")
+
+    def query(self, sql: str) -> str:
+        """Run one statement in the open transaction and return its output."""
+        assert self._process.stdin and self._process.stdout
+        self._process.stdin.write(f"{sql};\n\\echo {END_MARKER}\n")
+        self._process.stdin.flush()
+        lines: list[str] = []
+        while True:
+            line = self._process.stdout.readline()
+            if not line:
+                raise RuntimeError(f"the snapshot session ended during: {sql}")
+            if line.rstrip("\n") == END_MARKER:
+                return "\n".join(lines).strip()
+            lines.append(line.rstrip("\n"))
+
+    def close(self) -> None:
+        try:
+            self.query("COMMIT")
+        finally:
+            if self._process.stdin:
+                self._process.stdin.close()
+            self._process.wait(timeout=60)
+
+    def __enter__(self) -> SnapshotSession:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
 
 def busy_statements(conn: Connection, minutes: int) -> int:
@@ -318,10 +406,11 @@ def command_dump(args: argparse.Namespace, conn: Connection) -> int:
     started = time.monotonic()
     name = dump_name(datetime.now(timezone.utc))
     database_bytes = int(psql(conn, "SELECT pg_database_size(current_database())"))
-    counts = table_counts(conn)
-    command = pg_dump_command(conn, target, name, args.jobs)
-    print(redact(command), flush=True)
-    subprocess.run(command, check=True)
+    with SnapshotSession(conn) as session:
+        counts = counts_from(session.query)
+        command = pg_dump_command(conn, target, name, args.jobs, session.snapshot)
+        print(redact(command), flush=True)
+        subprocess.run(command, check=True)
     final = target / name
     (target / f"{name}{PARTIAL_SUFFIX}").rename(final)
     deletion_log = _export_deletion_log(final / DELETION_LOG)

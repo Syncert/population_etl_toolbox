@@ -108,3 +108,26 @@ def test_settings_come_from_the_stack_env_unless_overridden(
     )
     monkeypatch.setenv("ANALYTICS_DB_USER", "override")
     assert backup.connection_from(backup.read_env_file(env), "c").user == "override"
+
+
+def test_the_dump_reads_the_snapshot_its_counts_were_taken_in() -> None:
+    """Covers: ENV-025 -- writes between counting and dumping cannot fail a drill."""
+    command = backup.pg_dump_command(
+        CONN, Path("E:/backups"), "warehouse-x", 4, snapshot="00000003-0000001B-1"
+    )
+    assert "--snapshot=00000003-0000001B-1" in command
+    assert command[-1] == "/backup/warehouse-x.partial"
+    assert not any(
+        part.startswith("--snapshot")
+        for part in backup.pg_dump_command(CONN, Path("E:/b"), "warehouse-x", 4)
+    )
+
+
+def test_counts_come_from_whichever_session_runs_the_queries() -> None:
+    """Covers: ENV-025 -- small tables are counted exactly, large ones skipped."""
+    big = backup.EXACT_COUNT_MAX_BYTES + 1
+    answers = {
+        backup.TABLES_SQL: f"control.capture_log\t1024\nbronze.blob\t{big}",
+        "SELECT count(*) FROM control.capture_log": "27",
+    }
+    assert backup.counts_from(answers.__getitem__) == {"control.capture_log": 27}
