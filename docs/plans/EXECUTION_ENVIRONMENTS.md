@@ -75,12 +75,13 @@ claiming it, so it stays in `to_do/` until an operator can answer those three
 questions. The classification derives from the `verify` block and cannot see
 that distinction; this paragraph is where it is recorded.
 
-**2 plans.**
+**3 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
 | [`full-map-sweep-scheduled`](in_progress/EVERY_METRIC_MAP_IS_SWEPT_ON_A_SCHEDULE_PLAN.md) | low | Every published metric's map is graded at least once a week against a reachable deployment or populated internal stack. |
+| [`warehouse-backups`](in_progress/WAREHOUSE_BACKUPS_PLAN.md) | medium | One full dump of the internal warehouse exists on a drive outside H:, and one restore drill of it passed. |
 
 
 ## 3. Needs a machine with the warehouse up
