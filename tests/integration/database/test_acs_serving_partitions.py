@@ -33,8 +33,10 @@ SCRATCH_YEAR = 2001
 ROWS = 400
 
 
-def _insert_rows(cursor, year: int, token: str, count: int) -> None:
-    """`count` rows in `year`, each its own natural key."""
+def _insert_rows(
+    cursor, year: int, token: str, count: int, geo_level: str = "COUNTY"
+) -> None:
+    """`count` rows in `year` at `geo_level`, each its own natural key."""
     cursor.execute(
         f"""
         INSERT INTO {RELATION} (
@@ -45,12 +47,12 @@ def _insert_rows(cursor, year: int, token: str, count: int) -> None:
         SELECT MAKE_DATE(%s, 1, 1), MAKE_DATE(%s, 1, 1),
                MAKE_DATE(%s, 1, 1)::TIMESTAMPTZ,
                'test:acs-part:' || %s || ':' || g,
-               'COUNTY', g, 'acs5', %s, 'B99999',
+               %s, g, 'acs5', %s, 'B99999',
                'B99999_' || %s || 'E', g,
                'CENSUS_ACS:acs5:B99999_' || %s || 'E'
         FROM generate_series(1, %s) AS g
         """,
-        (year, year, year, token, year, token, token, count),
+        (year, year, year, token, geo_level, year, token, token, count),
     )
 
 
@@ -259,3 +261,60 @@ def test_the_dead_tuple_statistic_moves_when_rows_are_deleted(
             )
     finally:
         database.close()
+
+
+def test_a_grain_step_never_holds_another_grain_of_its_year(
+    scratch_partition: Callable[[], connection],
+) -> None:
+    """Covers: ETL-088 — a place step leaves the year's county rows readable.
+
+    The whole-year path truncates the year's partition, which takes ACCESS
+    EXCLUSIVE: a reader of that year's counties waits for as long as the
+    chunk runs, hours for a place year. A grain step deletes its own rows
+    instead. The contrast is measured, so this cannot pass on a database
+    where nothing ever blocks.
+    """
+    county_token, place_token = uuid4().hex[:8], uuid4().hex[:8]
+    setup = scratch_partition()
+    setup.autocommit = True
+    with setup.cursor() as cursor:
+        _insert_rows(cursor, SCRATCH_YEAR, county_token, 20, "COUNTY")
+        _insert_rows(cursor, SCRATCH_YEAR, place_token, 20, "PLACE")
+    setup.close()
+
+    def county_rows_while(call: str, parameters: tuple) -> int | None:
+        writer, reader = scratch_partition(), scratch_partition()
+        try:
+            with writer.cursor() as cursor:
+                cursor.execute(call, parameters)  # left open: the chunk "runs"
+            reader.autocommit = True
+            with reader.cursor() as cursor:
+                cursor.execute("SET lock_timeout = '1s'")
+                try:
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM {RELATION} "
+                        "WHERE observation_date = MAKE_DATE(%s, 1, 1) "
+                        "AND geo_level = 'COUNTY'",
+                        (SCRATCH_YEAR,),
+                    )
+                    return int(cursor.fetchone()[0])
+                except Exception as error:  # LockNotAvailable
+                    assert "lock timeout" in str(error)
+                    return None
+        finally:
+            writer.rollback()
+            writer.close()
+            reader.close()
+
+    year = (f"{SCRATCH_YEAR}-01-01", f"{SCRATCH_YEAR}-12-31")
+    assert (
+        county_rows_while(
+            "CALL gold_census.refresh_rpt_acs_observations(%s, %s, %s)",
+            (*year, ["PLACE"]),
+        )
+        == 20
+    )
+    assert (
+        county_rows_while("CALL gold_census.refresh_rpt_acs_observations(%s, %s)", year)
+        is None
+    )

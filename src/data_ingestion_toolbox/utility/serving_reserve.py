@@ -9,7 +9,10 @@ silently and re-serves the wrong years. One definition, two callers.
 
 from __future__ import annotations
 
-from data_ingestion_toolbox.utility.gold_schema import ServingRefreshChunkConfig
+from data_ingestion_toolbox.utility.gold_schema import (
+    GrainStep,
+    ServingRefreshChunkConfig,
+)
 
 
 BLS_CHUNK_CONFIG = ServingRefreshChunkConfig(
@@ -126,6 +129,19 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     # on the internal stack. A 90-minute limit failed that year every time.
     statement_timeout="600min",
     full_statement_timeout="600min",
+    # The year is served one grain group at a time (backfill plan,
+    # Deliverable 5), so a place year never holds that year's county, state
+    # and nation rows. Limits per step: the area grains were served inside 90
+    # minutes a year before places and tracts existed; a tract year (five
+    # tables, about 11M revision rows) inside the 120 minutes the year chunk
+    # had before 2024; a full-list place year (2024, about 159M revision rows)
+    # needed hours, and keeps the 600 minutes. Each step's duration is logged
+    # (`step=... duration_seconds=`), and the backfill records them per year.
+    grain_steps=(
+        GrainStep("area", ("NATIONAL", "STATE", "COUNTY"), "90min"),
+        GrainStep("tract", ("TRACT",), "120min"),
+        GrainStep("place", ("PLACE",), "600min"),
+    ),
 )
 
 FRED_CHUNK_CONFIG = ServingRefreshChunkConfig(

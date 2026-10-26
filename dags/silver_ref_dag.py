@@ -21,7 +21,7 @@ from data_ingestion_toolbox.silver_ref.provider_areas import (
 )
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     sync_geography_history,
-    MIN_SUB_COUNTY_HISTORY_YEAR,
+    MIN_TRACT_HISTORY_YEAR,
     sync_sub_county_geography,
     sync_sub_county_history,
 )
@@ -86,7 +86,7 @@ def silver_ref():
         # skipped; the newest is replayed to retire codes that no longer exist.
         latest = int(sub_county["latest_vintage"])
         return sync_sub_county_history(
-            list(range(MIN_SUB_COUNTY_HISTORY_YEAR, latest)), latest_year=latest
+            list(range(MIN_TRACT_HISTORY_YEAR, latest)), latest_year=latest
         )
 
     @task
