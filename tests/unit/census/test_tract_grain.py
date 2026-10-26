@@ -53,8 +53,11 @@ def test_tract_requests_take_every_county_of_one_state() -> None:
 def test_only_the_newest_year_and_the_tract_tables_are_requested() -> None:
     """Covers: ETL-061 — tract volume is bounded by year and by table."""
     years = [2019, 2020, 2021, 2022, 2023]
-    assert CONFIG.tract_years("acs5", years) == {2023}
+    newest = CONFIG.model_copy(update={"tract_year_scope": "newest"})
+    assert newest.tract_years("acs5", years) == {2023}
     assert CONFIG.tract_years("acs1", years) == set()
+    # The shipped declaration is every year (v1.0, W-4).
+    assert CONFIG.tract_years("acs5", years) == set(years)
     assert CONFIG.model_copy(update={"tract_year_scope": "newest:2"}).tract_years(
         "acs5", years
     ) == {2022, 2023}

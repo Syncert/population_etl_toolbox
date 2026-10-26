@@ -177,17 +177,27 @@ class AcsConfig(BaseModel):
     # (places of 65,000 or more, no 2020 release); measured to fit with the
     # reserve free on 2026-10-26 (`measure.py`, the backfill plan).
     place_year_scope: str = "2005-2024"
-    # The tables requested at tract grain (sub-county-geography): the few a
-    # "within this county" map shows. Tracts are about 85,000 against the
-    # counties' 3,200, so the whole curated list at tract grain would be some
-    # 25 times the county volume per year. These five tables are 63
-    # variables (B17001 is 59 of them): about 5.4 million facts and 10.7
-    # million revision rows (estimate and margin) for one year, in 51 state
-    # slices. Each must also be in `curated_tables`.
-    tract_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
-    # The 5-year years requested at tract grain, declared as for places; the
-    # default is the newest, which is what a county page reads.
-    tract_year_scope: str = "newest"
+    # The tables requested at tract grain (sub-county-geography). Tracts are
+    # about 85,000 against the counties' 3,200, so the whole curated list at
+    # tract grain would be some 25 times the county volume per year. The
+    # first five (63 variables) are what the "within this county" map began
+    # with; v1.0 (W-4) adds what the tract and city chapters show -- age,
+    # households, race and ethnicity, education, employment, commute,
+    # tenure, rent burden, owner costs, vacancy, health insurance, broadband,
+    # per capita income and housing units -- 558 variables a year from 2017,
+    # measured at about 159 MB per variable-year (about 1,140 GiB for
+    # 2010-2024); Nick chose the whole list on 2026-10-26. Each must also be
+    # in `curated_tables`.
+    tract_tables: List[str] = [
+        "B01003", "B19013", "B17001", "B25064", "B25077",
+        "B01001", "B01002", "B11001", "B02001", "B03002", "B15003", "B23025",
+        "B08301", "B08303", "B25003", "B25070", "B25091", "B25002", "B27010",
+        "B28002", "B19301", "B25001",
+    ]  # fmt: skip
+    # The 5-year years requested at tract grain, declared as for places:
+    # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
+    # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.
+    tract_year_scope: str = "2009-2024"
     # Place years outside `place_full_table_year_scope` are requested for
     # `place_history_tables` only (acs-place-tract-history-backfill). A place
     # year on the whole curated list measured about 136 GB on the internal
