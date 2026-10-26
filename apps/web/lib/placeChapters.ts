@@ -782,6 +782,8 @@ export interface LevelAnswer {
   row: ObservationRow | null;
   /** An error the request raised, stated rather than shown as a gap. */
   error?: string;
+  /** The request has not settled yet: not an absence, and never shown as one. */
+  pending?: boolean;
 }
 
 export interface CardRow {
@@ -817,6 +819,10 @@ export function threeLevelCard(
       return { place, row: null, message: `Not published at ${GRAIN_WORDS[place.level]} grain` };
     }
     if (answer?.error) return { place, row: null, message: answer.error };
+    // A request still in flight is not an absence: until it settles the cell
+    // says so, because "Not published" on a page that is still loading reads
+    // as a finding about the place.
+    if (answer?.pending) return { place, row: null, message: "Reading…" };
     const row = answer?.row ?? null;
     if (!row) return { place, row: null, message: "Not published for this place" };
     const own = observationPeriodLabel(row);

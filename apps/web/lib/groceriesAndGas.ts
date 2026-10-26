@@ -41,7 +41,7 @@ export const SOURCE_NAMES: Record<string, string> = {
 };
 
 export const NO_LOCAL_PRICES =
-  "No source publishes grocery or gas prices for a county. Each figure here is for the larger area named beside it.";
+  "No source publishes grocery or gas prices for a county or a city. Each figure here is for the larger area named beside it.";
 
 const LEVEL_WORDS: Record<Area["level"], string> = {
   NATIONAL: "the nation",

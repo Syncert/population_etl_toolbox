@@ -74,6 +74,17 @@ describe("a city or town's counties", () => {
     expect(crossCountyNote("Nowhere", [])).toBe("");
   });
 
+  it("does not say a place crosses county lines over a boundary sliver", () => {
+    // Abanda CDP: 100% Chambers County and 0% Randolph County by overlap area.
+    const sliver = groupNearby({ geo_id: "state:01|place:00100", total: 2, items: [
+      row("intersects", "state:55|county:025", "COUNTY", "Dane County", "55", { overlap_weight: 0.9988 }),
+      row("intersects", "state:55|county:105", "COUNTY", "Rock County", "55", { overlap_weight: 0.0012 }),
+    ] }, states, wisconsin);
+    expect(crossCountyNote("Abanda CDP", sliver.counties)).toBe(
+      "Abanda CDP lies in Dane County. Its boundary also touches Rock County, by less than half a percent of its area.",
+    );
+  });
+
   it("links a place within a county by its seven-digit code", () => {
     const county = groupNearby({ geo_id: "state:55|county:025", total: 1, items: [
       row("intersects", "state:55|place:99999", "PLACE", "Crossing city", "55", { overlap_weight: 0.6 }),
