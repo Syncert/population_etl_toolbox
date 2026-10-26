@@ -160,6 +160,12 @@ export default function PlacePage({
   const [distinctive, setDistinctive] = useState<DistinctiveResponse | null>(null);
   const [distinctiveNote, setDistinctiveNote] = useState("");
   const settled = useRef(false);
+  // Until the observations settle, a cell nothing has answered yet is being
+  // read, not unpublished: the chapters draw from this view, which answers
+  // every unknown key as pending, so a page still loading never reads as a
+  // place with no data (a page under load showed "Not published" everywhere).
+  const reading = observationStatus.state === "idle" || observationStatus.state === "loading";
+  const shownAnswers = useMemo(() => (reading ? readingAnswers(answers) : answers), [answers, reading]);
 
   // Resolve the address through the catalog.
   useEffect(() => {
@@ -311,12 +317,21 @@ export default function PlacePage({
         const groups = groupNearby(payload, states, counties);
         setNearby(groups);
         setNearbyNote(isEmpty(groups) ? "Nearby and related: the geography reference records no relationships for this place" : "");
+        // A city or town's county, for its cards' reference rows: the county
+        // holding the largest share of it, from the reference's own overlap
+        // weights (a city read beside its state and the nation alone, with
+        // its county missing from every card). The cross-county note beside
+        // the cards says when the place reaches into other counties.
+        if (level === "PLACE") {
+          const largest = groups.counties[0];
+          setCounty(largest ? counties.find((row) => row.geo_id === largest.geoId) || null : null);
+        }
       })
       .catch((error) => {
         if (!controller.signal.aborted) setNearbyNote(`Nearby and related: ${apiErrorMessage(error)}`);
       });
     return () => controller.abort();
-  }, [resolution.state, place, states, counties]);
+  }, [resolution.state, place, level, states, counties]);
   // Where this place stands among its siblings, one measure at a time, as the
   // API derives it (what-makes-this-place-distinctive).
   useEffect(() => {
@@ -337,7 +352,7 @@ export default function PlacePage({
   const levels = useMemo((): LevelPlace[] => {
     const chain: LevelPlace[] = [];
     if (city && level === "PLACE") chain.push({ level: "PLACE", geoId: city.geo_id, name: cityName(city), role: "this place" });
-    if (county) chain.push({ level: "COUNTY", geoId: county.geo_id, name: countyName(county), role: "this place" });
+    if (county) chain.push({ level: "COUNTY", geoId: county.geo_id, name: countyName(county), role: level === "COUNTY" ? "this place" : "parent" });
     if (state && level !== "NATIONAL") chain.push({ level: "STATE", geoId: state.geo_id, name: stateName(state), role: level === "STATE" ? "this place" : "parent" });
     if (nation) chain.push({ level: "NATIONAL", geoId: nation.geo_id, name: "United States", role: level === "NATIONAL" ? "this place" : "parent" });
     return chain;
@@ -515,13 +530,16 @@ export default function PlacePage({
           <ol>
             <li><Link href="/us">United States</Link></li>
             {state && level !== "NATIONAL" ? <li><Link href={placePath(stateSegment(state, states))}>{stateName(state)}</Link></li> : null}
-            {county ? <li aria-current="page">{countyName(county)}</li> : null}
+            {county && level === "COUNTY" ? <li aria-current="page">{countyName(county)}</li> : null}
+            {county && state && level === "PLACE" ? (
+              <li><Link href={placePath(stateSegment(state, states), countySegment(county, counties))}>{countyName(county)}</Link></li>
+            ) : null}
             {city && level === "PLACE" ? <li aria-current="page">{cityName(city)}</li> : null}
           </ol>
         </nav>
         <p>
           The same chapters in the same order on every place page. Each headline number is shown beside
-          {level === "NATIONAL" ? " its own history" : level === "STATE" ? " the nation's" : " its state's and the nation's"},
+          {level === "NATIONAL" ? " its own history" : level === "STATE" ? " the nation's" : level === "PLACE" ? " its county's, its state's and the nation's" : " its state's and the nation's"},
           {" "}with its period, source, and caveats. Nothing here is a score or a ranking.
         </p>
       </header>
@@ -533,7 +551,10 @@ export default function PlacePage({
       </section>
 
       {distinctive && distinctive.ranked.length ? (
-        <WhatStandsOut response={distinctive} siblingsName={level === "COUNTY" && state ? `${stateName(state)} counties` : "states"} />
+        <WhatStandsOut
+          response={distinctive}
+          siblingsName={level === "COUNTY" && state ? `${stateName(state)} counties` : level === "PLACE" && state ? `${stateName(state)} cities and towns` : "states"}
+        />
       ) : null}
 
       {visible.length ? (
@@ -552,13 +573,13 @@ export default function PlacePage({
           pageLevel={level}
           county={county}
           state={state}
-          answers={answers}
+          answers={shownAnswers}
           histories={histories}
           sourceFor={sourceFor}
         />
       ))}
 
-      {level !== "PLACE" && place && related?.geo_id === place.geo_id ? (
+      {place && related?.geo_id === place.geo_id ? (
         <GroceriesAndGas level={level} place={place} related={related} sources={sources} />
       ) : null}
 
@@ -723,7 +744,9 @@ function Chapter({
         source: primary.metric?.source_code || undefined,
         geoId: own.geoId,
         geoLevel: own.level as GeoLevel,
-        stateFips: (own.level === "STATE" ? state?.state_fips : own.level === "COUNTY" ? county?.state_fips : undefined) || undefined,
+        // The explorer needs the state before it lists counties, cities or
+        // tracts; a city link without it opened on an empty picker.
+        stateFips: (own.level === "STATE" ? state?.state_fips : own.level === "COUNTY" ? county?.state_fips : own.level === "PLACE" ? state?.state_fips : undefined) || undefined,
       })
     : "";
 
@@ -814,6 +837,19 @@ function Chapter({
       </footer>
     </section>
   );
+}
+
+const PENDING_ANSWER: LevelAnswer = Object.freeze({ row: null, pending: true }) as LevelAnswer;
+
+/**
+ * The answers as the chapters read them while the page is still loading:
+ * every key that has no answer yet is pending. Nothing is written into the
+ * real map, so a settled page reads exactly what the requests returned.
+ */
+function readingAnswers(answers: Map<string, LevelAnswer>): Map<string, LevelAnswer> {
+  const view = new Map<string, LevelAnswer>(answers);
+  view.get = (key: string) => answers.get(key) ?? PENDING_ANSWER;
+  return view;
 }
 
 function HeadlineCard({
@@ -929,11 +965,13 @@ function EarningsByIndustry({
                     ? `Not published at ${place.level.toLowerCase()} grain`
                     : answer?.error
                       ? answer.error
-                      : published
-                        ? formatObservationValue(row!.value)
-                        : row?.value_status
-                          ? `Published without a value: ${String(row.value_status)}`
-                          : "Not published for this place"}
+                      : answer?.pending
+                        ? "Reading…"
+                        : published
+                          ? formatObservationValue(row!.value)
+                          : row?.value_status
+                            ? `Published without a value: ${String(row.value_status)}`
+                            : "Not published for this place"}
                 </td>
               </tr>
             );
@@ -988,11 +1026,13 @@ function IndustryMix({
                     ? `Not published at ${place.level.toLowerCase()} grain`
                     : answer?.error
                       ? answer.error
-                      : published
-                        ? formatObservationValue(row!.value)
-                        : row?.value_status
-                          ? `Published without a value: ${String(row.value_status)}`
-                          : "Not published for this place"}
+                      : answer?.pending
+                        ? "Reading…"
+                        : published
+                          ? formatObservationValue(row!.value)
+                          : row?.value_status
+                            ? `Published without a value: ${String(row.value_status)}`
+                            : "Not published for this place"}
                 </td>
               </tr>
             );
@@ -1052,11 +1092,13 @@ function DepthRow({
             ? `Not published at ${place.level.toLowerCase()} grain`
             : answer?.error
               ? answer.error
-              : published
-                ? `${formatObservationValue(row!.value)} ${publishedUnit(row!)}`.trim()
-                : row?.value_status
-                  ? `Published without a value: ${String(row.value_status)}`
-                  : "Not published for this place"}
+              : answer?.pending
+                ? "Reading…"
+                : published
+                  ? `${formatObservationValue(row!.value)} ${publishedUnit(row!)}`.trim()
+                  : row?.value_status
+                    ? `Published without a value: ${String(row.value_status)}`
+                    : "Not published for this place"}
         {published ? <span className="subtle"> · {observationPeriodLabel(row)}{uncertaintyText(row!) ? ` · ${uncertaintyText(row!)}` : ""}</span> : null}
       </dd>
     </div>

@@ -118,7 +118,10 @@ test("within this county paints tracts, counts the uncoloured one, and tabulates
   );
   await expect(page.getByTestId("within-county-map")).toHaveAttribute("data-colored-values", "2");
   await page.getByTestId("within-county-measure").selectOption("CENSUS_ACS:acs5:B25064_001");
-  await expect(page.getByTestId("within-county-table")).toContainText("Median gross rent by Census tract");
+  // The caption names the release's period between the measure and the grain.
+  await expect(page.getByTestId("within-county-table").locator("caption")).toHaveText(
+    /^Median gross rent, .+ by Census tract$/,
+  );
 });
 
 // Covers: WEB-137 — bea-regional-accounts: BEA per capita income and real GDP
@@ -295,9 +298,11 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Crossing city, Wisconsin");
   await expect(page.locator(".section-kicker").first()).toHaveText("City or town");
 
-  // Three levels: the place, its state, the nation.
+  // Four levels: the place, the county holding most of it, its state, the
+  // nation.
   const income = page.getByTestId("card-median-household-income");
-  await expect(income.locator("tbody tr")).toHaveCount(3);
+  await expect(income.locator("tbody tr")).toHaveCount(4);
+  await expect(income).toContainText("Dane County");
   await expect(page.getByTestId("card-median-household-income-place")).toContainText("Crossing city");
   await expect(page.getByTestId("card-median-household-income-place")).toContainText("margin of error");
   // BLS publishes no place: said in the card, not borrowed from a county.
