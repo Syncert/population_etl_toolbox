@@ -139,7 +139,7 @@ import {
   workbenchLinkCeiling,
 } from "../lib/urlState";
 import type { WorkbenchUrlState } from "../lib/urlState";
-import { formatNumber } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 
 const CATALOG_PAGE_SIZE = 1000;
 /** Pages of history per series. Ten pages of 1,000 covers any published run. */
@@ -161,10 +161,7 @@ function metricLabel(metric: MetricSummary | undefined): string {
   if (!metric) {
     return "";
   }
-  return String(metric.metric_display_name || metric.metric_code).replaceAll(
-    "!!",
-    " › ",
-  );
+  return displayMetricName(metric);
 }
 
 function metricUnit(metric: MetricSummary | undefined): string | null {

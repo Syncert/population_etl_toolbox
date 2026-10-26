@@ -2,7 +2,20 @@
 // fixtures, not provider-published statistics; every metric identity is a
 // candidate the chapter contract names, verified against a deployed catalog.
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { servedParameters } from "./servedContract.js";
+
+// The plain labels the API serves beside each provider label (A-2), read from
+// the same registry the API reads, so the fixture answers as the API does.
+// Both runners start in apps/web or at the repository root.
+const DEFINITIONS_PATH = ["../../docs/semantics/metric_definitions.json", "docs/semantics/metric_definitions.json"]
+  .map((path) => resolve(process.cwd(), path))
+  .find((path) => existsSync(path));
+const DEFINED = new Map(
+  JSON.parse(readFileSync(DEFINITIONS_PATH, "utf8"))
+    .entries.flatMap((entry) => entry.metric_codes.map((code) => [code, [entry.name, entry.status]])),
+);
 
 const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
 
@@ -62,6 +75,7 @@ function unitFor(code) {
 const codes = placeChapterMetricCodes().filter((code) => !code.includes(":acs1:"));
 const metrics = Object.fromEntries(codes.map((code) => [code, {
   metric_code: code, metric_display_name: `${code.split(":").at(-1)} (UI fixture)`, source_code: code.split(":")[0],
+  metric_label: DEFINED.get(code)?.[0] ?? null, metric_label_status: DEFINED.get(code)?.[1] ?? null,
   units: unitFor(code), valid_geo_grains: grainsFor(code), freshness_state: "fresh",
   publication_time: "2026-09-01T00:00:00Z", harvested_at: "2026-09-02T00:00:00Z", source_watermark: "fixture-2026-09", publisher_contract_version: "v1",
 }]));

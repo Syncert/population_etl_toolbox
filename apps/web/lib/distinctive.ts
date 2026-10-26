@@ -7,6 +7,7 @@
 export interface DistinctiveMeasure {
   metric_code: string;
   metric_display_name?: string | null;
+  metric_label?: string | null;
   source_code?: string | null;
   units?: string | null;
   period_start?: string | null;

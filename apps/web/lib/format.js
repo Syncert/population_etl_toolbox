@@ -68,7 +68,11 @@ export function formatTime(value, options) {
 }
 
 /**
- * A metric's name, as the catalog publishes it.
+ * A metric's name, as the API serves it for readers.
+ *
+ * The API's `metric_label` (A-2) is the plain label: a reviewed or draft
+ * definition's, or the provider's own with its label path set as words. The
+ * fallback below only covers a response from an API that predates it.
  *
  * This used to return "Total population" for any metric code ending in one
  * particular Census variable, overriding whatever `metric_display_name` the
@@ -78,6 +82,9 @@ export function formatTime(value, options) {
  * from the source.
  */
 export function displayMetricName(metric) {
+  if (metric && typeof metric === "object" && metric.metric_label) {
+    return String(metric.metric_label);
+  }
   const value = typeof metric === "string" ? metric : metric?.metric_display_name;
   if (!value) return "Untitled metric";
   return value

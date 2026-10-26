@@ -51,6 +51,19 @@ describe("frontend formatting and saved-chart persistence", () => {
     expect(displayMetricName(null)).toBe("Untitled metric");
   });
 
+  test("a metric's name is the API's plain label when it serves one", () => {
+    // Covers: WEB-144 — the label a reader sees comes from the API's
+    // definitions (A-2), not from this client reformatting a provider label.
+    expect(
+      displayMetricName({
+        metric_code: "CENSUS_ACS:acs5:B19083_001",
+        metric_display_name: "Estimate!!Gini Index",
+        metric_label: "Gini index of income inequality",
+        metric_label_status: "draft",
+      }),
+    ).toBe("Gini index of income inequality");
+  });
+
   test("formats numbers, dates and times in the one chosen locale", () => {
     expect(DISPLAY_LOCALE).toBe("en-US");
     expect(formatNumber(1234567)).toBe("1,234,567");

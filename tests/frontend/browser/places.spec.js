@@ -148,6 +148,18 @@ test("a state page has no within-this-county section", async ({ page }) => {
   await expect(page.getByTestId("within-county")).toHaveCount(0);
 });
 
+// Covers: WEB-144 — a reader never sees a provider's label path or a
+// variable code as a name, on any level's page; codes stay in attributes.
+test("no place page shows an Estimate!! label path or a bare variable code", async ({ page }) => {
+  for (const path of ["/us", "/us/wisconsin", "/us/wisconsin/dane-county", "/us/wisconsin/crossing-city"]) {
+    await ready(page, path);
+    const text = await page.locator("main").innerText();
+    expect(text, path).not.toMatch(/Estimate!!/);
+    const code = text.match(/.{0,60}\b[BC]\d{5}_\d{3}[EM]?\b.{0,20}/);
+    expect(code?.[0] ?? null, path).toBeNull();
+  }
+});
+
 // Covers: WEB-135 — bls-qcew-county-wages: the county page shows jobs located
 // here beside residents who work, each labelled with how it was counted, and
 // an industry mix of private jobs that states a withheld sector.
@@ -157,7 +169,7 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await expect(page.getByTestId("card-qcew-jobs")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-qcew-jobs-basis")).toHaveText("Jobs located here, counted by employers (QCEW)");
   await expect(page.getByTestId("card-unemployment-rate-basis")).toHaveText("Residents who work, counted where they live (LAUS)");
-  await expect(page.getByTestId("card-qcew-jobs")).toContainText("BLS_QCEW:employment:10:0");
+  await expect(page.getByTestId("card-qcew-jobs").locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "BLS_QCEW:employment:10:0");
   await expect(page.getByTestId("card-qcew-jobs-county")).toContainText("jobs");
   await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
 
@@ -203,7 +215,7 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(model).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
   await expect(page.getByTestId("card-saipe-median-household-income-basis")).toHaveText("Model-based annual estimate (SAIPE)");
-  await expect(model).toContainText("CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
+  await expect(model.locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
   await expect(survey).not.toContainText("CENSUS_SAIPE_SAHIE");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("margin of error");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("confidence lower");

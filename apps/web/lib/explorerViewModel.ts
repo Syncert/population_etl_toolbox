@@ -6,7 +6,7 @@ import type { DistributionResponse, MetricSummary } from "./api/types";
 import { isDrawableTileGrain } from "./tileGrains";
 import { normalizeGeoLevel } from "./urlState";
 import type { ValueScale } from "./urlState";
-import { DISPLAY_LOCALE } from "./format";
+import { DISPLAY_LOCALE, displayMetricName } from "./format";
 
 // Re-exported: the grain vocabulary and its aliases are declared beside
 // `GEO_LEVELS`, and this module's callers have always reached the
@@ -184,7 +184,7 @@ export function pickPreferredMetric(
 export function metricOptions(metrics: MetricSummary[] | null | undefined): MetricOption[] {
   return (metrics || []).map((metric) => ({
     value: metric.metric_code,
-    label: `${String(metric.metric_display_name).replaceAll("!!", " › ")} (${metric.metric_code})`,
+    label: displayMetricName(metric),
     source: metric.source_code,
   }));
 }

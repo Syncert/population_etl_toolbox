@@ -846,7 +846,9 @@ function HeadlineCard({
     <div className="place-card" data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
       <h3>{measure.measure.label}</h3>
       <p className="subtle">
-        {displayMetricName(measure.metric)} · {measure.metricCode}
+        <span title={measure.metricCode} data-metric-code={measure.metricCode}>
+          {displayMetricName(measure.metric)}
+        </span>
         {card.period ? ` · ${card.period}` : ""}
         {unit ? ` · ${publishedUnit(unit) || "unit not published"}` : ""}
       </p>
@@ -1067,7 +1069,7 @@ function StandoutRow({ measure, siblingsName }: { measure: DistinctiveMeasure; s
   const unit = measure.units && measure.units !== "value" ? ` ${measure.units}` : "";
   return (
     <li data-testid={`standout-${measure.metric_code}`}>
-      <strong>{measure.metric_display_name || measure.metric_code}</strong>
+      <strong>{displayMetricName(measure)}</strong>
       <span> · {formatObservationValue(measure.value)}{unit}{measure.period_start ? ` · period beginning ${measure.period_start}` : ""}</span>
       <p className="subtle">{rankSentence(measure, siblingsName)}.</p>
       {measure.caveats.map((caveat) => <p key={caveat} className="subtle">{caveat}</p>)}

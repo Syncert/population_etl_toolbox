@@ -21,9 +21,26 @@ export interface SourceSummary {
   [key: string]: unknown;
 }
 
+/** A metric's plain-language definition, as the API serves it (A-2). */
+export interface MetricDefinition {
+  label: string;
+  definition: string;
+  unit?: string | null;
+  universe?: string | null;
+  caveat?: string | null;
+  status: string;
+  version: number;
+  citations: string[];
+}
+
 export interface MetricSummary {
   metric_code: string;
   metric_display_name?: string | null;
+  /** The plain label to show (A-2); `metric_display_name` is the provider's. */
+  metric_label?: string | null;
+  /** `approved`, `draft` (not yet reviewed) or `provider` (no entry yet). */
+  metric_label_status?: string | null;
+  definition?: MetricDefinition | null;
   source_code?: string | null;
   source_object_type?: string | null;
   valid_geo_grains?: string[] | null;

@@ -23,7 +23,7 @@ import type {
 import { metricHasNoPublishedValue, metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
-import { formatNumber } from "./format";
+import { displayMetricName, formatNumber } from "./format";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -466,9 +466,7 @@ export function comparisonMetricOptions(
 ): { value: string; label: string }[] {
   return (Array.isArray(metrics) ? metrics : []).map((metric) => ({
     value: metric.metric_code,
-    label: metric.metric_display_name
-      ? `${metric.metric_display_name} (${metric.metric_code})`
-      : metric.metric_code,
+    label: metric.metric_label || metric.metric_display_name ? displayMetricName(metric) : metric.metric_code,
   }));
 }
 
