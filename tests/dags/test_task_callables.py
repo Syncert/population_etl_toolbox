@@ -431,6 +431,22 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
     """Covers: DAG-010 — production planners build source-specific work scopes."""
     database = RecordingDatabase(fetches=[[], []])
     callable_ = _callable(dagbag, dag_id, "build_ingestion_plan")
+    if "CONFIG" in callable_.__globals__ and hasattr(
+        callable_.__globals__["CONFIG"], "place_year_scope"
+    ):
+        # The planning mechanism under test is "the newest year"; the
+        # shipped declaration (every year) is asserted in tests/unit/census.
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            callable_.__globals__["CONFIG"].model_copy(
+                update={
+                    "place_year_scope": "newest",
+                    "place_full_table_year_scope": "newest",
+                }
+            ),
+        )
     _patch_callable_global(
         monkeypatch, callable_, "_get_postgres_hook", lambda: database
     )
@@ -568,6 +584,22 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
     """Covers: ETL-083 — a backfill conf plans that year's slices at that grain only."""
     database = RecordingDatabase(fetches=[[]])
     callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    if "CONFIG" in callable_.__globals__ and hasattr(
+        callable_.__globals__["CONFIG"], "place_year_scope"
+    ):
+        # The planning mechanism under test is "the newest year"; the
+        # shipped declaration (every year) is asserted in tests/unit/census.
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            callable_.__globals__["CONFIG"].model_copy(
+                update={
+                    "place_year_scope": "newest",
+                    "place_full_table_year_scope": "newest",
+                }
+            ),
+        )
     fingerprints: list[tuple[Any, ...]] = []
     _patch_callable_global(
         monkeypatch, callable_, "_get_postgres_hook", lambda: database
