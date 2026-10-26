@@ -21,7 +21,7 @@ test("the home search reaches a county page by keyboard", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("What is going on in your place?");
-  const input = page.getByRole("combobox", { name: "Find your county, state, or the nation" });
+  const input = page.getByRole("combobox", { name: "Find your city or town, county, state, or the nation" });
   await expect(input).toBeEnabled();
   await input.fill("county wis");
   await expect(page.getByTestId("place-finder-status")).toHaveText("2 places found");
@@ -90,4 +90,31 @@ test("the analyst routes stay reachable under Tools", async ({ page }) => {
   }
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("tools-menu")).not.toHaveAttribute("open", "");
+});
+
+// Covers: WEB-145 — a city is found by name through the API's search, its
+// county beside it, and "use my location" opens the city containing the
+// point rather than the nearest county.
+test("the home search finds a city by name and opens its page", async ({ page }) => {
+  await installPlaceFixtures(page);
+  await page.goto("/");
+  const input = page.getByRole("combobox", { name: "Find your city or town, county, state, or the nation" });
+  await expect(input).toBeEnabled();
+  await input.fill("crossing");
+  await expect(page.getByRole("option", { name: /Crossing city, Wisconsin · city or town/ })).toBeVisible();
+  await input.press("Enter");
+  await expect(page).toHaveURL(/\/us\/wisconsin\/crossing-city$/);
+});
+
+test("use my location opens the city that contains the reader", async ({ browser }) => {
+  const context = await browser.newContext({ geolocation: { latitude: 43.07, longitude: -89.4 } });
+  await context.grantPermissions(["geolocation"], { origin: "http://localhost:3100" });
+  const page = await context.newPage();
+  await installPlaceFixtures(page);
+  await page.goto("/");
+  await expect(page.getByRole("combobox")).toBeEnabled();
+  await page.getByTestId("place-finder-locate").click();
+  await expect(page.getByTestId("place-finder-locating")).toHaveText("Opening Crossing city, Wisconsin, which contains your location.");
+  await expect(page).toHaveURL(/\/us\/wisconsin\/crossing-city$/);
+  await context.close();
 });

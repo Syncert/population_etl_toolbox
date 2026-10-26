@@ -12,7 +12,7 @@ import { countyName, countySegment, placePath, stateName, stateSegment } from ".
 
 export interface PlaceEntry {
   geoId: string;
-  level: "NATIONAL" | "STATE" | "COUNTY";
+  level: "NATIONAL" | "STATE" | "COUNTY" | "PLACE" | "METRO";
   name: string;
   href: string;
   /** Lower-cased words the search matches against. */
@@ -66,7 +66,7 @@ export function buildPlaceDirectory(
 export function searchPlaces(entries: readonly PlaceEntry[], query: string, limit = 8): PlaceEntry[] {
   const words = query.toLowerCase().split(/[\s,]+/).filter(Boolean);
   if (!words.length) return [];
-  const order = { NATIONAL: 0, STATE: 1, COUNTY: 2 };
+  const order = { NATIONAL: 0, STATE: 1, COUNTY: 2, PLACE: 3, METRO: 4 };
   return entries
     .filter((entry) => words.every((word) => entry.haystack.includes(word)))
     .sort((left, right) => {
@@ -75,6 +75,57 @@ export function searchPlaces(entries: readonly PlaceEntry[], query: string, limi
       return leftStarts - rightStarts || order[left.level] - order[right.level] || left.name.localeCompare(right.name);
     })
     .slice(0, limit);
+}
+
+/** One item of `/catalog/geographies/search` (A-1). */
+export interface PlaceMatch {
+  geo_id: string;
+  geo_level: string;
+  name: string;
+  state_fips?: string | null;
+  state_name?: string | null;
+  county_name?: string | null;
+  metro_name?: string | null;
+  population?: number | null;
+  match: string;
+  contains_geo_id?: string | null;
+}
+
+/**
+ * The page a search or location match opens, or null for a grain the site
+ * has no page for (metros until metro pages exist, ZIP code areas, tracts).
+ * A county and a city are addressed by their FIPS segment, which the place
+ * route accepts and redirects to the canonical name, so no slug rule is
+ * repeated here.
+ */
+export function placeMatchEntry(match: PlaceMatch, states: readonly GeographySummary[]): PlaceEntry | null {
+  const state = states.find((row) => row.state_fips === match.state_fips);
+  const stateSeg = state ? stateSegment(state, states) : null;
+  const stateLabel = state ? stateName(state) : match.state_name || "";
+  const county = /county:(\d{3})/.exec(match.geo_id)?.[1];
+  const place = /place:(\d{5})/.exec(match.geo_id)?.[1];
+  if (match.geo_level === "STATE" && stateSeg) {
+    return { geoId: match.geo_id, level: "STATE", name: stateLabel, href: placePath(stateSeg), haystack: "" };
+  }
+  if (match.geo_level === "COUNTY" && stateSeg && county) {
+    return {
+      geoId: match.geo_id,
+      level: "COUNTY",
+      name: `${match.name}, ${stateLabel}`,
+      href: placePath(stateSeg, `${match.state_fips}${county}`),
+      haystack: "",
+    };
+  }
+  if (match.geo_level === "PLACE" && stateSeg && place) {
+    return {
+      geoId: match.geo_id,
+      level: "PLACE",
+      name: `${match.name}, ${stateLabel}`,
+      href: placePath(stateSeg, `${match.state_fips}${place}`),
+      haystack: "",
+    };
+  }
+  return null;
 }
 
 function coordinate(value: unknown): number | null {

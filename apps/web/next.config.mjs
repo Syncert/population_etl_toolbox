@@ -37,7 +37,9 @@ const nextConfig = {
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          // The site's own pages may ask for location ("Use my location" on the
+          // home page, only when pressed); embedded frames may not.
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
         ],

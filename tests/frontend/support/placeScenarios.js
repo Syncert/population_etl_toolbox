@@ -163,6 +163,26 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       observation_filters: ["geo_id", "geo_level", "state_fips"], observation_dimensions: [],
       observation_routes: [{ path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") }],
     })) } });
+    // Place search and point lookup (A-1), answered from the same fixtures:
+    // a name match in the API's shape, and Crossing city for a point in Dane.
+    if (path === "/api/v1/catalog/geographies/search") {
+      const q = String(params.get("q") || "").toLowerCase();
+      const named = (row) => String(row.place_name || row.county_name || row.state_name || row.geo_name || "");
+      const items = [...STATES, ...COUNTIES, ...PLACES]
+        .filter((row) => named(row).toLowerCase().includes(q))
+        .map((row) => ({ geo_id: row.geo_id, geo_level: row.geo_level, name: named(row), state_fips: row.state_fips, state_name: row.state_name || null, match: "prefix" }));
+      return route.fulfill({ json: { query: q, levels: ["STATE", "COUNTY", "METRO", "PLACE", "ZCTA"], items } });
+    }
+    if (path === "/api/v1/catalog/geographies/locate") {
+      const inDane = Math.abs(Number(params.get("latitude")) - 43.07) < 0.5 && Math.abs(Number(params.get("longitude")) + 89.4) < 0.5;
+      const items = inDane ? [
+        { geo_id: "state:55|place:99999", geo_level: "PLACE", name: "Crossing city", state_fips: "55" },
+        { geo_id: "state:55|county:025", geo_level: "COUNTY", name: "Dane County", state_fips: "55" },
+        { geo_id: "cbsa:31540", geo_level: "METRO", name: "Madison, WI", state_fips: null },
+        { geo_id: "state:55", geo_level: "STATE", name: "Wisconsin", state_fips: "55" },
+      ] : [];
+      return route.fulfill({ json: { latitude: Number(params.get("latitude")), longitude: Number(params.get("longitude")), items } });
+    }
     if (path.startsWith("/api/v1/catalog/geographies/") && path.endsWith("/related")) {
       const geoId = decodeURIComponent(path.slice("/api/v1/catalog/geographies/".length, -"/related".length));
       const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geoId);
