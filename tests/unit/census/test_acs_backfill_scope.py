@@ -55,11 +55,11 @@ def test_a_malformed_backfill_refuses_rather_than_running_everything(
 def test_only_the_newest_place_year_carries_the_whole_table_list() -> None:
     """Covers: ETL-083 — an older place year asks for the history tables only."""
     years = [2019, 2020, 2021, 2022, 2023, 2024]
-    assert CONFIG.place_full_table_years == 1
+    assert CONFIG.place_full_table_year_scope == "newest"
     assert CONFIG.place_tables(2024, years) is None
     assert CONFIG.place_tables(2019, years) == CONFIG.place_history_tables
     assert set(CONFIG.place_history_tables) == set(CONFIG.tract_tables)
     assert set(CONFIG.place_history_tables) <= set(CONFIG.curated_tables)
-    widened = CONFIG.model_copy(update={"place_full_table_years": 2})
+    widened = CONFIG.model_copy(update={"place_full_table_year_scope": "newest:2"})
     assert widened.place_tables(2023, years) is None
     assert widened.place_tables(2022, years) == CONFIG.place_history_tables

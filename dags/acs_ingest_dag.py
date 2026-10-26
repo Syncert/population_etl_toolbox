@@ -469,7 +469,7 @@ def acs_ingest():
             return (dataset, year, geo_level, state_fips, current_hash) in completed
 
         # Place slices are requested for each dataset's newest years only
-        # (`AcsConfig.place_recent_years`), because they are ten times the
+        # (`AcsConfig.place_year_scope`), because they are ten times the
         # counties' volume.
         years_by_dataset = {
             dataset: [year for ds, year in varset_meta if ds == dataset]
@@ -480,7 +480,7 @@ def acs_ingest():
             for dataset, years in years_by_dataset.items()
         }
         # Tract slices (sub-county-geography): the 5-year estimates' newest
-        # years only (`AcsConfig.tract_recent_years`), for `tract_tables`.
+        # years only (`AcsConfig.tract_year_scope`), for `tract_tables`.
         tract_years_by_dataset = {
             dataset: CONFIG.tract_years(dataset, years)
             for dataset, years in years_by_dataset.items()
