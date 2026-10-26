@@ -82,3 +82,74 @@ def test_the_report_states_free_space_after_the_projection() -> None:
     report = render(measurement)
     assert "Projected total: 30 GiB" in report
     assert "free afterwards: 20% of the volume" in report
+
+
+class _Cursor:
+    def __init__(self, answer):
+        self._answer = answer
+        self._rows: list[tuple] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return None
+
+    def execute(self, sql, params=None):
+        self._rows = self._answer(sql, params)
+
+    def fetchall(self):
+        return self._rows
+
+
+class _Warehouse:
+    """Answers the measurement's catalog queries from a small fixed warehouse."""
+
+    closed = False
+
+    def cursor(self):
+        return _Cursor(self.answer)
+
+    def close(self):
+        self.closed = True
+
+    @staticmethod
+    def answer(sql, params):
+        if "pg_database_size" in sql:
+            return [(600 * GIB,)]
+        if "pg_total_relation_size(%s::regclass)" in sql:
+            return [(100 * GIB,)]
+        if "FROM silver_census.observation_revision" in sql:
+            return [("acs5", 2024, "place", 1000)]
+        if "pg_inherits" in sql:
+            return [("rpt_acs_observations_2024", 50 * GIB)]
+        if "FROM raw_census.acs_variables" in sql:
+            return [("acs5", 2024, 4000), ("acs5", 2023, 2000)]
+        raise AssertionError(f"unexpected query: {sql}")
+
+
+def test_the_command_measures_the_warehouse_and_projects_the_named_years(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path
+) -> None:
+    """Covers: ETL-085 -- one run reads the catalog, projects, and writes JSON."""
+    from data_ingestion_toolbox.census_acs import measure
+
+    warehouse = _Warehouse()
+    monkeypatch.setattr(measure, "_connect", lambda dsn: warehouse)
+    monkeypatch.setattr(measure, "disk_usage", lambda path: (6000 * GIB, 4000 * GIB))
+    report = tmp_path / "measure.json"
+
+    assert (
+        measure.main(
+            ["--dsn", "x", "--project", "acs5:place:2023-2024", "--json", str(report)]
+        )
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert "| acs5 | 2024 | place | 1,000 |" in out
+    # 2024 holds 250 GiB (two silver relations and its gold partition); 2023
+    # publishes half the variables, so it projects half that.
+    assert "| acs5 | 2023 | place | 2,000 | 125.0 |" in out
+    assert warehouse.closed
+    assert '"database_bytes": 644245094400' in report.read_text(encoding="utf-8")
