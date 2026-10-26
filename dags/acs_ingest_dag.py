@@ -67,6 +67,10 @@ from data_ingestion_toolbox.census_acs.metadata import (
     sync_variable_metadata_for_year,
 )
 from data_ingestion_toolbox.census_acs.backfill import BackfillScope
+from data_ingestion_toolbox.census_acs.disk_guard import (
+    assert_room_for,
+    projected_plan_bytes,
+)
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
@@ -613,6 +617,23 @@ def acs_ingest():
         # TI already exists and a retry re-renders this task against an empty list.
         if not plan:
             return [[]]
+
+        # A backfill year refuses up front when the warehouse's disk cannot
+        # hold it with the reserve free (`census_acs/disk_guard.py`).
+        if scope is not None:
+            parents = {
+                (dataset, level): len(fips(dataset))
+                for dataset in years_by_dataset
+                for level, fips in (
+                    ("place", place_parent_fips),
+                    ("tract", tract_parent_fips),
+                )
+            }
+            assert_room_for(
+                projected_plan_bytes(plan, CONFIG.backfill_bytes_per_variable, parents),
+                CONFIG.backfill_disk_path,
+                CONFIG.backfill_reserve_fraction,
+            )
 
         # About 8 batches per (dataset, year) once place slices are planned.
         batches = chunk_list(plan, chunk_size=25)

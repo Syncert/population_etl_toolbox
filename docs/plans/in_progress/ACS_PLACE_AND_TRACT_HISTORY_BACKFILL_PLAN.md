@@ -224,9 +224,55 @@ data-quality check before the next year starts.
   the only place data and covers large places only. Default: load it, since
   it is small and published.
 
+## Progress (2026-10-26, branch `feat/acs-backfill-measure-and-scope`)
+
+Deliverables 1, 3, 4 and 6 are implemented; 2, 5, 7 and 8 remain (v1.0
+build-out items W-2, W-5, W-10).
+
+- **D1 measurement:** `python -m data_ingestion_toolbox.census_acs.measure`
+  (ETL-085), run in the Airflow scheduler container on the internal stack:
+  Docker's data disk 6,047 GiB with 5,016 GiB free; database 704 GiB; ACS
+  silver relations 293 GiB. Measured 2024 (silver share plus the 2024 gold
+  partition's share): acs5 place 137.7 GiB for 3,844 curated variables
+  (38.5 MB per variable), acs5 tract 9.3 GiB for the five tables' 63
+  variables (159 MB per variable), acs1 place 2.8 GiB (0.61 MB per variable).
+  These are `AcsConfig.backfill_bytes_per_variable`.
+- **What the warehouse holds** (`control.acs_ingestion_slices`, 2026-10-26):
+  acs5 place slices for every year 2009–2024 (2024 on the whole curated
+  list, the rest on the five history tables); acs1 place 2009–2024 less 2020
+  on the history tables; acs5 tract 2010–2024 on the five tract tables; no
+  2009 tracts (Census 2000 tracts, not in the reference).
+- **Projection, full city history** (acs5 place 2009–2023 on the whole list,
+  less the five tables already loaded, plus acs1 places 2005–2023):
+  1,366 GiB. Per year it ranges from 41 GiB (2009, 1,276 variables) to
+  133 GiB (2020–2023, about 3,840), because older vintages publish fewer of
+  the curated variables.
+- **Projection, wider tract tables** (W-4 candidate list of 17 tables, 558
+  variables a year from 2017, 336 in 2009–2010): about 7,680 variable-years
+  for 2010–2024 at 159 MB is about 1,140 GiB.
+- Both together leave about 2,500 GiB, 41% of the 6,047 GiB volume, free:
+  above the 20% reserve.
+- **D3 declared scope:** `place_year_scope`, `tract_year_scope` and
+  `place_full_table_year_scope` ("newest", "newest:N", "YYYY-YYYY", "YYYY",
+  "none") replace the three "N newest years" knobs; defaults unchanged. The
+  one-year-and-grain run parameter (`acs_backfill` conf, ETL-083) was already
+  on `main`.
+- **D4 resume across runs:** `silver_census.transform_slice_state` keys each
+  finished slice by a content fingerprint (revision count and newest
+  revision, variable metadata, geography reference, `TRANSFORM_VERSION`); a
+  later run under any key skips an unchanged slice (ETL-087).
+- **D6 guard rails:** a backfill run projects its planned slices and refuses
+  before any request if the reserve (20%) would not stay free at
+  `backfill_disk_path` (ETL-086); `acs_ingest` already had
+  `max_active_runs=1`; the bounded slice read is unchanged.
+
+Evidence: `pytest tests/unit/census tests/unit/shared/test_catalog_evidence.py
+tests/unit/tooling` 193 passed; `pytest tests/dags/test_task_callables.py -k
+acs` 11 passed; ACS database tier against the test PostGIS (`-k "acs or
+census_ac"`) 26 passed; schema snapshot regenerated; `ruff check .` and
+`ruff format --check .` clean.
+
 ## Checkpoint
 
-Next pickup, once `claude/project-thread-ypfqia` is merged and the 2024
-publish has finished: write the Deliverable 1 measurement script and record
-its 2024 output here, then the failing unit test that a run restricted to
-one year and grain forms no other request.
+Next pickup: W-2, Deliverables 2 and 5 (2000-decade tract reference for
+2009, place identities per vintage, ACS serving chunks per (year, grain)).

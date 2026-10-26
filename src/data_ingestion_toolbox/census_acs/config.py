@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List
 
 import os
 from pydantic import BaseModel, Field, field_validator
@@ -193,6 +193,24 @@ class AcsConfig(BaseModel):
     # `python -m data_ingestion_toolbox.census_acs.measure` shows the disk.
     place_full_table_year_scope: str = "newest"
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
+    # Free-disk guard for operator backfill runs (`disk_guard.py`). The path
+    # must sit on the warehouse's filesystem; on the internal stack every
+    # container's `/` is Docker's one data disk. A run refuses when its
+    # projected bytes would leave less than the reserve free.
+    backfill_disk_path: str = Field(
+        default_factory=lambda: os.environ.get("ACS_BACKFILL_DISK_PATH", "/")
+    )
+    backfill_reserve_fraction: float = 0.20
+    # Bytes one curated variable adds per (year, "<dataset>/<grain>") across
+    # all of the grain's state slices, silver and gold together, measured on
+    # the internal stack by `python -m data_ingestion_toolbox.census_acs.measure`
+    # on 2026-10-26 from the 2024 year (recorded in the backfill plan). A
+    # grain left out projects nothing.
+    backfill_bytes_per_variable: Dict[str, float] = {
+        "acs5/place": 38_454_870.0,
+        "acs1/place": 611_340.0,
+        "acs5/tract": 158_899_297.0,
+    }
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
@@ -237,6 +255,13 @@ class AcsConfig(BaseModel):
     @classmethod
     def validate_year_scopes(cls, value: str) -> str:
         return validate_year_scope(value)
+
+    @field_validator("backfill_reserve_fraction")
+    @classmethod
+    def validate_reserve_fraction(cls, value: float) -> float:
+        if not 0 <= value < 1:
+            raise ValueError("backfill_reserve_fraction must be in [0, 1)")
+        return value
 
     @field_validator("place_history_tables")
     @classmethod
