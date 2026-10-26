@@ -67,6 +67,30 @@ plan's open item: 401 places in the 2009 ACS ceased before 2010 and stay
    2000 reference vintage (tracts from ETL-089, places from `places2k`);
    nothing is reassigned to 2010 boundaries by name.
 
+## D2 design (2026-10-26, after reading the ACS adapter)
+
+The ACS path assumes `acs1`/`acs5` in more places than the request URL:
+`raw_capture` and gold CHECK constraints (`dataset IN ('acs1','acs5')`),
+`metadata.py` (variables must end in `E`/`M`), `time_utils` (dataset to
+reference period), the gold transform's dataset filter and its dataset
+ordering. The plan is:
+
+1. A dataset registry in `census_acs/config.py`: each dataset names its API
+   path (`acs/acs5`, `dec/sf1`, `dec/sf3`), the years it exists for, and
+   whether it publishes margins. `ingest.py` and `metadata.py` build URLs
+   from it instead of `acs/{dataset}`.
+2. Decennial variables are translated at replay through the declared
+   crosswalk to the ACS variable they measure (`P001001` to `B01003_001E`),
+   with the source variable kept on the revision row
+   (`source_variable_name`) and in raw capture. Only crosswalked variables
+   are requested. A decennial row has no margin row.
+3. A migration widens the dataset CHECKs to admit `dec2000sf1`,
+   `dec2000sf3` (and later `dec1990stf1`, `dec1990stf3`); `time_utils`
+   gives a decennial dataset the census day (April 1) as its reference.
+4. Gold keeps `dataset_code`, so the API and the site can label a value a
+   census count rather than a survey estimate (ADR-0011); series ordering
+   places the census year before the ACS years.
+
 ## Deliverables
 
 - D1. Census 2000 place reference from `places2k.zip` in `silver_ref`
