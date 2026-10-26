@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-090 | None |
+| ETL and shared units | ETL-001–ETL-091 | None |
 | Database integration | DB-001–DB-062 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **630 of 630** | **0 of 630** |
+| **Total** | **631 of 631** | **0 of 631** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 630-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 631-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -560,6 +560,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-088 | P0 | Unit + database / `unit integration database` | An ACS year is served one grain group at a time | `ACS_CHUNK_CONFIG.grain_steps` names area (NATIONAL, STATE, COUNTY), tract and place, in that order, covering every served grain exactly once, each with its own statement timeout (90, 120 and 600 minutes); the chunk driver runs each step as its own committed transaction, passing the step's grains to `gold_census.refresh_rpt_acs_observations(start, end, geo_levels)`, which deletes and re-inserts that grain's rows only and never truncates; while a place step is open a reader of the same year's counties under a one-second lock timeout reads them, while the whole-year call (two arguments, still the dashboard path) blocks that reader -- the contrast is measured | One ACS serving chunk was one calendar year and truncated its partition under ACCESS EXCLUSIVE, so while a place year published -- hours, for 2024 -- every API read of that year's counties, states and nation waited behind it, and one 600-minute limit stood in for every year whatever it held |
 | ETL-089 | P0 | Unit / `unit` | The 2009 ACS's tracts resolve against Census 2000 tracts | `history_vintage` maps every tract year 2000-2009 to the Census 2000 vintage and `historical_sub_county_asset(2009, "tract")` names the Bureau's 2000-to-2010 tract relationship file (`us2010trf.txt`); `parse_tract_relationship_2000_capture` reads its first nine columns into one attributes record per distinct GEOID00 (land and water area from AREALAND00 and AREA00, the Bureau's tract name), refuses a row whose GEOID00 is not its state, county and tract codes, refuses a tract its parts describe two ways, and refuses an empty file; `silver_ref` publishes it with the other tract history from 2009, so 2009 tracts are resolvable entities that are not current; a 2009 place and a tract before 2009 refuse rather than borrow a later file | The 2009 ACS 5-year estimates are the only release on Census 2000 tracts and had no reference at all, so the tract history began in 2010 and a 2009 request could only be refused or matched by code to a 2010 tract that reused it |
 | ETL-090 | P1 | Unit / `unit tooling` | An ACS backfill runs one year per run, newest first, and records each | `scripts/run_acs_backfill.py` orders the named years newest first however they are written, triggers one `acs_ingest` run per year whose conf is exactly the ETL-083 request for that year and grain, waits for it to end, appends the run's state, duration and the database's size before and after as one JSON line, and stops at the first run that does not succeed; an empty year list refuses | October's place history was started as fourteen runs queued at once and left to the scheduler, so two years failed days later with nobody watching and no record of how long any year took or what it added |
+| ETL-091 | P1 | Unit + database / `unit integration database` | The ACS adapter loads metro (CBSA) estimates as the Bureau publishes them | `build_geo_params("metro", ...)` asks for every metropolitan and micropolitan statistical area in one request per dataset and year, naming no state, and the config's metro year scope admits the requested years; a captured metro response replays one row per CBSA keyed by its code in `cbsa_source` with no state, and a Census sentinel margin stays a sentinel rather than a number; a response without the CBSA geography column refuses; migration 036 adds `cbsa_source` and replaces the geo-level checks on `control.acs_ingestion_slices` and `silver_census.observation_revision` with ones admitting `metro`, and re-applying the manifest on a populated warehouse keeps 036's checks (031 and 032 leave them alone) | Metro figures existed only as roll-ups of counties, which differ from the Bureau's own CBSA estimates and carry no margin, and both relations refused a metro row by CHECK |
 
 ### PostgreSQL Integration Tests
 
