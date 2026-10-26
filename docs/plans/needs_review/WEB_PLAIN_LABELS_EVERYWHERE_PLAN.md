@@ -3,7 +3,7 @@ id: web-plain-labels-everywhere
 depends_on:
   - api-plain-labels
 parallel_safe: false
-complexity: small
+complexity: low
 verify:
   - npm --prefix apps/web run test:unit
   - npm --prefix apps/web run lint
