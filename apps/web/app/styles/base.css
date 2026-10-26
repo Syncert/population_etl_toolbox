@@ -334,9 +334,12 @@ main.dashboard {
   font-size: 0.78rem;
 }
 
+/* The map and its legend stack: the legend used to float over the canvas's
+   bottom-left corner, where on a national map it covered the West Coast. */
 .map-shell {
   position: relative;
-  height: 360px;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -345,8 +348,9 @@ main.dashboard {
 }
 
 .map-canvas {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  height: 360px;
+  width: 100%;
 }
 
 .county-tooltip {
@@ -389,6 +393,39 @@ main.dashboard {
   font-size: 0.75rem;
   color: var(--ink);
   pointer-events: none;
+}
+
+/* Under a map the legend is a row of the shell, not an overlay, so no part
+   of the map is ever hidden behind it; the bins read left to right. */
+.map-shell .map-legend,
+.map-shell .map-legend + p {
+  position: static;
+  max-width: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  background: rgba(255, 253, 248, 0.94);
+  pointer-events: auto;
+}
+
+.map-shell .map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 4px;
+  align-items: center;
+}
+
+.map-shell .map-legend .legend-title {
+  flex-basis: 100%;
+  margin-bottom: 2px;
+}
+
+.map-shell > p {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.75rem;
 }
 
 .legend-title {
@@ -466,7 +503,7 @@ th {
     border-radius: 14px;
   }
 
-  .map-shell {
+  .map-canvas {
     height: 300px;
   }
 
