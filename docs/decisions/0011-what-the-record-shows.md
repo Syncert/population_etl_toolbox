@@ -1,6 +1,6 @@
 # ADR-0011: The wording rules for "What the record shows"
 
-- **Status:** Proposed 2026-10-26, awaiting the repository owner (Nick).
+- **Status:** Accepted 2026-10-26 by the repository owner (Nick); proposed the same day.
 - **Date:** 2026-10-26
 - **Decision owners:** Repository owner and data-product maintainers
 - **Related work:** v1.0 build-out item D-9 (`feat/web-check-the-record`).

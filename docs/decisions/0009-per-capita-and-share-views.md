@@ -1,6 +1,6 @@
 # ADR-0009: Per-capita and share views are a declared derived product
 
-- **Status:** Proposed 2026-10-26, awaiting the repository owner (Nick).
+- **Status:** Accepted 2026-10-26 by the repository owner (Nick); proposed the same day.
 - **Date:** 2026-10-26
 - **Decision owners:** Repository owner and data-product maintainers
 - **Related work:** v1.0 build-out items A-3 (`feat/api-per-capita-and-shares`)
