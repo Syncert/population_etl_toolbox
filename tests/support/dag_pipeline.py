@@ -595,6 +595,23 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         geography_pipeline, "parse_legacy_county_gazetteer_capture", parse_attributes
     )
+    # Census 2000 tracts and places come from a relationship file and a
+    # fixed-width Gazetteer; the fixture publishes the same bounded
+    # geographies for that vintage.
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_tract_relationship_2000_capture",
+        lambda payload, *, geography_vintage: parse_attributes(
+            payload, geo_type="tract", geography_vintage=geography_vintage
+        ),
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_place_gazetteer_2000_capture",
+        lambda payload, *, geography_vintage: parse_attributes(
+            payload, geo_type="place", geography_vintage=geography_vintage
+        ),
+    )
     monkeypatch.setattr(geography_pipeline, "parse_boundary_capture", parse_geometry)
 
 
