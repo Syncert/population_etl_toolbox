@@ -3064,6 +3064,8 @@
         "caveats": "array<string>",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "percentile_rank": "number",
         "period_start": "string | null",
         "request": "string",
@@ -3388,11 +3390,14 @@
     "MetricCapability": {
       "properties": {
         "aggregation_characteristic": "string | null",
+        "definition": "MetricDefinitionSummary | null",
         "freshness_state": "string | null",
         "harvested_at": "string(date-time) | null",
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "observation_dimensions": "array<string>",
         "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
@@ -3420,11 +3425,14 @@
     "MetricCatalog": {
       "properties": {
         "aggregation_characteristic": "string | null",
+        "definition": "MetricDefinitionSummary | null",
         "freshness_state": "string | null",
         "harvested_at": "string(date-time) | null",
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "physical_lineage": "object | null",
         "publication_time": "string(date-time) | null",
         "publisher_contract_version": "string | null",
@@ -3439,6 +3447,25 @@
       },
       "required": [
         "metric_code"
+      ]
+    },
+    "MetricDefinitionSummary": {
+      "properties": {
+        "caveat": "string | null",
+        "citations": "array<string>",
+        "definition": "string",
+        "label": "string",
+        "status": "string",
+        "unit": "string | null",
+        "universe": "string | null",
+        "version": "integer"
+      },
+      "required": [
+        "citations",
+        "definition",
+        "label",
+        "status",
+        "version"
       ]
     },
     "MetricListResponse": {
@@ -3820,6 +3847,8 @@
         "geo_name": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "period_end": "string | null",
         "period_start": "string | null",
         "release": "string | null",
@@ -3903,6 +3932,8 @@
         "margin_of_error_pct": "string | null",
         "metric_code": "string | null",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "observation_date": "any | null",
         "period": "string | null",
         "release_date": "any | null",
