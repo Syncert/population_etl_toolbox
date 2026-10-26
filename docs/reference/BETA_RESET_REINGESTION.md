@@ -343,15 +343,15 @@ beside its months.
 
 `acs_ingest` requests five levels per dataset and year: the nation, all
 states, each county parent's counties, and -- for the newest year only, by
-default (`AcsConfig.place_recent_years`) -- each state's places. The place
+default (`AcsConfig.place_year_scope`, `"newest"`) -- each state's places. The place
 slices are the large ones. One 5-year year is 52 place slices of 77 requests
 each (3,844 curated variables in chunks of 50), about 4,000 requests, and
 about 62 million facts for some 32,000 places against the counties' 6.2
 million; the 1-year estimates add 50 smaller slices (their 649 places of
 65,000 or more; Vermont and West Virginia have none and are never asked).
 Expect the first place load to dominate the run and the silver transform and
-`mv_acs_latest` refresh to grow roughly tenfold. Raise `place_recent_years`
-only with that volume in mind. A place the shared reference does not carry
+`mv_acs_latest` refresh to grow roughly tenfold. Widen `place_year_scope`
+(for example to `"2009-2024"`) only with that volume in mind. A place the shared reference does not carry
 is recorded `unmapped` in `silver_ref.geography_resolution` with the year it
 was requested under and left out of the facts; unlike a missing state or
 county it does not stop the transform.

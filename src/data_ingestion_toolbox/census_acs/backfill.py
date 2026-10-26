@@ -1,7 +1,7 @@
 """One ACS year at one grain, as an operator-requested backfill run.
 
 The scheduled `acs_ingest` run requests places and tracts for each dataset's
-newest years only (`AcsConfig.place_recent_years`, `tract_recent_years`).
+declared years only (`AcsConfig.place_year_scope`, `tract_year_scope`).
 A city or tract history is loaded instead as a sequence of small runs, each
 naming one year and one grain in its Airflow `dag_run.conf`:
 

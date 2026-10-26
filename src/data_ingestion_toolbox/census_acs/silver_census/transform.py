@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 import uuid
@@ -486,13 +487,8 @@ _RAW_FRAME_SCHEMA = {
 }
 
 
-def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
-    """SQL for the latest revision of every cell in ``year``/``raw_slice``.
-
-    The filters sit inside the ranking CTE. Every one of them is a column the
-    window partitions by, so filtering before ranking gives the same rows as
-    filtering after, and lets the slice index narrow the scan.
-    """
+def _slice_where(year: int | None, raw_slice: RawSlice) -> tuple[str, list[object]]:
+    """The WHERE clause over ``observation`` that selects ``year``/``raw_slice``."""
     filters: list[str] = []
     params: list[object] = []
     if year is not None:
@@ -509,7 +505,17 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
         else:
             filters.append("observation.state_fips_source = %s")
             params.append(raw_slice.state_fips)
-    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    return (f"WHERE {' AND '.join(filters)}" if filters else ""), params
+
+
+def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
+    """SQL for the latest revision of every cell in ``year``/``raw_slice``.
+
+    The filters sit inside the ranking CTE. Every one of them is a column the
+    window partitions by, so filtering before ranking gives the same rows as
+    filtering after, and lets the slice index narrow the scan.
+    """
+    where, params = _slice_where(year, raw_slice)
     sql = f"""
         WITH captured_ranked AS (
             SELECT
@@ -599,6 +605,76 @@ def _plan_year_slices(hook: PostgresHook, year: int, row_count: int) -> list[Raw
         cur.execute(sql, (int(year),))
         rows = cur.fetchall()
     return [RawSlice(dataset=r[0], geo_level=r[1], state_fips=r[2]) for r in rows]
+
+
+#: Bump when the transform's output for unchanged input changes, so every
+#: slice's content fingerprint changes with it and a later run replays it.
+TRANSFORM_VERSION = "acs-silver-v2"
+
+
+def transform_context(meta_df: pl.DataFrame, geo_df: pl.DataFrame) -> str:
+    """What besides a slice's revisions decides its silver rows.
+
+    The variable metadata and the geography reference: a tract the reference
+    newly carries (an older decade's, say) turns rows that were ledgered
+    `unmapped` into facts, so a slice finished before it must run again.
+    """
+    digest = hashlib.sha256(TRANSFORM_VERSION.encode())
+    for frame in (meta_df, geo_df):
+        digest.update(str(frame.height).encode())
+        if frame.height:
+            digest.update(str(int(frame.hash_rows(seed=0).sum())).encode())
+    return digest.hexdigest()
+
+
+def slice_fingerprint(
+    hook: PostgresHook, year: int, raw_slice: RawSlice, context: str
+) -> str:
+    """The slice's raw content, as its revision count and newest revision.
+
+    Revisions are append-only: a changed provider response adds rows, which
+    moves both figures, and an equivalent replay adds none.
+    """
+    where, params = _slice_where(year, raw_slice)
+    sql = f"""
+        SELECT COUNT(*), MAX(observation.parsed_at)::TEXT
+        FROM silver_census.observation_revision AS observation
+        {where};
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, tuple(params))
+        count, newest = cur.fetchone()
+    payload = f"{context}|{year}|{raw_slice.key}|{count}|{newest}"
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _finished_fingerprints(hook: PostgresHook, year: int) -> dict[str, str]:
+    """Slices of ``year`` any earlier run finished, with the content they read."""
+    sql = """
+        SELECT slice_key, content_fingerprint
+        FROM silver_census.transform_slice_state
+        WHERE year = %s;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (int(year),))
+        return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def _record_slice_fingerprint(
+    hook: PostgresHook, year: int, slice_key: str, fingerprint: str, changed: int
+) -> None:
+    sql = """
+        INSERT INTO silver_census.transform_slice_state
+            (year, slice_key, content_fingerprint, rows_changed)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (year, slice_key) DO UPDATE
+        SET content_fingerprint = EXCLUDED.content_fingerprint,
+            rows_changed = EXCLUDED.rows_changed,
+            completed_at = NOW();
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (int(year), slice_key, fingerprint, int(changed)))
+        conn.commit()
 
 
 def _completed_slice_keys(
@@ -1526,10 +1602,15 @@ def transform_census_to_silver(
     time_df = _load_time_dim(hook, date(earliest_year, 1, 1), date(latest_year, 12, 31))
     logger.info("[CENSUS_ACS] Loaded %s time dimension rows", f"{time_df.height:,}")
 
+    # A slice any earlier run finished against the same content and the same
+    # reference is skipped (`transform_slice_state`), not only a retry's.
+    context = transform_context(meta_df, geo_df)
+
     # ── process each year ─────────────────────────────────────────────
     for y in years:
         raw_slices = _plan_year_slices(hook, y, metrics.raw_rows_by_year[y])
         done = _completed_slice_keys(hook, resume_key, y)
+        finished = _finished_fingerprints(hook, y)
         if raw_slices != [WHOLE_YEAR]:
             logger.info(
                 "[CENSUS_ACS CHUNK] Year=%s has %s raw rows; reading it in %s slices",
@@ -1545,6 +1626,15 @@ def transform_census_to_silver(
                     y,
                     raw_slice.key,
                     resume_key,
+                )
+                continue
+            fingerprint = slice_fingerprint(hook, y, raw_slice, context)
+            if finished.get(raw_slice.key) == fingerprint:
+                logger.info(
+                    "[CENSUS_ACS CHUNK] Year=%s slice=%s unchanged since an "
+                    "earlier run finished it; skipping",
+                    y,
+                    raw_slice.key,
                 )
                 continue
 
@@ -1586,6 +1676,7 @@ def transform_census_to_silver(
                 df_silver = None
             raw = None
             _record_slice_complete(hook, resume_key, y, raw_slice.key, changed)
+            _record_slice_fingerprint(hook, y, raw_slice.key, fingerprint, changed)
 
     metrics.log_transform_summary()
     logger.info("Inserted %s Census silver rows total", inserted_total)

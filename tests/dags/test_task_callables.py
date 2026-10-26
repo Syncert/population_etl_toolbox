@@ -615,3 +615,49 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
             conf = {"acs_backfill": {"year": 2031, "geo_level": geo_level}}
 
         callable_(targets, dag_run=Missing())
+
+
+def test_an_acs_backfill_year_refuses_when_the_disk_cannot_hold_it(
+    dagbag, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Covers: ETL-086 -- a backfill year projected past the reserve is refused up front."""
+    from data_ingestion_toolbox.census_acs.disk_guard import DiskGuardError
+
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_get_postgres_hook",
+        lambda: RecordingDatabase(fetches=[[]]),
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", lambda *a: ("h", 3)
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "sync_variable_metadata_for_year", lambda y, d: None
+    )
+    config = callable_.__globals__["CONFIG"]
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}, {"dataset": "acs5", "year": 2024}]
+    for per_variable, refused in ((1.0, False), (1e18, True)):
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            config.model_copy(
+                update={
+                    "backfill_bytes_per_variable": {"acs5/tract": per_variable},
+                    "backfill_disk_path": str(tmp_path),
+                }
+            ),
+        )
+        if refused:
+            with pytest.raises(DiskGuardError, match="must stay free"):
+                callable_(targets, dag_run=Run())
+        else:
+            assert [
+                unit for batch in callable_(targets, dag_run=Run()) for unit in batch
+            ]
