@@ -215,6 +215,30 @@ answered under its own name here and under its state's name on
 `/observations`, which is one geography with two names to anyone joining the
 two responses.
 
+### Finding a place by name, or by where you are
+
+`GET /api/v1/catalog/geographies/search?q=Austin` answers up to `limit`
+(default 10, at most 50) states, counties, metros, cities and towns, and ZIP
+code areas whose names match, narrowed with repeated `level=` (`STATE`,
+`COUNTY`, `METRO`, `PLACE`, `ZCTA`). Each item carries the canonical `geo_id`,
+`geo_level`, `name`, the state, and for a city or tract the county containing
+its internal point and the metro whose counties include it. Matches are
+ranked by kind -- `exact`, `prefix`, `word` (a later word starts with the
+query), then `sounds_like` (the first word sounds like the query, four
+letters or more) -- and then by `population`, the newest served ACS 5-year
+total (for a metro without its own figures, the sum of its counties'). A city
+matched by name brings its county right after it, marked `contains_a_match`
+with `contains_geo_id`, so "Austin" finds Travis County. The page address is
+the client's to build from the `geo_id` and names; it is not part of this
+contract.
+
+`GET /api/v1/catalog/geographies/locate?latitude=30.27&longitude=-97.74`
+answers the served geographies whose boundary contains the point, smallest
+first: tract, ZIP code area, city, county, metro, state. A point outside every
+boundary answers an empty list; nothing is snapped to the nearest place. Both
+routes are catalog routes: cached and rate limited like the rest of
+`/catalog`.
+
 ## Observations
 
 ### Derived within-parent percentile ranks

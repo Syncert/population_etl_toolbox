@@ -15,6 +15,12 @@ from apps.api.services.catalog_service import (
     list_source_freshness,
     list_sources,
 )
+from apps.api.schemas.search import LocateResponse, PlaceSearchResponse
+from apps.api.services.place_search_service import (
+    SEARCH_LEVELS,
+    locate_point,
+    search_places,
+)
 from apps.api.schemas import (
     CapabilityListResponse,
     FreshnessListResponse,
@@ -124,6 +130,46 @@ def get_metric(
     if capability is None:
         raise HTTPException(status_code=404, detail="metric_code not found")
     return capability
+
+
+@router.get("/geographies/search", response_model=PlaceSearchResponse)
+def get_geography_search(
+    q: str = Query(..., min_length=2, max_length=100),
+    level: Optional[list[str]] = Query(None, max_length=5),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db_session_dep),
+) -> PlaceSearchResponse:
+    """Find a state, county, metro, city or ZIP code area by name.
+
+    Ranked by how the name matches (exact, prefix, a later word, sounds-like)
+    and then by served population; a matched city's county is offered beside
+    it. ``level`` narrows the grains (STATE, COUNTY, METRO, PLACE, ZCTA).
+    """
+    levels = [value.upper() for value in level] if level else None
+    if levels and not set(levels) <= set(SEARCH_LEVELS):
+        raise HTTPException(
+            status_code=422,
+            detail=f"level must be among {', '.join(SEARCH_LEVELS)}",
+        )
+    try:
+        return search_places(db, q, levels, limit)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get("/geographies/locate", response_model=LocateResponse)
+def get_geography_locate(
+    latitude: float = Query(..., ge=-90, le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+    db: Session = Depends(get_db_session_dep),
+) -> LocateResponse:
+    """The served geographies containing a point: tract, ZIP code area, city,
+    county, metro and state, smallest first. Nothing is guessed for a point
+    outside every boundary."""
+    try:
+        return locate_point(db, latitude, longitude)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
 
 
 @router.get(
