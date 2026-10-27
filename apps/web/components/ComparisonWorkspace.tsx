@@ -280,9 +280,14 @@ export default function ComparisonWorkspace() {
                 return current;
               }
             }
+            // Only side A opens on a default measure. Filling both sides
+            // from each catalog's first entry opened the page on a pair the
+            // policy refused (BEA GDP against BLS employment), so the first
+            // thing a reader saw was two red verdicts about a comparison
+            // nobody asked for. Side B waits for a choice.
             const chosen = resolved.metricCode
               ? resolved.metricCode
-              : resolved.chooseDefault
+              : resolved.chooseDefault && side === "a"
                 ? items[0]?.metric_code || ""
                 : "";
             return { ...current, [side]: { ...current[side], metricCode: chosen } };
