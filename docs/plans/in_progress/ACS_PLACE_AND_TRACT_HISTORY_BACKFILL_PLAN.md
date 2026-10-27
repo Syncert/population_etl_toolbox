@@ -23,6 +23,20 @@ In progress since 2026-10-12. Decisions Nick made on 2026-10-12:
   move). Docker's 665 GB image now lives at `E:\DockerDesktop\wsl`, reached
   through the `%LOCALAPPDATA%\Docker\wsl` junction; the G: copy is kept as a
   backup until E: is verified under load.
+- **Superseded on 2026-10-26: Docker on H:.** The checkouts and Docker's data
+  now live on H: (two 4 TB NVMe drives striped into one ~7.3 TB volume, no
+  redundancy), at `H:\DockerDesktop\wsl`, still reached through the
+  `%LOCALAPPDATA%\Docker\wsl` junction. The WSL data disk
+  (`disk\docker_data.vhdx`) was still capped at its original ~1 TB maximum
+  size (`df` inside Docker: 1007 G, 775 G used). The WSL 2 backend has no
+  disk setting, so Nick grew the file with `Resize-VHD -SizeBytes 6TB` from an
+  elevated shell while Docker was stopped, and the ext4 filesystem was grown
+  online (`resize2fs` from a privileged container): 5.9 T, 4.9 T free,
+  checked with `docker run --rm -v /var/lib/docker:/d:ro alpine df -h /d`.
+  Containers created from the G: checkout bind-mounted G: paths and failed to
+  start; `make deploy-up` from the H: checkout recreated them. The
+  five-table scope cut below was made for disk and is lifted (the v1.0
+  build-out, Wave W).
 - **Scope ("the recommended approach").** Tracts for every 5-year year,
   2009–2023, on the five `tract_tables`. Places for every year, but only on
   those same five tables (B01003, B19013, B17001, B25064, B25077); 2024 keeps

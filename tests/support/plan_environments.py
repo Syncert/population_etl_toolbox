@@ -58,6 +58,11 @@ CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
         "`DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- "
         "which is a running deployment, not merely a Docker daemon.",
     ),
+    "hosting-cost-per-user": (
+        COMPOSE,
+        "With the `metering` profile up, one sample per container per minute is "
+        "written, and the replay script runs against the stack.",
+    ),
 }
 
 
