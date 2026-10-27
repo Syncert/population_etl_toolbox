@@ -19,7 +19,10 @@ def test_newest_is_the_default_and_names_one_year() -> None:
     """Covers: ETL-055 -- the default scope is the newest published year."""
     assert YearScope.parse("newest").select(ACS5) == {2024}
     assert YearScope.parse("newest:3").select(ACS5) == {2022, 2023, 2024}
-    assert CONFIG.tract_years("acs5", ACS5) == {2024}
+    assert CONFIG.model_copy(update={"tract_year_scope": "newest"}).tract_years(
+        "acs5", ACS5
+    ) == {2024}
+    assert CONFIG.tract_years("acs5", ACS5) == set(ACS5)
     # Places declare the whole published history (v1.0, W-3).
     assert CONFIG.place_years("acs5", ACS5) == set(ACS5)
     assert CONFIG.place_years("acs1", ACS1) == set(ACS1)
