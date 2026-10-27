@@ -128,3 +128,17 @@ ordering. The plan is:
   segment tables (`stf301xx.dbf`, ...), plus `cnames*.dbf` and a
   `document/` folder with the layouts. A dBase reader and per-segment
   variable layouts are the parser's core.
+- 2026-10-27: D5 format, read from Vermont's STF3A (`CD90_3A_10`; disc
+  directories are numbered by disc, not by state FIPS, so a state-to-disc
+  index is needed). dBase III files: `stf300xx.dbf` is the geographic header
+  (67 fields: `SUMLEV`, `GEOCOMP`, `LOGRECNU`, `STATEFP`, `CNTY`, `PLACEFP`,
+  `TRACTBNA`, `ANPSADPI` name, `AREALAND`/`AREAWAT`); `stf301xx`..`stf334xx`
+  are segments keyed by `LOGRECNU`; `tables.dbf` maps every cell (`P0010001`)
+  to its table, label and segment; `stf3stru.dbf` documents the header.
+  Summary levels needed: 040 state, 050 county, 160 place, 140 tract (or
+  BNA), with `GEOCOMP = '00'` only. The headers carry each place's and
+  tract's name and area, so the 1990 place and tract reference can be built
+  from the same files. Unlike 2000, many 1990 measures have no total cell
+  (poverty, commute mode): the crosswalk needs a declared sum of cells.
+  1990 money is in 1989 dollars; median value and gross rent are for
+  specified units only.
