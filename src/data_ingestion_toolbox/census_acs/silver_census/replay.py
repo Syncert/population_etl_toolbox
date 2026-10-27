@@ -10,7 +10,11 @@ from uuid import UUID
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
-from data_ingestion_toolbox.census_acs.config import ACS_METRO_GEOGRAPHY
+from data_ingestion_toolbox.census_acs.config import (
+    ACS_METRO_GEOGRAPHY,
+    CENSUS_DATASETS,
+)
+from data_ingestion_toolbox.census_acs.decennial import acs_variable_for
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 
 CENSUS_NULL_SENTINELS = {
@@ -34,7 +38,15 @@ def parse_captured_values(
     year: int,
     geo_level: str,
 ) -> list[dict[str, object]]:
-    """Unpivot a captured array in silver while preserving headers and strings."""
+    """Unpivot a captured array in silver while preserving headers and strings.
+
+    A census dataset's variable is stored under the ACS estimate the
+    decennial crosswalk pairs it with; `source_header` keeps the census's own
+    name (decennial-2000-and-1990-history). A census column the crosswalk
+    does not name refuses rather than load under its census name.
+    """
+    spec = CENSUS_DATASETS.get(dataset)
+    census = spec is not None and not spec.margins
     try:
         document = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -85,7 +97,15 @@ def parse_captured_values(
         cbsa_source = _text(source_row.get(ACS_METRO_GEOGRAPHY))
         us_source = _text(source_row.get("us"))
         for column_index in variable_indexes:
-            variable_name = header[column_index]
+            source_header = header[column_index]
+            try:
+                variable_name = (
+                    acs_variable_for(dataset, source_header)
+                    if census
+                    else source_header
+                )
+            except ValueError as exc:
+                raise CensusCapturePayloadError(str(exc)) from exc
             value_source = _text(record[column_index])
             if value_source is None:
                 value_status = "absent"
@@ -108,7 +128,7 @@ def parse_captured_values(
                 {
                     "source_row_index": row_index,
                     "source_column_index": column_index,
-                    "source_header": variable_name,
+                    "source_header": source_header,
                     "dataset": dataset,
                     "year": year,
                     "geo_level": geo_level,

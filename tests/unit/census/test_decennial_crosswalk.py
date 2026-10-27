@@ -93,3 +93,30 @@ def test_a_crosswalked_variable_the_bureau_no_longer_lists_refuses() -> None:
     del variables["P053001"]
     with pytest.raises(ValueError, match="has no P053001"):
         census_variable_rows(2000, "dec2000sf3", variables)
+
+
+def test_a_census_value_replays_under_its_acs_variable() -> None:
+    """Covers: ETL-094 -- stored as the ACS estimate, the census name kept as header."""
+    import json
+
+    from data_ingestion_toolbox.census_acs.silver_census.replay import (
+        CensusCapturePayloadError,
+        parse_captured_values,
+    )
+
+    payload = json.dumps(
+        [["P001001", "H004003", "state", "place"], ["2390", "412", "06", "00212"]]
+    ).encode()
+    rows = parse_captured_values(
+        payload, dataset="dec2000sf1", year=2000, geo_level="place"
+    )
+    by_header = {row["source_header"]: row for row in rows}
+    population = by_header["P001001"]
+    assert population["variable_name"] == "B01003_001E"
+    assert (population["table_id"], population["measure_type"]) == ("B01003", "E")
+    assert population["dataset"] == "dec2000sf1"
+    assert by_header["H004003"]["variable_name"] == "B25003_003E"
+
+    stray = json.dumps([["P012003", "state"], ["5", "06"]]).encode()
+    with pytest.raises(CensusCapturePayloadError, match="not in the decennial"):
+        parse_captured_values(stray, dataset="dec2000sf1", year=2000, geo_level="state")
