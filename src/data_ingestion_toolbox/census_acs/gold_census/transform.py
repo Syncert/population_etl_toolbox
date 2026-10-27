@@ -74,7 +74,10 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
             SELECT DISTINCT dataset, estimate_year
             FROM silver_census.fact_demographics
             WHERE source_system = 'CENSUS_ACS'
-              AND dataset IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3')
+              AND dataset IN (
+                  'acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                  'dec1990stf1', 'dec1990stf3'
+              )
             ORDER BY dataset, estimate_year
             """
         )
@@ -101,12 +104,20 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                     CASE WHEN f.dataset = 'acs5' THEN 5
                          WHEN LEFT(f.dataset, 3) = 'dec' THEN 0 ELSE 1 END
                         AS survey_span_years,
-                    'https://api.census.gov/data/' || f.estimate_year::TEXT ||
-                        CASE f.dataset
-                            WHEN 'dec2000sf1' THEN '/dec/sf1'
-                            WHEN 'dec2000sf3' THEN '/dec/sf3'
-                            ELSE '/acs/' || f.dataset
-                        END || '/variables.json' AS reference_url
+                    CASE f.dataset
+                        -- The 1990 files are not on the Data API; their
+                        -- reference is the archive page that documents them.
+                        WHEN 'dec1990stf1'
+                            THEN 'https://www2.census.gov/census_1990/1990STF1.html'
+                        WHEN 'dec1990stf3'
+                            THEN 'https://www2.census.gov/census_1990/1990STF3.html'
+                        ELSE 'https://api.census.gov/data/' || f.estimate_year::TEXT ||
+                            CASE f.dataset
+                                WHEN 'dec2000sf1' THEN '/dec/sf1'
+                                WHEN 'dec2000sf3' THEN '/dec/sf3'
+                                ELSE '/acs/' || f.dataset
+                            END || '/variables.json'
+                    END AS reference_url
                 FROM silver_census.fact_demographics f
                 LEFT JOIN raw_census.acs_tables rt
                   ON rt.dataset = f.dataset
