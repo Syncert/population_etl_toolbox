@@ -11,13 +11,17 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE IF NOT EXISTS gold_census.dim_acs_table (
     acs_table_sk      BIGSERIAL PRIMARY KEY,
-    dataset_code      TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code      TEXT NOT NULL CONSTRAINT dim_acs_table_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3')),
     vintage_year      INTEGER NOT NULL,
     table_id          TEXT NOT NULL,
     table_title       TEXT,
     concept           TEXT,
     universe          TEXT,
-    survey_span_years INTEGER NOT NULL CHECK (survey_span_years IN (1, 5)),
+    -- 0 is a census: one day's count, pooling no survey years.
+    survey_span_years INTEGER NOT NULL
+        CONSTRAINT dim_acs_table_survey_span_years_census_check
+        CHECK (survey_span_years IN (0, 1, 5)),
     reference_url     TEXT,
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (dataset_code, vintage_year, table_id)
@@ -26,7 +30,8 @@ CREATE TABLE IF NOT EXISTS gold_census.dim_acs_table (
 CREATE TABLE IF NOT EXISTS gold_census.dim_acs_variable (
     acs_variable_sk        BIGSERIAL PRIMARY KEY,
     acs_table_sk           BIGINT NOT NULL REFERENCES gold_census.dim_acs_table(acs_table_sk),
-    dataset_code           TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code           TEXT NOT NULL CONSTRAINT dim_acs_variable_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3')),
     vintage_year           INTEGER NOT NULL,
     variable_code          TEXT NOT NULL,
     variable_label         TEXT,
@@ -138,7 +143,8 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     -- the provider's or this pipeline's -- constrained so a row cannot claim
     -- a published value and carry none.
     value                      NUMERIC,
-    dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code               TEXT NOT NULL CONSTRAINT rpt_acs_observations_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3')),
     vintage_year               INTEGER NOT NULL,
     table_id                   TEXT NOT NULL,
     table_title                TEXT,

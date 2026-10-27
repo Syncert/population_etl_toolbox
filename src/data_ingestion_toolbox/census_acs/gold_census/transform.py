@@ -74,7 +74,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
             SELECT DISTINCT dataset, estimate_year
             FROM silver_census.fact_demographics
             WHERE source_system = 'CENSUS_ACS'
-              AND dataset IN ('acs1', 'acs5')
+              AND dataset IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3')
             ORDER BY dataset, estimate_year
             """
         )
@@ -98,9 +98,15 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                     )) AS table_title,
                     UPPER(MIN(f.variable_concept)) AS concept,
                     MIN(f.universe) AS universe,
-                    CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
+                    CASE WHEN f.dataset = 'acs5' THEN 5
+                         WHEN LEFT(f.dataset, 3) = 'dec' THEN 0 ELSE 1 END
+                        AS survey_span_years,
                     'https://api.census.gov/data/' || f.estimate_year::TEXT ||
-                        '/acs/' || f.dataset || '/variables.json' AS reference_url
+                        CASE f.dataset
+                            WHEN 'dec2000sf1' THEN '/dec/sf1'
+                            WHEN 'dec2000sf3' THEN '/dec/sf3'
+                            ELSE '/acs/' || f.dataset
+                        END || '/variables.json' AS reference_url
                 FROM silver_census.fact_demographics f
                 LEFT JOIN raw_census.acs_tables rt
                   ON rt.dataset = f.dataset

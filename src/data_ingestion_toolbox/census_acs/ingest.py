@@ -36,6 +36,7 @@ from data_ingestion_toolbox.census_acs.silver_census.replay import (
 from .config import (
     ACS_METRO_GEOGRAPHY,
     CONFIG,
+    census_api_url,
     place_parent_fips,
     tract_parent_fips,
 )
@@ -206,7 +207,7 @@ def fetch_acs_api(
     Call the Census API and return the raw JSON (list-of-lists).
 
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    base_url = census_api_url(year, dataset)
 
     params: Dict[str, str] = {
         "get": ",".join(variables),
@@ -481,7 +482,7 @@ def ingest_slice(
             "state_fips": state_fips,
         }
     )
-    endpoint = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    endpoint = census_api_url(year, dataset)
     total_rows = 0
 
     return _ingest_capture_chunks(
