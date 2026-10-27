@@ -19,8 +19,10 @@ def test_newest_is_the_default_and_names_one_year() -> None:
     """Covers: ETL-055 -- the default scope is the newest published year."""
     assert YearScope.parse("newest").select(ACS5) == {2024}
     assert YearScope.parse("newest:3").select(ACS5) == {2022, 2023, 2024}
-    assert CONFIG.place_years("acs5", ACS5) == {2024}
     assert CONFIG.tract_years("acs5", ACS5) == {2024}
+    # Places declare the whole published history (v1.0, W-3).
+    assert CONFIG.place_years("acs5", ACS5) == set(ACS5)
+    assert CONFIG.place_years("acs1", ACS1) == set(ACS1)
 
 
 def test_a_range_names_its_years_and_only_published_ones() -> None:
@@ -37,7 +39,8 @@ def test_full_table_years_follow_their_own_scope() -> None:
     """Covers: ETL-055 -- a place year outside the full-table scope reads the history tables."""
     widened = CONFIG.model_copy(update={"place_full_table_year_scope": "2009-2024"})
     assert widened.place_tables(2009, ACS5) is None
-    assert CONFIG.place_tables(2009, ACS5) == CONFIG.place_history_tables
+    newest = CONFIG.model_copy(update={"place_full_table_year_scope": "newest"})
+    assert newest.place_tables(2009, ACS5) == CONFIG.place_history_tables
 
 
 @pytest.mark.parametrize("spec", ["newest:0", "2024-2009", "latest", "19", ""])

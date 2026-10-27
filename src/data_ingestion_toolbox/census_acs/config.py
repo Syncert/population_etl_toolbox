@@ -172,9 +172,11 @@ class AcsConfig(BaseModel):
     # The years requested at place grain, declared (`year_scope.py`):
     # "newest", "newest:N", "YYYY-YYYY", "YYYY" or "none". Places are ten
     # times the counties' volume -- about 62 million 5-year facts for one
-    # year against the counties' 6.2 million -- so the default is the newest
-    # year, which is what a place page reads; widen it to load place history.
-    place_year_scope: str = "newest"
+    # year against the counties' 6.2 million. The city history is every
+    # published year (v1.0, W-3): the 5-year from 2009, the 1-year from 2005
+    # (places of 65,000 or more, no 2020 release); measured to fit with the
+    # reserve free on 2026-10-26 (`measure.py`, the backfill plan).
+    place_year_scope: str = "2005-2024"
     # The tables requested at tract grain (sub-county-geography): the few a
     # "within this county" map shows. Tracts are about 85,000 against the
     # counties' 3,200, so the whole curated list at tract grain would be some
@@ -189,9 +191,10 @@ class AcsConfig(BaseModel):
     # Place years outside `place_full_table_year_scope` are requested for
     # `place_history_tables` only (acs-place-tract-history-backfill). A place
     # year on the whole curated list measured about 136 GB on the internal
-    # stack in 2026-10; widen this scope only after
-    # `python -m data_ingestion_toolbox.census_acs.measure` shows the disk.
-    place_full_table_year_scope: str = "newest"
+    # stack in 2026-10; widened to every year after
+    # `python -m data_ingestion_toolbox.census_acs.measure` showed the disk
+    # holds the whole list with 41% free (2026-10-26).
+    place_full_table_year_scope: str = "2005-2024"
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
     # Free-disk guard for operator backfill runs (`disk_guard.py`). The path
     # must sit on the warehouse's filesystem; on the internal stack every
