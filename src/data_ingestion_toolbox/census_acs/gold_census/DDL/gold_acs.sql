@@ -636,6 +636,21 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END IF;
 
+    -- A key whose latest row is already newer than this chunk cannot change:
+    -- nothing inside the chunk outranks a later observation, and the chunk's
+    -- own report refresh never touches a later year. Backfilling 2023 places
+    -- under a loaded 2024 deleted and re-inserted 63.6 million identical
+    -- latest rows in about ten hours; for a backfill year this leaves only
+    -- the keys that year adds. A chunk with no upper bound keeps every key.
+    IF p_end_date IS NOT NULL THEN
+        DELETE FROM gold_acs_affected_keys k
+        USING gold_census.mv_acs_latest m
+        WHERE m.geo_id = k.geo_id
+          AND m.variable_code = k.variable_code
+          AND m.metric_code = k.metric_code
+          AND m.observation_date > p_end_date;
+    END IF;
+
     -- PostgreSQL does not auto-analyze session-local temporary tables. Accurate
     -- key cardinality keeps the delete and per-key latest lookups predictable
     -- for large ACS annual chunks.

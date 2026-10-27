@@ -247,6 +247,11 @@
       "path": "sql/migrations/037_census_decennial_datasets.sql"
     },
     {
+      "id": "migration-038",
+      "phase": "source-fix",
+      "path": "sql/migrations/038_drop_duplicate_acs_silver_index.sql"
+    },
+    {
       "id": "gold-census",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"

@@ -673,7 +673,13 @@ def _record_slice_fingerprint(
         ON CONFLICT (year, slice_key) DO UPDATE
         SET content_fingerprint = EXCLUDED.content_fingerprint,
             rows_changed = EXCLUDED.rows_changed,
-            completed_at = NOW();
+            completed_at = NOW(),
+            -- A replay that changed nothing must not hide an earlier change
+            -- the serving step has not published yet.
+            last_changed_at = CASE
+                WHEN EXCLUDED.rows_changed > 0 THEN NOW()
+                ELSE silver_census.transform_slice_state.last_changed_at
+            END;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (int(year), slice_key, fingerprint, int(changed)))

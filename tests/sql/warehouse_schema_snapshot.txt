@@ -9604,7 +9604,6 @@ r silver_census.fact_demographics
     index idx_fact_demo_source_year CREATE INDEX idx_fact_demo_source_year ON silver_census.fact_demographics USING btree (source_system, estimate_year)
     index idx_fact_demo_table_id CREATE INDEX idx_fact_demo_table_id ON silver_census.fact_demographics USING btree (table_id)
     index idx_fact_demo_time_sk CREATE INDEX idx_fact_demo_time_sk ON silver_census.fact_demographics USING btree (time_sk)
-    index idx_fact_demo_upsert_key CREATE INDEX idx_fact_demo_upsert_key ON silver_census.fact_demographics USING btree (dataset, table_id, variable_code, geo_id, estimate_year)
 
 r silver_census.observation_revision
     column capture_id uuid NOT NULL
@@ -9654,6 +9653,7 @@ r silver_census.transform_slice_state
     column content_fingerprint text NOT NULL
     column rows_changed bigint NOT NULL
     column completed_at timestamp with time zone NOT NULL DEFAULT now()
+    column last_changed_at timestamp with time zone NOT NULL DEFAULT now()
     constraint transform_slice_state_pkey PRIMARY KEY (year, slice_key)
     constraint transform_slice_state_rows_changed_check CHECK ((rows_changed >= 0))
     index transform_slice_state_pkey CREATE UNIQUE INDEX transform_slice_state_pkey ON silver_census.transform_slice_state USING btree (year, slice_key)

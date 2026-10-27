@@ -61,6 +61,7 @@ services:
       - ../../sql/migrations/032_acs_tract_grain.sql:/docker-entrypoint-initdb.d/128_migration_032.sql:ro
       - ../../sql/migrations/036_acs_metro_grain.sql:/docker-entrypoint-initdb.d/128a_migration_036.sql:ro
       - ../../sql/migrations/037_census_decennial_datasets.sql:/docker-entrypoint-initdb.d/128b_migration_037.sql:ro
+      - ../../sql/migrations/038_drop_duplicate_acs_silver_index.sql:/docker-entrypoint-initdb.d/128c_migration_038.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/130_gold_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/135_gold_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/140_gold_fred.sql:ro
