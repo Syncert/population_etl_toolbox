@@ -114,3 +114,17 @@ ordering. The plan is:
   crosswalk: 21 pairs (12 SF1, 9 SF3), each checked to exist in the 2000
   and 2024 ACS 5-year `variables.json` (ETL-094). Next: request only
   crosswalked variables, translate at replay, widen the dataset CHECKs.
+- 2026-10-27: D2 done in code: census metadata filing and replay under
+  the paired ACS estimate (`source_header` keeps the census name), 2000
+  tract codes padded (`0401` to `040100`), census day April 1, survey span
+  0, migration 037 (DB-063; the serving fact's CHECK `NOT VALID`), catalog
+  ids `DECENNIALSF12000`/`DECENNIALSF32000`, place and tract scopes from
+  2000. DB tier in the Linux image: 437 passed, 1 skipped. Live load waits
+  for the running ACS history load, which holds `acs_ingest`.
+- 2026-10-27: D5 survey. The 1990 archive (`www2.census.gov/census_1990/`)
+  holds the STF1A and STF3A CD-ROMs as per-state dBase files: `CD90_1A_*`
+  (STF1A, grouped by state) and `CD90_3A_NN` (STF3A, one directory per
+  state FIPS), each with a geographic header table (`stf300xx.dbf`) and
+  segment tables (`stf301xx.dbf`, ...), plus `cnames*.dbf` and a
+  `document/` folder with the layouts. A dBase reader and per-segment
+  variable layouts are the parser's core.
