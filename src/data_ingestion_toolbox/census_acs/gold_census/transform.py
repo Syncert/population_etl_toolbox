@@ -99,7 +99,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                     UPPER(MIN(f.variable_concept)) AS concept,
                     MIN(f.universe) AS universe,
                     CASE WHEN f.dataset = 'acs5' THEN 5
-                         WHEN f.dataset LIKE 'dec%' THEN 0 ELSE 1 END
+                         WHEN LEFT(f.dataset, 3) = 'dec' THEN 0 ELSE 1 END
                         AS survey_span_years,
                     'https://api.census.gov/data/' || f.estimate_year::TEXT ||
                         CASE f.dataset
