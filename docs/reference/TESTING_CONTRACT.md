@@ -288,7 +288,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
 | ETL and shared units | ETL-001–ETL-095 | None |
-| Database integration | DB-001–DB-063 | None |
+| Database integration | DB-001–DB-064 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
 | External source contracts | EXT-001–EXT-030 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **638 of 638** | **0 of 638** |
+| **Total** | **639 of 639** | **0 of 639** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 638-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 639-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -637,6 +637,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-061 | P0 | Integration / `integration database`, Integration / `integration api` | ACS and BLS serve a value the provider withheld | The two gold fact views no longer filter on a non-null value, the two reporting tables no longer declare theirs `NOT NULL`, and all four served relations carry `value_status`, `source_value` and `capture_id`. A row may not claim `valid` beside a null value, refused by `rpt_{acs,bls}_observations_published_value_check`. `publishes_value_status` flips for both sources because it is *derived* from the dispatch entry's `value_status_column` rather than declared twice, and `test_a_source_that_publishes_no_value_state_serves_only_numbers` holds the warehouse to the claim in both directions -- a source declaring the column must have it on both served relations, and one declaring none on neither | 31,481,530 of 99,783,997 ACS fact rows carry no estimate, and the serving filter removed every one. A cell Census suppressed and a geography that was never published gave a consumer the same answer: nothing. `AGENTS.md` forbids coercing a suppressed value to zero; omitting it is not zeroing, but it loses the same distinction |
 | DB-062 | P1 | Integration / `database` | Neighbouring counties are a versioned relationship | `GeographyRepository.reconcile_relationships` records `adjacent` in `silver_ref.bridge_geo_relationship_version`, both directions, once per geometry vintage, with evidence `census_boundary_adjacency`, where two counties' boundaries intersect in a line or more (a corner is not a shared boundary); migration 030 widens the type check on an existing table. `gold_glossary.geo_relationship` serves containment, intersection and adjacency between current geographies from each parent's newest vintage of each type, with the vintage and evidence the bridge recorded. Proved against PostGIS with two counties sharing an edge and a place spanning both. On the development warehouse the 2025 vintage yields 17,960 directed pairs for 3,214 of 3,235 counties in about 20 seconds | Neighbours computed per request, matched by name, inferred from a corner, or kept after a redrawn boundary replaced them |
 | DB-063 | P1 | Integration / `database` | The ACS relations admit the 2000 census without a long lock | After bootstrap each of `control.acs_ingestion_slices`, `gold_census.dim_acs_table`, `gold_census.dim_acs_variable` and `gold_census.rpt_acs_observations` carries exactly one local dataset CHECK, named `*_census_check`, admitting `dec2000sf1` and `dec2000sf3` beside `acs1` and `acs5`; a census row inserts and an unknown dataset code violates the CHECK; on relations put back to the pre-037 `acs1`/`acs5` CHECK, migration 037 replaces each, validates the three small relations and leaves the partitioned serving fact's CHECK `NOT VALID`, and a second run changes nothing | Four CHECKs refused any dataset but the ACS, and widening the one on the 168 GB serving fact the ordinary way scans every row under an exclusive lock that stops every reader of the warehouse |
+| DB-064 | P0 | Integration / `database` | Serving an older year rewrites only the latest rows it can change | With a key's latest row in `gold_census.mv_acs_latest` from 2006, `refresh_mv_acs_latest` over 2003 leaves that row physically untouched (same `xmin` and `ctid`), while a key only 2003 holds is resolved to 2003; the procedure drops from its affected keys every key whose current latest row is dated after the chunk's end | Backfilling 2023 places under a loaded 2024 deleted and re-inserted 63.6 million identical latest rows, about ten of the year's 17.8 hours, and every older backfill year repeated it |
 
 ### API and Redis Tests
 

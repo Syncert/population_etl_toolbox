@@ -83,7 +83,8 @@ CREATE INDEX IF NOT EXISTS idx_fact_demo_time_sk ON silver_census.fact_demograph
 CREATE INDEX IF NOT EXISTS idx_fact_demo_geo_sk ON silver_census.fact_demographics(geo_sk);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_dataset ON silver_census.fact_demographics(dataset);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_table_id ON silver_census.fact_demographics(table_id);
-CREATE INDEX IF NOT EXISTS idx_fact_demo_upsert_key ON silver_census.fact_demographics(dataset, table_id, variable_code, geo_id, estimate_year);
+-- The upsert key is `fact_demographics_uk`; a second index on the same
+-- columns cost every insert a write (migration 038 drops it).
 CREATE INDEX IF NOT EXISTS idx_fact_demo_source_year ON silver_census.fact_demographics(source_system, estimate_year);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_ingested_at ON silver_census.fact_demographics(ingested_at);
 
