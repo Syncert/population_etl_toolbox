@@ -91,3 +91,43 @@ def test_a_malformed_1990_crosswalk_refuses(datasets: dict, message: str) -> Non
     """Covers: ETL-096 -- a 2000 file, an uncurated target, no cells, a summed median."""
     with pytest.raises(ValueError, match=message):
         parse_crosswalk_1990({"datasets": datasets})
+
+
+def test_a_1990_file_becomes_revision_rows_shaped_like_the_acs_replay() -> None:
+    """Covers: ETL-096 -- one row per geography and measure, the cells kept as the header."""
+    from data_ingestion_toolbox.census_acs.stf1990 import (
+        Stf1990FormatError,
+        Stf1990Geography,
+        revision_values,
+    )
+
+    place = Stf1990Geography(
+        logical_record="000004",
+        geo_level="place",
+        state_fips="50",
+        county_fips=None,
+        place_fips="00400",
+        tract_code=None,
+        name="Albany village",
+        land_area_m2=None,
+        water_area_m2=None,
+    )
+    rows = revision_values(
+        "dec1990stf1", [place], {"000004": _cells("dec1990stf1", "7")}
+    )
+    # One row per declared measure, however many cells each sums.
+    assert len(rows) == len(crosswalk_1990()["dec1990stf1"])
+    population = next(row for row in rows if row["variable_name"] == "B01003_001E")
+    assert population["source_header"] == "P0010001"
+    assert (
+        population["year"],
+        population["geo_level"],
+        population["place_fips_source"],
+    ) == (
+        1990,
+        "place",
+        "00400",
+    )
+    assert population["measure_type"] == "E" and population["value"] == Decimal(7)
+    with pytest.raises(Stf1990FormatError, match="no segment cells"):
+        revision_values("dec1990stf1", [place], {})

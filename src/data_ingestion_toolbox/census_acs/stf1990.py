@@ -294,3 +294,66 @@ def measure_values(dataset: str, cells: dict[str, str]) -> list[Value1990]:
             )
         )
     return values
+
+
+# ------------------------------------------------------------ replay rows
+
+#: The 1990 file the revision rows are stored as, the census year.
+YEAR_1990 = 1990
+
+#: The revision table's geography level for each served 1990 level.
+REVISION_LEVELS = {
+    "state": "state",
+    "county": "county",
+    "place": "place",
+    "tract": "tract",
+}
+
+
+def revision_values(
+    dataset: str,
+    header: list[Stf1990Geography],
+    cells_by_record: dict[str, dict[str, str]],
+) -> list[dict[str, object]]:
+    """`silver_census.observation_revision` rows for one state's 1990 file.
+
+    One row per served geography and declared measure, shaped as the ACS
+    replay's rows are: the ACS estimate as `variable_name`, the summed cells
+    as `source_header`, the cells' text as `value_source`. `source_row_index`
+    is the header record's position and `source_column_index` the measure's,
+    so a row is traceable to the header record and the crosswalk entry. A
+    served geography with no segment record refuses: the segment tables of
+    one disc hold every logical record of its header.
+    """
+    rows: list[dict[str, object]] = []
+    for row_index, geography in enumerate(header):
+        cells = cells_by_record.get(geography.logical_record)
+        if cells is None:
+            raise Stf1990FormatError(
+                f"{dataset} logical record {geography.logical_record} has no segment cells"
+            )
+        for column_index, value in enumerate(measure_values(dataset, cells)):
+            table_id = value.acs_variable.split("_", 1)[0]
+            rows.append(
+                {
+                    "source_row_index": row_index,
+                    "source_column_index": column_index,
+                    "source_header": value.source_header,
+                    "dataset": dataset,
+                    "year": YEAR_1990,
+                    "geo_level": REVISION_LEVELS[geography.geo_level],
+                    "us_source": None,
+                    "state_fips_source": geography.state_fips,
+                    "county_fips_source": geography.county_fips,
+                    "place_fips_source": geography.place_fips,
+                    "tract_code_source": geography.tract_code,
+                    "cbsa_source": None,
+                    "variable_name": value.acs_variable,
+                    "table_id": table_id,
+                    "measure_type": "E",
+                    "value_source": value.value_source,
+                    "value": value.value,
+                    "value_status": value.value_status,
+                }
+            )
+    return rows
