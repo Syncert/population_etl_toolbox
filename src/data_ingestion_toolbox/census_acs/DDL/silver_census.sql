@@ -118,6 +118,14 @@ CREATE TABLE IF NOT EXISTS silver_census.transform_slice_state (
     PRIMARY KEY (year, slice_key)
 );
 
+-- When the slice last changed a stored row. A run that finds nothing to
+-- change leaves it alone, so the serving step can skip a grain no slice has
+-- changed since that grain was last served (skip-unchanged-grains). Rows
+-- that predate the column take the time it was added: unknown history is
+-- treated as a change, so the first serve after it lands still runs.
+ALTER TABLE silver_census.transform_slice_state
+    ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- Autovacuum for this high-update table
 ALTER TABLE silver_census.fact_demographics SET (
     autovacuum_vacuum_scale_factor = 0.05,  -- Vacuum when 5% of table updated (default 20%)

@@ -70,6 +70,13 @@ class ServingRefreshChunkConfig:
     #: ``report_procedure`` takes the step's grains as a third argument. The
     #: chunk's checkpoint completes only when every step has.
     grain_steps: tuple[GrainStep, ...] = ()
+    #: Whether a grain step has anything to publish: a query taking the
+    #: named parameters `year`, `geo_levels` (the step's grains) and `since`
+    #: (the chunk's last completed refresh),
+    #: answering one row whose single column is true when silver changed any
+    #: of those grains in that year since then. Empty means "always publish".
+    #: It must answer true whenever it cannot tell (skip-unchanged-grains).
+    step_changed_sql: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -375,6 +382,32 @@ def _analyze_after_chunk(
         )
 
 
+def _step_has_changes(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    step: GrainStep,
+    chunk: dict[str, Any],
+) -> bool:
+    """Whether one grain step of a chunk has silver changes to publish.
+
+    A chunk never completed, or a source declaring no `step_changed_sql`,
+    always publishes; so does any answer other than an explicit false.
+    """
+    if not config.step_changed_sql or chunk.get("completed_at") is None:
+        return True
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            config.step_changed_sql,
+            {
+                "year": chunk["start"].year,
+                "geo_levels": list(step.geo_levels),
+                "since": chunk["completed_at"],
+            },
+        )
+        row = cur.fetchone()
+    return not (row is not None and row[0] is False)
+
+
 def refresh_serving_layer_in_year_chunks(
     *,
     hook: PostgresHook,
@@ -642,6 +675,17 @@ def refresh_serving_layer_in_year_chunks(
         )
         try:
             for step in config.grain_steps:
+                if not force_full and not _step_has_changes(hook, config, step, chunk):
+                    log.info(
+                        "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=SKIPPED reason=unchanged_since=%s",
+                        config.log_label,
+                        position,
+                        len(planned_chunks),
+                        chunk["start"],
+                        step.name,
+                        chunk["completed_at"],
+                    )
+                    continue
                 # Each grain step commits on its own, so the year's small
                 # grains are served (and released) before the large one starts.
                 step_started = time.monotonic()
