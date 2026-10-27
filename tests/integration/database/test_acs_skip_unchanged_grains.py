@@ -112,3 +112,31 @@ def test_unknown_or_never_served_grains_publish(
     # The nation's slices are named `us`, the step's grain `NATIONAL`.
     ledger("acs5/us", 4)
     assert _changed(postgres_connection_factory, "area", served - timedelta(days=1))
+
+
+def test_a_ledger_row_from_before_the_column_is_bounded_by_its_completion(
+    postgres_connection_factory: Callable[[], connection], ledger
+) -> None:
+    """Covers: DB-065 -- re-applying the DDL dates old rows by completion, not by deploy time."""
+    from pathlib import Path
+
+    ledger("acs5/county/10", 0)
+    database = postgres_connection_factory()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "UPDATE silver_census.transform_slice_state "
+                "SET completed_at = NOW() - INTERVAL '30 days', "
+                "    last_changed_at = NOW() WHERE year = %s",
+                (YEAR,),
+            )
+            ddl = (
+                Path(__file__).resolve().parents[3]
+                / "src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql"
+            )
+            cursor.execute(ddl.read_text(encoding="utf-8"))
+    finally:
+        database.close()
+    served = datetime.now(timezone.utc) - timedelta(days=1)
+    assert _changed(postgres_connection_factory, "area", served) is False

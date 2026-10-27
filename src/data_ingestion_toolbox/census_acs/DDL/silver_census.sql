@@ -120,11 +120,17 @@ CREATE TABLE IF NOT EXISTS silver_census.transform_slice_state (
 
 -- When the slice last changed a stored row. A run that finds nothing to
 -- change leaves it alone, so the serving step can skip a grain no slice has
--- changed since that grain was last served (skip-unchanged-grains). Rows
--- that predate the column take the time it was added: unknown history is
--- treated as a change, so the first serve after it lands still runs.
+-- changed since that grain was last served (skip-unchanged-grains).
 ALTER TABLE silver_census.transform_slice_state
     ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- A row that predates the column cannot say when it last changed, but no
+-- later than its last completion: that bound is still safe for the skip,
+-- whereas the time the column was added made every year look changed and
+-- re-served every grain of every backfill year. Once the transform writes
+-- the column, it never exceeds `completed_at`, so this is a no-op.
+UPDATE silver_census.transform_slice_state
+SET last_changed_at = completed_at
+WHERE last_changed_at > completed_at;
 
 -- Autovacuum for this high-update table
 ALTER TABLE silver_census.fact_demographics SET (
