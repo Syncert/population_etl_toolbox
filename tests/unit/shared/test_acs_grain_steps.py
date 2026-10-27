@@ -11,7 +11,7 @@ from data_ingestion_toolbox.utility.serving_reserve import ACS_CHUNK_CONFIG
 pytestmark = pytest.mark.unit
 
 #: Every `geo_level` `gold_census.fact_acs_observation` serves today.
-SERVED_LEVELS = {"NATIONAL", "STATE", "COUNTY", "TRACT", "PLACE"}
+SERVED_LEVELS = {"NATIONAL", "STATE", "COUNTY", "METRO", "TRACT", "PLACE"}
 
 
 def test_the_steps_cover_every_served_grain_exactly_once() -> None:
