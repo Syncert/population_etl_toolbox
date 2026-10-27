@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-095 | None |
+| ETL and shared units | ETL-001–ETL-096 | None |
 | Database integration | DB-001–DB-063 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **638 of 638** | **0 of 638** |
+| **Total** | **639 of 639** | **0 of 639** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 638-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 639-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -567,6 +567,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-093 | P1 | Unit / `unit` | Each Census dataset is requested from its own Data API path | `CENSUS_DATASETS` names every dataset the adapter reads with its API path, the years it exists for and whether it publishes margins; `census_api_url` returns `acs/acs1` and `acs/acs5` for the ACS and `dec/sf1` and `dec/sf3` for Census 2000 (`dec2000sf1`, `dec2000sf3`), which publish no margins and exist for 2000 alone; a census dataset asked for another year, and a dataset the registry does not name, refuse; the request, the capture endpoint and `variables.json` all read the same URL; the gold table dimension gives a census release survey span 0 and its own `dec/` reference URL, in SQL psycopg2 can format with parameters | The adapter wrote `/acs/{dataset}` into three URLs and refused any dataset but `acs1` and `acs5`, so the 2000 census -- the same API and payload shape, under `dec/` -- could not be requested at all |
 | ETL-094 | P1 | Unit / `unit` | A census variable joins an ACS series only by a declared pairing | `decennial_crosswalk.json` names, per census dataset, each source variable with the ACS estimate it measures, its label, and for money the year its dollars are in; `parse_crosswalk` refuses a dataset that is not a census dataset in `CENSUS_DATASETS`, a target that is a margin or not a curated table's estimate, and two source variables claiming one target; `requested_variables` returns only named variables (none for an ACS dataset) and `acs_variable_for` refuses a variable the crosswalk does not name; the checked-in file loads and pairs `P001001` with `B01003_001E` and SF3 median household income with `B19013_001E` in 1999 dollars; `census_variable_rows` files each crosswalked variable under its own census name and label and the ACS table of its target, with no margin rows, and refuses when `variables.json` no longer lists one; `parse_captured_values` stores a census value under its paired ACS estimate (table and measure type from the target) with the census name kept as `source_header`, and refuses a census column the crosswalk does not name | A census table and an ACS table share few identifiers and differ in universe and dollars, so a pairing inferred from labels at load time would silently join unlike things into one series |
 | ETL-095 | P1 | Unit / `unit` | The 1990 Summary Tape Files are read from the Bureau's archived dBase tables | `read_dbf` reads a dBase III table's field descriptors and live records as Latin-1 text, skipping deleted records, and refuses bytes that are not a dBase III table, field lengths that do not add up to the record length, and a table shorter than its record count; `parse_header` keeps whole-geography (`GEOCOMP` 00) records at the state, county, place and tract summary levels (040, 050, 160, 140), scales areas from thousandths of a square kilometre to square metres, pads a four-digit tract or BNA code to six, and refuses a header without its key fields or one repeating a logical record; `parse_segment` returns the named cells by logical record and refuses a cell the segment does not carry | The 1990 census is no longer on the Data API, so its only source is the CD-ROM tables the Bureau archived, which nothing in the repository could read |
+| ETL-096 | P1 | Unit / `unit` | A 1990 measure is the declared sum of its cells | `decennial_1990_crosswalk.json` names, for STF1A and STF3A, each ACS estimate with the 1990 cells that measure it, its label, the year of any dollars, and whether it is a median; `parse_crosswalk_1990` refuses a file that is not a 1990 file, a target that is not a curated ACS estimate, a measure with no cell or a repeated one, and a median summed from several cells; `measure_values` sums a measure's cells only when every one is a number (otherwise `invalid`, never a partial sum), records a median of 0 as a `sentinel`, keeps a count of 0, and reports the cells read as `source_header` | Many 1990 tables publish a measure only as parts (workers by mode, persons below poverty by age), so the ACS series could not take a 1990 value without a sum someone could review |
 
 ### PostgreSQL Integration Tests
 
