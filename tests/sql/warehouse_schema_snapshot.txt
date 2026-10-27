@@ -9647,6 +9647,16 @@ r silver_census.transform_checkpoint
     constraint transform_checkpoint_rows_changed_check CHECK ((rows_changed >= 0))
     index transform_checkpoint_pkey CREATE UNIQUE INDEX transform_checkpoint_pkey ON silver_census.transform_checkpoint USING btree (resume_key, year, slice_key)
 
+r silver_census.transform_slice_state
+    column year integer NOT NULL
+    column slice_key text NOT NULL
+    column content_fingerprint text NOT NULL
+    column rows_changed bigint NOT NULL
+    column completed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint transform_slice_state_pkey PRIMARY KEY (year, slice_key)
+    constraint transform_slice_state_rows_changed_check CHECK ((rows_changed >= 0))
+    index transform_slice_state_pkey CREATE UNIQUE INDEX transform_slice_state_pkey ON silver_census.transform_slice_state USING btree (year, slice_key)
+
 r silver_census_bps.dim_measure
     column measure_id text NOT NULL
     column structure_type text NOT NULL

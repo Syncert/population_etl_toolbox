@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List
 
 import os
 from pydantic import BaseModel, Field, field_validator
+
+from data_ingestion_toolbox.census_acs.year_scope import YearScope, validate_year_scope
 
 
 # County endpoints are available for the 50 states, DC, and Puerto Rico.
@@ -167,12 +169,12 @@ class AcsConfig(BaseModel):
     ]
     # geo levels we ingest
     geo_levels: List[str] = ["us", "state", "county", "place", "tract"]
-    # How many of each dataset's newest available years are requested at
-    # place grain. Places are ten times the counties' volume -- about 62
-    # million 5-year facts for one year against the counties' 6.2 million --
-    # so the default is the newest year, which is what a place page reads;
-    # raise it to backfill place history.
-    place_recent_years: int = 1
+    # The years requested at place grain, declared (`year_scope.py`):
+    # "newest", "newest:N", "YYYY-YYYY", "YYYY" or "none". Places are ten
+    # times the counties' volume -- about 62 million 5-year facts for one
+    # year against the counties' 6.2 million -- so the default is the newest
+    # year, which is what a place page reads; widen it to load place history.
+    place_year_scope: str = "newest"
     # The tables requested at tract grain (sub-county-geography): the few a
     # "within this county" map shows. Tracts are about 85,000 against the
     # counties' 3,200, so the whole curated list at tract grain would be some
@@ -181,16 +183,34 @@ class AcsConfig(BaseModel):
     # million revision rows (estimate and margin) for one year, in 51 state
     # slices. Each must also be in `curated_tables`.
     tract_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
-    # How many of the 5-year dataset's newest years are requested at tract
-    # grain; the default is the newest, which is what a county page reads.
-    tract_recent_years: int = 1
-    # Place years beyond the newest `place_full_table_years` are requested
-    # for `place_history_tables` only (acs-place-tract-history-backfill). A
-    # place year on the whole curated list measured about 136 GB on the
-    # internal stack in 2026-10; a city history on every table would not fit
-    # on its disk, and the city page's history charts read these tables.
-    place_full_table_years: int = 1
+    # The 5-year years requested at tract grain, declared as for places; the
+    # default is the newest, which is what a county page reads.
+    tract_year_scope: str = "newest"
+    # Place years outside `place_full_table_year_scope` are requested for
+    # `place_history_tables` only (acs-place-tract-history-backfill). A place
+    # year on the whole curated list measured about 136 GB on the internal
+    # stack in 2026-10; widen this scope only after
+    # `python -m data_ingestion_toolbox.census_acs.measure` shows the disk.
+    place_full_table_year_scope: str = "newest"
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
+    # Free-disk guard for operator backfill runs (`disk_guard.py`). The path
+    # must sit on the warehouse's filesystem; on the internal stack every
+    # container's `/` is Docker's one data disk. A run refuses when its
+    # projected bytes would leave less than the reserve free.
+    backfill_disk_path: str = Field(
+        default_factory=lambda: os.environ.get("ACS_BACKFILL_DISK_PATH", "/")
+    )
+    backfill_reserve_fraction: float = 0.20
+    # Bytes one curated variable adds per (year, "<dataset>/<grain>") across
+    # all of the grain's state slices, silver and gold together, measured on
+    # the internal stack by `python -m data_ingestion_toolbox.census_acs.measure`
+    # on 2026-10-26 from the 2024 year (recorded in the backfill plan). A
+    # grain left out projects nothing.
+    backfill_bytes_per_variable: Dict[str, float] = {
+        "acs5/place": 38_454_870.0,
+        "acs1/place": 611_340.0,
+        "acs5/tract": 158_899_297.0,
+    }
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
@@ -229,11 +249,18 @@ class AcsConfig(BaseModel):
             raise ValueError("configured ingestion scope must not be empty")
         return value
 
-    @field_validator("place_recent_years")
+    @field_validator(
+        "place_year_scope", "tract_year_scope", "place_full_table_year_scope"
+    )
     @classmethod
-    def validate_place_recent_years(cls, value: int) -> int:
-        if value < 0:
-            raise ValueError("place_recent_years must not be negative")
+    def validate_year_scopes(cls, value: str) -> str:
+        return validate_year_scope(value)
+
+    @field_validator("backfill_reserve_fraction")
+    @classmethod
+    def validate_reserve_fraction(cls, value: float) -> float:
+        if not 0 <= value < 1:
+            raise ValueError("backfill_reserve_fraction must be in [0, 1)")
         return value
 
     @field_validator("place_history_tables")
@@ -243,36 +270,27 @@ class AcsConfig(BaseModel):
             raise ValueError("place_history_tables must name at least one table")
         return value
 
-    @field_validator("tract_recent_years")
-    @classmethod
-    def validate_tract_recent_years(cls, value: int) -> int:
-        if value < 0:
-            raise ValueError("tract_recent_years must not be negative")
-        return value
-
     def tract_years(self, dataset: str, years: List[int]) -> set[int]:
-        """The years of ``dataset`` requested at tract grain: the newest ones."""
+        """The years of ``dataset`` requested at tract grain, by its declared scope."""
         if "tract" not in self.geo_levels or not tract_parent_fips(dataset):
             return set()
-        newest = sorted(set(years), reverse=True)
-        return set(newest[: self.tract_recent_years])
+        return YearScope.parse(self.tract_year_scope).select(years)
 
     def place_tables(self, year: int, years: List[int]) -> List[str] | None:
         """The tables requested for ``year`` at place grain.
 
-        ``None`` means the whole curated list: the newest
-        `place_full_table_years` of ``years``. Any older year is requested for
+        ``None`` means the whole curated list: a year of ``years`` inside
+        `place_full_table_year_scope`. Any other year is requested for
         `place_history_tables` only.
         """
-        newest = sorted(set(years), reverse=True)[: self.place_full_table_years]
-        return None if year in newest else list(self.place_history_tables)
+        full = YearScope.parse(self.place_full_table_year_scope).select(years)
+        return None if year in full else list(self.place_history_tables)
 
     def place_years(self, dataset: str, years: List[int]) -> set[int]:
-        """The years of ``dataset`` requested at place grain: the newest ones."""
+        """The years of ``dataset`` requested at place grain, by its declared scope."""
         if "place" not in self.geo_levels or not place_parent_fips(dataset):
             return set()
-        newest = sorted(set(years), reverse=True)
-        return set(newest[: self.place_recent_years])
+        return YearScope.parse(self.place_year_scope).select(years)
 
     @field_validator("census_api_global_concurrency", "raw_load_max_rows")
     @classmethod

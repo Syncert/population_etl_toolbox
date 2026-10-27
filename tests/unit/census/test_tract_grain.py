@@ -55,7 +55,7 @@ def test_only_the_newest_year_and_the_tract_tables_are_requested() -> None:
     years = [2019, 2020, 2021, 2022, 2023]
     assert CONFIG.tract_years("acs5", years) == {2023}
     assert CONFIG.tract_years("acs1", years) == set()
-    assert CONFIG.model_copy(update={"tract_recent_years": 2}).tract_years(
+    assert CONFIG.model_copy(update={"tract_year_scope": "newest:2"}).tract_years(
         "acs5", years
     ) == {2022, 2023}
     assert set(CONFIG.tract_tables) <= set(CONFIG.curated_tables)

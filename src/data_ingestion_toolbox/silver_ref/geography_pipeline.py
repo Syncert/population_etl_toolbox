@@ -62,6 +62,16 @@ TRACT_SCOPES = frozenset({SUB_COUNTY_SCOPE, HISTORICAL_TRACT_SCOPE})
 #: which also stand for 2011. Annual files start in 2012. The 2009 ACS was
 #: published on Census 2000 tracts, which have no Gazetteer.
 MIN_SUB_COUNTY_HISTORY_YEAR = 2010
+#: Census 2000 tracts, which the 2009 ACS 5-year estimates (and only they) were
+#: published on. They have no Gazetteer; the Bureau's 2000-to-2010 tract
+#: relationship file lists every one of them with its 2000 land and total
+#: area, and is the same file the decade crosswalk weights come from.
+TRACT_2000_VINTAGE = 2000
+TRACT_2000_RELATIONSHIP_URL = (
+    "https://www2.census.gov/geo/docs/maps-data/data/rel/trf_txt/us2010trf.txt"
+)
+#: The first ACS year a tract reference exists for: the 2009 5-year.
+MIN_TRACT_HISTORY_YEAR = 2009
 
 
 @dataclass(frozen=True)
@@ -235,6 +245,61 @@ def parse_gazetteer_capture(
     if len({record.geo_id for record in records}) != len(records):
         raise ValueError("gazetteer capture contains duplicate canonical identities")
     return records
+
+
+def parse_tract_relationship_2000_capture(
+    payload: bytes, *, geography_vintage: int = TRACT_2000_VINTAGE
+) -> list[GeographyRecord]:
+    """Census 2000 tracts from the 2000-to-2010 tract relationship file.
+
+    The file is comma-separated with no header, one row per (2000 tract, 2010
+    tract) part; its first nine columns describe the 2000 tract: STATE00,
+    COUNTY00, TRACT00, GEOID00, POP00, HU00, PART00, AREA00 and AREALAND00
+    (square metres). A tract appears once per part, so the records are the
+    distinct GEOID00 values, and a tract described two ways refuses.
+    """
+    text = payload.decode("utf-8-sig")
+    records: dict[str, GeographyRecord] = {}
+    for line_number, row in enumerate(csv.reader(io.StringIO(text)), start=1):
+        if not row:
+            continue
+        if len(row) < 9:
+            raise ValueError(
+                f"tract relationship row {line_number} has {len(row)} columns"
+            )
+        state, county, tract, geoid = (value.strip() for value in row[:4])
+        if (
+            geoid != f"{state}{county}{tract}"
+            or len(geoid) != 11
+            or not geoid.isdigit()
+        ):
+            raise ValueError(f"tract relationship row {line_number}: GEOID00 {geoid!r}")
+        total, land = _optional_int(row[7]), _optional_int(row[8])
+        record = GeographyRecord(
+            geo_type="tract",
+            geo_id=canonical_geo_id(
+                "tract", state_fips=state, county_fips=county, tract_code=tract
+            ),
+            census_geoid=geoid,
+            state_fips=state,
+            county_fips=county,
+            place_fips=None,
+            name=tract_name(tract),
+            geography_vintage=geography_vintage,
+            land_area_m2=land,
+            water_area_m2=(
+                total - land if total is not None and land is not None else None
+            ),
+            tract_code=tract,
+        )
+        existing = records.setdefault(record.geo_id, record)
+        if existing != record:
+            raise ValueError(
+                f"tract {geoid} is described two ways in the relationship file"
+            )
+    if not records:
+        raise ValueError("tract relationship capture contains no records")
+    return list(records.values())
 
 
 def tract_name(tract_code: str) -> str:
@@ -1123,14 +1188,28 @@ def sub_county_urls(year: int) -> list[tuple[str, str, str]]:
     ]
 
 
-def historical_sub_county_asset(year: int, geo_type: str) -> tuple[str, str, str]:
-    """The Gazetteer attributes of one vintage's places or tracts.
+def history_vintage(year: int, geo_type: str) -> int:
+    """The reference vintage an ACS year's places or tracts are published from.
 
-    2010 and 2011 read the 2010 Census files; from 2012 the Bureau publishes
-    one file a year.
+    Tracts of the 2000 decade (the 2009 ACS) are one vintage, Census 2000;
+    every later year is its own vintage.
+    """
+    if geo_type == "tract" and TRACT_2000_VINTAGE <= year < MIN_SUB_COUNTY_HISTORY_YEAR:
+        return TRACT_2000_VINTAGE
+    return year
+
+
+def historical_sub_county_asset(year: int, geo_type: str) -> tuple[str, str, str]:
+    """The attributes of one vintage's places or tracts.
+
+    2010 and 2011 read the 2010 Census Gazetteer files; from 2012 the Bureau
+    publishes one file a year. Census 2000 tracts come from the 2000-to-2010
+    tract relationship file.
     """
     if geo_type not in {"place", "tract"}:
         raise ValueError(f"no sub-county history asset for {geo_type!r}")
+    if geo_type == "tract" and history_vintage(year, geo_type) == TRACT_2000_VINTAGE:
+        return ("attributes", "tract", TRACT_2000_RELATIONSHIP_URL)
     if year < MIN_SUB_COUNTY_HISTORY_YEAR:
         raise ValueError(
             f"no {geo_type} Gazetteer for vintage {year}; the first is "
@@ -1309,6 +1388,8 @@ def sync_geography_reference(
                     "source_format": (
                         "legacy_fixed_width"
                         if geo_type == "county" and year in LEGACY_COUNTY_URLS
+                        else "tract_relationship_2000"
+                        if url == TRACT_2000_RELATIONSHIP_URL
                         else "modern_gazetteer_or_shapefile"
                     ),
                 }
@@ -1367,6 +1448,10 @@ def sync_geography_reference(
                 if product == "attributes":
                     if geo_type == "county" and year in LEGACY_COUNTY_URLS:
                         records = parse_legacy_county_gazetteer_capture(
+                            payload, geography_vintage=year
+                        )
+                    elif geo_type == "tract" and year == TRACT_2000_VINTAGE:
+                        records = parse_tract_relationship_2000_capture(
                             payload, geography_vintage=year
                         )
                     else:
@@ -1514,10 +1599,10 @@ def sync_sub_county_history(
     latest = latest_year or resolve_latest_complete_year()
     wanted = sorted({int(year) for year in years if int(year) < latest})
     for year in wanted:
-        if year < MIN_SUB_COUNTY_HISTORY_YEAR:
+        if year < MIN_TRACT_HISTORY_YEAR:
             raise ValueError(
-                f"no place or tract Gazetteer for vintage {year}; the first is "
-                f"{MIN_SUB_COUNTY_HISTORY_YEAR}"
+                f"no place or tract reference for vintage {year}; the first is "
+                f"{MIN_TRACT_HISTORY_YEAR}"
             )
     factory = _get_hook().get_conn
     totals = {"vintages_synced": 0, "attributes": 0, "retired": 0, "refused": 0}
@@ -1526,7 +1611,14 @@ def sync_sub_county_history(
         ("tract", HISTORICAL_TRACT_SCOPE),
     ):
         completed = successful_geography_vintages(factory, snapshot_scopes=(scope,))
-        for year in [year for year in wanted if year not in completed]:
+        if geo_type == "place":
+            # No place reference before 2010 is captured yet: a 2009 place
+            # resolves against the 2010 entities its code still names, and
+            # one that ceased before 2010 stays ledgered `unmapped`.
+            vintages = [y for y in wanted if y >= MIN_SUB_COUNTY_HISTORY_YEAR]
+        else:
+            vintages = sorted({history_vintage(y, geo_type) for y in wanted})
+        for year in [year for year in vintages if year not in completed]:
             logger.info("[CENSUS_GEO] Publishing %s history vintage %s", geo_type, year)
             counts = sync_geography_reference(
                 source_year=year,

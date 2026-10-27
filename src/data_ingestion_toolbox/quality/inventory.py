@@ -806,6 +806,16 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first ACS capture",
     ),
     _obj(
+        "silver_census.transform_slice_state",
+        "silver",
+        "CENSUS_ACS",
+        grain="year, slice_key",
+        lineage="silver_census.observation_revision",
+        scope_method="one row per transform slice, with the content it last finished against",
+        cadence="per ACS silver transform",
+        empty_behavior="empty before the first ACS silver transform",
+    ),
+    _obj(
         "silver_census.transform_checkpoint",
         "silver",
         "CENSUS_ACS",

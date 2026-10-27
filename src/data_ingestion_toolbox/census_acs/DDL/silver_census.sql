@@ -99,6 +99,22 @@ CREATE TABLE IF NOT EXISTS silver_census.transform_checkpoint (
     PRIMARY KEY (resume_key, year, slice_key)
 );
 
+-- The content each transform slice last finished against, whatever run did
+-- it: the fingerprint covers the slice's revision count and newest revision,
+-- the variable metadata, the geography reference and the transform version.
+-- A later run skips a slice whose fingerprint is unchanged, so a backfill can
+-- stop and resume across runs; new revisions (errata) or a wider reference
+-- change the fingerprint and replay the slice. Delete a year's rows to force
+-- its replay.
+CREATE TABLE IF NOT EXISTS silver_census.transform_slice_state (
+    year                INTEGER NOT NULL,
+    slice_key           TEXT NOT NULL,
+    content_fingerprint TEXT NOT NULL,
+    rows_changed        BIGINT NOT NULL CHECK (rows_changed >= 0),
+    completed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (year, slice_key)
+);
+
 -- Autovacuum for this high-update table
 ALTER TABLE silver_census.fact_demographics SET (
     autovacuum_vacuum_scale_factor = 0.05,  -- Vacuum when 5% of table updated (default 20%)
