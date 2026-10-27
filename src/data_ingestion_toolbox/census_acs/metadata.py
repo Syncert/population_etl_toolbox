@@ -17,7 +17,8 @@ from data_ingestion_toolbox.utility.db_connection import (
     warehouse_database,
 )
 
-from .config import CONFIG, census_api_url
+from .config import CENSUS_DATASETS, CONFIG, census_api_url
+from .decennial import crosswalk
 
 
 DATA_JSON_URL = "https://api.census.gov/data.json"
@@ -193,13 +194,93 @@ def fetch_variables_json(year: int, dataset: str) -> Dict:
         return resp.json()
 
 
+def census_variable_rows(
+    year: int, dataset: str, variables: Dict[str, Dict]
+) -> List[tuple]:
+    """`raw_census.acs_variables` rows for a census dataset's crosswalked variables.
+
+    Each row keeps the census's own variable name, label and concept, filed
+    under the ACS table of the estimate it measures, so a slice asking for a
+    curated table's variables asks a census dataset for exactly its declared
+    pairings and nothing else. A census publishes no margins, so there are no
+    margin rows. A crosswalked variable missing from `variables.json` refuses:
+    the Bureau renamed or withdrew it and the pairing needs review.
+    """
+    rows: List[tuple] = []
+    for source, entry in sorted(crosswalk().get(dataset, {}).items()):
+        info = variables.get(source)
+        if info is None:
+            raise ValueError(f"{dataset} {year} variables.json has no {source}")
+        table_id = entry.acs_variable.split("_", 1)[0]
+        rows.append(
+            (
+                dataset,
+                year,
+                source,
+                table_id,
+                info.get("label"),
+                info.get("concept"),
+                info.get("predicateType"),
+                info.get("group") or table_id,
+            )
+        )
+    return rows
+
+
+def _sync_census_variable_metadata(year: int, dataset: str, variables: Dict) -> None:
+    rows = census_variable_rows(year, dataset, variables)
+    conn = _get_pg_connection()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            for row in rows:
+                cur.execute(
+                    """
+                    INSERT INTO raw_census.acs_variables (
+                        dataset, year, variable_name, table_id,
+                        label, concept, predicate_type, group_name
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (dataset, year, variable_name)
+                    DO UPDATE SET
+                        table_id = EXCLUDED.table_id,
+                        label = EXCLUDED.label,
+                        concept = EXCLUDED.concept,
+                        predicate_type = EXCLUDED.predicate_type,
+                        group_name = EXCLUDED.group_name;
+                    """,
+                    row,
+                )
+            for table_id, concept in {row[3]: row[5] for row in rows}.items():
+                cur.execute(
+                    """
+                    INSERT INTO raw_census.acs_tables (
+                        dataset, table_id, concept, product
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (dataset, table_id)
+                    DO UPDATE SET
+                        concept = EXCLUDED.concept,
+                        product = EXCLUDED.product;
+                    """,
+                    (dataset, table_id, concept, dataset),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
     """
     For the given year+dataset, load variables.json, filter to curated table IDs,
-    and upsert into acs_tables and acs_variables.
+    and upsert into acs_tables and acs_variables. A census dataset (one that
+    publishes no margins) files only its crosswalked variables.
     """
     meta = fetch_variables_json(year, dataset)
     variables = meta.get("variables", {})
+    if not CENSUS_DATASETS[dataset].margins:
+        _sync_census_variable_metadata(year, dataset, variables)
+        return
 
     conn = _get_pg_connection()
 

@@ -57,3 +57,39 @@ def test_a_malformed_crosswalk_refuses(datasets: dict, message: str) -> None:
     """Covers: ETL-094 -- an ACS dataset, a margin, an uncurated table or a shared target."""
     with pytest.raises(ValueError, match=message):
         parse_crosswalk({"datasets": datasets})
+
+
+def _census_variables(dataset: str) -> dict[str, dict]:
+    """A `variables.json` body naming every crosswalked variable, and one more."""
+    variables = {
+        source: {"label": f"Total!!{source}", "concept": "C", "predicateType": "int"}
+        for source in requested_variables(dataset)
+    }
+    variables["P012003"] = {
+        "label": "Total!!Male!!Under 5 years",
+        "concept": "SEX BY AGE",
+    }
+    return variables
+
+
+def test_a_census_files_only_its_crosswalked_variables_under_acs_tables() -> None:
+    """Covers: ETL-094 -- the census name is kept, filed under the ACS table."""
+    from data_ingestion_toolbox.census_acs.metadata import census_variable_rows
+
+    rows = census_variable_rows(2000, "dec2000sf1", _census_variables("dec2000sf1"))
+    by_name = {row[2]: row for row in rows}
+    assert set(by_name) == set(requested_variables("dec2000sf1"))
+    assert by_name["P001001"][:4] == ("dec2000sf1", 2000, "P001001", "B01003")
+    assert by_name["H004003"][3] == "B25003"
+    # No margin rows: a census publishes none.
+    assert not any(name.endswith("M") for name in by_name)
+
+
+def test_a_crosswalked_variable_the_bureau_no_longer_lists_refuses() -> None:
+    """Covers: ETL-094 -- a withdrawn variable needs review, not a silent gap."""
+    from data_ingestion_toolbox.census_acs.metadata import census_variable_rows
+
+    variables = _census_variables("dec2000sf3")
+    del variables["P053001"]
+    with pytest.raises(ValueError, match="has no P053001"):
+        census_variable_rows(2000, "dec2000sf3", variables)
