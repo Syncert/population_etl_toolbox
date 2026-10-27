@@ -863,9 +863,17 @@ def _transform_rows_to_silver_df(
             ]
         )
 
+    # A census counts on one day, April 1 of its year; the ACS covers one or
+    # five calendar years (decennial-2000-and-1990-history).
+    census_day = pl.concat_str(
+        [pl.col("estimate_year").cast(pl.Utf8), pl.lit("-04-01")]
+    ).str.to_date("%Y-%m-%d")
+    is_census = pl.col("dataset").str.to_lowercase().str.starts_with("dec")
     grouped = grouped.with_columns(
         [
-            pl.when(pl.col("dataset").str.to_lowercase() == "acs5")
+            pl.when(is_census)
+            .then(census_day)
+            .when(pl.col("dataset").str.to_lowercase() == "acs5")
             .then(
                 pl.concat_str(
                     [
@@ -883,13 +891,16 @@ def _transform_rows_to_silver_df(
                 ).str.to_date("%Y-%m-%d")
             )
             .alias("duration_start"),
-            pl.concat_str(
-                [
-                    pl.col("estimate_year").cast(pl.Utf8),
-                    pl.lit("-12-31"),
-                ]
+            pl.when(is_census)
+            .then(census_day)
+            .otherwise(
+                pl.concat_str(
+                    [
+                        pl.col("estimate_year").cast(pl.Utf8),
+                        pl.lit("-12-31"),
+                    ]
+                ).str.to_date("%Y-%m-%d")
             )
-            .str.to_date("%Y-%m-%d")
             .alias("duration_end"),
         ]
     )

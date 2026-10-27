@@ -58,8 +58,9 @@ def test_only_the_newest_place_year_carries_the_whole_table_list() -> None:
     newest = CONFIG.model_copy(update={"place_full_table_year_scope": "newest"})
     assert newest.place_tables(2024, years) is None
     assert newest.place_tables(2019, years) == CONFIG.place_history_tables
-    # The shipped declaration is the whole city history (v1.0, W-3).
-    assert CONFIG.place_full_table_year_scope == "2005-2024"
+    # The shipped declaration is the whole city history, from the 2000 census
+    # (v1.0, W-3; decennial-2000-and-1990-history).
+    assert CONFIG.place_full_table_year_scope == "2000-2024"
     assert CONFIG.place_tables(2019, years) is None
     # The history tables are the first five tract tables; tracts carry more.
     assert set(CONFIG.place_history_tables) <= set(CONFIG.tract_tables)

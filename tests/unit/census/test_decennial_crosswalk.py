@@ -120,3 +120,29 @@ def test_a_census_value_replays_under_its_acs_variable() -> None:
     stray = json.dumps([["P012003", "state"], ["5", "06"]]).encode()
     with pytest.raises(CensusCapturePayloadError, match="not in the decennial"):
         parse_captured_values(stray, dataset="dec2000sf1", year=2000, geo_level="state")
+
+
+def test_a_census_2000_tract_without_a_suffix_gains_its_00() -> None:
+    """Covers: ETL-094 -- `0401` is tract 040100, as the 2000 reference names it."""
+    import json
+
+    from data_ingestion_toolbox.census_acs.silver_census.replay import (
+        CensusCapturePayloadError,
+        census_tract_code,
+        parse_captured_values,
+    )
+
+    payload = json.dumps(
+        [
+            ["P053001", "state", "county", "tract"],
+            ["43917", "10", "001", "0401"],
+            ["39172", "10", "001", "040201"],
+        ]
+    ).encode()
+    rows = parse_captured_values(
+        payload, dataset="dec2000sf3", year=2000, geo_level="tract"
+    )
+    assert [row["tract_code_source"] for row in rows] == ["040100", "040201"]
+    assert [row["variable_name"] for row in rows] == ["B19013_001E"] * 2
+    with pytest.raises(CensusCapturePayloadError):
+        census_tract_code("401")

@@ -94,6 +94,8 @@ def parse_captured_values(
         county_source = _text(source_row.get("county"))
         place_source = _text(source_row.get("place"))
         tract_source = _text(source_row.get("tract"))
+        if census and tract_source is not None:
+            tract_source = census_tract_code(tract_source)
         cbsa_source = _text(source_row.get(ACS_METRO_GEOGRAPHY))
         us_source = _text(source_row.get("us"))
         for column_index in variable_indexes:
@@ -147,6 +149,20 @@ def parse_captured_values(
                 }
             )
     return parsed
+
+
+def census_tract_code(code: str) -> str:
+    """A census tract code as six digits.
+
+    The Census 2000 API prints a tract without a suffix as four digits
+    (`0401`) and one with a suffix as six (`040201`); every reference and the
+    ACS write six (`040100`). Any other shape refuses.
+    """
+    if code.isdigit() and len(code) == 6:
+        return code
+    if code.isdigit() and len(code) == 4:
+        return f"{code}00"
+    raise CensusCapturePayloadError(f"census tract code {code!r} is not 4 or 6 digits")
 
 
 def _text(value: object) -> str | None:

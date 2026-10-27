@@ -20,7 +20,7 @@ r control.acs_ingestion_slices
     column variables_hash_seen_at timestamp with time zone
     column last_error text
     constraint acs_ingestion_slices_check CHECK (((finished_at IS NULL) OR ((started_at IS NOT NULL) AND (started_at <= finished_at))))
-    constraint acs_ingestion_slices_dataset_check CHECK ((dataset = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint acs_ingestion_slices_dataset_census_check CHECK ((dataset = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text])))
     constraint acs_ingestion_slices_geo_level_metro_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text, 'place'::text, 'tract'::text, 'metro'::text])))
     constraint acs_ingestion_slices_pkey PRIMARY KEY (id)
     constraint acs_ingestion_slices_rows_loaded_check CHECK ((rows_loaded >= 0))
@@ -3016,10 +3016,10 @@ r gold_census.dim_acs_table
     column survey_span_years integer NOT NULL
     column reference_url text
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_acs_table_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint dim_acs_table_dataset_code_census_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text])))
     constraint dim_acs_table_dataset_code_vintage_year_table_id_key UNIQUE (dataset_code, vintage_year, table_id)
     constraint dim_acs_table_pkey PRIMARY KEY (acs_table_sk)
-    constraint dim_acs_table_survey_span_years_check CHECK ((survey_span_years = ANY (ARRAY[1, 5])))
+    constraint dim_acs_table_survey_span_years_census_check CHECK ((survey_span_years = ANY (ARRAY[0, 1, 5])))
     index dim_acs_table_dataset_code_vintage_year_table_id_key CREATE UNIQUE INDEX dim_acs_table_dataset_code_vintage_year_table_id_key ON gold_census.dim_acs_table USING btree (dataset_code, vintage_year, table_id)
     index dim_acs_table_pkey CREATE UNIQUE INDEX dim_acs_table_pkey ON gold_census.dim_acs_table USING btree (acs_table_sk)
 
@@ -3037,7 +3037,7 @@ r gold_census.dim_acs_variable
     column is_publishable_default boolean NOT NULL DEFAULT true
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     constraint dim_acs_variable_acs_table_sk_fkey FOREIGN KEY (acs_table_sk) REFERENCES gold_census.dim_acs_table(acs_table_sk)
-    constraint dim_acs_variable_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint dim_acs_variable_dataset_code_census_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text])))
     constraint dim_acs_variable_dataset_code_vintage_year_variable_code_key UNIQUE (dataset_code, vintage_year, variable_code)
     constraint dim_acs_variable_pkey PRIMARY KEY (acs_variable_sk)
     constraint dim_acs_variable_value_role_check CHECK ((value_role = ANY (ARRAY['ESTIMATE'::text, 'MOE'::text, 'ANNOTATION'::text])))
@@ -3290,7 +3290,7 @@ p gold_census.rpt_acs_observations
     column units text
     column metric_code text
     column metric_display_name text
-    constraint rpt_acs_observations_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint rpt_acs_observations_dataset_code_census_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text])))
     constraint rpt_acs_observations_published_value_check CHECK (((value_status <> 'valid'::text) OR (estimate_value IS NOT NULL)))
     constraint rpt_acs_observations_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index ix_rpt_acs_latest_selection CREATE INDEX ix_rpt_acs_latest_selection ON ONLY gold_census.rpt_acs_observations USING btree (geo_id, variable_code, metric_code, observation_date DESC, updated_at DESC, (

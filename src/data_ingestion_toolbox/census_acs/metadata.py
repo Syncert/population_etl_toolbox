@@ -59,6 +59,19 @@ def _get_pg_connection():
     return psycopg2.connect(**details.psycopg_kwargs())
 
 
+#: Census datasets the adapter reads beside the ACS, by their catalog
+#: identifier: a census is one fixed release, not a yearly series, so it is
+#: named rather than matched by title (decennial-2000-and-1990-history).
+CENSUS_CATALOG_IDS: Dict[str, str] = {
+    "DECENNIALSF12000": "dec2000sf1",
+    "DECENNIALSF32000": "dec2000sf3",
+}
+
+
+def _catalog_id(identifier: str) -> str:
+    return identifier.rstrip("/").rsplit("/", 1)[-1]
+
+
 def fetch_acs_datasets_from_data_json() -> List[Dict]:
     """
     Fetch dataset metadata from data.json and filter to ACS 1- and 5- year datasets.
@@ -89,8 +102,8 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
         if not title:
             continue
 
-        # Use regex to match ACS 1/5 year
-        if not pattern.search(title):
+        # Use regex to match ACS 1/5 year; a named census passes by identifier.
+        if not pattern.search(title) and _catalog_id(ident) not in CENSUS_CATALOG_IDS:
             continue
 
         # Ensure c_vintage is a valid year
@@ -117,10 +130,11 @@ def _classify_detailed_table_dataset(dataset: Dict) -> tuple[str, int, str, str]
     title = str(dataset["title"])
     year = int(dataset["year"])
     identifier = str(dataset["identifier"])
-    census_id = identifier.rstrip("/").rsplit("/", 1)[-1]
+    census_id = _catalog_id(identifier)
     expected_ids = {
         f"ACSDT1Y{year}": "acs1",
         f"ACSDT5Y{year}": "acs5",
+        **CENSUS_CATALOG_IDS,
     }
     local_name = expected_ids.get(census_id)
     if local_name is None:

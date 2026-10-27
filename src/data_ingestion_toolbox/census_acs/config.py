@@ -81,6 +81,9 @@ ACS_COUNTY_PARENT_FIPS: tuple[str, ...] = (
 ACS_PLACE_PARENT_FIPS: dict[str, tuple[str, ...]] = {
     "acs5": ACS_COUNTY_PARENT_FIPS,
     "acs1": tuple(code for code in ACS_COUNTY_PARENT_FIPS if code not in {"50", "54"}),
+    # Census 2000 publishes places and tracts in every state, DC and Puerto Rico.
+    "dec2000sf1": ACS_COUNTY_PARENT_FIPS,
+    "dec2000sf3": ACS_COUNTY_PARENT_FIPS,
 }
 
 
@@ -91,7 +94,11 @@ def place_parent_fips(dataset: str) -> tuple[str, ...]:
 
 #: States whose tracts each dataset publishes (sub-county-geography). Only the
 #: 5-year estimates publish tracts; the 1-year estimates publish none.
-ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {"acs5": ACS_COUNTY_PARENT_FIPS}
+ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {
+    "acs5": ACS_COUNTY_PARENT_FIPS,
+    "dec2000sf1": ACS_COUNTY_PARENT_FIPS,
+    "dec2000sf3": ACS_COUNTY_PARENT_FIPS,
+}
 
 
 @dataclass(frozen=True)
@@ -145,7 +152,9 @@ class AcsConfig(BaseModel):
         default_factory=lambda: os.environ.get("CENSUS_API_KEY", "")
     )
     # dataset names used locally
-    datasets: List[str] = ["acs1", "acs5"]
+    # The ACS, and the 2000 census's Summary Files 1 and 3 for the history
+    # before it (decennial-2000-and-1990-history).
+    datasets: List[str] = ["acs1", "acs5", "dec2000sf1", "dec2000sf3"]
     # curated table IDs (can expand later)
     curated_tables: List[str] = [
         # https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/documentation/
@@ -218,7 +227,7 @@ class AcsConfig(BaseModel):
     # published year (v1.0, W-3): the 5-year from 2009, the 1-year from 2005
     # (places of 65,000 or more, no 2020 release); measured to fit with the
     # reserve free on 2026-10-26 (`measure.py`, the backfill plan).
-    place_year_scope: str = "2005-2024"
+    place_year_scope: str = "2000-2024"
     # The tables requested at tract grain (sub-county-geography). Tracts are
     # about 85,000 against the counties' 3,200, so the whole curated list at
     # tract grain would be some 25 times the county volume per year. The
@@ -239,14 +248,14 @@ class AcsConfig(BaseModel):
     # The 5-year years requested at tract grain, declared as for places:
     # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
     # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.
-    tract_year_scope: str = "2009-2024"
+    tract_year_scope: str = "2000-2024"
     # Place years outside `place_full_table_year_scope` are requested for
     # `place_history_tables` only (acs-place-tract-history-backfill). A place
     # year on the whole curated list measured about 136 GB on the internal
     # stack in 2026-10; widened to every year after
     # `python -m data_ingestion_toolbox.census_acs.measure` showed the disk
     # holds the whole list with 41% free (2026-10-26).
-    place_full_table_year_scope: str = "2005-2024"
+    place_full_table_year_scope: str = "2000-2024"
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
     # The years requested at metro (CBSA) grain, declared as for places: the
     # Bureau's own metro and micro area estimates on the whole curated list,

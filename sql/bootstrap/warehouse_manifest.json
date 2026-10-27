@@ -242,6 +242,11 @@
       "path": "sql/migrations/036_acs_metro_grain.sql"
     },
     {
+      "id": "migration-037",
+      "phase": "source-fix",
+      "path": "sql/migrations/037_census_decennial_datasets.sql"
+    },
+    {
       "id": "gold-census",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"
