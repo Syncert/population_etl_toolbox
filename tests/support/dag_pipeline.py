@@ -1300,6 +1300,7 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from data_ingestion_toolbox.census_acs import ingest as acs_ingest
     from data_ingestion_toolbox.census_acs import metadata as acs_metadata
+    from data_ingestion_toolbox.census_acs.config import ACS_METRO_GEOGRAPHY
 
     def observations(
         year: int,
@@ -1319,6 +1320,8 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
             "place": (["state", "place"], [["11", "50000"]]),
             # The tract `build_sub_county_geographies` gives county 11/001.
             "tract": (["state", "county", "tract"], [["11", "001", "000100"]]),
+            # Abilene, TX: a CBSA the reviewed area excerpt publishes (W-7).
+            "metro": ([ACS_METRO_GEOGRAPHY], [["10180"]]),
         }
         if geo_level not in geographies:
             raise AssertionError(
