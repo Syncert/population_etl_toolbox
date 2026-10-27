@@ -137,6 +137,27 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     # had before 2024; a full-list place year (2024, about 159M revision rows)
     # needed hours, and keeps the 600 minutes. Each step's duration is logged
     # (`step=... duration_seconds=`), and the backfill records them per year.
+    # A grain step is skipped when the transform's per-slice ledger says no
+    # slice of that year and grain changed a row since the chunk was last
+    # served. Slice keys are `dataset/geo_level[/state]`; the step names the
+    # served levels. A grain-year with no ledger row, or a ledger row older
+    # than the column recording changes, counts as changed.
+    step_changed_sql="""
+        WITH grains AS (
+            SELECT CASE level
+                       WHEN 'NATIONAL' THEN 'us'
+                       ELSE LOWER(level)
+                   END AS slice_level
+            FROM UNNEST(%(geo_levels)s::TEXT[]) AS level
+        ), ledger AS (
+            SELECT s.last_changed_at
+            FROM silver_census.transform_slice_state AS s
+            JOIN grains AS g ON g.slice_level = split_part(s.slice_key, '/', 2)
+            WHERE s.year = %(year)s
+        )
+        SELECT NOT EXISTS (SELECT 1 FROM ledger)
+            OR EXISTS (SELECT 1 FROM ledger WHERE last_changed_at > %(since)s)
+    """,
     grain_steps=(
         GrainStep("area", ("NATIONAL", "STATE", "COUNTY", "METRO"), "90min"),
         GrainStep("tract", ("TRACT",), "120min"),
