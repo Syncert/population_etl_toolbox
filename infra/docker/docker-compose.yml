@@ -295,8 +295,16 @@ services:
       FCC_BDC_USERNAME: ${FCC_BDC_USERNAME:-}
       FCC_BDC_API_TOKEN: ${FCC_BDC_API_TOKEN:-}
       HUD_USER_API_TOKEN: ${HUD_USER_API_TOKEN:-}
+      # Where `raw_capture_export` writes (DAG-019): a path inside the
+      # backup mount below, and deliberately no default.
+      CAPTURE_EXPORT_ROOT: ${CAPTURE_EXPORT_ROOT:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
+      # A drive outside the warehouse's volume for the nightly capture export
+      # (on OFFICE_LAB the warehouse is a stripe with no redundancy). Unset,
+      # it is an empty directory beside this file, and the export refuses
+      # until CAPTURE_EXPORT_ROOT names a path in it.
+      - ${BACKUP_HOST_DIR:-./backups-not-configured}:/opt/backups
       # Shared so the webserver reads task logs directly from disk and
       # history survives container recreates.
       - airflow_logs:/opt/airflow/logs
