@@ -286,7 +286,35 @@ acs` 11 passed; ACS database tier against the test PostGIS (`-k "acs or
 census_ac"`) 26 passed; schema snapshot regenerated; `ruff check .` and
 `ruff format --check .` clean.
 
+## Progress (2026-10-26, branch `feat/acs-decade-geography-and-serving`)
+
+- **D2, tracts:** Census 2000 tracts (66,304, the 2009 ACS's only tract
+  geography) are published as reference vintage 2000 from the Bureau's
+  2000-to-2010 tract relationship file, which `silver_ref` now syncs with the
+  rest of the tract history from 2009 (ETL-089). Tracts of 2010–2024 already
+  resolved from each vintage's Gazetteer (ETL-084), including Connecticut's
+  2022 planning-region recoding: `silver_ref.geography_resolution` shows
+  85,395 tracts resolved for 2021 and 85,396 for 2022, none unmapped.
+- **D2, places:** places resolve for every 5-year year 2010–2024 and every
+  1-year year (2010–2024) with at most 21 codes unmapped in a year (2024).
+  2009 has 24,901 places resolved and 401 unmapped: places that ceased
+  before 2010, for which no reference before 2010 is captured yet. They stay
+  ledgered `unmapped`, never matched to a later place. A Census 2000 place
+  file (`places2k.zip`, fixed width) or the 2009 TIGER place files would
+  close it; that is left as an open item rather than guessed.
+- **D5, serving:** `ACS_CHUNK_CONFIG.grain_steps` serves each year as three
+  committed steps (area, tract, place; 90, 120 and 600 minutes), each
+  deleting and re-inserting its own grain through
+  `refresh_rpt_acs_observations(start, end, geo_levels)`. A database test
+  shows a reader of a year's counties under a one-second lock timeout reads
+  them while a place step is open, and is blocked by the whole-year path
+  (ETL-088). The whole-year path (two arguments) stays for the dashboard
+  procedure and the DB-056 checks. Per-step durations are logged and will be
+  recorded per year during W-3.
+
 ## Checkpoint
 
-Next pickup: W-2, Deliverables 2 and 5 (2000-decade tract reference for
-2009, place identities per vintage, ACS serving chunks per (year, grain)).
+Next pickup: W-3, the full-scope city backfill (declare
+`place_full_table_year_scope` and `place_year_scope` as "2009-2024", run
+one `acs_backfill` year at a time, newest to oldest, record durations and
+sizes here).

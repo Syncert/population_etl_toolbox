@@ -35,7 +35,7 @@ _REQUIRED_RELATIONS = (
     "gold_census.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
-    "gold_census.refresh_rpt_acs_observations(date,date)",
+    "gold_census.refresh_rpt_acs_observations(date,date,text[])",
     "gold_census.refresh_mv_acs_latest(date,date)",
     "gold_census.refresh_dashboard_serving_layer_acs(date,date,boolean)",
 )

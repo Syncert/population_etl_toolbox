@@ -17,6 +17,21 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class GrainStep:
+    """One committed part of a year chunk: the served grains it rewrites.
+
+    A source whose year holds grains of very different size (ACS: a place year
+    is ten times its counties) refreshes the year one step at a time, each in
+    its own transaction under its own timeout, so the small grains readers ask
+    for most are never held behind the large one.
+    """
+
+    name: str
+    geo_levels: tuple[str, ...]
+    statement_timeout: str
+
+
+@dataclass(frozen=True)
 class ServingRefreshChunkConfig:
     """Trusted SQL configuration for a source-specific annual serving refresh."""
 
@@ -51,6 +66,10 @@ class ServingRefreshChunkConfig:
     #: analyse a latest relation", which is what a source serving a view
     #: rather than a table wants.
     latest_table: str = ""
+    #: When set, each year chunk is refreshed as these steps in order, and
+    #: ``report_procedure`` takes the step's grains as a third argument. The
+    #: chunk's checkpoint completes only when every step has.
+    grain_steps: tuple[GrainStep, ...] = ()
 
 
 @dataclass(frozen=True, order=True)
@@ -622,19 +641,49 @@ def refresh_serving_layer_in_year_chunks(
             chunk["target"],
         )
         try:
+            for step in config.grain_steps:
+                # Each grain step commits on its own, so the year's small
+                # grains are served (and released) before the large one starts.
+                step_started = time.monotonic()
+                with hook.get_conn() as conn, conn.cursor() as cur:
+                    cur.execute("SET LOCAL lock_timeout = '30s'")
+                    cur.execute(
+                        f"SET LOCAL statement_timeout = '{step.statement_timeout}'"
+                    )
+                    del conn.notices[:]
+                    cur.execute(
+                        f"CALL {config.report_procedure}(%s, %s, %s)",
+                        (chunk["start"], chunk["end"], list(step.geo_levels)),
+                    )
+                    cur.execute(
+                        f"CALL {config.latest_procedure}(%s, %s)",
+                        (chunk["start"], chunk["end"]),
+                    )
+                    _forward_procedure_notices(conn, log)
+                    conn.commit()
+                log.info(
+                    "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=COMPLETE duration_seconds=%.2f",
+                    config.log_label,
+                    position,
+                    len(planned_chunks),
+                    chunk["start"],
+                    step.name,
+                    time.monotonic() - step_started,
+                )
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
                 cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
                 del conn.notices[:]
-                cur.execute(
-                    f"CALL {config.report_procedure}(%s, %s)",
-                    (chunk["start"], chunk["end"]),
-                )
-                cur.execute(
-                    f"CALL {config.latest_procedure}(%s, %s)",
-                    (chunk["start"], chunk["end"]),
-                )
-                _forward_procedure_notices(conn, log)
+                if not config.grain_steps:
+                    cur.execute(
+                        f"CALL {config.report_procedure}(%s, %s)",
+                        (chunk["start"], chunk["end"]),
+                    )
+                    cur.execute(
+                        f"CALL {config.latest_procedure}(%s, %s)",
+                        (chunk["start"], chunk["end"]),
+                    )
+                    _forward_procedure_notices(conn, log)
                 cur.execute(
                     f"""
                     SELECT COUNT(*)
