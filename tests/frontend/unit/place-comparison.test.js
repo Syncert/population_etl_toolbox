@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { barPosition, compareMeasure, grainMismatch, pairPath } from "../../../apps/web/lib/placeComparison";
+import { barPosition, compareMeasure, grainMismatch, intervalsOverlap, pairPath } from "../../../apps/web/lib/placeComparison";
 
 // Covers: WEB-129 — two places compared only as far as preflight allows,
 // in one shared period, with the verdict carried through unchanged.
@@ -43,6 +43,21 @@ describe("comparing one measure for two places", () => {
     expect(barPosition(80000, compared)).toBe(100);
     expect(barPosition(0, compared)).toBe(0);
     expect(barPosition(40000, compared)).toBe(50);
+  });
+
+  it("scales the bar to the two places, and pins a larger reference mark to the end", () => {
+    // Two counties against the nation's 341 million were both a sliver.
+    const { row: compared } = compareMeasure(inputs({ a: row("9694934"), b: row("1389670"), parents: [{ name: "United States", row: row("341784857") }] }), a, b);
+    expect(barPosition(9694934, compared)).toBe(100);
+    expect(Math.round(barPosition(1389670, compared))).toBe(14);
+    expect(barPosition(341784857, compared)).toBe(100);
+  });
+
+  it("says when two margins of error overlap, and nothing when a margin is missing", () => {
+    expect(intervalsOverlap({ value: "90112", margin_of_error: "1200" }, { value: "91000", margin_of_error: "900" })).toBe(true);
+    expect(intervalsOverlap({ value: "90112", margin_of_error: "300" }, { value: "99611", margin_of_error: "400" })).toBe(false);
+    expect(intervalsOverlap({ value: "90112" }, { value: "99611", margin_of_error: "400" })).toBeNull();
+    expect(intervalsOverlap({ value: null, margin_of_error: "1" }, { value: "1", margin_of_error: "1" })).toBeNull();
   });
 
   it("addresses pairs and refuses mixed grains", () => {
