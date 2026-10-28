@@ -160,3 +160,39 @@ def test_a_header_without_its_keys_or_with_a_repeat_refuses() -> None:
         parse_header(_dbf(HEADER_FIELDS, rows))
     with pytest.raises(Stf1990FormatError):
         tract_code_1990("960")
+
+
+def test_the_1990_reference_comes_from_each_states_stf1a_header() -> None:
+    """Covers: ETL-097 -- places and tracts of the 1990s resolve to Census 1990."""
+    from data_ingestion_toolbox.silver_ref.geography_pipeline import (
+        STF1990_ROOT,
+        historical_sub_county_assets,
+        history_vintage,
+        parse_stf1990_header_capture,
+    )
+
+    assert history_vintage(1990, "place") == 1990
+    assert history_vintage(1999, "tract") == 1990
+    assert history_vintage(2000, "tract") == 2000
+    assets = historical_sub_county_assets(1990, "tract")
+    assert len(assets) == 51
+    assert (
+        "attributes",
+        "tract",
+        f"{STF1990_ROOT}/CD90_1A_1/stf1a0vt.dbf",
+    ) in assets
+
+    header = _dbf(HEADER_FIELDS, _header_rows())
+    places = parse_stf1990_header_capture(header, geo_type="place")
+    tracts = parse_stf1990_header_capture(header, geo_type="tract")
+    assert [(p.geo_id, p.name, p.census_geoid) for p in places] == [
+        ("state:50|place:00400", "Albany village", "5000400")
+    ]
+    assert [(t.geo_id, t.census_geoid, t.geography_vintage) for t in tracts] == [
+        ("state:50|county:001|tract:960100", "50001960100", 1990)
+    ]
+    rows = _header_rows()
+    rows.append(list(rows[3]))
+    rows[-1][2] = "000099"
+    with pytest.raises(ValueError, match="repeats"):
+        parse_stf1990_header_capture(_dbf(HEADER_FIELDS, rows), geo_type="place")

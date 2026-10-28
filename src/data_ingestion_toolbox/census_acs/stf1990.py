@@ -357,3 +357,22 @@ def revision_values(
                 }
             )
     return rows
+
+
+# ------------------------------------------------------------ the archive
+
+DISCS_1990_PATH = Path(__file__).with_name("stf1990_discs.json")
+
+
+@lru_cache(maxsize=1)
+def discs_1990() -> dict[str, dict[str, list[str]]]:
+    """The archived disc directories holding each state's files, per dataset."""
+    return json.loads(DISCS_1990_PATH.read_text(encoding="utf-8"))["discs"]
+
+
+def stf1a_header_paths() -> list[str]:
+    """Each state's STF1A geographic header, from the first disc holding it."""
+    return [
+        f"{discs[0]}/stf1a0{state}.dbf"
+        for state, discs in sorted(discs_1990()["dec1990stf1"].items())
+    ]
