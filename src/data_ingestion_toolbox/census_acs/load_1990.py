@@ -218,3 +218,49 @@ def load(
         raise
     control.finish_run(run_id, status="success")
     return results
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Load the 1990 census end to end inside the Airflow image.
+
+        docker exec docker-airflow-scheduler-1 \
+            python -m data_ingestion_toolbox.census_acs.load_1990 [--states vt,nh]
+
+    Captures and replays the files, then transforms year 1990 and serves it
+    with the ACS adapter's own steps. Run `silver_ref` first so the 1990
+    places and tracts are entities, and apply migration 039.
+    """
+    import argparse
+    import json
+
+    from data_ingestion_toolbox.census_acs.silver_census.transform import (
+        _get_hook,
+        transform_census_to_silver,
+    )
+    from data_ingestion_toolbox.utility.gold_schema import (
+        refresh_serving_layer_in_year_chunks,
+    )
+    from data_ingestion_toolbox.utility.serving_reserve import ACS_CHUNK_CONFIG
+
+    parser = argparse.ArgumentParser(description="Load the 1990 census.")
+    parser.add_argument("--states", help="comma-separated postal codes; all by default")
+    parser.add_argument("--datasets", default=",".join(DATASETS_1990))
+    parser.add_argument("--skip-serving", action="store_true")
+    args = parser.parse_args(argv)
+
+    hook = _get_hook()
+    only = [s.strip().lower() for s in args.states.split(",")] if args.states else None
+    results = load(hook.get_conn, datasets=args.datasets.split(","), only_states=only)
+    print(json.dumps(results, indent=2))
+    transformed = transform_census_to_silver(resume_key="load_1990", years=[1990])
+    print(json.dumps({"transformed": transformed}))
+    if not args.skip_serving:
+        served = refresh_serving_layer_in_year_chunks(
+            hook=hook, config=ACS_CHUNK_CONFIG
+        )
+        print(json.dumps({"served": served}, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
