@@ -84,3 +84,54 @@ def acs_variable_for(dataset: str, source_variable: str) -> str:
         raise ValueError(
             f"{dataset} {source_variable} is not in the decennial crosswalk"
         ) from None
+
+
+#: How a census file is named where its values are labelled.
+CENSUS_TITLES = {
+    "dec2000sf1": "Census 2000 Summary File 1",
+    "dec2000sf3": "Census 2000 Summary File 3",
+    "dec1990stf1": "1990 Census Summary Tape File 1A",
+    "dec1990stf3": "1990 Census Summary Tape File 3A",
+}
+
+
+def census_metadata_rows() -> list[tuple[str, int, str, str, str, None]]:
+    """Variable metadata for census values, under the ACS name they are stored as.
+
+    `raw_census.acs_variables` files a census variable under its own name,
+    which is what a request asks for; the transform labels a stored value by
+    its ACS name. These rows bridge the two from the reviewed crosswalks:
+    the crosswalk's label (with the year of any dollars) and the file's title
+    as the concept.
+    """
+    from .stf1990 import YEAR_1990, crosswalk_1990
+
+    def label(text: str, dollars_of: int | None) -> str:
+        return f"{text} ({dollars_of} dollars)" if dollars_of else text
+
+    rows: list[tuple[str, int, str, str, str, None]] = []
+    for dataset, entries in crosswalk().items():
+        for entry in entries.values():
+            rows.append(
+                (
+                    dataset,
+                    2000,
+                    entry.acs_variable,
+                    label(entry.label, entry.dollars_of),
+                    CENSUS_TITLES[dataset],
+                    None,
+                )
+            )
+    for dataset, measures in crosswalk_1990().items():
+        for measure in measures.values():
+            rows.append(
+                (
+                    dataset,
+                    YEAR_1990,
+                    measure.acs_variable,
+                    label(measure.label, measure.dollars_of),
+                    CENSUS_TITLES[dataset],
+                    None,
+                )
+            )
+    return rows
