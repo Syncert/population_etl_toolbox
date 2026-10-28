@@ -17,6 +17,7 @@ from data_ingestion_toolbox.census_acs.load_1990 import (
 )
 from data_ingestion_toolbox.census_acs.stf1990 import (
     Stf1990FormatError,
+    crosswalk_1990,
     requested_cells,
 )
 from tests.unit.census.test_stf1990 import HEADER_FIELDS, _dbf
