@@ -142,3 +142,20 @@ ordering. The plan is:
   (poverty, commute mode): the crosswalk needs a declared sum of cells.
   1990 money is in 1989 dollars; median value and gross rent are for
   specified units only.
+- 2026-10-28: D5 progress on `feat/census-1990-history`: reader (ETL-095),
+  1990 crosswalk with summed cells and revision rows (ETL-096), disc index
+  `stf1990_discs.json`, migration 039 (DB-063), the 1990 place and tract
+  reference from STF1A headers (ETL-097).
+  Remaining: (1) a runner `scripts/load_census_1990.py` that, per dataset,
+  state and disc, captures the header and needed segment `.dbf` files
+  (`tables.dbf` maps cells to segments; STF1A segment `STF1A0` is file
+  `stf1a0xx.dbf`, STF3A `STF314` is `stf314xx.dbf`), replays
+  `revision_values` into `silver_census.observation_revision` with the
+  header's capture id, skipping geographies an earlier disc of the state
+  already gave, then calls `transform_census_to_silver(years=[1990])` and
+  the chunked serving refresh; (2) variable labels: the transform joins
+  metadata on the ACS variable name, but census metadata is filed under
+  the census name, so 2000 and 1990 values load with null labels; file
+  the crosswalk labels under the ACS name for census datasets without
+  adding them to the API request list; (3) live loads after the ACS
+  history load frees the warehouse.
