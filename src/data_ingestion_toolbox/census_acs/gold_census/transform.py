@@ -60,8 +60,17 @@ def ensure_acs_gold_schema(hook: PostgresHook | None = None) -> None:
     )
 
 
-def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
-    """Sync ACS source-specific metadata into gold_census.dim_acs_table and gold_census.dim_acs_variable."""
+def refresh_acs_elements(
+    hook: PostgresHook | None = None, years: list[int] | None = None
+) -> int:
+    """Sync ACS source-specific metadata into gold_census.dim_acs_table and gold_census.dim_acs_variable.
+
+    ``years`` limits the refresh to those estimate years' releases: an
+    operator backfill run transforms one year and leaves every other year's
+    facts as they were, so their dimension rows cannot change. Refreshing
+    every release scanned the whole fact table, about 24 of a backfill year's
+    roughly 270 minutes. ``None`` refreshes every release.
+    """
     if hook is None:
         hook = _get_hook()
 
@@ -78,8 +87,13 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                   'acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
                   'dec1990stf1', 'dec1990stf3'
               )
+              AND (
+                  %(years)s::INT[] IS NULL
+                  OR estimate_year = ANY(%(years)s::INT[])
+              )
             ORDER BY dataset, estimate_year
-            """
+            """,
+            {"years": years},
         )
         releases = cur.fetchall()
 
