@@ -667,9 +667,29 @@ def _record_slice_fingerprint(
     hook: PostgresHook, year: int, slice_key: str, fingerprint: str, changed: int
 ) -> None:
     sql = """
+        -- A slice recorded for the first time with nothing to change holds
+        -- rows written before the ledger existed. When its year was fully
+        -- served before this run (the chunk's completed watermark covers its
+        -- target), those rows were published by that serve, so their last
+        -- change is no later than it; otherwise nothing is known and the
+        -- slice counts as changed now (skip-unchanged-grains).
         INSERT INTO silver_census.transform_slice_state
-            (year, slice_key, content_fingerprint, rows_changed)
-        VALUES (%s, %s, %s, %s)
+            (year, slice_key, content_fingerprint, rows_changed, last_changed_at)
+        SELECT %(year)s, %(slice_key)s, %(fingerprint)s, %(changed)s,
+               CASE
+                   WHEN %(changed)s > 0 THEN NOW()
+                   ELSE COALESCE(
+                       (
+                           SELECT c.last_refresh_completed_at
+                           FROM control.serving_refresh_chunk_state AS c
+                           WHERE c.source_code = 'CENSUS_ACS'
+                             AND c.chunk_start = MAKE_DATE(%(year)s, 1, 1)
+                             AND c.completed_silver_ingested_at
+                                 >= c.target_silver_ingested_at
+                       ),
+                       NOW()
+                   )
+               END
         ON CONFLICT (year, slice_key) DO UPDATE
         SET content_fingerprint = EXCLUDED.content_fingerprint,
             rows_changed = EXCLUDED.rows_changed,
@@ -682,7 +702,15 @@ def _record_slice_fingerprint(
             END;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (int(year), slice_key, fingerprint, int(changed)))
+        cur.execute(
+            sql,
+            {
+                "year": int(year),
+                "slice_key": slice_key,
+                "fingerprint": fingerprint,
+                "changed": int(changed),
+            },
+        )
         conn.commit()
 
 
