@@ -13,8 +13,18 @@ captured file replays exactly.
 
 from __future__ import annotations
 
+import json
 import struct
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from functools import lru_cache
+from pathlib import Path
+
+from .config import CONFIG
+
+#: The 1990 files read: Summary Tape File 1A (100-percent counts) and 3A
+#: (the long-form sample), state by state.
+DATASETS_1990 = ("dec1990stf1", "dec1990stf3")
 
 #: The summary levels the warehouse serves, by the 1990 code: state, county,
 #: place, and census tract or block numbering area (state-county-tract).
@@ -169,3 +179,200 @@ def parse_segment(payload: bytes, cells: set[str]) -> dict[str, dict[str, str]]:
     return {
         record["LOGRECNU"]: {cell: record[cell] for cell in cells} for record in records
     }
+
+
+# ------------------------------------------------------------ crosswalk
+
+CROSSWALK_1990_PATH = Path(__file__).with_name("decennial_1990_crosswalk.json")
+
+
+@dataclass(frozen=True)
+class Measure1990:
+    """One ACS estimate as the declared sum of 1990 cells."""
+
+    dataset: str
+    acs_variable: str
+    cells: tuple[str, ...]
+    label: str
+    dollars_of: int | None = None
+    median: bool = False
+    note: str | None = None
+
+    @property
+    def source_header(self) -> str:
+        """The cells it is read from, as `source_header` records them."""
+        return "+".join(self.cells)
+
+
+def parse_crosswalk_1990(document: dict) -> dict[str, dict[str, Measure1990]]:
+    """Validate the 1990 crosswalk and index it by dataset and ACS estimate.
+
+    A target must be a curated table's estimate; a measure names at least one
+    cell and no cell twice; a median is one cell, since medians do not add.
+    """
+    curated = set(CONFIG.curated_tables)
+    index: dict[str, dict[str, Measure1990]] = {}
+    for dataset, measures in document["datasets"].items():
+        if dataset not in DATASETS_1990:
+            raise ValueError(f"1990 crosswalk names {dataset!r}, not a 1990 file")
+        entries: dict[str, Measure1990] = {}
+        for target, item in measures.items():
+            table, _, cell = target.partition("_")
+            if table not in curated or not (cell[:-1].isdigit() and cell.endswith("E")):
+                raise ValueError(
+                    f"{dataset} names {target!r}, not a curated ACS estimate"
+                )
+            cells = tuple(item["cells"])
+            if not cells or len(set(cells)) != len(cells):
+                raise ValueError(f"{dataset} {target} names no cell, or one twice")
+            median = bool(item.get("median", False))
+            if median and len(cells) != 1:
+                raise ValueError(
+                    f"{dataset} {target} sums a median, which does not add"
+                )
+            entries[target] = Measure1990(
+                dataset=dataset,
+                acs_variable=target,
+                cells=cells,
+                label=item["label"],
+                dollars_of=item.get("dollars_of"),
+                median=median,
+                note=item.get("note"),
+            )
+        index[dataset] = entries
+    return index
+
+
+@lru_cache(maxsize=1)
+def crosswalk_1990() -> dict[str, dict[str, Measure1990]]:
+    return parse_crosswalk_1990(
+        json.loads(CROSSWALK_1990_PATH.read_text(encoding="utf-8"))
+    )
+
+
+def requested_cells(dataset: str) -> set[str]:
+    """Every cell a 1990 file is read for."""
+    return {
+        cell for measure in crosswalk_1990()[dataset].values() for cell in measure.cells
+    }
+
+
+@dataclass(frozen=True)
+class Value1990:
+    acs_variable: str
+    source_header: str
+    value_source: str
+    value: Decimal | None
+    value_status: str
+
+
+def measure_values(dataset: str, cells: dict[str, str]) -> list[Value1990]:
+    """Every declared measure of one geography, from its cells.
+
+    A sum is taken only when every cell is a number; one that is not makes
+    the measure `invalid`, never a partial sum. A median of zero is the
+    files' mark for a median not computed (too few cases), so it is a
+    `sentinel`, not a zero.
+    """
+    values: list[Value1990] = []
+    for measure in crosswalk_1990()[dataset].values():
+        parts = [cells.get(cell, "") for cell in measure.cells]
+        source = "+".join(parts)
+        try:
+            numbers = [Decimal(part) for part in parts]
+        except InvalidOperation:
+            numbers = []
+        if len(numbers) != len(parts):
+            status, value = "invalid", None
+        elif measure.median and numbers[0] == 0:
+            status, value = "sentinel", None
+        else:
+            status, value = "valid", sum(numbers, Decimal(0))
+        values.append(
+            Value1990(
+                measure.acs_variable, measure.source_header, source, value, status
+            )
+        )
+    return values
+
+
+# ------------------------------------------------------------ replay rows
+
+#: The 1990 file the revision rows are stored as, the census year.
+YEAR_1990 = 1990
+
+#: The revision table's geography level for each served 1990 level.
+REVISION_LEVELS = {
+    "state": "state",
+    "county": "county",
+    "place": "place",
+    "tract": "tract",
+}
+
+
+def revision_values(
+    dataset: str,
+    header: list[Stf1990Geography],
+    cells_by_record: dict[str, dict[str, str]],
+) -> list[dict[str, object]]:
+    """`silver_census.observation_revision` rows for one state's 1990 file.
+
+    One row per served geography and declared measure, shaped as the ACS
+    replay's rows are: the ACS estimate as `variable_name`, the summed cells
+    as `source_header`, the cells' text as `value_source`. `source_row_index`
+    is the header record's position and `source_column_index` the measure's,
+    so a row is traceable to the header record and the crosswalk entry. A
+    served geography with no segment record refuses: the segment tables of
+    one disc hold every logical record of its header.
+    """
+    rows: list[dict[str, object]] = []
+    for row_index, geography in enumerate(header):
+        cells = cells_by_record.get(geography.logical_record)
+        if cells is None:
+            raise Stf1990FormatError(
+                f"{dataset} logical record {geography.logical_record} has no segment cells"
+            )
+        for column_index, value in enumerate(measure_values(dataset, cells)):
+            table_id = value.acs_variable.split("_", 1)[0]
+            rows.append(
+                {
+                    "source_row_index": row_index,
+                    "source_column_index": column_index,
+                    "source_header": value.source_header,
+                    "dataset": dataset,
+                    "year": YEAR_1990,
+                    "geo_level": REVISION_LEVELS[geography.geo_level],
+                    "us_source": None,
+                    "state_fips_source": geography.state_fips,
+                    "county_fips_source": geography.county_fips,
+                    "place_fips_source": geography.place_fips,
+                    "tract_code_source": geography.tract_code,
+                    "cbsa_source": None,
+                    "variable_name": value.acs_variable,
+                    "table_id": table_id,
+                    "measure_type": "E",
+                    "value_source": value.value_source,
+                    "value": value.value,
+                    "value_status": value.value_status,
+                }
+            )
+    return rows
+
+
+# ------------------------------------------------------------ the archive
+
+DISCS_1990_PATH = Path(__file__).with_name("stf1990_discs.json")
+
+
+@lru_cache(maxsize=1)
+def discs_1990() -> dict[str, dict[str, list[str]]]:
+    """The archived disc directories holding each state's files, per dataset."""
+    return json.loads(DISCS_1990_PATH.read_text(encoding="utf-8"))["discs"]
+
+
+def stf1a_header_paths() -> list[str]:
+    """Each state's STF1A geographic header, from the first disc holding it."""
+    return [
+        f"{discs[0]}/stf1a0{state}.dbf"
+        for state, discs in sorted(discs_1990()["dec1990stf1"].items())
+    ]

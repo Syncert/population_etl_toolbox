@@ -184,6 +184,19 @@ def replay_census_capture(
         year=year,
         geo_level=geo_level,
     )
+    return insert_revision_rows(connection_factory, capture_id, values)
+
+
+def insert_revision_rows(
+    connection_factory: Callable[[], Any],
+    capture_id: UUID,
+    values: list[dict[str, object]],
+) -> int:
+    """Write parsed rows of one capture to `silver_census.observation_revision`.
+
+    Idempotent: a row already stored for the same capture, row and column is
+    left as it is.
+    """
     if not values:
         return 0
     records = [

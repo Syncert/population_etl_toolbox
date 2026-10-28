@@ -15,6 +15,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.census_acs.config import CONFIG as RAW_CONFIG
+from data_ingestion_toolbox.census_acs.decennial import census_metadata_rows
 from data_ingestion_toolbox.silver_ref.geography_contract import (
     persist_exact_resolution_outcomes,
 )
@@ -387,6 +388,9 @@ def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
         rows = cur.fetchall()
+    # Census values are stored under ACS names their metadata is not filed
+    # under (decennial-2000-and-1990-history); label them from the crosswalks.
+    rows = list(rows) + census_metadata_rows()
 
     return (
         pl.DataFrame(

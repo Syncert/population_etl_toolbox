@@ -146,3 +146,15 @@ def test_a_census_2000_tract_without_a_suffix_gains_its_00() -> None:
     assert [row["variable_name"] for row in rows] == ["B19013_001E"] * 2
     with pytest.raises(CensusCapturePayloadError):
         census_tract_code("401")
+
+
+def test_census_values_are_labelled_under_the_acs_name_they_are_stored_as() -> None:
+    """Covers: ETL-094 -- one label per paired estimate, with the year of its dollars."""
+    from data_ingestion_toolbox.census_acs.decennial import census_metadata_rows
+
+    rows = {(row[0], row[1], row[2]): row for row in census_metadata_rows()}
+    population = rows[("dec2000sf1", 2000, "B01003_001E")]
+    assert population[3:5] == ("Total population", "Census 2000 Summary File 1")
+    income_1990 = rows[("dec1990stf3", 1990, "B19013_001E")]
+    assert income_1990[3] == "Median household income (1989 dollars)"
+    assert len(rows) == len(census_metadata_rows())

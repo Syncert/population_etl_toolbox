@@ -14,12 +14,10 @@ from psycopg2.extensions import connection
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
-MIGRATION = (
-    Path(__file__).resolve().parents[3]
-    / "sql"
-    / "migrations"
-    / "037_census_decennial_datasets.sql"
-)
+MIGRATIONS = Path(__file__).resolve().parents[3] / "sql" / "migrations"
+#: 037 admits Census 2000; 039 widens the same CHECKs to 1990.
+MIGRATION = MIGRATIONS / "037_census_decennial_datasets.sql"
+MIGRATION_1990 = MIGRATIONS / "039_census_1990_datasets.sql"
 
 #: Each relation 037 widens, its column, and the CHECK it leaves.
 TARGETS = (
@@ -71,7 +69,13 @@ def test_every_dataset_check_admits_the_census_and_nothing_else(
             for relation, column, name in TARGETS:
                 checks = _dataset_checks(cursor, relation, column)
                 assert [check[0] for check in checks] == [name], relation
-                assert "dec2000sf1" in checks[0][2] and "dec2000sf3" in checks[0][2]
+                for dataset in (
+                    "dec2000sf1",
+                    "dec2000sf3",
+                    "dec1990stf1",
+                    "dec1990stf3",
+                ):
+                    assert dataset in checks[0][2], (relation, dataset)
             cursor.execute("BEGIN")
             cursor.execute(
                 "INSERT INTO gold_census.dim_acs_table (dataset_code, vintage_year, "
@@ -104,7 +108,8 @@ def test_a_deployed_warehouse_is_widened_without_scanning_the_serving_fact(
                 cursor.execute(
                     f"ALTER TABLE {relation} ADD CHECK ({column} IN ('acs1', 'acs5'))"
                 )
-            sql = MIGRATION.read_text(encoding="utf-8")
+            cursor.execute(MIGRATION.read_text(encoding="utf-8"))
+            sql = MIGRATION_1990.read_text(encoding="utf-8")
             cursor.execute(sql)
             first = {
                 relation: _dataset_checks(cursor, relation, column)
@@ -122,6 +127,7 @@ def test_a_deployed_warehouse_is_widened_without_scanning_the_serving_fact(
     assert first == second
     for relation, _column, name in TARGETS:
         assert [check[0] for check in first[relation]] == [name], relation
+        assert "dec1990stf3" in first[relation][0][2], relation
     validated = {relation: checks[0][1] for relation, checks in first.items()}
     assert validated == {
         "control.acs_ingestion_slices": True,

@@ -103,3 +103,19 @@ def test_a_census_release_is_described_with_its_own_api_path() -> None:
     )
     assert "WHEN 'dec2000sf3' THEN '/dec/sf3'" in table_sql
     assert "LEFT(f.dataset, 3) = 'dec' THEN 0" in table_sql
+
+
+def test_a_1990_release_points_at_its_archive_page() -> None:
+    """Covers: ETL-093 -- the 1990 files are documented by the archive, not the API."""
+    from data_ingestion_toolbox.census_acs.gold_census.transform import (
+        refresh_acs_elements,
+    )
+
+    hook = _RecordingHook()
+    refresh_acs_elements(hook=hook)
+    table_sql = next(
+        sql for sql in hook.cursor.statements if "gold_census.dim_acs_table (" in sql
+    )
+    assert "https://www2.census.gov/census_1990/1990STF3.html" in table_sql
+    release_sql = hook.cursor.statements[0]
+    assert "'dec1990stf1', 'dec1990stf3'" in release_sql

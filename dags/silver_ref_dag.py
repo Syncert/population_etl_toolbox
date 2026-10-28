@@ -22,6 +22,8 @@ from data_ingestion_toolbox.silver_ref.provider_areas import (
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     sync_geography_history,
     MIN_TRACT_HISTORY_YEAR,
+    SUB_COUNTY_1990_VINTAGE,
+    TRACT_2000_VINTAGE,
     sync_sub_county_geography,
     sync_sub_county_history,
 )
@@ -86,7 +88,10 @@ def silver_ref():
         # skipped; the newest is replayed to retire codes that no longer exist.
         latest = int(sub_county["latest_vintage"])
         return sync_sub_county_history(
-            list(range(MIN_TRACT_HISTORY_YEAR, latest)), latest_year=latest
+            # The 1990 and 2000 censuses' own vintages, then every ACS year.
+            [SUB_COUNTY_1990_VINTAGE, TRACT_2000_VINTAGE]
+            + list(range(MIN_TRACT_HISTORY_YEAR, latest)),
+            latest_year=latest,
         )
 
     @task
