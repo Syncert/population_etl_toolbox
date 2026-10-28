@@ -56,7 +56,10 @@ class _RecordingCursor:
     def execute(self, sql: str, params: tuple | None = None) -> None:
         # psycopg2 interpolates with `%`: a bare `%` in the SQL text raises
         # here exactly as it does against a server.
-        rendered = sql % tuple(repr(value) for value in params) if params else sql
+        if isinstance(params, dict):
+            rendered = sql % {key: repr(value) for key, value in params.items()}
+        else:
+            rendered = sql % tuple(repr(value) for value in params) if params else sql
         self.statements.append(rendered)
         self._rows = [("dec2000sf3", 2000)] if "SELECT DISTINCT dataset" in sql else []
 
@@ -119,3 +122,17 @@ def test_a_1990_release_points_at_its_archive_page() -> None:
     assert "https://www2.census.gov/census_1990/1990STF3.html" in table_sql
     release_sql = hook.cursor.statements[0]
     assert "'dec1990stf1', 'dec1990stf3'" in release_sql
+
+
+def test_a_backfill_year_refreshes_only_its_own_releases() -> None:
+    """Covers: ETL-093 -- the release list is filtered to the scope's years."""
+    from data_ingestion_toolbox.census_acs.gold_census.transform import (
+        refresh_acs_elements,
+    )
+
+    hook = _RecordingHook()
+    refresh_acs_elements(hook=hook, years=[2019])
+    assert "ANY([2019]::INT[])" in hook.cursor.statements[0]
+    everything = _RecordingHook()
+    refresh_acs_elements(hook=everything)
+    assert "None::INT[] IS NULL" in everything.cursor.statements[0]

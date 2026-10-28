@@ -852,13 +852,18 @@ def acs_ingest():
             conn.commit()
 
     @task(trigger_rule="none_failed")
-    def refresh_gold_census_elements() -> int:
-        """Refresh ACS dimensions and metric mappings in gold_census."""
+    def refresh_gold_census_elements(dag_run: Optional[object] = None) -> int:
+        """Refresh ACS dimensions and metric mappings in gold_census.
+
+        A backfill run refreshes its own year's releases only; it changed no
+        other year.
+        """
         from data_ingestion_toolbox.census_acs.gold_census.transform import (
             refresh_acs_elements,
         )
 
-        return refresh_acs_elements()
+        scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
+        return refresh_acs_elements(years=None if scope is None else [scope.year])
 
     @task(trigger_rule="none_failed")
     def refresh_gold_census_serving_layer() -> dict[str, int]:
