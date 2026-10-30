@@ -24,6 +24,10 @@ BACKFILL_GEO_LEVELS = frozenset({"place", "tract", "metro"})
 
 #: The first year the Data API serves any ACS estimate (the 1-year 2005).
 FIRST_ACS_YEAR = 2005
+#: Census years the Data API serves before the ACS: the 2000 census's
+#: Summary Files 1 and 3 (decennial-2000-and-1990-history). 1990 is not on
+#: the API and loads through `load_1990` instead.
+CENSUS_YEARS = frozenset({2000})
 
 
 class BackfillScopeError(ValueError):
@@ -55,9 +59,10 @@ class BackfillScope:
         year = raw.get("year")
         if isinstance(year, bool) or not isinstance(year, int):
             raise BackfillScopeError("acs_backfill.year must be an integer year")
-        if year < FIRST_ACS_YEAR:
+        if year < FIRST_ACS_YEAR and year not in CENSUS_YEARS:
             raise BackfillScopeError(
-                f"acs_backfill.year must be {FIRST_ACS_YEAR} or later"
+                f"acs_backfill.year must be {FIRST_ACS_YEAR} or later, or a "
+                f"census year ({sorted(CENSUS_YEARS)})"
             )
         geo_level = raw.get("geo_level")
         if geo_level not in BACKFILL_GEO_LEVELS:
