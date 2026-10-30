@@ -521,3 +521,38 @@ def test_the_manifest_rule_is_not_applicable_on_a_warehouse_with_no_ledger(
     finally:
         database.rollback()
         database.close()
+
+
+def test_only_flagged_applies_just_what_the_ledger_lacks(
+    postgres_connection_factory,
+) -> None:
+    """Covers: DB-049 — a populated warehouse re-applies its gaps, not every step.
+
+    A full re-apply re-runs migrations whose constraint checks scan every
+    fact under an exclusive lock; on the internal warehouse that held the ACS
+    silver table for nothing when four hand-applied migrations were the only
+    gap. `--only-flagged` selects the missing and drifted assets alone.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[3] / "scripts/apply_warehouse_manifest.py"
+    spec = importlib.util.spec_from_file_location("apply_warehouse_manifest", path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    removed = manifest_assets()[-1].id
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        assert script.flagged_assets(database) == []
+        with database.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM control.schema_migration_state WHERE component_name = %s",
+                (removed,),
+            )
+        assert [asset.id for asset in script.flagged_assets(database)] == [removed]
+        assert script.parse_args(["--only-flagged"]).only_flagged is True
+    finally:
+        database.rollback()
+        database.close()
