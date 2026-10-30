@@ -117,7 +117,9 @@ def database_bytes() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--grain", choices=["place", "tract"], required=True)
+    parser.add_argument(
+        "--grain", choices=["place", "tract", "metro", "area"], required=True
+    )
     parser.add_argument("--years", required=True)
     parser.add_argument("--log")
     parser.add_argument("--poll-seconds", type=int, default=120)

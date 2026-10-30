@@ -650,6 +650,44 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
         callable_(targets, dag_run=Missing())
 
 
+def test_an_acs_backfill_area_run_plans_the_nation_states_and_counties(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-083 — a census year names `area` to load its nation, states and counties."""
+    database = RecordingDatabase(fetches=[[]])
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    _patch_callable_global(
+        monkeypatch, callable_, "_get_postgres_hook", lambda: database
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_variables_fingerprint",
+        lambda *args: ("stable-hash", 3),
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2000, "geo_level": "area"}}
+
+    targets = [
+        {"dataset": "dec2000sf1", "year": 2000},
+        {"dataset": "acs5", "year": 2019},
+    ]
+    work_units = [unit for batch in callable_(targets, dag_run=Run()) for unit in batch]
+    assert {unit["geo_level"] for unit in work_units} == {"us", "state", "county"}
+    assert {(unit["dataset"], unit["year"]) for unit in work_units} == {
+        ("dec2000sf1", 2000)
+    }
+    assert sum(unit["geo_level"] == "county" for unit in work_units) == 52
+
+
 def test_an_acs_backfill_year_refuses_when_the_disk_cannot_hold_it(
     dagbag, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
