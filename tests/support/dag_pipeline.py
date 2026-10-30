@@ -620,6 +620,13 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(geography_pipeline, "parse_boundary_capture", parse_geometry)
+    # The fixture publishes one bounded set of tracts for every vintage, so the
+    # decade relationship files have no parts to cross; their capture still
+    # runs (tract-crosswalk), and the parse is tested against real excerpts.
+    from data_ingestion_toolbox.silver_ref import tract_crosswalk
+
+    for earlier in tract_crosswalk.PARSERS:
+        monkeypatch.setitem(tract_crosswalk.PARSERS, earlier, lambda _payload: [])
 
 
 def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:

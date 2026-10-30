@@ -216,6 +216,38 @@ CREATE TABLE IF NOT EXISTS silver_ref.bridge_geo_relationship_version (
     CHECK (overlap_weight IS NULL OR overlap_weight BETWEEN 0 AND 1)
 );
 
+-- Census tracts across a decade boundary (acs-place-and-tract-history,
+-- deliverable 7): one row per part of an earlier-decade tract that lies in a
+-- later-decade tract, from the Bureau's tract relationship files. A tract
+-- keeps one identity per code across decades (its versions carry the
+-- vintage), so a decade succession is keyed by the two decades as well as
+-- the two tracts, which `bridge_geo_relationship_version` cannot express:
+-- an unchanged tract succeeds itself. Each part carries the land area the
+-- Bureau published for it and the share of each tract that area is, and,
+-- where the file publishes it (2000 to 2010), the later census's population
+-- and housing units in the part. Nothing here is written over a published
+-- value; a comparable-over-time series is derived from it and labelled so.
+CREATE TABLE IF NOT EXISTS silver_ref.tract_decade_crosswalk (
+    earlier_vintage INTEGER NOT NULL CHECK (earlier_vintage IN (2000, 2010)),
+    later_vintage INTEGER NOT NULL,
+    earlier_geo_sk BIGINT NOT NULL REFERENCES silver_ref.dim_geo_entity(geo_sk),
+    later_geo_sk BIGINT NOT NULL REFERENCES silver_ref.dim_geo_entity(geo_sk),
+    land_area_part_m2 NUMERIC NOT NULL CHECK (land_area_part_m2 >= 0),
+    total_area_part_m2 NUMERIC CHECK (total_area_part_m2 >= 0),
+    earlier_land_share NUMERIC CHECK (earlier_land_share BETWEEN 0 AND 1),
+    later_land_share NUMERIC CHECK (later_land_share BETWEEN 0 AND 1),
+    later_population_part INTEGER CHECK (later_population_part >= 0),
+    later_housing_units_part INTEGER CHECK (later_housing_units_part >= 0),
+    earlier_population_share NUMERIC CHECK (earlier_population_share BETWEEN 0 AND 1),
+    source_snapshot_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (earlier_vintage, earlier_geo_sk, later_geo_sk),
+    CHECK (later_vintage = earlier_vintage + 10)
+);
+
+CREATE INDEX IF NOT EXISTS tract_decade_crosswalk_later_idx
+    ON silver_ref.tract_decade_crosswalk (later_vintage, later_geo_sk);
+
 CREATE TABLE IF NOT EXISTS silver_ref.geography_resolution (
     resolution_sk BIGSERIAL PRIMARY KEY,
     provider_source TEXT NOT NULL,
