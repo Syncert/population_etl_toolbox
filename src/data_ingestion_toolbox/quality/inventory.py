@@ -1988,7 +1988,10 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         "BEA",
         grain="table_code, line_code, geo_id, year, capture_id",
         lineage="silver_bea.observation_revision, silver_ref.geography_resolution",
-        scope_method="registered tables x registered lines x nation, states and counties",
+        scope_method=(
+            "registered tables x registered lines x nation, states and counties, "
+            "and metro areas summed from their counties (marked by derivation)"
+        ),
         cadence="per BEA replay",
         empty_behavior="a withheld or unavailable cell keeps its status and no number, never zero",
     ),

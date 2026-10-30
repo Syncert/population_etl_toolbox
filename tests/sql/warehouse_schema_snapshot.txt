@@ -1783,6 +1783,7 @@ v gold_bea.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column derivation text
     body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
     body     table_code,
     body     table_title,
@@ -1807,7 +1808,8 @@ v gold_bea.observation_latest
     body     retrieved_at,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     derivation
     body    FROM gold_bea.observation_revision revision
     body   ORDER BY metric_key, geo_id, year, release_date DESC, retrieved_at DESC, capture_id DESC;
 
@@ -1837,6 +1839,7 @@ v gold_bea.observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column derivation text
     body SELECT (fact.table_code || ':'::text) || fact.line_code AS metric_key,
     body     fact.table_code,
     body     line.table_title,
@@ -1861,7 +1864,8 @@ v gold_bea.observation_revision
     body     fact.retrieved_at,
     body     fact.source_record_id,
     body     fact.capture_id,
-    body     fact.run_id
+    body     fact.run_id,
+    body     fact.derivation
     body    FROM silver_bea.fact_observation fact
     body      JOIN silver_bea.dim_line line ON line.table_code = fact.table_code AND line.line_code = fact.line_code
     body      JOIN control.bea_table_capture capture ON capture.capture_id = fact.capture_id
@@ -9120,7 +9124,7 @@ r silver_bea.dim_line
     column methodology_url text NOT NULL
     column parser_contract_version text NOT NULL
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text, 'price_level_us_100'::text])))
+    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text, 'price_level_us_100'::text, 'price_index'::text])))
     constraint dim_line_line_code_check CHECK ((line_code ~ '^[0-9]+$'::text))
     constraint dim_line_pkey PRIMARY KEY (table_code, line_code)
     index dim_line_pkey CREATE UNIQUE INDEX dim_line_pkey ON silver_bea.dim_line USING btree (table_code, line_code)
@@ -9142,9 +9146,11 @@ r silver_bea.fact_observation
     column value_status text NOT NULL
     column source_record_id text NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column derivation text
     constraint bea_fact_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
     constraint bea_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_derivation_check CHECK (((derivation IS NULL) OR (derivation = ANY (ARRAY['sum_of_member_counties'::text, 'ratio_of_member_county_sums'::text]))))
     constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'metro'::text, 'provider_area'::text])))
     constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
     constraint fact_observation_pkey PRIMARY KEY (table_code, line_code, geo_id, year, capture_id)

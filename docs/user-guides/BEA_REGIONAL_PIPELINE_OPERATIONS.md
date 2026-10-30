@@ -24,10 +24,12 @@ credential, unlike the BEA API, so the adapter holds no key.
 | `SARPP` | Regional price parities by state, from 2008 | 1 all items, 2 goods, 3 housing, 4 utilities, 5 other services | price level, nation = 100 |
 | `MARPP` | Regional price parities by metropolitan area, from 2008 | the same five lines | price level, nation = 100 |
 | `PARPP` | Regional price parities by state metropolitan and nonmetropolitan portion, from 2008 | the same five lines | price level, nation = 100 |
+| `MAIRPD` | Implicit regional price deflators by metropolitan area, from 2008, read from `MARPP.zip` | 1 implicit regional price deflator | price index, 2017 = 100 |
 
 Each zip holds one every-area CSV,
 `<TABLE>__ALL_AREAS_<first>_<last>.csv` (the price parity zips:
-`SARPP_STATE_`, `MARPP_MSA_`, `PARPP_PORT_`), with one column per year and a
+`SARPP_STATE_`, `MARPP_MSA_`, `PARPP_PORT_`; the deflator `MAIRPD_MSA_`
+inside `MARPP.zip`), with one column per year and a
 footer that states the release (`Last updated: February 5, 2026`). A file
 without that footer is refused whole: its rows are quarantined as
 `release_date_missing` and nothing is published from it.
@@ -48,7 +50,36 @@ Each of these is counted out of scope, not loaded:
 - BEA regions (`91000` to `98000`);
 - BEA's combined areas: the Virginia independent cities merged with their
   surrounding county (`51901` to `51958`) and Kalawao merged into Maui
-  (`15901`). They are BEA's own geography, not counties.
+  (`15901`). They are BEA's own geography, not counties. Their cells are
+  still read, to sum metro areas from (below).
+
+## Metro areas summed from counties
+
+BEA publishes no metro rows for its county income and GDP tables: the bulk
+zips hold none, and the Regional API refuses `GeoFips=MSA` for them
+(checked 2026-10-30). BEA builds its own metro figures by adding up each
+metro's counties, so every county table's replay does the same, in the same
+transaction, for each CBSA of the newest delineation the reference holds
+(`silver_ref`'s `census_cbsa_delineation` relationships), applied to every
+year as BEA applies the current delineation to its whole history.
+
+- Current-dollar and persons lines are summed. Per capita personal income
+  (`CAINC1:3`) is the metro's summed income over its summed population, in
+  whole dollars. Chained-dollar lines (`CAGDP1:1`) and price lines are never
+  derived.
+- A county BEA folds into a combined area counts through that area when all
+  of the area's counties are in the metro (Charlottesville's metro holds
+  Albemarle and Charlottesville city, so it counts `51901`). A combined area
+  split across a metro's edge leaves that metro with no figure.
+- A metro has a value only when every member area has a valid one; otherwise
+  it is `not_available` with no number, and `value_source` says how many
+  members had none. A partial sum is never served.
+- Derived rows carry `derivation` (`sum_of_member_counties` or
+  `ratio_of_member_county_sums`) through `gold_bea.observation_revision`;
+  it is NULL on every figure BEA published.
+
+Run `silver_ref` before the first BEA run on a new warehouse: with no
+delineation loaded, a county table adds no metro rows.
 
 The price parity tables describe other areas. `MARPP` rows are CBSAs by OMB
 code (`cbsa:<code>`, OMB bulletin 23-01, the delineation the shared
