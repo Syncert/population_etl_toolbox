@@ -188,6 +188,47 @@ def _area(value: str | None) -> int | None:
     return int(text) * 1000 if text.isdigit() else None
 
 
+def segment_tracts(payload: bytes) -> list[Stf1990Geography]:
+    """The tracts a segment table carries, from its own key columns.
+
+    Every segment repeats `SUMLEV`, `STATEFP`, `CNTY`, `TRACTBNA` and
+    `LOGRECNU`, so when a disc's header cannot be read its tracts can still be
+    placed. Only the tract level (140) is taken: a tract record has no
+    geographic components, while a state's or place's components (urban,
+    rural) are told apart only by the header's `GEOCOMP`. Names and areas are
+    the header's alone and are left empty.
+    """
+    fields, records = read_dbf(payload)
+    names = {field.name for field in fields}
+    required = {"SUMLEV", "STATEFP", "CNTY", "TRACTBNA", "LOGRECNU"}
+    missing = required - names
+    if missing:
+        raise Stf1990FormatError(f"1990 segment lacks {sorted(missing)}")
+    tracts: list[Stf1990Geography] = []
+    for record in records:
+        if record["SUMLEV"] != "140":
+            continue
+        tracts.append(
+            Stf1990Geography(
+                logical_record=record["LOGRECNU"],
+                geo_level="tract",
+                state_fips=record["STATEFP"],
+                county_fips=record["CNTY"] or None,
+                place_fips=None,
+                tract_code=tract_code_1990(record["TRACTBNA"]),
+                name="",
+                land_area_m2=None,
+                water_area_m2=None,
+            )
+        )
+    return tracts
+
+
+def is_dbf(payload: bytes) -> bool:
+    """Whether bytes are a dBase III table at all (not, say, an HTML page)."""
+    return len(payload) >= 33 and payload[0] in (0x03, 0x83)
+
+
 def parse_segment(payload: bytes, cells: set[str]) -> dict[str, dict[str, str]]:
     """The named cells of one segment table, by logical record number.
 

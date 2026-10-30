@@ -15,6 +15,7 @@ The transform and serving that follow are the ACS adapter's own:
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -26,12 +27,24 @@ from data_ingestion_toolbox.census_acs.stf1990 import (
     DATASETS_1990,
     Stf1990FormatError,
     discs_1990,
+    is_dbf,
     parse_header,
     parse_segment,
     read_dbf,
     requested_cells,
     revision_values,
+    segment_tracts,
 )
+
+
+class RejectedDownload(Stf1990FormatError):
+    """The archive answered a file request with something that is not the file.
+
+    www2.census.gov's firewall answers some requests with a "Request
+    Rejected" HTML page under HTTP 200; on 2026-10-30 it refused Minnesota's
+    second STF3A header (`CD90_3A_31/stf300mn.dbf`) every time.
+    """
+
 
 SOURCE_CODE = "CENSUS_ACS"
 ARCHIVE_ROOT = "https://www2.census.gov/census_1990"
@@ -104,22 +117,42 @@ def load_state(
             )
 
         stems = segment_files(fetch("tables.dbf").payload, cells)
-        header_file = fetch(f"{HEADER_STEM[dataset]}{state}.dbf")
-        header = parse_header(header_file.payload)
-        by_record: dict[str, dict[str, str]] = {}
-        for stem, stem_cells in sorted(stems.items()):
-            payload = (
-                header_file.payload
-                if stem == HEADER_STEM[dataset]
-                else fetch(f"{stem}{state}.dbf").payload
+        try:
+            header_file: CapturedFile | None = fetch(
+                f"{HEADER_STEM[dataset]}{state}.dbf"
             )
-            for record, values in parse_segment(payload, stem_cells).items():
+        except RejectedDownload:
+            # A disc after the first adds tracts only (its state, counties
+            # and places are on every disc), and each segment carries its
+            # tracts' keys, so the tracts are read from the segments -- when
+            # no requested cell lives in the header itself (STF3A's do not).
+            if disc == discs[0] or HEADER_STEM[dataset] in stems:
+                raise
+            header_file = None
+        by_record: dict[str, dict[str, str]] = {}
+        segment_capture = None
+        header: list = []
+        for stem, stem_cells in sorted(stems.items()):
+            if header_file is not None and stem == HEADER_STEM[dataset]:
+                segment = header_file
+            else:
+                segment = fetch(f"{stem}{state}.dbf")
+            if header_file is None and segment_capture is None:
+                segment_capture = segment
+                header = segment_tracts(segment.payload)
+            for record, values in parse_segment(segment.payload, stem_cells).items():
                 by_record.setdefault(record, {}).update(values)
+        if header_file is not None:
+            header = parse_header(header_file.payload)
+            row_capture = header_file
+        else:
+            totals["header_fallbacks"] = totals.get("header_fallbacks", 0) + 1
+            row_capture = segment_capture
         rows = revision_values(dataset, header, by_record)
         fresh = [row for row in rows if geography_key(row) not in seen]
         totals["repeated"] += len(rows) - len(fresh)
         seen.update(geography_key(row) for row in fresh)
-        totals["rows"] += insert(header_file.capture_id, fresh)
+        totals["rows"] += insert(row_capture.capture_id, fresh)
         totals["discs"] += 1
     return totals
 
@@ -143,23 +176,34 @@ def warehouse_capture(connection_factory: Callable, run_id: UUID) -> Capture:
     )
 
     control = CaptureControl(connection_factory, source_code=SOURCE_CODE)
-    client = httpx.Client(follow_redirects=True, timeout=300)
+    client = httpx.Client(
+        follow_redirects=True,
+        timeout=300,
+        headers={"User-Agent": "population-etl-toolbox (census 1990 archive load)"},
+    )
 
     def capture(url: str, parameters: dict[str, object]) -> CapturedFile:
         request = control.start_request(
-            run_id=run_id, endpoint=url, parameters=parameters, max_attempts=3
+            run_id=run_id, endpoint=url, parameters=parameters, max_attempts=4
         )
         try:
             response = None
-            for attempt in range(1, 4):
+            for attempt in range(1, 5):
                 try:
                     response = client.get(url)
                     response.raise_for_status()
+                    # A rejection page is not the file: never store it as one.
+                    if not is_dbf(response.content):
+                        raise RejectedDownload(
+                            f"{url} answered {response.headers.get('content-type')!r}, "
+                            "not a dBase table"
+                        )
                     break
-                except httpx.HTTPError as exc:
-                    if attempt == 3:
+                except (httpx.HTTPError, RejectedDownload) as exc:
+                    if attempt == 4:
                         raise
                     control.record_request_retry(request.request_id, error=exc)
+                    time.sleep(15 * attempt)
             assert response is not None
             capture_id = uuid4()
             persist_response_capture(
@@ -189,6 +233,42 @@ def warehouse_capture(connection_factory: Callable, run_id: UUID) -> Capture:
     return capture
 
 
+def loaded_states(connection_factory: Callable, dataset: str) -> set[str]:
+    """States whose every disc already has replayed revision rows.
+
+    A rerun after a failure resumes at the first state not finished; a split
+    state with any disc missing is read again in full, since its discs share
+    geographies and are deduplicated together.
+    """
+    discs = discs_1990()[dataset]
+    database = connection_factory()
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT capture.request_parameters->>'state',
+                                capture.request_parameters->>'disc'
+                FROM raw_capture.response_capture AS capture
+                WHERE capture.source_code = %s
+                  AND capture.request_parameters->>'dataset' = %s
+                  AND EXISTS (
+                      SELECT 1 FROM silver_census.observation_revision AS r
+                      WHERE r.capture_id = capture.capture_id
+                  )
+                """,
+                (SOURCE_CODE, dataset),
+            )
+            replayed = cursor.fetchall()
+    finally:
+        database.close()
+    by_state: dict[str, set[str]] = {}
+    for state, disc in replayed:
+        by_state.setdefault(state, set()).add(disc)
+    return {
+        state for state, have in by_state.items() if set(discs.get(state, [])) <= have
+    }
+
+
 def load(
     connection_factory: Callable,
     datasets: Iterable[str] = DATASETS_1990,
@@ -207,8 +287,12 @@ def load(
     results: dict[str, dict[str, int]] = {}
     try:
         for dataset in datasets:
+            done = loaded_states(connection_factory, dataset)
             for state in only_states or states(dataset):
                 if state not in discs_1990()[dataset]:
+                    continue
+                if state in done:
+                    results[f"{dataset}/{state}"] = {"skipped": 1}
                     continue
                 results[f"{dataset}/{state}"] = load_state(
                     dataset, state, capture=capture, insert=insert
