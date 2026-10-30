@@ -473,8 +473,11 @@ class RawSlice:
 
     @property
     def key(self) -> str:
+        # A per-dataset slice must not share the whole year's key: the
+        # resume checkpoint and the content ledger are keyed by it, and two
+        # datasets under "*" would let a retry skip the second as done.
         if self.geo_level is None:
-            return "*"
+            return "*" if self.dataset is None else f"{self.dataset}/*"
         return f"{self.dataset}/{self.geo_level}/{self.state_fips or '-'}"
 
 

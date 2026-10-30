@@ -334,7 +334,8 @@ def test_a_backfill_run_transforms_only_its_year(
         transform.transform_census_to_silver(years=[YEAR])
         == (len(SEEDED_PLACES) + 1) * 2
     )
-    assert fetched == ["*"]
+    # A year-scoped run reads its year one dataset at a time (ETL-100).
+    assert fetched == ["acs5/*"]
 
 
 def test_a_later_run_skips_unchanged_slices_and_replays_a_changed_one(

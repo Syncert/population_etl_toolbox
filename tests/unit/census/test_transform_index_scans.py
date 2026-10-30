@@ -75,3 +75,10 @@ def test_a_small_year_is_read_one_dataset_at_a_time() -> None:
     large = _plan_year_slices(hook, 2023, 60_000_000, ["acs5"])
     assert large == [RawSlice(dataset="acs5", geo_level="county", state_fips="10")]
     assert all("dataset = %s AND year = %s" in sql for sql, _ in hook.statements)
+
+
+def test_each_dataset_slice_has_its_own_resume_key() -> None:
+    """Covers: ETL-100 -- a retry cannot skip the second dataset as already done."""
+    keys = {RawSlice(dataset="dec2000sf1").key, RawSlice(dataset="dec2000sf3").key}
+    assert keys == {"dec2000sf1/*", "dec2000sf3/*"}
+    assert RawSlice().key == "*"
