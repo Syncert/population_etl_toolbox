@@ -203,3 +203,42 @@ def test_the_1990_reference_comes_from_each_states_stf1a_header() -> None:
     assert (
         parse_stf1990_header_capture(_dbf(HEADER_FIELDS, rows), geo_type="place") == []
     )
+
+
+def test_a_reviewed_place_code_correction_applies_to_its_record_only() -> None:
+    """Covers: ETL-095 -- Three Springs takes 76632; Seven Springs keeps 69336."""
+    rows = [
+        [
+            "160",
+            "00",
+            "043787",
+            "42",
+            "",
+            "69336",
+            "",
+            "0000002986",
+            "0000000000",
+            "Seven Springs borough",
+        ],
+        [
+            "160",
+            "00",
+            "043907",
+            "42",
+            "",
+            "69336",
+            "",
+            "0000002616",
+            "0000000000",
+            "Three Springs borough",
+        ],
+    ]
+    places = {g.name: g.place_fips for g in parse_header(_dbf(HEADER_FIELDS, rows))}
+    assert places == {
+        "Seven Springs borough": "69336",
+        "Three Springs borough": "76632",
+    }
+    # The same name under another state or code is not corrected.
+    rows[1][3] = "41"
+    places = {g.name: g.place_fips for g in parse_header(_dbf(HEADER_FIELDS, rows))}
+    assert places["Three Springs borough"] == "69336"

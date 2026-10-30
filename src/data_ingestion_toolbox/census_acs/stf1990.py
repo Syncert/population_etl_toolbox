@@ -36,6 +36,22 @@ SUMMARY_LEVELS: dict[str, str] = {
 }
 
 
+#: Reviewed corrections to a place code the 1990 files print wrongly, keyed
+#: by (state FIPS, printed code, the record's name): the code it should carry.
+#: A correction is applied only to the record named here, never by name alone.
+#:
+#: Pennsylvania's STF1A header prints 69336 for both Seven Springs and Three
+#: Springs boroughs (logical records 043787 and 043907). They are separate
+#: places of different area (2.99 and 2.62 km2). Every later Bureau file
+#: gives Three Springs 76632 and Seven Springs 69336 -- the 2000 place
+#: Gazetteer (`places2k.zip`) and the 2010 Census SF1 -- and place codes are
+#: assigned alphabetically, which puts "Three Springs" near 76632, not 69336.
+#: Read 2026-10-30.
+PLACE_CODE_CORRECTIONS_1990: dict[tuple[str, str, str], str] = {
+    ("42", "69336", "Three Springs borough"): "76632",
+}
+
+
 class Stf1990FormatError(ValueError):
     """A captured 1990 file is not the dBase table its role requires."""
 
@@ -142,7 +158,9 @@ def parse_header(payload: bytes) -> list[Stf1990Geography]:
                 geo_level=level,
                 state_fips=state,
                 county_fips=record["CNTY"] or None,
-                place_fips=record["PLACEFP"] or None,
+                place_fips=_place_code(
+                    state, record["PLACEFP"], record.get("ANPSADPI", "")
+                ),
                 tract_code=(
                     tract_code_1990(record.get("TRACTBNA", ""))
                     if level == "tract"
@@ -156,6 +174,13 @@ def parse_header(payload: bytes) -> list[Stf1990Geography]:
     if len({item.logical_record for item in kept}) != len(kept):
         raise Stf1990FormatError("1990 header repeats a logical record")
     return kept
+
+
+def _place_code(state: str, code: str, name: str) -> str | None:
+    """The record's place code, with a reviewed correction applied."""
+    if not code:
+        return None
+    return PLACE_CODE_CORRECTIONS_1990.get((state, code, name.strip()), code)
 
 
 def _area(value: str | None) -> int | None:
