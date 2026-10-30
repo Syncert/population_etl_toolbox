@@ -809,12 +809,13 @@ def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed BEA zips: every registered table has one."""
+    """Serve the reviewed BEA zips: every registered table's zip has one."""
     from data_ingestion_toolbox.bea import capture as bea_capture
     from data_ingestion_toolbox.bea.client import BeaFile
 
     def fetch(table: Any, **_kwargs: Any) -> BeaFile:
-        path = FIXTURE_ROOT / "bea" / f"{table.code}.zip"
+        # A table published inside another table's zip reads that zip.
+        path = FIXTURE_ROOT / "bea" / table.path.lstrip("/")
         if not path.is_file():
             raise AssertionError(f"no BEA fixture for {table.code}")
         return BeaFile(
