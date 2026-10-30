@@ -136,7 +136,15 @@ def load_state(
             if header_file is not None and stem == HEADER_STEM[dataset]:
                 segment = header_file
             else:
-                segment = fetch(f"{stem}{state}.dbf")
+                try:
+                    segment = fetch(f"{stem}{state}.dbf")
+                except RejectedDownload:
+                    # The archive refuses some segments outright (PA's
+                    # CD90_3A_50/stf330pa.dbf, median gross rent). Its cells
+                    # stay absent for this disc's geographies; the rest of
+                    # the state still loads.
+                    totals["segments_refused"] = totals.get("segments_refused", 0) + 1
+                    continue
             if header_file is None and segment_capture is None:
                 segment_capture = segment
                 header = segment_tracts(segment.payload)

@@ -174,3 +174,31 @@ def test_a_rejected_later_header_falls_back_to_the_segments_tracts(monkeypatch) 
 
     with pytest.raises(RejectedDownload):
         load_state("dec1990stf1", "vt", capture=reject_first, insert=lambda c, r: 0)
+
+
+def test_a_refused_segment_leaves_its_measures_absent(monkeypatch) -> None:
+    """Covers: ETL-098 -- the archive refuses PA's median-rent segment; the rest loads."""
+    from data_ingestion_toolbox.census_acs.load_1990 import RejectedDownload
+
+    files = _disc([STATE, PLACE, TRACT_A])
+    monkeypatch.setattr(
+        load_1990, "discs_1990", lambda: {"dec1990stf1": {"vt": ["DISC_A"]}}
+    )
+
+    def capture(url: str, parameters: dict) -> CapturedFile:
+        name = url.rsplit("/", 1)[-1]
+        if name == "stf1a1vt.dbf":
+            raise RejectedDownload("Request Rejected")
+        return CapturedFile(uuid4(), files[name])
+
+    rows: list[dict] = []
+    totals = load_state(
+        "dec1990stf1",
+        "vt",
+        capture=capture,
+        insert=lambda capture_id, batch: rows.extend(batch) or len(batch),
+    )
+    assert totals["segments_refused"] == 1
+    statuses = {row["value_status"] for row in rows}
+    assert statuses == {"valid", "absent"}
+    assert all(row["value"] is None for row in rows if row["value_status"] == "absent")

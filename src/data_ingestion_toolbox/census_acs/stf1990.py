@@ -348,7 +348,10 @@ def measure_values(dataset: str, cells: dict[str, str]) -> list[Value1990]:
             numbers = [Decimal(part) for part in parts]
         except InvalidOperation:
             numbers = []
-        if len(numbers) != len(parts):
+        if any(cell not in cells for cell in measure.cells):
+            # A cell whose segment could not be read is absent, not wrong.
+            status, value = "absent", None
+        elif len(numbers) != len(parts):
             status, value = "invalid", None
         elif measure.median and numbers[0] == 0:
             status, value = "sentinel", None
