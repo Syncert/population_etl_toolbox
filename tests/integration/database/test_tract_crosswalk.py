@@ -155,3 +155,83 @@ def test_successions_are_matched_by_code_and_decade(
         )
         == 3
     )
+
+
+def _serve(monkeypatch, factory, payloads: dict[str, bytes]) -> None:
+    from data_ingestion_toolbox.silver_ref import geography_pipeline
+    from tests.support.dag_pipeline import stub_response
+    from tests.support.postgres import PostgresHookStub
+
+    monkeypatch.setattr(
+        geography_pipeline, "_get_hook", lambda: PostgresHookStub(factory)
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "_download_with_retry",
+        lambda _client, url, **_kwargs: stub_response(payloads[url], url=url),
+    )
+
+
+@pytest.fixture
+def owned_runs(postgres_connection_factory: Callable[[], connection]):
+    from tests.support.warehouse_scope import delete_capture_graph, source_run_ids
+
+    baseline = source_run_ids(postgres_connection_factory, "CENSUS_GEO")
+    yield
+    runs = sorted(source_run_ids(postgres_connection_factory, "CENSUS_GEO") - baseline)
+    remover = postgres_connection_factory()
+    try:
+        with remover.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM silver_ref.tract_decade_crosswalk WHERE source_snapshot_id IN "
+                "(SELECT capture_id FROM raw_capture.response_capture WHERE run_id = ANY(%s::UUID[]))",
+                ([str(run) for run in runs],),
+            )
+            cursor.execute(
+                "DELETE FROM silver_ref.geography_resolution "
+                "WHERE provider_dataset = 'census_tract_relationship'"
+            )
+            delete_capture_graph(cursor, runs)
+        remover.commit()
+    finally:
+        remover.close()
+
+
+def test_a_sync_captures_both_files_before_publishing_them(
+    postgres_connection_factory: Callable[[], connection],
+    decade_reference,
+    owned_runs,
+    monkeypatch,
+) -> None:
+    """Covers: ETL-102 -- capture first, then each decade's parts; an unreadable file quarantines."""
+    from data_ingestion_toolbox.silver_ref.tract_crosswalk import (
+        RELATIONSHIP_FILES,
+        sync_tract_crosswalk,
+    )
+
+    payloads = {
+        RELATIONSHIP_FILES[2000]: (FIXTURES / "us2010trf.excerpt.txt").read_bytes(),
+        RELATIONSHIP_FILES[2010]: (
+            FIXTURES / "tab20_tract20_tract10.excerpt.txt"
+        ).read_bytes(),
+    }
+    _serve(monkeypatch, postgres_connection_factory, payloads)
+    counts = sync_tract_crosswalk()
+    # The 2000 parts land where this reference holds both decades; it holds no
+    # 2020 tract, so every 2010-to-2020 part is ledgered rather than written.
+    assert counts["2000-2010"]["parts"] == 3
+    assert counts["2010-2020"]["parts"] == 0
+    assert counts["2010-2020"]["unmapped_tracts"] > 0
+
+    payloads[RELATIONSHIP_FILES[2010]] = b"not|the|file\n"
+    with pytest.raises(ValueError, match="lacks its columns"):
+        sync_tract_crosswalk()
+    assert _rows(
+        postgres_connection_factory,
+        """
+        SELECT run.status, quarantine.error_code
+        FROM control.capture_quarantine AS quarantine
+        JOIN control.ingestion_run AS run ON run.run_id = quarantine.run_id
+        WHERE quarantine.error_code = 'tract_crosswalk_replay_failed'
+        """,
+    ) == [("failed", "tract_crosswalk_replay_failed")]
