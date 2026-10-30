@@ -287,7 +287,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-022 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
-| ETL and shared units | ETL-001–ETL-099 | None |
+| ETL and shared units | ETL-001–ETL-100 | None |
 | Database integration | DB-001–DB-065 | None |
 | API | API-001–API-169 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-011 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-143 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **644 of 644** | **0 of 644** |
+| **Total** | **645 of 645** | **0 of 645** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 644-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 645-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -571,6 +571,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-097 | P1 | Unit / `unit` | 1990 places and tracts resolve against Census 1990 | `history_vintage` maps every place and tract year 1990-1999 to the Census 1990 vintage; `historical_sub_county_assets(1990, ...)` names one STF1A geographic header per state (`stf1a0xx.dbf`, 51 files) from the archived disc `stf1990_discs.json` lists first; `parse_stf1990_header_capture` turns a header's whole-geography place and tract records into vintage-1990 references keyed by state and place code or by state, county and six-digit tract code, with the header's names and areas, collapses a geography the header repeats identically, and leaves unpublished a code the header names two ways rather than choose between them; the `silver_ref` DAG publishes the 1990 and 2000 vintages before the ACS years | The 1990 census names places and tracts by codes no later reference carries, so its values could only be refused or matched by name |
 | ETL-098 | P1 | Unit + database / `unit integration database` | The 1990 files are captured disc by disc and replayed once per geography | `segment_files` reads `tables.dbf` for the segment table carrying each requested cell (file stem is the segment in lower case) and refuses a cell it does not list; `load_state` reads every archived disc holding a state, captures `tables.dbf`, the geographic header and each needed segment under its own URL before parsing, replays `revision_values` with the header's capture, and skips a geography an earlier disc of the state already gave (a split state's state and places once, each disc's tracts); a 2000 file or a state no disc holds refuses; against the database, `load` stores every file in raw capture byte for byte and writes one revision row per geography and measure, all keyed to the header's capture, as year 1990, and a rerun skips a state whose every disc is already replayed; a download that is not a dBase table (the archive's "Request Rejected" page under HTTP 200) is retried and never stored as the file, and when a later disc's header is refused its tracts are read from its segments' own keys, while a refused first-disc header still fails the state | A state split across several STF3A discs repeats its state, counties and places on every disc, so reading the discs naively would store each of those values several times |
 | ETL-099 | P1 | Unit / `unit` | LAUS metropolitan areas load keyed by their CBSA | `parse_laus_series_id` reads a LAUS metro area code (`MT` + the state LAUS files it under + the five-digit CBSA + six zeros) as geo level `metro` with geo id `cbsa:<code>` and no state or county, the key the shared reference gives a CBSA; a metro code not ending in six zeros is rejected; `get_laus_series_ids(..., "metro")` returns the catalog's `MT` series only; the BLS DAG plans one national LAUS metro slice beside the state and county slices | LAUS publishes unemployment and labor force for about 390 metropolitan areas, but the parser rejected every metro code, so the metro pages had no labor figures |
+| ETL-100 | P1 | Unit / `unit` | The transform reads the revision table one dataset at a time | A transform scoped to named years counts each year per (dataset, year) over every known dataset with `dataset = %s AND year = %s`, plans a year at or under the slice threshold as one slice per dataset present (and a larger year as (dataset, level, state) slices read the same way), and checks geography coverage only for its own datasets and years; no read of `silver_census.observation_revision` filters by year alone | The only index on the revision table leads with the dataset, so each year-only read scanned all 1.8 billion rows (428 GB): about an hour, three times per backfill run, which is most of the ~1.6 hours each already-loaded tract year spent re-checking and an hour of the 2000 census's first transform |
 
 ### PostgreSQL Integration Tests
 
