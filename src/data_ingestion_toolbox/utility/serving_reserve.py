@@ -142,6 +142,15 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     # served. Slice keys are `dataset/geo_level[/state]`; the step names the
     # served levels. A grain-year with no ledger row, or a ledger row older
     # than the column recording changes, counts as changed.
+    #
+    # A small year is transformed as whole-year slices (`*`, or `dataset/*`)
+    # that name no level, so the ledger cannot say which grain changed. When
+    # one changed since the last serve, the step asks silver itself: did a
+    # fact at its levels change after the watermark the last complete serve
+    # published through (`served_through`)? Without that, every grain of a
+    # small year was re-served whenever any grain changed: a 2000 tract load
+    # re-served the year's area and place grains, and the next area load would
+    # re-serve 1.4 million unchanged tract rows (25 minutes).
     step_changed_sql="""
         WITH grains AS (
             SELECT CASE level
@@ -154,9 +163,28 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
             FROM silver_census.transform_slice_state AS s
             JOIN grains AS g ON g.slice_level = split_part(s.slice_key, '/', 2)
             WHERE s.year = %(year)s
+        ), whole_year AS (
+            SELECT s.last_changed_at
+            FROM silver_census.transform_slice_state AS s
+            WHERE s.year = %(year)s
+              AND (s.slice_key = '*' OR split_part(s.slice_key, '/', 2) = '*')
         )
-        SELECT NOT EXISTS (SELECT 1 FROM ledger)
+        SELECT (NOT EXISTS (SELECT 1 FROM ledger)
+                AND NOT EXISTS (SELECT 1 FROM whole_year))
             OR EXISTS (SELECT 1 FROM ledger WHERE last_changed_at > %(since)s)
+            OR (
+                EXISTS (SELECT 1 FROM whole_year WHERE last_changed_at > %(since)s)
+                AND (
+                    %(served_through)s::TIMESTAMPTZ IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM silver_census.fact_demographics AS fact
+                        WHERE fact.ingested_at > %(served_through)s::TIMESTAMPTZ
+                          AND fact.estimate_year = %(year)s
+                          AND fact.geo_level IN (SELECT slice_level FROM grains)
+                    )
+                )
+            )
     """,
     grain_steps=(
         GrainStep("area", ("NATIONAL", "STATE", "COUNTY", "METRO"), "90min"),

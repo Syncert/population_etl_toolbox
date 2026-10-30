@@ -402,6 +402,8 @@ def _step_has_changes(
                 "year": chunk["start"].year,
                 "geo_levels": list(step.geo_levels),
                 "since": chunk["completed_at"],
+                # The silver watermark the last complete serve published.
+                "served_through": chunk.get("completed"),
             },
         )
         row = cur.fetchone()
