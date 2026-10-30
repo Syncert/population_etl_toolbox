@@ -233,3 +233,38 @@ def test_a_titled_table_missing_a_requested_cell_is_refused() -> None:
     tables = _tables_dbf(partial)
     with pytest.raises(LayoutMismatch, match="does not list"):
         segment_files(tables, set(CELLS))
+
+
+def test_the_loader_builds_1990s_gold_dimensions_before_serving(monkeypatch) -> None:
+    """Covers: ETL-098 -- without its table and variable rows a 1990 serve publishes nothing."""
+    from data_ingestion_toolbox.census_acs.gold_census import transform as gold
+    from data_ingestion_toolbox.census_acs.silver_census import transform as silver
+    from data_ingestion_toolbox.utility import gold_schema
+
+    order: list[str] = []
+
+    class _Hook:
+        get_conn = staticmethod(lambda: None)
+
+    monkeypatch.setattr(silver, "_get_hook", lambda: _Hook())
+    monkeypatch.setattr(load_1990, "load", lambda *_a, **_k: order.append("load") or {})
+    monkeypatch.setattr(
+        silver,
+        "transform_census_to_silver",
+        lambda **kwargs: order.append(f"transform {kwargs['years']}") or 1,
+    )
+    monkeypatch.setattr(
+        gold,
+        "refresh_acs_elements",
+        lambda **kwargs: order.append(f"elements {kwargs['years']}") or 2,
+    )
+    monkeypatch.setattr(
+        gold_schema,
+        "refresh_serving_layer_in_year_chunks",
+        lambda **_kwargs: order.append("serve") or {},
+    )
+    assert load_1990.main(["--states", "vt"]) == 0
+    assert order == ["load", "transform [1990]", "elements [1990]", "serve"]
+    order.clear()
+    assert load_1990.main(["--skip-serving"]) == 0
+    assert order == ["load", "transform [1990]", "elements [1990]"]
