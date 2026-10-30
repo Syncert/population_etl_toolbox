@@ -92,3 +92,28 @@ def test_a_state_is_captured_byte_for_byte_and_replayed_as_1990(
         ("state", measures, 1),
         ("tract", measures, 1),
     ]
+
+
+def test_a_state_whose_tables_are_titled_otherwise_is_recorded_and_skipped(
+    postgres_connection_factory: Callable[[], connection], monkeypatch
+) -> None:
+    """Covers: ETL-098 -- Puerto Rico's numbering is refused; the run goes on."""
+    files = _disc([STATE, PLACE, TRACT_A])
+    files["tables.dbf"] = files["tables.dbf"].replace(
+        b"HOUSING UNITS", b"MILITARY SVC "
+    )
+    monkeypatch.setattr(
+        load_1990, "discs_1990", lambda: {"dec1990stf1": {"pr": ["DISC_P"]}}
+    )
+
+    def get(self, url: str, **_kwargs) -> httpx.Response:
+        name = url.rsplit("/", 1)[-1].replace("pr.dbf", "vt.dbf")
+        return httpx.Response(
+            200, content=files[name], request=httpx.Request("GET", url)
+        )
+
+    monkeypatch.setattr(httpx.Client, "get", get)
+    results = load_1990.load(
+        postgres_connection_factory, datasets=["dec1990stf1"], only_states=["pr"]
+    )
+    assert results == {"dec1990stf1/pr": {"layout_refused": 1}}

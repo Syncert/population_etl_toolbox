@@ -15,6 +15,7 @@ The transform and serving that follow are the ACS adapter's own:
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +47,8 @@ class RejectedDownload(Stf1990FormatError):
     """
 
 
+logger = logging.getLogger(__name__)
+
 SOURCE_CODE = "CENSUS_ACS"
 ARCHIVE_ROOT = "https://www2.census.gov/census_1990"
 PARSER_VERSION = "census-stf1990-v1"
@@ -54,18 +57,60 @@ PARSER_VERSION = "census-stf1990-v1"
 HEADER_STEM = {"dec1990stf1": "stf1a0", "dec1990stf3": "stf300"}
 
 
+#: What each table the 1990 crosswalks read is titled in `tables.dbf`. A
+#: cell's name says only its table and position, and Puerto Rico's STF3A
+#: numbers its tables differently (its P049 is period of military service,
+#: the states' is means of transportation to work), so a disc is read only
+#: when every table carries the title the crosswalk was reviewed against.
+TABLE_TITLES: dict[str, str] = {
+    "P001": "PERSONS",
+    "P003": "HOUSEHOLDS",
+    "P008": "PERSONS OF HISPANIC ORIGIN",
+    "P010": "HISPANIC ORIGIN BY RACE",
+    "H001": "HOUSING UNITS",
+    "H002": "OCCUPANCY STATUS",
+    "H003": "TENURE",
+    "P049": "MEANS OF TRANSPORTATION TO WORK",
+    "P080A": "MEDIAN HOUSEHOLD INCOME IN 1989",
+    "P114A": "PER CAPITA INCOME IN 1989",
+    "P117": "POVERTY STATUS IN 1989 BY AGE",
+    "H043A": "MEDIAN GROSS RENT",
+    "H061A": "MEDIAN VALUE",
+}
+
+
+class LayoutMismatch(Stf1990FormatError):
+    """A disc's tables are not the ones the crosswalk was reviewed against."""
+
+
+def table_of(cell: str) -> str:
+    """The table a cell belongs to: `P0490001` is P049, `P080A001` is P080A."""
+    return cell[:5] if cell[4].isalpha() else cell[:4]
+
+
 def segment_files(tables_payload: bytes, cells: set[str]) -> dict[str, set[str]]:
     """Which segment table carries each requested cell, by file-name stem.
 
     `tables.dbf` lists every cell with the segment it lives in (`STF314`,
     `STF1A0`); the file is that name in lower case plus the state's postal
-    code. A requested cell `tables.dbf` does not list refuses.
+    code. Each requested table's title must be the one in `TABLE_TITLES`, and
+    every requested cell must be listed; otherwise the disc is refused.
     """
     _, rows = read_dbf(tables_payload)
+    titles: dict[str, str] = {}
+    for row in rows:
+        if not row.get("FIELD") and row.get("SEGMENT"):
+            titles.setdefault(row["TABLE"], row["TEXT"].upper())
+    for table in sorted({table_of(cell) for cell in cells}):
+        expected = TABLE_TITLES.get(table)
+        if expected is None or not titles.get(table, "").startswith(expected):
+            raise LayoutMismatch(
+                f"table {table} is titled {titles.get(table)!r}, not {expected!r}"
+            )
     segment_of = {row["FIELD"]: row["SEGMENT"] for row in rows if row.get("FIELD")}
     missing = cells - set(segment_of)
     if missing:
-        raise Stf1990FormatError(f"tables.dbf does not list {sorted(missing)}")
+        raise LayoutMismatch(f"tables.dbf does not list {sorted(missing)}")
     stems: dict[str, set[str]] = {}
     for cell in cells:
         stems.setdefault(segment_of[cell].lower(), set()).add(cell)
@@ -302,9 +347,16 @@ def load(
                 if state in done:
                     results[f"{dataset}/{state}"] = {"skipped": 1}
                     continue
-                results[f"{dataset}/{state}"] = load_state(
-                    dataset, state, capture=capture, insert=insert
-                )
+                try:
+                    results[f"{dataset}/{state}"] = load_state(
+                        dataset, state, capture=capture, insert=insert
+                    )
+                except LayoutMismatch as exc:
+                    # Recorded and left out, never read under the wrong table.
+                    results[f"{dataset}/{state}"] = {"layout_refused": 1}
+                    logger.warning(
+                        "[CENSUS_1990] %s %s refused: %s", dataset, state, exc
+                    )
     except BaseException as exc:
         control.finish_run(run_id, status="failed", error=exc)
         raise

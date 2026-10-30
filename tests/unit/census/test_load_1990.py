@@ -11,9 +11,12 @@ import pytest
 
 from data_ingestion_toolbox.census_acs import load_1990
 from data_ingestion_toolbox.census_acs.load_1990 import (
+    TABLE_TITLES,
     CapturedFile,
+    LayoutMismatch,
     load_state,
     segment_files,
+    table_of,
 )
 from data_ingestion_toolbox.census_acs.stf1990 import (
     Stf1990FormatError,
@@ -27,13 +30,24 @@ pytestmark = pytest.mark.unit
 CELLS = sorted(requested_cells("dec1990stf1"))
 
 
+def _tables_dbf(segment_of: dict[str, str]) -> bytes:
+    """`tables.dbf` as the discs carry it: a title row per table, then its cells."""
+    rows: list[list[str]] = []
+    for table in sorted({table_of(cell) for cell in segment_of}):
+        cells = sorted(cell for cell in segment_of if table_of(cell) == table)
+        rows.append([table, "", TABLE_TITLES[table], segment_of[cells[0]]])
+        rows += [[table, cell, "Total", segment_of[cell]] for cell in cells]
+    return _dbf([("TABLE", 6), ("FIELD", 10), ("TEXT", 68), ("SEGMENT", 6)], rows)
+
+
 def _tables() -> bytes:
     """`tables.dbf`: the first half of the cells in the header, the rest in segment 1."""
-    rows = [
-        ["P001", cell, "Total", "STF1A0" if index < len(CELLS) // 2 else "STF1A1"]
-        for index, cell in enumerate(CELLS)
-    ]
-    return _dbf([("TABLE", 6), ("FIELD", 10), ("TEXT", 68), ("SEGMENT", 6)], rows)
+    return _tables_dbf(
+        {
+            cell: "STF1A0" if index < len(CELLS) // 2 else "STF1A1"
+            for index, cell in enumerate(CELLS)
+        }
+    )
 
 
 def _disc(records: list[list[str]]) -> dict[str, bytes]:
@@ -62,7 +76,7 @@ def test_cells_are_read_from_the_segment_tables_dbf_names() -> None:
     stems = segment_files(_tables(), set(CELLS))
     assert set(stems) == {"stf1a0", "stf1a1"}
     assert stems["stf1a0"] | stems["stf1a1"] == set(CELLS)
-    with pytest.raises(Stf1990FormatError, match="does not list"):
+    with pytest.raises(Stf1990FormatError, match="P999"):
         segment_files(_tables(), {"P9990001"})
 
 
@@ -116,10 +130,7 @@ def test_a_rejected_later_header_falls_back_to_the_segments_tracts(monkeypatch) 
     from data_ingestion_toolbox.census_acs.load_1990 import RejectedDownload
 
     # As in STF3A, every requested cell lives in a segment, none in the header.
-    tables = _dbf(
-        [("TABLE", 6), ("FIELD", 10), ("TEXT", 68), ("SEGMENT", 6)],
-        [["P001", cell, "Total", "STF1A1"] for cell in CELLS],
-    )
+    tables = _tables_dbf({cell: "STF1A1" for cell in CELLS})
     keys = [
         ("SUMLEV", 3),
         ("STATEFP", 2),
@@ -202,3 +213,23 @@ def test_a_refused_segment_leaves_its_measures_absent(monkeypatch) -> None:
     statuses = {row["value_status"] for row in rows}
     assert statuses == {"valid", "absent"}
     assert all(row["value"] is None for row in rows if row["value_status"] == "absent")
+
+
+def test_a_disc_whose_tables_are_titled_otherwise_is_refused() -> None:
+    """Covers: ETL-098 -- Puerto Rico's P049 is military service, not commuting."""
+    segment_of = {cell: "STF1A1" for cell in CELLS}
+    good = _tables_dbf(segment_of)
+    assert set(segment_files(good, set(CELLS))) == {"stf1a1"}
+    renamed = good.replace(b"HOUSING UNITS", b"MILITARY SVC ")
+    with pytest.raises(LayoutMismatch, match="H001"):
+        segment_files(renamed, set(CELLS))
+    assert table_of("P0490001") == "P049" and table_of("P080A001") == "P080A"
+
+
+def test_a_titled_table_missing_a_requested_cell_is_refused() -> None:
+    """Covers: ETL-098 -- the right table, but not the cell the crosswalk sums."""
+    segment_of = {cell: "STF1A1" for cell in CELLS}
+    partial = {cell: seg for cell, seg in segment_of.items() if cell != "H0030002"}
+    tables = _tables_dbf(partial)
+    with pytest.raises(LayoutMismatch, match="does not list"):
+        segment_files(tables, set(CELLS))
