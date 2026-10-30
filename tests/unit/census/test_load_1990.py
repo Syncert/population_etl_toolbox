@@ -109,3 +109,68 @@ def test_a_state_or_file_the_archive_lacks_refuses() -> None:
         load_state("dec2000sf1", "vt", capture=None, insert=None)
     with pytest.raises(ValueError, match="no archived disc"):
         load_state("dec1990stf1", "pr", capture=None, insert=None)
+
+
+def test_a_rejected_later_header_falls_back_to_the_segments_tracts(monkeypatch) -> None:
+    """Covers: ETL-098 -- Minnesota's second STF3A header is refused by the archive."""
+    from data_ingestion_toolbox.census_acs.load_1990 import RejectedDownload
+
+    # As in STF3A, every requested cell lives in a segment, none in the header.
+    tables = _dbf(
+        [("TABLE", 6), ("FIELD", 10), ("TEXT", 68), ("SEGMENT", 6)],
+        [["P001", cell, "Total", "STF1A1"] for cell in CELLS],
+    )
+    keys = [
+        ("SUMLEV", 3),
+        ("STATEFP", 2),
+        ("CNTY", 3),
+        ("TRACTBNA", 6),
+        ("LOGRECNU", 6),
+    ]
+
+    def disc_files(records: list[list[str]]) -> dict[str, bytes]:
+        return {
+            "tables.dbf": tables,
+            "stf1a0vt.dbf": _dbf(HEADER_FIELDS, records),
+            # Each segment carries its records' keys, as the archive's do.
+            "stf1a1vt.dbf": _dbf(
+                keys + [(cell, 9) for cell in CELLS],
+                [[r[0], r[3], r[4], r[6], r[2]] + ["2"] * len(CELLS) for r in records],
+            ),
+        }
+
+    first = disc_files([STATE, PLACE, TRACT_A])
+    second = disc_files([STATE, PLACE, TRACT_B])
+    monkeypatch.setattr(
+        load_1990, "discs_1990", lambda: {"dec1990stf1": {"vt": ["DISC_A", "DISC_B"]}}
+    )
+    discs = {"DISC_A": first, "DISC_B": second}
+
+    def capture(url: str, parameters: dict) -> CapturedFile:
+        disc, name = url.rsplit("/", 2)[-2:]
+        if disc == "DISC_B" and name == "stf1a0vt.dbf":
+            raise RejectedDownload("Request Rejected")
+        return CapturedFile(uuid4(), discs[disc][name])
+
+    inserted: list[dict] = []
+    totals = load_state(
+        "dec1990stf1",
+        "vt",
+        capture=capture,
+        insert=lambda capture_id, rows: inserted.extend(rows) or len(rows),
+    )
+    assert totals["header_fallbacks"] == 1
+    tracts = {
+        row["tract_code_source"] for row in inserted if row["geo_level"] == "tract"
+    }
+    assert tracts == {"960100", "970100"}
+    # The first disc's header is never optional.
+    discs["DISC_A"] = dict(first)
+
+    def reject_first(url: str, parameters: dict) -> CapturedFile:
+        if url.endswith("DISC_A/stf1a0vt.dbf"):
+            raise RejectedDownload("Request Rejected")
+        return capture(url, parameters)
+
+    with pytest.raises(RejectedDownload):
+        load_state("dec1990stf1", "vt", capture=reject_first, insert=lambda c, r: 0)

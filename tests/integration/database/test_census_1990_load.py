@@ -53,6 +53,13 @@ def test_a_state_is_captured_byte_for_byte_and_replayed_as_1990(
                 (f"{load_1990.ARCHIVE_ROOT}/DISC_T/%",),
             )
             captured = cursor.fetchall()
+            done = load_1990.loaded_states(postgres_connection_factory, "dec1990stf1")
+            # A rerun resumes after the finished state rather than reading it again.
+            again = load_1990.load(
+                postgres_connection_factory,
+                datasets=["dec1990stf1"],
+                only_states=["vt"],
+            )
             cursor.execute(
                 """
                 SELECT geo_level, COUNT(*), COUNT(DISTINCT capture_id)
@@ -71,6 +78,8 @@ def test_a_state_is_captured_byte_for_byte_and_replayed_as_1990(
         database.close()
 
     assert results["dec1990stf1/vt"]["discs"] == 1
+    assert "vt" in done
+    assert again["dec1990stf1/vt"] == {"skipped": 1}
     assert [name for name, _ in captured] == [
         "stf1a0vt.dbf",
         "stf1a1vt.dbf",
