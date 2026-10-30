@@ -77,6 +77,13 @@ class ServingRefreshChunkConfig:
     #: of those grains in that year since then. Empty means "always publish".
     #: It must answer true whenever it cannot tell (skip-unchanged-grains).
     step_changed_sql: str = ""
+    #: Whether silver holds publishable rows for a chunk: a query taking the
+    #: chunk's start and end dates and answering one boolean. A chunk that
+    #: served no report rows while this answers true fails instead of being
+    #: checkpointed complete: the 1990 census's first serve dropped all 1.67M
+    #: silver rows (no gold dimension rows for its datasets) and recorded the
+    #: year as served. Empty means "do not check".
+    silver_rows_sql: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -740,6 +747,14 @@ def refresh_serving_layer_in_year_chunks(
                     (chunk["start"], chunk["end"]),
                 )
                 report_rows = int(cur.fetchone()[0])
+                if report_rows == 0 and config.silver_rows_sql:
+                    cur.execute(config.silver_rows_sql, (chunk["start"], chunk["end"]))
+                    if cur.fetchone()[0]:
+                        raise RuntimeError(
+                            f"{config.log_label} chunk {chunk['start']} served no "
+                            "report rows although silver holds publishable rows "
+                            "for it; check that its gold dimensions are built"
+                        )
                 cur.execute(
                     """
                     UPDATE control.serving_refresh_chunk_state

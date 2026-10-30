@@ -22,9 +22,15 @@ SERVED = datetime(2026, 10, 27, tzinfo=timezone.utc)
 class _Cursor:
     """Answers the driver's bookkeeping as a warehouse with one served year would."""
 
-    def __init__(self, calls: list[tuple[str, object]], changed: set[str]) -> None:
+    def __init__(
+        self,
+        calls: list[tuple[str, object]],
+        changed: set[str],
+        silver_rows: bool = False,
+    ) -> None:
         self.calls = calls
         self.changed = changed
+        self.silver_rows = silver_rows
         self._one: tuple | None = None
         self._all: list[tuple] = []
 
@@ -48,6 +54,8 @@ class _Cursor:
             ACS_CHUNK_CONFIG.all_chunks_sql,
         ):
             self._all = [(date(2021, 1, 1), date(2021, 12, 31), SERVED)]
+        elif sql is ACS_CHUNK_CONFIG.silver_rows_sql:
+            self._one = (self.silver_rows,)
         elif sql is ACS_CHUNK_CONFIG.step_changed_sql:
             levels = set(params["geo_levels"])
             self._one = (bool(levels & self.changed),)
@@ -67,9 +75,10 @@ class _Cursor:
 
 
 class _Hook:
-    def __init__(self, changed: set[str]) -> None:
+    def __init__(self, changed: set[str], silver_rows: bool = False) -> None:
         self.calls: list[tuple[str, object]] = []
         self.changed = changed
+        self.silver_rows = silver_rows
 
     def get_conn(self):
         hook = self
@@ -84,7 +93,7 @@ class _Hook:
                 return None
 
             def cursor(self):
-                return _Cursor(hook.calls, hook.changed)
+                return _Cursor(hook.calls, hook.changed, hook.silver_rows)
 
             def commit(self):
                 return None
@@ -115,3 +124,12 @@ def test_a_forced_re_serve_never_asks_and_serves_every_step() -> None:
     )
     assert not any(sql is ACS_CHUNK_CONFIG.step_changed_sql for sql, _ in hook.calls)
     assert len(_served_grains(hook)) == len(ACS_CHUNK_CONFIG.grain_steps)
+
+
+def test_a_year_that_serves_nothing_from_publishable_silver_fails() -> None:
+    """Covers: DB-065 -- zero report rows over nonzero silver is a failure, not a checkpoint."""
+    hook = _Hook(changed={"PLACE"}, silver_rows=True)
+    with pytest.raises(RuntimeError, match="served no report rows"):
+        refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
+    assert any("status = 'FAILED'" in sql for sql, _ in hook.calls)
+    assert not any("status = 'COMPLETE'" in sql for sql, _ in hook.calls)
