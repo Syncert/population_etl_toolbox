@@ -36,3 +36,23 @@ def test_each_year_is_one_run_carrying_its_backfill_conf() -> None:
     assert command[3:7] == ["airflow", "dags", "trigger", "acs_ingest"]
     conf = json.loads(command[command.index("--conf") + 1])
     assert conf == {"acs_backfill": {"year": 2019, "geo_level": "place"}}
+
+
+def test_a_driver_waits_on_a_run_already_queued_or_running() -> None:
+    """Covers: ETL-090 -- a second driver for the same work never triggers it twice."""
+    runs = [
+        {"run_id": "backfill_tract_2000_20261030T183244", "state": "running"},
+        {"run_id": "backfill_tract_2009_20261030T112120", "state": "success"},
+        {"run_id": "backfill_place_2000_20261030T145122", "state": "queued"},
+    ]
+    assert (
+        driver.active_run_for("tract", 2000, runs)
+        == "backfill_tract_2000_20261030T183244"
+    )
+    assert (
+        driver.active_run_for("place", 2000, runs)
+        == "backfill_place_2000_20261030T145122"
+    )
+    # A finished run is history, not a reason to wait.
+    assert driver.active_run_for("tract", 2009, runs) is None
+    assert driver.active_run_for("area", 2000, runs) is None
