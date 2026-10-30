@@ -120,6 +120,16 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
         WHERE bounds.first_year IS NOT NULL
         ORDER BY y
     """,
+    silver_rows_sql="""
+        SELECT EXISTS (
+            SELECT 1
+            FROM silver_census.fact_demographics AS s
+            WHERE s.source_system = 'CENSUS_ACS'
+              AND s.estimate_year BETWEEN EXTRACT(YEAR FROM %s::DATE)::INT
+                                      AND EXTRACT(YEAR FROM %s::DATE)::INT
+              AND s.estimate_value IS NOT NULL
+        )
+    """,
     report_procedure="gold_census.refresh_rpt_acs_observations",
     latest_procedure="gold_census.refresh_mv_acs_latest",
     latest_table="gold_census.mv_acs_latest",

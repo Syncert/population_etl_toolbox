@@ -370,13 +370,17 @@ def main(argv: list[str] | None = None) -> int:
         docker exec docker-airflow-scheduler-1 \
             python -m data_ingestion_toolbox.census_acs.load_1990 [--states vt,nh]
 
-    Captures and replays the files, then transforms year 1990 and serves it
-    with the ACS adapter's own steps. Run `silver_ref` first so the 1990
+    Captures and replays the files, then transforms year 1990, builds its
+    gold table and variable rows and serves it with the ACS adapter's own
+    steps. Run `silver_ref` first so the 1990
     places and tracts are entities, and apply migration 039.
     """
     import argparse
     import json
 
+    from data_ingestion_toolbox.census_acs.gold_census.transform import (
+        refresh_acs_elements,
+    )
     from data_ingestion_toolbox.census_acs.silver_census.transform import (
         _get_hook,
         transform_census_to_silver,
@@ -398,6 +402,10 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(results, indent=2))
     transformed = transform_census_to_silver(resume_key="load_1990", years=[1990])
     print(json.dumps({"transformed": transformed}))
+    # The serving join reads 1990's gold table and variable rows; without
+    # them a serve publishes nothing.
+    elements = refresh_acs_elements(hook=hook, years=[1990])
+    print(json.dumps({"elements": elements}))
     if not args.skip_serving:
         served = refresh_serving_layer_in_year_chunks(
             hook=hook, config=ACS_CHUNK_CONFIG
