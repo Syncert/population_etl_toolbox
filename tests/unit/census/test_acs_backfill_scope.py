@@ -40,6 +40,7 @@ def test_a_backfill_names_one_year_and_one_grain() -> None:
         ({"year": "2019", "geo_level": "tract"}, "integer year"),
         ({"year": True, "geo_level": "tract"}, "integer year"),
         ({"year": 2004, "geo_level": "tract"}, "2005 or later"),
+        ({"year": 1990, "geo_level": "place"}, "census year"),
         ({"year": 2019, "geo_level": "county"}, "must be one of"),
         ({"year": 2019}, "must be one of"),
     ],
@@ -68,3 +69,13 @@ def test_only_the_newest_place_year_carries_the_whole_table_list() -> None:
     widened = CONFIG.model_copy(update={"place_full_table_year_scope": "newest:2"})
     assert widened.place_tables(2023, years) is None
     assert widened.place_tables(2022, years) == CONFIG.place_history_tables
+
+
+def test_the_2000_census_year_is_a_loadable_backfill() -> None:
+    """Covers: ETL-083 -- the 2000 census is on the API; 2001-2004 and 1990 are not."""
+    from data_ingestion_toolbox.census_acs.backfill import BackfillScope
+
+    scope = BackfillScope.from_conf(
+        {"acs_backfill": {"year": 2000, "geo_level": "place"}}
+    )
+    assert (scope.year, scope.geo_level) == (2000, "place")
