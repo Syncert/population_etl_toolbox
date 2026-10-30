@@ -95,6 +95,17 @@ def silver_ref():
         )
 
     @task
+    def load_tract_crosswalk(_history: dict[str, int]) -> dict[str, dict[str, int]]:
+        # The Bureau's 2000-2010 and 2010-2020 tract relationship files, after
+        # every decade's tracts are in the reference: a part is written only
+        # when both its tracts are held for their decades.
+        from data_ingestion_toolbox.silver_ref.tract_crosswalk import (
+            sync_tract_crosswalk,
+        )
+
+        return sync_tract_crosswalk()
+
+    @task
     def load_area_geo() -> dict[str, int]:
         # Census regions, divisions and CBSAs, after the counties and states
         # they contain: a membership is written only for a geography the
@@ -118,7 +129,7 @@ def silver_ref():
 
     ddl = ensure_schema()
     geo = load_dim_geo()
-    load_sub_county_history(load_sub_county_geo(geo))
+    load_tract_crosswalk(load_sub_county_history(load_sub_county_geo(geo)))
     areas = load_area_geo()
     provider_areas = load_provider_areas()
     time = load_dim_time()

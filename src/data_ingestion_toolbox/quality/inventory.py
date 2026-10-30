@@ -551,6 +551,19 @@ _REFERENCE_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first reference load",
     ),
     _obj(
+        "silver_ref.tract_decade_crosswalk",
+        "reference",
+        "SHARED",
+        grain="earlier_vintage, earlier_geo_sk, later_geo_sk",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method=(
+            "one row per part of a 2000 or 2010 census tract lying in a tract "
+            "of the next census, from the Bureau's relationship files"
+        ),
+        cadence="per tract relationship file release",
+        empty_behavior="empty only before the decade tract references load",
+    ),
+    _obj(
         "silver_ref.geography_resolution",
         "reference",
         "SHARED",

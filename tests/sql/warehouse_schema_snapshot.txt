@@ -11883,6 +11883,36 @@ r silver_ref.geography_resolution
     index geography_resolution_pkey CREATE UNIQUE INDEX geography_resolution_pkey ON silver_ref.geography_resolution USING btree (resolution_sk)
     index geography_resolution_provider_source_provider_dataset_sourc_key CREATE UNIQUE INDEX geography_resolution_provider_source_provider_dataset_sourc_key ON silver_ref.geography_resolution USING btree (provider_source, provider_dataset, source_geo_type, source_code, source_vintage)
 
+r silver_ref.tract_decade_crosswalk
+    column earlier_vintage integer NOT NULL
+    column later_vintage integer NOT NULL
+    column earlier_geo_sk bigint NOT NULL
+    column later_geo_sk bigint NOT NULL
+    column land_area_part_m2 numeric NOT NULL
+    column total_area_part_m2 numeric
+    column earlier_land_share numeric
+    column later_land_share numeric
+    column later_population_part integer
+    column later_housing_units_part integer
+    column earlier_population_share numeric
+    column source_snapshot_id uuid NOT NULL
+    column ingested_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint tract_decade_crosswalk_check CHECK ((later_vintage = (earlier_vintage + 10)))
+    constraint tract_decade_crosswalk_earlier_geo_sk_fkey FOREIGN KEY (earlier_geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint tract_decade_crosswalk_earlier_land_share_check CHECK (((earlier_land_share >= (0)::numeric) AND (earlier_land_share <= (1)::numeric)))
+    constraint tract_decade_crosswalk_earlier_population_share_check CHECK (((earlier_population_share >= (0)::numeric) AND (earlier_population_share <= (1)::numeric)))
+    constraint tract_decade_crosswalk_earlier_vintage_check CHECK ((earlier_vintage = ANY (ARRAY[2000, 2010])))
+    constraint tract_decade_crosswalk_land_area_part_m2_check CHECK ((land_area_part_m2 >= (0)::numeric))
+    constraint tract_decade_crosswalk_later_geo_sk_fkey FOREIGN KEY (later_geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint tract_decade_crosswalk_later_housing_units_part_check CHECK ((later_housing_units_part >= 0))
+    constraint tract_decade_crosswalk_later_land_share_check CHECK (((later_land_share >= (0)::numeric) AND (later_land_share <= (1)::numeric)))
+    constraint tract_decade_crosswalk_later_population_part_check CHECK ((later_population_part >= 0))
+    constraint tract_decade_crosswalk_pkey PRIMARY KEY (earlier_vintage, earlier_geo_sk, later_geo_sk)
+    constraint tract_decade_crosswalk_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint tract_decade_crosswalk_total_area_part_m2_check CHECK ((total_area_part_m2 >= (0)::numeric))
+    index tract_decade_crosswalk_later_idx CREATE INDEX tract_decade_crosswalk_later_idx ON silver_ref.tract_decade_crosswalk USING btree (later_vintage, later_geo_sk)
+    index tract_decade_crosswalk_pkey CREATE UNIQUE INDEX tract_decade_crosswalk_pkey ON silver_ref.tract_decade_crosswalk USING btree (earlier_vintage, earlier_geo_sk, later_geo_sk)
+
 r silver_usda_ers.fact_observation
     column attribute text NOT NULL
     column geo_id text NOT NULL
