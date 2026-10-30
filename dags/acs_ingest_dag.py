@@ -420,6 +420,11 @@ def acs_ingest():
                     "dataset publishes"
                 )
 
+        # The nation, states and counties: every scheduled run, or a backfill
+        # run that names the `area` grain (a census year has no other run to
+        # load them: decennial-2000-and-1990-history).
+        area_planned = scope is None or scope.geo_level == "area"
+
         # ACS county coverage includes the 50 states, DC, and Puerto Rico.
         # Use the explicit Census state/territory codes so gaps in the numeric
         # FIPS range (for example, invalid code 52) cannot become empty slices.
@@ -534,7 +539,7 @@ def acs_ingest():
         plan: list[dict] = []
         for (dataset, year), meta in varset_meta.items():
             # US slice
-            if scope is None and not is_done_for_current_varset(
+            if area_planned and not is_done_for_current_varset(
                 dataset, year, "us", None
             ):
                 plan.append(
@@ -549,7 +554,7 @@ def acs_ingest():
                 )
 
             # STATE slice (all states in one call)
-            if scope is None and not is_done_for_current_varset(
+            if area_planned and not is_done_for_current_varset(
                 dataset, year, "state", None
             ):
                 plan.append(
@@ -579,7 +584,7 @@ def acs_ingest():
                 )
 
             # COUNTY slices (by state)
-            for sf in state_fips_list if scope is None else ():
+            for sf in state_fips_list if area_planned else ():
                 if is_done_for_current_varset(dataset, year, "county", sf):
                     continue
                 plan.append(
