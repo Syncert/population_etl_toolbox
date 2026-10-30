@@ -224,3 +224,12 @@ def test_a_disc_whose_tables_are_titled_otherwise_is_refused() -> None:
     with pytest.raises(LayoutMismatch, match="H001"):
         segment_files(renamed, set(CELLS))
     assert table_of("P0490001") == "P049" and table_of("P080A001") == "P080A"
+
+
+def test_a_titled_table_missing_a_requested_cell_is_refused() -> None:
+    """Covers: ETL-098 -- the right table, but not the cell the crosswalk sums."""
+    segment_of = {cell: "STF1A1" for cell in CELLS}
+    partial = {cell: seg for cell, seg in segment_of.items() if cell != "H0030002"}
+    tables = _tables_dbf(partial)
+    with pytest.raises(LayoutMismatch, match="does not list"):
+        segment_files(tables, set(CELLS))
