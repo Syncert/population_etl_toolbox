@@ -74,6 +74,42 @@ def _run(command: list[str]) -> str:
     return subprocess.run(command, check=True, capture_output=True, text=True).stdout
 
 
+def _list_runs() -> list[dict]:
+    output = _run(
+        [
+            "docker",
+            "exec",
+            SCHEDULER,
+            "airflow",
+            "dags",
+            "list-runs",
+            "-d",
+            DAG_ID,
+            "-o",
+            "json",
+        ]
+    )
+    start = output.find("[")
+    return json.loads(output[start:] if start >= 0 else "[]")
+
+
+def active_run_for(grain: str, year: int, runs: list[dict]) -> str | None:
+    """A queued or running backfill run of the same grain and year, if any.
+
+    Two drivers started for the same work (a restart while the old one still
+    lived, 2026-10-30) each triggered a 2000 tract run; the second queued
+    behind the first to redo it. A driver now waits on the existing run.
+    """
+    prefix = f"backfill_{grain}_{year}_"
+    for run in runs:
+        if str(run.get("run_id", "")).startswith(prefix) and run.get("state") in (
+            "queued",
+            "running",
+        ):
+            return str(run["run_id"])
+    return None
+
+
 def run_state(run_id: str) -> str:
     output = _run(
         [
@@ -128,10 +164,15 @@ def main(argv: list[str] | None = None) -> int:
 
     for year in parse_years(args.years):
         started = datetime.now(timezone.utc)
-        run_id = run_id_for(args.grain, year, started)
         before = database_bytes()
-        print(f"{started:%Y-%m-%d %H:%M}Z triggering {run_id}", flush=True)
-        _run(trigger_command(args.grain, year, run_id))
+        existing = active_run_for(args.grain, year, _list_runs())
+        if existing:
+            run_id = existing
+            print(f"{started:%Y-%m-%d %H:%M}Z waiting on {run_id}", flush=True)
+        else:
+            run_id = run_id_for(args.grain, year, started)
+            print(f"{started:%Y-%m-%d %H:%M}Z triggering {run_id}", flush=True)
+            _run(trigger_command(args.grain, year, run_id))
         state = "queued"
         while state not in TERMINAL:
             time.sleep(args.poll_seconds)
