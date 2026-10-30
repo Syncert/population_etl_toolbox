@@ -191,8 +191,15 @@ def test_the_1990_reference_comes_from_each_states_stf1a_header() -> None:
     assert [(t.geo_id, t.census_geoid, t.geography_vintage) for t in tracts] == [
         ("state:50|county:001|tract:960100", "50001960100", 1990)
     ]
+    # The same place on two records collapses to one.
     rows = _header_rows()
     rows.append(list(rows[3]))
     rows[-1][2] = "000099"
-    with pytest.raises(ValueError, match="repeats"):
-        parse_stf1990_header_capture(_dbf(HEADER_FIELDS, rows), geo_type="place")
+    same = parse_stf1990_header_capture(_dbf(HEADER_FIELDS, rows), geo_type="place")
+    assert [p.name for p in same] == ["Albany village"]
+    # One code named two ways (as Pennsylvania's 69336 is in the Bureau's
+    # file) is left unpublished rather than chosen between.
+    rows[-1][9] = "Alburg village"
+    assert (
+        parse_stf1990_header_capture(_dbf(HEADER_FIELDS, rows), geo_type="place") == []
+    )

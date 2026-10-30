@@ -409,9 +409,26 @@ def parse_stf1990_header_capture(
                 tract_code=geography.tract_code,
             )
         )
-    if len({record.geo_id for record in records}) != len(records):
-        raise ValueError(f"1990 {geo_type} header repeats a geography")
-    return records
+    # The Bureau's 1990 files carry at least one code given to two places
+    # (Pennsylvania's 69336: Seven Springs and Three Springs boroughs). A code
+    # named two ways cannot say which place it is, so neither is published and
+    # values under that code stay unmapped; nothing is chosen by name.
+    by_id: dict[str, list[GeographyRecord]] = {}
+    for record in records:
+        by_id.setdefault(record.geo_id, []).append(record)
+    kept: list[GeographyRecord] = []
+    for geo_id, named in by_id.items():
+        if len({(record.name, record.land_area_m2) for record in named}) > 1:
+            logger.warning(
+                "[CENSUS_GEO] 1990 %s %s is named %d ways (%s); left unpublished",
+                geo_type,
+                geo_id,
+                len(named),
+                ", ".join(record.name for record in named),
+            )
+            continue
+        kept.append(named[0])
+    return kept
 
 
 def tract_name(tract_code: str) -> str:
