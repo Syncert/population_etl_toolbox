@@ -14,8 +14,10 @@ verify:
 
 ## Status
 
-In progress (v1.0 build-out, item A-3), started 2026-10-31 on branch
-`feat/api-per-capita-and-shares` from `dev`. Governed by
+Needs review (v1.0 build-out, item A-3). Built 2026-10-31 on branch
+`feat/api-per-capita-and-shares` (#175), with the provider-rate fix (#179)
+and the state filter for PEP and SAIPE/SAHIE (below); every warehouse check
+passed on OFFICE_LAB. What remains is Nick's review of the drafted pairings. Governed by
 [ADR-0009](../../decisions/0009-per-capita-and-share-views.md), accepted by
 Nick on 2026-10-26, so no new ADR is needed. Unblocks A-4 (cross-level
 comparison) and D-6 (the per-capita toggle).
@@ -127,9 +129,23 @@ approves them, the route refuses each with its status unless the stack sets
   and data.census.gov S1701_C03_001, 2024 ACS 5-year, gives 10.9 ± 0.6. Pass.
 - `violent_crime_rate`, states: every row was unavailable (`suppressed_input`)
   because usability was a literal list of status words (`valid`), and FBI UCR
-  says `reported`. Fixed on `fix/derived-ratio-provider-status`: an input is
-  usable when it carries a number, which is the neutral contract's own rule.
-  Re-check pending.
+  says `reported`. Fixed in #179: an input is usable when it carries a
+  number, which is the neutral contract's own rule.
+
+Re-check on the API rebuilt from dev at f12d013, drafts served:
+
+| Pairing | Query | Result |
+| --- | --- | --- |
+| `violent_crime_rate` | states, `period_start=2022-01-01` | 52/52 with a value, `derived: false`, no reason. Alaska 59.43, Alabama 32.21 |
+| `property_crime_rate` | same | 52/52. Alaska 131.88, Alabama 130.98 |
+| `birth_rate` | states, `newest_per_geography` | 52/52, period 2025-07-01. Alabama 11.139, Alaska 12.033 |
+| `poverty_rate_saipe` | counties, `newest_per_geography` | 3,144 counties; all 254 in Texas have a value. Travis 2024 is 10.5 |
+
+The SAIPE query with `state_fips=48` was refused: SAIPE/SAHIE and PEP rows
+carry no `state_fips` column, so neither source declared the filter. Both
+now declare it over the canonical `geo_id` (`state:NN|...`): a state and
+every county in it match. The per-capita toggle and the compare pages ask
+for one state's counties, so this was worth fixing here.
 
 ## Follow-up
 

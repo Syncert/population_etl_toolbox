@@ -330,15 +330,17 @@ def test_comparable_pair_aligns_one_newest_value_per_geography() -> None:
 def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
     """Covers: API-051 — a filter one source cannot honor is explained."""
     rows = {
-        "CENSUS_PEP:POP": _metric(
-            "CENSUS_PEP:POP",
-            "CENSUS_PEP",
+        "CENSUS_BPS:units:total:annual": _metric(
+            "CENSUS_BPS:units:total:annual",
+            "CENSUS_BPS",
+            # The units of the other side, so the pair fails on the filter
+            # alone rather than on comparability.
             units="people",
             valid_time_grains=["ANNUAL"],
             physical_lineage={
-                "schema": "gold_pep",
-                "relation": "population_estimate_revision",
-                "key": "POP",
+                "schema": "gold_census_bps",
+                "relation": "observation_revision",
+                "key": "units:total:annual",
             },
         ),
         "CENSUS_ACS:acs5:B01003_001E": _metric(
@@ -360,7 +362,7 @@ def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
             "/api/v1/comparison",
             params={
                 "metric_code_a": "CENSUS_ACS:acs5:B01003_001E",
-                "metric_code_b": "CENSUS_PEP:POP",
+                "metric_code_b": "CENSUS_BPS:units:total:annual",
                 "state_fips": "06",
             },
         )
@@ -368,7 +370,7 @@ def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
             "/api/v1/comparison",
             params={
                 "metric_code_a": "CENSUS_ACS:acs5:B01003_001E",
-                "metric_code_b": "CENSUS_PEP:POP",
+                "metric_code_b": "CENSUS_BPS:units:total:annual",
             },
         )
     finally:
@@ -376,18 +378,18 @@ def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
 
     assert rejected.status_code == 422
     assert "state_fips" in rejected.json()["detail"]
-    assert "CENSUS_PEP" in rejected.json()["detail"]
+    assert "CENSUS_BPS" in rejected.json()["detail"]
 
     # Without the unsupported filter the cross-relation pair serves: the ACS
     # side binds the composed catalog code its serving relation now carries,
-    # and the PEP side its published lineage key.
+    # and the permits side its published lineage key.
     assert served.status_code == 200
     sql = _dispatched(session)[-1]
-    assert "FROM gold_pep.population_estimate_latest" in sql
+    assert "FROM gold_census_bps.observation_latest" in sql
     assert "FROM gold_census.mv_acs_latest" in sql
     bound = session.parameters[-1]
     assert bound["a_metric_code_value"] == "CENSUS_ACS:acs5:B01003_001E"
-    assert bound["b_lineage_key"] == "POP"
+    assert bound["b_lineage_key"] == "units:total:annual"
 
 
 def test_both_metric_codes_are_required() -> None:
