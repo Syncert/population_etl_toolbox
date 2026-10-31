@@ -1,6 +1,6 @@
 """Covers: ETL-107 — the Return A record is read field by field, the FBI's way.
 
-The fixture holds 47 verbatim 2023 records; the Dane County Sheriff's and
+The fixture holds 49 verbatim 2023 records; the Dane County Sheriff's and
 Fitchburg's January totals are the CDE's own (6 and 13 violent offenses).
 """
 
@@ -40,7 +40,7 @@ def records() -> dict:
 
 def test_every_record_parses_at_its_documented_length(records: dict) -> None:
     """Covers: ETL-107 — every record parses at its documented length."""
-    assert len(records) == 47
+    assert len(records) == 49
     assert {record.data_year for record in records.values()} == {2023}
 
 
@@ -76,6 +76,39 @@ def test_county_slices_sum_to_the_agency_population(records: dict) -> None:
     assert austin.county_codes == (227, 246, 105)
     assert austin.population == 910_523 + 67_252 + 1_041
     assert records["WI01102"].county_codes == (11, 56, 1)
+
+
+def test_population_with_no_county_code_is_the_agencys_but_no_countys(
+    records: dict,
+) -> None:
+    """Covers: ETL-107 — county code 000 keeps the population and names no county.
+
+    DC Police (and New York City, state police, territories) report a
+    population under county code 000; Ridgetop, Tennessee has a second
+    population group with a blank code. Neither fails the year.
+    """
+    district = records["DCMPD00"]
+    assert district.county_slices == ()
+    assert district.county_codes == ()
+    assert district.countyless_population == district.population == 678_972
+    ridgetop = records["TN07403"]
+    assert ridgetop.countyless_population == 60
+    assert (
+        ridgetop.population
+        == sum(item.population for item in ridgetop.county_slices) + 60
+    )
+
+
+def test_a_county_code_that_is_not_a_number_fails_the_record() -> None:
+    """Covers: ETL-107 — a non-numeric county code is a shifted column, not a gap."""
+    line = next(
+        row
+        for row in SAMPLE.read_text(encoding="latin-1").splitlines()
+        if row[3:10] == "WI01301"
+    )
+    shifted = line[:53] + "X13" + line[56:]
+    with pytest.raises(ReturnARecordError, match="not a number"):
+        parse_record(shifted, 1)
 
 
 def test_negative_entries_decode(records: dict) -> None:
