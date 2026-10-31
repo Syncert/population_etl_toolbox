@@ -3009,6 +3009,128 @@ v gold_cdc.metric_publisher
     body           ORDER BY (candidate.release_watermark::bigint) DESC
     body          LIMIT 1) release ON true;
 
+v gold_census.acs_tract_comparable
+    column geo_id text
+    column observation_date date
+    column dataset_code text
+    column vintage_year integer
+    column table_id text
+    column variable_code text
+    column metric_code text
+    column variable_label text
+    column units text
+    column comparable_value numeric
+    column comparable_status text
+    column weight_basis text
+    column source_tract_count bigint
+    column source_geo_ids text[]
+    column target_tract_vintage integer
+    column derivation text
+    body WITH tract AS (
+    body          SELECT dim_geo_entity.geo_sk,
+    body             dim_geo_entity.geo_id
+    body            FROM silver_ref.dim_geo_entity
+    body           WHERE dim_geo_entity.geo_type = 'tract'::text
+    body         ), to_2020 AS (
+    body          SELECT 2010 AS source_decade,
+    body             earlier.geo_id AS source_geo_id,
+    body             later.geo_id,
+    body             step.earlier_land_share AS weight,
+    body             step.earlier_geo_sk = step.later_geo_sk AND step.earlier_land_share = 1::numeric AND step.later_land_share = 1::numeric AS unchanged
+    body            FROM silver_ref.tract_decade_crosswalk step
+    body              JOIN tract earlier ON earlier.geo_sk = step.earlier_geo_sk
+    body              JOIN tract later ON later.geo_sk = step.later_geo_sk
+    body           WHERE step.earlier_vintage = 2010
+    body         UNION ALL
+    body          SELECT 2000,
+    body             earlier.geo_id,
+    body             later.geo_id,
+    body             first_step.earlier_population_share * second_step.earlier_land_share,
+    body             first_step.earlier_geo_sk = second_step.later_geo_sk AND first_step.earlier_land_share = 1::numeric AND first_step.later_land_share = 1::numeric AND second_step.earlier_land_share = 1::numeric AND second_step.later_land_share = 1::numeric
+    body            FROM silver_ref.tract_decade_crosswalk first_step
+    body              JOIN silver_ref.tract_decade_crosswalk second_step ON second_step.earlier_vintage = 2010 AND second_step.earlier_geo_sk = first_step.later_geo_sk
+    body              JOIN tract earlier ON earlier.geo_sk = first_step.earlier_geo_sk
+    body              JOIN tract later ON later.geo_sk = second_step.later_geo_sk
+    body           WHERE first_step.earlier_vintage = 2000
+    body         ), source AS (
+    body          SELECT published.source_code,
+    body             published.observation_date,
+    body             published.duration_start,
+    body             published.duration_end,
+    body             published.time_sk,
+    body             published.as_of_date,
+    body             published.updated_at,
+    body             published.geo_id,
+    body             published.geo_level,
+    body             published.state_fips,
+    body             published.county_fips,
+    body             published.state_name,
+    body             published.county_name,
+    body             published.place_name,
+    body             published.geo_latitude,
+    body             published.geo_longitude,
+    body             published.value,
+    body             published.dataset_code,
+    body             published.vintage_year,
+    body             published.table_id,
+    body             published.table_title,
+    body             published.variable_code,
+    body             published.variable_label,
+    body             published.concept,
+    body             published.universe,
+    body             published.denominator_hint,
+    body             published.is_publishable_default,
+    body             published.estimate_value,
+    body             published.value_status,
+    body             published.source_value,
+    body             published.capture_id,
+    body             published.margin_of_error,
+    body             published.margin_of_error_pct,
+    body             published.estimate_annotation,
+    body             published.moe_annotation,
+    body             published.value_type,
+    body             published.units,
+    body             published.metric_code,
+    body             published.metric_display_name,
+    body                 CASE
+    body                     WHEN published.vintage_year >= 2000 AND published.vintage_year <= 2009 THEN 2000
+    body                     WHEN published.vintage_year >= 2010 AND published.vintage_year <= 2019 THEN 2010
+    body                     ELSE NULL::integer
+    body                 END AS source_decade
+    body            FROM gold_census.rpt_acs_observations published
+    body           WHERE published.geo_level = 'TRACT'::text AND published.vintage_year >= 2000 AND published.vintage_year <= 2019 AND (published.table_id = ANY (ARRAY['B01001'::text, 'B01003'::text, 'B02001'::text, 'B03002'::text, 'B08301'::text, 'B08303'::text, 'B11001'::text, 'B15003'::text, 'B17001'::text, 'B23025'::text, 'B25001'::text, 'B25002'::text, 'B25003'::text, 'B25070'::text, 'B25091'::text, 'B27010'::text, 'B28002'::text]))
+    body         )
+    body  SELECT weight.geo_id,
+    body     source.observation_date,
+    body     source.dataset_code,
+    body     source.vintage_year,
+    body     source.table_id,
+    body     source.variable_code,
+    body     source.metric_code,
+    body     source.variable_label,
+    body     source.units,
+    body         CASE
+    body             WHEN bool_and(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL) THEN sum(source.estimate_value * weight.weight)
+    body             ELSE NULL::numeric
+    body         END AS comparable_value,
+    body         CASE
+    body             WHEN bool_and(weight.unchanged) AND count(*) = 1 THEN 'unchanged'::text
+    body             WHEN bool_and(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL) THEN 'apportioned'::text
+    body             ELSE 'incomplete'::text
+    body         END AS comparable_status,
+    body         CASE min(source.source_decade)
+    body             WHEN 2000 THEN 'share of 2010 population, then share of land area'::text
+    body             ELSE 'share of land area'::text
+    body         END AS weight_basis,
+    body     count(*) AS source_tract_count,
+    body     array_agg(source.geo_id ORDER BY source.geo_id) AS source_geo_ids,
+    body     2020 AS target_tract_vintage,
+    body     'decade_crosswalk'::text AS derivation
+    body    FROM source
+    body      JOIN to_2020 weight ON weight.source_geo_id = source.geo_id AND weight.source_decade = source.source_decade
+    body   WHERE weight.weight IS NULL OR weight.weight > 0::numeric
+    body   GROUP BY weight.geo_id, source.observation_date, source.dataset_code, source.vintage_year, source.table_id, source.variable_code, source.metric_code, source.variable_label, source.units;
+
 r gold_census.dim_acs_table
     column acs_table_sk bigint NOT NULL DEFAULT nextval('gold_census.dim_acs_table_acs_table_sk_seq'::regclass)
     column dataset_code text NOT NULL
