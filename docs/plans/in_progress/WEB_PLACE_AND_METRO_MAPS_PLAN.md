@@ -176,13 +176,22 @@ two pages, so four ranked reads. Two changes:
   5,000 rows a page (their declared maximum), so one state's cities, every
   county or every metro is one request. Source-scoped routes keep 1,000.
 
-These halve and then halve again the ranked reads, from four to one, for
-Texas places. They are not yet measured. EXPLAIN (ANALYZE, BUFFERS) of the
-place read on OFFICE_LAB will show whether the scan itself also needs the
-state in the index: `ix_mv_acs_latest_metric_level_geo_period` leads
-(metric_code, geo_level, geo_id), so `state_fips` is a filter over every
-place row of the metric nationally. If that scan alone is slow, the next step
-is an index with `state_fips` after `geo_level`, built CONCURRENTLY first.
+- **Index:** `ix_mv_acs_latest_metric_level_state_geo_period` on
+  `gold_census.mv_acs_latest (metric_code, geo_level, state_fips, geo_id,
+  observation_date, duration_start, duration_end)`, in `gold_acs.sql` and the
+  schema snapshot. EXPLAIN (ANALYZE, BUFFERS) on OFFICE_LAB, 2026-10-31, of
+  the statement in `/mnt/project-files/place-maps/explain-place-read.sql`:
+
+  | Read | Before (state filtered after the scan) | After |
+  |---|---|---|
+  | Texas places | 30,768 rows removed, 1,863 kept, 6,965 ms | index scan, 28 removed (period only), 8.1 ms |
+  | Wisconsin tracts | 109,996 removed, 1,542 kept, 18,756 ms | 418 removed, 10.3 ms |
+
+  Built CONCURRENTLY on OFFICE_LAB before this DDL lands (4 min 38 s, valid,
+  **about 11 GB**), so `ensure_*` finds it already built. The period filter
+  (`COALESCE(duration_start, observation_date)::TEXT = ...`) is a computed
+  expression no index serves, but it now removes only tens of rows, so it is
+  left as it is.
 
 ## Hand-off (OFFICE_LAB, needs the warehouse)
 
@@ -217,12 +226,9 @@ Rebuild web and API from `dev`, then:
   measure (a BEA metro income code) shows the selector with Metro areas.
 - 4 again: an earlier release within three years of 2025 draws with the
   later-vintage sentence. One more than three years earlier is withheld.
-- 6 again: time the Texas place read and the Wisconsin tract read, and run
-  `EXPLAIN (ANALYZE, BUFFERS)` of the place page statement (SQL in the API
-  log or rebuilt from the request: metric B19013_001, geo_level PLACE,
-  state_fips 48, newest_per_geography, limit 5000).
+- 6 again: time the Texas place and Wisconsin tract pages end to end (the
+  statements themselves are now 8 to 10 ms).
 
 ## Next pickup
 
-The re-checks above. If the place EXPLAIN still shows a slow scan, add the
-state index. Then move this plan to `needs_review/`.
+The re-checks above, then move this plan to `needs_review/`.
