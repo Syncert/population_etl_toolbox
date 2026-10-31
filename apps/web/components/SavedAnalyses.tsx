@@ -413,7 +413,9 @@ export default function SavedAnalyses() {
             <div>
               <div className="section-kicker">Configuration {selected.configuration_id}</div>
               <h2>{selected.name}</h2>
-              <p className="subtle" data-testid="saved-document">
+              {/* The stored request, shown exactly as stored: a provenance
+                  record, so it may name codes (WEB-144). */}
+              <p className="subtle" data-testid="saved-document" data-provenance="stored-document">
                 {describeDocument(selected.document)}
               </p>
             </div>

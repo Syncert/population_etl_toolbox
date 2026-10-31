@@ -16,7 +16,7 @@ import {
   serializeCatalogState,
   sourceFilterOptions,
 } from "../../lib/catalog";
-import { displayMetricName, formatNumber } from "../../lib/format";
+import { displayMetricName, formatNumber, metricNameNote } from "../../lib/format";
 import { explorerHref } from "../../lib/urlState";
 import StatusPill from "../../components/StatusPill";
 
@@ -231,9 +231,9 @@ export default function CatalogPage() {
                         })}
                         data-testid={`catalog-metric-link-${metric.metric_code}`}
                       >
-                        <span>
+                        <span title={metricNameNote(metric)} data-metric-code={metric.metric_code}>
                           <strong>{displayMetricName(metric)}</strong>
-                          <small>{metric.metric_code}</small>
+                          {metric.definition?.definition ? <small>{metric.definition.definition}</small> : null}
                         </span>
                         <ArrowRight size={15} />
                       </Link>

@@ -522,6 +522,15 @@ _GRAIN_OF_GEO_TYPE = "gold_glossary.geo_grain(geo_type)"
 _GEO_TYPE_GRAIN_FILTER = ("geo_level", f"{_GRAIN_OF_GEO_TYPE} = UPPER(:geo_level)")
 _STATE_FIPS_FILTER = ("state_fips", "state_fips = :state_fips")
 _COUNTY_FIPS_FILTER = ("county_fips", "county_fips = :county_fips")
+#: The state filter for a source whose relation carries no ``state_fips``
+#: column but whose ``geo_id`` is the canonical ``state:NN[|county:NNN]`` key:
+#: the state is the key's first segment, so a state row and every county or
+#: place inside it match, and a row keyed otherwise (a metro, the nation)
+#: does not, as it does not on a ``state_fips`` column.
+_STATE_OF_GEO_ID_FILTER = (
+    "state_fips",
+    "split_part(geo_id, '|', 1) = 'state:' || :state_fips",
+)
 
 #: One reviewed dispatch entry per completed source, keyed by glossary source
 #: code. This is the registry dispatch API-001 recorded: the neutral
@@ -719,6 +728,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "observation_year >= :year_from"),
                 ("year_to", "observation_year <= :year_to"),
             ),
@@ -1100,6 +1110,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "estimate_year >= :year_from"),
                 ("year_to", "estimate_year <= :year_to"),
             ),

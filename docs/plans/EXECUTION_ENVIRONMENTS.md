@@ -46,12 +46,11 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**4 plans.**
+**3 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`api-cross-level-compare`](in_progress/API_CROSS_LEVEL_COMPARE_PLAN.md) | medium | none | `api-per-capita-and-shares` |
-| [`api-per-capita-and-shares`](in_progress/API_PER_CAPITA_AND_SHARES_PLAN.md) | medium | none | `api-plain-labels` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 
@@ -98,11 +97,12 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**5 plans.**
+**6 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-place-tract-history-backfill`](in_progress/ACS_PLACE_AND_TRACT_HISTORY_BACKFILL_PLAN.md) | high | `postgres` | `acs-place-grain`, `sub-county-geography` |
+| [`api-place-search`](in_progress/FIND_A_PLACE_BY_NAME_OR_LOCATION_PLAN.md) | medium | `postgres` | `nearby-and-related-places`, `find-your-place-home` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |

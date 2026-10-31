@@ -120,6 +120,8 @@ list.
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `county_fips`, `q`, `active_only`) — see below |
 | `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
+| `GET /api/v1/catalog/geographies/search` | Places a typed name may mean, for "find your place": states, counties, metros, cities and towns, and ZCTAs, best match first and ranked by population, with the containing state and county and the web page path — see [Finding a place](#finding-a-place-by-name-or-by-location) |
+| `GET /api/v1/catalog/geographies/locate` | The city or town, county, tract, ZCTA, state and metro a latitude and longitude lie in, with `landing` (the city, else the county) for "use my location"; `404 {"detail": "no geography contains this point"}` where no state does |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
@@ -246,6 +248,82 @@ A deployment that must show only reviewed wording sets
 provider's (`metric_label_status: "provider"`), while the catalog still serves
 the draft `definition` with its status. Off by default, so the drafts can be
 reviewed on the running site.
+
+### Finding a place by name or by location
+
+Two catalog reads answer "find your place". Both read projections the
+glossary reconciliation run rebuilds daily, directly after the geography
+projection (`gold_glossary.geo_search` and `gold_glossary.geo_boundary`), so
+a geography published since that run is not offered yet — the same caveat as
+`/catalog/geographies` above.
+
+**Search.** `GET /api/v1/catalog/geographies/search?q=Austin` answers up to
+`limit` (1–25, default 10) geographies a typed name may mean:
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | Required. Matched case-insensitively with accents removed, `&` read as "and", and punctuation as spaces ("Española", "espanola" and "ESPANOLA" are one query). At least two letters or digits after that, at most 100 characters; otherwise a `422` naming the rule |
+| `grain` | Optional, repeatable or comma-separated: `STATE`, `COUNTY`, `METRO`, `PLACE`, `ZCTA`. Any other word is a `422` naming the five. Tracts are not searched by name; reach one from its county or by location |
+| `state_fips` | Optional two digits. A metro's state is its **principal state**, the state of its most populous member county |
+
+Each item says why it was offered in `match`:
+
+| `match` | Offered because |
+| --- | --- |
+| `exact` | Its name without the Census description is the query: "Austin" for "Austin city", "Travis" for "Travis County", a metro's title before the comma, a ZCTA's five digits |
+| `prefix` | Its name starts with the query |
+| `word_prefix` | A later word of its name starts with the query ("Round" finds the Austin–Round Rock metro) |
+| `fuzzy` | A close spelling by trigram similarity ("Austn") |
+| `contains_match` | It contains one of the three best city matches, named in `matched_via` |
+
+The order is: `exact`, then `prefix`, then `word_prefix`, then `fuzzy` (closest
+first); within each, **larger population first**, a geography with no served
+population last, then grain (city, county, metro, state, ZCTA), then `geo_id`,
+so the order is total. Each of the three best `exact` or `prefix` city matches
+is followed by its county and its metro, unless they are already listed or
+`grain`/`state_fips` exclude them. So "Austin" answers Austin city, then Travis
+County (`contains_match`, `matched_via` Austin city) and the Austin–Round
+Rock–San Marcos metro, then Austin County and the other Austins by
+population.
+
+`population`, `population_year` and `population_metric_code` are the newest
+valid ACS 5-year total population (`CENSUS_ACS:acs5:B01003_001`) for that
+geography. They rank the answer and are labelled so a client can show them;
+read the observation routes for the series. `null` means none is served (a
+ZCTA, until ACS publishes at that grain here), never zero.
+
+`county_geo_id` and `county_name` are a city's containing county: the county
+holding the largest share of it by the published overlap weight. A city that
+crosses a county line has others; `/related` lists every one.
+
+`page_path` is the web page for the geography (`/us/texas/austin-city`,
+`/us/texas/travis-county`), made by the web's own address rule, including
+its FIPS fallback when two names in a state slug the same way. It is `null`
+for a grain with no page yet: metro, tract, ZCTA.
+
+**Locate.** `GET /api/v1/catalog/geographies/locate?lat=30.2650&lon=-97.7470`
+answers the current geographies whose boundary covers the point: `state`,
+`county`, `place`, `tract` and `zcta`, each with its `boundary_vintage` and
+`page_path`, and `metro`, the county's metro by its delineated membership
+(OMB builds metros from whole counties, so a metro has no boundary of its
+own here; its `boundary_vintage` is the delineation's). `landing` is the city
+or town the point is in, or its county when it is in none (unincorporated
+land), so "use my location" opens the page a resident calls home. Where two
+current boundaries of one grain cover the point (a tract the newer decade
+split), the newer boundary wins. Boundaries are the Census cartographic
+files (1:500,000), so a point within a few metres of a line can land on
+either side of it.
+
+- `lat` is a finite number from −90 to 90 and `lon` from −180 to 180, both
+  required; anything else is a `422`.
+- A point no state boundary covers (abroad, offshore) is
+  `404 {"detail": "no geography contains this point"}`.
+- The response never echoes the coordinates, the shared cache stores it
+  under a SHA-256 of the request, and query strings are never logged, so a
+  stored answer names a tract, not a point.
+
+Both are catalog reads: they spend the catalog rate-limit budget and are
+publicly cacheable like the rest of `/catalog/`.
 
 ## Observations
 
@@ -2067,6 +2145,7 @@ status code on the one class of error the API can explain.
 | `/catalog/metrics` | `metric_code` — the catalog's own unique key, so no two rows can tie |
 | `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
 | `/catalog/geographies/{geo_id}/related` | `relationship`, then `geo_id` |
+| `/catalog/geographies/search` | Match tier (`exact`, `prefix`, `word_prefix`, `fuzzy` by closeness), then population (largest first, none last), then grain, then `geo_id`; each of the three best city matches followed by its county and metro. Not paged: `limit` caps it at 25 |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
 | `/migration-flows` | `items` by the chosen measure, largest first, then `counterpart_geo_id`; `totals` in SOI's header order; `categories` by SOI's counterpart code |
