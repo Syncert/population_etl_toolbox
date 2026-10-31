@@ -68,7 +68,11 @@ export function formatTime(value, options) {
 }
 
 /**
- * A metric's name, as the catalog publishes it.
+ * A metric's name, as the API serves it for readers.
+ *
+ * The API's `metric_label` (A-2) is the plain label: a reviewed or draft
+ * definition's, or the provider's own with its label path set as words. The
+ * fallback below only covers a response from an API that predates it.
  *
  * This used to return "Total population" for any metric code ending in one
  * particular Census variable, overriding whatever `metric_display_name` the
@@ -78,6 +82,9 @@ export function formatTime(value, options) {
  * from the source.
  */
 export function displayMetricName(metric) {
+  if (metric && typeof metric === "object" && metric.metric_label) {
+    return String(metric.metric_label);
+  }
   const value = typeof metric === "string" ? metric : metric?.metric_display_name;
   if (!value) return "Untitled metric";
   return value
@@ -86,4 +93,22 @@ export function displayMetricName(metric) {
     .replace(/^Estimate\s*-\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * What a metric's name is, for its hover text: the API's label status (A-2)
+ * in words, then the metric code, which a reader no longer sees in the text.
+ * A draft label is shown by default until Nick reviews it, and says so here;
+ * with `METRIC_LABELS_REVIEWED_ONLY` the API serves the provider's instead.
+ */
+export function metricNameNote(metric, code) {
+  const status = metric && typeof metric === "object" ? metric.metric_label_status : null;
+  const metricCode = code || (metric && typeof metric === "object" ? metric.metric_code : metric) || "";
+  const prefix =
+    status === "draft" || status === "needs_review"
+      ? "Plain label awaiting review"
+      : status === "provider"
+        ? "The publisher's own label"
+        : "";
+  return [prefix, metricCode].filter(Boolean).join(" · ");
 }

@@ -96,11 +96,12 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**5 plans.**
+**6 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-place-tract-history-backfill`](in_progress/ACS_PLACE_AND_TRACT_HISTORY_BACKFILL_PLAN.md) | high | `postgres` | `acs-place-grain`, `sub-county-geography` |
+| [`api-place-search`](in_progress/FIND_A_PLACE_BY_NAME_OR_LOCATION_PLAN.md) | medium | `postgres` | `nearby-and-related-places`, `find-your-place-home` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |

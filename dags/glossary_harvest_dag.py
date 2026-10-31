@@ -80,7 +80,17 @@ def glossary_reconciliation():
         hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         hook.run("CALL gold_glossary.refresh_dim_geo_latest()")
 
-    reconcile_all_publishers() >> refresh_shared_geography()
+    @task
+    def refresh_place_search() -> None:
+        """Rebuild the place-search projection from the refreshed geography.
+
+        It reads the geography projection this run just refreshed, so it runs
+        after it rather than beside it (api-place-search).
+        """
+        hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        hook.run("CALL gold_glossary.refresh_geo_search()")
+
+    reconcile_all_publishers() >> refresh_shared_geography() >> refresh_place_search()
 
 
 glossary_harvest_dag = glossary_harvest()

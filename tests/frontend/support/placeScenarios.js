@@ -2,7 +2,20 @@
 // fixtures, not provider-published statistics; every metric identity is a
 // candidate the chapter contract names, verified against a deployed catalog.
 import { placeChapterMetricCodes } from "../../../apps/web/lib/placeChapters.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { servedParameters } from "./servedContract.js";
+
+// The plain labels the API serves beside each provider label (A-2), read from
+// the same registry the API reads, so the fixture answers as the API does.
+// Both runners start in apps/web or at the repository root.
+const DEFINITIONS_PATH = ["../../docs/semantics/metric_definitions.json", "docs/semantics/metric_definitions.json"]
+  .map((path) => resolve(process.cwd(), path))
+  .find((path) => existsSync(path));
+const DEFINED = new Map(
+  JSON.parse(readFileSync(DEFINITIONS_PATH, "utf8"))
+    .entries.flatMap((entry) => entry.metric_codes.map((code) => [code, [entry.name, entry.status]])),
+);
 
 const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
 
@@ -62,6 +75,7 @@ function unitFor(code) {
 const codes = placeChapterMetricCodes().filter((code) => !code.includes(":acs1:"));
 const metrics = Object.fromEntries(codes.map((code) => [code, {
   metric_code: code, metric_display_name: `${code.split(":").at(-1)} (UI fixture)`, source_code: code.split(":")[0],
+  metric_label: DEFINED.get(code)?.[0] ?? null, metric_label_status: DEFINED.get(code)?.[1] ?? null,
   units: unitFor(code), valid_geo_grains: grainsFor(code), freshness_state: "fresh",
   publication_time: "2026-09-01T00:00:00Z", harvested_at: "2026-09-02T00:00:00Z", source_watermark: "fixture-2026-09", publisher_contract_version: "v1",
 }]));
@@ -173,7 +187,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     if (path === "/api/v1/place/distinctive") {
       const geoId = params.get("geo_id");
       if (![...STATES, ...COUNTIES].some((item) => item.geo_id === geoId)) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
-      const rank = (metric_code, name, value, below, extra = {}) => ({ metric_code, metric_display_name: `${name} (UI fixture)`, source_code: metric_code.split(":")[0], units: null,
+      const rank = (metric_code, name, value, below, extra = {}) => ({ metric_code, metric_display_name: `${name} (UI fixture)`, metric_label: DEFINED.get(metric_code)?.[0] ?? null, metric_label_status: DEFINED.get(metric_code)?.[1] ?? null, source_code: metric_code.split(":")[0], units: null,
         period_start: "2020-01-01", value, siblings_with_value: 70, siblings_withheld: 0, siblings_missing: 0, siblings_below: below, siblings_tied: 0, percentile_rank: below / 70,
         caveats: [], request: `/api/v1/observations?metric_code=${metric_code}&scope=latest&geo_level=COUNTY&state_fips=55&newest_per_geography=true`, ...extra });
       const ranked = geoId === "state:55|county:025" ? [
