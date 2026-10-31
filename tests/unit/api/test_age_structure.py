@@ -67,7 +67,8 @@ WISCONSIN = {
 NATION = {
     "geo_id": "us:1",
     "geo_level": "NATIONAL",
-    "geo_name": "United States",
+    # The catalog's nation row carries its code as its name.
+    "geo_name": "us:1",
     "state_fips": None,
 }
 TRACT = {
@@ -400,6 +401,7 @@ def test_a_city_answers_with_its_county_state_and_nation_in_one_request(
         ("us:1", "reference", "NATIONAL"),
     ]
     assert body["places"][1]["overlap_weight"] == 0.99
+    assert body["places"][3]["geo_name"] == "United States", "never the code"
     assert all(p["release"] == "2023" for p in body["places"])
     assert body["places"][0]["bands"][4]["men"]["count"] == "7000"
     observation_reads = [
