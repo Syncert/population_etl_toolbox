@@ -18,7 +18,7 @@ To do, 2026-10-31. Part 1 of the API side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md),
 governed by [ADR-0013](../../decisions/0013-age-and-sex-structure.md)
 (accepted by Nick on 2026-10-31 with the level toggle). The web plan,
-[`WEB_AGE_AND_SEX_STRUCTURE_PLAN.md`](WEB_AGE_AND_SEX_STRUCTURE_PLAN.md),
+[`WEB_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/WEB_AGE_AND_SEX_STRUCTURE_PLAN.md),
 builds against the contract below and can be built in parallel against
 fixtures.
 
