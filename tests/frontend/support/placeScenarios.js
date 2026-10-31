@@ -187,7 +187,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     if (path === "/api/v1/place/distinctive") {
       const geoId = params.get("geo_id");
       if (![...STATES, ...COUNTIES].some((item) => item.geo_id === geoId)) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
-      const rank = (metric_code, name, value, below, extra = {}) => ({ metric_code, metric_display_name: `${name} (UI fixture)`, source_code: metric_code.split(":")[0], units: null,
+      const rank = (metric_code, name, value, below, extra = {}) => ({ metric_code, metric_display_name: `${name} (UI fixture)`, metric_label: DEFINED.get(metric_code)?.[0] ?? null, metric_label_status: DEFINED.get(metric_code)?.[1] ?? null, source_code: metric_code.split(":")[0], units: null,
         period_start: "2020-01-01", value, siblings_with_value: 70, siblings_withheld: 0, siblings_missing: 0, siblings_below: below, siblings_tied: 0, percentile_rank: below / 70,
         caveats: [], request: `/api/v1/observations?metric_code=${metric_code}&scope=latest&geo_level=COUNTY&state_fips=55&newest_per_geography=true`, ...extra });
       const ranked = geoId === "state:55|county:025" ? [

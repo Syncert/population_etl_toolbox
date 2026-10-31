@@ -366,7 +366,9 @@ test("what stands out lists the highest and lowest measures apart, with withheld
   const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
   await expect(income).toContainText("Higher than 68 of 70 Wisconsin counties with a published value (1 withheld a value)");
   await expect(income.getByRole("link", { name: "See every county on a map" })).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
-  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age (UI fixture)");
+  // Named by the API's plain label (WEB-144), not the provider's.
+  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age");
+  await expect(section.getByTestId("place-standout-lowest")).not.toContainText("Median age (UI fixture)");
   await expect(section).not.toContainText(/score|overall/i);
 });
 
