@@ -67,7 +67,10 @@ test("a city compares against its county by default, and the toggle redraws ever
 });
 
 test("a county offers its state, the nation and none, the state selected", async ({ page }) => {
-  await open(page, "/us/wisconsin/dane-county");
+  const seen = [];
+  await open(page, "/us/wisconsin/dane-county", seen);
+  // Asked for the county only, never for the state while the county resolved.
+  expect(ageRequests(seen)).toEqual(["/api/v1/age-structure?geo_id=state%3A55%7Ccounty%3A025"]);
   const toggle = page.getByTestId("age-section-reference");
   await expect(toggle.getByRole("button")).toHaveText(["State: Wisconsin", "Nation: United States", "None"]);
   await expect(toggle.getByRole("button", { name: "State: Wisconsin" })).toHaveAttribute("aria-pressed", "true");

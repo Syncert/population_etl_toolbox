@@ -134,8 +134,26 @@ Validation (local, fixtures):
 Remaining: merge dev after the API PR, rerun the full browser tier against
 the real snapshot, then the live check on OFFICE_LAB (acceptance 8).
 
+## Live check (OFFICE_LAB, 2026-10-31, batch 425ee9eb)
+
+Madison, Dane County and Wisconsin render with real values: Madison's 20 to
+24 band sits well outside the Dane County outline, median age 31.8, sex ratio
+100.1, margin whiskers drawn. Screenshots: project files `age_madison.png`,
+`age_dane.png`, `age_wisconsin.png`. Found and fixed in the follow-up PR:
+
+- The nation read "Nation: Us:1" and its legend "us:1, 2020–2024": the catalog
+  names the nation by its id. The API fixes it at the source (#230); the web
+  also names every place for a reader where an answer arrives
+  (`readableName`), so an id is never shown.
+- A county page asked `/age-structure` for the state while the county was
+  still resolving; the section now mounts only for the page's own resolved
+  place (as #228 did for migration flows).
+
+A Dane County tract was not checked live because tracts have no page yet
+(D-4); the section is the same component and will be checked when that page
+exists.
+
 ## Checkpoint
 
-Next pickup: merge dev once the API part 1 PR has landed; rerun
-`npm run test:browser`; then the OFFICE_LAB live check with screenshots of
-Madison, Dane County, Wisconsin and a Dane County tract.
+Next pickup: after the follow-up PR merges, the plan is ready for review;
+the tract check rides on the tract page (D-4).

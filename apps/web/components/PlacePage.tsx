@@ -1014,7 +1014,10 @@ function Chapter({
           answers={answers}
         />
       ) : null}
-      {chapter.id === "people" && own ? <AgeAndSexSection geoId={own.geoId} /> : null}
+      {/* Only once the page's own place has resolved: before then the chapter's
+          first level is a placeholder (the state, on a county page), and its
+          age structure would be read and thrown away (as #228 for migration). */}
+      {chapter.id === "people" && own && own.level === pageLevel && own.role === "this place" ? <AgeAndSexSection geoId={own.geoId} /> : null}
       {/* IRS SOI publishes county-to-county flows only, so the read names the
           page's county itself, never the chapter's first level: that is the
           state while the address is still resolving, and a state is the
