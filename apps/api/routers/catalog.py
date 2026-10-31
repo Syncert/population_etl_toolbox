@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
+from apps.api.schemas.derived import DerivedRatioCatalogResponse
+from apps.api.services.derived_ratio_service import list_pairings
 from apps.api.services.catalog_service import (
     get_geography_related,
     get_metric_capability,
@@ -102,6 +104,31 @@ def get_freshness(db: Session = Depends(get_db_session_dep)) -> FreshnessListRes
         return list_source_freshness(db)
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc
+
+
+@router.get("/derived-ratios", response_model=DerivedRatioCatalogResponse)
+def get_derived_ratios(
+    numerator: Optional[str] = Query(
+        None,
+        max_length=200,
+        description=(
+            "A metric code: only the pairings that divide this metric. A place "
+            "page card asks this to learn which per-capita or share views its "
+            "count offers."
+        ),
+    ),
+    served_only: bool = Query(
+        False,
+        description="Only the pairings /observations/derived will answer.",
+    ),
+) -> DerivedRatioCatalogResponse:
+    """The reviewed per-capita and share pairings (ADR-0009).
+
+    Each names its numerator, its denominator (or the provider's own rate),
+    the universe the result describes, its status and whether it is served.
+    Read from the versioned semantic registry; no database read.
+    """
+    return list_pairings(numerator=numerator or None, served_only=served_only)
 
 
 @router.get(
