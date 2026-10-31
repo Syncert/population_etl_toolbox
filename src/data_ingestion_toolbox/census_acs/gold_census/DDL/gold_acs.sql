@@ -315,6 +315,15 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_geo_date
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_updated_at
     ON gold_census.rpt_acs_observations (updated_at DESC);
 
+-- A tract or place step is published one state per session, and each session
+-- reads, clears and re-reads its own state's rows of the year three times. On
+-- the 2024 partition (68 GB, 102M rows) each of those was a 29-second
+-- sequential scan, so a state cost minutes of I/O before writing anything.
+-- Built per partition with CREATE INDEX CONCURRENTLY on the internal stack
+-- (2026-10-31); this statement then attaches those and builds the rest.
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_level_state
+    ON gold_census.rpt_acs_observations (geo_level, state_fips, observation_date);
+
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_latest_selection
     ON gold_census.rpt_acs_observations (
         geo_id,
