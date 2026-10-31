@@ -157,6 +157,60 @@ PEP's latest view, which ranks by `(metric_code, geo_id, observation_year)`,
 takes the filter inside its window. Re-time
 `/place/distinctive?geo_id=state:55|county:025` after the API rebuild.
 
+## Follow-up 2: `/place/distinctive` (9.9 s after #192)
+
+Naming the siblings saved only 1.4 s, because the main cost was elsewhere:
+Census PEP. Its four measures read `gold_pep.population_estimate_latest`,
+which ranks rows in a window over `gold_pep.population_estimate_revision`,
+which itself ranks in a window over `silver_pep.fact_population_estimate`.
+The filter on metric and geography passes down through both windows, because
+both partition by `metric_code` and `geo_id`. But the only index on the fact
+table that holds those columns, `pep_fact_natural_key_idx`, starts with
+`dataset_code` and `release_vintage`, so each PEP read was a full sequential
+scan of the fact table.
+
+`pep_fact_metric_geo_year_idx (metric_code, geo_id, observation_year)` serves
+that filter. On a local copy of the two views (Postgres 16, 1.3M synthetic
+fact rows), one PEP read went from a parallel sequential scan taking 98.6 ms
+to a bitmap index scan taking 2.1 ms.
+
+The other sources already have an index that serves this read:
+
+- ACS uses `ix_mv_acs_latest_metric_level_geo_period`.
+- BLS uses `ix_mv_bls_latest_metric_geo`.
+- CDC uses `cdc_fact_measure_geo_period_idx`.
+
+On OFFICE_LAB, build the index, then check the plan:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS pep_fact_metric_geo_year_idx
+    ON silver_pep.fact_population_estimate (metric_code, geo_id, observation_year);
+ANALYZE silver_pep.fact_population_estimate;
+
+-- Expect a Bitmap Index Scan or Index Scan on pep_fact_metric_geo_year_idx
+-- and no Seq Scan on fact_population_estimate.
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT geo_id, value FROM (
+    SELECT geo_id, value,
+           ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY estimate_date DESC) AS r
+      FROM gold_pep.population_estimate_latest
+     WHERE metric_code = 'RBIRTH'
+       AND gold_glossary.geo_grain(geo_type) = 'COUNTY'
+       AND geo_id = ANY (SELECT geo_id FROM gold_glossary.dim_geography
+                          WHERE geo_level = 'COUNTY' AND state_fips = '55')
+) AS latest WHERE r = 1;
+```
+
+If the route is still over 1 s after that, time each measure separately and
+report the slowest plans:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM gold_cdc.latest_release_observation
+ WHERE geo_id LIKE 'state:55|county:%';
+EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM gold_bls.mv_bls_latest
+ WHERE metric_code = 'BLS:LAU:UNEMP_RATE' AND geo_id LIKE 'state:55|county:%';
+```
+
 ## Not changed
 
 - A per-metric period/release summary table was considered and not built.
