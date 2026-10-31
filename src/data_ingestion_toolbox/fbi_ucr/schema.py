@@ -45,6 +45,7 @@ REQUIRED_RELATIONS = (
     "gold_fbi.agency_observation_area_filter",
     "gold_fbi.county_rollup",
     "gold_fbi.latest_county_rollup",
+    "gold_fbi.county_agency_rate_month",
     "gold_fbi.county_agency_rate",
     "gold_fbi.latest_county_agency_rate",
     "gold_fbi.measure_export",
