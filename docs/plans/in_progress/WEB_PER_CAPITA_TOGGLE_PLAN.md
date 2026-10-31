@@ -17,7 +17,7 @@ verify:
 
 ## Status
 
-To do (v1.0 build-out, item D-6). Branch `feat/web-per-capita-toggle`.
+In progress (v1.0 build-out, item D-6). Branch `feat/web-per-capita-toggle`.
 
 ## Goal
 
