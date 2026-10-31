@@ -1,7 +1,8 @@
 # ADR-0013: Age and sex structure is regrouped from the provider's own table
 
-- **Status:** Proposed 2026-10-31 for the repository owner's (Nick's) review.
-  Nothing in it is built until it is accepted.
+- **Status:** Accepted 2026-10-31 by the repository owner (Nick), with the
+  comparison chosen by a toggle across enclosing levels (rule 4); proposed
+  the same day.
 - **Date:** 2026-10-31
 - **Decision owners:** Repository owner and data-product maintainers
 - **Related work:** [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../plans/to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
@@ -66,6 +67,12 @@ arithmetic the provider did not do:
    share of the place's total population (both sexes), so a city and its
    state can be overlaid. Counts are shown in the tooltip and table. Under
    ADR-0010, shares compare across levels; counts are never overlaid.
+   The comparison is the reader's choice among the place's enclosing levels,
+   next level up by default: a city or tract against its county, its state
+   or the nation; a county against its state or the nation; a state against
+   the nation; a metro against the nation, or its state when it lies in one.
+   A city spanning counties is compared with the county holding most of its
+   population, and that share is stated.
 5. **Summary indicators, defined once.** Served with these definitions:
    - *Median age*: the provider's own (B01002, census P013), never
      re-estimated from bands (ADR-0009 rule 5).

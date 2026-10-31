@@ -24,17 +24,21 @@ verify:
 To do: **discovery draft**, written 2026-10-31 at Nick's request ("age
 analytics requires pretty specialized charts if not also specialized data
 views ... better with stacked bars spanning both ways for male and female").
-Not claimable until Nick has answered the decisions below and accepted (or
-amended) [ADR-0013](../../decisions/0013-age-and-sex-structure.md), which is
-proposed alongside this plan. Once accepted it splits into an API item and a
-web item in the usual way (A-n then D-n); the deliverables below are already
-grouped that way.
+Nick approved the direction on 2026-10-31 (19:05 UTC, "I like this") with
+one amendment: the comparison is a **toggle across levels** -- a city
+against its county, state or the nation; a county against its state or the
+nation. [ADR-0013](../../decisions/0013-age-and-sex-structure.md) is
+accepted with that amendment. His approval is read as taking the
+recommended option of each decision below (2a, 3 yes, 4 yes); a different
+answer from him replaces that reading. Next it splits into an API item and
+a web item in the usual way (A-n then D-n); the deliverables below are
+already grouped that way.
 
 A visual mock of the pyramid, cards and difference bars with illustrative
 numbers (not warehouse data) is at
 <https://claude.ai/artifact/Pt7U3yxUU5EX4MZcMZyaE4> (private to Nick).
 
-## Decisions Nick needs to make
+## Decisions (recommended options taken 2026-10-31)
 
 1. **ADR-0013** as proposed (eighteen five-year bands regrouped from B01001
    with Bureau margins; pyramids drawn as shares of each place's own total;
@@ -130,11 +134,27 @@ FHFA, FEMA NRI, FCC, EPA, NOAA, EIA, FRED.
 Each is a component in the People chapter's new **"Age and sex"** section on
 the place page (nation, state, county, city, metro, tract), unless noted.
 
-1. **Population pyramid with a reference outline.** Eighteen five-year bands,
-   men left and women right, each bar the band's share of the place's total.
-   The parent (county for a city or tract, state for a county, nation for a
-   state) is drawn as an outline over the bars, switchable to the nation or
-   to any compared place. Margin of error as a whisker on each bar; a band
+1. **Population pyramid with a reference outline and a level toggle.**
+   Eighteen five-year bands, men left and women right, each bar the band's
+   share of the place's total. The comparison place is drawn as an outline
+   over the bars and chosen with a toggle of the place's enclosing levels
+   (Nick, 2026-10-31):
+
+   | Page | Toggle (default first) |
+   |---|---|
+   | City | County · State · Nation · None |
+   | Tract | County · State · Nation · None |
+   | County | State · Nation · None |
+   | Metro | Nation · State (only when the metro lies in one state) · None |
+   | State | Nation · None |
+   | Nation | None |
+
+   A city that spans counties compares against the county holding most of
+   its population, named in the toggle ("Dane County, 99 % of Madison"), from
+   the existing relationships. The same toggle drives the summary cards'
+   comparison values and the "where this place differs" bars, so one choice
+   changes the whole section. The compare page can still overlay any other
+   place. Margin of error as a whisker on each bar; a band
    whose coefficient of variation exceeds 30 % is hatched and says so. Hover
    or focus shows count, share, margin and the parent's share. A table
    toggle shows the same numbers. Release picker (1-year where published,
@@ -195,15 +215,17 @@ the place page (nation, state, county, city, metro, tract), unless noted.
 
 ### API (one item)
 
-4. `GET /api/v1/age-structure?geo_id=&dataset=acs5&release=latest|YYYY&reference=parent|us:1|<geo_id>`:
-   the place's and the reference's eighteen bands per sex (count, share of
-   total, margins), totals, provider medians, the summary indicators, the
-   release and period, the scheme's identity and version, `derived: true`
-   on every computed value, and refusals per band (`suppressed_input`,
-   `line_missing`) never zero. `reference=parent` resolves through the
-   existing relationships (city → county, tract → county, county → state,
-   state → nation). Up to three extra `compare_geo_ids` for the compare
-   page.
+4. `GET /api/v1/age-structure?geo_id=&dataset=acs5&release=latest|YYYY`:
+   the place's eighteen bands per sex (count, share of total, margins),
+   totals, provider medians, the summary indicators, the release and
+   period, the scheme's identity and version, `derived: true` on every
+   computed value, and refusals per band (`suppressed_input`,
+   `line_missing`) never zero, **and the same block for every enclosing
+   level** the toggle offers (`references: [{level, geo_id, name,
+   share_of_place_inside, ...}]`, resolved once from the existing
+   relationships), with `default_reference`. Answering every level in one
+   response means the toggle switches in the browser with no further
+   request. Up to three extra `compare_geo_ids` for the compare page.
 5. `GET /api/v1/age-structure/history?geo_id=&dataset=acs5&periods=non_overlapping|all`:
    per release, the broad-group shares, the indicators and (on request) the
    bands, as released (`rpt_acs_observations`, not `mv_acs_latest`, which
@@ -252,8 +274,9 @@ the place page (nation, state, county, city, metro, tract), unless noted.
 
 ## Performance (prevention list applied)
 
-- **One place's pyramid** reads 49 B01001 codes for at most 4 places (place,
-  reference, up to 3 compared would be 7): one statement,
+- **One place's pyramid** reads 49 B01001 codes for at most 4 places (the
+  place and its county, state and nation; the compare page adds up to 3):
+  one statement,
   `metric_code = ANY(:codes) AND geo_id = ANY(:geos)` on
   `gold_census.mv_acs_latest`, served by `ix_mv_acs_latest_metric_geo`
   (`metric_code, geo_id`). About 200–350 rows. No new index. Plain equality
@@ -271,7 +294,7 @@ the place page (nation, state, county, city, metro, tract), unless noted.
   way city and tract maps already read (#192, #210). Without 2(a), no
   grain-wide age map beyond median age is offered.
 - **The page batches**: the "Age and sex" section makes one `age-structure`
-  request (place plus reference) and, when opened, one `history` request;
+  request (the place and every level its toggle offers) and, when opened, one `history` request;
   never one request per band. The summary cards come from the same answer.
 - **Per-request lookups once**: the reference place is resolved once per
   request, not per band.
@@ -294,28 +317,33 @@ the place page (nation, state, county, city, metro, tract), unless noted.
    state outline (the university). A band with a suppressed line is drawn
    absent and named, never as zero (unit tests with fixtures; live check on
    OFFICE_LAB recorded in the plan).
-2. The child, old-age and total dependency ratios for a county equal the
+2. On a city page the toggle offers County, State, Nation and None (County
+   first); on a county page State, Nation and None; switching it redraws the
+   outline, the cards' comparison values and the difference bars without a
+   new request (browser tier counts requests). A city spanning counties
+   names the county holding most of its population and that share.
+3. The child, old-age and total dependency ratios for a county equal the
    Bureau's S0101 published ratios for the same release within rounding
    (unit fixture copied from data.census.gov for two counties).
-3. Median age shown is B01002's published value, never one estimated from
+4. Median age shown is B01002's published value, never one estimated from
    bands.
-4. A cohort request between overlapping 5-year releases is refused with
+5. A cohort request between overlapping 5-year releases is refused with
    `overlapping_periods`; between 2010-vintage and 2020-vintage tracts with
    `boundary_changed`; the sentence uses only ADR-0011's verbs.
-5. Every derived value carries `derived: true`, the scheme id and version,
+6. Every derived value carries `derived: true`, the scheme id and version,
    and its margin method; a `draft` scheme is marked "Draft view awaiting
    review" on the page.
-6. The "Age and sex" section makes at most two API requests per page view
+7. The "Age and sex" section makes at most two API requests per page view
    (browser tier counts them); the pyramid statement's `EXPLAIN` on
    OFFICE_LAB shows index scans on `ix_mv_acs_latest_metric_geo` and no
    sequential scan, recorded in the plan's evidence.
-7. The pyramid is keyboard-navigable, has a table equivalent, passes the
+8. The pyramid is keyboard-navigable, has a table equivalent, passes the
    axe gate, reads at 390 px, and shows no raw variable code outside
    `data-provenance`.
-8. With decision 2(a): the summary relation's rows equal the request-time
+9. With decision 2(a): the summary relation's rows equal the request-time
    computation for every county in one state (database tier), and the share
    65+ map for Texas counties renders from it in one request.
-9. `/layout`, `/explore` and `/map` stay within their bundle budgets.
+10. `/layout`, `/explore` and `/map` stay within their bundle budgets.
 
 ## Tests
 
@@ -354,6 +382,6 @@ the place page (nation, state, county, city, metro, tract), unless noted.
 
 ## Checkpoint
 
-Next pickup: Nick's answers to the four decisions above and ADR-0013's
-status. Then split into the API item (semantics record, routes, optional
-gold relation) and the web item, and claim the API item first.
+Next pickup: split into the API item (semantics record, routes, the
+summary relation) and the web item (pyramid with the level toggle, cards,
+difference bars, history, cohorts, rates), and claim the API item first.
