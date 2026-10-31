@@ -481,3 +481,35 @@ def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
     finally:
         reader.rollback()
         reader.close()
+
+
+def test_the_admin_coverage_read_counts_what_the_latest_view_serves(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: API-183 — FBI coverage read from the facts equals the served view.
+
+    The admin Source Map read FBI UCR through ``latest_release_observation``,
+    whose participation, measure and release joins it never needs; with every
+    Return A agency loaded it passed the 20 s ceiling. It now reads the fact of
+    each product's newest published release, which must count the same rows
+    per grain and year as the view.
+    """
+    from dataclasses import replace
+
+    from apps.api.services import warehouse_coverage as coverage
+
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    plan = coverage._plan("FBI_UCR")
+    assert plan is not None and plan.from_sql is not None
+    reader = return_a_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(coverage._scan_sql(plan))
+            fast = cursor.fetchall()
+            cursor.execute(coverage._scan_sql(replace(plan, from_sql=None)))
+            served = cursor.fetchall()
+    finally:
+        reader.rollback()
+        reader.close()
+    assert fast == served
+    assert any(row[0] == "AGENCY" and row[4] > 0 for row in fast)
