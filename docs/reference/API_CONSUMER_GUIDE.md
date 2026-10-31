@@ -1755,8 +1755,11 @@ county, a county and its state, a metro and the nation). It follows
   both places publish (`period_basis: newest_common`); with no common period
   each shows its own newest (`each_newest`) and the note `periods_differ`.
   `period_start` asks for one period on both sides (a year matches the
-  periods starting in it). A side with no value has `published: false` and
-  the note `not_published`; it is never zero.
+  periods starting in it). A side with no value has `published: false` (or
+  keeps its withheld status) and the note `not_published`; it is never zero,
+  and the comparison is refused with `refusal.reason: not_published` naming
+  the place ("there is no published value for United States in this series":
+  BLS LAUS publishes no national rate). The nation is named "United States".
 - **Margins decide "different".** Each side carries its 90 percent margin and
   interval where one is published; `intervals_overlap` says whether they
   overlap, and an overlap adds the note `intervals_overlap` ("not

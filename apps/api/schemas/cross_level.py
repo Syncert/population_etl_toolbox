@@ -27,6 +27,7 @@ RefusalReason = Literal[
     "universes_differ",
     "units_differ",
     "different_measures",
+    "not_published",
 ]
 
 #: What a served comparison cannot carry, one note per limit.
