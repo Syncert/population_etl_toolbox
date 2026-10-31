@@ -264,6 +264,36 @@ test("migration lists name origins and destinations and say the populations diff
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-138 — irs-county-migration: the flows are read for the page's
+// county only. While a county address is still resolving the chapters hold
+// only the state, and the page once read `/migration-flows?geo_id=state:55`,
+// which the API refuses with 422, on every Dane County load; a city page
+// never reads them at all.
+test("migration flows are asked for the county, never its state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installPlaceFixtures(page);
+  // Hold the state's county list so the chapters render before the county is known.
+  await page.route("**/api/v1/catalog/geographies?*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("geo_level") === "COUNTY") {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return route.fallback();
+  });
+  const asked = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/migration-flows") asked.push(url.searchParams.get("geo_id"));
+  });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("migration-inflow")).toContainText("Where people came from");
+  expect([...new Set(asked)]).toEqual(["state:55|county:025"]);
+  asked.length = 0;
+  await page.goto("/us/wisconsin/madison-city");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  expect(asked).toEqual([]);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);
