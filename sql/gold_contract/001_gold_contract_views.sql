@@ -330,6 +330,26 @@ SELECT boundary.geo_level,
 FROM gold_glossary.tile_boundary_version AS boundary
 GROUP BY boundary.geo_level, boundary.boundary_vintage;
 
+-- A boundary simplified to one tile pixel at the zoom it is drawn at. A
+-- 4096-unit tile cannot show a vertex finer than that, so dropping it changes
+-- no drawn pixel; it is what keeps a dense low-zoom tile (thousands of
+-- Northeast places at z6 measured 514 KB against a 512 KiB budget) inside the
+-- budget as vintages add vertices. `preserveCollapsed` keeps a place smaller
+-- than a pixel as a dot rather than dropping it: a place left out of a tile
+-- would read as missing, not as uncoloured.
+CREATE OR REPLACE FUNCTION gold.tile_simplified(tile_geom GEOMETRY, z INTEGER)
+RETURNS GEOMETRY
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT ST_Simplify(
+        tile_geom,
+        40075016.685578488 / (POWER(2, z) * 4096.0),
+        TRUE
+    )
+$$;
+
 -- The vintage a tile request is served: the one it names when that is a year,
 -- the newest the grain holds when it names none, and NULL (nothing drawn)
 -- otherwise.
@@ -382,7 +402,9 @@ BEGIN
     SELECT ST_AsMVT(feature, 'places', 4096, 'geom')
     INTO tile
     FROM (
-        SELECT ST_AsMVTGeom(boundary.tile_geom, envelope, 4096, 64, TRUE) AS geom,
+        SELECT ST_AsMVTGeom(
+                   gold.tile_simplified(boundary.tile_geom, z), envelope, 4096, 64, TRUE
+               ) AS geom,
                boundary.geo_id,
                boundary.geo_level,
                boundary.state_fips,
@@ -435,7 +457,9 @@ BEGIN
     SELECT ST_AsMVT(feature, 'metros', 4096, 'geom')
     INTO tile
     FROM (
-        SELECT ST_AsMVTGeom(boundary.tile_geom, envelope, 4096, 64, TRUE) AS geom,
+        SELECT ST_AsMVTGeom(
+                   gold.tile_simplified(boundary.tile_geom, z), envelope, 4096, 64, TRUE
+               ) AS geom,
                boundary.geo_id,
                boundary.geo_level,
                boundary.area_code AS cbsa_code,
