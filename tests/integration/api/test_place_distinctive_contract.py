@@ -186,6 +186,10 @@ def test_a_county_is_ranked_among_its_state_one_measure_at_a_time(
     assert payload["not_ranked"] == [
         {
             "metric_code": "CENSUS_ACS:acs5:NOT_PUBLISHED_ANYWHERE",
+            # No registry entry and no published label: nothing to show,
+            # and nothing guessed (API-170).
+            "metric_label": None,
+            "metric_label_status": None,
             "reason": "not published in this catalog",
         }
     ]
