@@ -22,6 +22,8 @@ import {
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
+  getDerivedObservations,
+  getDerivedRatios,
   getMetric,
 } from "../lib/api/client";
 import type { CollectionResponse, GeographySummary, MetricSummary, Observation } from "../lib/api/types";
@@ -74,6 +76,9 @@ import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
 import { rankSentence, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
+import { pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
+import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
+import { DerivedValue, ProviderRateNote, ViewToggle } from "./DerivedView";
 import type { GeoLevel } from "../lib/urlState";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
@@ -119,6 +124,15 @@ function publishedUnit(row: ObservationRow): string {
 
 const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}`;
 
+/** One place's value under one pairing, as `/observations/derived` answered it. */
+interface DerivedAnswer {
+  row: DerivedRatioObservation | null;
+  error?: string;
+  pending?: boolean;
+}
+
+const derivedKey = (ratioId: string, geoId: string) => `${ratioId}|${geoId}`;
+
 function placeTitle(place: GeographySummary | null, level: PlaceLevel, state: GeographySummary | null): string {
   if (!place) return "";
   if (level === "COUNTY") return `${countyName(place)}, ${state ? stateName(state) : String(place.state_name || "")}`.replace(/, $/, "");
@@ -159,6 +173,9 @@ export default function PlacePage({
   const [nearbyNote, setNearbyNote] = useState("");
   const [distinctive, setDistinctive] = useState<DistinctiveResponse | null>(null);
   const [distinctiveNote, setDistinctiveNote] = useState("");
+  // Every pairing the API lists (ADR-0009): the toggles offer the served
+  // ones, and a provider's own rate names its denominator from its entry.
+  const [pairings, setPairings] = useState<DerivedRatioPairing[]>([]);
   const settled = useRef(false);
   // Until the observations settle, a cell nothing has answered yet is being
   // read, not unpublished: the chapters draw from this view, which answers
@@ -276,6 +293,11 @@ export default function PlacePage({
         // Every measure then reports that its source's access shape is unknown.
       }
     })();
+    getDerivedRatios({}, { signal: controller.signal })
+      .then((payload) => { if (!controller.signal.aborted) setPairings(Array.isArray(payload?.items) ? payload.items : []); })
+      .catch(() => {
+        // No pairings listed: every chapter shows its counts, and no toggle.
+      });
     (async () => {
       const codes = placeChapterMetricCodes();
       const found = new Map<string, MetricSummary>();
@@ -576,6 +598,7 @@ export default function PlacePage({
           answers={shownAnswers}
           histories={histories}
           sourceFor={sourceFor}
+          pairings={pairings}
         />
       ))}
 
@@ -699,6 +722,7 @@ function Chapter({
   answers,
   histories,
   sourceFor,
+  pairings,
 }: {
   resolved: ResolvedChapter;
   levels: LevelPlace[];
@@ -708,9 +732,54 @@ function Chapter({
   answers: Map<string, LevelAnswer>;
   histories: Map<string, ObservationRow[]>;
   sourceFor: (metric: MetricSummary | null) => ExplorerSource | null;
+  pairings: DerivedRatioPairing[];
 }) {
   const { chapter } = resolved;
   const own = levels[0];
+  const [view, setView] = useState<ViewChoice>("count");
+  const [derived, setDerived] = useState<Map<string, DerivedAnswer>>(new Map());
+  const measured = useMemo(() => [...resolved.headline, ...resolved.depth].filter((measure) => measure.metric), [resolved]);
+  const choices = useMemo(() => viewChoices(pairings, measured.map((measure) => measure.metricCode)), [pairings, measured]);
+  const viewPairings = useMemo(
+    () => measured.flatMap((measure) => VIEWABLE.flatMap((choice) => pairingFor(pairings, measure.metricCode, choice) || [])),
+    [pairings, measured],
+  );
+
+  // A derived view reads each paired measure for every level the chapter
+  // shows, so a county reads beside its state on one denominator.
+  useEffect(() => {
+    if (view === "count") return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const next = new Map<string, DerivedAnswer>();
+    const tasks: (() => Promise<void>)[] = [];
+    for (const measure of measured) {
+      const pairing = pairingFor(pairings, measure.metricCode, view);
+      if (!pairing) continue;
+      for (const entry of levels) {
+        if (!publishesAt(measure, entry.level)) continue;
+        const key = derivedKey(pairing.ratio_id, entry.geoId);
+        next.set(key, { row: null, pending: true });
+        tasks.push(async () => {
+          try {
+            const payload = await getDerivedObservations(
+              { ratio_id: pairing.ratio_id, geo_id: entry.geoId, newest_per_geography: true, limit: 1 },
+              { signal },
+            );
+            const row = (payload.items || []).find((item) => item.geo_id === entry.geoId) || null;
+            next.set(key, { row });
+          } catch (error) {
+            if (!signal.aborted) next.set(key, { row: null, error: apiErrorMessage(error) });
+          }
+        });
+      }
+    }
+    setDerived(new Map(next));
+    inPool(tasks, REQUEST_CONCURRENCY).then(() => {
+      if (!signal.aborted) setDerived(new Map(next));
+    });
+    return () => controller.abort();
+  }, [view, measured, levels, pairings]);
   const trendMeasure = resolved.headline.find((measure) => measure.measure.id === chapter.trend.measureId) || null;
   const primary = trendMeasure?.metric ? trendMeasure : resolved.headline.find((measure) => measure.metric) || null;
   const primaryRow = primary && own ? answers.get(answerKey(primary.metricCode, own.geoId))?.row ?? null : null;
@@ -764,9 +833,28 @@ function Chapter({
           The figures below are {state ? stateName(state) : "the state"}&apos;s, not {county ? countyName(county) : "this county"}&apos;s.
         </p>
       ) : null}
+      <ViewToggle
+        choices={choices}
+        value={view}
+        onChange={setView}
+        pairings={viewPairings}
+        label="Show counts as"
+        testId={`chapter-${chapter.id}-view`}
+      />
       <div className="place-cards">
         {resolved.headline.map((measure) => (
-          <HeadlineCard key={measure.measure.id} measure={measure} levels={levels} answers={answers} pageLevel={pageLevel} stateContext={resolved.stateContext} county={county} />
+          <HeadlineCard
+            key={measure.measure.id}
+            measure={measure}
+            levels={levels}
+            answers={answers}
+            pageLevel={pageLevel}
+            stateContext={resolved.stateContext}
+            county={county}
+            pairing={pairingFor(pairings, measure.metricCode, view)}
+            providerRate={providerRateFor(pairings, measure.metricCode)}
+            derived={derived}
+          />
         ))}
       </div>
       {trend && trendMeasure ? (
@@ -789,7 +877,16 @@ function Chapter({
       {resolved.depth.some((measure) => !measure.measure.group) && own ? (
         <dl className="place-depth" data-testid={`chapter-${chapter.id}-depth`}>
           {resolved.depth.filter((measure) => !measure.measure.group).map((measure) => (
-            <DepthRow key={measure.measure.id} measure={measure} place={own} answer={answers.get(answerKey(measure.metricCode, own.geoId))} />
+            <DepthRow
+              key={measure.measure.id}
+              measure={measure}
+              place={own}
+              answer={answers.get(answerKey(measure.metricCode, own.geoId))}
+              view={view}
+              pairing={pairingFor(pairings, measure.metricCode, view)}
+              levels={levels}
+              derived={derived}
+            />
           ))}
         </dl>
       ) : null}
@@ -839,6 +936,8 @@ function Chapter({
   );
 }
 
+const VIEWABLE: readonly ViewChoice[] = ["per_capita", "share"];
+
 const PENDING_ANSWER: LevelAnswer = Object.freeze({ row: null, pending: true }) as LevelAnswer;
 
 /**
@@ -859,6 +958,9 @@ function HeadlineCard({
   pageLevel,
   stateContext,
   county,
+  pairing,
+  providerRate,
+  derived,
 }: {
   measure: ResolvedPlaceMeasure;
   levels: LevelPlace[];
@@ -866,6 +968,11 @@ function HeadlineCard({
   pageLevel: PlaceLevel;
   stateContext: boolean;
   county: GeographySummary | null;
+  /** The pairing the chapter's view divides this count by, if any. */
+  pairing: DerivedRatioPairing | null;
+  /** The pairing that names this metric as the provider's own rate, if any. */
+  providerRate: DerivedRatioPairing | null;
+  derived: Map<string, DerivedAnswer>;
 }) {
   if (!measure.metric) {
     return (
@@ -901,12 +1008,24 @@ function HeadlineCard({
                 {entry.place.name}
                 {entry.place.role === "state context" ? <span className="place-role"> (state context)</span> : null}
               </th>
-              <td>
-                {entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row)}`.trim() : entry.message}
-              </td>
-              <td className="subtle">
-                {entry.row && !entry.message ? uncertaintyText(entry.row) : ""}
-              </td>
+              {pairing && publishesAt(measure, entry.place.level) ? (
+                <td colSpan={2}>
+                  <DerivedValue
+                    pairing={pairing}
+                    {...(derived.get(derivedKey(pairing.ratio_id, entry.place.geoId)) || { row: null, pending: true })}
+                    testId={`card-${measure.measure.id}-${entry.place.level.toLowerCase()}-derived`}
+                  />
+                </td>
+              ) : (
+                <>
+                  <td>
+                    {entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row)}`.trim() : entry.message}
+                  </td>
+                  <td className="subtle">
+                    {entry.row && !entry.message ? uncertaintyText(entry.row) : ""}
+                  </td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>
@@ -915,6 +1034,7 @@ function HeadlineCard({
         <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measure.measure.basis || measureBasis(measure.metricCode)}</p>
       ) : null}
       {measure.measure.showReported ? <ReportedLine measure={measure} row={card.rows[0]?.row ?? null} /> : null}
+      {providerRate ? <ProviderRateNote pairing={providerRate} testId={`card-${measure.measure.id}-denominator`} /> : null}
       {measure.measure.note ? <p className="subtle">{measure.measure.note}</p> : null}
     </div>
   );
@@ -1071,11 +1191,40 @@ function DepthRow({
   measure,
   place,
   answer,
+  view,
+  pairing,
+  levels,
+  derived,
 }: {
   measure: ResolvedPlaceMeasure;
   place: LevelPlace;
   answer: LevelAnswer | undefined;
+  view: ViewChoice;
+  pairing: DerivedRatioPairing | null;
+  levels: LevelPlace[];
+  derived: Map<string, DerivedAnswer>;
 }) {
+  if (pairing && measure.metric) {
+    const shown = levels.filter((entry) => publishesAt(measure, entry.level));
+    return (
+      <div data-testid={`depth-${measure.measure.id}`} data-view={view}>
+        <dt>
+          {pairing.label}
+          <span className="place-universe"> · Universe: {pairing.universe}</span>
+        </dt>
+        <dd>
+          <ul className="derived-levels">
+            {shown.map((entry) => (
+              <li key={entry.geoId} data-testid={`depth-${measure.measure.id}-${entry.level.toLowerCase()}`}>
+                <span className="derived-place">{entry.name}:</span>{" "}
+                <DerivedValue pairing={pairing} {...(derived.get(derivedKey(pairing.ratio_id, entry.geoId)) || { row: null, pending: true })} />
+              </li>
+            ))}
+          </ul>
+        </dd>
+      </div>
+    );
+  }
   const row = answer?.row ?? null;
   const published = row && row.value !== null && row.value !== undefined;
   return (
@@ -1086,6 +1235,7 @@ function DepthRow({
         {measure.measure.basis || (measure.metric && measureBasis(measure.metricCode)) ? <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measure.measure.basis || measureBasis(measure.metricCode)}</span> : null}
       </dt>
       <dd>
+        {view !== "count" && measure.metric ? <span className="subtle" data-testid={`depth-${measure.measure.id}-count-only`}>No reviewed {view === "share" ? "share" : "per-resident view"} for this count; showing the count. </span> : null}
         {!measure.metric
           ? "Not published by this warehouse"
           : !publishesAt(measure, place.level)

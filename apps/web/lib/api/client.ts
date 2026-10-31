@@ -27,6 +27,7 @@ import type {
   SourceFreshness,
   SourceSummary,
 } from "./types";
+import type { DerivedRatioPage, DerivedRatioPairing } from "../derivedViews";
 
 export const API_BASE = "/api/v1";
 
@@ -520,6 +521,22 @@ export function getObservations(
   options: RequestOptions = {},
 ): Promise<CollectionResponse<Observation>> {
   return apiFetch<CollectionResponse<Observation>>("/observations", { ...options, params });
+}
+
+/** The per-capita and share pairings the API lists (ADR-0009). */
+export function getDerivedRatios(
+  params: QueryParams = {},
+  options: RequestOptions = {},
+): Promise<{ total: number; items: DerivedRatioPairing[] }> {
+  return apiFetch<{ total: number; items: DerivedRatioPairing[] }>("/catalog/derived-ratios", { ...options, params });
+}
+
+/** One pairing's values, computed by the API over served rows (ADR-0009). */
+export function getDerivedObservations(
+  params: QueryParams,
+  options: RequestOptions = {},
+): Promise<DerivedRatioPage> {
+  return apiFetch<DerivedRatioPage>("/observations/derived", { ...options, params });
 }
 
 // The MVP-shaped observation routes are reached through
