@@ -9,6 +9,7 @@ import AdminWarehousePage from "../../../apps/web/components/AdminWarehousePage"
 import {
   coverageByColumn,
   edgePath,
+  formatWatermark,
   missingYears,
   runLimited,
   shortType,
@@ -150,6 +151,14 @@ describe("admin warehouse helpers", () => {
     expect(edgePath(from, to, "payload_checksum")).toBe("M246,52 C283,52 283,94 320,94");
     expect(shortType("timestamp with time zone")).toBe("timestamptz");
     expect(shortType("geometry(MultiPolygon,4326)")).toBe("geometry");
+  });
+
+  test("an epoch watermark is shown as a date; a period stays as written", () => {
+    expect(formatWatermark("1780605223")).toBe("2026-06-04");
+    expect(formatWatermark("1780605223000")).toBe("2026-06-04");
+    expect(formatWatermark("2025-12")).toBe("2025-12");
+    expect(formatWatermark("2024")).toBe("2024");
+    expect(formatWatermark(null)).toBe("");
   });
 
   test("runLimited never runs more than its limit at once", async () => {

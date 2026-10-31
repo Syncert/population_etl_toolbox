@@ -265,10 +265,15 @@ def test_coverage_reads_the_served_expressions_and_folds_grains() -> None:
     result = coverage.measure_source(db, "FBI_UCR")
     dispatch = OBSERVATION_DISPATCH["FBI_UCR"]
     assert result["status"] == "ok"
+    # FBI's latest relation is a filter to the newest release: the cheaper read.
     assert result["relation"] == dispatch.latest_relation
     assert "statement_timeout" in db.statements[0]
-    assert dispatch.geo_level_expression in db.statements[1]
-    assert dispatch.period_start_expression in db.statements[1]
+    scan = db.statements[1]
+    # Grouped by the raw column; the registry's expression runs on the groups.
+    assert "SELECT subject_type AS raw_grain" in scan
+    assert "UPPER(raw_grain) AS grain" in scan
+    assert "period_start AS raw_period" in scan
+    assert "::TEXT AS raw_period" not in scan
     assert [(g["grain"], g["column"]) for g in result["grains"]] == [
         ("COUNTY", "county"),
         ("AGENCY", "other"),
@@ -276,12 +281,47 @@ def test_coverage_reads_the_served_expressions_and_folds_grains() -> None:
     assert result["row_count"] == 10
 
 
-@pytest.mark.parametrize("code", ["BLS", "FRED"])
-def test_newest_only_sources_are_measured_on_their_releases(code: str) -> None:
-    """Covers: API-183 — a newest-period table would report one year."""
+@pytest.mark.parametrize("code", ["BLS", "FRED", "BEA", "BLS_QCEW", "CENSUS_PEP"])
+def test_sorted_latest_relations_are_measured_on_their_releases(code: str) -> None:
+    """Covers: API-183 — no newest-release sort; the same (grain, year) pairs."""
     db = _Session([], [])
     result = coverage.measure_source(db, code)
     assert result["relation"] == OBSERVATION_DISPATCH[code].released_relation
+
+
+def test_pep_ranks_only_its_population_measure() -> None:
+    """Covers: API-183 — a window partition filter, said on the page."""
+    db = _Session([], [])
+    result = coverage.measure_source(db, "CENSUS_PEP")
+    assert "AND metric_code = 'POPESTIMATE'" in db.statements[1]
+    assert "POPESTIMATE" in result["note"]
+
+
+def test_a_measurement_is_kept_until_the_release_changes() -> None:
+    """Covers: API-183 — the catalog fingerprint, not a timer, triggers a rescan."""
+    release = [(12, "2024", "2026-10-01", "run-1")]
+    counted = [
+        {
+            "grain": "COUNTY",
+            "first_year": 2001,
+            "last_year": 2024,
+            "years": [2001, 2024],
+            "row_count": 5,
+        }
+    ]
+    first = coverage.source_coverage(_Session(release, [], counted), "BEA", now=0.0)
+    assert not first["cached"]
+    day_later = _Session(release)
+    again = coverage.source_coverage(day_later, "BEA", now=86_400.0)
+    assert again["cached"] and len(day_later.statements) == 1
+    new_release = _Session([(12, "2025", "2026-11-01", "run-2")], [], counted)
+    measured = coverage.source_coverage(new_release, "BEA", now=90_000.0)
+    assert not measured["cached"]
+    expired = _Session([(12, "2025", "2026-11-01", "run-2")], [], counted)
+    late = coverage.source_coverage(
+        expired, "BEA", now=90_000.0 + coverage.CACHE_SECONDS + 1
+    )
+    assert not late["cached"]
 
 
 def test_acs_is_read_from_its_year_partitions_not_scanned() -> None:
@@ -336,7 +376,8 @@ def test_a_timeout_is_reported_and_cached_briefly() -> None:
         pgcode = "57014"
 
     db = _Session(
-        [],
+        [],  # release fingerprint
+        [],  # SET LOCAL statement_timeout
         OperationalError(
             "SELECT", {}, _Cancelled("canceling statement due to statement timeout")
         ),
@@ -344,10 +385,10 @@ def test_a_timeout_is_reported_and_cached_briefly() -> None:
     first = coverage.source_coverage(db, "CENSUS_LODES", now=0.0)
     assert first["status"] == "timed_out" and not first["cached"]
     assert db.rolled_back == 1
-    again = coverage.source_coverage(db, "CENSUS_LODES", now=60.0)
+    again = coverage.source_coverage(_Session([]), "CENSUS_LODES", now=60.0)
     assert again["cached"]
     retried = coverage.source_coverage(
-        _Session([], []), "CENSUS_LODES", now=coverage.FAILED_CACHE_SECONDS + 1.0
+        _Session([], [], []), "CENSUS_LODES", now=coverage.FAILED_CACHE_SECONDS + 1.0
     )
     assert retried["status"] == "ok" and not retried["cached"]
 
