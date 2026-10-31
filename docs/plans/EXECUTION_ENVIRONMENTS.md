@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**4 plans.**
+**5 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -54,6 +54,7 @@ grep was looking for.
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 | [`web-age-and-sex-structure`](to_do/WEB_AGE_AND_SEX_STRUCTURE_PLAN.md) | high | `browser` | `api-age-and-sex-structure`, `place-pages`, `web-cross-level-compare` |
+| [`website-reads-a-serving-layer`](to_do/THE_WEBSITE_READS_A_SERVING_LAYER_NOT_THE_WAREHOUSE_PLAN.md) | high | none | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
