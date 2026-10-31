@@ -12,7 +12,12 @@ from apps.api.services.comparison_service import (
     metric_correlation,
     preflight_metric_comparison,
 )
-from apps.api.services.neutral_observations_service import NeutralQueryError
+from apps.api.services.cross_level_service import UnknownGeography, compare_places
+from apps.api.services.derived_ratio_service import UnknownRatio
+from apps.api.services.neutral_observations_service import (
+    NeutralQueryError,
+    validated_period_start,
+)
 from apps.api.services.comparison_matrix_service import metric_matrix
 from apps.api.schemas import (
     ComparisonCorrelationResponse,
@@ -20,6 +25,7 @@ from apps.api.schemas import (
     ComparisonPreflightResponse,
     ComparisonResponse,
 )
+from apps.api.schemas.cross_level import PlacesComparisonResponse
 
 router = APIRouter(tags=["comparison"])
 
@@ -184,6 +190,75 @@ def get_comparison_matrix(
         raise HTTPException(
             status_code=404, detail=f"{exc.parameter} not found"
         ) from exc
+    except NeutralQueryError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/comparison/places",
+    response_model=PlacesComparisonResponse,
+    name="get_places_comparison",
+    summary="One measure in two places, at any geographic level",
+    responses=NOT_FOUND,
+)
+def get_places_comparison(
+    geo_id_a: str = Query(..., min_length=1, max_length=60),
+    geo_id_b: str = Query(..., min_length=1, max_length=60),
+    metric_code: Optional[str] = Query(None, max_length=200),
+    ratio_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="A per-capita or share pairing from /catalog/derived-ratios, "
+        "in place of metric_code.",
+    ),
+    metric_code_b: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="A different code for side b; refused unless it is the same "
+        "measure from the same program.",
+    ),
+    period_start: Optional[str] = Query(None, max_length=10),
+    db: Session = Depends(get_db_session_dep),
+) -> PlacesComparisonResponse:
+    """Two places, possibly at different levels, on one measure (ADR-0010).
+
+    A city beside its county, a county beside its state, a metro beside the
+    nation. A median, mean, rate, share or index compares across levels; a
+    count does not, and is refused with ``counts_differ_in_size`` and the
+    served per-capita or share views that would answer instead (ADR-0009).
+    A refusal is a verdict to explain and answers ``200`` with
+    ``comparable: false``.
+
+    Each side shows the newest period both places publish, or each its own
+    newest with the note ``periods_differ``; a side with no value is "not
+    published", never zero. The answer says how the places relate (one
+    inside the other, overlapping, or neither), whether the two 90 percent
+    intervals overlap, and computes ``difference`` only for two independent
+    places in the same period. It never ranks or names a winner.
+    """
+    # An empty optional value is the same request as omitting it (API-124).
+    try:
+        return compare_places(
+            db,
+            geo_id_a=geo_id_a,
+            geo_id_b=geo_id_b,
+            metric_code=metric_code or None,
+            ratio_id=ratio_id or None,
+            metric_code_b=metric_code_b or None,
+            period_start=validated_period_start(period_start or None),
+        )
+    except UnknownAnalysisMetric as exc:
+        raise HTTPException(
+            status_code=404, detail=f"{exc.parameter} not found"
+        ) from exc
+    except UnknownGeography as exc:
+        raise HTTPException(
+            status_code=404, detail=f"{exc.parameter} not found"
+        ) from exc
+    except UnknownRatio as exc:
+        raise HTTPException(status_code=404, detail="ratio_id not found") from exc
     except NeutralQueryError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc
     except SQLAlchemyError as exc:

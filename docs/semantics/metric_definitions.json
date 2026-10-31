@@ -11,6 +11,7 @@
       "definition": "The age that divides the population into two equal halves.",
       "unit": "years",
       "universe": "people",
+      "kind": "median",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -38,6 +39,7 @@
       "definition": "Everyone who usually lives in the area, as the survey estimates it.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "A survey estimate with a margin of error; the official population count is the Population Estimates Program's figure.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -65,6 +67,7 @@
       "definition": "Residents younger than 18.",
       "unit": "people",
       "universe": "people under 18",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -92,6 +95,7 @@
       "definition": "Residents aged 65 or older.",
       "unit": "people",
       "universe": "people 65 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -119,6 +123,7 @@
       "definition": "Households of one person: the householder lives alone.",
       "unit": "households",
       "universe": "households",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -146,6 +151,7 @@
       "definition": "Men aged 15 or older who have never been married.",
       "unit": "people",
       "universe": "people 15 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -173,6 +179,7 @@
       "definition": "Women aged 15 or older who have never been married.",
       "unit": "people",
       "universe": "people 15 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -200,6 +207,7 @@
       "definition": "Residents aged 1 or older who lived in the same home one year earlier.",
       "unit": "people",
       "universe": "people 1 year and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -227,6 +235,7 @@
       "definition": "Residents aged 1 or older who moved from another home in the same county during the past year.",
       "unit": "people",
       "universe": "people 1 year and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -254,6 +263,7 @@
       "definition": "Residents who were not U.S. citizens at birth.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -281,6 +291,7 @@
       "definition": "Civilians aged 18 or older who once served on active duty in the U.S. armed forces.",
       "unit": "people",
       "universe": "civilians 18 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -308,6 +319,7 @@
       "definition": "The income that divides households into two equal halves, in the survey year's inflation-adjusted dollars.",
       "unit": "dollars",
       "universe": "households",
+      "kind": "median",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -335,6 +347,7 @@
       "definition": "Total income of residents aged 15 and over divided by the whole population, in the survey year's inflation-adjusted dollars.",
       "unit": "dollars",
       "universe": "people",
+      "kind": "mean",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -362,6 +375,7 @@
       "definition": "How unequally household income is spread: 0 is perfect equality and 1 is one household holding all income.",
       "unit": "index (0 to 1)",
       "universe": "households",
+      "kind": "index",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -389,6 +403,7 @@
       "definition": "People whose family income in the past 12 months was below the official poverty threshold for their family size.",
       "unit": "people",
       "universe": "people whose poverty status is determined",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -416,6 +431,7 @@
       "definition": "Households whose income in the past 12 months was less than $10,000.",
       "unit": "households",
       "universe": "households",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -443,6 +459,7 @@
       "definition": "Households whose income in the past 12 months was $200,000 or more.",
       "unit": "households",
       "universe": "households",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -470,6 +487,7 @@
       "definition": "People aged 16 or older who are working or looking for work, including the armed forces.",
       "unit": "people",
       "universe": "people 16 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -497,6 +515,7 @@
       "definition": "Civilians aged 16 or older without a job who looked for work in the past four weeks and could start.",
       "unit": "people",
       "universe": "people 16 and over",
+      "kind": "count",
       "caveat": "A survey count with a margin of error; the official unemployment rate is BLS's Local Area Unemployment Statistics.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -524,6 +543,7 @@
       "definition": "Civilians aged 16 or older who live here and had a job, wherever the job is.",
       "unit": "people",
       "universe": "civilian employed people 16 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -551,6 +571,7 @@
       "definition": "Workers aged 16 or older who usually worked at home last week.",
       "unit": "workers",
       "universe": "workers 16 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -578,6 +599,7 @@
       "definition": "Workers aged 16 or older who usually got to work by bus, train, ferry or other public transit.",
       "unit": "workers",
       "universe": "workers 16 and over",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -605,6 +627,7 @@
       "definition": "Workers whose usual one-way trip to work took 90 minutes or longer.",
       "unit": "workers",
       "universe": "workers 16 and over who did not work from home",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -632,6 +655,7 @@
       "definition": "Houses, apartments, mobile homes and rooms intended as separate living quarters, occupied or vacant.",
       "unit": "housing units",
       "universe": "housing units",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -659,6 +683,7 @@
       "definition": "Occupied homes whose owner or co-owner lives in them, mortgaged or not.",
       "unit": "housing units",
       "universe": "occupied housing units",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -686,6 +711,7 @@
       "definition": "Occupied homes that are not owner-occupied, whether or not cash rent is paid.",
       "unit": "housing units",
       "universe": "occupied housing units",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -713,6 +739,7 @@
       "definition": "Homes no one was living in when surveyed, including seasonal homes.",
       "unit": "housing units",
       "universe": "housing units",
+      "kind": "count",
       "caveat": "Includes seasonal and other vacancies, not only units for rent or sale.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -740,6 +767,7 @@
       "definition": "One-unit structures detached from any other house.",
       "unit": "housing units",
       "universe": "housing units",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -767,6 +795,7 @@
       "definition": "Homes in structures first built in the vintage's newest year-built band.",
       "unit": "housing units",
       "universe": "housing units",
+      "kind": "count",
       "caveat": "Census redraws the year-built bands between vintages; the band is the one this vintage published.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -794,6 +823,7 @@
       "definition": "Households with no car, van or truck kept at home for their use.",
       "unit": "households",
       "universe": "households",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -821,6 +851,7 @@
       "definition": "Households paying for any broadband internet service, including cellular data plans.",
       "unit": "households",
       "universe": "households",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -848,6 +879,7 @@
       "definition": "Households with no internet access at home.",
       "unit": "households",
       "universe": "households",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -875,6 +907,7 @@
       "definition": "The middle monthly rent paid by renter households, including the utilities and fuels the renter pays.",
       "unit": "dollars per month",
       "universe": "renter-occupied housing units paying cash rent",
+      "kind": "median",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -902,6 +935,7 @@
       "definition": "The middle value of owner-occupied homes, as their owners estimate it.",
       "unit": "dollars",
       "universe": "owner-occupied housing units",
+      "kind": "median",
       "caveat": "The owner's own estimate, which is what the ACS asks, with a margin of error.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -929,6 +963,7 @@
       "definition": "Children and teenagers under 19 with no health coverage of any kind.",
       "unit": "people",
       "universe": "civilian noninstitutionalized people",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -956,6 +991,7 @@
       "definition": "People aged 19 to 34 with no health coverage of any kind.",
       "unit": "people",
       "universe": "civilian noninstitutionalized people",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -983,6 +1019,7 @@
       "definition": "People aged 35 to 64 with no health coverage of any kind.",
       "unit": "people",
       "universe": "civilian noninstitutionalized people",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -1010,6 +1047,7 @@
       "definition": "People aged 65 or older with no health coverage of any kind.",
       "unit": "people",
       "universe": "civilian noninstitutionalized people",
+      "kind": "count",
       "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
       "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
       "limitations": [
@@ -1036,6 +1074,7 @@
       "definition": "The Census Bureau's official estimate of everyone who usually lives here on July 1.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "Population Estimates Program vintage, a different method from the survey estimates. An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1060,6 +1099,7 @@
       "definition": "Births to residents during the year ending July 1.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1084,6 +1124,7 @@
       "definition": "Deaths of residents during the year ending July 1.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1108,6 +1149,7 @@
       "definition": "People who moved here from elsewhere in the U.S. minus people who moved away to elsewhere in the U.S.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1132,6 +1174,7 @@
       "definition": "People who moved here from abroad minus people who moved abroad.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1156,6 +1199,7 @@
       "definition": "The change in the population estimate over the year ending July 1.",
       "unit": "people",
       "universe": "people",
+      "kind": "count",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1180,6 +1224,7 @@
       "definition": "Net domestic and international migration per 1,000 residents, as the program published it.",
       "unit": "per 1,000 residents",
       "universe": "people",
+      "kind": "rate",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1204,6 +1249,7 @@
       "definition": "Births minus deaths per 1,000 residents, as the program published it.",
       "unit": "per 1,000 residents",
       "universe": "people",
+      "kind": "rate",
       "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1228,6 +1274,7 @@
       "definition": "The share of the civilian labor force living here that is unemployed, as Local Area Unemployment Statistics estimates it.",
       "unit": "percent",
       "universe": "civilian labor force, by residence",
+      "kind": "rate",
       "caveat": "Counts residents who work, wherever the job is; a different universe from jobs located here.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1252,6 +1299,7 @@
       "definition": "Jobs at employers covered by unemployment insurance in this place, wherever the worker lives.",
       "unit": "jobs",
       "universe": "covered jobs, by place of work",
+      "kind": "count",
       "caveat": "Counts jobs, not people; excludes the self-employed and some agricultural and federal jobs.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1276,6 +1324,7 @@
       "definition": "Total covered wages divided by covered jobs and by the weeks in the period.",
       "unit": "dollars per week",
       "universe": "covered jobs, by place of work",
+      "kind": "mean",
       "caveat": "An average across all covered jobs, so a few high wages raise it; not a typical wage.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1300,6 +1349,7 @@
       "definition": "All personal income of residents, including transfer receipts and employer contributions, divided by BEA's population.",
       "unit": "dollars",
       "universe": "residents",
+      "kind": "mean",
       "caveat": "Current dollars, not adjusted for inflation; not the survey's household income.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1324,6 +1374,7 @@
       "definition": "The value of goods and services produced by businesses and governments located here, in chained 2017 dollars.",
       "unit": "thousands of chained 2017 dollars",
       "universe": "production located here",
+      "kind": "count",
       "caveat": "Chained dollars: years compare without inflation, but components do not add exactly.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1348,6 +1399,7 @@
       "definition": "The Census Bureau's model-based estimate of median household income for one year.",
       "unit": "dollars",
       "universe": "households",
+      "kind": "median",
       "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1372,6 +1424,7 @@
       "definition": "The share of people whose income is below the poverty threshold, as the Bureau's one-year model estimates it.",
       "unit": "percent",
       "universe": "people whose poverty status is determined",
+      "kind": "rate",
       "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1396,6 +1449,7 @@
       "definition": "The number of people whose income is below the poverty threshold, as the Bureau's one-year model estimates it.",
       "unit": "people",
       "universe": "people whose poverty status is determined",
+      "kind": "count",
       "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1420,6 +1474,7 @@
       "definition": "The share of children under 18 living below the poverty threshold, as the Bureau's one-year model estimates it.",
       "unit": "percent",
       "universe": "related children and others under 18",
+      "kind": "rate",
       "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1444,6 +1499,7 @@
       "definition": "The share of people under 65 with no health insurance, as the Bureau's one-year model estimates it.",
       "unit": "percent",
       "universe": "people under 65, all incomes",
+      "kind": "rate",
       "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1468,6 +1524,7 @@
       "definition": "The number of people under 65 with no health insurance, as the Bureau's one-year model estimates it.",
       "unit": "people",
       "universe": "people under 65, all incomes",
+      "kind": "count",
       "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1492,6 +1549,7 @@
       "definition": "The share of adults 18 and over with a body mass index of 30 or more, age-adjusted so places with older or younger populations compare.",
       "unit": "percent",
       "universe": "adults 18 and over",
+      "kind": "rate",
       "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1516,6 +1574,7 @@
       "definition": "The share of adults 18 and over ever told by a doctor they have diabetes, age-adjusted.",
       "unit": "percent",
       "universe": "adults 18 and over",
+      "kind": "rate",
       "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1540,6 +1599,7 @@
       "definition": "Murder, rape, robbery and aggravated assault reported by law enforcement, per 100,000 people in the agencies' coverage.",
       "unit": "per 100,000 people",
       "universe": "population covered by reporting agencies",
+      "kind": "rate",
       "caveat": "Reported offenses only, from the agencies that reported; a period no agency reported is not zero crime.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1564,6 +1624,7 @@
       "definition": "Burglary, larceny-theft and motor vehicle theft reported by law enforcement, per 100,000 people in the agencies' coverage.",
       "unit": "per 100,000 people",
       "universe": "population covered by reporting agencies",
+      "kind": "rate",
       "caveat": "Reported offenses only, from the agencies that reported; a period no agency reported is not zero crime.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1588,6 +1649,7 @@
       "definition": "New one-unit homes authorized by building permits in the year.",
       "unit": "housing units",
       "universe": "new privately owned housing units",
+      "kind": "count",
       "caveat": "Authorized, not started or completed; the Bureau imputes for jurisdictions that did not report.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1612,6 +1674,7 @@
       "definition": "New homes in buildings of five or more units authorized by building permits in the year.",
       "unit": "housing units",
       "universe": "new privately owned housing units",
+      "kind": "count",
       "caveat": "Authorized, not started or completed; the Bureau imputes for jurisdictions that did not report.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1636,6 +1699,7 @@
       "definition": "New one-unit homes authorized by building permits in each month.",
       "unit": "housing units",
       "universe": "new privately owned housing units",
+      "kind": "count",
       "caveat": "Authorized, not started or completed; monthly figures are only from jurisdictions that report monthly.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1660,6 +1724,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in farm.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1684,6 +1749,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in forestry, fishing, and related activities.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1708,6 +1774,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in mining, quarrying, and oil and gas extraction.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1732,6 +1799,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in utilities.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1756,6 +1824,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in construction.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1780,6 +1849,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in manufacturing.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1804,6 +1874,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in wholesale trade.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1828,6 +1899,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in retail trade.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1852,6 +1924,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in transportation and warehousing.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1876,6 +1949,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in information.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1900,6 +1974,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in finance and insurance.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1924,6 +1999,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in real estate and rental and leasing.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1948,6 +2024,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in professional, scientific, and technical services.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1972,6 +2049,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in management of companies and enterprises.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -1996,6 +2074,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in administrative and waste services.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2020,6 +2099,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in educational services.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2044,6 +2124,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in health care and social assistance.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2068,6 +2149,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in arts, entertainment, and recreation.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2092,6 +2174,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in accommodation and food services.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2116,6 +2199,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in other services.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2140,6 +2224,7 @@
       "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in government and government enterprises.",
       "unit": "thousands of dollars",
       "universe": "earnings by place of work",
+      "kind": "count",
       "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2164,6 +2249,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in agriculture, forestry, fishing and hunting (NAICS 11).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2188,6 +2274,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in mining, quarrying, and oil and gas extraction (NAICS 21).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2212,6 +2299,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in utilities (NAICS 22).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2236,6 +2324,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in construction (NAICS 23).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2260,6 +2349,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in manufacturing (NAICS 31-33).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2284,6 +2374,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in wholesale trade (NAICS 42).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2308,6 +2399,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in retail trade (NAICS 44-45).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2332,6 +2424,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in transportation and warehousing (NAICS 48-49).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2356,6 +2449,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in information (NAICS 51).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2380,6 +2474,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in finance and insurance (NAICS 52).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2404,6 +2499,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in real estate and rental and leasing (NAICS 53).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2428,6 +2524,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in professional, scientific, and technical services (NAICS 54).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2452,6 +2549,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in management of companies and enterprises (NAICS 55).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2476,6 +2574,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in administrative and waste services (NAICS 56).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2500,6 +2599,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in educational services (NAICS 61).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2524,6 +2624,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in health care and social assistance (NAICS 62).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2548,6 +2649,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in arts, entertainment, and recreation (NAICS 71).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2572,6 +2674,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in accommodation and food services (NAICS 72).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2596,6 +2699,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in other services (NAICS 81).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2620,6 +2724,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in public administration (NAICS 92).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2644,6 +2749,7 @@
       "definition": "Privately owned jobs covered by unemployment insurance at employers here in unclassified (NAICS 99).",
       "unit": "jobs",
       "universe": "private jobs located here",
+      "kind": "count",
       "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
       "intended_use": "Describe a place as its provider publishes it.",
       "limitations": [
@@ -2668,6 +2774,7 @@
       "definition": "The average retail price of a gallon of regular-grade gasoline, from EIA's weekly survey of retail stations.",
       "unit": "dollars per gallon",
       "universe": "retail gasoline stations",
+      "kind": "mean",
       "caveat": "Published for the nation and a small set of states, not for counties or cities; a county page shows the containing area's price and names it.",
       "intended_use": "Show what a gallon of gas costs in the nearest area EIA publishes.",
       "limitations": [
@@ -2697,6 +2804,7 @@
       "definition": "The average price BLS records for a gallon of unleaded regular gasoline in urban areas of the Census region, collected for the Consumer Price Index.",
       "unit": "dollars per gallon",
       "universe": "urban consumers in the Census region",
+      "kind": "mean",
       "caveat": "A regional urban average, not a local price; used only where EIA publishes no state price.",
       "intended_use": "Show what a gallon of gas costs where no state price exists.",
       "limitations": [
@@ -2735,6 +2843,7 @@
       "definition": "The Consumer Price Index for food bought at grocery stores and other stores for eating at home, for all urban consumers in the area, not seasonally adjusted.",
       "unit": "index",
       "universe": "all urban consumers in the area",
+      "kind": "index",
       "caveat": "An index whose level depends on each area's own base, so only its change over a year is meaningful; levels of two areas are never compared.",
       "intended_use": "Show how fast grocery prices have changed in the nearest area BLS publishes.",
       "limitations": [
@@ -2761,6 +2870,7 @@
       "definition": "How the overall price level of goods and services in the area compares with the national average, set at 100.",
       "unit": "index (U.S. = 100)",
       "universe": "metropolitan area or state",
+      "kind": "index",
       "caveat": "A level relative to the nation in one year; it is not a measure of inflation, and parities from different years are on different national bases.",
       "intended_use": "Show whether everyday costs in the area run above or below the national average.",
       "limitations": [
