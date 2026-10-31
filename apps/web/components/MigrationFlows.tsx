@@ -96,10 +96,16 @@ function FlowList({ answer, heading, testId }: { answer: MigrationAnswer; headin
   );
 }
 
+/** The only geography SOI's county-to-county files describe (ADR-0008). */
+export const COUNTY_GEO_ID = /^state:\d{2}\|county:\d{3}$/;
+
 export default function MigrationFlows({ geoId }: { geoId: string }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
+  const county = COUNTY_GEO_ID.test(geoId);
 
   useEffect(() => {
+    // Anything but a county is the API's 422, so it is never asked.
+    if (!county) return;
     let cancelled = false;
     setLoad({ state: "loading" });
     Promise.all([read(geoId, "inflow"), read(geoId, "outflow")])
@@ -112,8 +118,9 @@ export default function MigrationFlows({ geoId }: { geoId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [geoId]);
+  }, [geoId, county]);
 
+  if (!county) return null;
   if (load.state === "loading") return <p className="subtle" data-testid="migration-loading">Reading IRS migration flows…</p>;
   if (load.state === "error") return <p className="subtle" data-testid="migration-error">IRS migration flows could not be read: {load.message}</p>;
   if (!load.inflow && !load.outflow) return null;
