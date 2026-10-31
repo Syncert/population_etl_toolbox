@@ -9,10 +9,17 @@ silently and re-serves the wrong years. One definition, two callers.
 
 from __future__ import annotations
 
+import os
+
 from data_ingestion_toolbox.utility.gold_schema import (
     GrainStep,
     ServingRefreshChunkConfig,
 )
+
+#: Sessions publishing an ACS tract or place step at once, one state each.
+#: One session left all but one of the internal stack's 32 cores idle
+#: through a tract year (2026-10-31); bounded well under the connection limit.
+ACS_SERVING_WORKERS = int(os.environ.get("ACS_SERVING_WORKERS", "8"))
 
 
 BLS_CHUNK_CONFIG = ServingRefreshChunkConfig(
@@ -130,6 +137,21 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
               AND s.estimate_value IS NOT NULL
         )
     """,
+    # Tracts and places are published a state per session (by_state steps).
+    state_list_sql="""
+        SELECT DISTINCT state_fips
+        FROM silver_ref.dim_geo_entity
+        WHERE geo_type = 'state' AND state_fips IS NOT NULL
+        ORDER BY state_fips
+    """,
+    step_workers=ACS_SERVING_WORKERS,
+    stateless_rows_sql="""
+        SELECT COUNT(*)
+        FROM gold_census.rpt_acs_observations
+        WHERE observation_date BETWEEN %(start)s AND %(end)s
+          AND geo_level = ANY(%(geo_levels)s::TEXT[])
+          AND state_fips IS NULL
+    """,
     report_procedure="gold_census.refresh_rpt_acs_observations",
     latest_procedure="gold_census.refresh_mv_acs_latest",
     latest_table="gold_census.mv_acs_latest",
@@ -198,8 +220,8 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     """,
     grain_steps=(
         GrainStep("area", ("NATIONAL", "STATE", "COUNTY", "METRO"), "90min"),
-        GrainStep("tract", ("TRACT",), "120min"),
-        GrainStep("place", ("PLACE",), "600min"),
+        GrainStep("tract", ("TRACT",), "120min", by_state=True),
+        GrainStep("place", ("PLACE",), "600min", by_state=True),
     ),
 )
 
