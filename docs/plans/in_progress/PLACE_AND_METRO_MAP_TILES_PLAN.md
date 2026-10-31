@@ -144,7 +144,7 @@ host is not reachable from this session), so the live Martin tier is left to
 | Command | Result |
 |---|---|
 | `python -m pytest tests/unit -q` | 2831 passed |
-| `python -m pytest tests/unit/martin -q` | 39 passed |
+| `python -m pytest tests/unit/martin -q` | 37 passed |
 | `python -m pytest tests/dags -m dag -q` (Airflow venv) | 296 passed, 5 skipped, 5 failed; the same 5 (`test_task_callables.py`, ACS backfill planning) fail identically on `dev` without this branch |
 | `pytest -m "integration and database" tests/integration/database/test_tile_boundary_versions.py` | 4 passed |
 | `pytest -m "integration and database" tests/integration/database/test_schema_snapshot.py` | 3 passed after `python -m tests.support.schema_snapshot --write` |

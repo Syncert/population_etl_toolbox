@@ -92,7 +92,9 @@ def measure_sizes(tiles_url: str) -> tuple[dict, list[dict]]:
         catalog[layer] = json.loads(body) if status == 200 else {"status": status}
     measured = []
     for sample in samples():
-        status, body = _get(f"{tiles_url}/{sample.layer}/{sample.z}/{sample.x}/{sample.y}")
+        status, body = _get(
+            f"{tiles_url}/{sample.layer}/{sample.z}/{sample.x}/{sample.y}"
+        )
         features = None
         if body:
             try:
