@@ -18,13 +18,13 @@ verify:
 
 ## Status
 
-In progress since 2026-10-31 on `claude/project-thread-f4fxpt` (the build-out
+Needs review since 2026-10-31: built on `claude/project-thread-f4fxpt` (the build-out
 names `feat/web-cross-level-compare`), branched from `dev` at `59e6a25` (A-4,
 #180) with D-6's branch (#183) merged in for its "Show counts as" switch.
 Governed by [ADR-0010](../../decisions/0010-cross-level-comparison.md) and
 [ADR-0009](../../decisions/0009-per-capita-and-share-views.md); no new ADR.
-Built and passing in a cloud session against fixtures; the last criterion is
-a live check on OFFICE_LAB.
+Merged in #188, with follow-ups #193 and #199; every live check on
+OFFICE_LAB has passed (below).
 
 ## Why
 
@@ -92,7 +92,7 @@ nation", explained to an ordinary reader.
 - [x] cross-level rows, plain refusals, containment and period wording
 - [x] D-6 switch on compare pages; place-page compare links; picker search
 - [x] unit and browser tests (WEB-146), bundle budgets for the new routes
-- [ ] live check on OFFICE_LAB (unverified until then)
+- [x] live check on OFFICE_LAB (2026-10-31, after #193 and #199)
 
 ## Evidence
 
@@ -174,3 +174,23 @@ Fixed on the next follow-up:
   OFFICE_LAB built concurrently before the merge (119 MB, 2.1M rows).
 
 Re-time both pages and Dane County's related list after this merges.
+
+## Re-time, OFFICE_LAB, 2026-10-31 (dev at 610667e, #199; API and web rebuilt)
+
+1. Until no "Reading" text remained: Austin city beside Travis County 7.8 s
+   (was 91 s), Dane County beside Wisconsin 5.8 s (was 132 s).
+2. `GET /api/v1/catalog/geographies/state%3A55%7Ccounty%3A025/related`,
+   uncached: 0.63 s (was 7.88 s); the related read alone 646 ms for Dane
+   County (was 8,723 ms) and 41 ms for Madison city.
+3. Dane County's "Nearby and related" section, by eye: present and filled,
+   "Within this county" lists Black Earth, Blue Mounds, Cottage Grove, Cross
+   Plains, Dane, Deerfield, DeForest, Fitchburg, Madison city, Maple Bluff,
+   Marshall and more, each with a compare link; neighbours and "Part of"
+   below it.
+4. The seven chapter batches for Rock County beside Wisconsin, uncached, in
+   parallel (page filled in 4.6 s): PEP 725 ms, work and money 663, NASS
+   corn 599, FBI 526, health 390, housing 389, people 305. No batch
+   dominates, so no EXPLAIN was needed; the rest of the time is page and
+   catalog work outside the batches.
+
+Every criterion has passed live, so the plan moves to needs_review.
