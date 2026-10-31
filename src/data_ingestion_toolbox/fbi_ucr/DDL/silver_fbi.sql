@@ -318,7 +318,8 @@ CREATE TABLE IF NOT EXISTS silver_fbi.agency_geography_relationship (
     geo_id TEXT,
     geo_sk BIGINT REFERENCES silver_ref.dim_geo_entity(geo_sk),
     resolution_method TEXT CHECK (resolution_method IS NULL OR resolution_method IN (
-        'exact_state_code', 'county_label_match', 'reviewed_place_crosswalk'
+        'exact_state_code', 'county_label_match', 'reviewed_place_crosswalk',
+        'fbi_county_code'
     )),
     resolution_status TEXT NOT NULL CHECK (resolution_status IN (
         'resolved', 'unresolved', 'ambiguous', 'unsupported'
@@ -448,3 +449,49 @@ COMMENT ON COLUMN silver_fbi.observation_revision.source_record IS
 
 COMMENT ON COLUMN silver_fbi.agency_revision.county_labels IS
     'Provider county-name evidence only; never a canonical county code or a rollup key.';
+
+-- ---------------------------------------------------------------------------
+-- Return A master files (every agency's monthly offenses, one file a year)
+-- ---------------------------------------------------------------------------
+
+-- One row per release and data year once that year's file is fully in silver.
+-- A load skips a year already here with the same payload, so a run that stops
+-- part way resumes at the first year it had not finished, and a rerun of a
+-- finished year changes nothing.
+CREATE TABLE IF NOT EXISTS control.fbi_return_a_year (
+    release_key TEXT NOT NULL CHECK (release_key ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+    data_year INTEGER NOT NULL CHECK (data_year BETWEEN 1960 AND 2100),
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    payload_checksum TEXT NOT NULL CHECK (payload_checksum ~ '^[0-9a-f]{64}$'),
+    record_count INTEGER NOT NULL CHECK (record_count >= 0),
+    observation_count BIGINT NOT NULL CHECK (observation_count >= 0),
+    participation_count BIGINT NOT NULL CHECK (participation_count >= 0),
+    unresolved_county_codes INTEGER NOT NULL CHECK (unresolved_county_codes >= 0),
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (release_key, data_year)
+);
+
+-- The FBI numbers a state's counties 1, 2, 3 ... in its own order, not by
+-- FIPS. Each code is resolved from the file itself where it can be: a
+-- sheriff's or county police record names its county (`county_agency_name`).
+-- A code no county agency names takes the code-th county in FIPS order
+-- (`fips_order_rank`), and only in a state where every name-resolved code
+-- agrees with that order; otherwise it stays unresolved and its agencies are
+-- left out of county views rather than guessed.
+CREATE TABLE IF NOT EXISTS silver_fbi.return_a_county_crosswalk (
+    release_key TEXT NOT NULL,
+    data_year INTEGER NOT NULL,
+    state_code TEXT NOT NULL CHECK (state_code ~ '^[A-Z]{2}$'),
+    fbi_county_code INTEGER NOT NULL CHECK (fbi_county_code > 0),
+    geo_id TEXT,
+    geo_sk BIGINT REFERENCES silver_ref.dim_geo_entity(geo_sk),
+    method TEXT CHECK (method IS NULL OR method IN (
+        'county_agency_name', 'fips_order_rank'
+    )),
+    status TEXT NOT NULL CHECK (status IN ('resolved', 'unresolved')),
+    reason_code TEXT,
+    evidence TEXT,
+    PRIMARY KEY (release_key, data_year, state_code, fbi_county_code),
+    CHECK (status <> 'resolved' OR (geo_id IS NOT NULL AND method IS NOT NULL))
+);
+

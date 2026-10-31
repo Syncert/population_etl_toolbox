@@ -111,6 +111,15 @@ as `agencies_not_loaded`, its coverage share is left empty, and those
 agencies are listed (`not_loaded_oris`; `coverage.not_loaded_agencies` in the
 API). The refusal clears by itself once every agency's reports are loaded.
 
+Every agency's reports now come from the FBI's Return A master files (one
+national file a year, every agency's months and population), loaded as the
+products `return_a_violent_crime` and `return_a_property_crime`; the county
+rate pairings read those (version 2). Their totals are the CDE's own
+definitions summed from the file's offense components and are checked
+against the CDE's published totals where both exist (DQ-FBI-011). On the
+2023 file, Dane County's January covers 555,061 of 569,830 people (97 %),
+Madison included.
+
 ## Consequences
 
 - A county page can show "violent offenses per 100,000 people covered by

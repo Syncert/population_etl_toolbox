@@ -1136,6 +1136,11 @@ python scripts/run_acs_backfill.py --grain area --years 2000
 # The 1990 census (STF1A and STF3A dBase files): capture, replay,
 # transform, gold dimensions, serve. Resumes by state.
 docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_acs.load_1990
+
+# FBI Return A master files: every agency's monthly offenses, one national
+# file a year. Apply migration 040 first. Resumes by year; a rerun skips a
+# year already loaded from the same file. Then back to 1985 the same way.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.fbi_ucr.return_a.load --years 2025-2015
 ```
 
 Run a long driver detached so it survives the terminal. On Windows,
