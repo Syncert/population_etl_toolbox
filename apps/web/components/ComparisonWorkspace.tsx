@@ -59,6 +59,7 @@ import {
   describePreflight,
   incompatibleAlternatives,
   mayRequestComparison,
+  pairLabel,
   periodsDiffer,
   preferredComparisonGrain,
   preflightRequestParams,
@@ -93,7 +94,7 @@ import {
   serializeComparisonState,
 } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
-import { formatNumber } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 import { tableCaption, tablePageModel, tablePageRows } from "../lib/tablePage";
 
 const DEFAULT_GEO_LEVEL = "COUNTY";
@@ -645,7 +646,9 @@ export default function ComparisonWorkspace() {
     if (!comparable || saving) {
       return;
     }
-    const title = `${selection.a.metricCode} vs ${selection.b.metricCode}`;
+    const title = `${displayMetricName(selectedMetricRow("a") || selection.a.metricCode)} vs ${displayMetricName(
+      selectedMetricRow("b") || selection.b.metricCode,
+    )}`;
 
     // The configuration stores the pair and the geography, not the comparison
     // response: the verdict, the derived fields, and the caveats are the
@@ -829,7 +832,7 @@ export default function ComparisonWorkspace() {
                   ))}
                 </select>
                 {requestedMetricNotice[side] ? (
-                  <p className="subtle" data-testid={`requested-metric-note-${side}`}>
+                  <p className="subtle" data-testid={`requested-metric-note-${side}`} data-provenance="link">
                     {requestedMetricNotice[side]}
                   </p>
                 ) : null}
@@ -997,8 +1000,8 @@ export default function ComparisonWorkspace() {
             </p>
             <ScatterChart
               model={scatter}
-              labelX={String(comparison.metric_code_a || "measure A")}
-              labelY={String(comparison.metric_code_b || "measure B")}
+              labelX={pairLabel(comparison, "a")}
+              labelY={pairLabel(comparison, "b")}
             />
           </article>
         ) : null}

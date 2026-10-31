@@ -281,7 +281,7 @@ export default function DataQualityExplorer({ embedded = false }: { embedded?: b
               <tbody>
                 {shown.map((row) => (
                   <tr key={row.metricCode} data-testid={`quality-metric-${row.metricCode}`}>
-                    <td>{row.displayName || row.metricCode}</td>
+                    <td title={row.metricCode} data-metric-code={row.metricCode}>{row.displayName}</td>
                     <td>{row.freshness || "Not published"}</td>
                     <td>{row.publishedAt || "Not published"}</td>
                     <td>{row.harvestedAt || "Not published"}</td>

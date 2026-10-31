@@ -457,7 +457,9 @@ export default function EvidencePacketBuilder() {
           <strong>The API reports these blocks can no longer be replayed as composed:</strong>
           <ul>
             {staleBlocks.map((state) => (
-              <li key={state.blockId} data-testid={`stale-${state.blockId}`}>
+              // The API's verdict, quoted as it gave it; it may name a code,
+              // so it is marked as a provenance record (WEB-144).
+              <li key={state.blockId} data-testid={`stale-${state.blockId}`} data-provenance="api-verdict">
                 <strong>{state.title}</strong>: {state.reason}
               </li>
             ))}
@@ -547,9 +549,8 @@ export default function EvidencePacketBuilder() {
                   onClick={() => attachSavedView(chart)}
                   data-testid={`packet-attach-${String(chart.id)}`}
                 >
-                  <span>
+                  <span title={String(chart.metricCode || "")} data-metric-code={String(chart.metricCode || "")}>
                     <strong>{String(chart.title || chart.id)}</strong>
-                    <small>{String(chart.metricCode || "")}</small>
                   </span>
                   <Plus size={15} />
                 </button>

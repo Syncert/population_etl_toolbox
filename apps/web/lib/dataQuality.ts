@@ -13,6 +13,7 @@
 // evidence actually lives rather than inventing a surface for it.
 
 import type { MetricSummary, SourceFreshness } from "./api/types";
+import { displayMetricName } from "./format";
 
 // The route's own shape lives with the transport's other shapes, and is
 // re-exported here because this module's readers think of it as part of the
@@ -193,7 +194,7 @@ export function metricQualityRows(
   const rows = (Array.isArray(metrics) ? metrics : []).map((metric) => ({
     metricCode: metric.metric_code,
     sourceCode: text(metric.source_code),
-    displayName: text(metric.metric_display_name),
+    displayName: displayMetricName(metric),
     freshness: text(metric.freshness_state),
     publishedAt: text(metric.publication_time),
     harvestedAt: text(metric.harvested_at),
