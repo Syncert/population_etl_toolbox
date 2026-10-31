@@ -122,6 +122,7 @@ list.
 | `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/geographies/search` | Places a typed name may mean, for "find your place": states, counties, metros, cities and towns, and ZCTAs, best match first and ranked by population, with the containing state and county and the web page path — see [Finding a place](#finding-a-place-by-name-or-by-location) |
 | `GET /api/v1/catalog/geographies/locate` | The city or town, county, tract, ZCTA, state and metro a latitude and longitude lie in, with `landing` (the city, else the county) for "use my location"; `404 {"detail": "no geography contains this point"}` where no state does |
+| `GET /api/v1/catalog/tile-layers` | Every vector tile layer a map can draw (`counties`, `tracts`, `places`, `metros`), its grains, zooms and join key, and for the versioned place and metro layers each boundary vintage held with its own tile template — see [Map tiles](#map-tiles-places-and-metros-by-boundary-vintage) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
@@ -305,8 +306,9 @@ for a grain with no page yet: metro, tract, ZCTA.
 answers the current geographies whose boundary covers the point: `state`,
 `county`, `place`, `tract` and `zcta`, each with its `boundary_vintage` and
 `page_path`, and `metro`, the county's metro by its delineated membership
-(OMB builds metros from whole counties, so a metro has no boundary of its
-own here; its `boundary_vintage` is the delineation's). `landing` is the city
+(OMB builds metros from whole counties, so the metro follows from the
+county rather than from the metro's own polygon; its `boundary_vintage` is the
+delineation's). `landing` is the city
 or town the point is in, or its county when it is in none (unincorporated
 land), so "use my location" opens the page a resident calls home. Where two
 current boundaries of one grain cover the point (a tract the newer decade
@@ -324,6 +326,38 @@ either side of it.
 
 Both are catalog reads: they spend the catalog rate-limit budget and are
 publicly cacheable like the rest of `/catalog/`.
+
+### Map tiles: places and metros by boundary vintage
+
+`GET /api/v1/catalog/tile-layers` lists the vector tile layers the same
+origin serves under `/tiles/`, so a map is built from this list rather than
+from guesses about the tile server:
+
+| Layer | Grains | Zooms | Boundaries |
+| --- | --- | --- | --- |
+| `counties` | `STATE`, `COUNTY` | 0–12 | current |
+| `tracts` | `TRACT` | 6–14 | current |
+| `places` | `PLACE` (cities and towns) | 6–14 | by vintage |
+| `metros` | `METRO` (metropolitan and micropolitan areas) | 0–12 | by OMB delineation vintage |
+
+A place annexes, incorporates or disincorporates, and OMB redelineates
+metros, so a figure for an earlier year belongs on that year's boundary. The
+`places` and `metros` layers are **versioned**: `vintages` lists each
+boundary vintage held, with its `feature_count` and its own `tile_template`
+(`/tiles/places/{z}/{x}/{y}?vintage=2010`). `default_vintage` is the newest,
+and the layer's `tile_template` draws it. A vintage that is not listed draws
+**nothing**: the tile server never substitutes another vintage, because a
+value drawn on another vintage's boundary is drawn on the wrong shape. A
+versioned layer with nothing loaded has `available: false`. Metro polygons
+are the Census cartographic boundary of each delineation, never a union of
+member counties.
+
+Every feature carries `geo_id` (the `join_key`), `geo_level`, its name
+(`name_field`), its state where it has one and `boundary_vintage`. **Tiles
+carry no values.** A map colours a geography by joining a published value
+on `geo_id`, and `uncoloured_rule` is the rule it follows: a geography with
+no published value is left uncoloured, never drawn as zero, and the map says
+how many it left uncoloured. A catalog read like the rest of `/catalog/`.
 
 ## Observations
 

@@ -17,6 +17,7 @@ from apps.api.services.catalog_service import (
     list_source_freshness,
     list_sources,
 )
+from apps.api.services.tile_layers import list_tile_layers
 from apps.api.services.place_search import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -35,6 +36,7 @@ from apps.api.schemas import (
     MetricCapability,
     MetricListResponse,
     SourceSystem,
+    TileLayerCatalogResponse,
 )
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -149,6 +151,25 @@ def locate_geographies(
     if located is None:
         raise HTTPException(status_code=404, detail="no geography contains this point")
     return located
+
+
+@router.get("/tile-layers", response_model=TileLayerCatalogResponse)
+def get_tile_layers(
+    db: Session = Depends(get_db_session_dep),
+) -> TileLayerCatalogResponse:
+    """Every vector tile layer a map can draw, and the boundary vintages it holds.
+
+    ``counties`` (states and counties) and ``tracts`` draw current
+    boundaries. ``places`` (cities and towns) and ``metros`` are versioned:
+    each listed vintage has its own ``tile_template`` (``?vintage=YYYY``), the
+    default is the newest, and a vintage not listed draws nothing rather than
+    another vintage's boundaries. Tiles carry no values; ``uncoloured_rule``
+    is the rule a map joining values on ``join_key`` follows.
+    """
+    try:
+        return list_tile_layers(db)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
 
 
 @router.get("/capabilities", response_model=CapabilityListResponse)

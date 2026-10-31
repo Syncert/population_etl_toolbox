@@ -613,6 +613,18 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/tile-layers": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:TileLayerCatalogResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/cdc/observations": {
       "parameters": [
         {
@@ -4964,6 +4976,58 @@
       "required": [
         "source_code",
         "source_name"
+      ]
+    },
+    "TileLayer": {
+      "properties": {
+        "available": "boolean",
+        "default_vintage": "integer | null",
+        "grains": "array<string>",
+        "join_key": "string",
+        "layer_id": "string",
+        "maxzoom": "integer",
+        "minzoom": "integer",
+        "name_field": "string",
+        "source_layer": "string",
+        "tile_template": "string",
+        "versioned": "boolean",
+        "vintages": "array<TileLayerVintage>"
+      },
+      "required": [
+        "available",
+        "grains",
+        "join_key",
+        "layer_id",
+        "maxzoom",
+        "minzoom",
+        "name_field",
+        "source_layer",
+        "tile_template",
+        "versioned"
+      ]
+    },
+    "TileLayerCatalogResponse": {
+      "properties": {
+        "layers": "array<TileLayer>",
+        "uncoloured_rule": "string"
+      },
+      "required": [
+        "layers",
+        "uncoloured_rule"
+      ]
+    },
+    "TileLayerVintage": {
+      "properties": {
+        "boundary_vintage": "integer",
+        "feature_count": "integer",
+        "is_default": "boolean",
+        "tile_template": "string"
+      },
+      "required": [
+        "boundary_vintage",
+        "feature_count",
+        "is_default",
+        "tile_template"
       ]
     },
     "ValidationError": {

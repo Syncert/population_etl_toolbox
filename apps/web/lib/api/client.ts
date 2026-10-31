@@ -28,6 +28,7 @@ import type {
   SourceCapability,
   SourceFreshness,
   SourceSummary,
+  TileLayerCatalogResponse,
 } from "./types";
 
 export const API_BASE = "/api/v1";
@@ -513,6 +514,15 @@ export function locateGeography(
   options: RequestOptions = {},
 ): Promise<GeographyLocateResponse> {
   return apiFetch<GeographyLocateResponse>("/catalog/geographies/locate", { ...options, params: { lat, lon } });
+}
+
+/**
+ * Every tile layer a map can draw and the boundary vintages each holds
+ * (tiles-places-and-metros). Maps build their sources from this list rather
+ * than from the tile server's own catalog.
+ */
+export function getTileLayers(options: RequestOptions = {}): Promise<TileLayerCatalogResponse> {
+  return apiFetch<TileLayerCatalogResponse>("/catalog/tile-layers", options);
 }
 
 // The capability resource answers with the standard `{total, items}`

@@ -573,3 +573,161 @@ SELECT latest.geo_id,
 FROM gold_glossary.dim_geo_latest AS latest
 WHERE latest.geography_state = 'current'
   AND latest.geo_geom IS NOT NULL;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Boundaries by vintage, for the place and metro tile layers
+-- (tiles-places-and-metros)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- `dim_geo_latest` keeps one geometry per geography, the newest. A place
+-- annexes, incorporates or disincorporates, and OMB redelineates metros, so a
+-- map of an earlier year drawn on today's boundaries colours the wrong shape,
+-- and a place that no longer exists cannot be drawn at all. This holds one row
+-- per geography and boundary vintage the reference loaded, for the two grains
+-- whose tile layers are versioned, and the tile functions in
+-- `001_gold_contract_views.sql` serve exactly the vintage they are asked for.
+--
+-- The geometry is stored in Web Mercator because that is the only projection
+-- a tile is cut in: transforming 32,000 place polygons on every request is
+-- work the warehouse can do once per vintage. Rows carry no observation; a
+-- map colours them by joining the published values on `geo_id`, so a
+-- geography with no published value is drawn uncoloured, never as zero.
+CREATE TABLE IF NOT EXISTS gold_glossary.tile_boundary_version (
+    geo_id            TEXT NOT NULL,
+    geo_level         TEXT NOT NULL,
+    boundary_vintage  INTEGER NOT NULL,
+    geo_name          TEXT NOT NULL,
+    state_fips        TEXT,
+    state_name        TEXT,
+    place_fips        TEXT,
+    area_code         TEXT,
+    lsad              TEXT,
+    latitude          DOUBLE PRECISION,
+    longitude         DOUBLE PRECISION,
+    geometry_checksum TEXT NOT NULL,
+    tile_geom         geometry(MultiPolygon, 3857) NOT NULL,
+    refreshed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (geo_id, boundary_vintage),
+    CONSTRAINT ck_tile_boundary_version_grain
+        CHECK (geo_level IN ('PLACE', 'METRO'))
+);
+
+CREATE INDEX IF NOT EXISTS ix_gold_glossary_tile_boundary_version_geom
+    ON gold_glossary.tile_boundary_version USING GIST (tile_geom);
+-- Which vintages a grain holds, and the newest one, are read on every tile
+-- request that names no vintage.
+CREATE INDEX IF NOT EXISTS ix_gold_glossary_tile_boundary_version_vintage
+    ON gold_glossary.tile_boundary_version (geo_level, boundary_vintage);
+
+-- Brought in line with the reference incrementally: a boundary is rewritten
+-- only when its checksum changed, and one the reference no longer holds is
+-- removed. Comparing checksums first means a run that finds nothing new
+-- reads no geometry; a full rebuild would rewrite every polygon of every
+-- vintage on every glossary run. Called by the `glossary_reconciliation` DAG
+-- after `refresh_dim_geo_latest`.
+DROP PROCEDURE IF EXISTS gold_glossary.refresh_tile_boundaries();
+CREATE OR REPLACE PROCEDURE gold_glossary.refresh_tile_boundaries()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('gold_glossary.refresh_tile_boundaries'));
+
+    DROP TABLE IF EXISTS pg_temp.tile_boundary_choice;
+    -- One geometry per geography and vintage (valid, the 500k cartographic
+    -- resolution where the reference holds several, the newest load) and the
+    -- attributes it is served with. No geometry is read here.
+    CREATE TEMP TABLE tile_boundary_choice ON COMMIT DROP AS
+    WITH boundary_choice AS (
+        SELECT DISTINCT ON (boundary.geo_sk, boundary.boundary_vintage)
+               boundary.geo_geometry_sk,
+               boundary.geo_sk,
+               boundary.boundary_vintage,
+               boundary.geometry_checksum,
+               entity.geo_id,
+               entity.state_fips,
+               entity.place_fips,
+               entity.area_code,
+               gold_glossary.geo_grain(entity.geo_type) AS geo_level
+        FROM silver_ref.dim_geo_geometry_version AS boundary
+        JOIN silver_ref.dim_geo_entity AS entity
+             ON entity.geo_sk = boundary.geo_sk
+            AND entity.geo_type IN ('place', 'metro')
+        WHERE boundary.is_valid
+        ORDER BY boundary.geo_sk, boundary.boundary_vintage,
+                 (boundary.resolution = '500k') DESC,
+                 boundary.ingested_at DESC, boundary.geo_geometry_sk DESC
+    )
+    SELECT choice.*,
+           -- The name the reference gave it at that vintage: the newest
+           -- attribute version not later than the boundary, else the
+           -- nearest one after it.
+           gold_glossary.geo_name(attribute.name, NULL, state.name, choice.geo_id)
+               AS geo_name,
+           state.name AS state_name,
+           attribute.lsad,
+           attribute.latitude,
+           attribute.longitude
+    FROM boundary_choice AS choice
+    LEFT JOIN LATERAL (
+        SELECT version.name, version.lsad, version.latitude, version.longitude
+        FROM silver_ref.dim_geo_entity_version AS version
+        WHERE version.geo_sk = choice.geo_sk
+        ORDER BY (version.geography_vintage <= choice.boundary_vintage) DESC,
+                 ABS(version.geography_vintage - choice.boundary_vintage),
+                 version.ingested_at DESC, version.geo_version_sk DESC
+        LIMIT 1
+    ) AS attribute ON TRUE
+    LEFT JOIN silver_ref.dim_geo_current AS state
+         ON state.geo_type = 'state'
+        AND state.state_fips = choice.state_fips;
+
+    DELETE FROM gold_glossary.tile_boundary_version AS served
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_temp.tile_boundary_choice AS choice
+        WHERE choice.geo_id = served.geo_id
+          AND choice.boundary_vintage = served.boundary_vintage
+    );
+
+    -- Only what changed reads its geometry.
+    INSERT INTO gold_glossary.tile_boundary_version (
+        geo_id, geo_level, boundary_vintage, geo_name, state_fips, state_name,
+        place_fips, area_code, lsad, latitude, longitude, geometry_checksum,
+        tile_geom, refreshed_at
+    )
+    SELECT choice.geo_id, choice.geo_level, choice.boundary_vintage,
+           choice.geo_name, choice.state_fips, choice.state_name,
+           choice.place_fips, choice.area_code, choice.lsad,
+           choice.latitude, choice.longitude, choice.geometry_checksum,
+           ST_Multi(ST_CollectionExtract(ST_Transform(boundary.geom, 3857), 3)),
+           NOW()
+    FROM pg_temp.tile_boundary_choice AS choice
+    JOIN silver_ref.dim_geo_geometry_version AS boundary
+         ON boundary.geo_geometry_sk = choice.geo_geometry_sk
+    WHERE NOT EXISTS (
+        SELECT 1 FROM gold_glossary.tile_boundary_version AS served
+        WHERE served.geo_id = choice.geo_id
+          AND served.boundary_vintage = choice.boundary_vintage
+          AND (served.geo_level, served.geo_name, served.state_fips,
+               served.state_name, served.place_fips, served.area_code,
+               served.lsad, served.latitude, served.longitude,
+               served.geometry_checksum)
+              IS NOT DISTINCT FROM
+              (choice.geo_level, choice.geo_name, choice.state_fips,
+               choice.state_name, choice.place_fips, choice.area_code,
+               choice.lsad, choice.latitude, choice.longitude,
+               choice.geometry_checksum)
+    )
+    ON CONFLICT (geo_id, boundary_vintage) DO UPDATE
+    SET geo_level = EXCLUDED.geo_level,
+        geo_name = EXCLUDED.geo_name,
+        state_fips = EXCLUDED.state_fips,
+        state_name = EXCLUDED.state_name,
+        place_fips = EXCLUDED.place_fips,
+        area_code = EXCLUDED.area_code,
+        lsad = EXCLUDED.lsad,
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        geometry_checksum = EXCLUDED.geometry_checksum,
+        tile_geom = EXCLUDED.tile_geom,
+        refreshed_at = NOW();
+END;
+$$;
