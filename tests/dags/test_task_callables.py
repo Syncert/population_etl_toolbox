@@ -756,6 +756,10 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
     _patch_callable_global(
         monkeypatch, callable_, "_variables_fingerprint", fingerprint
     )
+    # The disk guard has its own test; a small CI runner's disk is not this one's subject.
+    _patch_callable_global(
+        monkeypatch, callable_, "assert_room_for", lambda *_a, **_k: None
+    )
     _patch_callable_global(
         monkeypatch,
         callable_,

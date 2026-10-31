@@ -8,7 +8,7 @@ import { installCrossLevelFixtures } from "../support/crossLevelScenarios.js";
 // Medians and rates sit side by side in one period with how the places
 // relate and no difference between nested or overlapping places; a total
 // across levels is refused in plain words and its served share is shown
-// instead, marked as a draft view; a total with no share says it is left
+// instead; a total with no share says it is left
 // out; each chapter's "Show counts as" switch asks for the chosen view; a
 // metro, which has no page, is addressed by identity, and an identity
 // address of two places with pages settles on the place-page form; place
@@ -43,7 +43,8 @@ test("a city beside its county: medians side by side, totals refused in plain wo
   await expect(page.getByTestId("compare-row-below-poverty-refusal")).toContainText(
     "This is a total, and Madison city, Wisconsin is a city or town and Dane County, Wisconsin is a county, so they differ in size by their nature",
   );
-  await expect(page.getByTestId("compare-row-below-poverty-instead")).toHaveText("Shown instead: Share of people below the poverty level (Draft view awaiting review)");
+  await expect(page.getByTestId("compare-row-below-poverty-instead")).toHaveText("Shown instead: Share of people below the poverty level")
+  await expect(page.getByTestId("compare-row-below-poverty-instead").locator("[data-pairing-status='draft']")).toHaveCount(0);
   await expect(poverty).toHaveAttribute("data-ratio-id", "poverty_share:acs5");
   await expect(poverty.locator(".paired-bar")).toHaveCount(2);
 

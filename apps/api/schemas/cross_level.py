@@ -13,6 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+from apps.api.schemas.derived import PairingStatus
 from apps.api.schemas.labels import LabelStatus
 
 #: What a value measures (ADR-0010 rule 2), from the metric's definition.
@@ -54,6 +55,9 @@ class ComparisonAlternative(BaseModel):
     label: str
     unit: str
     href: str
+    #: The pairing's review status, so a draft shown instead of a refused
+    #: total is marked as one and an approved one is not.
+    pairing_status: PairingStatus
 
 
 class PlacesRefusal(BaseModel):
