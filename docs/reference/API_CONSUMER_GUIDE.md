@@ -566,6 +566,67 @@ a release pin or a reduction, and filters by `geo_id`, `geo_level` and
 ADR-0007; `/catalog/metrics/{code}` lists the windows a metric answers in
 `time_windows`, empty where it has none.
 
+### Per person, per household and share of the total
+
+A count is hard to compare between a city of 30,000 and a county of a
+million. `GET /api/v1/observations/derived?ratio_id=...` answers a
+**declared derived** per-capita or share value ([ADR-0009](../decisions/0009-per-capita-and-share-views.md)),
+and `GET /api/v1/catalog/derived-ratios` lists the reviewed pairings it can
+answer; `?numerator=<metric_code>` narrows that to the views one count
+offers, and `served_only=true` to those the API will answer now.
+
+Each pairing in `docs/semantics/derived_ratios.json` names its numerator,
+its denominator (or the provider's own rate), its `kind` (`share`,
+`per_capita` or `provider_rate`), the `scale` and `unit` the result is
+stated in, and the `universe` the result describes, which is the
+denominator's: a poverty share is people below the poverty level over people
+whose poverty status is determined (`B17001_002` / `B17001_001`), not over
+the total population. An ACS pairing exists once per dataset
+(`poverty_share:acs5`, `poverty_share:acs1`), so a 5-year count is only ever
+divided by a 5-year total. **Only an `approved` pairing is served**; any
+other answers 422 naming its status. A local stack can set
+`DERIVED_RATIOS_SERVE_DRAFTS=1` to serve drafts for review, and every row
+carries `pairing_status`, so a draft is never mistaken for a reviewed view.
+
+The route takes the parameters `/observations` takes for the numerator --
+`scope`, `release`, `period_start`, `geo_id`, `geo_level`, `state_fips`,
+`county_fips`, `year_from`, `year_to`, `newest_per_geography`,
+`newest_release_per_period`, `limit`, `offset` -- reads the numerator's page
+exactly as `/observations` would, and divides each row by the denominator
+row with **the same geography, period and release**. Nothing else is ever
+matched. Each row carries:
+
+- `value`, rounded to two decimals of `unit` (percent, per 1,000, per
+  100,000), or `null` with `unavailable_reason`: `different_period` (the
+  denominator is published for this geography, but not for this period and
+  release), `denominator_missing`, `denominator_zero` or `suppressed_input`.
+  A missing or withheld input is never read as zero.
+- `margin_of_error` and `margin_of_error_method`. For ACS inputs the margin
+  is the Census Bureau's formula for a derived proportion (`proportion`), or
+  for a ratio (`ratio`), or the ratio formula where the proportion formula's
+  radicand is negative (`ratio_fallback`), at the inputs' 90 percent
+  confidence. `unavailable` means an input's margin is not published. The
+  served ACS rows do not keep the Bureau's "controlled" annotation, so a
+  pairing names the levels at which the Bureau controls its denominator
+  (total population and housing units at nation, state, county and metro);
+  there a null denominator margin is taken as zero, as the Bureau instructs,
+  and the denominator says `margin_of_error_controlled: true`.
+- `derived: true`, `ratio_id`, `pairing_version`, and both inputs in
+  `numerator` and `denominator`: metric code, plain label, release, period,
+  value, value status and margin.
+
+Where the provider publishes the rate itself -- the FBI's rate per 100,000,
+the Population Estimates Program's births and deaths per 1,000, SAIPE's and
+SAHIE's percentages -- the pairing is a `provider_rate`: the route answers
+the provider's own rows, `derived: false`, with the provider's row in
+`provider_rate`, and no recomputed value appears beside it. Its paging,
+scope and filters are the rate metric's.
+
+`total`, `limit` and `offset` page the numerator's (or the provider rate's)
+rows in that metric's own `/observations` order; the response's `ratio`
+repeats the pairing so a client can name the denominator beside every value
+("percent of households, ACS 2019-2023").
+
 ### Census PEP spans six decades, and its measures do not
 
 Census PEP publishes one series per decade, each its own product with its
@@ -1337,6 +1398,7 @@ neither repeat a row nor skip one:
 | `/observations` | the source's own declared key for the scope you asked: its latest order for `scope=latest`, its as-released order for `scope=as_released`. Both end in a column no two rows of one metric share, which is why a reduction (`newest_per_geography`, `newest_release_per_period`) picks the same row every time |
 | `/observations/releases` | the release ordering the source declares, descending, then the release identity itself — the group key, so no two rows can tie |
 | `/observations/periods` | the served `period_start` descending, then `period_end` descending with null last — the pair is the group key, so paging is deterministic |
+| `/observations/derived` | the numerator's (or the provider rate's) own `/observations` order for the scope you asked; each row is matched to its denominator, never reordered |
 | `/observations/latest` | `geo_id` — the three union sources publish one latest row per geography |
 | `/observations/timeseries` | `observation_date`, then the release identity the union carries: `as_of_date`, `dataset_code`, `vintage_year` |
 | `/{source}/observations/latest` | `geo_id`, then the source's own remaining key — for Census PEP that is `observation_date`, `vintage_year`, `capture_id`, because its latest publication is a series |

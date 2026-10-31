@@ -1,0 +1,1121 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it.",
+  "entries": [
+    {
+      "ratio_id": "poverty_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people below the poverty level",
+      "numerator": "CENSUS_ACS:{dataset}:B17001_002",
+      "denominator": "CENSUS_ACS:{dataset}:B17001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people whose poverty status is determined",
+      "universe": "people whose poverty status is determined",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B17001_002 is a line of the table whose total B17001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "The Bureau's own overall poverty rate is this ratio (table S1701)."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B17001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "unemployed_share_of_labor_force",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Unemployed share of the civilian labor force (survey)",
+      "numerator": "CENSUS_ACS:{dataset}:B23025_005",
+      "denominator": "CENSUS_ACS:{dataset}:B23025_003",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian labor force, 16 and over",
+      "universe": "civilian labor force, 16 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B23025_005 is a line of the table whose total B23025_003 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "The official unemployment rate is BLS LAUS; this is the survey's own share over a five-year (or one-year) period, and the two differ."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23025",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "labor_force_participation",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 16 and over in the labor force",
+      "numerator": "CENSUS_ACS:{dataset}:B23025_002",
+      "denominator": "CENSUS_ACS:{dataset}:B23025_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people 16 and over",
+      "universe": "people 16 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B23025_002 is a line of the table whose total B23025_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23025",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "owner_occupied_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of occupied homes that are owner-occupied",
+      "numerator": "CENSUS_ACS:{dataset}:B25003_002",
+      "denominator": "CENSUS_ACS:{dataset}:B25003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "occupied housing units",
+      "universe": "occupied housing units",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25003_002 is a line of the table whose total B25003_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25003",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "renter_occupied_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of occupied homes that are renter-occupied",
+      "numerator": "CENSUS_ACS:{dataset}:B25003_003",
+      "denominator": "CENSUS_ACS:{dataset}:B25003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "occupied housing units",
+      "universe": "occupied housing units",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25003_003 is a line of the table whose total B25003_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25003",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "vacancy_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of housing units that are vacant",
+      "numerator": "CENSUS_ACS:{dataset}:B25002_003",
+      "denominator": "CENSUS_ACS:{dataset}:B25002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "housing units",
+      "universe": "housing units",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25002_003 is a line of the table whose total B25002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "Vacant includes seasonal and for-sale units, not only units for rent."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "living_alone_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households of one person living alone",
+      "numerator": "CENSUS_ACS:{dataset}:B11001_008",
+      "denominator": "CENSUS_ACS:{dataset}:B11001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B11001_008 is a line of the table whose total B11001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B11001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "never_married_men_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of men 15 and over who never married",
+      "numerator": "CENSUS_ACS:{dataset}:B12001_003",
+      "denominator": "CENSUS_ACS:{dataset}:B12001_002",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "men 15 and over",
+      "universe": "men 15 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B12001_003 is a line of the table whose total B12001_002 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B12001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "never_married_women_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of women 15 and over who never married",
+      "numerator": "CENSUS_ACS:{dataset}:B12001_012",
+      "denominator": "CENSUS_ACS:{dataset}:B12001_011",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "women 15 and over",
+      "universe": "women 15 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B12001_012 is a line of the table whose total B12001_011 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B12001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "same_house_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people living in the same house as a year ago",
+      "numerator": "CENSUS_ACS:{dataset}:B07001_017",
+      "denominator": "CENSUS_ACS:{dataset}:B07001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people 1 year and over",
+      "universe": "people 1 year and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B07001_017 is a line of the table whose total B07001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "moved_within_county_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people who moved within the county in the past year",
+      "numerator": "CENSUS_ACS:{dataset}:B07001_033",
+      "denominator": "CENSUS_ACS:{dataset}:B07001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people 1 year and over",
+      "universe": "people 1 year and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B07001_033 is a line of the table whose total B07001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "foreign_born_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of residents born outside the United States",
+      "numerator": "CENSUS_ACS:{dataset}:B05002_013",
+      "denominator": "CENSUS_ACS:{dataset}:B05002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "total population (survey)",
+      "universe": "total population (survey)",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B05002_013 is a line of the table whose total B05002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B05002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "veteran_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of civilians 18 and over who are veterans",
+      "numerator": "CENSUS_ACS:{dataset}:B21001_002",
+      "denominator": "CENSUS_ACS:{dataset}:B21001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilians 18 and over",
+      "universe": "civilians 18 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B21001_002 is a line of the table whose total B21001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B21001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "income_under_10k_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with income under $10,000",
+      "numerator": "CENSUS_ACS:{dataset}:B19001_002",
+      "denominator": "CENSUS_ACS:{dataset}:B19001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B19001_002 is a line of the table whose total B19001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "income_200k_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with income of $200,000 or more",
+      "numerator": "CENSUS_ACS:{dataset}:B19001_017",
+      "denominator": "CENSUS_ACS:{dataset}:B19001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B19001_017 is a line of the table whose total B19001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "worked_from_home_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of workers who worked from home",
+      "numerator": "CENSUS_ACS:{dataset}:B08301_021",
+      "denominator": "CENSUS_ACS:{dataset}:B08301_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "workers 16 and over",
+      "universe": "workers 16 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08301_021 is a line of the table whose total B08301_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08301",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "public_transit_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of workers commuting by public transportation",
+      "numerator": "CENSUS_ACS:{dataset}:B08301_010",
+      "denominator": "CENSUS_ACS:{dataset}:B08301_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "workers 16 and over",
+      "universe": "workers 16 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08301_010 is a line of the table whose total B08301_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08301",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "commute_90_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of commuters travelling 90 minutes or more",
+      "numerator": "CENSUS_ACS:{dataset}:B08303_013",
+      "denominator": "CENSUS_ACS:{dataset}:B08303_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "workers 16 and over who did not work from home",
+      "universe": "workers 16 and over who did not work from home",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08303_013 is a line of the table whose total B08303_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08303",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "single_family_detached_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of housing units that are single-family detached",
+      "numerator": "CENSUS_ACS:{dataset}:B25024_002",
+      "denominator": "CENSUS_ACS:{dataset}:B25024_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "housing units",
+      "universe": "housing units",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25024_002 is a line of the table whose total B25024_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25024",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "built_2020_or_later_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of housing units built in 2020 or later",
+      "numerator": "CENSUS_ACS:{dataset}:B25034_002",
+      "denominator": "CENSUS_ACS:{dataset}:B25034_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "housing units",
+      "universe": "housing units",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25034_002 is a line of the table whose total B25034_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "The Bureau changes this table's year bands between releases; line 2 names the newest band of its own release."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25034",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "no_vehicle_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with no vehicle available",
+      "numerator": "CENSUS_ACS:{dataset}:B08201_002",
+      "denominator": "CENSUS_ACS:{dataset}:B08201_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08201_002 is a line of the table whose total B08201_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08201",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "broadband_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with a broadband subscription",
+      "numerator": "CENSUS_ACS:{dataset}:B28002_004",
+      "denominator": "CENSUS_ACS:{dataset}:B28002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B28002_004 is a line of the table whose total B28002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "Published from the 2017 release on."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B28002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "no_internet_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with no internet access",
+      "numerator": "CENSUS_ACS:{dataset}:B28002_013",
+      "denominator": "CENSUS_ACS:{dataset}:B28002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B28002_013 is a line of the table whose total B28002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "Published from the 2017 release on."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B28002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_under_19_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people under 19 with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_017",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_002",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people under 19",
+      "universe": "civilian noninstitutionalized people under 19",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_017 is a line of the table whose total B27010_002 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_19_to_34_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 19 to 34 with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_033",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_018",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people 19 to 34",
+      "universe": "civilian noninstitutionalized people 19 to 34",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_033 is a line of the table whose total B27010_018 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_35_to_64_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 35 to 64 with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_050",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_034",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people 35 to 64",
+      "universe": "civilian noninstitutionalized people 35 to 64",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_050 is a line of the table whose total B27010_034 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_65_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 65 and over with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_066",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_051",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people 65 and over",
+      "universe": "civilian noninstitutionalized people 65 and over",
+      "numerator_is_subset": true,
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_066 is a line of the table whose total B27010_051 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "under_18_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of residents under 18",
+      "numerator": "CENSUS_ACS:{dataset}:B09001_001",
+      "denominator": "CENSUS_ACS:{dataset}:B01003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "total population (survey)",
+      "universe": "total population (survey)",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B09001_001 counts a subset of the people B01003_001 counts, in the same ACS release; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "B09001 counts people under 18 in households and group quarters, a subset of the total population in the same release."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B09001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "age_65_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of residents 65 and over",
+      "numerator": "CENSUS_ACS:{dataset}:B09020_001",
+      "denominator": "CENSUS_ACS:{dataset}:B01003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "total population (survey)",
+      "universe": "total population (survey)",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B09020_001 counts a subset of the people B01003_001 counts, in the same ACS release; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B09020",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "violent_crime_rate",
+      "kind": "provider_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people",
+      "label": "Violent crime rate, as the FBI published it",
+      "numerator": "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
+      "provider_rate": "FBI_UCR:summarized_violent_crime:V:offense:rate",
+      "denominator_label": "population covered by reporting agencies",
+      "universe": "population covered by reporting agencies",
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "The rate covers the population of agencies that reported; a missing agency report is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+      ]
+    },
+    {
+      "ratio_id": "property_crime_rate",
+      "kind": "provider_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people",
+      "label": "Property crime rate, as the FBI published it",
+      "numerator": "FBI_UCR:summarized_property_crime:P:offense:absolute_total",
+      "provider_rate": "FBI_UCR:summarized_property_crime:P:offense:rate",
+      "denominator_label": "population covered by reporting agencies",
+      "universe": "population covered by reporting agencies",
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "The rate covers the population of agencies that reported; a missing agency report is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+      ]
+    },
+    {
+      "ratio_id": "birth_rate",
+      "kind": "provider_rate",
+      "scale": 1000,
+      "unit": "per 1,000 residents",
+      "label": "Births per 1,000 residents, as the Census Bureau estimated it",
+      "numerator": "CENSUS_PEP:BIRTHS",
+      "provider_rate": "CENSUS_PEP:RBIRTH",
+      "denominator_label": "average resident population over the estimate year (PEP)",
+      "universe": "average resident population over the estimate year (PEP)",
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "Population Estimates Program rates use the average of the year's starting and ending populations."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/file-layouts.html"
+      ]
+    },
+    {
+      "ratio_id": "death_rate",
+      "kind": "provider_rate",
+      "scale": 1000,
+      "unit": "per 1,000 residents",
+      "label": "Deaths per 1,000 residents, as the Census Bureau estimated it",
+      "numerator": "CENSUS_PEP:DEATHS",
+      "provider_rate": "CENSUS_PEP:RDEATH",
+      "denominator_label": "average resident population over the estimate year (PEP)",
+      "universe": "average resident population over the estimate year (PEP)",
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "Population Estimates Program rates use the average of the year's starting and ending populations."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/file-layouts.html"
+      ]
+    },
+    {
+      "ratio_id": "poverty_rate_saipe",
+      "kind": "provider_rate",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people in poverty, as SAIPE modelled it",
+      "numerator": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVALL",
+      "provider_rate": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRTALL",
+      "denominator_label": "people whose poverty status is determined (SAIPE)",
+      "universe": "people whose poverty status is determined (SAIPE)",
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "A model-based single-year estimate; it is not the ACS survey share."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/saipe/technical-documentation/methodology.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_rate_sahie",
+      "kind": "provider_rate",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people under 65 without health insurance, as SAHIE modelled it",
+      "numerator": "CENSUS_SAIPE_SAHIE:sahie:NUI",
+      "provider_rate": "CENSUS_SAIPE_SAHIE:sahie:PCTUI",
+      "denominator_label": "people under 65, all incomes (SAHIE)",
+      "universe": "people under 65, all incomes (SAHIE)",
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "A model-based single-year estimate; it is not the ACS survey share."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/sahie/technical-documentation/methodology.html"
+      ]
+    }
+  ]
+}
