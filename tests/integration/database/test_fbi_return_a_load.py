@@ -1,10 +1,11 @@
 """Return A master files load every agency, resumably (ETL-107).
 
-The fixture is 47 verbatim 2023 records from the FBI's ``reta-2023.txt``:
+The fixture is 49 verbatim 2023 records from the FBI's ``reta-2023.txt``:
 every agency in Wisconsin's Dane (FBI county 013) and Brown (005) counties,
 Richland County's (052), three Travis County, Texas, agencies, Camden County
-Police (New Jersey, the year's only negative entry) and Wisconsin Dells (three
-counties). The load runs through a stand-in download that serves the
+Police (New Jersey, the year's only negative entry), Wisconsin Dells (three
+counties), DC Police (a population under county code 000) and Ridgetop,
+Tennessee (a second population group with a blank code). The load runs through a stand-in download that serves the
 fixture as the zip the CDE serves.
 """
 
@@ -139,7 +140,18 @@ def test_every_agency_loads_and_dane_county_is_read_with_madison(
     summary = load(return_a_warehouse, [2023], fetch=_fetch)
     assert summary["release_key"] == RELEASE
     assert [item["status"] for item in summary["years"]] == ["loaded"]
-    assert summary["years"][0]["records"] == 47
+    assert summary["years"][0]["records"] == 49
+    # DC Police's population names no county: it loads, with no county link.
+    assert (
+        _rows(
+            return_a_warehouse,
+            """
+            SELECT geo_id FROM silver_fbi.agency_geography_relationship
+            WHERE ori = 'DCMPD0000' AND relationship_type = 'county'
+            """,
+        )
+        == []
+    )
 
     # The Sheriff's January matches the CDE's own summarized row (6), as do
     # Fitchburg (13) and Madison (71).

@@ -18,7 +18,7 @@ In progress, 2026-10-31: part 1 built on this branch (`/age-structure`, `/age-st
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md),
 governed by [ADR-0013](../../decisions/0013-age-and-sex-structure.md)
 (accepted by Nick on 2026-10-31 with the level toggle). The web plan,
-[`WEB_AGE_AND_SEX_STRUCTURE_PLAN.md`](../to_do/WEB_AGE_AND_SEX_STRUCTURE_PLAN.md),
+[`WEB_AGE_AND_SEX_STRUCTURE_PLAN.md`](WEB_AGE_AND_SEX_STRUCTURE_PLAN.md),
 builds against the contract below and can be built in parallel against
 fixtures.
 

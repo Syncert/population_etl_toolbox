@@ -151,6 +151,9 @@ class ReturnARecord:
     agency_name: str
     county_slices: tuple[CountySlice, ...]
     months: tuple[MonthCards, ...]
+    #: Population the file gives with no county code (the District, New York
+    #: City, state police, territories): the agency's, but in no county.
+    countyless_population: int = 0
 
     @property
     def ori(self) -> str:
@@ -163,27 +166,39 @@ class ReturnARecord:
 
     @property
     def population(self) -> int:
-        """The agency's population: its county slices summed (the guide's note)."""
-        return sum(item.population for item in self.county_slices)
+        """The agency's population: its population groups summed (the guide's note)."""
+        return (
+            sum(item.population for item in self.county_slices)
+            + self.countyless_population
+        )
 
     @property
     def county_codes(self) -> tuple[int, ...]:
         return tuple(item.fbi_county_code for item in self.county_slices)
 
 
-def _slice(line: str, first: int) -> CountySlice | None:
-    population = decode_unsigned(_at(line, first, first + 8))
+def _slice(line: str, first: int) -> tuple[CountySlice | None, int]:
+    """One population group: its county slice, or the population no county code names.
+
+    The District, a city spanning several counties (New York), a state police
+    division and a territory's police carry a population with county code
+    ``000`` (or blank). That population is the agency's; it names no county,
+    so it is kept apart from the slices rather than refused. A code that is
+    present but not a number still fails: it is a shifted column, not a gap.
+    """
+    population = decode_unsigned(_at(line, first, first + 8)) or 0
     county = _at(line, first + 9, first + 11).strip()
-    if not county or not county.isdigit() or int(county) == 0:
-        if population:
-            raise ReturnARecordError(
-                f"population {population} without a county at {first}"
-            )
-        return None
-    return CountySlice(
-        fbi_county_code=int(county),
-        population=population or 0,
-        msa_code=_at(line, first + 12, first + 14).strip(),
+    if county and not county.isdigit():
+        raise ValueError(f"county code {county!r} at {first + 9} is not a number")
+    if not county or int(county) == 0:
+        return None, population
+    return (
+        CountySlice(
+            fbi_county_code=int(county),
+            population=population,
+            msa_code=_at(line, first + 12, first + 14).strip(),
+        ),
+        0,
     )
 
 
@@ -228,11 +243,9 @@ def parse_record(line: str, line_number: int) -> ReturnARecord:
         raise ReturnARecordError(f"line {line_number}: invalid ORI {ori7!r}")
     try:
         months_reported = decode_unsigned(_at(line, 42, 43)) or 0
-        slices = tuple(
-            item
-            for item in (_slice(line, 45), _slice(line, 60), _slice(line, 75))
-            if item is not None
-        )
+        groups = (_slice(line, 45), _slice(line, 60), _slice(line, 75))
+        slices = tuple(item for item, _ in groups if item is not None)
+        countyless_population = sum(population for _, population in groups)
         months = tuple(
             _month(
                 line[
@@ -257,6 +270,7 @@ def parse_record(line: str, line_number: int) -> ReturnARecord:
         agency_name=_at(line, 121, 144).strip(),
         county_slices=slices,
         months=months,
+        countyless_population=countyless_population,
     )
 
 

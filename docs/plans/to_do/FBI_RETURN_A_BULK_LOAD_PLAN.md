@@ -195,6 +195,14 @@ Follow-ups, not in v1:
 - NIBRS incident files.
 - Arrest, hate-crime and LEOKA master files.
 - City (place) crime rates.
+- Linking agencies with no county code to a county. The file gives 194
+  agencies in 2023 (20.4 million people) a population under county code
+  `000` or a blank code: DC Police, NYPD, state police divisions,
+  territories. They load with their population and no county link, so they
+  count for state and national figures and never reach a county's numerator
+  or its 50% floor (ADR-0012). The District of Columbia (11001) therefore
+  reads "no reporting agency" until DC Police is mapped to it, a post-v1
+  follow-up.
 
 ## Verify
 
