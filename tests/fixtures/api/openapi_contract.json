@@ -3271,12 +3271,14 @@
       "properties": {
         "href": "string",
         "label": "string",
+        "pairing_status": "string",
         "ratio_id": "string",
         "unit": "string"
       },
       "required": [
         "href",
         "label",
+        "pairing_status",
         "ratio_id",
         "unit"
       ]

@@ -34,6 +34,8 @@ export interface ComparisonAlternative {
   label: string;
   unit: string;
   href: string;
+  /** The pairing's review status: only a draft is marked as one. */
+  pairing_status: "approved" | "draft" | "needs_review" | "deprecated";
 }
 
 export interface PlacesSide {

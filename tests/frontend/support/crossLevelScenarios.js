@@ -77,7 +77,7 @@ export function placesAnswer(params) {
   };
   if (total && crossLevel) {
     const alternatives = DERIVED_RATIOS.filter((item) => item.served && item.numerator === code)
-      .map((item) => ({ ratio_id: item.ratio_id, label: item.label, unit: item.unit, href: `/api/v1/comparison/places?ratio_id=${item.ratio_id}` }));
+      .map((item) => ({ ratio_id: item.ratio_id, label: item.label, unit: item.unit, href: `/api/v1/comparison/places?ratio_id=${item.ratio_id}`, pairing_status: item.status }));
     return { json: { ...base, comparable: false, period_basis: null,
       refusal: { reason: "counts_differ_in_size", detail: `${code} is a count, and a ${a.geo_level.toLowerCase()} and a ${b.geo_level.toLowerCase()} differ in size (UI fixture)`, alternatives },
       side_a: { geo_id: a.geo_id, geo_level: a.geo_level, geo_name: a.geo_name, metric_code: code, published: null },
