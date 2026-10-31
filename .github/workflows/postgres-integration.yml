@@ -40,8 +40,9 @@ jobs:
     name: Warehouse integration (PostGIS 16 + Python 3.11)
     runs-on: ubuntu-latest
     # The database tier runs about 14 minutes on a hosted runner; 15 left no
-    # margin and cancelled passing runs.
-    timeout-minutes: 25
+    # margin and cancelled passing runs. By 2026-10-31 it ran 20-25 minutes,
+    # and 25 cancelled a passing run while several PRs shared the runners.
+    timeout-minutes: 40
 
     services:
       postgres:
