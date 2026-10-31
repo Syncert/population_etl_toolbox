@@ -77,7 +77,7 @@ export default function HomePage() {
       <section className="home-intro home-finder">
         <div className="section-kicker">Economic Data Studio</div>
         <h1>What is going on in your place?</h1>
-        <p>One page for every county, every state, and the nation: the same chapters in the same order, each number beside its state&apos;s and the nation&apos;s, with its period and source.</p>
+        <p>One page for every city, county and state, and the nation: the same chapters in the same order, each number beside its state&apos;s and the nation&apos;s, with its period and source.</p>
         <PlaceSearch catalog={catalog} error={placeError} />
       </section>
 
