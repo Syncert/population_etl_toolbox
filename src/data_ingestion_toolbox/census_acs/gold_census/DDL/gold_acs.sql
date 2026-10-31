@@ -97,7 +97,10 @@ SELECT
     -- every warehouse that matters.
     s.value_status,
     s.source_value,
-    s.capture_id
+    s.capture_id,
+    -- The fact's own state, so the serving refresh can read one year and one
+    -- state through `idx_fact_demo_year_state` (appended, as above).
+    s.state_fips
 FROM silver_census.fact_demographics s
 JOIN gold_census.dim_acs_variable av
     ON av.dataset_code  = s.dataset
@@ -376,10 +379,16 @@ DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observations(DATE, DATE);
 -- A grain-scoped step deletes rather than truncates: a truncate would take
 -- ACCESS EXCLUSIVE on the whole year partition, and every reader of the year
 -- (whatever grain it asked for) would wait behind it. NULL is every grain.
+-- The three-argument form is replaced by one that also takes a state: left
+-- in place, a three-argument call would match both and be refused.
+DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observations(DATE, DATE, TEXT[]);
 CREATE OR REPLACE PROCEDURE gold_census.refresh_rpt_acs_observations(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL,
-    p_geo_levels TEXT[] DEFAULT NULL
+    p_geo_levels TEXT[] DEFAULT NULL,
+    -- One state of a grain step, so a large grain is published by several
+    -- sessions at once (each its own states). Requires `p_geo_levels`.
+    p_state_fips TEXT DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
@@ -394,6 +403,10 @@ DECLARE
     v_cleared_years INTEGER := 0;
 BEGIN
     RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
+    IF p_state_fips IS NOT NULL AND p_geo_levels IS NULL THEN
+        RAISE EXCEPTION 'a state''s refresh names its grains: truncating a year '
+                        'partition for one state would clear every other state';
+    END IF;
 
     DROP TABLE IF EXISTS pg_temp.gold_acs_affected_keys;
     CREATE TEMP TABLE gold_acs_affected_keys (
@@ -412,6 +425,7 @@ BEGIN
         WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
           AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
           AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
+          AND (p_state_fips IS NULL OR d.state_fips = p_state_fips)
     ), recorded AS (
         INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
         SELECT DISTINCT geo_id, variable_code, metric_code FROM scanned
@@ -441,7 +455,8 @@ BEGIN
         DELETE FROM gold_census.rpt_acs_observations
         WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
           AND (p_end_date IS NULL OR observation_date <= p_end_date)
-          AND geo_level = ANY(p_geo_levels);
+          AND geo_level = ANY(p_geo_levels)
+          AND (p_state_fips IS NULL OR state_fips = p_state_fips);
     ELSIF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
         -- Every year, including the default partition.
         TRUNCATE TABLE gold_census.rpt_acs_observations;
@@ -575,7 +590,15 @@ BEGIN
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = ao.geo_id
     WHERE (p_start_date IS NULL OR ao.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR ao.observation_date <= p_end_date)
-      AND (p_geo_levels IS NULL OR ao.geo_level = ANY(p_geo_levels));
+      -- The same window on the fact's own year, which the year index can
+      -- read: `observation_date` is computed in the view, so the date bounds
+      -- alone scanned the whole fact. A date in the window implies its year.
+      AND (p_start_date IS NULL
+           OR ao.vintage_year >= EXTRACT(YEAR FROM p_start_date)::INT)
+      AND (p_end_date IS NULL
+           OR ao.vintage_year <= EXTRACT(YEAR FROM p_end_date)::INT)
+      AND (p_geo_levels IS NULL OR ao.geo_level = ANY(p_geo_levels))
+      AND (p_state_fips IS NULL OR ao.state_fips = p_state_fips);
     GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
     INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
@@ -584,6 +607,7 @@ BEGIN
     WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
       AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
+      AND (p_state_fips IS NULL OR d.state_fips = p_state_fips)
     ON CONFLICT DO NOTHING;
 
     SELECT COUNT(*) INTO v_affected_keys FROM gold_acs_affected_keys;

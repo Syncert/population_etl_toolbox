@@ -86,6 +86,11 @@ CREATE INDEX IF NOT EXISTS idx_fact_demo_table_id ON silver_census.fact_demograp
 -- The upsert key is `fact_demographics_uk`; a second index on the same
 -- columns cost every insert a write (migration 038 drops it).
 CREATE INDEX IF NOT EXISTS idx_fact_demo_source_year ON silver_census.fact_demographics(source_system, estimate_year);
+-- The serving refresh reads one year, and one state of it when a large grain
+-- is published state by state; without this every grain step scanned the
+-- whole 275 GB fact (853M rows) on 2026-10-31, including the steps that
+-- published nothing. Built CONCURRENTLY by hand on the internal stack.
+CREATE INDEX IF NOT EXISTS idx_fact_demo_year_state ON silver_census.fact_demographics(estimate_year, state_fips);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_ingested_at ON silver_census.fact_demographics(ingested_at);
 
 -- One row per slice of `transform_census_to_silver` that finished under an

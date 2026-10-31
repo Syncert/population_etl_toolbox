@@ -54,6 +54,10 @@ class _Cursor:
             ACS_CHUNK_CONFIG.all_chunks_sql,
         ):
             self._all = [(date(2021, 1, 1), date(2021, 12, 31), SERVED)]
+        elif sql is ACS_CHUNK_CONFIG.stateless_rows_sql:
+            self._one = (0,)
+        elif sql is ACS_CHUNK_CONFIG.state_list_sql:
+            self._all = [("10",), ("55",)]
         elif sql is ACS_CHUNK_CONFIG.silver_rows_sql:
             self._one = (self.silver_rows,)
         elif sql is ACS_CHUNK_CONFIG.step_changed_sql:
@@ -102,11 +106,13 @@ class _Hook:
 
 
 def _served_grains(hook: _Hook) -> list[list[str]]:
-    return [
-        list(params[2])
-        for sql, params in hook.calls
-        if sql.startswith(f"CALL {ACS_CHUNK_CONFIG.report_procedure}")
-    ]
+    """Each grain step served, once, however many states it was split into."""
+    grains: list[list[str]] = []
+    for sql, params in hook.calls:
+        if sql.startswith(f"CALL {ACS_CHUNK_CONFIG.report_procedure}"):
+            if list(params[2]) not in grains:
+                grains.append(list(params[2]))
+    return grains
 
 
 def test_a_places_only_year_serves_the_place_step_alone() -> None:
@@ -133,3 +139,19 @@ def test_a_year_that_serves_nothing_from_publishable_silver_fails() -> None:
         refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
     assert any("status = 'FAILED'" in sql for sql, _ in hook.calls)
     assert not any("status = 'COMPLETE'" in sql for sql, _ in hook.calls)
+
+
+def test_a_tract_or_place_step_is_published_state_by_state() -> None:
+    """Covers: DB-065 -- one session per state, each naming its state; the area step stays whole."""
+    hook = _Hook(changed={"PLACE", "TRACT", "COUNTY"})
+    refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
+    calls = [
+        params
+        for sql, params in hook.calls
+        if sql.startswith(f"CALL {ACS_CHUNK_CONFIG.report_procedure}")
+    ]
+    area = [params for params in calls if "COUNTY" in params[2]]
+    assert len(area) == 1 and len(area[0]) == 3
+    for grain in ("TRACT", "PLACE"):
+        states = sorted(params[3] for params in calls if list(params[2]) == [grain])
+        assert states == ["10", "55"]

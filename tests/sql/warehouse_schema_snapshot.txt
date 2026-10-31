@@ -3069,6 +3069,7 @@ v gold_census.fact_acs_observation
     column value_status text
     column source_value text
     column capture_id uuid
+    column state_fips character varying(2)
     body SELECT s.geo_id,
     body         CASE
     body             WHEN COALESCE(TRIM(BOTH FROM s.geo_level), ''::text) <> ''::text THEN gold_glossary.geo_grain(s.geo_level::text)
@@ -3094,7 +3095,8 @@ v gold_census.fact_acs_observation
     body     s.ingested_at AS updated_at,
     body     s.value_status,
     body     s.source_value,
-    body     s.capture_id
+    body     s.capture_id,
+    body     s.state_fips
     body    FROM silver_census.fact_demographics s
     body      JOIN gold_census.dim_acs_variable av ON av.dataset_code = s.dataset::text AND av.vintage_year = s.estimate_year AND av.variable_code = s.variable_code::text
     body   WHERE s.variable_code IS NOT NULL AND s.variable_code::text <> ''::text;
@@ -9610,6 +9612,7 @@ r silver_census.fact_demographics
     index idx_fact_demo_source_year CREATE INDEX idx_fact_demo_source_year ON silver_census.fact_demographics USING btree (source_system, estimate_year)
     index idx_fact_demo_table_id CREATE INDEX idx_fact_demo_table_id ON silver_census.fact_demographics USING btree (table_id)
     index idx_fact_demo_time_sk CREATE INDEX idx_fact_demo_time_sk ON silver_census.fact_demographics USING btree (time_sk)
+    index idx_fact_demo_year_state CREATE INDEX idx_fact_demo_year_state ON silver_census.fact_demographics USING btree (estimate_year, state_fips)
 
 r silver_census.observation_revision
     column capture_id uuid NOT NULL
