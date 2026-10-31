@@ -97,7 +97,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**7 plans.**
+**8 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
