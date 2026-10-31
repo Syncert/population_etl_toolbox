@@ -24,6 +24,12 @@ from functools import lru_cache
 from pathlib import Path
 
 STATUSES = frozenset({"draft", "approved", "deprecated", "needs_review"})
+#: What a value measures (ADR-0010 rule 2). A count grows with the place; the
+#: others describe its population whatever its size, so they compare across
+#: geographic levels.
+KINDS = frozenset({"count", "median", "mean", "rate", "share", "index"})
+#: The kind an entry without one is taken to be: the conservative default.
+DEFAULT_KIND = "count"
 REQUIRED = (
     "metric_id",
     "metric_codes",
@@ -77,6 +83,8 @@ class MetricDefinition:
     status: str
     version: int
     citations: tuple[str, ...]
+    #: ``None`` when the entry declares none; read it through ``measure_kind``.
+    kind: str | None = None
 
 
 def parse_registry(document: dict) -> dict[str, MetricDefinition]:
@@ -96,6 +104,8 @@ def parse_registry(document: dict) -> dict[str, MetricDefinition]:
             raise DefinitionError(
                 f"{entry['metric_id']} has status {entry['status']!r}"
             )
+        if entry.get("kind") is not None and entry["kind"] not in KINDS:
+            raise DefinitionError(f"{entry['metric_id']} has kind {entry['kind']!r}")
         if not entry["citations"] or not entry["metric_codes"]:
             raise DefinitionError(f"{entry['metric_id']} names no code or no citation")
         definition = MetricDefinition(
@@ -108,6 +118,7 @@ def parse_registry(document: dict) -> dict[str, MetricDefinition]:
             status=entry["status"],
             version=int(entry["version"]),
             citations=tuple(entry["citations"]),
+            kind=entry.get("kind"),
         )
         for code in entry["metric_codes"]:
             if code in by_code:
@@ -125,6 +136,24 @@ def definition_for(metric_code: str | None) -> MetricDefinition | None:
     if not metric_code:
         return None
     return registry().get(metric_code)
+
+
+def measure_kind(metric_code: str | None) -> tuple[str, str]:
+    """What a metric measures and how sure the registry is: ``(kind, status)``.
+
+    ``status`` is the entry's own status, or ``undeclared`` for a metric with
+    no entry or an entry without a kind, which is then a count (ADR-0010 rule
+    2). With ``METRIC_LABELS_REVIEWED_ONLY=1`` a draft's kind gives way to the
+    default exactly as its label gives way to the provider's.
+    """
+    definition = definition_for(metric_code)
+    if (
+        definition is None
+        or definition.kind is None
+        or (reviewed_only() and definition.status != "approved")
+    ):
+        return DEFAULT_KIND, "undeclared"
+    return definition.kind, definition.status
 
 
 def provider_label(metric_code: str | None, display_name: str | None) -> str | None:
