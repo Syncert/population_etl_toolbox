@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 import uuid
@@ -14,6 +15,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.census_acs.config import CONFIG as RAW_CONFIG
+from data_ingestion_toolbox.census_acs.decennial import census_metadata_rows
 from data_ingestion_toolbox.silver_ref.geography_contract import (
     persist_exact_resolution_outcomes,
 )
@@ -323,7 +325,9 @@ def _count_unpadded_state_geo_ids(hook: PostgresHook) -> int:
     return int(row[0]) if row else 0
 
 
-def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
+def _assert_geo_dimension_coverage(
+    hook: PostgresHook, scope: dict[int, list[str]] | None = None
+) -> None:
     """Fail before transformation when captured ACS geography IDs are not loaded.
 
     Places are not part of this gate (acs-place-grain). The nation, the states
@@ -348,7 +352,14 @@ def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
                     ELSE NULL
                 END AS geo_id
             FROM silver_census.observation_revision AS observation
-            WHERE observation.geo_level NOT IN ('place', 'tract')
+            WHERE observation.geo_level NOT IN ('place', 'tract', 'metro')
+              AND (
+                  %(datasets)s::TEXT[] IS NULL
+                  OR (
+                      observation.dataset = ANY(%(datasets)s::TEXT[])
+                      AND observation.year = ANY(%(years)s::INT[])
+                  )
+              )
         ), missing AS (
             SELECT source.geo_level, source.geo_id
             FROM source_geographies AS source
@@ -362,7 +373,17 @@ def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
         LIMIT 25;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        # A run scoped to named years checks only their datasets, on the slice
+        # index; unscoped, every row is checked as before.
+        cur.execute(
+            sql,
+            {
+                "datasets": sorted({d for ds in scope.values() for d in ds})
+                if scope
+                else None,
+                "years": sorted(scope) if scope else None,
+            },
+        )
         rows = cur.fetchall()
     if not rows:
         return
@@ -386,6 +407,9 @@ def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
         rows = cur.fetchall()
+    # Census values are stored under ACS names their metadata is not filed
+    # under (decennial-2000-and-1990-history); label them from the crosswalks.
+    rows = list(rows) + census_metadata_rows()
 
     return (
         pl.DataFrame(
@@ -449,8 +473,11 @@ class RawSlice:
 
     @property
     def key(self) -> str:
+        # A per-dataset slice must not share the whole year's key: the
+        # resume checkpoint and the content ledger are keyed by it, and two
+        # datasets under "*" would let a retry skip the second as done.
         if self.geo_level is None:
-            return "*"
+            return "*" if self.dataset is None else f"{self.dataset}/*"
         return f"{self.dataset}/{self.geo_level}/{self.state_fips or '-'}"
 
 
@@ -476,6 +503,7 @@ _RAW_FRAME_SCHEMA = {
     "county_fips": pl.Utf8,
     "place_fips": pl.Utf8,
     "tract_code": pl.Utf8,
+    "cbsa_code": pl.Utf8,
     "table_id": pl.Utf8,
     "variable_name": pl.Utf8,
     "measure_type": pl.Utf8,
@@ -486,13 +514,8 @@ _RAW_FRAME_SCHEMA = {
 }
 
 
-def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
-    """SQL for the latest revision of every cell in ``year``/``raw_slice``.
-
-    The filters sit inside the ranking CTE. Every one of them is a column the
-    window partitions by, so filtering before ranking gives the same rows as
-    filtering after, and lets the slice index narrow the scan.
-    """
+def _slice_where(year: int | None, raw_slice: RawSlice) -> tuple[str, list[object]]:
+    """The WHERE clause over ``observation`` that selects ``year``/``raw_slice``."""
     filters: list[str] = []
     params: list[object] = []
     if year is not None:
@@ -509,7 +532,17 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
         else:
             filters.append("observation.state_fips_source = %s")
             params.append(raw_slice.state_fips)
-    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    return (f"WHERE {' AND '.join(filters)}" if filters else ""), params
+
+
+def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
+    """SQL for the latest revision of every cell in ``year``/``raw_slice``.
+
+    The filters sit inside the ranking CTE. Every one of them is a column the
+    window partitions by, so filtering before ranking gives the same rows as
+    filtering after, and lets the slice index narrow the scan.
+    """
+    where, params = _slice_where(year, raw_slice)
     sql = f"""
         WITH captured_ranked AS (
             SELECT
@@ -520,6 +553,7 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
                 observation.county_fips_source AS county_fips,
                 observation.place_fips_source AS place_fips,
                 observation.tract_code_source AS tract_code,
+                observation.cbsa_source AS cbsa_code,
                 observation.table_id,
                 observation.variable_name,
                 observation.measure_type,
@@ -538,6 +572,7 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
                                  observation.county_fips_source,
                                  observation.place_fips_source,
                                  observation.tract_code_source,
+                                 observation.cbsa_source,
                                  observation.variable_name
                     ORDER BY capture.retrieved_at DESC,
                              observation.capture_id DESC
@@ -547,7 +582,7 @@ def _raw_rows_sql(year: int | None, raw_slice: RawSlice) -> tuple[str, tuple]:
             {where}
         )
         SELECT dataset, year, geo_level, state_fips, county_fips, place_fips,
-               tract_code, table_id, variable_name, measure_type, value,
+               tract_code, cbsa_code, table_id, variable_name, measure_type, value,
                capture_id, value_status, value_source
         FROM captured_ranked
         WHERE revision_rank = 1;
@@ -585,20 +620,173 @@ def _fetch_raw_frame(
     return pl.concat(frames, rechunk=True)
 
 
-def _plan_year_slices(hook: PostgresHook, year: int, row_count: int) -> list[RawSlice]:
-    """Split a year too large to hold at once into (dataset, level, state) slices."""
+#: Every dataset the revision table may hold. Queries name the dataset as
+#: well as the year: the only index that serves them,
+#: `census_observation_revision_slice_idx`, leads with the dataset, so a
+#: year alone reads all 1.8 billion rows (428 GB on OFFICE_LAB in October
+#: 2026) -- about an hour, three times per run.
+KNOWN_DATASETS: tuple[str, ...] = (
+    "acs1",
+    "acs5",
+    "dec2000sf1",
+    "dec2000sf3",
+    "dec1990stf1",
+    "dec1990stf3",
+)
+
+
+def _year_counts_by_dataset(
+    hook: PostgresHook, years: list[int]
+) -> dict[tuple[int, str], int]:
+    """Revision rows per (year, dataset), each counted on the slice index."""
+    counts: dict[tuple[int, str], int] = {}
+    sql = """
+        SELECT COUNT(*) FROM silver_census.observation_revision
+        WHERE dataset = %s AND year = %s;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        for year in years:
+            for dataset in KNOWN_DATASETS:
+                cur.execute(sql, (dataset, int(year)))
+                count = int(cur.fetchone()[0])
+                if count:
+                    counts[(int(year), dataset)] = count
+    return counts
+
+
+def _plan_year_slices(
+    hook: PostgresHook,
+    year: int,
+    row_count: int,
+    datasets: list[str] | None = None,
+) -> list[RawSlice]:
+    """Split a year into slices the slice index can read.
+
+    A year at or under the threshold is one slice per dataset; a larger one
+    is one per (dataset, level, state). Each names its dataset, so no read
+    scans the whole table. ``datasets`` of ``None`` is the old whole-year
+    shape, kept for callers that pass no dataset list.
+    """
     if row_count <= _YEAR_SLICE_ROW_THRESHOLD:
-        return [WHOLE_YEAR]
+        if datasets is None:
+            return [WHOLE_YEAR]
+        return [RawSlice(dataset=dataset) for dataset in datasets]
     sql = """
         SELECT DISTINCT dataset, geo_level, state_fips_source
         FROM silver_census.observation_revision
-        WHERE year = %s
+        WHERE dataset = %s AND year = %s
         ORDER BY dataset, geo_level, state_fips_source NULLS FIRST;
+    """
+    rows: list[tuple] = []
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        for dataset in datasets if datasets is not None else KNOWN_DATASETS:
+            cur.execute(sql, (dataset, int(year)))
+            rows.extend(cur.fetchall())
+    return [RawSlice(dataset=r[0], geo_level=r[1], state_fips=r[2]) for r in rows]
+
+
+#: Bump when the transform's output for unchanged input changes, so every
+#: slice's content fingerprint changes with it and a later run replays it.
+TRANSFORM_VERSION = "acs-silver-v2"
+
+
+def transform_context(meta_df: pl.DataFrame, geo_df: pl.DataFrame) -> str:
+    """What besides a slice's revisions decides its silver rows.
+
+    The variable metadata and the geography reference: a tract the reference
+    newly carries (an older decade's, say) turns rows that were ledgered
+    `unmapped` into facts, so a slice finished before it must run again.
+    """
+    digest = hashlib.sha256(TRANSFORM_VERSION.encode())
+    for frame in (meta_df, geo_df):
+        digest.update(str(frame.height).encode())
+        if frame.height:
+            digest.update(str(int(frame.hash_rows(seed=0).sum())).encode())
+    return digest.hexdigest()
+
+
+def slice_fingerprint(
+    hook: PostgresHook, year: int, raw_slice: RawSlice, context: str
+) -> str:
+    """The slice's raw content, as its revision count and newest revision.
+
+    Revisions are append-only: a changed provider response adds rows, which
+    moves both figures, and an equivalent replay adds none.
+    """
+    where, params = _slice_where(year, raw_slice)
+    sql = f"""
+        SELECT COUNT(*), MAX(observation.parsed_at)::TEXT
+        FROM silver_census.observation_revision AS observation
+        {where};
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, tuple(params))
+        count, newest = cur.fetchone()
+    payload = f"{context}|{year}|{raw_slice.key}|{count}|{newest}"
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _finished_fingerprints(hook: PostgresHook, year: int) -> dict[str, str]:
+    """Slices of ``year`` any earlier run finished, with the content they read."""
+    sql = """
+        SELECT slice_key, content_fingerprint
+        FROM silver_census.transform_slice_state
+        WHERE year = %s;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (int(year),))
-        rows = cur.fetchall()
-    return [RawSlice(dataset=r[0], geo_level=r[1], state_fips=r[2]) for r in rows]
+        return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def _record_slice_fingerprint(
+    hook: PostgresHook, year: int, slice_key: str, fingerprint: str, changed: int
+) -> None:
+    sql = """
+        -- A slice recorded for the first time with nothing to change holds
+        -- rows written before the ledger existed. When its year was fully
+        -- served before this run (the chunk's completed watermark covers its
+        -- target), those rows were published by that serve, so their last
+        -- change is no later than it; otherwise nothing is known and the
+        -- slice counts as changed now (skip-unchanged-grains).
+        INSERT INTO silver_census.transform_slice_state
+            (year, slice_key, content_fingerprint, rows_changed, last_changed_at)
+        SELECT %(year)s, %(slice_key)s, %(fingerprint)s, %(changed)s,
+               CASE
+                   WHEN %(changed)s > 0 THEN NOW()
+                   ELSE COALESCE(
+                       (
+                           SELECT c.last_refresh_completed_at
+                           FROM control.serving_refresh_chunk_state AS c
+                           WHERE c.source_code = 'CENSUS_ACS'
+                             AND c.chunk_start = MAKE_DATE(%(year)s, 1, 1)
+                             AND c.completed_silver_ingested_at
+                                 >= c.target_silver_ingested_at
+                       ),
+                       NOW()
+                   )
+               END
+        ON CONFLICT (year, slice_key) DO UPDATE
+        SET content_fingerprint = EXCLUDED.content_fingerprint,
+            rows_changed = EXCLUDED.rows_changed,
+            completed_at = NOW(),
+            -- A replay that changed nothing must not hide an earlier change
+            -- the serving step has not published yet.
+            last_changed_at = CASE
+                WHEN EXCLUDED.rows_changed > 0 THEN NOW()
+                ELSE silver_census.transform_slice_state.last_changed_at
+            END;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            sql,
+            {
+                "year": int(year),
+                "slice_key": slice_key,
+                "fingerprint": fingerprint,
+                "changed": int(changed),
+            },
+        )
+        conn.commit()
 
 
 def _completed_slice_keys(
@@ -671,6 +859,7 @@ def _transform_rows_to_silver_df(
             "county_fips",
             "place_fips",
             "tract_code",
+            "cbsa_code",
             "table_id",
             "variable_code",
         ]
@@ -741,6 +930,10 @@ def _transform_rows_to_silver_df(
                 + pl.lit("|tract:")
                 + pl.col("tract_code")
             )
+            # A metro is the Bureau's own CBSA estimate (W-7), keyed as the
+            # shared reference keys it.
+            .when(pl.col("geo_level") == "metro")
+            .then(pl.lit("cbsa:") + pl.col("cbsa_code"))
             .otherwise(pl.lit(None))
             .alias("geo_id"),
         ]
@@ -779,9 +972,17 @@ def _transform_rows_to_silver_df(
             ]
         )
 
+    # A census counts on one day, April 1 of its year; the ACS covers one or
+    # five calendar years (decennial-2000-and-1990-history).
+    census_day = pl.concat_str(
+        [pl.col("estimate_year").cast(pl.Utf8), pl.lit("-04-01")]
+    ).str.to_date("%Y-%m-%d")
+    is_census = pl.col("dataset").str.to_lowercase().str.starts_with("dec")
     grouped = grouped.with_columns(
         [
-            pl.when(pl.col("dataset").str.to_lowercase() == "acs5")
+            pl.when(is_census)
+            .then(census_day)
+            .when(pl.col("dataset").str.to_lowercase() == "acs5")
             .then(
                 pl.concat_str(
                     [
@@ -799,13 +1000,16 @@ def _transform_rows_to_silver_df(
                 ).str.to_date("%Y-%m-%d")
             )
             .alias("duration_start"),
-            pl.concat_str(
-                [
-                    pl.col("estimate_year").cast(pl.Utf8),
-                    pl.lit("-12-31"),
-                ]
+            pl.when(is_census)
+            .then(census_day)
+            .otherwise(
+                pl.concat_str(
+                    [
+                        pl.col("estimate_year").cast(pl.Utf8),
+                        pl.lit("-12-31"),
+                    ]
+                ).str.to_date("%Y-%m-%d")
             )
-            .str.to_date("%Y-%m-%d")
             .alias("duration_end"),
         ]
     )
@@ -1472,16 +1676,26 @@ def transform_census_to_silver(
 
     # ── year-level counts ─────────────────────────────────────────────
     logger.info("[CENSUS_ACS] Gathering per-year row counts...")
-    sql = """
-        SELECT year, COUNT(*)
-        FROM silver_census.observation_revision
-        WHERE %(years)s::INT[] IS NULL OR year = ANY(%(years)s::INT[])
-        GROUP BY year ORDER BY year;
-    """
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, {"years": sorted(set(years)) if years is not None else None})
-        for row in cur.fetchall():
-            metrics.raw_rows_by_year[int(row[0])] = int(row[1])
+    datasets_by_year: dict[int, list[str]] = {}
+    if years is not None:
+        # Named years are counted per dataset on the slice index.
+        for (year, dataset), count in sorted(
+            _year_counts_by_dataset(hook, sorted(set(years))).items()
+        ):
+            metrics.raw_rows_by_year[year] = (
+                metrics.raw_rows_by_year.get(year, 0) + count
+            )
+            datasets_by_year.setdefault(year, []).append(dataset)
+    else:
+        sql = """
+            SELECT year, COUNT(*)
+            FROM silver_census.observation_revision
+            GROUP BY year ORDER BY year;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            for row in cur.fetchall():
+                metrics.raw_rows_by_year[int(row[0])] = int(row[1])
 
     total_rows = sum(metrics.raw_rows_by_year.values())
     logger.info(
@@ -1503,7 +1717,7 @@ def transform_census_to_silver(
     metrics.log_pre_transform()
 
     logger.info("[CENSUS_ACS] Validating historical geography coverage...")
-    _assert_geo_dimension_coverage(hook)
+    _assert_geo_dimension_coverage(hook, datasets_by_year or None)
 
     inserted_total = 0
 
@@ -1526,11 +1740,18 @@ def transform_census_to_silver(
     time_df = _load_time_dim(hook, date(earliest_year, 1, 1), date(latest_year, 12, 31))
     logger.info("[CENSUS_ACS] Loaded %s time dimension rows", f"{time_df.height:,}")
 
+    # A slice any earlier run finished against the same content and the same
+    # reference is skipped (`transform_slice_state`), not only a retry's.
+    context = transform_context(meta_df, geo_df)
+
     # ── process each year ─────────────────────────────────────────────
     for y in years:
-        raw_slices = _plan_year_slices(hook, y, metrics.raw_rows_by_year[y])
+        raw_slices = _plan_year_slices(
+            hook, y, metrics.raw_rows_by_year[y], datasets_by_year.get(y)
+        )
         done = _completed_slice_keys(hook, resume_key, y)
-        if raw_slices != [WHOLE_YEAR]:
+        finished = _finished_fingerprints(hook, y)
+        if len(raw_slices) > 1:
             logger.info(
                 "[CENSUS_ACS CHUNK] Year=%s has %s raw rows; reading it in %s slices",
                 y,
@@ -1545,6 +1766,15 @@ def transform_census_to_silver(
                     y,
                     raw_slice.key,
                     resume_key,
+                )
+                continue
+            fingerprint = slice_fingerprint(hook, y, raw_slice, context)
+            if finished.get(raw_slice.key) == fingerprint:
+                logger.info(
+                    "[CENSUS_ACS CHUNK] Year=%s slice=%s unchanged since an "
+                    "earlier run finished it; skipping",
+                    y,
+                    raw_slice.key,
                 )
                 continue
 
@@ -1586,6 +1816,7 @@ def transform_census_to_silver(
                 df_silver = None
             raw = None
             _record_slice_complete(hook, resume_key, y, raw_slice.key, changed)
+            _record_slice_fingerprint(hook, y, raw_slice.key, fingerprint, changed)
 
     metrics.log_transform_summary()
     logger.info("Inserted %s Census silver rows total", inserted_total)

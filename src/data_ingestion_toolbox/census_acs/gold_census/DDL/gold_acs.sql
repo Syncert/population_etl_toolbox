@@ -11,13 +11,18 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE IF NOT EXISTS gold_census.dim_acs_table (
     acs_table_sk      BIGSERIAL PRIMARY KEY,
-    dataset_code      TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code      TEXT NOT NULL CONSTRAINT dim_acs_table_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                                'dec1990stf1', 'dec1990stf3')),
     vintage_year      INTEGER NOT NULL,
     table_id          TEXT NOT NULL,
     table_title       TEXT,
     concept           TEXT,
     universe          TEXT,
-    survey_span_years INTEGER NOT NULL CHECK (survey_span_years IN (1, 5)),
+    -- 0 is a census: one day's count, pooling no survey years.
+    survey_span_years INTEGER NOT NULL
+        CONSTRAINT dim_acs_table_survey_span_years_census_check
+        CHECK (survey_span_years IN (0, 1, 5)),
     reference_url     TEXT,
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (dataset_code, vintage_year, table_id)
@@ -26,7 +31,9 @@ CREATE TABLE IF NOT EXISTS gold_census.dim_acs_table (
 CREATE TABLE IF NOT EXISTS gold_census.dim_acs_variable (
     acs_variable_sk        BIGSERIAL PRIMARY KEY,
     acs_table_sk           BIGINT NOT NULL REFERENCES gold_census.dim_acs_table(acs_table_sk),
-    dataset_code           TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code           TEXT NOT NULL CONSTRAINT dim_acs_variable_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                                'dec1990stf1', 'dec1990stf3')),
     vintage_year           INTEGER NOT NULL,
     variable_code          TEXT NOT NULL,
     variable_label         TEXT,
@@ -138,7 +145,9 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     -- the provider's or this pipeline's -- constrained so a row cannot claim
     -- a published value and carry none.
     value                      NUMERIC,
-    dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code               TEXT NOT NULL CONSTRAINT rpt_acs_observations_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                                'dec1990stf1', 'dec1990stf3')),
     vintage_year               INTEGER NOT NULL,
     table_id                   TEXT NOT NULL,
     table_title                TEXT,
@@ -360,9 +369,17 @@ CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_geo
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observations(DATE, DATE);
+-- `p_geo_levels` scopes a chunk to those served grains (`ACS_CHUNK_CONFIG`'s
+-- grain steps): the serving driver refreshes a year as one committed step per
+-- grain group -- nation, state and county first, then tracts, then places --
+-- so a place year that takes hours never holds the county rows of that year.
+-- A grain-scoped step deletes rather than truncates: a truncate would take
+-- ACCESS EXCLUSIVE on the whole year partition, and every reader of the year
+-- (whatever grain it asked for) would wait behind it. NULL is every grain.
 CREATE OR REPLACE PROCEDURE gold_census.refresh_rpt_acs_observations(
     p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL
+    p_end_date DATE DEFAULT NULL,
+    p_geo_levels TEXT[] DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
@@ -394,6 +411,7 @@ BEGIN
         FROM gold_census.rpt_acs_observations d
         WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
           AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+          AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
     ), recorded AS (
         INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
         SELECT DISTINCT geo_id, variable_code, metric_code FROM scanned
@@ -417,7 +435,14 @@ BEGIN
     FROM pg_class c
     WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
 
-    IF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
+    IF p_geo_levels IS NOT NULL THEN
+        -- A grain step: row locks only, so readers of other grains (and of
+        -- this grain's previous rows) carry on.
+        DELETE FROM gold_census.rpt_acs_observations
+        WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR observation_date <= p_end_date)
+          AND geo_level = ANY(p_geo_levels);
+    ELSIF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
         -- Every year, including the default partition.
         TRUNCATE TABLE gold_census.rpt_acs_observations;
         v_cleared_years := -1;
@@ -549,7 +574,8 @@ BEGIN
     -- 'us'/'state'/'county'; served rows promise NATIONAL/STATE/COUNTY.
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = ao.geo_id
     WHERE (p_start_date IS NULL OR ao.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR ao.observation_date <= p_end_date);
+      AND (p_end_date IS NULL OR ao.observation_date <= p_end_date)
+      AND (p_geo_levels IS NULL OR ao.geo_level = ANY(p_geo_levels));
     GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
     INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
@@ -557,13 +583,15 @@ BEGIN
     FROM gold_census.rpt_acs_observations d
     WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+      AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
     ON CONFLICT DO NOTHING;
 
     SELECT COUNT(*) INTO v_affected_keys FROM gold_acs_affected_keys;
     RAISE NOTICE
-        '[ACS RPT CHUNK] status=COMPLETE start=% end=% cleared_partitions=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        '[ACS RPT CHUNK] status=COMPLETE start=% end=% grains=% cleared_partitions=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
         p_start_date,
         p_end_date,
+        COALESCE(array_to_string(p_geo_levels, ','), 'ALL'),
         -- -1 means the whole relation was truncated, 0 means the range was
         -- deleted rather than truncated. A reader watching a re-serve can tell
         -- a chunk that took the partitioned path from one that did not.
@@ -609,6 +637,21 @@ BEGIN
         WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
           AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
         ON CONFLICT DO NOTHING;
+    END IF;
+
+    -- A key whose latest row is already newer than this chunk cannot change:
+    -- nothing inside the chunk outranks a later observation, and the chunk's
+    -- own report refresh never touches a later year. Backfilling 2023 places
+    -- under a loaded 2024 deleted and re-inserted 63.6 million identical
+    -- latest rows in about ten hours; for a backfill year this leaves only
+    -- the keys that year adds. A chunk with no upper bound keeps every key.
+    IF p_end_date IS NOT NULL THEN
+        DELETE FROM gold_acs_affected_keys k
+        USING gold_census.mv_acs_latest m
+        WHERE m.geo_id = k.geo_id
+          AND m.variable_code = k.variable_code
+          AND m.metric_code = k.metric_code
+          AND m.observation_date > p_end_date;
     END IF;
 
     -- PostgreSQL does not auto-analyze session-local temporary tables. Accurate

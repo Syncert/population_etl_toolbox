@@ -87,6 +87,7 @@ def test_the_registry_names_every_table_and_line() -> None:
         "SARPP",
         "MARPP",
         "PARPP",
+        "MAIRPD",
     ]
     gdp = get_table("CAGDP1")
     assert gdp.lines == {"1": "chained_dollars", "3": "current_dollars"}
@@ -151,6 +152,11 @@ def test_regions_and_combined_areas_are_counted_not_loaded() -> None:
     ]
     assert parsed.out_of_scope_row_count > 0
     assert parsed.in_scope_row_count + parsed.out_of_scope_row_count == parsed.row_count
+    # Their cells are kept apart, to sum metro areas from, and never loaded.
+    assert {item.geo_id for item in parsed.combined} == {
+        "area:bea:15901",
+        "area:bea:51901",
+    }
 
 
 def test_provider_codes_keep_their_status_and_never_a_number() -> None:

@@ -10,6 +10,11 @@ from uuid import UUID
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
+from data_ingestion_toolbox.census_acs.config import (
+    ACS_METRO_GEOGRAPHY,
+    CENSUS_DATASETS,
+)
+from data_ingestion_toolbox.census_acs.decennial import acs_variable_for
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 
 CENSUS_NULL_SENTINELS = {
@@ -33,7 +38,15 @@ def parse_captured_values(
     year: int,
     geo_level: str,
 ) -> list[dict[str, object]]:
-    """Unpivot a captured array in silver while preserving headers and strings."""
+    """Unpivot a captured array in silver while preserving headers and strings.
+
+    A census dataset's variable is stored under the ACS estimate the
+    decennial crosswalk pairs it with; `source_header` keeps the census's own
+    name (decennial-2000-and-1990-history). A census column the crosswalk
+    does not name refuses rather than load under its census name.
+    """
+    spec = CENSUS_DATASETS.get(dataset)
+    census = spec is not None and not spec.margins
     try:
         document = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -60,6 +73,7 @@ def parse_captured_values(
         "county": {"state", "county"},
         "place": {"state", "place"},
         "tract": {"state", "county", "tract"},
+        "metro": {ACS_METRO_GEOGRAPHY},
     }
     if geo_level not in required_geographies:
         raise CensusCapturePayloadError("unsupported Census geography level")
@@ -69,7 +83,7 @@ def parse_captured_values(
             f"Census response missing geography columns: {sorted(missing)}"
         )
 
-    geo_columns = {"us", "state", "county", "place", "tract"}
+    geo_columns = {"us", "state", "county", "place", "tract", ACS_METRO_GEOGRAPHY}
     variable_indexes = [
         index for index, name in enumerate(header) if name not in geo_columns
     ]
@@ -80,9 +94,20 @@ def parse_captured_values(
         county_source = _text(source_row.get("county"))
         place_source = _text(source_row.get("place"))
         tract_source = _text(source_row.get("tract"))
+        if census and tract_source is not None:
+            tract_source = census_tract_code(tract_source)
+        cbsa_source = _text(source_row.get(ACS_METRO_GEOGRAPHY))
         us_source = _text(source_row.get("us"))
         for column_index in variable_indexes:
-            variable_name = header[column_index]
+            source_header = header[column_index]
+            try:
+                variable_name = (
+                    acs_variable_for(dataset, source_header)
+                    if census
+                    else source_header
+                )
+            except ValueError as exc:
+                raise CensusCapturePayloadError(str(exc)) from exc
             value_source = _text(record[column_index])
             if value_source is None:
                 value_status = "absent"
@@ -105,7 +130,7 @@ def parse_captured_values(
                 {
                     "source_row_index": row_index,
                     "source_column_index": column_index,
-                    "source_header": variable_name,
+                    "source_header": source_header,
                     "dataset": dataset,
                     "year": year,
                     "geo_level": geo_level,
@@ -114,6 +139,7 @@ def parse_captured_values(
                     "county_fips_source": county_source,
                     "place_fips_source": place_source,
                     "tract_code_source": tract_source,
+                    "cbsa_source": cbsa_source,
                     "variable_name": variable_name,
                     "table_id": variable_name.split("_", 1)[0],
                     "measure_type": variable_name[-1:] or None,
@@ -123,6 +149,20 @@ def parse_captured_values(
                 }
             )
     return parsed
+
+
+def census_tract_code(code: str) -> str:
+    """A census tract code as six digits.
+
+    The Census 2000 API prints a tract without a suffix as four digits
+    (`0401`) and one with a suffix as six (`040201`); every reference and the
+    ACS write six (`040100`). Any other shape refuses.
+    """
+    if code.isdigit() and len(code) == 6:
+        return code
+    if code.isdigit() and len(code) == 4:
+        return f"{code}00"
+    raise CensusCapturePayloadError(f"census tract code {code!r} is not 4 or 6 digits")
 
 
 def _text(value: object) -> str | None:
@@ -144,6 +184,19 @@ def replay_census_capture(
         year=year,
         geo_level=geo_level,
     )
+    return insert_revision_rows(connection_factory, capture_id, values)
+
+
+def insert_revision_rows(
+    connection_factory: Callable[[], Any],
+    capture_id: UUID,
+    values: list[dict[str, object]],
+) -> int:
+    """Write parsed rows of one capture to `silver_census.observation_revision`.
+
+    Idempotent: a row already stored for the same capture, row and column is
+    left as it is.
+    """
     if not values:
         return 0
     records = [
@@ -160,6 +213,7 @@ def replay_census_capture(
             item["county_fips_source"],
             item["place_fips_source"],
             item["tract_code_source"],
+            item["cbsa_source"],
             item["variable_name"],
             item["table_id"],
             item["measure_type"],
@@ -179,7 +233,7 @@ def replay_census_capture(
                     capture_id, source_row_index, source_column_index,
                     source_header, dataset, year, geo_level, us_source,
                     state_fips_source, county_fips_source, place_fips_source,
-                    tract_code_source, variable_name,
+                    tract_code_source, cbsa_source, variable_name,
                     table_id, measure_type, value_source, value, value_status
                 ) VALUES %s
                 ON CONFLICT (capture_id, source_row_index, source_column_index)

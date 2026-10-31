@@ -319,3 +319,71 @@ def test_a_large_chunk_resolves_with_hash_joins_and_restores_the_planner(
     assert (nestloop, mergejoin) == ("on", "on")
     newer = LARGE_CHUNK_KEYS // 2
     assert by_vintage == [(2003, LARGE_CHUNK_KEYS - newer), (2004, newer)]
+
+
+def test_an_older_year_leaves_a_newer_latest_row_untouched(
+    postgres_connection_factory: Callable[[], connection],
+    a_key_across_three_vintages: tuple[str, str, str],
+) -> None:
+    """Covers: DB-064 -- a backfill year rewrites only the keys it can change.
+
+    The key's latest row is 2006. Refreshing 2003 must not delete and re-insert
+    it: on the internal stack that rewrite was 63.6 million identical rows and
+    about ten hours for one backfilled place year. A key the old year holds
+    alone is still resolved.
+    """
+    geo_id, variable_code, metric_code = a_key_across_three_vintages
+    older = min(SEEDED_YEARS)
+    lone_geo = f"{geo_id}:lone"
+    database = postgres_connection_factory()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "CALL gold_census.refresh_mv_acs_latest(%s, %s)",
+                (f"{max(SEEDED_YEARS)}-01-01", f"{max(SEEDED_YEARS)}-12-31"),
+            )
+            cursor.execute(
+                "SELECT xmin::TEXT, ctid::TEXT FROM gold_census.mv_acs_latest "
+                "WHERE geo_id = %s AND variable_code = %s AND metric_code = %s",
+                (geo_id, variable_code, metric_code),
+            )
+            before = cursor.fetchone()
+            cursor.execute(
+                f"""
+                INSERT INTO {RELATION} (
+                    observation_date, as_of_date, updated_at, geo_id, geo_level,
+                    value, dataset_code, vintage_year, table_id, variable_code,
+                    estimate_value, metric_code
+                )
+                VALUES (MAKE_DATE(%s, 1, 1), MAKE_DATE(%s, 1, 1),
+                        MAKE_DATE(%s, 1, 1)::TIMESTAMPTZ, %s, 'COUNTY', 1,
+                        'acs5', %s, 'B99999', %s, 1, %s)
+                """,
+                (older, older, older, lone_geo, older, variable_code, metric_code),
+            )
+            cursor.execute(
+                "CALL gold_census.refresh_mv_acs_latest(%s, %s)",
+                (f"{older}-01-01", f"{older}-12-31"),
+            )
+            cursor.execute(
+                "SELECT xmin::TEXT, ctid::TEXT FROM gold_census.mv_acs_latest "
+                "WHERE geo_id = %s AND variable_code = %s AND metric_code = %s",
+                (geo_id, variable_code, metric_code),
+            )
+            after = cursor.fetchone()
+            cursor.execute(
+                "SELECT vintage_year FROM gold_census.mv_acs_latest WHERE geo_id = %s",
+                (lone_geo,),
+            )
+            lone = cursor.fetchall()
+            cursor.execute(f"DELETE FROM {RELATION} WHERE geo_id = %s", (lone_geo,))
+            cursor.execute(
+                "DELETE FROM gold_census.mv_acs_latest WHERE geo_id = %s", (lone_geo,)
+            )
+    finally:
+        database.close()
+
+    assert before is not None
+    assert after == before, "the newer latest row was deleted and re-inserted"
+    assert lone == [(older,)]

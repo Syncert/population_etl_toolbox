@@ -343,15 +343,15 @@ beside its months.
 
 `acs_ingest` requests five levels per dataset and year: the nation, all
 states, each county parent's counties, and -- for the newest year only, by
-default (`AcsConfig.place_recent_years`) -- each state's places. The place
+default (`AcsConfig.place_year_scope`, `"newest"`) -- each state's places. The place
 slices are the large ones. One 5-year year is 52 place slices of 77 requests
 each (3,844 curated variables in chunks of 50), about 4,000 requests, and
 about 62 million facts for some 32,000 places against the counties' 6.2
 million; the 1-year estimates add 50 smaller slices (their 649 places of
 65,000 or more; Vermont and West Virginia have none and are never asked).
 Expect the first place load to dominate the run and the silver transform and
-`mv_acs_latest` refresh to grow roughly tenfold. Raise `place_recent_years`
-only with that volume in mind. A place the shared reference does not carry
+`mv_acs_latest` refresh to grow roughly tenfold. Widen `place_year_scope`
+(for example to `"2009-2024"`) only with that volume in mind. A place the shared reference does not carry
 is recorded `unmapped` in `silver_ref.geography_resolution` with the year it
 was requested under and left out of the facts; unlike a missing state or
 county it does not stop the transform.
@@ -1050,3 +1050,54 @@ Three operator rules follow:
 3. Confirm the ingest pause actually held. On this run `acs_ingest` was
    unpaused through the UI before the re-serve started; it was harmless only
    because the schedule is monthly.
+
+## 8. Backups of the internal stack
+
+The internal stack's warehouse lives on a two-drive stripe (H: on OFFICE_LAB,
+Docker's data disk) with no redundancy: one drive failing loses the volume.
+Two copies are kept on drives outside it (E:, F: or G:).
+
+**Raw captures, nightly.** `raw_capture_export` (DAG-019) writes every
+capture to `CAPTURE_EXPORT_ROOT`. Set `BACKUP_HOST_DIR` in
+`infra/docker/stack.env` to a directory on another drive (it is mounted into
+Airflow at `/opt/backups`) and `CAPTURE_EXPORT_ROOT=/opt/backups/captures`,
+then recreate the Airflow containers with `make deploy-up`. Unset, the export
+refuses rather than writing into the volume it protects.
+
+**The warehouse, weekly.** `scripts/backup_warehouse.py` (ENV-025):
+
+```powershell
+# One dump now (directory format, parallel, zstd), then keep the newest two.
+python scripts/backup_warehouse.py dump --target E:/population_backups/warehouse --jobs 6
+python scripts/backup_warehouse.py prune --target E:/population_backups/warehouse --keep 2
+# Schedule both, Sundays 03:00, skipping while a load or refresh is running.
+powershell -ExecutionPolicy Bypass -File scripts\register_backup_task.ps1 -Target E:\population_backups\warehouse
+```
+
+`pg_dump` runs in a throwaway container of the warehouse's own image on the
+stack's network, so nothing is installed on the host and the client always
+matches the server. A dump is written as `warehouse-<UTC>.partial` and renamed
+only when `pg_dump` succeeds; `manifest.json` beside it records the database
+size, the dump size, the duration and exact row counts of every table under
+2 GiB. Set `APP_API_DSN` and the account deletion log is exported into the
+dump directory too (ADR-0005 s5; see "Restoring an `app_api` backup" above).
+As the warehouse grows past what one drive holds twice, point alternate weeks
+at different drives rather than lowering `--keep` to one.
+
+**The restore drill.** A backup is only known to work once it has been
+restored:
+
+```powershell
+python scripts/backup_warehouse.py restore-drill --target E:/population_backups/warehouse --jobs 6
+```
+
+It restores the newest complete dump into `population_etl_restore_drill` on
+the same server (it needs free space about the size of the database), applies
+the deletion log when `APP_API_DRILL_DSN` names that database, compares row
+counts with the manifest, writes `restore-drill.json` beside the dump and
+drops the scratch database. Any count that differs fails the drill. A real
+restore is the same `pg_restore` into the production database name, followed
+by `apply_deletion_log.py --apply` before the API serves traffic.
+
+The first dump and restore drill are recorded in the warehouse backups
+plan (`docs/plans/needs_review/WAREHOUSE_BACKUPS_PLAN.md`).

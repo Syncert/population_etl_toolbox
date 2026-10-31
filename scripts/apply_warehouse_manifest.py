@@ -16,6 +16,14 @@ upsert.
     python -m scripts.apply_warehouse_manifest --dry-run
     python -m scripts.apply_warehouse_manifest
     python -m scripts.apply_warehouse_manifest --check
+    python -m scripts.apply_warehouse_manifest --only-flagged
+
+On a populated warehouse, prefer `--only-flagged`: it applies just the assets
+`--check` reports missing or drifted. A full re-apply re-runs every step, and
+some are costly on a large warehouse even when they change nothing -- 027
+re-validates its constraints over every ACS silver fact under an exclusive
+lock, which held `silver_census.fact_demographics` until it was cancelled on
+2026-10-30, when the ledger only lacked four hand-applied migrations.
 
 Connection settings come from the same `POSTGRES_*` variables the rest of the
 repository uses, or from `--dsn`.
@@ -36,6 +44,13 @@ from data_ingestion_toolbox.utility.warehouse_manifest import (
     compare_to_manifest,
     manifest_assets,
 )
+
+
+def flagged_assets(database_connection) -> list:
+    """The manifest assets this warehouse is missing or carries at another hash."""
+    missing, drifted = compare_to_manifest(database_connection)
+    flagged = set(missing) | set(drifted)
+    return [asset for asset in manifest_assets() if asset.id in flagged]
 
 
 def connect(dsn: str | None):
@@ -72,6 +87,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="report assets this warehouse is missing or carries at another hash",
     )
+    parser.add_argument(
+        "--only-flagged",
+        action="store_true",
+        help="apply only the assets --check reports missing or drifted",
+    )
     return parser.parse_args(argv)
 
 
@@ -98,7 +118,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return 1
         try:
-            applied = apply_manifest(database)
+            applied = apply_manifest(
+                database, flagged_assets(database) if args.only_flagged else None
+            )
         except ManifestApplicationError as error:
             # The id, on stderr, because it is the whole of what an operator
             # needs to know to resume: every asset before it is committed.

@@ -25,7 +25,7 @@ import type { CollectionResponse, ComparisonPreflight, GeographySummary, MetricS
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { formatObservationValue, observationUnit } from "../lib/explorerViewModel";
+import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
   buildNewestValueRequest,
@@ -44,7 +44,7 @@ import {
   stateSegment,
 } from "../lib/placeChapters";
 import type { LevelPlace, PlaceLevel } from "../lib/placeChapters";
-import { barPosition, compareMeasure, grainMismatch, pairPath } from "../lib/placeComparison";
+import { barPosition, compareMeasure, grainMismatch, intervalsOverlap, pairPath } from "../lib/placeComparison";
 import type { ComparedPlace, ComparedRow, NotComparableRow } from "../lib/placeComparison";
 import { groupNearby, relatedPath } from "../lib/placeRelationships";
 import type { NearbyEntry, RelatedResponse } from "../lib/placeRelationships";
@@ -372,24 +372,39 @@ export default function ComparePlacesPage({ a: addressA, b: addressB }: { a: Sid
 
 function PairedRow({ row, a, b }: { row: ComparedRow; a: string; b: string }) {
   const unit = unitText(row.a.row);
+  const overlap = intervalsOverlap(row.a.row, row.b.row);
   return (
     <div className="paired-row" data-testid={`compare-row-${row.measureId}`} data-period={row.period}>
       <h3>{row.label}</h3>
       <p className="subtle">{row.metricCode} · {row.period}{unit ? ` · ${unit}` : ""}</p>
-      {[{ name: a, entry: row.a }, { name: b, entry: row.b }].map(({ name, entry }) => (
-        <div key={name} className="paired-bar">
-          <span className="paired-name">{name}</span>
-          <span className="paired-track" aria-hidden="true">
-            <span className="paired-fill" style={{ width: `${Math.max(2, barPosition(entry.value, row))}%` }} />
-            {row.ticks.map((tick) => (
-              <span key={tick.name} className="paired-tick" style={{ left: `${barPosition(tick.value, row)}%` }} title={tick.name} />
-            ))}
-          </span>
-          <span className="paired-value">{`${formatObservationValue(entry.row.value)} ${unit}`.trim()}</span>
-        </div>
-      ))}
+      {[{ name: a, entry: row.a }, { name: b, entry: row.b }].map(({ name, entry }) => {
+        const margin = marginOfErrorText(entry.row);
+        return (
+          <div key={name} className="paired-bar">
+            <span className="paired-name">{name}</span>
+            <span className="paired-track" aria-hidden="true">
+              <span className="paired-fill" style={{ width: `${Math.max(2, barPosition(entry.value, row))}%` }} />
+              {row.ticks.map((tick) => (
+                <span key={tick.name} className="paired-tick" style={{ left: `${barPosition(tick.value, row)}%` }} title={tick.name} />
+              ))}
+            </span>
+            <span className="paired-value">
+              {`${formatObservationValue(entry.row.value)} ${unit}`.trim()}
+              {margin && margin !== "Not provided" ? <span className="subtle paired-margin"> {margin}</span> : null}
+            </span>
+          </div>
+        );
+      })}
+      {overlap ? (
+        <p className="subtle" data-testid={`compare-row-${row.measureId}-overlap`}>
+          The two margins of error overlap, so these places may not truly differ on this measure.
+        </p>
+      ) : null}
       {row.ticks.length ? (
-        <p className="subtle">Reference marks: {row.ticks.map((tick) => `${tick.name} ${formatObservationValue(tick.value)}`).join(" · ")}</p>
+        <p className="subtle">
+          Reference marks: {row.ticks.map((tick) => `${tick.name} ${formatObservationValue(tick.value)}`).join(" · ")}
+          {row.ticks.some((tick) => tick.value > Math.max(row.a.value, row.b.value)) ? " (a mark beyond the bar sits at its end)" : ""}
+        </p>
       ) : null}
     </div>
   );

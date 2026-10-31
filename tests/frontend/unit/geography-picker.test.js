@@ -51,7 +51,9 @@ describe("the grain vocabulary is spelled once", () => {
   });
 
   test("the grains chosen after a state are the ones inside a state", () => {
-    expect([...GRAINS_WITHIN_A_STATE]).toEqual(["COUNTY", "PLACE"]);
+    // TRACT joined after the 2024 tract load: without a state the picker
+    // asked for all 85k tracts, ran past the page cap, and offered none.
+    expect([...GRAINS_WITHIN_A_STATE]).toEqual(["COUNTY", "PLACE", "TRACT"]);
     for (const grain of GRAINS_WITHIN_A_STATE) {
       expect(GEO_LEVELS).toContain(grain);
     }
@@ -166,10 +168,22 @@ describe("the picker answers for the selected grain", () => {
   test("an unknown grain is answered in its own terms, not another's", () => {
     // The vocabulary can grow. A grain with no label here is still never
     // answered with a list belonging to a different grain.
-    const picker = geographyPickerState("TRACT", { geographies: [] });
-    expect(picker.label).toBe("TRACT");
-    expect(picker.placeholder).toBe("No tract geographies are published to choose from");
+    const picker = geographyPickerState("ZCTA", { geographies: [] });
+    expect(picker.label).toBe("ZCTA");
+    expect(picker.placeholder).toBe("No zcta geographies are published to choose from");
     expect(picker.options).toEqual([]);
+  });
+
+  test("a tract grain is named in the reader's terms and chosen after a state", () => {
+    const waiting = geographyPickerState("TRACT", { geographies: [] });
+    expect(waiting.label).toBe("Census tract");
+    expect(waiting.placeholder).toBe("Select a state first");
+    const chosen = geographyPickerState("TRACT", {
+      geographies: [{ geo_id: "state:48|county:453|tract:000101", geo_name: "Census Tract 1.01", geo_level: "TRACT" }],
+      stateSelected: true,
+    });
+    expect(chosen.placeholder).toBe("All Census tracts");
+    expect(chosen.options.map((option) => option.geoId)).toEqual(["state:48|county:453|tract:000101"]);
   });
 
   test("every declared grain gets an answer of its own", () => {
