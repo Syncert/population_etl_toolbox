@@ -694,9 +694,12 @@ def bls_ingest():
 
         for program in synced_programs:
             if program == "la":
-                geos: list[tuple[str, Optional[str]]] = [("state", None)] + [
-                    ("county", sf) for sf in state_fips_list
-                ]
+                # Metropolitan areas are one national slice: a CBSA can span
+                # states, and LAUS publishes ~390 of them (W-7).
+                geos: list[tuple[str, Optional[str]]] = [
+                    ("state", None),
+                    ("metro", None),
+                ] + [("county", sf) for sf in state_fips_list]
                 for geo_level, state_fips in geos:
                     # Historical band — skip if already done
                     if hist_end >= hist_start:

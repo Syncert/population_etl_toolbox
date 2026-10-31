@@ -76,7 +76,7 @@ import {
   normalizeObservationRows,
   observationPeriodLabel,
 } from "../lib/observationAccess";
-import { GEO_GRAIN_LABELS, geographyPickerState } from "../lib/geographyPicker";
+import { GEO_GRAIN_LABELS, GRAINS_WITHIN_A_STATE, geographyPickerState } from "../lib/geographyPicker";
 import { GEO_GRAIN_ORDER } from "../lib/geographyPicker";
 import {
   metricSupportedGeoLevels,
@@ -462,7 +462,7 @@ export default function WorkbenchPage() {
       setGeographiesRead(true);
       return;
     }
-    const needsState = grain === "COUNTY" || grain === "PLACE";
+    const needsState = GRAINS_WITHIN_A_STATE.includes(grain);
     if (needsState && !draftStateFips) {
       setGeographies([]);
       setGeographiesRead(true);
@@ -1544,7 +1544,7 @@ export default function WorkbenchPage() {
     const named = rememberObservationNames(geographyNames, heatmapRows);
     if (named !== geographyNames) setGeographyNames(named);
     if (!unnamedGeographies(heatmapRows, named).length) return;
-    const needsState = grain === "COUNTY" || grain === "PLACE" || grain === "TRACT";
+    const needsState = GRAINS_WITHIN_A_STATE.includes(grain);
     if (needsState && !heatmapStateFips) return;
     let cancelled = false;
     fetchAllPages<GeographySummary>("/catalog/geographies", {
@@ -1809,7 +1809,7 @@ export default function WorkbenchPage() {
               ) : null}
             </div>
 
-            {draftGeoLevel === "COUNTY" || draftGeoLevel === "PLACE" ? (
+            {GRAINS_WITHIN_A_STATE.includes(draftGeoLevel) ? (
               <div className="control-group">
                 <label htmlFor="workbench-state">State</label>
                 <select

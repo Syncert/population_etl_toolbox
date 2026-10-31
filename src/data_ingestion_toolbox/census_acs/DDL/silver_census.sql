@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS silver_census.observation_revision (
     dataset             TEXT NOT NULL,
     year                INTEGER NOT NULL,
     geo_level           TEXT NOT NULL
-        CONSTRAINT observation_revision_geo_level_tract_check
-        CHECK (geo_level IN ('us', 'state', 'county', 'place', 'tract')),
+        CONSTRAINT observation_revision_geo_level_metro_check
+        CHECK (geo_level IN ('us', 'state', 'county', 'place', 'tract', 'metro')),
     us_source           TEXT,
     state_fips_source   TEXT,
     county_fips_source  TEXT,
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS silver_census.observation_revision (
     place_fips_source   TEXT,
     -- Census tract code; set only for `tract` slices (sub-county-geography).
     tract_code_source   TEXT,
+    -- CBSA code; set only for `metro` slices (migration 036).
+    cbsa_source         TEXT,
     variable_name       TEXT NOT NULL,
     table_id            TEXT NOT NULL,
     measure_type        TEXT,
@@ -81,7 +83,8 @@ CREATE INDEX IF NOT EXISTS idx_fact_demo_time_sk ON silver_census.fact_demograph
 CREATE INDEX IF NOT EXISTS idx_fact_demo_geo_sk ON silver_census.fact_demographics(geo_sk);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_dataset ON silver_census.fact_demographics(dataset);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_table_id ON silver_census.fact_demographics(table_id);
-CREATE INDEX IF NOT EXISTS idx_fact_demo_upsert_key ON silver_census.fact_demographics(dataset, table_id, variable_code, geo_id, estimate_year);
+-- The upsert key is `fact_demographics_uk`; a second index on the same
+-- columns cost every insert a write (migration 038 drops it).
 CREATE INDEX IF NOT EXISTS idx_fact_demo_source_year ON silver_census.fact_demographics(source_system, estimate_year);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_ingested_at ON silver_census.fact_demographics(ingested_at);
 
@@ -98,6 +101,36 @@ CREATE TABLE IF NOT EXISTS silver_census.transform_checkpoint (
     completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (resume_key, year, slice_key)
 );
+
+-- The content each transform slice last finished against, whatever run did
+-- it: the fingerprint covers the slice's revision count and newest revision,
+-- the variable metadata, the geography reference and the transform version.
+-- A later run skips a slice whose fingerprint is unchanged, so a backfill can
+-- stop and resume across runs; new revisions (errata) or a wider reference
+-- change the fingerprint and replay the slice. Delete a year's rows to force
+-- its replay.
+CREATE TABLE IF NOT EXISTS silver_census.transform_slice_state (
+    year                INTEGER NOT NULL,
+    slice_key           TEXT NOT NULL,
+    content_fingerprint TEXT NOT NULL,
+    rows_changed        BIGINT NOT NULL CHECK (rows_changed >= 0),
+    completed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (year, slice_key)
+);
+
+-- When the slice last changed a stored row. A run that finds nothing to
+-- change leaves it alone, so the serving step can skip a grain no slice has
+-- changed since that grain was last served (skip-unchanged-grains).
+ALTER TABLE silver_census.transform_slice_state
+    ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- A row that predates the column cannot say when it last changed, but no
+-- later than its last completion: that bound is still safe for the skip,
+-- whereas the time the column was added made every year look changed and
+-- re-served every grain of every backfill year. Once the transform writes
+-- the column, it never exceeds `completed_at`, so this is a no-op.
+UPDATE silver_census.transform_slice_state
+SET last_changed_at = completed_at
+WHERE last_changed_at > completed_at;
 
 -- Autovacuum for this high-update table
 ALTER TABLE silver_census.fact_demographics SET (

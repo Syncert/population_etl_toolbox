@@ -480,3 +480,6 @@ build/
 # Local agent evidence artifacts and pytest --basetemp scratch directories
 .codex/
 .pytest_tmp_period*/
+
+# Default backup mount when BACKUP_HOST_DIR is unset (docker-compose.yml).
+infra/docker/backups-not-configured/

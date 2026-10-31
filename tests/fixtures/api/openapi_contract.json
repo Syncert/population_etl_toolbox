@@ -2828,6 +2828,10 @@
         "geographies_b": "integer",
         "metric_code_a": "string",
         "metric_code_b": "string",
+        "metric_label_a": "string | null",
+        "metric_label_b": "string | null",
+        "metric_label_status_a": "string | null",
+        "metric_label_status_b": "string | null",
         "n": "integer",
         "pearson_r": "number | null",
         "period_a": "string | null",
@@ -2877,6 +2881,10 @@
         "derivations": "array<string>",
         "metric_code_a": "string",
         "metric_code_b": "string",
+        "metric_label_a": "string | null",
+        "metric_label_b": "string | null",
+        "metric_label_status_a": "string | null",
+        "metric_label_status_b": "string | null",
         "rules": "array<CompatibilityFinding>",
         "source_code_a": "string | null",
         "source_code_b": "string | null"
@@ -2898,6 +2906,10 @@
         "limit": "integer",
         "metric_code_a": "string",
         "metric_code_b": "string",
+        "metric_label_a": "string | null",
+        "metric_label_b": "string | null",
+        "metric_label_status_a": "string | null",
+        "metric_label_status_b": "string | null",
         "offset": "integer",
         "source_code_a": "string | null",
         "source_code_b": "string | null",
@@ -3133,6 +3145,9 @@
         "items": "array<DistributionBin>",
         "max_value": "number | null",
         "metric_code": "string",
+        "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "min_value": "number | null",
         "period": "string | null",
         "periods_differ": "boolean",
@@ -3349,6 +3364,9 @@
       "properties": {
         "geographies": "integer",
         "metric_code": "string",
+        "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "period": "string | null",
         "periods_differ": "boolean",
         "source_code": "string | null",
@@ -3890,6 +3908,8 @@
     "NotRankedMeasure": {
       "properties": {
         "metric_code": "string",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "reason": "string"
       },
       "required": [

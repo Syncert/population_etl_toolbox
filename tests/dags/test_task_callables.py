@@ -431,6 +431,22 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
     """Covers: DAG-010 — production planners build source-specific work scopes."""
     database = RecordingDatabase(fetches=[[], []])
     callable_ = _callable(dagbag, dag_id, "build_ingestion_plan")
+    if "CONFIG" in callable_.__globals__ and hasattr(
+        callable_.__globals__["CONFIG"], "place_year_scope"
+    ):
+        # The planning mechanism under test is "the newest year"; the
+        # shipped declaration (every year) is asserted in tests/unit/census.
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            callable_.__globals__["CONFIG"].model_copy(
+                update={
+                    "place_year_scope": "newest",
+                    "place_full_table_year_scope": "newest",
+                }
+            ),
+        )
     _patch_callable_global(
         monkeypatch, callable_, "_get_postgres_hook", lambda: database
     )
@@ -473,10 +489,11 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "county",
             "place",
             "tract",
+            "metro",
         }
         # us + state + 52 county parents + 52 place parents (ETL-055) + 52
-        # tract parents (ETL-061).
-        assert len(work_units) == 158
+        # tract parents (ETL-061) + one metro slice of every CBSA (ETL-091).
+        assert len(work_units) == 159
         county_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
@@ -568,6 +585,22 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
     """Covers: ETL-083 — a backfill conf plans that year's slices at that grain only."""
     database = RecordingDatabase(fetches=[[]])
     callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    if "CONFIG" in callable_.__globals__ and hasattr(
+        callable_.__globals__["CONFIG"], "place_year_scope"
+    ):
+        # The planning mechanism under test is "the newest year"; the
+        # shipped declaration (every year) is asserted in tests/unit/census.
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            callable_.__globals__["CONFIG"].model_copy(
+                update={
+                    "place_year_scope": "newest",
+                    "place_full_table_year_scope": "newest",
+                }
+            ),
+        )
     fingerprints: list[tuple[Any, ...]] = []
     _patch_callable_global(
         monkeypatch, callable_, "_get_postgres_hook", lambda: database
@@ -615,3 +648,138 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
             conf = {"acs_backfill": {"year": 2031, "geo_level": geo_level}}
 
         callable_(targets, dag_run=Missing())
+
+
+def test_an_acs_backfill_area_run_plans_the_nation_states_and_counties(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-083 — a census year names `area` to load its nation, states and counties."""
+    database = RecordingDatabase(fetches=[[]])
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    _patch_callable_global(
+        monkeypatch, callable_, "_get_postgres_hook", lambda: database
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_variables_fingerprint",
+        lambda *args: ("stable-hash", 3),
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2000, "geo_level": "area"}}
+
+    targets = [
+        {"dataset": "dec2000sf1", "year": 2000},
+        {"dataset": "acs5", "year": 2019},
+    ]
+    work_units = [unit for batch in callable_(targets, dag_run=Run()) for unit in batch]
+    assert {unit["geo_level"] for unit in work_units} == {"us", "state", "county"}
+    assert {(unit["dataset"], unit["year"]) for unit in work_units} == {
+        ("dec2000sf1", 2000)
+    }
+    assert sum(unit["geo_level"] == "county" for unit in work_units) == 52
+
+
+def test_an_acs_backfill_year_refuses_when_the_disk_cannot_hold_it(
+    dagbag, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Covers: ETL-086 -- a backfill year projected past the reserve is refused up front."""
+    from data_ingestion_toolbox.census_acs.disk_guard import DiskGuardError
+
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_get_postgres_hook",
+        lambda: RecordingDatabase(fetches=[[]]),
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", lambda *a: ("h", 3)
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "sync_variable_metadata_for_year", lambda y, d: None
+    )
+    config = callable_.__globals__["CONFIG"]
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}, {"dataset": "acs5", "year": 2024}]
+    for per_variable, refused in ((1.0, False), (1e18, True)):
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            config.model_copy(
+                update={
+                    "backfill_bytes_per_variable": {"acs5/tract": per_variable},
+                    "backfill_disk_path": str(tmp_path),
+                }
+            ),
+        )
+        if refused:
+            with pytest.raises(DiskGuardError, match="must stay free"):
+                callable_(targets, dag_run=Run())
+        else:
+            assert [
+                unit for batch in callable_(targets, dag_run=Run()) for unit in batch
+            ]
+
+
+def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-083 — a tract slice is done only for the tract tables it was loaded with.
+
+    The tract list was widened from five tables to twenty-two (W-4), but a
+    tract slice carried the fingerprint of the whole curated list, which did
+    not change, so every tract year loaded on five tables was skipped as done.
+    """
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    config = callable_.__globals__["CONFIG"]
+
+    def fingerprint(year, dataset, tables=None):
+        if tables is None:
+            return ("whole-list", 30)
+        assert list(tables) == list(config.tract_tables)
+        return ("tract-list", 22)
+
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", fingerprint
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}]
+
+    def plan(loaded_with: str) -> list[dict]:
+        completed = [
+            ("acs5", 2019, "tract", fips, loaded_with)
+            for fips in callable_.__globals__["tract_parent_fips"]("acs5")
+        ]
+        database = RecordingDatabase(fetches=[completed])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return [unit for batch in callable_(targets, dag_run=Run()) for unit in batch]
+
+    replanned = plan("whole-list")
+    assert replanned and {unit["geo_level"] for unit in replanned} == {"tract"}
+    assert {unit["variables_hash"] for unit in replanned} == {"tract-list"}
+    assert plan("tract-list") == []

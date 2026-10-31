@@ -166,8 +166,11 @@ def test_transform_preflight_rejects_missing_historical_geographies() -> None:
         def __exit__(self, *_args):
             return None
 
-        def execute(self, sql: str) -> None:
+        def execute(self, sql: str, params: dict | None = None) -> None:
             assert "silver_ref.dim_geo_entity" in sql
+            # Unscoped, the check reads every row; a scoped run names its
+            # datasets and years so the slice index serves it.
+            assert params == {"datasets": None, "years": None}
 
         def fetchall(self) -> list[tuple[str, str, int]]:
             return [

@@ -40,6 +40,7 @@ def test_a_backfill_names_one_year_and_one_grain() -> None:
         ({"year": "2019", "geo_level": "tract"}, "integer year"),
         ({"year": True, "geo_level": "tract"}, "integer year"),
         ({"year": 2004, "geo_level": "tract"}, "2005 or later"),
+        ({"year": 1990, "geo_level": "place"}, "census year"),
         ({"year": 2019, "geo_level": "county"}, "must be one of"),
         ({"year": 2019}, "must be one of"),
     ],
@@ -55,11 +56,26 @@ def test_a_malformed_backfill_refuses_rather_than_running_everything(
 def test_only_the_newest_place_year_carries_the_whole_table_list() -> None:
     """Covers: ETL-083 — an older place year asks for the history tables only."""
     years = [2019, 2020, 2021, 2022, 2023, 2024]
-    assert CONFIG.place_full_table_years == 1
-    assert CONFIG.place_tables(2024, years) is None
-    assert CONFIG.place_tables(2019, years) == CONFIG.place_history_tables
-    assert set(CONFIG.place_history_tables) == set(CONFIG.tract_tables)
+    newest = CONFIG.model_copy(update={"place_full_table_year_scope": "newest"})
+    assert newest.place_tables(2024, years) is None
+    assert newest.place_tables(2019, years) == CONFIG.place_history_tables
+    # The shipped declaration is the whole city history, from the 2000 census
+    # (v1.0, W-3; decennial-2000-and-1990-history).
+    assert CONFIG.place_full_table_year_scope == "2000-2024"
+    assert CONFIG.place_tables(2019, years) is None
+    # The history tables are the first five tract tables; tracts carry more.
+    assert set(CONFIG.place_history_tables) <= set(CONFIG.tract_tables)
     assert set(CONFIG.place_history_tables) <= set(CONFIG.curated_tables)
-    widened = CONFIG.model_copy(update={"place_full_table_years": 2})
+    widened = CONFIG.model_copy(update={"place_full_table_year_scope": "newest:2"})
     assert widened.place_tables(2023, years) is None
     assert widened.place_tables(2022, years) == CONFIG.place_history_tables
+
+
+def test_the_2000_census_year_is_a_loadable_backfill() -> None:
+    """Covers: ETL-083 -- the 2000 census is on the API; 2001-2004 and 1990 are not."""
+    from data_ingestion_toolbox.census_acs.backfill import BackfillScope
+
+    scope = BackfillScope.from_conf(
+        {"acs_backfill": {"year": 2000, "geo_level": "place"}}
+    )
+    assert (scope.year, scope.geo_level) == (2000, "place")

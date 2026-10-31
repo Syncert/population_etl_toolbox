@@ -551,6 +551,19 @@ _REFERENCE_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first reference load",
     ),
     _obj(
+        "silver_ref.tract_decade_crosswalk",
+        "reference",
+        "SHARED",
+        grain="earlier_vintage, earlier_geo_sk, later_geo_sk",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method=(
+            "one row per part of a 2000 or 2010 census tract lying in a tract "
+            "of the next census, from the Bureau's relationship files"
+        ),
+        cadence="per tract relationship file release",
+        empty_behavior="empty only before the decade tract references load",
+    ),
+    _obj(
         "silver_ref.geography_resolution",
         "reference",
         "SHARED",
@@ -804,6 +817,16 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="deterministic replay of accepted captures",
         cadence="per ACS ingestion run",
         empty_behavior="empty only before the first ACS capture",
+    ),
+    _obj(
+        "silver_census.transform_slice_state",
+        "silver",
+        "CENSUS_ACS",
+        grain="year, slice_key",
+        lineage="silver_census.observation_revision",
+        scope_method="one row per transform slice, with the content it last finished against",
+        cadence="per ACS silver transform",
+        empty_behavior="empty before the first ACS silver transform",
     ),
     _obj(
         "silver_census.transform_checkpoint",
@@ -1978,7 +2001,10 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         "BEA",
         grain="table_code, line_code, geo_id, year, capture_id",
         lineage="silver_bea.observation_revision, silver_ref.geography_resolution",
-        scope_method="registered tables x registered lines x nation, states and counties",
+        scope_method=(
+            "registered tables x registered lines x nation, states and counties, "
+            "and metro areas summed from their counties (marked by derivation)"
+        ),
         cadence="per BEA replay",
         empty_behavior="a withheld or unavailable cell keeps its status and no number, never zero",
     ),

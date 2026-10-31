@@ -145,12 +145,29 @@ export function isEmpty(groups: NearbyGroups): boolean {
 export function crossCountyNote(name: string, counties: readonly NearbyEntry[]): string {
   if (!counties.length) return "";
   const bare = (entry: NearbyEntry) => entry.name.replace(/, [^,]+$/, "");
-  if (counties.length === 1) return `${name} lies in ${bare(counties[0]!)}.`;
-  const parts = counties.map((entry) =>
+  // A boundary sliver -- a share that rounds to 0% -- is a mapping artefact
+  // of two boundary files, not a place that lies in two counties. It is
+  // named, so the reference is not hidden, but the place does not "cross
+  // county lines" over it (Abanda CDP read as crossing into Randolph County
+  // at 0%).
+  const slivers = counties.filter((entry) => entry.share !== null && Math.round(entry.share * 100) === 0);
+  const main = counties.filter((entry) => !slivers.includes(entry));
+  const sliverNote = slivers.length
+    ? ` Its boundary also touches ${listAnd(slivers.map(bare))}, by less than half a percent of its area.`
+    : "";
+  if (main.length <= 1) {
+    const only = main[0] ?? counties[0]!;
+    return `${name} lies in ${bare(only)}.${sliverNote}`;
+  }
+  const parts = main.map((entry) =>
     entry.share === null ? bare(entry) : `${bare(entry)} (${Math.round(entry.share * 100)}%)`,
   );
-  const listed = parts.length === 2 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
-  return `${name} crosses county lines: it lies in ${listed}. A county's figures describe the whole county, not this place.`;
+  return `${name} crosses county lines: it lies in ${listAnd(parts)}. A county's figures describe the whole county, not this place.${sliverNote}`;
+}
+
+function listAnd(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return parts.length === 2 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
 }
 
 /**

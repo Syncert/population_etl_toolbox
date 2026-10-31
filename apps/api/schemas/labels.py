@@ -9,7 +9,7 @@ ACS ``Estimate!!`` path set as words. ``metric_label_status`` says which.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Mapping, Optional
 
 from pydantic import BaseModel, model_validator
 
@@ -47,6 +47,23 @@ class PlainLabelled(BaseModel):
             self.metric_label = label
             self.metric_label_status = status if label is not None else None
         return self
+
+
+def label_fields(
+    metric_code: str | None, metric: Mapping[str, Any] | None, suffix: str = ""
+) -> dict[str, Any]:
+    """``metric_label{suffix}`` and its status for a response naming a metric by code.
+
+    ``metric`` is the glossary row the route already resolved; its
+    ``metric_display_name`` is the provider label a metric with no entry falls
+    back to. Used by the two-sided responses (``suffix`` ``_a``/``_b``).
+    """
+    display_name = (metric or {}).get("metric_display_name")
+    label, status = plain_label(metric_code, display_name)
+    return {
+        f"metric_label{suffix}": label,
+        f"metric_label_status{suffix}": status if label is not None else None,
+    }
 
 
 def definition_summary(metric_code: str | None) -> MetricDefinitionSummary | None:
