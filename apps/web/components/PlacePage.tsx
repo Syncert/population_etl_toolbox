@@ -22,8 +22,6 @@ import {
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
-  getDerivedObservations,
-  getDerivedRatios,
   getMetric,
 } from "../lib/api/client";
 import type { CollectionResponse, GeographySummary, MetricSummary, Observation } from "../lib/api/types";
@@ -76,7 +74,7 @@ import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
 import { rankSentence, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
-import { pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
+import { getDerivedObservations, getDerivedRatios, pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
 import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
 import { DerivedValue, ProviderRateNote, ViewToggle } from "./DerivedView";
 import type { GeoLevel } from "../lib/urlState";
@@ -1220,7 +1218,7 @@ function DepthRow({
           <ul className="derived-levels">
             {shown.map((entry) => (
               <li key={entry.geoId} data-testid={`depth-${measure.measure.id}-${entry.level.toLowerCase()}`}>
-                <span className="derived-place">{entry.name}:</span>{" "}
+                <strong>{entry.name}:</strong>{" "}
                 <DerivedValue pairing={pairing} {...(derived.get(derivedKey(pairing.ratio_id, entry.geoId)) || { row: null, pending: true })} />
               </li>
             ))}

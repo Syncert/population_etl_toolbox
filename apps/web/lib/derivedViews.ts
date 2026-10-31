@@ -5,6 +5,8 @@
 // This module only chooses among the pairings the catalog serves and words
 // what the API returned, so the denominator is named beside every value.
 
+import { apiFetch } from "./api/client";
+import type { QueryParams, RequestOptions } from "./api/client";
 import { formatObservationValue } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
@@ -208,4 +210,17 @@ export function derivedMapRow(row: DerivedRatioObservation, viewKey: string): Ob
 
 export function viewKey(pairing: DerivedRatioPairing): string {
   return `derived:${pairing.ratio_id}`;
+}
+
+/** The per-capita and share pairings the API lists. */
+export function getDerivedRatios(
+  params: QueryParams = {},
+  options: RequestOptions = {},
+): Promise<{ total: number; items: DerivedRatioPairing[] }> {
+  return apiFetch<{ total: number; items: DerivedRatioPairing[] }>("/catalog/derived-ratios", { ...options, params });
+}
+
+/** One pairing's values, computed by the API over served rows. */
+export function getDerivedObservations(params: QueryParams, options: RequestOptions = {}): Promise<DerivedRatioPage> {
+  return apiFetch<DerivedRatioPage>("/observations/derived", { ...options, params });
 }

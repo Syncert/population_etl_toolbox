@@ -18,7 +18,6 @@ import {
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
-  getDerivedRatios,
   getMetric,
   getSources,
   searchMetrics,
@@ -44,7 +43,7 @@ import {
 import { PLACE_CHAPTERS, countySegment, placePath, stateSegment } from "../lib/placeChapters";
 import { discoverTileMetadata } from "../lib/tiles";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { denominatorText, derivedMapRow, pairingFor, viewChoices, viewKey } from "../lib/derivedViews";
+import { denominatorText, derivedMapRow, getDerivedRatios, pairingFor, viewChoices, viewKey } from "../lib/derivedViews";
 import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
 import { DraftViewMark, ViewToggle } from "./DerivedView";
 

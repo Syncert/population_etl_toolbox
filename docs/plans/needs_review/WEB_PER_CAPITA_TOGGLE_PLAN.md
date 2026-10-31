@@ -67,13 +67,14 @@ WEB-145 (frontend unit, frontend browser).
 
 ## Evidence (cloud session, Linux, 2026-10-31)
 
-- `npm run test:unit`: 881 passed (6 new in `derived-views.test.js`).
-- `npm run lint`, `npm run typecheck`, `next build`: pass.
-- `npx playwright test`: 256 passed on this branch, 5 new in
-  `per-capita-toggle.spec.js`; 257 passed on a trial merge with D-2 (#177),
-  whose scan for variable codes runs after every browser test.
+- `npm run test:unit`: 884 passed after merging dev (6 new in `derived-views.test.js`).
+- `npm run lint`, `npm run typecheck`, `next build`, `check:bundle` (/layout 506.9 of 507 kB), `check:csp`: pass.
+- `npx playwright test`: 257 passed after merging dev with D-2 (#177), whose
+  scan for variable codes runs after every browser test; 5 new in
+  `per-capita-toggle.spec.js`.
 - Screenshots (browser fixtures): `docs/incidents/screenshots-2026-10-31-per-capita/`.
 - Not verified here: the running site. A-3 serves pairings only with
-  `DERIVED_RATIOS_SERVE_DRAFTS=1`; until A-3's follow-up accepts FBI's
-  `reported` status, the live FBI pairing answers `suppressed_input`
-  (the place cards show the FBI rate itself, so they are unaffected).
+  `DERIVED_RATIOS_SERVE_DRAFTS=1`. #179 fixed the FBI pairing answering
+  `suppressed_input`; the place cards read the FBI rate itself either way.
+- The `/layout` bundle had 0.2 kB of headroom on `dev`, so the styles reuse
+  `command-row`, `segmented-control` and `subtle` and add three rules.

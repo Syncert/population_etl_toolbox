@@ -32,8 +32,8 @@ export function ViewToggle({
 }) {
   if (choices.length < 2) return null;
   return (
-    <div className="derived-toggle" data-testid={testId}>
-      <span className="derived-toggle-label" id={`${testId}-label`}>{label}</span>
+    <div className="command-row derived-toggle" data-testid={testId}>
+      <strong id={`${testId}-label`}>{label}</strong>
       <div className="segmented-control" role="group" aria-labelledby={`${testId}-label`}>
         {choices.map((choice) => (
           <button
@@ -55,16 +55,16 @@ export function ViewToggle({
 export function DraftViewMark({ pairing, testId }: { pairing: Pick<DerivedRatioPairing, "status" | "version">; testId?: string }) {
   if (!isDraft(pairing.status)) return null;
   return (
-    <span className="derived-draft" title={draftViewNote(pairing)} data-pairing-status={pairing.status} data-testid={testId}>
-      {DRAFT_VIEW_TEXT}
-    </span>
+    <em className="subtle" title={draftViewNote(pairing)} data-pairing-status={pairing.status} data-testid={testId}>
+      ({DRAFT_VIEW_TEXT})
+    </em>
   );
 }
 
 /** The denominator a provider's own rate was computed on, named under its card. */
 export function ProviderRateNote({ pairing, testId }: { pairing: DerivedRatioPairing; testId: string }) {
   return (
-    <p className="subtle derived-denominator" data-testid={testId} data-ratio-id={pairing.ratio_id}>
+    <p className="subtle" data-testid={testId} data-ratio-id={pairing.ratio_id}>
       {sentence(pairing.unit)}, {denominatorText(pairing)}.{" "}
       <DraftViewMark pairing={pairing} />
     </p>
@@ -97,7 +97,6 @@ export function DerivedValue({
   const available = row.value !== null && row.value !== undefined && !row.unavailable_reason;
   return (
     <span
-      className="derived-value"
       data-testid={testId}
       data-ratio-id={pairing.ratio_id}
       data-available={available ? "true" : "false"}
@@ -105,7 +104,7 @@ export function DerivedValue({
       data-derived={row.derived ? "true" : "false"}
     >
       <strong>{derivedValueText(row)}</strong>{" "}
-      <span className="derived-denominator">{denominatorText(pairing)}</span>
+      <span className="subtle">{denominatorText(pairing)}</span>
       {period ? <span className="subtle"> · {period}</span> : null}
       {margin ? <span className="subtle"> · {margin}</span> : null}{" "}
       <DraftViewMark pairing={{ status: row.pairing_status, version: row.pairing_version }} />

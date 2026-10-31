@@ -38,7 +38,7 @@ test("reported violent crime: a county reads against its state on the FBI's own 
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("Wisconsin");
   const denominator = page.getByTestId("card-violent-crime-rate-denominator");
   await expect(denominator).toHaveText(/Per 100,000 people, denominator: population covered by reporting agencies, as the publisher computed it\./);
-  await expect(denominator.locator("[data-pairing-status='draft']")).toHaveText("Draft view awaiting review");
+  await expect(denominator.locator("[data-pairing-status='draft']")).toHaveText("(Draft view awaiting review)");
   // No count of offenses is on the page to divide, so no toggle is offered.
   await expect(page.getByTestId("chapter-safety-view")).toHaveCount(0);
   await safety.screenshot({ path: "test-results/per-capita/county-violent-crime.png" });
@@ -63,7 +63,7 @@ test("a share names its denominator for the county, its state and the nation", a
     await expect(line).toContainText("of total population (survey)");
     await expect(line).toContainText("2019-01-01 – 2023-12-31");
     await expect(line).toContainText("margin of error ±0.8 (Census Bureau formula for a derived proportion)");
-    await expect(line.locator("[data-pairing-status='draft']")).toHaveText("Draft view awaiting review");
+    await expect(line.locator("[data-pairing-status='draft']")).toHaveText("(Draft view awaiting review)");
   }
   // A measure the registry pairs with nothing keeps its count, and says so.
   await expect(page.getByTestId("chapter-people").locator("[data-testid$='-count-only']").first()).toContainText("showing the count");
@@ -149,7 +149,7 @@ test("the county map shows a count as a share, names the denominator, and keeps 
   await expect(page.getByTestId("measure-map")).toHaveAttribute("data-view", "share");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Share of people below the poverty level");
   await expect(page.getByTestId("measure-map-denominator")).toContainText("Every value is percent of people whose poverty status is determined");
-  await expect(page.getByTestId("measure-map-draft")).toHaveText("Draft view awaiting review");
+  await expect(page.getByTestId("measure-map-draft")).toHaveText("(Draft view awaiting review)");
   const all = page.getByTestId("measure-map-all");
   await expect(all.locator("thead")).toContainText("Percent of people whose poverty status is determined");
   await expect(all.locator('tr[data-geo-id="state:55|county:025"] td').first()).toHaveText("10.42 percent");
