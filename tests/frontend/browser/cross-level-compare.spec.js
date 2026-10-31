@@ -158,3 +158,33 @@ test("a side with no published figure is refused in plain words, and the other s
   await expect(page.getByTestId("compare-row-unemployment-rate-difference")).toHaveCount(0);
   await expect(page.getByTestId("compare-row-unemployment-rate-containment")).toHaveCount(0);
 });
+
+test("a metro beside the nation still lists the measures the catalog lists for one side", async ({ page }) => {
+  // OFFICE_LAB: the catalog lists no metro grain for the survey or LAUS, so
+  // filtering on both sides' grains left this page with no rows at all.
+  await open(page, "/compare/places?a=cbsa:31540&b=us:1");
+  await expect(page.getByTestId("compare-places-empty")).toHaveCount(0);
+  await expect(page.getByTestId("compare-row-median-household-income")).toHaveAttribute("data-state", "ok");
+  await expect(page.getByTestId("compare-row-unemployment-rate")).toHaveAttribute("data-refusal", "not_published");
+});
+
+test("a canonical address resolves through the place search, without paging a state's places", async ({ page }) => {
+  const listed = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/catalog/geographies" && ["COUNTY", "PLACE"].includes(url.searchParams.get("geo_level") || "")) listed.push(url.searchParams.get("geo_level"));
+  });
+  await open(page, "/us/wisconsin/madison-city/vs/us/wisconsin/dane-county");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Madison city, Wisconsin and Dane County, Wisconsin");
+  expect(listed).toEqual([]);
+});
+
+test("a place page always offers its state and the nation to compare with", async ({ page }) => {
+  await installCrossLevelFixtures(page);
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  const offer = page.getByTestId("place-compare-with");
+  await expect(offer).toHaveText("Compare this place with Wisconsin or the United States");
+  await expect(offer.getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/dane-county/vs/us/wisconsin");
+  await expect(offer.getByRole("link", { name: "the United States" })).toHaveAttribute("href", "/us/wisconsin/dane-county/vs/us");
+});

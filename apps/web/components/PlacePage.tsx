@@ -612,6 +612,8 @@ export default function PlacePage({
         </p>
       ) : null}
 
+      {place && level !== "NATIONAL" ? <CompareWith place={place} path={pathname} state={level === "STATE" ? null : state} states={states} nation={nation} /> : null}
+
       {nearby && !isEmpty(nearby) ? (
         <section className="analysis-panel place-nearby" aria-labelledby="place-nearby-heading" data-testid="place-nearby">
           <h2 id="place-nearby-heading">Nearby and related</h2>
@@ -1332,5 +1334,42 @@ function CompareLink({ from, path, entry }: { from: GeographySummary | null; pat
         compare
       </Link>
     </>
+  );
+}
+
+/**
+ * "Compare with" its state and the nation, from the page's own places rather
+ * than the reference's rows, so the two comparisons a reader reaches for
+ * first are always offered (web-cross-level-compare).
+ */
+function CompareWith({
+  place,
+  path,
+  state,
+  states,
+  nation,
+}: {
+  place: GeographySummary;
+  path: string | null;
+  state: GeographySummary | null;
+  states: GeographySummary[];
+  nation: GeographySummary | null;
+}) {
+  if (!path || !COMPARE_GEO_ID.test(place.geo_id)) return null;
+  const targets = [
+    ...(state ? [{ geoId: state.geo_id, name: stateName(state), path: placePath(stateSegment(state, states)) }] : []),
+    ...(nation ? [{ geoId: nation.geo_id, name: "the United States", path: "/us" }] : []),
+  ].filter((target) => COMPARE_GEO_ID.test(target.geoId));
+  if (!targets.length) return null;
+  return (
+    <p className="place-compare-with" data-testid="place-compare-with">
+      Compare this place with{" "}
+      {targets.map((target, index) => (
+        <span key={target.geoId}>
+          {index ? " or " : ""}
+          <Link className="text-link" href={compareHref({ geoId: place.geo_id, path }, target)}>{target.name}</Link>
+        </span>
+      ))}
+    </p>
   );
 }
