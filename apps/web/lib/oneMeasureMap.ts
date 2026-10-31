@@ -37,6 +37,12 @@ export interface MeasureMapView {
   ranked: RankedCounty[];
   withValue: number;
   withoutValue: number;
+  /**
+   * Rows whose geography is not among those listed (a city that has since
+   * disincorporated, a tract retired at a redraw). Counted and stated, never
+   * dropped silently and never drawn.
+   */
+  offBoundary: number;
   bins: MeasureBin[];
   /** The bins in the shape the explorer's choropleth reads. */
   distribution: DistributionResponse | null;
@@ -123,6 +129,8 @@ export function buildMeasureMapView(
     if (row.geo_id) byGeo.set(String(row.geo_id), row);
   }
   const periods = [...new Set([...byGeo.values()].map((row) => observationPeriodLabel(row)))];
+  const listed = new Set(counties.map((county) => county.geo_id));
+  const offBoundary = [...byGeo.keys()].filter((geoId) => !listed.has(geoId)).length;
   const ranked: RankedCounty[] = counties.map((county) => {
     const row = byGeo.get(county.geo_id) || null;
     const value = row ? publishedNumber(row.value) : null;
@@ -147,6 +155,7 @@ export function buildMeasureMapView(
     ranked,
     withValue: values.length,
     withoutValue: ranked.length - values.length,
+    offBoundary,
     bins,
     distribution: bins.length
       ? {
