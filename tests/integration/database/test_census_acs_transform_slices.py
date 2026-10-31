@@ -248,7 +248,8 @@ def test_a_sliced_year_writes_exactly_the_facts_the_whole_year_writes(
     monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
     fetched = _record_fetches(monkeypatch)
     assert transform.transform_census_to_silver() == expected_changed
-    assert fetched == ["acs5/place/10", "acs5/state/10"]
+    # Slices run concurrently, so they are read in no fixed order.
+    assert sorted(fetched) == ["acs5/place/10", "acs5/state/10"]
     assert _facts(factory) == whole_year
 
 
