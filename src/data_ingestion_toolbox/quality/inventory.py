@@ -1592,6 +1592,26 @@ _CDC_OBJECTS: tuple[WarehouseObject, ...] = (
 
 _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
     _obj(
+        "control.fbi_return_a_year",
+        "control",
+        "FBI_UCR",
+        grain="release_key, data_year",
+        lineage="raw_capture.response_capture",
+        scope_method="years requested of fbi_ucr/return_a/load.py",
+        cadence="per Return A load",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
+        "silver_fbi.return_a_county_crosswalk",
+        "silver",
+        "FBI_UCR",
+        grain="release_key, data_year, state_code, fbi_county_code",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_current",
+        scope_method="every FBI county code a loaded Return A year uses",
+        cadence="per Return A load",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
         "control.fbi_ucr_release",
         "control",
         "FBI_UCR",
@@ -5156,6 +5176,15 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fbi.county_agency_rate",
             "gold_fbi.latest_county_agency_rate",
         ),
+    ),
+    _rule(
+        "DQ-FBI-011",
+        "WARN",
+        "reconciliation",
+        "Violent and property totals summed from the Return A master file's "
+        "offense components equal the CDE's published totals for every "
+        "agency and month both publish.",
+        ("gold_fbi.latest_release_observation",),
     ),
     # -- USDA NASS ---------------------------------------------------------
     _rule(

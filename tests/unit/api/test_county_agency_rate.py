@@ -37,7 +37,7 @@ DANE = "state:55|county:025"
 
 def _row(**overrides: Any) -> dict[str, Any]:
     row = {
-        "product_id": "summarized_violent_crime",
+        "product_id": "return_a_violent_crime",
         "measure_id": "V:offense:absolute_total",
         "release_key": "2026-08-15",
         "geo_id": DANE,
@@ -101,7 +101,7 @@ def test_a_rate_row_carries_its_coverage_and_inputs() -> None:
     assert row.geo_level == "COUNTY" and row.geo_name == "Dane County"
     assert row.unavailable_reason is None
     assert row.numerator.metric_code == (
-        "FBI_UCR:summarized_violent_crime:V:offense:absolute_total"
+        "FBI_UCR:return_a_violent_crime:V:offense:absolute_total"
     )
     assert row.numerator.value == "13"
     assert row.denominator is None and row.provider_rate is None
@@ -181,7 +181,7 @@ def test_the_read_is_the_gold_view_bound_and_reduced(drafts) -> None:
     assert "ORDER BY geo_id, period_start DESC, release_key DESC" in sql
     assert "geo_id = :geo_id" in sql and "state_fips = :state_fips" in sql
     assert "UPPER(" not in sql and DANE not in sql
-    assert params["product_id"] == "summarized_violent_crime"
+    assert params["product_id"] == "return_a_violent_crime"
     assert params["measure_id"] == "V:offense:absolute_total"
     assert page.total == 1 and page.ratio.kind == "agency_rate"
     assert page.ratio.reads_beside == "FBI_UCR:summarized_violent_crime:V:offense:rate"
@@ -251,7 +251,7 @@ def test_the_route_serves_it_only_when_served(monkeypatch: pytest.MonkeyPatch) -
 def test_it_is_never_compared_or_offered_as_a_count_view(drafts) -> None:
     """Covers: API-181 — no reviewed rule reads it against another place."""
     offered = cross_level_service.count_alternatives(
-        "FBI_UCR:summarized_violent_crime:V:offense:absolute_total"
+        "FBI_UCR:return_a_violent_crime:V:offense:absolute_total"
     )
     assert RATIO not in {alternative.ratio_id for alternative in offered}
     with pytest.raises(NeutralQueryError, match="not compared across places"):

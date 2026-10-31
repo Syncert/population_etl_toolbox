@@ -202,6 +202,11 @@
       "path": "sql/migrations/035_fbi_relationship_equal_window.sql"
     },
     {
+      "id": "migration-040",
+      "phase": "source-fix",
+      "path": "sql/migrations/040_fbi_return_a_county_code.sql"
+    },
+    {
       "id": "silver-epa-aqs",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql"

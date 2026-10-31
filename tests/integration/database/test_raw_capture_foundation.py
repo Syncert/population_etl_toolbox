@@ -115,6 +115,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "fred_ingestion_slices"),
         ("control", "cdc_dataset_release"),
         ("control", "fbi_ucr_release"),
+        ("control", "fbi_return_a_year"),
         ("control", "usda_nass_release"),
         ("control", "usda_nass_slice"),
         ("control", "usda_ers_file"),

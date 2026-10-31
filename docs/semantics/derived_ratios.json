@@ -1027,7 +1027,7 @@
       "scale": 100000,
       "unit": "per 100,000 people covered by reporting agencies in this county",
       "label": "Violent crime per 100,000 people, computed from agency reports",
-      "numerator": "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
+      "numerator": "FBI_UCR:return_a_violent_crime:V:offense:absolute_total",
       "reads_beside": "FBI_UCR:summarized_violent_crime:V:offense:rate",
       "geo_levels": [
         "COUNTY"
@@ -1037,10 +1037,10 @@
       "status": "approved",
       "owner": "v1.0 build-out",
       "reviewer": "Nick",
-      "version": 1,
+      "version": 2,
       "effective_date": "2026-10-31",
       "last_reviewed_date": "2026-10-31",
-      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): violent offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds.",
+      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): violent offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds. Version 2 (2026-10-31) reads the agencies from the FBI's Return A master file, which holds every agency, instead of the CDE's six-agency sample; the method is unchanged.",
       "limitations": [
         "Agencies serving more than one county, and agencies with no published population, are left out of both sides.",
         "The rate describes the people its reporting agencies cover, not every county resident: where a sheriff and town police both serve a county, each agency's population is its own jurisdiction's.",
@@ -1048,7 +1048,7 @@
         "Monthly, like the agency reports it divides; never rolled up into a year. Not comparable with a Census per-capita figure."
       ],
       "citations": [
-        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/downloads"
       ]
     },
     {
@@ -1057,7 +1057,7 @@
       "scale": 100000,
       "unit": "per 100,000 people covered by reporting agencies in this county",
       "label": "Property crime per 100,000 people, computed from agency reports",
-      "numerator": "FBI_UCR:summarized_property_crime:P:offense:absolute_total",
+      "numerator": "FBI_UCR:return_a_property_crime:P:offense:absolute_total",
       "reads_beside": "FBI_UCR:summarized_property_crime:P:offense:rate",
       "geo_levels": [
         "COUNTY"
@@ -1067,10 +1067,10 @@
       "status": "approved",
       "owner": "v1.0 build-out",
       "reviewer": "Nick",
-      "version": 1,
+      "version": 2,
       "effective_date": "2026-10-31",
       "last_reviewed_date": "2026-10-31",
-      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): property offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds.",
+      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): property offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds. Version 2 (2026-10-31) reads the agencies from the FBI's Return A master file, which holds every agency, instead of the CDE's six-agency sample; the method is unchanged.",
       "limitations": [
         "Agencies serving more than one county, and agencies with no published population, are left out of both sides.",
         "The rate describes the people its reporting agencies cover, not every county resident: where a sheriff and town police both serve a county, each agency's population is its own jurisdiction's.",
@@ -1078,7 +1078,7 @@
         "Monthly, like the agency reports it divides; never rolled up into a year. Not comparable with a Census per-capita figure."
       ],
       "citations": [
-        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/downloads"
       ]
     },
     {
