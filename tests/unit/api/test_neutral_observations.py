@@ -576,6 +576,35 @@ def test_a_filter_the_source_does_not_declare_is_rejected_with_help() -> None:
     assert not _dispatched(session), "a rejected filter must not reach SQL"
 
 
+def test_a_state_filter_reads_the_state_from_the_geography_key() -> None:
+    """Covers: API-043 — PEP and SAIPE/SAHIE rows carry no state_fips column.
+
+    Their geo_id is the canonical `state:NN|county:NNN` key, so the state
+    filter compares its first segment: a state and every county in it match,
+    and the code is bound, never interpolated.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "geo_level": "county",
+                "state_fips": "48",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    sql = _dispatched(session)[-1]
+    assert "split_part(geo_id, '|', 1) = 'state:' || :state_fips" in sql
+    assert session.parameters[-1]["state_fips"] == "48"
+    for source in ("CENSUS_PEP", "CENSUS_SAIPE_SAHIE"):
+        assert "state_fips" in OBSERVATION_DISPATCH[source].supported_filters()
+
+
 def test_supported_filters_bind_their_declared_conditions() -> None:
     """Covers: API-043 — a declared filter becomes its reviewed condition."""
     session = _DispatchSession(metric_row=dict(_CDC_METRIC))
