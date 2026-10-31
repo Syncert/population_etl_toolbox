@@ -52,7 +52,6 @@ from data_ingestion_toolbox.semantics.derived_ratios import (
 ACS_SOURCE = "CENSUS_ACS"
 #: Values and margins are stated to two decimals of the scaled unit.
 QUANTUM = Decimal("0.01")
-VALID_STATUSES = frozenset({None, "", "valid"})
 
 
 class UnknownRatio(LookupError):
@@ -138,9 +137,13 @@ def _input(
 
 
 def _usable(observation: NeutralObservation) -> Optional[Decimal]:
-    """The input's numeric value, or ``None`` when it is withheld or not numeric."""
-    if observation.value_status not in VALID_STATUSES:
-        return None
+    """The input's numeric value, or ``None`` when the source published none.
+
+    The neutral contract's own rule: ``value`` is null whenever the source
+    published no usable number, and ``value_status`` is in each source's own
+    vocabulary (ACS ``valid``, FBI UCR ``reported``, PEP none at all). A list
+    of "good" words refused every FBI rate, so the number decides.
+    """
     return _number(observation.value)
 
 

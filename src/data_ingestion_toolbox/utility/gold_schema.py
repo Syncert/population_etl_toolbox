@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import logging
 import pathlib
@@ -472,7 +473,10 @@ def _serve_step_by_state(
         states = [str(row[0]) for row in cur.fetchall()]
 
     def publish(state: str) -> None:
-        with hook.get_conn() as conn, conn.cursor() as cur:
+        # A hook of its own per session: `PostgresHook.get_conn` stores the
+        # connection on the hook and returns that attribute, so threads
+        # sharing one hook can be handed each other's connection.
+        with copy.copy(hook).get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET LOCAL lock_timeout = '30s'")
             cur.execute(f"SET LOCAL statement_timeout = '{step.statement_timeout}'")
             cur.execute(
