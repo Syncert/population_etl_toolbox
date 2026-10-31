@@ -331,7 +331,7 @@ services:
       --email admin@example.com || true;
       airflow connections delete public_data >/dev/null 2>&1 || true;
       airflow connections add public_data --conn-type postgres --conn-host ${PUBLIC_DATA_DB_HOST:-${ANALYTICS_DB_HOST:-analytics_postgres}} --conn-port ${PUBLIC_DATA_DB_PORT:-${ANALYTICS_DB_PORT:-5432}} --conn-login ${PUBLIC_DATA_DB_USER:-${ANALYTICS_DB_USER:-analytics}} --conn-password ${PUBLIC_DATA_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD:-analytics}} --conn-schema ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME:-population_etl}};
-      airflow pools set census_api 4 'Census Bureau API limit';
+      airflow pools set census_api 6 'Census Bureau API limit';
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
