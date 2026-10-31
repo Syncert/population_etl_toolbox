@@ -312,6 +312,31 @@ census_ac"`) 26 passed; schema snapshot regenerated; `ruff check .` and
   procedure and the DB-056 checks. Per-step durations are logged and will be
   recorded per year during W-3.
 
+## Progress (2026-10-31, W-5: crosswalk and comparable series)
+
+- `silver_ref.tract_decade_crosswalk` (#168, ETL-102) holds the Bureau's
+  2000-to-2010 and 2010-to-2020 tract relationship files, matched by code and
+  decade. Loaded on the internal stack 2026-10-30: 110,854 parts 2000-to-2010,
+  126,222 parts 2010-to-2020; the only unmapped tracts are the island areas'
+  (Guam, the Virgin Islands, the Northern Marianas, American Samoa), which the
+  ACS does not publish. It is a table of its own, not
+  `bridge_geo_relationship_version` as Deliverable 7 first said: a tract keeps
+  one entity per code across decades, so a succession must be keyed by both
+  decades, and an unchanged tract succeeds itself, which the bridge's
+  `parent <> related` CHECK refuses.
+- `gold_census.acs_tract_comparable` (ETL-103) is the derived series: counts
+  published on 2000- and 2010-decade tracts apportioned to 2020 tracts (2010
+  population share, then land share; the 2020 file publishes no population),
+  `unchanged`, `apportioned` or `incomplete`, `derivation =
+  'decade_crosswalk'`. Medians, per-capita figures and margins of error are
+  not apportioned. The API exposure belongs with A-5 (metro and tract pages).
+- Not covered: the Connecticut 2022 planning-region recoding (a recorded gap,
+  outside v1).
+- W-4 gap found 2026-10-31: tract years 2010-2024 were loaded on the first
+  five tables only, because tract slices fingerprinted the whole curated list
+  (#169 fixes it); the reload of 2024-2010 on the 22-table list runs from
+  `/h/backfill-logs/tract_wide_reload.sh` (`backfill-tract-wide.jsonl`).
+
 ## Checkpoint
 
 Next pickup: W-3, the full-scope city backfill (declare

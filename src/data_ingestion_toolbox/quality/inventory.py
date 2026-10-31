@@ -899,6 +899,19 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first publication",
     ),
     _obj(
+        "gold_census.acs_tract_comparable",
+        "serving",
+        "CENSUS_ACS",
+        grain="geo_id (2020 tract), observation_date, dataset_code, variable_code",
+        lineage=("gold_census.rpt_acs_observations, silver_ref.tract_decade_crosswalk"),
+        scope_method=(
+            "derived: earlier-decade tract counts apportioned to 2020 tracts; "
+            "count tables only"
+        ),
+        cadence="a view, current with its two inputs",
+        empty_behavior="empty until the tract crosswalk is loaded",
+    ),
+    _obj(
         "gold_census.fact_observation",
         "serving",
         "CENSUS_ACS",
@@ -4115,6 +4128,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.fact_acs_observation",
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
+            "gold_census.acs_tract_comparable",
         ),
         automation="enforced",
         automation_note=(
@@ -4124,7 +4138,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "the silver one -- they add the geography and the metric code the "
             "catalog publishes -- and both are declared below and checked "
             "against the warehouse. `fact_acs_observation` carries no index "
-            "because it is a view over the silver fact."
+            "because it is a view over the silver fact; `acs_tract_comparable` "
+            "is a view grouped by its own grain, so it holds one row per 2020 "
+            "tract, release and variable by construction."
         ),
         enforced_grains=(
             EnforcedGrain(
