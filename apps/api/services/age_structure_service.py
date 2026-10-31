@@ -48,6 +48,7 @@ from apps.api.schemas.age_structure import (
     MedianAgeValue,
 )
 from apps.api.services.contracts import require_relation, session_memo
+from apps.api.services.cross_level_service import place_name
 from apps.api.services.derived_ratio_service import derived_margin
 from data_ingestion_toolbox.semantics.age_bands import (
     SEXES,
@@ -561,7 +562,9 @@ def _identities(db: Session, geo_ids: Sequence[str]) -> dict[str, Mapping[str, A
         .mappings()
         .all()
     )
-    return {str(row["geo_id"]): row for row in rows}
+    # The catalog's nation row carries its code (``us:1``) as its name; serve
+    # the name a reader knows it by, as the cross-level comparison does.
+    return {str(row["geo_id"]): {**row, "geo_name": place_name(row)} for row in rows}
 
 
 def _related(db: Session, geo_id: str) -> list[Mapping[str, Any]]:
