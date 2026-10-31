@@ -1087,6 +1087,27 @@ def _list_serving_windows(
     )
 
 
+def _group_total(
+    db: Session,
+    rows: Sequence[Mapping[str, Any]],
+    offset: int,
+    count_query: Any,
+    params: Mapping[str, Any],
+) -> int:
+    """The number of groups a grouped listing holds, read from its own page.
+
+    ``COUNT(*) OVER ()`` over a grouped query counts the groups before
+    ``LIMIT`` applies, so any row of the page carries the total. Only a page
+    past the last group has no row to carry it; that page alone pays for the
+    separate count, and the first page of an empty listing is simply zero.
+    """
+    if rows:
+        return int(rows[0]["group_total"])
+    if offset <= 0:
+        return 0
+    return int(db.execute(count_query, dict(params)).scalar() or 0)
+
+
 def list_metric_releases(
     db: Session,
     metric_code: str,
@@ -1117,10 +1138,10 @@ def list_metric_releases(
     require_relation(db, relation)
 
     where_sql = " AND ".join(conditions)
-    count_query = text(
-        f"SELECT COUNT(DISTINCT {dispatch.release_expression}) "
-        f"FROM {relation} WHERE {where_sql}"
-    )
+    # One pass: the window counts the groups before LIMIT applies, so the page
+    # carries its own total and the relation is read once rather than once
+    # for the count and again for the page (a 15 s statement timeout on the
+    # tract-backed ACS relations when it was read twice).
     list_query = text(
         f"""
         SELECT
@@ -1128,7 +1149,8 @@ def list_metric_releases(
             MAX({dispatch.as_of_expression or "NULL::TEXT"}) AS as_of,
             COUNT(*)::INT AS observation_count,
             MAX({dispatch.period_start_expression}) AS newest_period_start,
-            MAX({dispatch.period_end_expression}) AS newest_period_end
+            MAX({dispatch.period_end_expression}) AS newest_period_end,
+            COUNT(*) OVER () AS group_total
         FROM {relation}
         WHERE {where_sql}
         GROUP BY 1
@@ -1137,10 +1159,14 @@ def list_metric_releases(
         LIMIT :limit OFFSET :offset
         """
     )
+    count_query = text(
+        f"SELECT COUNT(DISTINCT {dispatch.release_expression}) "
+        f"FROM {relation} WHERE {where_sql}"
+    )
 
-    total = int(db.execute(count_query, params).scalar() or 0)
     page_params = {**params, "limit": limit, "offset": offset}
     rows = db.execute(list_query, page_params).mappings().all()
+    total = _group_total(db, rows, offset, count_query, params)
 
     return MetricReleaseListResponse(
         metric_code=metric_code,
@@ -1180,16 +1206,12 @@ def list_metric_periods(
     relation = dispatch.latest_relation
     require_relation(db, relation)
 
-    count_query = text(
-        f"SELECT COUNT(*) FROM ("
-        f"SELECT {start}, {end} FROM {relation} WHERE {where_sql} "
-        "GROUP BY 1, 2) AS published_periods"
-    )
     list_query = text(
         f"""
         SELECT {start} AS period_start,
                {end} AS period_end,
-               COUNT(*)::INT AS observation_count
+               COUNT(*)::INT AS observation_count,
+               COUNT(*) OVER () AS group_total
         FROM {relation}
         WHERE {where_sql}
         GROUP BY 1, 2
@@ -1197,12 +1219,17 @@ def list_metric_periods(
         LIMIT :limit OFFSET :offset
         """
     )
-    total = int(db.execute(count_query, params).scalar() or 0)
+    count_query = text(
+        f"SELECT COUNT(*) FROM ("
+        f"SELECT {start}, {end} FROM {relation} WHERE {where_sql} "
+        "GROUP BY 1, 2) AS published_periods"
+    )
     rows = (
         db.execute(list_query, {**params, "limit": limit, "offset": offset})
         .mappings()
         .all()
     )
+    total = _group_total(db, rows, offset, count_query, params)
     return MetricPeriodListResponse(
         metric_code=metric_code,
         source_code=dispatch.source_code,

@@ -752,38 +752,53 @@ function Chapter({
   );
 
   // A derived view reads each paired measure for every level the chapter
-  // shows, so a county reads beside its state on one denominator.
+  // shows, so a county reads beside its state on one denominator. Each answer
+  // shows as soon as it arrives, the place itself is read before its state and
+  // the nation, and an answer already read is kept when the reader switches
+  // views back and forth, so one slow read never holds up the others.
+  const derivedCache = useRef(new Map<string, DerivedAnswer>());
   useEffect(() => {
     if (view === "count") return;
     const controller = new AbortController();
     const signal = controller.signal;
+    const cache = derivedCache.current;
     const next = new Map<string, DerivedAnswer>();
-    const tasks: (() => Promise<void>)[] = [];
+    const queued: { rank: number; run: () => Promise<void> }[] = [];
     for (const measure of measured) {
       const pairing = pairingFor(pairings, measure.metricCode, view);
       if (!pairing) continue;
-      for (const entry of levels) {
-        if (!publishesAt(measure, entry.level)) continue;
+      levels.forEach((entry, rank) => {
+        if (!publishesAt(measure, entry.level)) return;
         const key = derivedKey(pairing.ratio_id, entry.geoId);
+        const known = cache.get(key);
+        if (known) {
+          next.set(key, known);
+          return;
+        }
         next.set(key, { row: null, pending: true });
-        tasks.push(async () => {
-          try {
-            const payload = await getDerivedObservations(
-              { ratio_id: pairing.ratio_id, geo_id: entry.geoId, newest_per_geography: true, limit: 1 },
-              { signal },
-            );
-            const row = (payload.items || []).find((item) => item.geo_id === entry.geoId) || null;
-            next.set(key, { row });
-          } catch (error) {
-            if (!signal.aborted) next.set(key, { row: null, error: apiErrorMessage(error) });
-          }
+        queued.push({
+          rank,
+          run: async () => {
+            let answer: DerivedAnswer;
+            try {
+              const payload = await getDerivedObservations(
+                { ratio_id: pairing.ratio_id, geo_id: entry.geoId, newest_per_geography: true, limit: 1 },
+                { signal },
+              );
+              answer = { row: (payload.items || []).find((item) => item.geo_id === entry.geoId) || null };
+              cache.set(key, answer);
+            } catch (error) {
+              if (signal.aborted) return;
+              answer = { row: null, error: apiErrorMessage(error) };
+            }
+            if (!signal.aborted) setDerived((current) => new Map(current).set(key, answer));
+          },
         });
-      }
+      });
     }
-    setDerived(new Map(next));
-    inPool(tasks, REQUEST_CONCURRENCY).then(() => {
-      if (!signal.aborted) setDerived(new Map(next));
-    });
+    setDerived(next);
+    const tasks = queued.sort((a, b) => a.rank - b.rank).map((item) => item.run);
+    void inPool(tasks, REQUEST_CONCURRENCY);
     return () => controller.abort();
   }, [view, measured, levels, pairings]);
   const trendMeasure = resolved.headline.find((measure) => measure.measure.id === chapter.trend.measureId) || null;

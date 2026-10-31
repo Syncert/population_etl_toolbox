@@ -268,8 +268,14 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
     """Covers: API-160 — discover exact served period pairs before painting."""
     session = _DispatchSession(
         metric_row=dict(_CDC_METRIC),
-        rows=[{"period_start": "2021", "period_end": "2021", "observation_count": 3}],
-        total=2,
+        rows=[
+            {
+                "period_start": "2021",
+                "period_end": "2021",
+                "observation_count": 3,
+                "group_total": 2,
+            }
+        ],
     )
     client = _client_with(session)
     try:
@@ -305,6 +311,65 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
         "ORDER BY period_start DESC, period_end DESC NULLS LAST"
         in _dispatched(session)[-1]
     )
+
+
+@pytest.mark.parametrize(
+    "route", ["/api/v1/observations/periods", "/api/v1/observations/releases"]
+)
+def test_grouped_listings_read_the_relation_once(route: str) -> None:
+    """Covers: API-160 — a page carries its own group total; no second scan.
+
+    Counting the groups and then listing them read every served row of the
+    metric twice, and on the tract-backed ACS relations each pass alone was
+    near the 15 s statement timeout. `COUNT(*) OVER ()` counts the groups
+    before LIMIT applies, so a page with rows needs no separate count; only a
+    page past the last group asks for one.
+    """
+    row = {
+        "period_start": "2021",
+        "period_end": "2021",
+        "release": "1710000000",
+        "observation_count": 3,
+        "group_total": 7,
+    }
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[row], total=99)
+    client = _client_with(session)
+    try:
+        response = client.get(route, params={"metric_code": _CDC_METRIC["metric_code"]})
+    finally:
+        _clear_overrides()
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 7
+    reads = _dispatched(session)
+    assert len(reads) == 1 and "COUNT(*) OVER ()" in reads[0]
+
+    empty = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[], total=7)
+    client = _client_with(empty)
+    try:
+        past_end = client.get(
+            route, params={"metric_code": _CDC_METRIC["metric_code"], "offset": 50}
+        )
+        first = client.get(route, params={"metric_code": _CDC_METRIC["metric_code"]})
+    finally:
+        _clear_overrides()
+    assert past_end.json()["total"] == 7, "past the last group, the count still answers"
+    assert first.json()["total"] == 0
+    assert (
+        sum(sql.lstrip().startswith("SELECT COUNT(") for sql in _dispatched(empty)) == 1
+    )
+
+
+def test_acs_grain_filter_is_plain_equality() -> None:
+    """Covers: API-042 — an ACS grain filter an index can serve.
+
+    ACS serving writes `geo_level` through `gold_glossary.geo_grain`, and the
+    bound word is normalised first, so `UPPER(geo_level)` added nothing but a
+    scan of every tract row of the metric for an all-county read.
+    """
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    declared = dict(OBSERVATION_DISPATCH["CENSUS_ACS"].filter_conditions)
+    assert declared["geo_level"] == "geo_level = :geo_level"
 
 
 def test_period_listing_refuses_as_released_scope() -> None:
@@ -923,10 +988,16 @@ def test_releases_resource_lists_releases_newest_first() -> None:
             "observation_count": 40,
             "newest_period_start": "2022-01-01",
             "newest_period_end": "2022-12-31",
+            "group_total": 2,
         },
-        {"release": "1700000000", "as_of": None, "observation_count": 38},
+        {
+            "release": "1700000000",
+            "as_of": None,
+            "observation_count": 38,
+            "group_total": 2,
+        },
     ]
-    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=rows, total=2)
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=rows)
     client = _client_with(session)
     try:
         response = client.get(

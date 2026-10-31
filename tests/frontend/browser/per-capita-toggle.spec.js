@@ -74,6 +74,29 @@ test("a share names its denominator for the county, its state and the nation", a
   await expect(page.getByTestId("depth-under-18").locator("dt")).not.toContainText("Share of residents under 18");
 });
 
+test("each share shows as it arrives; a slow state read never holds up the county", async ({ page }) => {
+  await installPlaceFixtures(page);
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  // Registered after the fixtures, so it is asked first: the state's reads
+  // wait until the county's answer is already on the page.
+  await page.route((url) => url.pathname === "/api/v1/observations/derived", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("geo_id") === "state:55") await held;
+    await route.fallback();
+  });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await page.getByTestId("chapter-people-view").getByRole("button", { name: "Share" }).click();
+  await expect(page.getByTestId("depth-under-18-county")).toContainText("10.1 percent");
+  await expect(page.getByTestId("depth-under-18-state")).toContainText("Reading…");
+  release();
+  await expect(page.getByTestId("depth-under-18-state")).toContainText("11 percent");
+  // Switching back and forth keeps what was read rather than reading it again.
+  await page.getByTestId("chapter-people-view").getByRole("button", { name: "Count" }).click();
+  await page.getByTestId("chapter-people-view").getByRole("button", { name: "Share" }).click();
+  await expect(page.getByTestId("depth-under-18-county")).toContainText("10.1 percent");
+});
+
 test("a share the API cannot compute reads as its reason, never as zero", async ({ page }) => {
   await ready(page, "/us/wisconsin/rock-county");
   await page.getByTestId("chapter-people-view").getByRole("button", { name: "Share" }).click();
