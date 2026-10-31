@@ -18,9 +18,13 @@ verify:
   source of truth database currently being used can't be the analytics query
   destination and the website serving layer long term. That wouldn't scale
   would it? Planning and exploration only."
-- **Decision needed from Nick:** whether to accept the recommendation below
-  (keep one Postgres through v1, split serving out at public launch, add a
-  columnar sidecar only when an analytics question needs it).
+- **Decided by Nick (2026-10-31 21:03–21:10):** at public launch the site
+  is served from **managed Postgres on AWS**. That cloud copy holds **only what
+  the website serves**: newest values plus a compact history table. The
+  warehouse and its loads stay at the office. An RDS read replica of the
+  serving copy is added if traffic or failover needs it.
+- **Still open:** whether to accept the rest of the staged path (one Postgres
+  through v1, Parquet + DuckDB only when an analytics question needs it).
 - **Replaces:** the standing rule "stay on Postgres; columnar sidecar only if
   post-parallel measurements show scan-bound steps." That rule stays true but
   incomplete. It says nothing about where the website reads from once the site
@@ -406,9 +410,8 @@ What this says so far:
 ## Open questions for Nick
 
 1. Accept the staged path (Postgres now, Parquet + DuckDB when analytics needs
-   it, a serving-only Postgres at public launch)?
-2. At launch, would you rather pay for managed Postgres (more money, less of
-   your time) or run a VPS yourself (less money, you own backups and
-   upgrades)?
-3. Should the remote warehouse on the wish list become this serving-only
-   database instead of a second full warehouse?
+   it, a serving-only Postgres at public launch)? *Open.*
+2. Managed Postgres or a self-run VPS at launch? **Answered 2026-10-31:
+   managed, on AWS.**
+3. Should the cloud copy be serving-only, with the warehouse staying at the
+   office? **Answered 2026-10-31: yes.**
