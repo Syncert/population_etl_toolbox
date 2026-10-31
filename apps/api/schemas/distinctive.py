@@ -32,7 +32,7 @@ class DistinctiveMeasure(PlainLabelled):
     request: str
 
 
-class NotRankedMeasure(BaseModel):
+class NotRankedMeasure(PlainLabelled):
     metric_code: str
     reason: str
 

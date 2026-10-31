@@ -17,6 +17,7 @@ a guessed name.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -48,6 +49,17 @@ REGISTRY_PATH = (
 
 #: The ACS label path's measure prefixes, as the Bureau writes them.
 _ACS_PREFIX = re.compile(r"^(Estimate|Margin of Error|Annotation of Estimate)!!")
+
+
+#: Set to ``1`` to serve only reviewed (``approved``) labels: a draft entry's
+#: label then gives way to the provider's, while its definition is still
+#: served with its status. Off by default so the drafts can be reviewed on the
+#: running site; listed in ``infra/docker/stack.env.example``.
+REVIEWED_ONLY_ENV = "METRIC_LABELS_REVIEWED_ONLY"
+
+
+def reviewed_only() -> bool:
+    return os.environ.get(REVIEWED_ONLY_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
 class DefinitionError(ValueError):
@@ -133,6 +145,8 @@ def plain_label(
 ) -> tuple[str | None, str]:
     """The label to show and where it came from: the entry's status, or ``provider``."""
     definition = definition_for(metric_code)
-    if definition is not None:
+    if definition is not None and not (
+        reviewed_only() and definition.status != "approved"
+    ):
         return definition.label, definition.status
     return provider_label(metric_code, display_name), "provider"

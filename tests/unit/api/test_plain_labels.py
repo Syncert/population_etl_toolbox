@@ -10,7 +10,13 @@ from pathlib import Path
 
 import pytest
 
+from apps.api.schemas.analysis import (
+    ComparisonResponse,
+    DistributionBinsResponse,
+    MatrixMetricSummary,
+)
 from apps.api.schemas.catalog import MetricCatalog
+from apps.api.schemas.labels import label_fields
 from apps.api.schemas.observations import NeutralObservation
 from data_ingestion_toolbox.semantics.definitions import (
     DefinitionError,
@@ -24,6 +30,32 @@ pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[3]
 PLACE_CHAPTERS = ROOT / "apps" / "web" / "lib" / "placeChapters.ts"
+GROCERIES_AND_GAS = ROOT / "apps" / "web" / "lib" / "groceriesAndGas.ts"
+
+#: Census division -> its region, the two codes BLS builds an area's CPI id from.
+_DIVISION_REGION = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 3, 8: 4, 9: 4}
+
+
+def _groceries_and_gas_codes() -> set[str]:
+    """Every code the place page's grocery-and-gas card can ask for.
+
+    The card builds BLS ids from the containing region's and division's
+    codes; each template is expanded over every region and division.
+    """
+    text = GROCERIES_AND_GAS.read_text(encoding="utf-8")
+    codes: set[str] = set()
+    for template in re.findall(r'metricCode: [`"]([^`"]+)[`"]', text):
+        if "${" not in template:
+            codes.add(template)
+        elif "${division}" in template:
+            codes |= {
+                template.replace("${region}", str(r)).replace("${division}", str(d))
+                for d, r in _DIVISION_REGION.items()
+            }
+        else:
+            codes |= {template.replace("${region}", str(r)) for r in range(1, 5)}
+    assert codes, "the card's metric templates were not found"
+    return codes
 
 
 def _place_page_codes() -> set[str]:
@@ -65,7 +97,7 @@ def test_every_metric_a_place_page_shows_has_a_definition() -> None:
     defined = set(registry())
     undefined = sorted(
         code
-        for code in _place_page_codes()
+        for code in _place_page_codes() | _groceries_and_gas_codes()
         if code not in defined and not code.startswith("USDA_NASS:")
     )
     assert undefined == []
@@ -124,3 +156,53 @@ def test_the_registry_refuses_a_broken_entry() -> None:
         )
     with pytest.raises(DefinitionError, match="status"):
         parse_registry({"entries": [{**entry, "status": "final"}]})
+
+
+def test_every_response_naming_a_metric_by_code_carries_its_label() -> None:
+    """Covers: API-170 -- comparison sides, matrix measures and bins are labelled."""
+    gini = {"metric_display_name": "Estimate!!Gini Index"}
+    under5 = {"metric_display_name": "Estimate!!Total:!!Male:!!Under 5 years"}
+    response = ComparisonResponse(
+        metric_code_a="CENSUS_ACS:acs5:B19083_001",
+        metric_code_b="CENSUS_ACS:acs5:B01001_003",
+        **label_fields("CENSUS_ACS:acs5:B19083_001", gini, "_a"),
+        **label_fields("CENSUS_ACS:acs5:B01001_003", under5, "_b"),
+        total=0,
+        limit=10,
+        offset=0,
+        items=[],
+    )
+    assert response.metric_label_a == "Gini index of income inequality"
+    assert response.metric_label_status_a == "draft"
+    assert response.metric_label_b == "Total: Male: Under 5 years"
+    assert response.metric_label_status_b == "provider"
+    assert label_fields("NOPE:x", None) == {
+        "metric_label": None,
+        "metric_label_status": None,
+    }
+
+    summary = MatrixMetricSummary(metric_code="CENSUS_ACS:acs5:B19083_001", **gini)
+    assert summary.metric_label == "Gini index of income inequality"
+    bins = DistributionBinsResponse(
+        metric_code="EIA:EPMR",
+        metric_display_name="Weekly U.S. Regular All Formulations Retail Gasoline Prices",
+        total=0,
+        bin_count=0,
+        items=[],
+    )
+    assert bins.metric_label == "Regular gasoline, average retail price"
+
+
+def test_reviewed_only_serves_the_provider_label_for_a_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-170 -- with the switch on, a draft is never shown as the label."""
+    monkeypatch.setenv("METRIC_LABELS_REVIEWED_ONLY", "1")
+    metric = MetricCatalog(
+        metric_code="CENSUS_ACS:acs5:B19083_001",
+        metric_display_name="Estimate!!Gini Index",
+    )
+    assert metric.metric_label == "Gini Index"
+    assert metric.metric_label_status == "provider"
+    # The draft definition is still served, saying it is a draft.
+    assert metric.definition is not None and metric.definition.status == "draft"

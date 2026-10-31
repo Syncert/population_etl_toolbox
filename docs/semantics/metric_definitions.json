@@ -2658,6 +2658,123 @@
       "version": 1,
       "effective_date": "2026-10-26",
       "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "EIA:EPMR",
+      "metric_codes": [
+        "EIA:EPMR"
+      ],
+      "name": "Regular gasoline, average retail price",
+      "definition": "The average retail price of a gallon of regular-grade gasoline, from EIA's weekly survey of retail stations.",
+      "unit": "dollars per gallon",
+      "universe": "retail gasoline stations",
+      "caveat": "Published for the nation and a small set of states, not for counties or cities; a county page shows the containing area's price and names it.",
+      "intended_use": "Show what a gallon of gas costs in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation and a small set of states, not for counties or cities; a county page shows the containing area's price and names it.",
+        "Weekly prices are never averaged into an annual figure by this platform."
+      ],
+      "citations": [
+        "https://www.eia.gov/petroleum/gasdiesel/",
+        "https://www.eia.gov/dnav/pet/pet_pri_gnd_dcus_nus_w.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BLS:APU_gasoline_regular_region",
+      "metric_codes": [
+        "BLS:APU010074714",
+        "BLS:APU020074714",
+        "BLS:APU030074714",
+        "BLS:APU040074714"
+      ],
+      "name": "Regular gasoline, average price (Census region)",
+      "definition": "The average price BLS records for a gallon of unleaded regular gasoline in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per gallon",
+      "universe": "urban consumers in the Census region",
+      "caveat": "A regional urban average, not a local price; used only where EIA publishes no state price.",
+      "intended_use": "Show what a gallon of gas costs where no state price exists.",
+      "limitations": [
+        "A regional urban average, not a local price; used only where EIA publishes no state price."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BLS:CUUR_food_at_home",
+      "metric_codes": [
+        "BLS:CUUR0000SAF11",
+        "BLS:CUUR0100SAF11",
+        "BLS:CUUR0200SAF11",
+        "BLS:CUUR0300SAF11",
+        "BLS:CUUR0400SAF11",
+        "BLS:CUUR0110SAF11",
+        "BLS:CUUR0120SAF11",
+        "BLS:CUUR0230SAF11",
+        "BLS:CUUR0240SAF11",
+        "BLS:CUUR0350SAF11",
+        "BLS:CUUR0360SAF11",
+        "BLS:CUUR0370SAF11",
+        "BLS:CUUR0480SAF11",
+        "BLS:CUUR0490SAF11"
+      ],
+      "name": "Food at home prices (Consumer Price Index)",
+      "definition": "The Consumer Price Index for food bought at grocery stores and other stores for eating at home, for all urban consumers in the area, not seasonally adjusted.",
+      "unit": "index",
+      "universe": "all urban consumers in the area",
+      "caveat": "An index whose level depends on each area's own base, so only its change over a year is meaningful; levels of two areas are never compared.",
+      "intended_use": "Show how fast grocery prices have changed in the nearest area BLS publishes.",
+      "limitations": [
+        "An index whose level depends on each area's own base, so only its change over a year is meaningful; levels of two areas are never compared."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/",
+        "https://www.bls.gov/cpi/additional-resources/geographic-revision-2018.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BEA:RPP_all_items",
+      "metric_codes": [
+        "BEA:MARPP:1",
+        "BEA:SARPP:1"
+      ],
+      "name": "Regional price parity, all items",
+      "definition": "How the overall price level of goods and services in the area compares with the national average, set at 100.",
+      "unit": "index (U.S. = 100)",
+      "universe": "metropolitan area or state",
+      "caveat": "A level relative to the nation in one year; it is not a measure of inflation, and parities from different years are on different national bases.",
+      "intended_use": "Show whether everyday costs in the area run above or below the national average.",
+      "limitations": [
+        "A level relative to the nation in one year; it is not a measure of inflation, and parities from different years are on different national bases."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
     }
   ]
 }
