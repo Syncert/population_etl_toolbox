@@ -1843,12 +1843,24 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published release",
     ),
     _obj(
+        "gold_fbi.county_agency_rate_month",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period",
+        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
+        scope_method="every county-month of one product, recomputed by "
+        "gold_fbi.refresh_county_agency_rate in the transaction that "
+        "publishes that product",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
         "gold_fbi.county_agency_rate",
         "gold",
         "FBI_UCR",
         grain="product_id, release_key, measure_id, county geo_id, period "
         "(declared-derived rate; ADR-0012)",
-        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
+        lineage="gold_fbi.county_agency_rate_month",
         scope_method="reported offenses of single-county agencies over those "
         "agencies' FBI populations, per 100,000; multi-county agencies and "
         "agencies without a published population are excluded from both "
@@ -5176,6 +5188,15 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fbi.county_agency_rate",
             "gold_fbi.latest_county_agency_rate",
         ),
+    ),
+    _rule(
+        "DQ-FBI-014",
+        "BLOCK",
+        "freshness",
+        "The served county crime rate rows of every product were computed in "
+        "or after that product's newest publication, and a product with "
+        "county-linked agencies and a published release has served rows.",
+        ("gold_fbi.county_agency_rate_month",),
     ),
     _rule(
         "DQ-FBI-011",

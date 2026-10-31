@@ -171,6 +171,23 @@ Follow-ups, not in v1:
   follow in a second step if the file proves stable.
 - After each batch, refresh the gold FBI views once.
 
+## Prevention (measured on the 2015-2025 load, 2026-10-31)
+
+- **No county rate on read.** `gold_fbi.county_agency_rate` summed every
+  agency-month in the country before a county filter applied (its `summed`
+  CTE is read twice, so it is materialized): 131-137 s for one county.
+  The rate is computed per product at publication into
+  `gold_fbi.county_agency_rate_month` and read by index; DQ-FBI-014 fails a
+  product whose rows predate its newest publication.
+- **Quality rules read by key, from the small side.** DQ-FBI-010 ran 975 s
+  (cancelled at 900 s) and DQ-FBI-011 739 s, each joining nationwide gold
+  views. DQ-FBI-010 now bounds its months from the served table and reads
+  each contributing agency's month on the fact and participation keys;
+  DQ-FBI-011 starts from the CDE's reviewed agencies and looks each Return
+  A month up on `fbi_fact_measure_subject_period_idx`. Any new rule over
+  agency facts gets the same treatment and an EXPLAIN on the loaded
+  warehouse before it merges.
+
 ## Not in scope
 
 - Splitting offenses of multi-county agencies across counties (an ADR

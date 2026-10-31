@@ -995,6 +995,14 @@ def test_county_rollup_retains_reported_zero_and_partial_coverage(
         reader.close()
 
 
+def _refresh_county_rates(cursor) -> None:
+    """Recompute the served county rate, as a publication does, after an edit."""
+    cursor.execute(
+        "SELECT gold_fbi.refresh_county_agency_rate(product_id) "
+        "FROM (SELECT DISTINCT product_id FROM silver_fbi.dim_ucr_dataset_release) AS p"
+    )
+
+
 def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
     fbi_warehouse: Callable[[], connection],
 ) -> None:
@@ -1064,6 +1072,7 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                   AND measure_id = 'V:offense:absolute_total'
                 """
             )
+            _refresh_county_rates(cursor)
             cursor.execute(query, dane)
             rate, reason, offenses, covered, linked, share, *lists = cursor.fetchone()
             assert (rate, reason, offenses, covered, linked, share) == (
@@ -1085,6 +1094,7 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                   AND measure_id = 'V:offense:absolute_total'
                 """
             )
+            _refresh_county_rates(cursor)
             cursor.execute(query, dane)
             assert cursor.fetchone()[:2] == (None, "only_multi_county_agencies")
             cursor.execute(
@@ -1095,6 +1105,7 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                   AND measure_id = 'V:offense:absolute_total'
                 """
             )
+            _refresh_county_rates(cursor)
             cursor.execute(query, dane)
             assert cursor.fetchone()[:2] == (None, "no_reporting_agency")
             # Fitchburg alone reports: 30,000 of 115,648 is under the floor,
@@ -1107,6 +1118,7 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                   AND measure_id = 'V:offense:absolute_total'
                 """
             )
+            _refresh_county_rates(cursor)
             cursor.execute(query, dane)
             row = cursor.fetchone()
             assert row[:6] == (
@@ -1127,12 +1139,14 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                 WHERE subject_code = 'WI0137000' AND period = '02-2023'
                 """
             )
+            _refresh_county_rates(cursor)
             cursor.execute(query, ("state:55|county:025", "02-2023"))
             row = cursor.fetchone()
             assert row[1:5] == (None, Decimal("6"), Decimal("85648"), Decimal("85648"))
             assert row[6] == ["WI0130000"]
             assert row[9] == ["WI0137000"]
 
+            _refresh_county_rates(cursor)
             outcomes = fbi_county_agency_rate_agreement(cursor, {})
             assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
 
@@ -1159,6 +1173,7 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                 SELECT * FROM madison_link;
                 """
             )
+            _refresh_county_rates(cursor)
             cursor.execute(
                 """
                 SELECT rate, unavailable_reason, coverage_share, not_loaded_oris
@@ -1171,8 +1186,10 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
                 (None, "agencies_not_loaded", None, ["WI0130100"])
             ]
             # Rock County's links are untouched and keep their own reason.
+            _refresh_county_rates(cursor)
             cursor.execute(query, ("state:55|county:105", "03-2023"))
             assert cursor.fetchone()[:2] == (None, "only_multi_county_agencies")
+            _refresh_county_rates(cursor)
             outcomes = fbi_county_agency_rate_agreement(cursor, {})
             assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
     finally:
