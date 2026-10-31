@@ -32,6 +32,7 @@ import { boundaryTileUrl } from "../lib/mapWiring";
 import { ACTIVE_GEOGRAPHIES_ONLY, normalizeNeutralObservationRows, observationPeriodLabel } from "../lib/observationAccess";
 import { discoverTractTiles } from "../lib/tiles";
 import type { TractTiles } from "../lib/tiles";
+import { GEOGRAPHY_NOUNS, uncolouredSentence as sharedUncolouredSentence } from "../lib/uncoloured";
 
 const TRACT_SOURCE = "within-county-tracts";
 const TRACT_LAYER = "within-county-tracts-fill";
@@ -45,11 +46,9 @@ export const TRACT_MEASURES: readonly { code: string; label: string }[] = [
   { code: "CENSUS_ACS:acs5:B25077_001", label: "Median home value" },
 ];
 
-/** The sentence the legend states about tracts left uncoloured. */
+/** The sentence the legend states about tracts left uncoloured (the shared rule). */
 export function uncolouredSentence(total: number, coloured: number): string {
-  const missing = Math.max(total - coloured, 0);
-  if (!missing) return `All ${total} tracts have a published value.`;
-  return `${missing} of ${total} tracts have no published value and are left uncoloured, not shown as zero.`;
+  return sharedUncolouredSentence(GEOGRAPHY_NOUNS.TRACT, total, coloured);
 }
 
 /** One release the reader can choose, named by the period it covers. */

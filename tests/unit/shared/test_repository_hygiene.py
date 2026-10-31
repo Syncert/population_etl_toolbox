@@ -38,6 +38,10 @@ OPERATIONAL_SCRIPTS = {
     # and restores the newest into a scratch database to prove it (ENV-025).
     "backup_warehouse.py",
     "deploy_stack.ps1",
+    # Measures the place and metro tile layers on a loaded stack: bytes per
+    # sample tile against a budget, and coverage of published geographies
+    # (MARTIN-013). Read-only; a check only a loaded warehouse can answer.
+    "measure_tile_layers.py",
     # Schedules backup_warehouse.py weekly on OFFICE_LAB (ENV-025).
     "register_backup_task.ps1",
     # Runs an ACS backfill one year per `acs_ingest` run, newest first, and

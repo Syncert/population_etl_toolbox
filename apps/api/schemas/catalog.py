@@ -208,6 +208,60 @@ class GeographyLocateResponse(BaseModel):
     metro: Optional[LocatedGeography] = None
 
 
+class TileLayerVintage(BaseModel):
+    """One boundary vintage a versioned tile layer holds."""
+
+    boundary_vintage: int
+    feature_count: int
+    is_default: bool = Field(
+        description="The vintage a tile request that names none is drawn on (the newest)."
+    )
+    tile_template: str = Field(
+        description="Same-origin tile URL template that draws exactly this vintage."
+    )
+
+
+class TileLayer(BaseModel):
+    """One vector tile layer the tile server publishes (tiles-places-and-metros).
+
+    ``versioned`` layers draw the boundary vintage a request names with
+    ``?vintage=``, and never another: a vintage not listed in ``vintages``
+    draws nothing. Unversioned layers draw the current boundaries only.
+    Features carry identity, never values; a map joins published values on
+    ``join_key``.
+    """
+
+    layer_id: str
+    source_layer: str = Field(description="The MVT layer name inside each tile.")
+    grains: list[str]
+    versioned: bool
+    minzoom: int
+    maxzoom: int
+    join_key: str
+    name_field: str
+    tile_template: str = Field(
+        description=(
+            "Same-origin tile URL template. For a versioned layer it draws the "
+            "default vintage."
+        )
+    )
+    vintages: list[TileLayerVintage] = Field(default_factory=list)
+    default_vintage: Optional[int] = None
+    available: bool = Field(
+        description=(
+            "False for a versioned layer that holds no boundary yet: its tiles "
+            "are empty, and a map should say so rather than draw nothing."
+        )
+    )
+
+
+class TileLayerCatalogResponse(BaseModel):
+    """Every tile layer, and the rule a map drawn from them follows."""
+
+    layers: list[TileLayer]
+    uncoloured_rule: str
+
+
 class ObservationRouteCapability(BaseModel):
     """One route that can answer observation queries for a source.
 

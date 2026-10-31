@@ -305,6 +305,165 @@ WHERE geo_level = gold_glossary.geo_grain('tract')
   AND geography_state = 'current'
   AND geo_geom IS NOT NULL;
 
+-- Cities and towns (Census places) and metros, as tile layers versioned by
+-- boundary vintage (tiles-places-and-metros). Martin publishes each as a
+-- function source, `places` and `metros`, because a table source cannot take
+-- a parameter and these layers must: `?vintage=2012` draws the boundaries the
+-- reference loaded for 2012, and without it the layer draws the newest
+-- vintage it holds. A vintage the layer does not hold, or one that is not a
+-- year, draws nothing. It never falls back to another vintage, because a
+-- figure drawn on another vintage's boundary is a figure drawn on the wrong
+-- shape. `gold.tile_layer_vintage` says which vintages exist.
+--
+-- Features carry identity and the vintage, never a value: a map colours them
+-- by joining published values on `geo_id`, so a geography with no published
+-- value is uncoloured rather than drawn as zero.
+
+-- What a layer holds per grain and vintage, and which vintage a request that
+-- names none is served.
+CREATE OR REPLACE VIEW gold.tile_layer_vintage AS
+SELECT boundary.geo_level,
+       boundary.boundary_vintage,
+       COUNT(*)::INTEGER AS feature_count,
+       boundary.boundary_vintage = MAX(boundary.boundary_vintage)
+           OVER (PARTITION BY boundary.geo_level) AS is_default
+FROM gold_glossary.tile_boundary_version AS boundary
+GROUP BY boundary.geo_level, boundary.boundary_vintage;
+
+-- The vintage a tile request is served: the one it names when that is a year,
+-- the newest the grain holds when it names none, and NULL (nothing drawn)
+-- otherwise.
+CREATE OR REPLACE FUNCTION gold.tile_requested_vintage(
+    p_geo_level TEXT,
+    query_params JSON
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+STABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    requested TEXT := NULLIF(TRIM(COALESCE(query_params ->> 'vintage', '')), '');
+BEGIN
+    IF requested IS NULL THEN
+        RETURN (
+            SELECT MAX(boundary.boundary_vintage)
+            FROM gold_glossary.tile_boundary_version AS boundary
+            WHERE boundary.geo_level = p_geo_level
+        );
+    END IF;
+    IF requested !~ '^[0-9]{4}$' THEN
+        RETURN NULL;
+    END IF;
+    RETURN requested::INTEGER;
+END;
+$$;
+
+-- Census places. Drawn from zoom 6, as tracts are: 32,000 polygons at a
+-- national zoom are a tile no browser should be sent.
+CREATE OR REPLACE FUNCTION gold.tile_places(
+    z INTEGER,
+    x INTEGER,
+    y INTEGER,
+    query_params JSON
+)
+RETURNS BYTEA
+LANGUAGE plpgsql
+STABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    wanted INTEGER := gold.tile_requested_vintage(
+        gold_glossary.geo_grain('place'), query_params
+    );
+    envelope GEOMETRY := ST_TileEnvelope(z, x, y);
+    tile BYTEA;
+BEGIN
+    SELECT ST_AsMVT(feature, 'places', 4096, 'geom')
+    INTO tile
+    FROM (
+        SELECT ST_AsMVTGeom(boundary.tile_geom, envelope, 4096, 64, TRUE) AS geom,
+               boundary.geo_id,
+               boundary.geo_level,
+               boundary.state_fips,
+               boundary.place_fips,
+               boundary.state_name,
+               boundary.geo_name AS place_name,
+               boundary.latitude,
+               boundary.longitude,
+               boundary.boundary_vintage
+        FROM gold_glossary.tile_boundary_version AS boundary
+        WHERE boundary.geo_level = gold_glossary.geo_grain('place')
+          AND boundary.boundary_vintage = wanted
+          AND boundary.tile_geom && envelope
+    ) AS feature
+    WHERE feature.geom IS NOT NULL;
+    RETURN tile;
+END;
+$$;
+
+COMMENT ON FUNCTION gold.tile_places(INTEGER, INTEGER, INTEGER, JSON) IS
+    '{"description":"Census places (cities and towns) by boundary vintage. '
+    '?vintage=YYYY selects a vintage; without it, the newest. Features carry '
+    'no values: a place with no published value is uncoloured, not zero.",'
+    '"vector_layers":[{"id":"places","fields":{"geo_id":"String",'
+    '"geo_level":"String","state_fips":"String","place_fips":"String",'
+    '"state_name":"String","place_name":"String","latitude":"Number",'
+    '"longitude":"Number","boundary_vintage":"Number"}}]}';
+
+-- Metropolitan and micropolitan statistical areas (CBSAs), from the Census
+-- cartographic boundary of each OMB delineation. About 925 polygons, so they
+-- draw from zoom 0 like counties.
+CREATE OR REPLACE FUNCTION gold.tile_metros(
+    z INTEGER,
+    x INTEGER,
+    y INTEGER,
+    query_params JSON
+)
+RETURNS BYTEA
+LANGUAGE plpgsql
+STABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    wanted INTEGER := gold.tile_requested_vintage(
+        gold_glossary.geo_grain('metro'), query_params
+    );
+    envelope GEOMETRY := ST_TileEnvelope(z, x, y);
+    tile BYTEA;
+BEGIN
+    SELECT ST_AsMVT(feature, 'metros', 4096, 'geom')
+    INTO tile
+    FROM (
+        SELECT ST_AsMVTGeom(boundary.tile_geom, envelope, 4096, 64, TRUE) AS geom,
+               boundary.geo_id,
+               boundary.geo_level,
+               boundary.area_code AS cbsa_code,
+               boundary.geo_name AS metro_name,
+               boundary.lsad,
+               boundary.latitude,
+               boundary.longitude,
+               boundary.boundary_vintage
+        FROM gold_glossary.tile_boundary_version AS boundary
+        WHERE boundary.geo_level = gold_glossary.geo_grain('metro')
+          AND boundary.boundary_vintage = wanted
+          AND boundary.tile_geom && envelope
+    ) AS feature
+    WHERE feature.geom IS NOT NULL;
+    RETURN tile;
+END;
+$$;
+
+COMMENT ON FUNCTION gold.tile_metros(INTEGER, INTEGER, INTEGER, JSON) IS
+    '{"description":"Metropolitan and micropolitan statistical areas by OMB '
+    'delineation vintage. ?vintage=YYYY selects a delineation; without it, the '
+    'newest. Features carry no values: a metro with no published value is '
+    'uncoloured, not zero.",'
+    '"vector_layers":[{"id":"metros","fields":{"geo_id":"String",'
+    '"geo_level":"String","cbsa_code":"String","metro_name":"String",'
+    '"lsad":"String","latitude":"Number","longitude":"Number",'
+    '"boundary_vintage":"Number"}}]}';
+
 CREATE OR REPLACE VIEW gold.dim_metric AS
 SELECT * FROM gold_glossary.dim_metric;
 

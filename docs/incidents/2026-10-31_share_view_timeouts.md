@@ -80,28 +80,42 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_release_period
         metric_code, vintage_year, as_of_date,
         observation_date, duration_start, duration_end);
 
--- Generates one CREATE INDEX CONCURRENTLY and one ATTACH PARTITION per partition;
--- run its output with \gexec in psql.
+-- One CREATE INDEX CONCURRENTLY per partition, in each partition's own
+-- schema; run its output with \gexec in psql.
 SELECT format(
-         'CREATE INDEX CONCURRENTLY IF NOT EXISTS %I ON gold_census.%I '
+         'CREATE INDEX CONCURRENTLY IF NOT EXISTS %I ON %I.%I '
          '(metric_code, vintage_year, as_of_date, observation_date, duration_start, duration_end)',
-         c.relname || '_mrp', c.relname)
-  FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
- WHERE i.inhparent = 'gold_census.rpt_acs_observations'::regclass
-UNION ALL
+         c.relname || '_mrp', n.nspname, c.relname)
+  FROM pg_inherits i
+  JOIN pg_class c ON c.oid = i.inhrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE i.inhparent = to_regclass('gold_census.rpt_acs_observations')
+\gexec
+
+-- Then attach each one. Every name is schema-qualified, and the index is
+-- looked up with to_regclass('<schema>.<name>'): an unqualified lookup
+-- searches search_path and fails on OFFICE_LAB, where gold_census is not on it.
 SELECT format(
          'ALTER INDEX gold_census.ix_rpt_acs_observations_metric_release_period '
-         'ATTACH PARTITION gold_census.%I', c.relname || '_mrp')
-  FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
- WHERE i.inhparent = 'gold_census.rpt_acs_observations'::regclass
+         'ATTACH PARTITION %s', to_regclass(format('%I.%I', n.nspname, c.relname || '_mrp')))
+  FROM pg_inherits i
+  JOIN pg_class c ON c.oid = i.inhrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE i.inhparent = to_regclass('gold_census.rpt_acs_observations')
+   AND to_regclass(format('%I.%I', n.nspname, c.relname || '_mrp')) IS NOT NULL
 \gexec
 
 VACUUM (ANALYZE) gold_census.mv_acs_latest;  -- sets the visibility map for index-only scans
 ANALYZE gold_census.rpt_acs_observations;
+-- If VACUUM fails with "could not resize shared memory segment" (parallel
+-- vacuum workers share memory through /dev/shm, which the warehouse
+-- container keeps small), run it without workers instead:
+-- VACUUM (ANALYZE, PARALLEL 0) gold_census.mv_acs_latest;
 ```
 
-The second query lists every `CREATE` before any `ATTACH`, so all partition
-indexes exist before the first attach. Once the parent index is valid
+The attach runs only after every partition index exists, and skips any that
+is missing so a failed build shows as an invalid parent rather than an error
+halfway through. Once the parent index is valid
 (`pg_index.indisvalid`), `ix_rpt_acs_observations_metric_vintage` is redundant.
 Drop it in a quiet window.
 
@@ -132,6 +146,16 @@ What to expect:
 - Periods and releases are index-only scans with low heap fetches.
 - After the API rebuild, re-time the three routes and the Dane County Share
   view. Each route should answer well under 15 s.
+
+## Follow-up: `/place/distinctive` (still 11.3 s after the indexes)
+
+The ranking read each measure's newest value for every geography at the
+grain (and, for views that rank inside, every period) and only then kept the
+place and its siblings. It now names them: `geo_id = ANY(:sibling_ids)`. Every
+source reaches those through its `(metric_code, geo_id)` index, and Census
+PEP's latest view, which ranks by `(metric_code, geo_id, observation_year)`,
+takes the filter inside its window. Re-time
+`/place/distinctive?geo_id=state:55|county:025` after the API rebuild.
 
 ## Not changed
 

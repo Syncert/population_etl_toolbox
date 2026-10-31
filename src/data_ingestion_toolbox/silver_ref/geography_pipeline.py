@@ -580,6 +580,15 @@ def parse_boundary_capture(
             place = str(properties.get("PLACEFP") or "").zfill(5)
             geo_id = canonical_geo_id("place", state_fips=state, place_fips=place)
             census_geoid, county = f"{state}{place}", None
+        elif geo_type == "metro":
+            # The CBSA cartographic boundary of one OMB delineation
+            # (tiles-places-and-metros). A CBSA names no state, county or
+            # place; its identity is its five-digit OMB code.
+            cbsa = str(properties.get("CBSAFP") or properties.get("GEOID") or "")
+            if len(cbsa) != 5 or not cbsa.isdigit():
+                raise ValueError(f"CBSA boundary without a five-digit code: {cbsa!r}")
+            geo_id = canonical_geo_id("metro", area_code=cbsa)
+            census_geoid, state, county, place = cbsa, None, None, None
         else:
             raise ValueError(f"unsupported boundary type: {geo_type}")
         geojson = json.dumps(
@@ -589,7 +598,12 @@ def parse_boundary_capture(
         if geo_type == "zcta":
             name = zcta_name(zcta)
         geography = None
-        if name:
+        # A metro's attributes come from the delineation file that lists its
+        # member counties (`area_geography`), not from its boundary: the
+        # boundary file's name carries a description ("Madison, WI Metro
+        # Area") the delineation does not, and a second attribute version
+        # from it would rename every metro.
+        if name and geo_type != "metro":
             geography = GeographyRecord(
                 geo_type=geo_type,
                 geo_id=geo_id,
