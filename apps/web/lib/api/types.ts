@@ -146,6 +146,38 @@ export interface GeographyLocateResponse {
   metro?: LocatedGeography | null;
 }
 
+/** One boundary vintage a versioned tile layer holds (tiles-places-and-metros). */
+export interface TileLayerVintage {
+  boundary_vintage: number;
+  feature_count: number;
+  is_default: boolean;
+  tile_template: string;
+}
+
+/**
+ * One tile layer from `/catalog/tile-layers`. A versioned layer draws the
+ * vintage its template names and never another; features carry no values.
+ */
+export interface TileLayer {
+  layer_id: string;
+  source_layer: string;
+  grains: string[];
+  versioned: boolean;
+  minzoom: number;
+  maxzoom: number;
+  join_key: string;
+  name_field: string;
+  tile_template: string;
+  vintages: TileLayerVintage[];
+  default_vintage?: number | null;
+  available: boolean;
+}
+
+export interface TileLayerCatalogResponse {
+  layers: TileLayer[];
+  uncoloured_rule: string;
+}
+
 /** One versioned route that answers for a source, with its query parameters. */
 export interface ObservationRouteCapability {
   path: string;

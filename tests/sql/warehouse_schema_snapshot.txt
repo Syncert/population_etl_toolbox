@@ -1394,6 +1394,18 @@ v gold.tile_boundary
     body    FROM gold_glossary.dim_geo_latest
     body   WHERE (geo_level = ANY (ARRAY[gold_glossary.geo_grain('state'::text), gold_glossary.geo_grain('county'::text)])) AND geography_state = 'current'::text AND geo_geom IS NOT NULL;
 
+v gold.tile_layer_vintage
+    column geo_level text
+    column boundary_vintage integer
+    column feature_count integer
+    column is_default boolean
+    body SELECT geo_level,
+    body     boundary_vintage,
+    body     count(*)::integer AS feature_count,
+    body     boundary_vintage = max(boundary_vintage) OVER (PARTITION BY geo_level) AS is_default
+    body    FROM gold_glossary.tile_boundary_version boundary
+    body   GROUP BY geo_level, boundary_vintage;
+
 v gold.tile_tract
     column geo_id text
     column geo_level text
@@ -7009,6 +7021,27 @@ r gold_glossary.publisher_registry
     constraint publisher_registry_publisher_schema_publisher_view_key UNIQUE (publisher_schema, publisher_view)
     index publisher_registry_pkey CREATE UNIQUE INDEX publisher_registry_pkey ON gold_glossary.publisher_registry USING btree (source_code)
     index publisher_registry_publisher_schema_publisher_view_key CREATE UNIQUE INDEX publisher_registry_publisher_schema_publisher_view_key ON gold_glossary.publisher_registry USING btree (publisher_schema, publisher_view)
+
+r gold_glossary.tile_boundary_version
+    column geo_id text NOT NULL
+    column geo_level text NOT NULL
+    column boundary_vintage integer NOT NULL
+    column geo_name text NOT NULL
+    column state_fips text
+    column state_name text
+    column place_fips text
+    column area_code text
+    column lsad text
+    column latitude double precision
+    column longitude double precision
+    column geometry_checksum text NOT NULL
+    column tile_geom geometry(MultiPolygon,3857) NOT NULL
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint ck_tile_boundary_version_grain CHECK ((geo_level = ANY (ARRAY['PLACE'::text, 'METRO'::text])))
+    constraint tile_boundary_version_pkey PRIMARY KEY (geo_id, boundary_vintage)
+    index ix_gold_glossary_tile_boundary_version_geom CREATE INDEX ix_gold_glossary_tile_boundary_version_geom ON gold_glossary.tile_boundary_version USING gist (tile_geom)
+    index ix_gold_glossary_tile_boundary_version_vintage CREATE INDEX ix_gold_glossary_tile_boundary_version_vintage ON gold_glossary.tile_boundary_version USING btree (geo_level, boundary_vintage)
+    index tile_boundary_version_pkey CREATE UNIQUE INDEX tile_boundary_version_pkey ON gold_glossary.tile_boundary_version USING btree (geo_id, boundary_vintage)
 
 v gold_hud_fmr_il.measure_definition
     column measure text

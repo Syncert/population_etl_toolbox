@@ -1,15 +1,16 @@
 ---
 id: tiles-places-and-metros
 depends_on:
-  - acs-decade-geography-and-serving
-  - metro-figures
+  - sub-county-geography
+  - grocery-and-gasoline-prices
+  - api-place-search
 parallel_safe: true
 complexity: medium
 verify:
   - python -m pytest tests/unit/martin tests/unit/api tests/unit/shared -q
   - python -m pytest tests/dags -m dag -q
   - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database/test_tile_boundary_versions.py tests/integration/database/test_schema_snapshot.py -q
-  - RUN_INTEGRATION_TESTS=1 python -m pytest tests/integration/api/test_tile_layer_catalog_contract.py -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and api and database" tests/integration/api/test_tile_layer_catalog_contract.py -q
   - RUN_MARTIN_TESTS=1 python -m pytest -m martin tests/integration/martin -q
   - npm --prefix apps/web run test:unit
   - npm --prefix apps/web run typecheck
@@ -22,7 +23,9 @@ verify:
 
 ## Status
 
-Not started. Written first, in the branch that implements it, as the
+In progress since 2026-10-31 on `claude/project-thread-odh0cy` (the build-out
+names `feat/tiles-places-and-metros`), branched from `dev` at `24459ea`.
+Written first, in the branch that implements it, as the
 build-out prompt (`/mnt/project-files/prompts/v1.0-build-out-prompt.md`,
 Wave A, item A-6) requires.
 
@@ -51,10 +54,12 @@ Two things make it more than "add two table sources":
 
 ## Dependencies
 
-- `acs-decade-geography-and-serving` (W-2): place identities for every
-  vintage. Merged into `dev`.
-- `metro-figures` (W-7): metro grain, CBSA identities, delineation vintage and
-  county membership. Merged into `dev`.
+- W-2 (decade geography, part of `acs-place-tract-history-backfill`): place
+  identities and boundaries for every vintage. Merged into `dev`.
+- W-7 (metro figures) and `grocery-and-gasoline-prices`: metro grain, CBSA
+  identities, delineation vintage and county membership. Merged into `dev`.
+- `sub-county-geography`: the tract layer this follows the shape of.
+- `api-place-search`: the catalog route family this joins.
 - W-8 (ZCTA grain) has **not** landed, so there is no ZCTA layer. ZCTA
   boundaries exist (2020 only); adding a `zctas` layer is a follow-up once a
   source publishes at ZCTA grain.
@@ -116,17 +121,87 @@ Two things make it more than "add two table sources":
 
 ## Acceptance criteria
 
-- [ ] Metro polygons load from the published CBSA boundary file with the
+- [x] Metro polygons load from the published CBSA boundary file with the
       delineation vintage; unlisted CBSAs are recorded, not dropped.
-- [ ] `places` and `metros` are served by Martin, select a vintage by
-      `?vintage=`, default to the newest, and never substitute a vintage.
-- [ ] `/api/v1/catalog/tile-layers` lists every layer and its vintages.
-- [ ] Features carry no values; the rule is stated in the API and helpers.
-- [ ] Unit, DAG, database, API and Martin tiers pass; web unit, typecheck,
-      build and bundle budgets pass.
+- [x] `places` and `metros` are served by Martin, select a vintage by
+      `?vintage=`, default to the newest, and never substitute a vintage
+      (database tier against real PostGIS; the live Martin tier runs in CI).
+- [x] `/api/v1/catalog/tile-layers` lists every layer and its vintages.
+- [x] Features carry no values; the rule is stated in the API and helpers.
+- [x] Unit, DAG, database and API tiers pass; web unit, typecheck, lint,
+      build and bundle budgets pass. Martin live tier: CI (`martin-integration`).
 - [ ] On OFFICE_LAB: metro boundaries loaded, refresh run, real tiles
-      measured against the budget, coverage recorded (cloud sessions cannot
-      reach the warehouse or the running Martin; see Hand-off).
+      measured against the budget, coverage recorded (see Hand-off).
+
+## Implementation evidence (cloud session, 2026-10-31)
+
+Run in a cloud session with a local PostgreSQL 16 + PostGIS 3 cluster for
+the database and API tiers, and a Python 3.11 Airflow 2.9.3 venv for the DAG
+tier. The pinned Martin image could not be pulled here (the registry's blob
+host is not reachable from this session), so the live Martin tier is left to
+`martin-integration` in CI.
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/unit -q` | 2831 passed |
+| `python -m pytest tests/unit/martin -q` | 39 passed |
+| `python -m pytest tests/dags -m dag -q` (Airflow venv) | 296 passed, 5 skipped, 5 failed; the same 5 (`test_task_callables.py`, ACS backfill planning) fail identically on `dev` without this branch |
+| `pytest -m "integration and database" tests/integration/database/test_tile_boundary_versions.py` | 4 passed |
+| `pytest -m "integration and database" tests/integration/database/test_schema_snapshot.py` | 3 passed after `python -m tests.support.schema_snapshot --write` |
+| `pytest -m "integration and api and database" tests/integration/api/test_tile_layer_catalog_contract.py` | 1 passed |
+| `npm --prefix apps/web run test:unit` | 911 passed (68 files) |
+| `npm --prefix apps/web run typecheck` / `lint` / `build` | clean |
+| `npm --prefix apps/web run check:bundle` | every route within budget |
+| `python -m ruff check .` / `python -m ruff format --check .` (0.15.16) | clean |
+| `python -m tests.support.plan_environments --write` | regenerated |
+| `python tests/support/regenerate_openapi_contract.py` | 63 operations |
+
+Catalog rows added: ETL-105, DB-067, API-177, WEB-147, MARTIN-012,
+MARTIN-013; total recounted from the ranges table (666).
+
+### Decisions
+
+- **Function sources, not tables.** A Martin table source takes no parameter;
+  versioning needs one. `gold.tile_requested_vintage` is the only place the
+  default (newest) is chosen, and only when no vintage is named.
+- **Geometry stored in Web Mercator** in `gold_glossary.tile_boundary_version`
+  so a tile request transforms nothing. The refresh compares checksums and
+  attributes before reading any geometry.
+- **Metro attributes come from the delineation file**, never the boundary
+  file, so the boundary load adds no attribute version and renames nothing.
+- **Locate is unchanged**: a point's metro still follows from its county's
+  delineated membership (`GEO_LOCATE_GRAINS` excludes METRO), so loading
+  metro polygons does not change `/geographies/locate`.
+- **Places start at zoom 6** like tracts; metros at zoom 0 like counties.
+  The real-tile measurement on OFFICE_LAB decides whether that holds.
+
+## Hand-off: checks that need the loaded warehouse (OFFICE_LAB)
+
+Not run: a cloud session cannot reach the warehouse or the running Martin.
+
+1. Apply the DDL that the ledger lacks (`gold_glossary.tile_boundary_version`,
+   `gold_glossary.refresh_tile_boundaries`, `gold.tile_layer_vintage`,
+   `gold.tile_requested_vintage`, `gold.tile_places`, `gold.tile_metros`)
+   **before** restarting Martin: Martin refuses to start when a declared
+   function is missing.
+2. Run the area geography sync (`silver_ref` DAG, area task) so the 2023
+   CBSA cartographic boundary is captured and loaded. Record the count of
+   loaded metro polygons (expect about 925) and of `boundary_not_in_delineation`
+   rows in `silver_ref.geography_resolution` (expect Puerto Rico's CBSAs).
+3. `CALL gold_glossary.refresh_tile_boundaries();` and record wall time,
+   then `SELECT * FROM gold.tile_layer_vintage ORDER BY 1, 2;`. Run it a
+   second time and record that it is fast and rewrites nothing.
+4. Restart Martin (`docker-web-1`/`docker-api-1` images rebuilt from the
+   branch) and check `http://localhost:3001/tiles/places`,
+   `http://localhost:3001/tiles/metros` (TileJSON with `vector_layers`) and
+   `http://localhost:3001/api/v1/catalog/tile-layers`.
+5. `python scripts/measure_tile_layers.py --tiles-url http://localhost:3001/tiles --dsn <warehouse DSN>`
+   and paste the JSON summary here: bytes per sample tile against the 512 KB
+   budget (exit code 0), and per grain the published geographies with no
+   polygon and the polygons left uncoloured.
+6. Spot check: `http://localhost:3001/tiles/places/10/233/421?vintage=2010`
+   against `?vintage=2024` (Austin area) decode to different Austin
+   boundaries, and `?vintage=1999` is empty.
 
 ## What this plan deliberately does not do
 

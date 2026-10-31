@@ -565,3 +565,15 @@ GEO_LOCATE_METRO_QUERY: TextClause = text(
     LIMIT 1
     """
 )
+
+#: The boundary vintages each versioned tile layer holds
+#: (tiles-places-and-metros), newest first per grain.
+TILE_LAYER_VINTAGE_RELATION = "gold.tile_layer_vintage"
+TILE_LAYER_VINTAGES_QUERY: TextClause = text(
+    f"""
+    SELECT held.geo_level, held.boundary_vintage, held.feature_count,
+           held.is_default
+    FROM {TILE_LAYER_VINTAGE_RELATION} AS held
+    ORDER BY held.geo_level, held.boundary_vintage DESC
+    """
+)

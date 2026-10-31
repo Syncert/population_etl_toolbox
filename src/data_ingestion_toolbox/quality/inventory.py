@@ -705,6 +705,19 @@ _GLOSSARY_OBJECTS: tuple[WarehouseObject, ...] = (
         "first reference load",
     ),
     _obj(
+        "gold_glossary.tile_boundary_version",
+        "glossary",
+        "SHARED",
+        grain="geo_id, boundary_vintage (PLACE and METRO boundaries, every vintage)",
+        lineage="silver_ref.dim_geo_geometry_version, silver_ref.dim_geo_entity, "
+        "silver_ref.dim_geo_entity_version",
+        scope_method="incremental: gold_glossary.refresh_tile_boundaries() rewrites "
+        "a boundary only when its checksum or attributes changed and removes one "
+        "the reference no longer holds, after the geography projection refresh",
+        cadence="daily, with glossary_reconciliation",
+        empty_behavior="empty only before the first place or metro boundary load",
+    ),
+    _obj(
         "gold_glossary.geo_boundary",
         "glossary",
         "SHARED",
@@ -753,6 +766,13 @@ _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
             "tile_tract",
             "geo_id (TRACT, current, with geometry)",
             "gold_glossary.dim_geo_latest",
+        ),
+        # What the place and metro tile layers hold per vintage
+        # (tiles-places-and-metros); the tile functions read the same table.
+        (
+            "tile_layer_vintage",
+            "geo_level, boundary_vintage (PLACE and METRO)",
+            "gold_glossary.tile_boundary_version",
         ),
         ("dim_geography", "geo_id (projection)", "gold_glossary.dim_geography"),
         (

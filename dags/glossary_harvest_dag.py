@@ -90,7 +90,21 @@ def glossary_reconciliation():
         hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         hook.run("CALL gold_glossary.refresh_geo_search()")
 
-    reconcile_all_publishers() >> refresh_shared_geography() >> refresh_place_search()
+    @task
+    def refresh_tile_boundaries() -> None:
+        """Bring the place and metro boundaries by vintage in line with the reference.
+
+        Incremental: only a boundary whose checksum or attributes changed is
+        rewritten, so a run with nothing new reads no geometry
+        (tiles-places-and-metros). It reads the reference, not the projection
+        just refreshed, and runs beside the place search after it.
+        """
+        hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        hook.run("CALL gold_glossary.refresh_tile_boundaries()")
+
+    geography = refresh_shared_geography()
+    reconcile_all_publishers() >> geography
+    geography >> [refresh_place_search(), refresh_tile_boundaries()]
 
 
 glossary_harvest_dag = glossary_harvest()
