@@ -5561,6 +5561,37 @@ v gold_fbi.latest_county_rollup
     body           WHERE dim_ucr_dataset_release.status = 'published'::text
     body           GROUP BY dim_ucr_dataset_release.product_id) latest ON latest.product_id = rollup.product_id AND latest.refresh_date = rollup.refresh_date;
 
+v gold_fbi.latest_release_fact
+    column product_id text
+    column release_key text
+    column measure_id text
+    column subject_type text
+    column subject_code text
+    column period text
+    column period_start date
+    column period_end date
+    column value_status text
+    body SELECT fact.product_id,
+    body     fact.release_key,
+    body     fact.measure_id,
+    body     fact.subject_type,
+    body     fact.subject_code,
+    body     fact.period,
+    body     fact.period_start,
+    body     fact.period_end,
+    body     fact.value_status
+    body    FROM silver_fbi.fact_crime_observation fact
+    body      JOIN ( SELECT release.product_id,
+    body             release.release_key
+    body            FROM silver_fbi.dim_ucr_dataset_release release
+    body              JOIN ( SELECT dim_ucr_dataset_release.product_id,
+    body                     max(dim_ucr_dataset_release.refresh_date) AS refresh_date
+    body                    FROM silver_fbi.dim_ucr_dataset_release
+    body                   WHERE dim_ucr_dataset_release.status = 'published'::text
+    body                   GROUP BY dim_ucr_dataset_release.product_id) newest ON newest.product_id = release.product_id AND newest.refresh_date = release.refresh_date
+    body           WHERE release.status = 'published'::text) latest ON latest.product_id = fact.product_id AND latest.release_key = fact.release_key
+    body   WHERE fact.geography_status <> ALL (ARRAY['ambiguous'::text, 'unsupported'::text]);
+
 v gold_fbi.latest_release_observation
     column observation_sk bigint
     column product_id text

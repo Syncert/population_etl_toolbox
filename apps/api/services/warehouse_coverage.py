@@ -109,27 +109,10 @@ _PROBES: dict[str, tuple[str, str]] = {
 #: has its participation and measure rows (foreign keys), so reading the fact
 #: of each product's newest published release, with the same geography
 #: filter, counts exactly the rows ``latest_release_observation`` serves.
+#: ``gold_fbi.latest_release_fact`` is that read as a gold view, because the
+#: API's read-only role has no grant on silver schemas.
 _FROM_SQL: dict[str, str] = {
-    "FBI_UCR": """(
-        SELECT fact.subject_type, fact.period_start
-        FROM silver_fbi.fact_crime_observation AS fact
-        JOIN (
-            SELECT release.product_id, release.release_key
-            FROM silver_fbi.dim_ucr_dataset_release AS release
-            JOIN (
-                SELECT product_id, MAX(refresh_date) AS refresh_date
-                FROM silver_fbi.dim_ucr_dataset_release
-                WHERE status = 'published'
-                GROUP BY product_id
-            ) AS newest
-              ON newest.product_id = release.product_id
-             AND newest.refresh_date = release.refresh_date
-            WHERE release.status = 'published'
-        ) AS latest
-          ON latest.product_id = fact.product_id
-         AND latest.release_key = fact.release_key
-        WHERE fact.geography_status NOT IN ('ambiguous', 'unsupported')
-    ) AS fbi_latest""",
+    "FBI_UCR": "gold_fbi.latest_release_fact",
 }
 
 

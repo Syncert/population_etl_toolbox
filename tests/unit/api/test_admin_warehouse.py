@@ -274,11 +274,12 @@ def test_coverage_reads_the_served_expressions_and_folds_grains() -> None:
     assert "UPPER(raw_grain) AS grain" in scan
     assert "period_start AS raw_period" in scan
     assert "::TEXT AS raw_period" not in scan
-    # Read from the fact of each newest published release, not through the
-    # view's participation, measure and release joins it never needs.
-    assert "FROM silver_fbi.fact_crime_observation AS fact" in scan
+    # Read from a gold view over the fact of each newest published release,
+    # not through the joins coverage never needs, and never from a silver
+    # schema: the API's read-only role has no grant there.
+    assert "FROM gold_fbi.latest_release_fact" in scan
     assert "gold_fbi.latest_release_observation" not in scan
-    assert "fact.geography_status NOT IN ('ambiguous', 'unsupported')" in scan
+    assert "silver_" not in scan
     assert [(g["grain"], g["column"]) for g in result["grains"]] == [
         ("COUNTY", "county"),
         ("AGENCY", "other"),

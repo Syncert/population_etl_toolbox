@@ -54,6 +54,7 @@ def test_the_expected_gold_products_exist() -> None:
         # derived product, pinned in test_fbi_county_agency_rate.py.
         "county_agency_rate",
         "latest_county_agency_rate",
+        "latest_release_fact",
         "latest_release_observation",
         "measure_export",
         "metric_publisher",
