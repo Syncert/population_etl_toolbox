@@ -19,7 +19,7 @@ verify:
 
 ## Status
 
-To do. Written 2026-10-31 on `claude/project-thread-1kgyhx` (the build-out
+In progress since 2026-10-31. Written on `claude/project-thread-1kgyhx` (the build-out
 names `feat/web-place-maps`), branched from `dev` at `24a12c8` (A-6, #191).
 
 ## Why
