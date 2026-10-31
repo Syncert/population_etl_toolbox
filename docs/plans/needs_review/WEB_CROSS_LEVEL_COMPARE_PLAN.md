@@ -193,4 +193,26 @@ Re-time both pages and Dane County's related list after this merges.
    dominates, so no EXPLAIN was needed; the rest of the time is page and
    catalog work outside the batches.
 
+## Place page follow-on (#205, OFFICE_LAB, 2026-10-31, dev at 937f3e8)
+
+The same one-request-per-row pattern slowed the place page. Dane County made
+338 API requests, six at a time: 150 one-code catalog lookups, 159
+newest-value reads (one per measure and place), and 16 histories. #205
+replaced them with one `/catalog/metrics?metric_codes=` read and one
+`/observations/newest/batch` per chapter's set of places (API-180, WEB-149).
+
+Live, in a fresh browser context with no cache, the page was fully filled
+(no "Reading" left, Nearby and related shown) in 12.8 s from 118 requests,
+down from about 30 s. The count is 118 rather than the fixture's 69 because
+the live page also makes analytics and tile requests.
+
+Follow-up, not built: the next cut for the 12.8 s. The fixture shows what
+is still read one at a time: about 22 newest-value reads for sources that
+decline the reduction (CDC, FBI UCR, USDA NASS read their strata on their
+own), 16 trend histories (up to two pages each), and the groceries-and-gas
+card's own catalog and observation reads. A request waterfall on
+OFFICE_LAB should say which of these dominates before anything is built.
+The likely candidates are a history batch (`newest_release_per_period` for
+several measures and places) or batching the strata sources' single reads.
+
 Every criterion has passed live, so the plan moves to needs_review.
