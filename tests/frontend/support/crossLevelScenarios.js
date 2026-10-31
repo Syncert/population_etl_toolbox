@@ -16,13 +16,22 @@ const SCALE = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:0
 // compare across levels; everything else is a total.
 const NOT_A_TOTAL = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R|SAEPOVRT|SAEMHI|PCTUI/;
 
+// What the catalog lists for each metric. As on OFFICE_LAB, neither the
+// survey nor LAUS lists both the metro and the nation: the survey lists no
+// metro grain though it publishes metro rows, and LAUS has no national row.
 function grainsFor(code) {
-  if (code.startsWith("BLS:")) return ["COUNTY", "STATE", "METRO", "NATIONAL"];
+  if (code.startsWith("BLS:")) return ["COUNTY", "STATE", "METRO"];
   if (code.startsWith("CDC:")) return ["COUNTY", "NATIONAL"];
   if (code.startsWith("FBI_UCR:")) return ["AGENCY", "STATE", "NATIONAL"];
-  if (code.startsWith("CENSUS_ACS:")) return ["PLACE", "COUNTY", "STATE", "NATIONAL", "METRO"];
+  if (code.startsWith("CENSUS_ACS:")) return ["PLACE", "COUNTY", "STATE", "NATIONAL"];
   if (code.startsWith("CENSUS_PEP:POPESTIMATE")) return ["PLACE", "COUNTY", "STATE", "NATIONAL"];
   return ["COUNTY", "STATE", "NATIONAL"];
+}
+
+// Where each metric has rows. LAUS publishes metros but no national row.
+function publishedAt(code) {
+  if (code.startsWith("CENSUS_ACS:")) return [...grainsFor(code), "METRO"];
+  return grainsFor(code);
 }
 
 /** How a relates to b, from a's side, as the reference records it. */
@@ -77,9 +86,7 @@ export function placesAnswer(params) {
   }
   const period = code.startsWith("CENSUS_PEP") ? ["2024-01-01", "2024-12-31"] : ["2019-01-01", "2023-12-31"];
   const valueFor = (place) => {
-    if (!grainsFor(code).includes(place.geo_level)) return null;
-    // LAUS publishes no national row: the nation's side has nothing.
-    if (code.startsWith("BLS:") && place.geo_id === "us:1") return null;
+    if (!publishedAt(code).includes(place.geo_level)) return null;
     const scale = SCALE[place.geo_id] || 1;
     return ratio ? Number((10 + scale / 10).toFixed(2)) : total ? 1000 * scale : 40 + scale;
   };
@@ -127,7 +134,10 @@ export async function installCrossLevelFixtures(page, options = {}) {
     }
     if (path === "/api/v1/catalog/geographies/search") {
       const needle = String(params.get("q") || "").toLowerCase();
-      const items = SEARCHABLE.filter((item) => item.geo_name.toLowerCase().includes(needle)).map((item) => ({
+      const grains = (params.get("grain") || "").split(",").filter(Boolean);
+      const items = SEARCHABLE.filter((item) => item.geo_name.toLowerCase().includes(needle))
+        .filter((item) => !params.get("state_fips") || item.state_fips === params.get("state_fips"))
+        .filter((item) => !grains.length || grains.includes(item.geo_level)).map((item) => ({
         geo_id: item.geo_id, geo_level: item.geo_level, geo_name: item.geo_name, short_name: item.geo_name, match: "prefix",
         state_fips: item.state_fips || null, state_name: item.state_name || null, page_path: item.page_path,
       }));

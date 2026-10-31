@@ -1128,7 +1128,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
 
     const request = observationTracker.begin();
-    setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
+    // The plain name, never the code: the status shows while the page loads (WEB-144).
+    setObservationStatus({ state: "loading", message: `loading ${selectedMetricMeta ? displayMetricName(selectedMetricMeta) : "the measure"}` });
 
     async function loadObservations(source: ExplorerSource) {
       try {
