@@ -114,9 +114,17 @@ provider label). Before a public deployment, decide whether to set
 
 Not required by a criterion; filed as
 [`docs/plans/human_testing/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md`](../human_testing/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md):
-that the 21 codes added on 2026-10-31 exist in the internal warehouse's
-glossary, and the live routes return the labels. Handed to the OFFICE_LAB
-session.
+that the codes exist in the internal warehouse's glossary, and the live
+routes return the labels.
+
+- Step 1, 2026-10-31 00:45 UTC on OFFICE_LAB (registry from this branch):
+  162 of 165 codes exist in `gold_glossary.dim_metric`. The three missing are
+  the expected ones: `BLS_QCEW:employment:92:5`,
+  `CENSUS_BPS:units:1_unit:annual` and `CENSUS_BPS:units:5_plus_units:annual`.
+  Every new EIA gasoline, BLS regional gasoline, food-at-home CPI and BEA
+  parity code exists.
+- Step 2 (live label check) runs on OFFICE_LAB once this merges and the API
+  image is rebuilt from `dev`.
 
 ## Follow-up
 
