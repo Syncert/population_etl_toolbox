@@ -14,7 +14,7 @@ verify:
 
 ## Status
 
-In progress, 2026-10-31: part 1 built on this branch (`/age-structure`, `/age-structure/history`, `/age-structure/cohorts`; API-184..186). EXPLAIN evidence on OFFICE_LAB pending. Part 1 of the API side of
+In progress, 2026-10-31: part 1 built on this branch (`/age-structure`, `/age-structure/history`, `/age-structure/cohorts`; API-184..186). EXPLAIN (ANALYZE, BUFFERS) on OFFICE_LAB, 2026-10-31, live warehouse under load, 52 codes: latest read (Madison, Dane, Wisconsin, nation) Index Scan ix_mv_acs_latest_metric_geo, 208 rows, 407 ms cold / 2.5 ms warm; pinned read prunes to the one vintage partition and uses (metric_code, geo_id, observation_date), 3.6–3.7 ms cold, about 4.5 ms planning (Wisconsin and Texas sets); history read 832 rows on the (metric_code, geo_id, observation_date) index in every populated partition, 298–584 ms cold / 7–15 ms warm. The narrow pinned range relies on observation_date = MAKE_DATE(vintage_year, 1, 1); the live count of rows breaking that was 0 of 1,080,837,935. No new index. Part 1 of the API side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md),
 governed by [ADR-0013](../../decisions/0013-age-and-sex-structure.md)
 (accepted by Nick on 2026-10-31 with the level toggle). The web plan,

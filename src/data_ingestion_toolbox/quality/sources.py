@@ -523,6 +523,7 @@ FBI_RESOLUTION_CONFIDENCE: Mapping[str, str] = MappingProxyType(
         "exact_state_code": "exact",
         "reviewed_place_crosswalk": "reviewed",
         "county_label_match": "derived",
+        "fbi_county_code": "derived",
     }
 )
 
@@ -685,6 +686,64 @@ def fbi_county_agency_rate_agreement(
                      )))
         """,
         order_by="1",
+    )
+    return [
+        RuleOutcome(
+            object_name,
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def fbi_return_a_matches_cde(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FBI-011 — Return A totals agree with the CDE's for the same agency.
+
+    The Return A file publishes offense components, so its violent and
+    property totals are summed from them by the CDE's own definition. Where
+    the CDE also publishes an agency's total for the same month (the reviewed
+    agencies of the summarized products), the two must be equal: a mismatch
+    means the sum, the layout or a card was read wrong. Both sides are each
+    product's newest published release.
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.registry import RETURN_A_PRODUCTS
+
+    del scope
+    object_name = "gold_fbi.latest_release_observation"
+    pairs = [(item.product_id, item.mirrors_product_id) for item in RETURN_A_PRODUCTS]
+    values = ", ".join("(%s, %s)" for _ in pairs)
+    params = tuple(value for pair in pairs for value in pair)
+    compared = f"""
+        FROM (VALUES {values}) AS mirror (return_a, cde)
+        JOIN gold_fbi.latest_release_observation AS ra
+          ON ra.product_id = mirror.return_a
+        JOIN gold_fbi.latest_release_observation AS cde
+          ON cde.product_id = mirror.cde
+         AND cde.measure_id = ra.measure_id
+         AND cde.subject_type = 'agency'
+         AND cde.subject_code = ra.subject_code
+         AND cde.period = ra.period
+       WHERE ra.subject_type = 'agency'
+         AND ra.value_status = 'reported'
+         AND cde.value_status = 'reported'
+    """
+    cursor.execute(f"SELECT COUNT(*) {compared}", params)
+    if int(cursor.fetchone()[0]) == 0:
+        return [RuleOutcome(object_name, "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        SELECT ra.product_id || ' ' || ra.subject_code || ' ' || ra.period
+               || ' ' || ra.value || ' <> ' || cde.value
+        {compared}
+           AND ra.value <> cde.value
+        """,
+        order_by="1",
+        params=params,
     )
     return [
         RuleOutcome(
@@ -2987,6 +3046,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-003": fbi_reported_vs_absent,
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-FBI-010": fbi_county_agency_rate_agreement,
+    "DQ-FBI-011": fbi_return_a_matches_cde,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-ERS-002": ers_file_reconciliation,

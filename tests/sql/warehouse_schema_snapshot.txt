@@ -495,6 +495,27 @@ r control.epa_aqs_file
     index epa_aqs_file_capture_idx CREATE INDEX epa_aqs_file_capture_idx ON control.epa_aqs_file USING btree (capture_id)
     index epa_aqs_file_pkey CREATE UNIQUE INDEX epa_aqs_file_pkey ON control.epa_aqs_file USING btree (run_id)
 
+r control.fbi_return_a_year
+    column release_key text NOT NULL
+    column data_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column record_count integer NOT NULL
+    column observation_count bigint NOT NULL
+    column participation_count bigint NOT NULL
+    column unresolved_county_codes integer NOT NULL
+    column loaded_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fbi_return_a_year_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fbi_return_a_year_data_year_check CHECK (((data_year >= 1960) AND (data_year <= 2100)))
+    constraint fbi_return_a_year_observation_count_check CHECK ((observation_count >= 0))
+    constraint fbi_return_a_year_participation_count_check CHECK ((participation_count >= 0))
+    constraint fbi_return_a_year_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint fbi_return_a_year_pkey PRIMARY KEY (release_key, data_year)
+    constraint fbi_return_a_year_record_count_check CHECK ((record_count >= 0))
+    constraint fbi_return_a_year_release_key_check CHECK ((release_key ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text))
+    constraint fbi_return_a_year_unresolved_county_codes_check CHECK ((unresolved_county_codes >= 0))
+    index fbi_return_a_year_pkey CREATE UNIQUE INDEX fbi_return_a_year_pkey ON control.fbi_return_a_year USING btree (release_key, data_year)
+
 r control.fbi_ucr_release
     column run_id uuid NOT NULL
     column product_id text NOT NULL
@@ -10653,7 +10674,7 @@ r silver_fbi.agency_geography_relationship
     constraint agency_geography_relationship_ori_fkey FOREIGN KEY (ori) REFERENCES silver_fbi.dim_agency(ori)
     constraint agency_geography_relationship_pkey PRIMARY KEY (relationship_sk)
     constraint agency_geography_relationship_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['state'::text, 'county'::text, 'place'::text])))
-    constraint agency_geography_relationship_resolution_method_check CHECK (((resolution_method IS NULL) OR (resolution_method = ANY (ARRAY['exact_state_code'::text, 'county_label_match'::text, 'reviewed_place_crosswalk'::text]))))
+    constraint agency_geography_relationship_resolution_method_check CHECK (((resolution_method IS NULL) OR (resolution_method = ANY (ARRAY['exact_state_code'::text, 'county_label_match'::text, 'reviewed_place_crosswalk'::text, 'fbi_county_code'::text]))))
     constraint agency_geography_relationship_resolution_status_check CHECK ((resolution_status = ANY (ARRAY['resolved'::text, 'unresolved'::text, 'ambiguous'::text, 'unsupported'::text])))
     constraint fbi_agency_relationship_product_key UNIQUE (product_id, ori, relationship_type, source_label, geography_vintage, effective_start)
     index agency_geography_relationship_pkey CREATE UNIQUE INDEX agency_geography_relationship_pkey ON silver_fbi.agency_geography_relationship USING btree (relationship_sk)
@@ -10949,6 +10970,26 @@ r silver_fbi.participation_revision
     constraint participation_revision_subject_type_check CHECK ((subject_type = ANY (ARRAY['national'::text, 'state'::text, 'agency'::text])))
     index fbi_participation_revision_run_idx CREATE INDEX fbi_participation_revision_run_idx ON silver_fbi.participation_revision USING btree (run_id, product_id, release_key)
     index participation_revision_pkey CREATE UNIQUE INDEX participation_revision_pkey ON silver_fbi.participation_revision USING btree (capture_id, source_row_index)
+
+r silver_fbi.return_a_county_crosswalk
+    column release_key text NOT NULL
+    column data_year integer NOT NULL
+    column state_code text NOT NULL
+    column fbi_county_code integer NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column method text
+    column status text NOT NULL
+    column reason_code text
+    column evidence text
+    constraint return_a_county_crosswalk_check CHECK (((status <> 'resolved'::text) OR ((geo_id IS NOT NULL) AND (method IS NOT NULL))))
+    constraint return_a_county_crosswalk_fbi_county_code_check CHECK ((fbi_county_code > 0))
+    constraint return_a_county_crosswalk_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint return_a_county_crosswalk_method_check CHECK (((method IS NULL) OR (method = ANY (ARRAY['county_agency_name'::text, 'fips_order_rank'::text]))))
+    constraint return_a_county_crosswalk_pkey PRIMARY KEY (release_key, data_year, state_code, fbi_county_code)
+    constraint return_a_county_crosswalk_state_code_check CHECK ((state_code ~ '^[A-Z]{2}$'::text))
+    constraint return_a_county_crosswalk_status_check CHECK ((status = ANY (ARRAY['resolved'::text, 'unresolved'::text])))
+    index return_a_county_crosswalk_pkey CREATE UNIQUE INDEX return_a_county_crosswalk_pkey ON silver_fbi.return_a_county_crosswalk USING btree (release_key, data_year, state_code, fbi_county_code)
 
 r silver_fbi.reviewed_place_crosswalk
     column ori text NOT NULL

@@ -778,7 +778,10 @@ agencies' populations the coverage cannot be judged. Show the coverage beside th
 the rate describes the people its reporting agencies cover, not every
 resident, and it is not comparable with a Census per-capita figure. Its rows
 are ordered by period, county and release, and `newest_per_geography` keeps
-each county's newest month whether it has a rate or a refusal.
+each county's newest month whether it has a rate or a refusal. The agencies
+come from the FBI's Return A master files (`FBI_UCR:return_a_violent_crime:*`
+and `FBI_UCR:return_a_property_crime:*`), which hold every agency; a pairing's
+`numerator` names that product.
 
 `total`, `limit` and `offset` page the numerator's (or the provider rate's)
 rows in that metric's own `/observations` order; the response's `ratio`
