@@ -262,6 +262,14 @@ class AcsConfig(BaseModel):
     # 1-year from 2005 and 5-year from 2009 (W-7). About 935 areas, under a
     # third of the counties' volume.
     metro_year_scope: str = "2005-2024"
+    # Concurrent sessions for one year's transform slices. A slice writes
+    # rows no other slice touches (one dataset, level and state), so they
+    # need not wait on each other; one at a time left all but one of the
+    # internal stack's 32 cores idle through a tract year (2026-10-31).
+    # Bounded well under the warehouse's connection limit.
+    transform_workers: int = Field(
+        default_factory=lambda: int(os.environ.get("ACS_TRANSFORM_WORKERS", "8"))
+    )
     # Free-disk guard for operator backfill runs (`disk_guard.py`). The path
     # must sit on the warehouse's filesystem; on the internal stack every
     # container's `/` is Docker's one data disk. A run refuses when its

@@ -259,15 +259,15 @@ def test_a_retry_under_the_same_key_resumes_after_the_last_finished_slice(
     factory = two_slice_year
     monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
     real_upsert = transform._upsert_silver_rows
-    calls = {"n": 0}
 
-    def dies_on_second_slice(hook, df, load_batch_id, ingested_at):
-        calls["n"] += 1
-        if calls["n"] == 2:
+    # Slices run concurrently, so the interruption is named by slice rather
+    # than by its position: the state slice dies, the place slice finishes.
+    def dies_on_the_state_slice(hook, df, load_batch_id, ingested_at):
+        if "state" in set(df["geo_level"].to_list()):
             raise RuntimeError("Docker froze")
         return real_upsert(hook, df, load_batch_id, ingested_at)
 
-    monkeypatch.setattr(transform, "_upsert_silver_rows", dies_on_second_slice)
+    monkeypatch.setattr(transform, "_upsert_silver_rows", dies_on_the_state_slice)
     with pytest.raises(RuntimeError, match="Docker froze"):
         transform.transform_census_to_silver(resume_key="etl082-resume")
     checkpoints = _rows(
