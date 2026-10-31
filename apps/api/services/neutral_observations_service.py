@@ -520,19 +520,24 @@ def _named(
     """
     if response is None or not response.items:
         return response
-    geo_ids = sorted({item.geo_id for item in response.items if item.geo_id})
+    _name_rows(db, response.items)
+    return response
+
+
+def _name_rows(db: Session, items: Sequence[NeutralObservation]) -> None:
+    """Name ``items`` from the geography catalog, in one statement."""
+    geo_ids = sorted({item.geo_id for item in items if item.geo_id})
     if not geo_ids or relation_is_absent(db, GEOGRAPHY_RELATION):
-        return response
+        return
     names = {
         str(row["geo_id"]): row.get("geo_name")
         for row in db.execute(GEOGRAPHY_NAMES_QUERY, {"geo_ids": geo_ids})
         .mappings()
         .all()
     }
-    for item in response.items:
+    for item in items:
         name = names.get(str(item.geo_id))
         item.geo_name = None if name is None or name == item.geo_id else str(name)
-    return response
 
 
 def list_neutral_observations(
@@ -920,6 +925,172 @@ def prefetch_observations_for_geographies(
                 )
         for code, rows in found.items():
             memo[(code, scope, None, wanted_geo)] = rows
+
+
+#: The most metrics and geographies one newest-values batch reads; a page with
+#: more splits its reads (each chapter of a place page is one batch).
+NEWEST_BATCH_MOST_CODES = 40
+NEWEST_BATCH_MOST_GEOGRAPHIES = 8
+
+
+def _single_newest(
+    db: Session, metric_code: str, geo_id: str
+) -> Optional[NeutralObservationListResponse]:
+    """The single route's answer for one metric and one place, as it reads it:
+    ``/observations?metric_code=&scope=latest&newest_per_geography=true
+    &geo_id=&limit=1``, unnamed."""
+    return _list_neutral_observations(
+        db,
+        metric_code,
+        SCOPE_LATEST,
+        None,
+        {"geo_id": geo_id},
+        1,
+        0,
+        newest_per_geography=True,
+    )
+
+
+def newest_values_batch(
+    db: Session,
+    metric_codes: Sequence[str],
+    geo_ids: Sequence[str],
+) -> list[
+    tuple[str, str, int, Optional[str], Optional[NeutralObservationListResponse]]
+]:
+    """Each metric's newest value for each geography, one statement a source.
+
+    The place page asks every headline measure of a chapter for the place,
+    its state and the nation: as single reads that was one request per
+    measure and place, about 160 for a county, queued six at a time by the
+    browser. Each ``(metric, geography)`` answer here is exactly the single
+    route's (``_single_newest``): the same relation, the same identity
+    predicates, the same per-geography ranking over the same order, with the
+    geography bound as ``= ANY`` because the ranking already partitions by
+    it. The metrics that share a relation are read in one ``UNION ALL``,
+    each branch its own single read, so every branch keeps the plan its
+    single read had.
+
+    Returns ``(metric_code, geo_id, status, detail, response)`` in the order
+    asked, metrics outer: ``200`` with the single route's page, ``404`` for a
+    metric the glossary does not hold, ``422`` with the single route's
+    refusal, ``503`` when the metric's serving relation is absent.
+    """
+    codes = list(dict.fromkeys(metric_codes))
+    places = list(dict.fromkeys(geo_ids))
+    metrics = resolve_metrics(db, codes)
+    answers: dict[tuple[str, str], tuple[int, Optional[str], Any]] = {}
+
+    def refuse(code: str, status: int, detail: str) -> None:
+        for geo_id in places:
+            answers[(code, geo_id)] = (status, detail, None)
+
+    # Keyed by relation and dispatch entry: two entries over one relation can
+    # project it differently.
+    groups: dict[
+        tuple[str, str], tuple[ObservationDispatch, list[tuple[str, list[str], dict]]]
+    ] = {}
+    alone: list[str] = []
+    for index, code in enumerate(codes):
+        metric = metrics.get(code)
+        if metric is None:
+            refuse(code, 404, "metric_code not found")
+            continue
+        try:
+            dispatch = dispatch_for_metric(metric)
+            refusal = reduction_refusal(dispatch, REDUCTION_NEWEST_PER_GEOGRAPHY)
+            if refusal is not None:
+                raise NeutralQueryError(refusal)
+            conditions, params = _metric_conditions(
+                dispatch, code, metric, param_prefix=f"m{index}_"
+            )
+        except NeutralQueryError as exc:
+            refuse(code, 422, exc.detail)
+            continue
+        except ServingContractUnavailable as exc:
+            refuse(code, 503, str(exc))
+            continue
+        declared = dict(dispatch.filter_conditions).get("geo_id")
+        if declared != f"{dispatch.geo_id_expression} = :geo_id":
+            # The single read filters by a declaration this read cannot
+            # widen to a list: read it the single way.
+            alone.append(code)
+            continue
+        groups.setdefault((dispatch.latest_relation, repr(dispatch)), (dispatch, []))[
+            1
+        ].append((code, conditions, params))
+
+    for (relation, _), (dispatch, entries) in groups.items():
+        try:
+            require_relation(db, relation)
+        except ServingContractUnavailable as exc:
+            for code, _, _ in entries:
+                refuse(code, 503, str(exc))
+            continue
+        branches: list[str] = []
+        bound: dict[str, Any] = {"geo_ids": places}
+        for index, (code, conditions, params) in enumerate(entries):
+            label = f"code_{index}"
+            where_sql = " AND ".join(
+                [*conditions, f"{dispatch.geo_id_expression} = ANY(:geo_ids)"]
+            )
+            branches.append(
+                f"""SELECT CAST(:{label} AS TEXT) AS grouped_metric_code,
+            {_select_sql(dispatch)}
+        FROM {_newest_per_geography_source(dispatch, relation, where_sql)}
+            AS observations"""
+            )
+            bound[label] = code
+            bound.update(params)
+        found: dict[tuple[str, str], Mapping[str, Any]] = {}
+        for row in db.execute(text("\nUNION ALL\n".join(branches)), bound).mappings():
+            found.setdefault((str(row["grouped_metric_code"]), str(row["geo_id"])), row)
+        for code, _, _ in entries:
+            name = metrics[code].get("metric_display_name")
+            for geo_id in places:
+                row = found.get((code, geo_id))
+                items = (
+                    []
+                    if row is None
+                    else [_observation_from(row, dispatch, code, name)]
+                )
+                answers[(code, geo_id)] = (
+                    200,
+                    None,
+                    NeutralObservationListResponse(
+                        metric_code=code,
+                        source_code=dispatch.source_code,
+                        scope=SCOPE_LATEST,
+                        time_grain=TIME_GRAIN_NATIVE,
+                        release=None,
+                        total=len(items),
+                        limit=1,
+                        offset=0,
+                        items=items,
+                    ),
+                )
+
+    for code in alone:
+        for geo_id in places:
+            try:
+                answers[(code, geo_id)] = (200, None, _single_newest(db, code, geo_id))
+            except NeutralQueryError as exc:
+                answers[(code, geo_id)] = (422, exc.detail, None)
+            except ServingContractUnavailable as exc:
+                answers[(code, geo_id)] = (503, str(exc), None)
+
+    _name_rows(
+        db,
+        [
+            item
+            for _, _, response in answers.values()
+            if response is not None
+            for item in response.items
+        ],
+    )
+    return [
+        (code, geo_id, *answers[(code, geo_id)]) for code in codes for geo_id in places
+    ]
 
 
 def _no_calendar_figures(metric_code: str, time_grain: str) -> str:
