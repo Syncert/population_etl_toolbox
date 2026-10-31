@@ -886,3 +886,101 @@ BEGIN
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
+
+-- A tract's counts on the 2020 Census tract it now lies in, for the years the
+-- ACS published them on an earlier decade's tracts (acs-place-and-tract-
+-- history, deliverable 7). DERIVED, never a published value: each earlier
+-- tract's estimate is apportioned to the 2020 tracts its area became by the
+-- Bureau's relationship files (`silver_ref.tract_decade_crosswalk`) -- the
+-- share of its 2010 population for 2000 to 2010, the share of its land area
+-- for 2010 to 2020 (the 2020 file publishes no population) -- and the shares
+-- landing on one 2020 tract are summed. Only count tables are apportioned: a
+-- median, a per-capita figure or a margin of error cannot be split by a
+-- weight, so none appears here. A 2020 tract whose earlier tract is the same
+-- area under the same code keeps that tract's published value, marked
+-- `unchanged`; a 2020 tract any of whose contributing estimates was not
+-- published has no value (`incomplete`), never a partial sum. The published
+-- series in `rpt_acs_observations` is untouched.
+CREATE OR REPLACE VIEW gold_census.acs_tract_comparable AS
+WITH tract AS (
+    SELECT geo_sk, geo_id FROM silver_ref.dim_geo_entity WHERE geo_type = 'tract'
+),
+to_2020 AS (
+    SELECT 2010 AS source_decade,
+           earlier.geo_id AS source_geo_id,
+           later.geo_id AS geo_id,
+           step.earlier_land_share AS weight,
+           (step.earlier_geo_sk = step.later_geo_sk
+            AND step.earlier_land_share = 1 AND step.later_land_share = 1) AS unchanged
+    FROM silver_ref.tract_decade_crosswalk AS step
+    JOIN tract AS earlier ON earlier.geo_sk = step.earlier_geo_sk
+    JOIN tract AS later ON later.geo_sk = step.later_geo_sk
+    WHERE step.earlier_vintage = 2010
+    UNION ALL
+    SELECT 2000,
+           earlier.geo_id,
+           later.geo_id,
+           first_step.earlier_population_share * second_step.earlier_land_share,
+           (first_step.earlier_geo_sk = second_step.later_geo_sk
+            AND first_step.earlier_land_share = 1 AND first_step.later_land_share = 1
+            AND second_step.earlier_land_share = 1 AND second_step.later_land_share = 1)
+    FROM silver_ref.tract_decade_crosswalk AS first_step
+    JOIN silver_ref.tract_decade_crosswalk AS second_step
+      ON second_step.earlier_vintage = 2010
+     AND second_step.earlier_geo_sk = first_step.later_geo_sk
+    JOIN tract AS earlier ON earlier.geo_sk = first_step.earlier_geo_sk
+    JOIN tract AS later ON later.geo_sk = second_step.later_geo_sk
+    WHERE first_step.earlier_vintage = 2000
+),
+source AS (
+    SELECT published.*,
+           CASE WHEN published.vintage_year BETWEEN 2000 AND 2009 THEN 2000
+                WHEN published.vintage_year BETWEEN 2010 AND 2019 THEN 2010
+           END AS source_decade
+    FROM gold_census.rpt_acs_observations AS published
+    WHERE published.geo_level = 'TRACT'
+      AND published.vintage_year BETWEEN 2000 AND 2019
+      -- Count tables only; medians and per-capita figures do not apportion.
+      AND published.table_id IN (
+          'B01001', 'B01003', 'B02001', 'B03002', 'B08301', 'B08303', 'B11001',
+          'B15003', 'B17001', 'B23025', 'B25001', 'B25002', 'B25003', 'B25070',
+          'B25091', 'B27010', 'B28002'
+      )
+)
+SELECT weight.geo_id,
+       source.observation_date,
+       source.dataset_code,
+       source.vintage_year,
+       source.table_id,
+       source.variable_code,
+       source.metric_code,
+       source.variable_label,
+       source.units,
+       CASE WHEN BOOL_AND(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL)
+            THEN SUM(source.estimate_value * weight.weight)
+       END AS comparable_value,
+       CASE WHEN BOOL_AND(weight.unchanged) AND COUNT(*) = 1 THEN 'unchanged'
+            WHEN BOOL_AND(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL)
+                THEN 'apportioned'
+            ELSE 'incomplete'
+       END AS comparable_status,
+       CASE MIN(source.source_decade)
+            WHEN 2000 THEN 'share of 2010 population, then share of land area'
+            ELSE 'share of land area'
+       END AS weight_basis,
+       COUNT(*) AS source_tract_count,
+       ARRAY_AGG(source.geo_id ORDER BY source.geo_id) AS source_geo_ids,
+       2020 AS target_tract_vintage,
+       'decade_crosswalk'::TEXT AS derivation
+FROM source
+JOIN to_2020 AS weight
+  ON weight.source_geo_id = source.geo_id
+ AND weight.source_decade = source.source_decade
+WHERE weight.weight IS NULL OR weight.weight > 0
+GROUP BY weight.geo_id, source.observation_date, source.dataset_code,
+         source.vintage_year, source.table_id, source.variable_code,
+         source.metric_code, source.variable_label, source.units;
+
+COMMENT ON VIEW gold_census.acs_tract_comparable IS
+    'DERIVED: earlier-decade ACS and Census 2000 tract counts apportioned to 2020 Census tracts by the Bureau''s relationship files. Never a published value; medians, per-capita figures and margins of error are not apportioned.';
+
