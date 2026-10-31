@@ -903,9 +903,7 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         "serving",
         "CENSUS_ACS",
         grain="geo_id (2020 tract), observation_date, dataset_code, variable_code",
-        lineage=(
-            "gold_census.rpt_acs_observations, silver_ref.tract_decade_crosswalk"
-        ),
+        lineage=("gold_census.rpt_acs_observations, silver_ref.tract_decade_crosswalk"),
         scope_method=(
             "derived: earlier-decade tract counts apportioned to 2020 tracts; "
             "count tables only"
