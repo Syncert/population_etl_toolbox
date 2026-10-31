@@ -401,6 +401,7 @@ DECLARE
     v_year INTEGER;
     v_partition TEXT;
     v_cleared_years INTEGER := 0;
+    v_prev_nestloop TEXT;
 BEGIN
     RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
     IF p_state_fips IS NOT NULL AND p_geo_levels IS NULL THEN
@@ -494,6 +495,17 @@ BEGIN
         DELETE FROM gold_census.rpt_acs_observations
         WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
           AND (p_end_date IS NULL OR observation_date <= p_end_date);
+    END IF;
+
+    -- One state's read is estimated at a handful of rows (the view's computed
+    -- grain defeats the statistics), so the planner joined the geography
+    -- view by nested loop: for Delaware's 89,604 tract facts it compared
+    -- 17.4 billion row pairs, and a large state ran for over twenty minutes.
+    -- The real counts are thousands to millions; hash joins are right for
+    -- every state. Restored after the insert, and with the transaction.
+    IF p_state_fips IS NOT NULL THEN
+        v_prev_nestloop := current_setting('enable_nestloop');
+        PERFORM set_config('enable_nestloop', 'off', true);
     END IF;
 
     INSERT INTO gold_census.rpt_acs_observations (
@@ -600,6 +612,10 @@ BEGIN
       AND (p_geo_levels IS NULL OR ao.geo_level = ANY(p_geo_levels))
       AND (p_state_fips IS NULL OR ao.state_fips = p_state_fips);
     GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+
+    IF p_state_fips IS NOT NULL THEN
+        PERFORM set_config('enable_nestloop', v_prev_nestloop, true);
+    END IF;
 
     INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
     SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
