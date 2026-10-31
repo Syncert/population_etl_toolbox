@@ -130,8 +130,11 @@ Two things make it more than "add two table sources":
 - [x] Features carry no values; the rule is stated in the API and helpers.
 - [x] Unit, DAG, database and API tiers pass; web unit, typecheck, lint,
       build and bundle budgets pass. Martin live tier: CI (`martin-integration`).
-- [ ] On OFFICE_LAB: metro boundaries loaded, refresh run, real tiles
-      measured against the budget, coverage recorded (see Hand-off).
+- [x] On OFFICE_LAB: metro boundaries loaded, refresh run, real tiles
+      measured against the budget (dev 0f71e5c, 2026-10-31; see Live results).
+- [ ] On OFFICE_LAB, after the follow-up: coverage re-measured across every
+      served source, New York z6 re-measured with headroom, vintage spot
+      check 2025 vs 1999 (Hand-off steps 5 and 6).
 
 ## Implementation evidence (cloud session, 2026-10-31)
 
@@ -175,6 +178,45 @@ MARTIN-013; total recounted from the ranges table (666).
 - **Places start at zoom 6** like tracts; metros at zoom 0 like counties.
   The real-tile measurement on OFFICE_LAB decides whether that holds.
 
+## Live results on OFFICE_LAB (dev 0f71e5c, 2026-10-31)
+
+| Step | Result |
+|---|---|
+| 1. DDL via the ledger | applied |
+| 2. Area sync | 925 metro polygons loaded; 10 Puerto Rico CBSAs recorded `boundary_not_in_delineation` |
+| 3. `refresh_tile_boundaries()` | 4.07 s first run, 1.88 s rerun; `tile_layer_vintage`: METRO 2023 (925, default), PLACE 2025 (32,629, default) |
+| 4. Martin and catalog | healthy; `/tiles/places` and `/tiles/metros` TileJSON ok; `/api/v1/catalog/tile-layers` 200 |
+| 5. `measure_tile_layers.py` | exit 0, `over_budget` empty; New York places `6/18/24` 514,278 B against 524,288 (about 10 KB headroom); coverage reported METRO published 0 |
+| 6. Vintage spot check | not passable: only vintage 2025 place polygons are held (see Data gap); `?vintage=1999` empty passes |
+
+Three findings, fixed in the follow-up PR:
+
+- **Coverage asked one metric.** The coverage read counted a geography as
+  published only if ACS served its total population (`B01003_001`). ACS had
+  served no metro rows on OFFICE_LAB while LAUS and BEA had, so all 925
+  metros read as uncoloured. Coverage now asks every source's latest
+  relation, read from the API's dispatch registry
+  (`apps/api/registry.py`), and reports the count per source
+  (`published_by_source`); a relation that errors or exceeds 300 s is listed
+  under `skipped_sources`.
+- **Headroom at z6.** `gold.tile_simplified(geom, z)` simplifies each
+  boundary to one tile pixel at the requested zoom before `ST_AsMVTGeom`
+  (no drawn pixel changes; a sub-pixel place is kept as a dot, never
+  dropped). The script also lists tiles above 90% of the budget under
+  `near_budget`, so headroom shrinking shows up before a tile fails.
+- **Austin's tile.** Austin is in `10/233/422`, not `421`.
+
+### Data gap: historical place polygons
+
+The warehouse holds place **identities** for every vintage (names and FIPS
+from the Gazetteer and decennial files) but place **boundaries** only for
+2025, the latest TIGER cartographic file. So `?vintage=2010` and
+`?vintage=2024` return 204 today, which is the layer working as designed:
+it never draws another vintage in place of the one asked for. Loading
+TIGER place shapefiles by year (2010, 2020 and the ACS years between) is a
+W-item for the build-out, not part of this plan. Until it lands the vintage
+check is 2025 against 1999.
+
 ## Hand-off: checks that need the loaded warehouse (OFFICE_LAB)
 
 Not run: a cloud session cannot reach the warehouse or the running Martin.
@@ -195,13 +237,196 @@ Not run: a cloud session cannot reach the warehouse or the running Martin.
    branch) and check `http://localhost:3001/tiles/places`,
    `http://localhost:3001/tiles/metros` (TileJSON with `vector_layers`) and
    `http://localhost:3001/api/v1/catalog/tile-layers`.
-5. `python scripts/measure_tile_layers.py --tiles-url http://localhost:3001/tiles --dsn <warehouse DSN>`
-   and paste the JSON summary here: bytes per sample tile against the 512 KB
-   budget (exit code 0), and per grain the published geographies with no
-   polygon and the polygons left uncoloured.
-6. Spot check: `http://localhost:3001/tiles/places/10/233/421?vintage=2010`
-   against `?vintage=2024` (Austin area) decode to different Austin
-   boundaries, and `?vintage=1999` is empty.
+5. After the follow-up merges, apply the DDL the ledger lacks
+   (`gold.tile_simplified`, and the replaced `gold.tile_places` /
+   `gold.tile_metros`), then
+   `python scripts/measure_tile_layers.py --tiles-url http://localhost:3001/tiles --dsn <warehouse DSN>`
+   and record: bytes per sample tile against the 512 KiB budget (exit code
+   0, `near_budget` ideally empty; New York `6/18/24` should drop well below
+   514,278 B), and per grain `published`, `published_by_source`, the
+   published geographies with no polygon and the polygons left uncoloured.
+   METRO `published` should be near 925, not 0.
+6. Spot check (Austin, `10/233/422`):
+   `http://localhost:3001/tiles/places/10/233/422?vintage=2025` decodes to
+   Austin's boundary and `?vintage=1999` is empty (204). The 2010 against
+   2024 comparison waits on historical place polygons (Data gap above).
+
+### Results on OFFICE_LAB (2026-10-31, dev at 0f71e5c)
+
+1. `scripts/apply_warehouse_manifest.py --only-flagged`: applied and recorded
+   `glossary-schema` and `contract-views` before Martin restarted.
+2. Area sync: `metro_boundaries` 925, `unlisted_metro_boundaries` 10; 10
+   `boundary_not_in_delineation` rows in `silver_ref.geography_resolution`
+   (Puerto Rico's CBSAs). 5 s.
+3. `CALL gold_glossary.refresh_tile_boundaries();` 4.07 s, rerun 1.88 s.
+   `gold.tile_layer_vintage`: METRO 2023 (925, default), PLACE 2025 (32,629,
+   default).
+4. Martin restarted healthy; `/tiles/places` and `/tiles/metros` return
+   TileJSON with `vector_layers`; `/api/v1/catalog/tile-layers` returns 200.
+5. `measure_tile_layers.py` exited 0 (summary below; the New York places tile
+   6/18/24 is 514,278 B of the 524,288 budget). METRO coverage reports
+   `published: 0` although ACS, LAUS and BEA publish metros: a defect in the
+   coverage query, followed up by the A-6 thread.
+6. Not passable as written: the warehouse holds place geometries for the 2025
+   vintage only, so `10/233/422?vintage=2010` and `?vintage=2024` are empty
+   (204) like `?vintage=1999`; the default and `?vintage=2025` return 200
+   (6,224 B). Historical place boundaries (TIGER place shapefiles per vintage,
+   2010-2024) are a recorded Wave W gap, after W-8.
+
+```json
+{
+  "budget_bytes": 524288,
+  "tiles": [
+    {
+      "layer": "metros",
+      "area": "world",
+      "tile": "0/0/0",
+      "status": 200,
+      "bytes": 100171,
+      "features": 925
+    },
+    {
+      "layer": "places",
+      "area": "new-york",
+      "tile": "6/18/24",
+      "status": 200,
+      "bytes": 514278,
+      "features": 2925
+    },
+    {
+      "layer": "places",
+      "area": "new-york",
+      "tile": "8/75/96",
+      "status": 200,
+      "bytes": 96189,
+      "features": 508
+    },
+    {
+      "layer": "places",
+      "area": "new-york",
+      "tile": "10/301/385",
+      "status": 200,
+      "bytes": 2102,
+      "features": 7
+    },
+    {
+      "layer": "places",
+      "area": "los-angeles",
+      "tile": "6/10/25",
+      "status": 200,
+      "bytes": 74250,
+      "features": 360
+    },
+    {
+      "layer": "places",
+      "area": "los-angeles",
+      "tile": "8/43/102",
+      "status": 200,
+      "bytes": 23890,
+      "features": 88
+    },
+    {
+      "layer": "places",
+      "area": "los-angeles",
+      "tile": "10/175/408",
+      "status": 200,
+      "bytes": 5968,
+      "features": 19
+    },
+    {
+      "layer": "places",
+      "area": "austin",
+      "tile": "6/14/26",
+      "status": 200,
+      "bytes": 157527,
+      "features": 638
+    },
+    {
+      "layer": "places",
+      "area": "austin",
+      "tile": "8/58/105",
+      "status": 200,
+      "bytes": 46394,
+      "features": 114
+    },
+    {
+      "layer": "places",
+      "area": "austin",
+      "tile": "10/233/421",
+      "status": 200,
+      "bytes": 9066,
+      "features": 24
+    },
+    {
+      "layer": "metros",
+      "area": "new-york",
+      "tile": "4/4/6",
+      "status": 200,
+      "bytes": 169693,
+      "features": 358
+    },
+    {
+      "layer": "metros",
+      "area": "new-york",
+      "tile": "8/75/96",
+      "status": 200,
+      "bytes": 3281,
+      "features": 3
+    },
+    {
+      "layer": "metros",
+      "area": "los-angeles",
+      "tile": "4/2/6",
+      "status": 200,
+      "bytes": 34146,
+      "features": 51
+    },
+    {
+      "layer": "metros",
+      "area": "los-angeles",
+      "tile": "8/43/102",
+      "status": 200,
+      "bytes": 1773,
+      "features": 3
+    },
+    {
+      "layer": "metros",
+      "area": "austin",
+      "tile": "4/3/6",
+      "status": 200,
+      "bytes": 88062,
+      "features": 243
+    },
+    {
+      "layer": "metros",
+      "area": "austin",
+      "tile": "8/58/105",
+      "status": 200,
+      "bytes": 1916,
+      "features": 2
+    }
+  ],
+  "over_budget": [],
+  "coverage": [
+    {
+      "grain": "PLACE",
+      "default_vintage": 2025,
+      "polygons": 32629,
+      "published": 32631,
+      "published_without_polygon": 319,
+      "polygons_left_uncoloured": 317
+    },
+    {
+      "grain": "METRO",
+      "default_vintage": 2023,
+      "polygons": 925,
+      "published": 0,
+      "published_without_polygon": 0,
+      "polygons_left_uncoloured": 925
+    }
+  ]
+}
+```
 
 ## What this plan deliberately does not do
 

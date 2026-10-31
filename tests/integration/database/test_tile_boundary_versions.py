@@ -407,3 +407,46 @@ def test_the_refresh_rewrites_only_what_changed_and_drops_what_was_withdrawn(
     after = {(row[0], row[2]): row[7] for row in _rows(seeded)}
     assert (GONE, 2010) not in after
     assert after == {key: value for key, value in before.items() if key[0] != GONE}
+
+
+def test_a_boundary_is_simplified_to_one_pixel_and_never_dropped(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-067 — low-zoom tiles shed sub-pixel vertices; a sub-pixel place stays drawn."""
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                WITH dense AS (
+                    -- A 5 km circle with 4,096 vertices, near Cheyenne, in 3857.
+                    SELECT ST_Buffer(
+                        ST_Transform(ST_SetSRID(ST_MakePoint(-104.82, 41.14), 4326), 3857),
+                        5000, 1024
+                    ) AS geom
+                ),
+                tiny AS (
+                    -- A 20 m square: far below one pixel at zoom 6 (about 2.4 km).
+                    SELECT ST_Expand(
+                        ST_Transform(ST_SetSRID(ST_MakePoint(-104.82, 41.14), 4326), 3857),
+                        10
+                    ) AS geom
+                )
+                SELECT ST_NPoints(dense.geom),
+                       ST_NPoints(gold.tile_simplified(dense.geom, 6)),
+                       ST_NPoints(gold.tile_simplified(dense.geom, 14)),
+                       gold.tile_simplified(tiny.geom, 6) IS NOT NULL
+                           AND NOT ST_IsEmpty(gold.tile_simplified(tiny.geom, 6)),
+                       ST_HausdorffDistance(dense.geom, gold.tile_simplified(dense.geom, 6))
+                           <= 40075016.685578488 / (POWER(2, 6) * 4096.0)
+                FROM dense, tiny
+                """
+            )
+            raw, at_z6, at_z14, tiny_kept, within_a_pixel = cursor.fetchone()
+    finally:
+        reader.close()
+    assert raw > 4000
+    assert at_z6 < raw / 20
+    assert at_z14 > at_z6
+    assert tiny_kept
+    assert within_a_pixel
