@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import io
+import re
 import zipfile
 from collections.abc import Callable, Iterator
 from datetime import date
@@ -411,3 +412,72 @@ def test_the_derived_route_serves_the_county_rate_from_the_warehouse(
         "569830",
     )
     assert dane.coverage.coverage_share == "0.9741"
+
+
+def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-106 — the served county rate is computed once, read by index.
+
+    Computed on read, the rate summed every agency-month in the country
+    before the county filter applied: a county card took over two minutes
+    once every Return A agency was loaded. The publication now computes it
+    (DQ-FBI-014 holds it to that), and a county read never aggregates.
+    """
+    from data_ingestion_toolbox.quality.sources import (
+        fbi_county_agency_rate_is_current,
+    )
+
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    reader = return_a_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_fbi.county_agency_rate_month "
+                "WHERE product_id = 'return_a_violent_crime' AND geo_id = %s",
+                (DANE,),
+            )
+            assert cursor.fetchone()[0] == 12
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
+
+            cursor.execute("SET LOCAL enable_seqscan = off")
+            cursor.execute(
+                "EXPLAIN (COSTS OFF) SELECT * FROM gold_fbi.latest_county_agency_rate "
+                "WHERE product_id = 'return_a_violent_crime' "
+                "AND measure_id = %s AND geo_id = %s "
+                "ORDER BY period_start DESC LIMIT 1",
+                ("V:offense:absolute_total", DANE),
+            )
+            plan = "\n".join(row[0] for row in cursor.fetchall())
+            # Through the geography index or the key (release, measure,
+            # county); either way one county's rows, never a national sum.
+            assert re.search(r"Index Scan using \w+ on county_agency_rate_month", plan)
+            assert "agency_geography_relationship" not in plan
+            assert "fact_crime_observation" not in plan
+            cursor.execute("RESET enable_seqscan")
+
+            # A publication that skipped the refresh is caught...
+            cursor.execute(
+                "UPDATE silver_fbi.dim_ucr_dataset_release "
+                "SET published_at = published_at + INTERVAL '1 hour' "
+                "WHERE product_id = 'return_a_property_crime'"
+            )
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert outcomes[0].result == "fail"
+            assert outcomes[0].evidence == [
+                "return_a_property_crime computed before its newest publication"
+            ]
+            # ...and so is a product whose rows were never computed.
+            cursor.execute(
+                "DELETE FROM gold_fbi.county_agency_rate_month "
+                "WHERE product_id = 'return_a_violent_crime'"
+            )
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert outcomes[0].evidence == [
+                "return_a_property_crime computed before its newest publication",
+                "return_a_violent_crime never computed",
+            ]
+    finally:
+        reader.rollback()
+        reader.close()
