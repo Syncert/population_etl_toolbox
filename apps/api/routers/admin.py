@@ -5,7 +5,7 @@ Three reads behind ``/admin/warehouse``, each answered ``private, no-store``:
 - ``/admin/warehouse/sources`` -- the declared source inventory joined to the
   live metric catalog (metric counts, grains, newest watermark).
 - ``/admin/warehouse/coverage/{source_code}`` -- years held per grain,
-  measured from the source's serving relation and cached for six hours.
+  measured from the source's serving relations and kept until a new release.
 - ``/admin/warehouse/schema`` -- every warehouse table and view, its keys, and
   the foreign keys and view dependencies between them, read from the Postgres
   catalog and grouped into one diagram per source.
@@ -200,7 +200,8 @@ def warehouse_coverage(
     source_code: str,
     response: Response,
     refresh: bool = Query(
-        False, description="Measure now instead of reusing the six-hour cache."
+        False,
+        description="Measure now instead of reusing the measurement kept for this release.",
     ),
     _admin: Account = Depends(require_admin),
     db: Session = Depends(get_db_session_dep),

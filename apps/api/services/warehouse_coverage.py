@@ -1,25 +1,40 @@
-"""Years held per grain, measured from each source's serving relation.
+"""Years held per grain, measured from each source's serving relations.
 
 The admin Source Map asks the live warehouse, not a document, what each source
 holds: which grains it serves, the first and last observation year at each,
 which years in between are present, and how many rows back them. Every figure
-comes from the relation the API itself reads for that source
+comes from a relation the API itself reads for that source
 (``OBSERVATION_DISPATCH``), projected through the same reviewed grain and
 period expressions the observation routes use, so the page and the API cannot
 disagree about what a source holds.
 
-Cost. One grouped scan of one serving relation per source, bounded by a
-statement timeout and cached in-process for six hours (a timed-out measurement
-is cached for ten minutes, so a slow source is not rescanned on every visit).
+Cost, measured on OFFICE_LAB (BEA timed out at 20 s, PEP took 19.8 s) and
+reproduced on 5.6M synthetic BEA rows (15.5 s):
+
+- **Which relation.** A source's ``observation_latest`` is ``DISTINCT ON`` (or
+  a window) over its as-released relation, which sorts every row to keep the
+  newest release of each key. Which (grain, year) pairs exist does not depend
+  on that choice, so coverage reads the as-released relation and skips the
+  sort. CDC, FBI UCR and USDA NASS are the exception: their latest relation is
+  a plain filter to the newest release, already the cheaper read.
+- **How it groups.** The registry's grain expression (``geo_grain(geo_type)``)
+  and period expression (``period_start::TEXT``) were evaluated on every row.
+  The scan now groups by the raw grain column and the native period, a few
+  hundred groups, and applies both expressions to those groups only. Same
+  answer; 1.3 s instead of 15.5 s on the synthetic BEA rows.
+- **When it runs again.** A measurement is kept until the source's catalog
+  rows change (count, newest watermark, publication time, run), checked with
+  one indexed read of ``dim_metric_catalog``, and for at most seven days. A
+  timed-out or failed measurement is retried after ten minutes.
+
 Census ACS is not scanned at all: ``rpt_acs_observations`` is partitioned by
 observation year, so its years come from the partition catalog and its grains
-from the metric catalog. BLS and FRED are measured on their as-released
-relations, because their ``mv_*_latest`` tables hold only each series' newest
-period and would report one year.
+from the metric catalog.
 """
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -33,19 +48,28 @@ from sqlalchemy.orm import Session
 from apps.api.registry import OBSERVATION_DISPATCH
 from apps.api.services.warehouse_inventory import GRAIN_OF_SERVED_LEVEL, SOURCE_BY_CODE
 
-#: How long a measurement is reused. Loads land a few times a day at most.
-CACHE_SECONDS = 6 * 60 * 60
+#: The longest a measurement is reused while the source's catalog rows are
+#: unchanged. A new release changes them and is measured on the next visit.
+CACHE_SECONDS = 7 * 24 * 60 * 60
 #: How long a timed-out or failed measurement is reused before retrying.
 FAILED_CACHE_SECONDS = 10 * 60
 #: The per-source ceiling. Above the API's default 15 s because this is an
 #: admin page measured at most once per six hours, not a public read.
 STATEMENT_TIMEOUT_MS = 20_000
 
-#: Sources whose ``latest_relation`` keeps only each series' newest period.
-_NEWEST_ONLY = frozenset({"BLS", "FRED", "CENSUS_ACS"})
+#: Sources whose ``latest_relation`` is a filter to the newest release rather
+#: than a sort over every release; reading it is the cheaper of the two.
+_LATEST_IS_A_FILTER = frozenset({"CDC", "FBI_UCR", "USDA_NASS"})
+
+#: ``column`` or ``schema.function(column)``: grouped by the column, with the
+#: function applied to the groups.
+_GRAIN_SHAPE = re.compile(
+    r"\A(?:(?P<function>[A-Za-z_][\w.]*)\()?(?P<column>[a-z_]\w*)\)?\Z"
+)
+_TEXT_CAST = re.compile(r"::TEXT\Z", re.IGNORECASE)
 _ACS_PARENT = ("gold_census", "rpt_acs_observations")
 
-_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_cache: dict[str, tuple[float, tuple[Any, ...] | None, dict[str, Any]]] = {}
 _lock = threading.Lock()
 
 
@@ -54,6 +78,25 @@ class _Plan:
     relation: str
     grain_expression: str
     period_expression: str
+    #: A reviewed restriction for a source whose as-released relation ranks
+    #: every row in a window: a filter on a window partition column is pushed
+    #: below the window, so only that slice is ranked.
+    probe: str | None = None
+    note: str | None = None
+
+
+#: Census PEP's as-released view ranks every fact row by capture
+#: (``row_number() OVER (PARTITION BY dataset_code, release_vintage,
+#: metric_code, geo_id, observation_year ...)``), which no grouping avoids.
+#: ``metric_code`` is a partition column, so restricting it ranks only that
+#: measure's rows.
+_PROBES: dict[str, tuple[str, str]] = {
+    "CENSUS_PEP": (
+        "metric_code = 'POPESTIMATE'",
+        "Measured on POPESTIMATE, the population estimate every PEP vintage "
+        "publishes; row counts are POPESTIMATE rows only.",
+    ),
+}
 
 
 def _plan(catalog_source_code: str) -> _Plan | None:
@@ -61,14 +104,17 @@ def _plan(catalog_source_code: str) -> _Plan | None:
     if dispatch is None or not dispatch.period_start_expression:
         return None
     relation = (
-        dispatch.released_relation
-        if catalog_source_code in _NEWEST_ONLY
-        else dispatch.latest_relation
+        dispatch.latest_relation
+        if catalog_source_code in _LATEST_IS_A_FILTER
+        else dispatch.released_relation
     )
+    probe, note = _PROBES.get(catalog_source_code, (None, None))
     return _Plan(
         relation=relation,
         grain_expression=dispatch.geo_level_expression,
         period_expression=dispatch.period_start_expression,
+        probe=probe,
+        note=note,
     )
 
 
@@ -76,9 +122,24 @@ def _column(level: str | None) -> str:
     return GRAIN_OF_SERVED_LEVEL.get((level or "").upper(), "other")
 
 
+def _grain_parts(expression: str) -> tuple[str, str]:
+    """(what to group by, what to apply to each group's ``raw_grain``)."""
+    shape = _GRAIN_SHAPE.match(expression.strip())
+    if shape is None:
+        # An expression of another shape is evaluated per row, as before.
+        return expression, "raw_grain"
+    function = shape.group("function")
+    column = shape.group("column")
+    return column, (f"{function}(raw_grain)" if function else "raw_grain")
+
+
 def _scan_sql(plan: _Plan) -> str:
     # Every fragment is a reviewed constant from the serving registry; nothing
-    # here comes from the request.
+    # here comes from the request. The inner query groups by raw values (a few
+    # hundred groups); the registry's expressions run on those groups only.
+    group_by, grain = _grain_parts(plan.grain_expression)
+    period = _TEXT_CAST.sub("", plan.period_expression.strip())
+    probe = f" AND {plan.probe}" if plan.probe else ""
     return f"""
         SELECT grain,
                MIN(year) AS first_year,
@@ -86,12 +147,17 @@ def _scan_sql(plan: _Plan) -> str:
                ARRAY_AGG(DISTINCT year ORDER BY year) AS years,
                SUM(row_count)::BIGINT AS row_count
         FROM (
-            SELECT {plan.grain_expression} AS grain,
-                   LEFT({plan.period_expression}, 4)::INT AS year,
-                   COUNT(*) AS row_count
-            FROM {plan.relation}
-            WHERE {plan.period_expression} IS NOT NULL
-            GROUP BY 1, 2
+            SELECT {grain} AS grain,
+                   LEFT(raw_period::TEXT, 4)::INT AS year,
+                   row_count
+            FROM (
+                SELECT {group_by} AS raw_grain,
+                       {period} AS raw_period,
+                       COUNT(*) AS row_count
+                FROM {plan.relation}
+                WHERE {period} IS NOT NULL{probe}
+                GROUP BY 1, 2
+            ) AS by_raw
         ) AS by_year
         GROUP BY grain
         ORDER BY grain
@@ -201,7 +267,7 @@ def _measure_scan(db: Session, plan: _Plan) -> dict[str, Any]:
     ]
     return {
         "method": "scan",
-        "note": None,
+        "note": plan.note,
         "grains": grains,
         "row_count": sum(g["row_count"] for g in grains),
         "row_count_is_estimate": False,
@@ -282,15 +348,49 @@ def measure_source(db: Session, code: str) -> dict[str, Any]:
     }
 
 
+_RELEASE_FINGERPRINT = text(
+    """
+    SELECT COUNT(*) AS metrics,
+           MAX(source_watermark) AS watermark,
+           MAX(publication_time)::TEXT AS published,
+           MAX(source_run_id::TEXT) AS run_id
+    FROM gold_glossary.dim_metric_catalog
+    WHERE source_code = :source_code
+    """
+)
+
+
+def release_fingerprint(db: Session, code: str) -> tuple[Any, ...] | None:
+    """What the catalog says about the source's newest release, or ``None``."""
+    catalog_code = SOURCE_BY_CODE[code].catalog_source_code
+    if not catalog_code:
+        return None
+    try:
+        row = db.execute(_RELEASE_FINGERPRINT, {"source_code": catalog_code}).first()
+    except DBAPIError:
+        db.rollback()
+        return None
+    return None if row is None else tuple(row)
+
+
 def source_coverage(
     db: Session, code: str, *, refresh: bool = False, now: float | None = None
 ) -> dict[str, Any]:
-    """Cached :func:`measure_source`. ``refresh`` forces a new measurement."""
+    """Cached :func:`measure_source`, kept until the source's release changes.
+
+    ``refresh`` forces a new measurement.
+    """
     clock = time.monotonic() if now is None else now
+    fingerprint = release_fingerprint(db, code)
     with _lock:
         hit = _cache.get(code)
-    if hit is not None and not refresh and hit[0] > clock:
-        return {**hit[1], "cached": True}
+    if (
+        hit is not None
+        and not refresh
+        and hit[0] > clock
+        and (fingerprint is None or hit[1] == fingerprint)
+    ):
+        return {**hit[2], "cached": True}
     result = measure_source(db, code)
     ttl = (
         CACHE_SECONDS
@@ -298,7 +398,7 @@ def source_coverage(
         else FAILED_CACHE_SECONDS
     )
     with _lock:
-        _cache[code] = (clock + ttl, result)
+        _cache[code] = (clock + ttl, fingerprint, result)
     return {**result, "cached": False}
 
 

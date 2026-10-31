@@ -9,7 +9,7 @@ Interactive version: [Warehouse Source Map](https://claude.ai/artifact/R8x3zkZjR
 
 **Live version (admins):** the site's `/admin/warehouse` page shows this map and the schema atlas read from the
 warehouse each time it opens: grains and metric counts from `gold_glossary.dim_metric_catalog`, years per grain
-measured from each source's serving relation (cached six hours), and every table and view from `pg_catalog`. The
+measured from each source's serving relations (kept until a new release lands), and every table and view from `pg_catalog`. The
 descriptions it shows come from `apps/api/services/warehouse_inventory.py`; a unit test fails if a served source has
 no entry there, so add one with every new source. Turn the page on by listing operator labels or sign-in emails in
 `API_ADMIN_ACCOUNTS`. This file and `erd.md` are the snapshot of 2026-10-31.
