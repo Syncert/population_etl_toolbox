@@ -1823,6 +1823,32 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published release",
     ),
     _obj(
+        "gold_fbi.county_agency_rate",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period "
+        "(declared-derived rate; ADR-0012)",
+        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
+        scope_method="reported offenses of single-county agencies over those "
+        "agencies' FBI populations, per 100,000; multi-county agencies and "
+        "agencies without a published population are excluded from both "
+        "sides; refused under 50 percent coverage",
+        cadence="per publication",
+        empty_behavior="a county-month with no usable report carries a refusal "
+        "reason and no rate, never a zero",
+    ),
+    _obj(
+        "gold_fbi.latest_county_agency_rate",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, measure_id, county geo_id, period "
+        "(latest refresh per product)",
+        lineage="gold_fbi.county_agency_rate",
+        scope_method="latest-refresh projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
         "gold_fbi.latest_release_observation",
         "gold",
         "FBI_UCR",
@@ -5115,6 +5141,20 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 "gold_fbi.derived_calendar_rollup",
                 ("metric_code", "geo_id", "subject_code", "grain", "window_start"),
             ),
+        ),
+    ),
+    _rule(
+        "DQ-FBI-010",
+        "BLOCK",
+        "reconciliation",
+        "A county crime rate (ADR-0012) divides the reported offenses of "
+        "exactly the agencies it lists as contributing by exactly their FBI "
+        "populations; no contributing agency is also excluded as "
+        "multi-county; a rate is present exactly when no refusal reason is; "
+        "and no rate is published under the 50 percent coverage floor.",
+        (
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
         ),
     ),
     # -- USDA NASS ---------------------------------------------------------

@@ -210,7 +210,7 @@ two pages, so four ranked reads. Two changes:
   (under half the newest period's rows, and an earlier release's newest
   period) from that release as published (`rpt_acs_observations`), and an
   address naming it opens on the release. The pin is matched on
-  `vintage_year` itself (API-181) and served by the new
+  `vintage_year` itself (API-182) and served by the new
   `ix_rpt_acs_observations_metric_level_state_vintage`, pre-built on
   OFFICE_LAB before merge.
 - 6 passed: Wisconsin tracts 0.6 s.
@@ -219,6 +219,18 @@ two pages, so four ranked reads. Two changes:
   then periods and releases, then the state's cities and the values) plus
   the map library and tiles. A city map no longer reads the 3,200 counties;
   it reads its state's counties beside its cities.
+
+Index on OFFICE_LAB (pre-built before #210 merged): 7,933 MB, valid and
+attached. EXPLAIN (ANALYZE, BUFFERS) of the 2018–2022 Texas city read: 442 ms,
+1,862 rows; the 2022 partition's index scan 430 ms cold, every other partition
+0 rows.
+
+Follow-up (not done): partitions are by `observation_date`, so adding a
+predicate on it to the as-released read would prune to one partition. That
+holds only if every ACS row's `observation_date` falls in its `vintage_year`
+(decennial and 1-year rows included); check
+`SELECT count(*) FROM gold_census.rpt_acs_observations WHERE EXTRACT(YEAR FROM observation_date) <> vintage_year`
+first, since a wrong predicate would silently return nothing.
 
 ## Hand-off (OFFICE_LAB, needs the warehouse)
 

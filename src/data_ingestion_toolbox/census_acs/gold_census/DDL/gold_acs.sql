@@ -347,7 +347,7 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_level_state
 -- (web-place-maps), because mv_acs_latest keeps only each key's newest
 -- period. With only (metric_code, observation_date) that read visited every
 -- row of the metric at every grain in every year. The API matches the pin on
--- `vintage_year` itself (API-181), so all four columns are index conditions.
+-- `vintage_year` itself (API-182), so all four columns are index conditions.
 -- This table is partitioned: on a live warehouse build it per partition with
 -- CREATE INDEX CONCURRENTLY, then create it ON ONLY the parent and attach.
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_level_state_vintage

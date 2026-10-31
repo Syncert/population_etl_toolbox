@@ -749,6 +749,33 @@ the provider's own rows, `derived: false`, with the provider's row in
 `provider_rate`, and no recomputed value appears beside it. Its paging,
 scope and filters are the rate metric's.
 
+The FBI publishes its rate only for states and the nation. For a county, an
+`agency_rate` pairing (`violent_crime_county_agency_rate`,
+`property_crime_county_agency_rate`; ADR-0012) answers a rate the warehouse
+computes the FBI's way: the offenses reported by the agencies serving only
+that county, over those agencies' FBI-published populations, per 100,000,
+for one month. The pairing names the FBI rate it stands beside in
+`reads_beside`, and `geo_levels` is `["COUNTY"]`; asking it for a state or
+the nation is a `422`. Each row is `derived: true`, carries the offenses as
+`numerator`, and carries `coverage`:
+
+- `covered_population`: the reporting agencies' FBI population, the
+  denominator;
+- `linked_population`: every agency serving only this county with a
+  published population, reporting or not; `coverage_share` is one over the
+  other, and `coverage_floor` is 0.5;
+- `contributing_agencies`, `excluded_multi_county_agencies`,
+  `non_reporting_agencies` and `unknown_population_agencies`, as FBI ORIs.
+
+A month with no reporting agency, only agencies that also serve other
+counties, or coverage under the floor has no value and says why in
+`unavailable_reason` (`no_reporting_agency`, `only_multi_county_agencies`,
+`coverage_below_floor`), never a zero. Show the coverage beside the figure:
+the rate describes the people its reporting agencies cover, not every
+resident, and it is not comparable with a Census per-capita figure. Its rows
+are ordered by period, county and release, and `newest_per_geography` keeps
+each county's newest month whether it has a rate or a refusal.
+
 `total`, `limit` and `offset` page the numerator's (or the provider rate's)
 rows in that metric's own `/observations` order; the response's `ratio`
 repeats the pairing so a client can name the denominator beside every value
@@ -1525,7 +1552,7 @@ neither repeat a row nor skip one:
 | `/observations` | the source's own declared key for the scope you asked: its latest order for `scope=latest`, its as-released order for `scope=as_released`. Both end in a column no two rows of one metric share, which is why a reduction (`newest_per_geography`, `newest_release_per_period`) picks the same row every time |
 | `/observations/releases` | the release ordering the source declares, descending, then the release identity itself — the group key, so no two rows can tie |
 | `/observations/periods` | the served `period_start` descending, then `period_end` descending with null last — the pair is the group key, so paging is deterministic |
-| `/observations/derived` | the numerator's (or the provider rate's) own `/observations` order for the scope you asked; each row is matched to its denominator, never reordered |
+| `/observations/derived` | the numerator's (or the provider rate's) own `/observations` order for the scope you asked; each row is matched to its denominator, never reordered; an `agency_rate` pairing's rows by period, county and release |
 | `/observations/latest` | `geo_id` — the three union sources publish one latest row per geography |
 | `/observations/timeseries` | `observation_date`, then the release identity the union carries: `as_of_date`, `dataset_code`, `vintage_year` |
 | `/{source}/observations/latest` | `geo_id`, then the source's own remaining key — for Census PEP that is `observation_date`, `vintage_year`, `capture_id`, because its latest publication is a series |

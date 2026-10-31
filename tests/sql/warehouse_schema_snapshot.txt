@@ -5053,6 +5053,173 @@ v gold_fbi.calendar_window_observation
     body     refreshed_at::date AS as_of_date
     body    FROM gold_fbi.derived_calendar_rollup derived;
 
+v gold_fbi.county_agency_rate
+    column product_id text
+    column release_key text
+    column refresh_date date
+    column max_data_month text
+    column ucr_program text
+    column offense_code text
+    column offense_label text
+    column measure_id text
+    column measure_form text
+    column counted_entity_basis text
+    column geo_id text
+    column state_fips text
+    column county_fips text
+    column county_name text
+    column period text
+    column period_start date
+    column period_end date
+    column rate numeric
+    column unavailable_reason text
+    column offenses numeric
+    column covered_population numeric
+    column linked_population numeric
+    column coverage_share numeric
+    column coverage_floor numeric
+    column contributing_oris text[]
+    column excluded_multi_county_oris text[]
+    column non_reporting_oris text[]
+    column unknown_population_oris text[]
+    column derived boolean
+    column derivation_method text
+    column unit text
+    column methodology_note text
+    column counted_entity_note text
+    column methodology_url text
+    column documentation_url text
+    body WITH agency_month AS (
+    body          SELECT DISTINCT observation.product_id,
+    body             observation.release_key,
+    body             observation.measure_id,
+    body             link.geo_id,
+    body             observation.period,
+    body             observation.period_start,
+    body             observation.period_end,
+    body             observation.subject_code AS ori,
+    body             observation.value,
+    body             observation.value_status,
+    body             observation.population,
+    body             ( SELECT count(DISTINCT sibling.geo_id) > 1
+    body                    FROM silver_fbi.agency_geography_relationship sibling
+    body                   WHERE sibling.relationship_type = 'county'::text AND sibling.resolution_status = 'resolved'::text AND sibling.product_id = observation.product_id AND sibling.ori = observation.subject_code AND observation.period_start >= sibling.effective_start AND observation.period_end <= sibling.effective_end) AS is_multi_county
+    body            FROM gold_fbi.crime_observation observation
+    body              JOIN silver_fbi.agency_geography_relationship link ON link.product_id = observation.product_id AND link.ori = observation.subject_code AND link.relationship_type = 'county'::text AND link.resolution_status = 'resolved'::text AND observation.period_start >= link.effective_start AND observation.period_end <= link.effective_end
+    body           WHERE observation.subject_type = 'agency'::text AND observation.measure_form = 'absolute_total'::text AND observation.counted_entity_basis = 'offense'::text
+    body         ), classified AS (
+    body          SELECT agency_month.product_id,
+    body             agency_month.release_key,
+    body             agency_month.measure_id,
+    body             agency_month.geo_id,
+    body             agency_month.period,
+    body             agency_month.period_start,
+    body             agency_month.period_end,
+    body             agency_month.ori,
+    body             agency_month.value,
+    body             agency_month.value_status,
+    body             agency_month.population,
+    body             agency_month.is_multi_county,
+    body             NOT agency_month.is_multi_county AS is_single_county,
+    body             agency_month.value_status = 'reported'::text AS is_reported,
+    body             agency_month.population IS NOT NULL AS has_population
+    body            FROM agency_month
+    body         ), summed AS (
+    body          SELECT classified.product_id,
+    body             classified.release_key,
+    body             classified.measure_id,
+    body             classified.geo_id,
+    body             classified.period,
+    body             classified.period_start,
+    body             classified.period_end,
+    body             sum(classified.value) FILTER (WHERE classified.is_single_county AND classified.is_reported AND classified.has_population) AS offenses,
+    body             sum(classified.population) FILTER (WHERE classified.is_single_county AND classified.is_reported AND classified.has_population) AS covered_population,
+    body             sum(classified.population) FILTER (WHERE classified.is_single_county AND classified.has_population) AS linked_population,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_single_county AND classified.is_reported AND classified.has_population) AS contributing_oris,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_multi_county) AS excluded_multi_county_oris,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_single_county AND NOT classified.is_reported) AS non_reporting_oris,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_single_county AND classified.is_reported AND NOT classified.has_population) AS unknown_population_oris,
+    body             count(*) FILTER (WHERE classified.is_reported) AS reporting_rows,
+    body             count(*) FILTER (WHERE classified.is_single_county AND classified.is_reported) AS single_county_reporting_rows
+    body            FROM classified
+    body           GROUP BY classified.product_id, classified.release_key, classified.measure_id, classified.geo_id, classified.period, classified.period_start, classified.period_end
+    body         ), assessed AS (
+    body          SELECT summed.product_id,
+    body             summed.release_key,
+    body             summed.measure_id,
+    body             summed.geo_id,
+    body             summed.period,
+    body             summed.period_start,
+    body             summed.period_end,
+    body             summed.offenses,
+    body             summed.covered_population,
+    body             summed.linked_population,
+    body             summed.contributing_oris,
+    body             summed.excluded_multi_county_oris,
+    body             summed.non_reporting_oris,
+    body             summed.unknown_population_oris,
+    body             summed.reporting_rows,
+    body             summed.single_county_reporting_rows,
+    body                 CASE
+    body                     WHEN summed.linked_population > 0::numeric THEN summed.covered_population / summed.linked_population
+    body                     ELSE NULL::numeric
+    body                 END AS coverage_share,
+    body                 CASE
+    body                     WHEN summed.reporting_rows = 0 THEN 'no_reporting_agency'::text
+    body                     WHEN summed.single_county_reporting_rows = 0 THEN 'only_multi_county_agencies'::text
+    body                     WHEN summed.covered_population IS NULL OR summed.linked_population IS NULL OR summed.linked_population = 0::numeric OR summed.covered_population = 0::numeric OR summed.covered_population < (0.5 * summed.linked_population) THEN 'coverage_below_floor'::text
+    body                     ELSE NULL::text
+    body                 END AS unavailable_reason
+    body            FROM summed
+    body         )
+    body  SELECT assessed.product_id,
+    body     assessed.release_key,
+    body     release.refresh_date,
+    body     release.max_data_month,
+    body     release.ucr_program,
+    body     measure.offense_code,
+    body     measure.offense_label,
+    body     assessed.measure_id,
+    body     measure.measure_form,
+    body     measure.counted_entity_basis,
+    body     assessed.geo_id,
+    body     county.state_fips,
+    body     county.county_fips,
+    body     attribute.name AS county_name,
+    body     assessed.period,
+    body     assessed.period_start,
+    body     assessed.period_end,
+    body         CASE
+    body             WHEN assessed.unavailable_reason IS NULL THEN assessed.offenses * 100000::numeric / assessed.covered_population
+    body             ELSE NULL::numeric
+    body         END AS rate,
+    body     assessed.unavailable_reason,
+    body     assessed.offenses,
+    body     assessed.covered_population,
+    body     assessed.linked_population,
+    body     assessed.coverage_share,
+    body     0.5 AS coverage_floor,
+    body     COALESCE(assessed.contributing_oris, ARRAY[]::text[]) AS contributing_oris,
+    body     COALESCE(assessed.excluded_multi_county_oris, ARRAY[]::text[]) AS excluded_multi_county_oris,
+    body     COALESCE(assessed.non_reporting_oris, ARRAY[]::text[]) AS non_reporting_oris,
+    body     COALESCE(assessed.unknown_population_oris, ARRAY[]::text[]) AS unknown_population_oris,
+    body     true AS derived,
+    body     'agency_reported_offenses_per_covered_population'::text AS derivation_method,
+    body     'per 100,000 people covered by reporting agencies in this county'::text AS unit,
+    body     ((((('Offenses reported by the agencies serving only this county, divided '::text || 'by those agencies'' FBI-published populations, times 100,000 '::text) || '(ADR-0012). Agencies serving more than one county, and agencies '::text) || 'with no published population, are left out of both sides. No '::text) || 'rate is given when no agency reported, when only multi-county '::text) || 'agencies reported, or when the reporting agencies cover under '::text) || 'half the population the county''s agencies serve.'::text AS methodology_note,
+    body     release.counted_entity_note,
+    body     release.methodology_url,
+    body     release.documentation_url
+    body    FROM assessed
+    body      JOIN silver_fbi.dim_offense_measure measure ON measure.product_id = assessed.product_id AND measure.measure_id = assessed.measure_id
+    body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = assessed.product_id AND release.release_key = assessed.release_key
+    body      JOIN silver_ref.dim_geo_entity county ON county.geo_id = assessed.geo_id
+    body      LEFT JOIN LATERAL ( SELECT version.name
+    body            FROM silver_ref.dim_geo_entity_version version
+    body           WHERE version.geo_sk = county.geo_sk
+    body           ORDER BY version.geography_vintage DESC, version.ingested_at DESC
+    body          LIMIT 1) attribute ON true;
+
 v gold_fbi.county_rollup
     column product_id text
     column release_key text
@@ -5282,6 +5449,84 @@ r gold_fbi.derived_calendar_rollup
     constraint derived_calendar_rollup_method_version_check CHECK ((method_version >= 1))
     constraint fbi_rollup_value_or_reason CHECK ((((present_periods = expected_periods) AND (value IS NOT NULL) AND (refusal_reason IS NULL)) OR ((present_periods < expected_periods) AND (value IS NULL) AND (refusal_reason IS NOT NULL))))
     index uq_fbi_derived_calendar_rollup CREATE UNIQUE INDEX uq_fbi_derived_calendar_rollup ON gold_fbi.derived_calendar_rollup USING btree (metric_code, COALESCE(geo_id, ''::text), COALESCE(subject_code, ''::text), grain, window_start)
+
+v gold_fbi.latest_county_agency_rate
+    column product_id text
+    column release_key text
+    column refresh_date date
+    column max_data_month text
+    column ucr_program text
+    column offense_code text
+    column offense_label text
+    column measure_id text
+    column measure_form text
+    column counted_entity_basis text
+    column geo_id text
+    column state_fips text
+    column county_fips text
+    column county_name text
+    column period text
+    column period_start date
+    column period_end date
+    column rate numeric
+    column unavailable_reason text
+    column offenses numeric
+    column covered_population numeric
+    column linked_population numeric
+    column coverage_share numeric
+    column coverage_floor numeric
+    column contributing_oris text[]
+    column excluded_multi_county_oris text[]
+    column non_reporting_oris text[]
+    column unknown_population_oris text[]
+    column derived boolean
+    column derivation_method text
+    column unit text
+    column methodology_note text
+    column counted_entity_note text
+    column methodology_url text
+    column documentation_url text
+    body SELECT rate.product_id,
+    body     rate.release_key,
+    body     rate.refresh_date,
+    body     rate.max_data_month,
+    body     rate.ucr_program,
+    body     rate.offense_code,
+    body     rate.offense_label,
+    body     rate.measure_id,
+    body     rate.measure_form,
+    body     rate.counted_entity_basis,
+    body     rate.geo_id,
+    body     rate.state_fips,
+    body     rate.county_fips,
+    body     rate.county_name,
+    body     rate.period,
+    body     rate.period_start,
+    body     rate.period_end,
+    body     rate.rate,
+    body     rate.unavailable_reason,
+    body     rate.offenses,
+    body     rate.covered_population,
+    body     rate.linked_population,
+    body     rate.coverage_share,
+    body     rate.coverage_floor,
+    body     rate.contributing_oris,
+    body     rate.excluded_multi_county_oris,
+    body     rate.non_reporting_oris,
+    body     rate.unknown_population_oris,
+    body     rate.derived,
+    body     rate.derivation_method,
+    body     rate.unit,
+    body     rate.methodology_note,
+    body     rate.counted_entity_note,
+    body     rate.methodology_url,
+    body     rate.documentation_url
+    body    FROM gold_fbi.county_agency_rate rate
+    body      JOIN ( SELECT dim_ucr_dataset_release.product_id,
+    body             max(dim_ucr_dataset_release.refresh_date) AS refresh_date
+    body            FROM silver_fbi.dim_ucr_dataset_release
+    body           WHERE dim_ucr_dataset_release.status = 'published'::text
+    body           GROUP BY dim_ucr_dataset_release.product_id) latest ON latest.product_id = rate.product_id AND latest.refresh_date = rate.refresh_date;
 
 v gold_fbi.latest_county_rollup
     column product_id text

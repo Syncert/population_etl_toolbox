@@ -373,7 +373,7 @@ def test_acs_grain_filter_is_plain_equality() -> None:
 
 
 def test_an_acs_release_pin_matches_the_vintage_column() -> None:
-    """Covers: API-181 — an earlier ACS release is pinned on `vintage_year`.
+    """Covers: API-182 — an earlier ACS release is pinned on `vintage_year`.
 
     `vintage_year::TEXT = :release` is a cast no index can serve, so an
     earlier release of one state's cities read every row of the metric. A

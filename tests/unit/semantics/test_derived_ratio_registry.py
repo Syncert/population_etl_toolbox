@@ -177,7 +177,11 @@ def test_every_numerator_is_a_metric_the_place_pages_define() -> None:
     """Covers: ETL-104 — a pairing divides a measure readers already see, by its code."""
     defined = set(definitions())
     for pairing in load_registry().values():
-        if pairing.derived:
+        if pairing.kind == "agency_rate":
+            # A county agency rate (ADR-0012) stands on the safety card in
+            # place of the FBI rate the county does not have.
+            assert pairing.reads_beside in defined, pairing.ratio_id
+        elif pairing.derived:
             assert pairing.numerator in defined, pairing.ratio_id
         else:
             # The count or the provider's rate is on a page already.

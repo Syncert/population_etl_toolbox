@@ -294,7 +294,7 @@ def test_the_denominator_is_read_for_exactly_the_pages_geographies(
     assert "gold_census.rpt_acs_observations" in sql
     assert "geo_id = ANY(:geo_ids)" in sql
     assert params["geo_ids"] == ["0500000US48453"]
-    # An ACS release is pinned on the vintage column (API-181).
+    # An ACS release is pinned on the vintage column (API-182).
     assert params["release_number"] == 2023
     assert "vintage_year = :release_number" in sql
     assert params["metric_code_value"] == POVERTY_UNIVERSE
