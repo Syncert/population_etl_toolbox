@@ -150,7 +150,7 @@ the place page (nation, state, county, city, metro, tract), unless noted.
    | Nation | None |
 
    A city that spans counties compares against the county holding most of
-   its population, named in the toggle ("Dane County, 99 % of Madison"), from
+   its area (the reference's recorded overlap), named in the toggle, from
    the existing relationships. The same toggle drives the summary cards'
    comparison values and the "where this place differs" bars, so one choice
    changes the whole section. The compare page can still overlay any other
@@ -321,7 +321,7 @@ the place page (nation, state, county, city, metro, tract), unless noted.
    first); on a county page State, Nation and None; switching it redraws the
    outline, the cards' comparison values and the difference bars without a
    new request (browser tier counts requests). A city spanning counties
-   names the county holding most of its population and that share.
+   names the county holding the largest share of its area and that share.
 3. The child, old-age and total dependency ratios for a county equal the
    Bureau's S0101 published ratios for the same release within rounding
    (unit fixture copied from data.census.gov for two counties).
@@ -382,6 +382,12 @@ the place page (nation, state, county, city, metro, tract), unless noted.
 
 ## Checkpoint
 
-Next pickup: split into the API item (semantics record, routes, the
-summary relation) and the web item (pyramid with the level toggle, cards,
-difference bars, history, cohorts, rates), and claim the API item first.
+Split on 2026-10-31 into
+[`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](API_AGE_AND_SEX_STRUCTURE_PLAN.md)
+(part 1: the semantics record and the three routes, with the contract fixed)
+and [`WEB_AGE_AND_SEX_STRUCTURE_PLAN.md`](WEB_AGE_AND_SEX_STRUCTURE_PLAN.md).
+Still held here for later items: API part 2 (the summary relation with its
+index DDL, map metrics, by-age rates), PEP age-and-sex characteristics, and
+the 2000 P012 crosswalk.
+
+Next pickup: API part 1.

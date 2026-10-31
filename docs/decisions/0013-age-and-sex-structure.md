@@ -71,8 +71,9 @@ arithmetic the provider did not do:
    next level up by default: a city or tract against its county, its state
    or the nation; a county against its state or the nation; a state against
    the nation; a metro against the nation, or its state when it lies in one.
-   A city spanning counties is compared with the county holding most of its
-   population, and that share is stated.
+   A city spanning counties is compared with the county holding the largest
+   share of its area, as the geography reference records it, and that share
+   is stated.
 5. **Summary indicators, defined once.** Served with these definitions:
    - *Median age*: the provider's own (B01002, census P013), never
      re-estimated from bands (ADR-0009 rule 5).
