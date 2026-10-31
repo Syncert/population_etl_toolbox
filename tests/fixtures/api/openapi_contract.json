@@ -380,6 +380,89 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/geographies/locate": {
+      "parameters": [
+        {
+          "constraints": {
+            "maximum": 90,
+            "minimum": -90
+          },
+          "in": "query",
+          "name": "lat",
+          "required": true,
+          "type": "number"
+        },
+        {
+          "constraints": {
+            "maximum": 180,
+            "minimum": -180
+          },
+          "in": "query",
+          "name": "lon",
+          "required": true,
+          "type": "number"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographyLocateResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/geographies/search": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "grain",
+          "required": false,
+          "type": "array<string> | null"
+        },
+        {
+          "constraints": {
+            "default": 10,
+            "maximum": 25,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "q",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographySearchResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/geographies/{geo_id}/related": {
       "parameters": [
         {
@@ -3284,6 +3367,21 @@
         "total"
       ]
     },
+    "GeographyLocateResponse": {
+      "properties": {
+        "county": "LocatedGeography | null",
+        "landing": "LocatedGeography",
+        "metro": "LocatedGeography | null",
+        "place": "LocatedGeography | null",
+        "state": "LocatedGeography",
+        "tract": "LocatedGeography | null",
+        "zcta": "LocatedGeography | null"
+      },
+      "required": [
+        "landing",
+        "state"
+      ]
+    },
     "GeographyRelatedResponse": {
       "properties": {
         "geo_id": "string",
@@ -3316,6 +3414,53 @@
         "relationship"
       ]
     },
+    "GeographySearchItem": {
+      "properties": {
+        "county_geo_id": "string | null",
+        "county_name": "string | null",
+        "geo_id": "string",
+        "geo_level": "string",
+        "geo_name": "string",
+        "match": "string",
+        "matched_via": "GeographySearchVia | null",
+        "page_path": "string | null",
+        "population": "number | null",
+        "population_metric_code": "string | null",
+        "population_year": "integer | null",
+        "short_name": "string",
+        "state_fips": "string | null",
+        "state_name": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "geo_level",
+        "geo_name",
+        "match",
+        "short_name"
+      ]
+    },
+    "GeographySearchResponse": {
+      "properties": {
+        "items": "array<GeographySearchItem>",
+        "limit": "integer",
+        "query": "string"
+      },
+      "required": [
+        "items",
+        "limit",
+        "query"
+      ]
+    },
+    "GeographySearchVia": {
+      "properties": {
+        "geo_id": "string",
+        "geo_name": "string"
+      },
+      "required": [
+        "geo_id",
+        "geo_name"
+      ]
+    },
     "HTTPValidationError": {
       "properties": {
         "detail": "array<ValidationError>"
@@ -3330,6 +3475,19 @@
       "required": [
         "service",
         "status"
+      ]
+    },
+    "LocatedGeography": {
+      "properties": {
+        "boundary_vintage": "integer | null",
+        "geo_id": "string",
+        "geo_level": "string",
+        "geo_name": "string | null",
+        "page_path": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "geo_level"
       ]
     },
     "MatrixCell": {

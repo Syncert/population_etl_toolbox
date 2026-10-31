@@ -15,10 +15,20 @@ from apps.api.services.catalog_service import (
     list_source_freshness,
     list_sources,
 )
+from apps.api.services.place_search import (
+    DEFAULT_LIMIT,
+    MAX_LIMIT,
+    MAX_QUERY_CHARACTERS,
+    PlaceSearchRefusal,
+    locate_place,
+    search_places,
+)
 from apps.api.schemas import (
     CapabilityListResponse,
     FreshnessListResponse,
     GeographyListResponse,
+    GeographyLocateResponse,
+    GeographySearchResponse,
     GeographyRelatedResponse,
     MetricCapability,
     MetricListResponse,
@@ -82,6 +92,61 @@ def get_geographies(
         )
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc
+
+
+@router.get("/geographies/search", response_model=GeographySearchResponse)
+def search_geographies(
+    q: str = Query(..., min_length=1, max_length=MAX_QUERY_CHARACTERS),
+    grain: Optional[list[str]] = Query(None, max_length=10),
+    state_fips: Optional[str] = Query(None, max_length=2),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    db: Session = Depends(get_db_session_dep),
+) -> GeographySearchResponse:
+    """Places a typed name may mean, best match first, ranked by population.
+
+    Matches a state, county, metro, city or town, or ZCTA by its name without
+    the Census description, by name prefix, by a later word's prefix, or by a
+    close spelling. The county and metro of each of the three best city
+    matches follow it, so "Austin" offers Austin city, Travis County and the
+    Austin metro. ``grain`` narrows the grains (repeat it, or separate words
+    with commas).
+    """
+    grains = [word for value in grain or [] for word in value.split(",")]
+    try:
+        return search_places(db, q, grains=grains, state_fips=state_fips, limit=limit)
+    except PlaceSearchRefusal as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/geographies/locate",
+    response_model=GeographyLocateResponse,
+    responses=NOT_FOUND,
+)
+def locate_geographies(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    db: Session = Depends(get_db_session_dep),
+) -> GeographyLocateResponse:
+    """The city or town, county, tract, ZCTA, state and metro a point lies in.
+
+    ``landing`` is the city or town, or the county when the point is in none,
+    so "use my location" opens the page a resident calls home. The response
+    does not echo the coordinates. A point no state boundary covers (outside
+    the United States, or offshore) is ``404 {"detail": "no geography contains
+    this point"}``.
+    """
+    try:
+        located = locate_place(db, lat, lon)
+    except PlaceSearchRefusal as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    if located is None:
+        raise HTTPException(status_code=404, detail="no geography contains this point")
+    return located
 
 
 @router.get("/capabilities", response_model=CapabilityListResponse)

@@ -330,3 +330,246 @@ WHERE relationship.relationship_type IN ('contains', 'intersects', 'adjacent')
         WHERE newest.parent_geo_sk = relationship.parent_geo_sk
           AND newest.relationship_type = relationship.relationship_type
       );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Finding a place by name or by location (api-place-search)
+-- ─────────────────────────────────────────────────────────────────────────────
+--
+-- Two contracts the catalog serves "find your place" from. Before them the web
+-- read every geography page by page and matched names in the browser, and its
+-- "use my location" picked the county whose centre point was nearest, which is
+-- wrong near a county line and never lands on a city.
+--
+-- `pg_trgm` gives the fuzzy match its index; `unaccent` folds "Española" and
+-- "Espanola" to the same words. Both are PostgreSQL contrib modules the pinned
+-- PostGIS image ships.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- The words a name is matched by: lower case, accents removed, `&` spelled
+-- "and", every run of anything else one space, and one leading space so a
+-- word prefix is `LIKE '% word%'` whether or not it starts the name. The API
+-- normalises a query to the same shape (`apps/api/services/place_search.py`).
+CREATE OR REPLACE FUNCTION gold_glossary.search_words(name TEXT)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT ' ' || btrim(regexp_replace(
+        lower(unaccent(replace(COALESCE(name, ''), '&', ' and '))),
+        '[^a-z0-9]+', ' ', 'g'
+    ))
+$$;
+
+-- One row per current state, county, metro, place and ZCTA. Tracts are not
+-- searched by name: their names are numbers, and a reader reaches one from its
+-- county or from a location.
+--
+-- `short_name` drops the Census description a reader does not type ("Austin"
+-- for "Austin city", "Travis" for "Travis County", the title before the comma
+-- for a metro, the five digits for a ZCTA). The match is case-sensitive on
+-- purpose: Census writes the description of a place or an independent city in
+-- lower case ("Baltimore city"), and "Carson City" is a name, not "Carson"
+-- with a description.
+--
+-- `geo_name` is the published name (`gold_glossary.geo_name`), and it is also
+-- the text the web's address rule slugs: `stateName`, `countyName` and
+-- `cityName` in `apps/web/lib/placeChapters.ts` read the state, county or
+-- place name, which is what `geo_name` resolves to at those grains. So the
+-- API's `page_path` and the address the web resolves come from one name.
+--
+-- `county_geo_id` is a place's containing county: the county holding the
+-- largest share of it by the published overlap weight. A place crosses county
+-- lines; this names one county, and `/related` lists every one.
+--
+-- A metro's `state_fips` is its principal state: the state of its most
+-- populous member county. A metro can span states and has no state code.
+--
+-- `population` is the newest valid ACS 5-year total population
+-- (`CENSUS_ACS:acs5:B01003_001`), carried with its year and metric code. It
+-- ranks matches and is served labelled; it is not a second published series.
+CREATE TABLE IF NOT EXISTS gold_glossary.geo_search (
+    geo_id                 TEXT PRIMARY KEY,
+    geo_level              TEXT NOT NULL,
+    geo_name               TEXT NOT NULL,
+    short_name             TEXT NOT NULL,
+    name_words             TEXT NOT NULL,
+    short_words            TEXT NOT NULL,
+    state_fips             TEXT,
+    county_fips            TEXT,
+    place_fips             TEXT,
+    state_name             TEXT,
+    county_geo_id          TEXT,
+    county_name            TEXT,
+    population             NUMERIC,
+    population_year        INTEGER,
+    population_metric_code TEXT,
+    boundary_vintage       INTEGER,
+    refreshed_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_geo_search_grain
+        CHECK (geo_level IN ('STATE', 'COUNTY', 'METRO', 'PLACE', 'ZCTA'))
+);
+
+CREATE INDEX IF NOT EXISTS ix_gold_glossary_geo_search_name_trgm
+    ON gold_glossary.geo_search USING GIN (name_words gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS ix_gold_glossary_geo_search_short_trgm
+    ON gold_glossary.geo_search USING GIN (short_words gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS ix_gold_glossary_geo_search_state
+    ON gold_glossary.geo_search (state_fips, geo_level);
+
+-- Rebuilt whole from the geography projection, the relationship view and the
+-- served ACS population. A delete and an insert in one transaction rather than
+-- a truncate: a truncate takes ACCESS EXCLUSIVE and every search would wait
+-- behind the rebuild, where this way readers keep the previous rows until it
+-- commits. Called by the `glossary_reconciliation` DAG directly after
+-- `refresh_dim_geo_latest`.
+DROP PROCEDURE IF EXISTS gold_glossary.refresh_geo_search();
+CREATE OR REPLACE PROCEDURE gold_glossary.refresh_geo_search()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('gold_glossary.refresh_geo_search'));
+
+    DROP TABLE IF EXISTS pg_temp.geo_search_population;
+    CREATE TEMP TABLE geo_search_population (
+        geo_id      TEXT PRIMARY KEY,
+        population  NUMERIC,
+        year        INTEGER,
+        metric_code TEXT
+    ) ON COMMIT DROP;
+
+    -- ACS is installed by its own source DDL. A warehouse without it still
+    -- gets a searchable projection, ranked by name alone, rather than a
+    -- failed refresh.
+    IF to_regclass('gold_census.mv_acs_latest') IS NOT NULL THEN
+        INSERT INTO pg_temp.geo_search_population (geo_id, population, year, metric_code)
+        SELECT DISTINCT ON (served.geo_id)
+               served.geo_id, served.value, served.vintage_year, served.metric_code
+        FROM gold_census.mv_acs_latest AS served
+        WHERE served.metric_code = 'CENSUS_ACS:acs5:B01003_001'
+          AND served.value_status = 'valid'
+          AND served.value IS NOT NULL
+        ORDER BY served.geo_id, served.vintage_year DESC;
+    END IF;
+
+    DELETE FROM gold_glossary.geo_search;
+
+    INSERT INTO gold_glossary.geo_search (
+        geo_id, geo_level, geo_name, short_name, name_words,
+        short_words, state_fips, county_fips, place_fips, state_name,
+        county_geo_id, county_name, population, population_year,
+        population_metric_code, boundary_vintage, refreshed_at
+    )
+    WITH current_geo AS (
+        SELECT geo_id, geo_level, geo_name, state_fips, county_fips,
+               place_fips, state_name, county_name, place_name,
+               boundary_vintage
+        FROM gold_glossary.dim_geography
+        WHERE geography_state = 'current'
+          AND geo_level IN (
+                gold_glossary.geo_grain('state'),
+                gold_glossary.geo_grain('county'),
+                gold_glossary.geo_grain('metro'),
+                gold_glossary.geo_grain('place'),
+                gold_glossary.geo_grain('zcta')
+              )
+    ),
+    place_county AS (
+        SELECT DISTINCT ON (link.related_geo_id)
+               link.related_geo_id AS place_geo_id,
+               link.geo_id AS county_geo_id
+        FROM gold_glossary.geo_relationship AS link
+        JOIN current_geo AS county
+             ON county.geo_id = link.geo_id
+            AND county.geo_level = gold_glossary.geo_grain('county')
+        WHERE link.relationship_type = 'intersects'
+        ORDER BY link.related_geo_id, link.overlap_weight DESC NULLS LAST, link.geo_id
+    ),
+    metro_state AS (
+        SELECT DISTINCT ON (link.geo_id)
+               link.geo_id AS metro_geo_id,
+               county.state_fips
+        FROM gold_glossary.geo_relationship AS link
+        JOIN current_geo AS metro
+             ON metro.geo_id = link.geo_id
+            AND metro.geo_level = gold_glossary.geo_grain('metro')
+        JOIN current_geo AS county
+             ON county.geo_id = link.related_geo_id
+            AND county.geo_level = gold_glossary.geo_grain('county')
+        LEFT JOIN pg_temp.geo_search_population AS pop
+             ON pop.geo_id = county.geo_id
+        WHERE link.relationship_type = 'contains'
+        ORDER BY link.geo_id, pop.population DESC NULLS LAST, county.geo_id
+    ),
+    named AS (
+        SELECT geo.*,
+               COALESCE(NULLIF(btrim(CASE geo.geo_level
+                   WHEN gold_glossary.geo_grain('place') THEN regexp_replace(
+                       geo.geo_name,
+                       '\s+(city|town|township|village|borough|municipality|CDP|comunidad|zona urbana)$',
+                       '')
+                   WHEN gold_glossary.geo_grain('county') THEN regexp_replace(
+                       geo.geo_name,
+                       '\s+(County|Parish|Borough|Census Area|Municipality|City and Borough|Planning Region|city)$',
+                       '')
+                   WHEN gold_glossary.geo_grain('metro') THEN regexp_replace(
+                       split_part(geo.geo_name, ',', 1), '\s+(Metro|Micro) Area$', '')
+                   WHEN gold_glossary.geo_grain('zcta') THEN regexp_replace(geo.geo_name, '^ZCTA5?\s+', '')
+                   ELSE geo.geo_name
+               END), ''), geo.geo_name) AS short_name
+        FROM current_geo AS geo
+    )
+    SELECT named.geo_id,
+           named.geo_level,
+           named.geo_name,
+           named.short_name,
+           gold_glossary.search_words(named.geo_name),
+           gold_glossary.search_words(named.short_name),
+           COALESCE(named.state_fips, metro_state.state_fips),
+           named.county_fips,
+           named.place_fips,
+           state.geo_name,
+           place_county.county_geo_id,
+           county.geo_name,
+           pop.population,
+           pop.year,
+           pop.metric_code,
+           named.boundary_vintage,
+           NOW()
+    FROM named
+    LEFT JOIN place_county
+         ON place_county.place_geo_id = named.geo_id
+        AND named.geo_level = gold_glossary.geo_grain('place')
+    LEFT JOIN current_geo AS county
+         ON county.geo_id = place_county.county_geo_id
+    LEFT JOIN metro_state
+         ON metro_state.metro_geo_id = named.geo_id
+    LEFT JOIN current_geo AS state
+         ON state.geo_level = gold_glossary.geo_grain('state')
+        AND state.state_fips = COALESCE(named.state_fips, metro_state.state_fips)
+    LEFT JOIN pg_temp.geo_search_population AS pop
+         ON pop.geo_id = named.geo_id;
+END;
+$$;
+
+-- The current boundary of every geography that has one, for locating a point.
+-- The geography view carries no geometry (a page of the catalog would be
+-- megabytes), so "which place contains this point" reads here. Retired
+-- boundaries are excluded: a reader standing somewhere today is in today's
+-- geographies. The GiST index on `dim_geo_latest.geo_geom` answers it.
+CREATE OR REPLACE VIEW gold_glossary.geo_boundary AS
+SELECT latest.geo_id,
+       latest.geo_level,
+       gold_glossary.geo_name(
+           COALESCE(latest.area_name, latest.place_name),
+           latest.county_name, latest.state_name, latest.geo_id
+       ) AS geo_name,
+       latest.state_fips,
+       latest.county_fips,
+       latest.place_fips,
+       latest.boundary_vintage,
+       latest.geo_geom
+FROM gold_glossary.dim_geo_latest AS latest
+WHERE latest.geography_state = 'current'
+  AND latest.geo_geom IS NOT NULL;

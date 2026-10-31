@@ -112,6 +112,87 @@ class GeographyListResponse(BaseModel):
     items: list[GeographyLatest]
 
 
+class GeographySearchVia(BaseModel):
+    """The matched city a ``contains_match`` result was offered for."""
+
+    geo_id: str
+    geo_name: str
+
+
+class GeographySearchItem(BaseModel):
+    """One geography offered for a name typed into "find your place".
+
+    ``match`` says why it was offered: ``exact`` (its name without the Census
+    description is the query), ``prefix`` (its name starts with the query),
+    ``word_prefix`` (a later word of its name does), ``fuzzy`` (a close
+    spelling, by trigram similarity) or ``contains_match`` (it contains a
+    city that matched, named in ``matched_via``: Travis County for "Austin").
+
+    ``population`` ranks the matches. It is the newest valid ACS 5-year total
+    population, named by ``population_metric_code`` and ``population_year``,
+    and NULL where none is served (a ZCTA before its ACS grain lands): an
+    unranked geography is listed after the ranked ones, never as zero.
+
+    ``page_path`` is the web address of the geography's page, made by the
+    web's own address rule, or NULL for a grain with no page yet (metro,
+    ZCTA).
+    """
+
+    geo_id: str
+    geo_level: str
+    geo_name: str
+    short_name: str
+    match: str
+    matched_via: Optional[GeographySearchVia] = None
+    state_fips: Optional[str] = None
+    state_name: Optional[str] = None
+    #: A city's containing county: the one holding the largest share of it.
+    #: A city crossing a county line has others; ``/related`` lists them.
+    county_geo_id: Optional[str] = None
+    county_name: Optional[str] = None
+    population: Optional[float] = None
+    population_year: Optional[int] = None
+    population_metric_code: Optional[str] = None
+    page_path: Optional[str] = None
+
+
+class GeographySearchResponse(BaseModel):
+    #: The query as matched: lower case, accents removed, punctuation spaced.
+    query: str
+    limit: int
+    items: list[GeographySearchItem]
+
+
+class LocatedGeography(BaseModel):
+    """A geography whose current boundary covers the requested point."""
+
+    geo_id: str
+    geo_level: str
+    geo_name: Optional[str] = None
+    #: The boundary vintage the point was tested against; for a metro, the
+    #: delineation vintage of its county membership.
+    boundary_vintage: Optional[int] = None
+    page_path: Optional[str] = None
+
+
+class GeographyLocateResponse(BaseModel):
+    """The geographies containing one point, smallest page first in ``landing``.
+
+    The coordinates are not echoed. ``landing`` is the city or town the point
+    is in, or its county when it is in none (unincorporated land), so "use
+    my location" opens the page a resident calls home. ``metro`` comes from
+    the county's delineated membership, not from a boundary.
+    """
+
+    landing: LocatedGeography
+    state: LocatedGeography
+    county: Optional[LocatedGeography] = None
+    place: Optional[LocatedGeography] = None
+    tract: Optional[LocatedGeography] = None
+    zcta: Optional[LocatedGeography] = None
+    metro: Optional[LocatedGeography] = None
+
+
 class ObservationRouteCapability(BaseModel):
     """One route that can answer observation queries for a source.
 

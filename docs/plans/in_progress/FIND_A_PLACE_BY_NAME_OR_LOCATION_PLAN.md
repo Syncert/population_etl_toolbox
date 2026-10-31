@@ -9,7 +9,7 @@ verify:
   - python -m pytest tests/unit/api -q
   - python -m pytest tests/unit/shared -q
   - python -m pytest tests/dags -m dag -q
-  - python -m pytest tests/integration/database -m "integration and database" -k "geo_search or locate" -q
+  - python -m pytest tests/integration/api/test_place_search_contract.py -q
   - npm --prefix apps/web run test:unit
   - ruff check .
 ---
@@ -102,21 +102,25 @@ lands on the city page").
 
 ## Acceptance criteria
 
-- [ ] "Austin" answers Austin city first, then Travis County and the Austin
-      metro, then other matches by population (unit, against a fake session;
-      integration, against the real projection).
-- [ ] Exact, prefix, word-prefix and fuzzy tiers order as stated; a typo
-      ("Austn") still finds Austin by trigram.
-- [ ] A grain outside the vocabulary, a malformed `state_fips`, a one-letter
+- [x] "Austin" answers Austin city first, then Travis County and the Austin
+      metro, then other matches by population (unit, against a fake session).
+      The same against the real projection is written
+      (`tests/integration/api/test_place_search_contract.py`) and waits on
+      OFFICE_LAB (below).
+- [x] Exact, prefix, word-prefix and fuzzy tiers order as stated; a typo
+      ("Austn") still finds Austin by trigram (unit: labelling; the trigram
+      itself is the database tier's).
+- [x] A grain outside the vocabulary, a malformed `state_fips`, a one-letter
       query and an out-of-range limit are 422s naming the rule.
-- [ ] Locate answers city, county, tract, ZCTA, state and metro for a point
+- [x] Locate answers city, county, tract, ZCTA, state and metro for a point
       in a city; county as `landing` for a point outside every city; 404 for
-      a point no state covers; 422 for out-of-range or missing coordinates.
-- [ ] `page_path` agrees with the web's rules on the shared fixture,
-      including the slug-clash fallbacks.
-- [ ] Both routes are cache targets, spend the catalog budget, and appear in
+      a point no state covers; 422 for out-of-range or missing coordinates
+      (unit; the point-in-polygon read is the database tier's).
+- [x] `page_path` agrees with the web's rules on the shared fixture,
+      including the slug-clash fallbacks (pytest and Vitest).
+- [x] Both routes are cache targets, spend the catalog budget, and appear in
       the OpenAPI snapshot.
-- [ ] The projection refresh runs in the reconciliation DAG after the
+- [x] The projection refresh runs in the reconciliation DAG after the
       geography refresh (DAG tier).
 - [ ] The projection builds from the real warehouse on OFFICE_LAB and
       "Austin" answers as stated against real data; locate at Austin City
@@ -129,7 +133,7 @@ The database integration tier and the real warehouse are not reachable from
 the cloud session that built this. These steps are handed to the OFFICE_LAB
 session and recorded here when they run:
 
-1. `python -m pytest tests/integration/database -m "integration and database" -k "geo_search or locate" -q`
+1. `python -m pytest tests/integration/api/test_place_search_contract.py -q`
 2. Regenerate `tests/sql/warehouse_schema_snapshot.txt`
    (`python -m tests.support.schema_snapshot --write`) and commit it.
 3. Apply `sql/gold_contract/002_gold_glossary_schema.sql` to the internal
@@ -141,8 +145,45 @@ session and recorded here when they run:
 
 ## Checkpoint
 
-- Next pickup: implement deliverables 1–6.
+- Deliverables 1–6 are implemented on `feat/api-place-search`.
+- Next pickup: the three OFFICE_LAB steps above. When they pass, record them
+  here, tick the last criterion and move this plan to `needs_review/`.
+
+## Decisions
+
+- **One search projection, rebuilt whole.** About 70,000 rows (52 states,
+  ~3,200 counties, ~930 metros, ~32,000 places, ~33,000 ZCTAs), so a daily
+  rebuild in one transaction is cheaper and simpler than incremental upkeep,
+  and readers keep the previous rows until it commits.
+- **Population for ranking is ACS 5-year `B01003_001`**, the one total
+  published at every searched grain (state to place, and metro since W-7);
+  served labelled with its year and metric code.
+- **The containing county and metro of the three best city matches follow
+  the city.** "Travis County" does not contain the word "Austin", and the
+  readiness example asks for it; three keeps "Springfield" useful.
+- **Grain literals go through `gold_glossary.geo_grain`** and the page name
+  is the published `geo_name`, as the repository's vocabulary guards require
+  (DB-037, DB-038); the address rule's only copy outside the web is held to
+  it by the shared fixture.
+- **Locate reads a new view, `gold_glossary.geo_boundary`,** because the
+  geography view deliberately carries no geometry; a metro follows from its
+  county (OMB delineates metros from whole counties).
+- **Privacy.** The locate response never echoes coordinates; the shared
+  cache key is a SHA-256 of the query and query strings are never logged.
 
 ## Evidence
 
-(recorded as work lands)
+Cloud session, 2026-10-31, Python 3.11, branch `feat/api-place-search`:
+
+| Command | Result |
+| --- | --- |
+| `python -m pytest tests/unit -m unit -q` | 2,733 passed |
+| `python -m pytest tests/unit/api -q` | 873 passed (includes `test_place_search.py`, `test_place_paths.py`, the allowlist, guide and OpenAPI snapshot tests) |
+| `python -m pytest tests/dags -m dag -q` (Airflow 2.9.3) | 295 passed, 5 skipped, 4 failed; the 4 are the ACS backfill tests in `test_task_callables.py`, which fail identically on `dev` at `a953555` in this container (the backfill disk guard refuses on its small disk) and are unrelated to this plan. `test_glossary_reconciliation_dag.py` passes |
+| `npm --prefix apps/web run test:unit` | 64 files, 876 tests passed (includes `place-segments-parity.test.js`) |
+| `ruff check .` and `ruff format --check .` | clean |
+| `python -m tests.support.regenerate_openapi_contract` | 59 operations, 96 schemas |
+| `python -m tests.support.plan_environments --write` | regenerated |
+
+Not run here (no database or warehouse in a cloud session): the three
+OFFICE_LAB steps above.

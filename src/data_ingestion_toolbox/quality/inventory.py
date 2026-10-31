@@ -691,6 +691,29 @@ _GLOSSARY_OBJECTS: tuple[WarehouseObject, ...] = (
         cadence="per geography vintage",
         empty_behavior="empty only before the first reference load",
     ),
+    _obj(
+        "gold_glossary.geo_search",
+        "glossary",
+        "SHARED",
+        grain="geo_id (current state, county, metro, place and ZCTA)",
+        lineage="gold_glossary.dim_geography, gold_glossary.geo_relationship, "
+        "gold_census.mv_acs_latest",
+        scope_method="whole rebuild by gold_glossary.refresh_geo_search() in one "
+        "transaction, after the geography projection refresh",
+        cadence="daily, with glossary_reconciliation",
+        empty_behavior="empty only before the first reconciliation run after the "
+        "first reference load",
+    ),
+    _obj(
+        "gold_glossary.geo_boundary",
+        "glossary",
+        "SHARED",
+        grain="geo_id (current geographies with a boundary)",
+        lineage="gold_glossary.dim_geo_latest",
+        scope_method="view over the geography projection, current boundaries only",
+        cadence="per geography vintage",
+        empty_behavior="empty only before the first boundary load",
+    ),
 )
 
 _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
