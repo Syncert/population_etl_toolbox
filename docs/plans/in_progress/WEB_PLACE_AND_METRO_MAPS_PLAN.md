@@ -19,8 +19,12 @@ verify:
 
 ## Status
 
-In progress since 2026-10-31. Written on `claude/project-thread-1kgyhx` (the build-out
-names `feat/web-place-maps`), branched from `dev` at `24a12c8` (A-6, #191).
+In progress since 2026-10-31 on `claude/project-thread-1kgyhx` (the build-out
+names `feat/web-place-maps`; cloud sessions push only to their session
+branch), branched from `dev` at `24a12c8` (A-6, #191). First PR #198 merged
+2026-10-31 (`1dde1d0`). The OFFICE_LAB live check that day found three things
+(see "Live check 1"); the follow-up PR, branched from `dev` at `610667e`,
+answers them. Last updated 2026-10-31.
 
 ## Why
 
@@ -49,8 +53,9 @@ gap 6 of the October web-readiness review.
 4. **The boundary vintage is named.** A versioned layer draws the newest
    boundary vintage it holds that is not later than the period shown, and
    the page says which ("Drawn on the 2024 city and town boundaries"). When
-   it holds none that old, no map is drawn and the page says so; a value is
-   never drawn on another period's shapes. Unversioned layers say they draw
+   it holds none that old, it draws the earliest later vintage within three
+   years and says the period's own boundaries are not yet held; further than
+   that, no map is drawn and the page says so. Unversioned layers say they draw
    current boundaries. Rows whose geography is not on the boundaries listed
    are counted and stated, never dropped silently.
 5. **Bands and the uncoloured rule at every grain.** Equal-count (quantile)
@@ -101,8 +106,22 @@ gap 6 of the October web-readiness review.
 - **Which vintage.** Observations do not carry a boundary vintage, so the
   page draws the newest held vintage not later than the period's end year
   and names it. ACS 2020–2024 place values are on 2024 place boundaries and
-  ACS 2024 metro values on the 2023 delineation, which this choice gives. A
-  period older than every held vintage gets no map (A-6's no-fallback rule).
+  ACS 2024 metro values on the 2023 delineation, which this choice gives.
+- **A later vintage, within three years (2026-10-31, coordinator's direction
+  after live check 1; flagged to Nick).** OFFICE_LAB holds only the 2025
+  place boundaries, and the newest ACS period ends in 2024, so the first rule
+  (never a later vintage) withheld every city map until historical place
+  boundaries load, which is a Wave W follow-up weeks away. Nick's goal is that
+  a resident sees their town on a map now. When no vintage at or before the
+  period is held, the page draws the earliest later vintage if it is at most
+  `MAX_LATER_VINTAGE_GAP` = 3 years later, and says so: "Drawn on the 2025
+  city and town boundaries; 2024 boundaries are not yet held, so a few cities
+  and towns may differ from the shapes the values were measured on." Place
+  boundaries change by a few annexations and a handful of new or dissolved
+  places a year, so three years keeps the shapes close; past that the map is
+  withheld and the values stay in the table. This relaxes A-6's
+  no-fallback rule for the web's choice only. The tile layer still never
+  substitutes a vintage: the page asks for the one it names.
 - **Counties, tracts.** Their layers are unversioned and say "current
   boundaries". Tract values from an older decade join only where the tract
   still exists; the rest are counted as not on the list. The county page's
@@ -129,6 +148,51 @@ gap 6 of the October web-readiness review.
 Catalog row added: WEB-148; total recounted from the ranges table (667).
 Screenshots (synthetic shapes): `/mnt/project-files/screenshots/place-maps/`.
 
+## Live check 1 (OFFICE_LAB, dev `610667e`, 2026-10-31, relayed)
+
+1. tile-layers: pass (places 2025 only, 32,629; metros 2023, 925).
+2. Texas places: data pass (1,545 with a value, 318 without), map withheld
+   because only 2025 boundaries are held. Answered by the three-year rule.
+3. Metros: not testable. ACS has no METRO rows in `mv_acs_latest` yet; the
+   W-7 metro slice was never loaded on OFFICE_LAB (A-6 thread's root cause).
+   The catalog therefore lists no METRO grain for ACS and the selector
+   correctly does not offer it. A metro backfill
+   (`acs_backfill: {year: 2024, geo_level: metro}`) is the fix, not code.
+4. Earlier release at place grain: withheld, same cause as 2.
+5. Wisconsin tracts: pass, current boundaries named, 1,522 with a value.
+6. Read times: place 15 s, tract 19 s.
+
+### Read time (follow-up)
+
+Each `/observations` page ran the ACS read twice, once for `COUNT(*)` and
+again for the rows, and for `newest_per_geography` each run ranked every row
+of the metric at that grain and state. With 1,000-row pages, Texas places took
+two pages, so four ranked reads. Two changes:
+
+- **API (API-179):** the list statement carries `COUNT(*) OVER () AS
+  page_total`, so a page is one read. The separate count runs only for a page
+  past the end.
+- **Web:** the map asks `/observations` and `/observations/derived` for up to
+  5,000 rows a page (their declared maximum), so one state's cities, every
+  county or every metro is one request. Source-scoped routes keep 1,000.
+
+- **Index:** `ix_mv_acs_latest_metric_level_state_geo_period` on
+  `gold_census.mv_acs_latest (metric_code, geo_level, state_fips, geo_id,
+  observation_date, duration_start, duration_end)`, in `gold_acs.sql` and the
+  schema snapshot. EXPLAIN (ANALYZE, BUFFERS) on OFFICE_LAB, 2026-10-31, of
+  the statement in `/mnt/project-files/place-maps/explain-place-read.sql`:
+
+  | Read | Before (state filtered after the scan) | After |
+  |---|---|---|
+  | Texas places | 30,768 rows removed, 1,863 kept, 6,965 ms | index scan, 28 removed (period only), 8.1 ms |
+  | Wisconsin tracts | 109,996 removed, 1,542 kept, 18,756 ms | 418 removed, 10.3 ms |
+
+  Built CONCURRENTLY on OFFICE_LAB before this DDL lands (4 min 38 s, valid,
+  **about 11 GB**), so `ensure_*` finds it already built. The period filter
+  (`COALESCE(duration_start, observation_date)::TEXT = ...`) is a computed
+  expression no index serves, but it now removes only tens of rows, so it is
+  left as it is.
+
 ## Hand-off (OFFICE_LAB, needs the warehouse)
 
 Rebuild web and API from `dev` after merge, then at http://localhost:3001:
@@ -149,6 +213,22 @@ Rebuild web and API from `dev` after merge, then at http://localhost:3001:
 6. Record timings of the place and tract reads; save screenshots to the
    project's `screenshots/place-maps/` as `live-*.png`.
 
+### Re-check after the follow-up PR
+
+Rebuild web and API from `dev`, then:
+
+- 2 again: Texas places draw, and the page says "Drawn on the 2025 city and
+  town boundaries; 2024 boundaries are not yet held ...". Tile requests carry
+  `?vintage=2025`, and the Austin row (page 1 of "Every city or town", or in
+  the highest values) links to `/us/texas/austin-city`.
+- 3 again, once the ACS metro backfill has served METRO rows: "Draw by" offers
+  Metro areas, and the 2023 delineation is named. Before that, a metro-only
+  measure (a BEA metro income code) shows the selector with Metro areas.
+- 4 again: an earlier release within three years of 2025 draws with the
+  later-vintage sentence. One more than three years earlier is withheld.
+- 6 again: time the Texas place and Wisconsin tract pages end to end (the
+  statements themselves are now 8 to 10 ms).
+
 ## Next pickup
 
-OFFICE_LAB hand-off checks above, then move this plan to `needs_review/`.
+The re-checks above, then move this plan to `needs_review/`.

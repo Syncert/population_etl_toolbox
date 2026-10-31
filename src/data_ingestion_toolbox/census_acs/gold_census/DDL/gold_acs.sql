@@ -408,6 +408,19 @@ CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_level_geo_period
         observation_date, duration_start, duration_end
     );
 
+-- One metric at one grain in one state: a city or tract map is drawn a state
+-- at a time (web-place-maps), and with only the index above `state_fips` was
+-- a filter over every row of the metric at that grain nationally. On
+-- OFFICE_LAB (2026-10-31) Texas places read 32,631 rows to keep 1,863
+-- (7.0 s) and Wisconsin tracts 111,538 to keep 1,542 (18.8 s); with this
+-- index, 8.1 ms and 10.3 ms. About 11 GB. On a live warehouse build it with
+-- CREATE INDEX CONCURRENTLY first (4 min 38 s there).
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_level_state_geo_period
+    ON gold_census.mv_acs_latest (
+        metric_code, geo_level, state_fips, geo_id,
+        observation_date, duration_start, duration_end
+    );
+
 -- ============================================================
 -- ACS REFRESH PROCEDURES
 -- ============================================================

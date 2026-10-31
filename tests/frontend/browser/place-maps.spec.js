@@ -195,7 +195,7 @@ test("a measure drawn on Texas cities and towns, on the boundary vintage it name
   // An old period is not drawn on later shapes; its values stay in the table.
   await page.getByTestId("measure-map-period").selectOption("2008-01-01");
   await expect(shell).toHaveAttribute("data-period", "2008-01-01 – 2012-12-31");
-  await expect(page.getByTestId("measure-map-no-map")).toContainText("No city and town boundaries from 2012 or earlier are held (held: 2020, 2024)");
+  await expect(page.getByTestId("measure-map-no-map")).toContainText("No city and town boundaries from 2012 or up to 3 years after it are held (held: 2020, 2024)");
   await expect(page.getByTestId("measure-map-canvas")).toHaveCount(0);
   await expect(all.locator("tbody tr")).toHaveCount(14);
 
@@ -255,4 +255,28 @@ test("a grain the catalog does not publish is not offered", async ({ page }) => 
   await expect(page.getByTestId("measure-map")).toHaveAttribute("data-grain", "COUNTY");
   await expect(page.getByTestId("measure-map-grain").locator("option")).not.toContainText(["Tracts"]);
   await expect(page).not.toHaveURL(/grain=/);
+});
+
+test("cities are drawn on a later boundary vintage when the period's own is not held, and the page says so", async ({ page }) => {
+  const tileRequests = [];
+  await install(page);
+  // OFFICE_LAB's case: the place layer holds only 2025 boundaries and the
+  // newest ACS period ends in 2024. Registered after install(), so it wins.
+  const only2025 = { ...tileLayers, layers: tileLayers.layers.map((layer) => (layer.layer_id === "places"
+    ? { ...layer, tile_template: "/tiles/places/{z}/{x}/{y}?vintage=2025", default_vintage: 2025,
+      vintages: [{ boundary_vintage: 2025, feature_count: 32629, is_default: true, tile_template: "/tiles/places/{z}/{x}/{y}?vintage=2025" }] }
+    : layer)) };
+  await page.route("**/api/v1/catalog/tile-layers", (route) => route.fulfill({ json: only2025 }));
+  await routeSyntheticTiles(page, "places", placeLayer, tileRequests);
+  await page.goto(`/map/${encodeURIComponent(INCOME)}?grain=PLACE&state=48`);
+  await expect(page.getByTestId("measure-map-vintage")).toHaveText(
+    "Drawn on the 2025 city and town boundaries; 2024 boundaries are not yet held, so a few cities and towns may differ from the shapes the values were measured on.",
+  );
+  await expect(page.getByTestId("measure-map-vintage")).toHaveAttribute("data-vintage", "2025");
+  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2025");
+  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-colored-values", "12");
+  // Thirteen years from the nearest held vintage is too far: no map, values in the table.
+  await page.getByTestId("measure-map-period").selectOption("2008-01-01");
+  await expect(page.getByTestId("measure-map-no-map")).toContainText("No city and town boundaries from 2012 or up to 3 years after it are held (held: 2025)");
+  await expect(page.getByTestId("measure-map-all").locator("tbody tr")).toHaveCount(14);
 });
