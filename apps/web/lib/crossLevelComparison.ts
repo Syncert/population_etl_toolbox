@@ -88,6 +88,48 @@ export function getPlacesComparison(
   return apiFetch<PlacesComparison>("/comparison/places", { ...options, params });
 }
 
+/** One measure of a batch: its answer, or the status its own request had. */
+export interface PlacesBatchItem {
+  metric_code: string | null;
+  ratio_id: string | null;
+  status: number;
+  detail: string | null;
+  answer: PlacesComparison | null;
+  /** A refused total's first offered view, answered in the same request. */
+  instead: PlacesComparison | null;
+}
+
+/** "m:<code>" or "r:<ratio id>": how a row finds its batch item. */
+export const batchKey = (asked: { metricCode?: string; ratioId?: string }) =>
+  asked.ratioId ? `r:${asked.ratioId}` : `m:${asked.metricCode}`;
+
+/**
+ * Many measures for the same two places in one request, keyed by
+ * `batchKey`. The pair and its rows are read once for the batch on the API,
+ * where one request per row paid for them every time.
+ */
+export async function getPlacesComparisonBatch(
+  params: { geo_id_a: string; geo_id_b: string; metricCodes: string[]; ratioIds: string[] },
+  options: RequestOptions = {},
+): Promise<Map<string, PlacesBatchItem>> {
+  const metricCodes = [...new Set(params.metricCodes)];
+  const ratioIds = [...new Set(params.ratioIds)];
+  const payload = await apiFetch<{ items: PlacesBatchItem[] }>("/comparison/places/batch", {
+    ...options,
+    params: {
+      geo_id_a: params.geo_id_a,
+      geo_id_b: params.geo_id_b,
+      metric_codes: metricCodes.join(","),
+      ratio_ids: ratioIds.join(","),
+    },
+  });
+  const found = new Map<string, PlacesBatchItem>();
+  for (const item of Array.isArray(payload?.items) ? payload.items : []) {
+    found.set(batchKey(item.ratio_id ? { ratioId: item.ratio_id } : { metricCode: item.metric_code ?? "" }), item);
+  }
+  return found;
+}
+
 const LEVEL_WORDS: Record<CompareLevel, string> = {
   NATIONAL: "the nation",
   STATE: "a state",

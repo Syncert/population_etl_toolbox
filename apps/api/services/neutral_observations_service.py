@@ -169,6 +169,8 @@ def reduction_refusal(dispatch: ObservationDispatch, reduction: str) -> Optional
 #: session is ``REPEATABLE READ``, so a published row cannot change inside one
 #: request, and the memo dies with the session (API-147).
 _RESOLVED_METRICS_KEY = "apps.api.resolved_metrics"
+#: Rows read for a metric over a set of geographies, within one request.
+_GEOGRAPHY_READS_KEY = "apps.api.geography_reads"
 
 
 def resolve_metric(db: Session, metric_code: str) -> Optional[Mapping[str, Any]]:
@@ -800,6 +802,10 @@ def observations_for_geographies(
     """
     if scope not in (SCOPE_LATEST, SCOPE_AS_RELEASED):
         raise NeutralQueryError("scope must be latest or as_released")
+    memo = session_memo(db, _GEOGRAPHY_READS_KEY)
+    key = (metric_code, scope, release, tuple(sorted(set(geo_ids))))
+    if memo is not None and key in memo:
+        return memo[key]
     metric = resolve_metric(db, metric_code)
     if metric is None:
         return None
@@ -829,10 +835,91 @@ def observations_for_geographies(
         """
     )
     display_name = metric.get("metric_display_name")
-    return [
+    rows = [
         _observation_from(row, dispatch, metric_code, display_name)
         for row in db.execute(query, params).mappings().all()
     ]
+    if memo is not None:
+        memo[key] = rows
+    return rows
+
+
+def prefetch_observations_for_geographies(
+    db: Session,
+    metric_codes: Sequence[str],
+    scope: str,
+    geo_ids: Sequence[str],
+) -> None:
+    """Read many metrics for the same few geographies, one statement a source.
+
+    Fills the per-request memo that ``observations_for_geographies`` answers
+    from, so a composition of a dozen measures over two places (the
+    cross-level compare page's chapter) costs one read per source relation
+    rather than one per measure. Only a source whose rows carry their own
+    metric code can be read this way; any other metric is left to its own
+    read, as is every code the glossary does not hold. Each code's rows are
+    exactly what its own read would return: the same relation, the same
+    predicates with ``= ANY`` for the code, the same order.
+    """
+    memo = session_memo(db, _GEOGRAPHY_READS_KEY)
+    if memo is None or not geo_ids or scope not in (SCOPE_LATEST, SCOPE_AS_RELEASED):
+        return
+    wanted_geo = tuple(sorted(set(geo_ids)))
+    codes = [
+        code
+        for code in dict.fromkeys(metric_codes)
+        if (code, scope, None, wanted_geo) not in memo
+    ]
+    metrics = resolve_metrics(db, codes)
+    groups: dict[str, tuple[ObservationDispatch, list[str]]] = {}
+    for code in codes:
+        metric = metrics.get(code)
+        if metric is None:
+            continue
+        try:
+            dispatch = dispatch_for_metric(metric)
+        except NeutralQueryError:
+            continue
+        if dispatch.metric_code_column is None:
+            continue
+        relation = (
+            dispatch.latest_relation
+            if scope == SCOPE_LATEST
+            else dispatch.released_relation
+        )
+        groups.setdefault(relation, (dispatch, []))[1].append(code)
+    for relation, (dispatch, group) in groups.items():
+        require_relation(db, relation)
+        order = (
+            dispatch.latest_order if scope == SCOPE_LATEST else dispatch.released_order
+        )
+        query = text(
+            f"""
+            SELECT
+                {dispatch.metric_code_column} AS grouped_metric_code,
+                {_select_sql(dispatch)}
+            FROM {relation}
+            WHERE {dispatch.metric_code_column} = ANY(:metric_codes)
+              AND {dispatch.geo_id_expression} = ANY(:geo_ids)
+            ORDER BY {", ".join(order)}
+            """
+        )
+        found: dict[str, list[NeutralObservation]] = {code: [] for code in group}
+        for row in db.execute(
+            query, {"metric_codes": group, "geo_ids": list(wanted_geo)}
+        ).mappings():
+            code = str(row["grouped_metric_code"])
+            if code in found:
+                found[code].append(
+                    _observation_from(
+                        row,
+                        dispatch,
+                        code,
+                        metrics[code].get("metric_display_name"),
+                    )
+                )
+        for code, rows in found.items():
+            memo[(code, scope, None, wanted_geo)] = rows
 
 
 def _no_calendar_figures(metric_code: str, time_grain: str) -> str:

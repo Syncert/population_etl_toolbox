@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
+from apps.api.query_lists import code_list
 from apps.api.schemas.derived import DerivedRatioCatalogResponse
 from apps.api.services.derived_ratio_service import list_pairings
 from apps.api.services.catalog_service import (
@@ -55,10 +56,17 @@ def get_metrics(
     source_code: Optional[str] = Query(None, max_length=50),
     active_only: Optional[bool] = None,
     q: Optional[str] = Query(None, max_length=200),
+    metric_codes: Optional[str] = Query(
+        None,
+        max_length=8000,
+        description="Comma-separated metric codes: only these rows, in one read. "
+        "At most 200 codes; a code the catalog does not hold is simply absent.",
+    ),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> MetricListResponse:
+    codes = code_list(metric_codes, "metric_codes", 200)
     try:
         return list_metrics(
             db,
@@ -67,6 +75,7 @@ def get_metrics(
             q=q,
             limit=limit,
             offset=offset,
+            metric_codes=codes,
         )
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc

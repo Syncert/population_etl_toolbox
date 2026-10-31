@@ -112,6 +112,30 @@ export function placesAnswer(params) {
     intervals_overlap: both ? notes.some((note) => note.reason === "intervals_overlap") : null, notes } };
 }
 
+function withMetroGrain(code) {
+  return code.startsWith("CENSUS_ACS:") || code.startsWith("BLS:LAU") ? { ...metrics[code], valid_geo_grains: grainsFor(code) } : metrics[code];
+}
+
+/** `/comparison/places/batch`: each item as the single route answers it (API-178). */
+export function placesBatch(params) {
+  const ask = (extra) => placesAnswer(new URLSearchParams({ geo_id_a: params.get("geo_id_a"), geo_id_b: params.get("geo_id_b"), ...extra }));
+  const split = (name) => (params.get(name) || "").split(",").filter(Boolean);
+  const pair = ask({ metric_code: "CENSUS_ACS:acs5:B19013_001" });
+  if (pair.status === 404) return pair;
+  const item = (asked, answered) => {
+    if (answered.status) return { ...asked, status: answered.status, detail: answered.json.detail, answer: null, instead: null };
+    const answer = answered.json;
+    const alternative = answer.refusal?.reason === "counts_differ_in_size" ? answer.refusal.alternatives?.[0] : null;
+    const instead = alternative ? ask({ ratio_id: alternative.ratio_id }) : null;
+    return { ...asked, status: 200, detail: null, answer, instead: instead && !instead.status ? instead.json : null };
+  };
+  const items = [
+    ...split("metric_codes").map((code) => item({ metric_code: code, ratio_id: null }, ask({ metric_code: code }))),
+    ...split("ratio_ids").map((ratio) => item({ metric_code: null, ratio_id: ratio }, ask({ ratio_id: ratio }))),
+  ];
+  return { json: { geo_id_a: params.get("geo_id_a"), geo_id_b: params.get("geo_id_b"), items } };
+}
+
 // "Find your place" (A-1): a name offers every grain it matches, a metro
 // with no page yet.
 const SEARCHABLE = [
@@ -129,6 +153,7 @@ export async function installCrossLevelFixtures(page, options = {}) {
     const params = url.searchParams;
     const path = url.pathname;
     if (path === "/api/v1/comparison/places") return route.fulfill(placesAnswer(params));
+    if (path === "/api/v1/comparison/places/batch") return route.fulfill(placesBatch(params));
     if (path === "/api/v1/catalog/geographies" && params.get("geo_level") === "METRO") {
       return route.fulfill({ json: { total: 1, limit: 1000, offset: 0, items: [METRO] } });
     }
@@ -143,11 +168,16 @@ export async function installCrossLevelFixtures(page, options = {}) {
       }));
       return route.fulfill({ json: { query: needle, limit: Number(params.get("limit") || 10), items } });
     }
+    if (path === "/api/v1/catalog/metrics" && params.get("metric_codes")) {
+      // The metro grain here too, and every other row as the place fixtures list it.
+      const items = params.get("metric_codes").split(",").flatMap((code) => (metrics[code] ? [withMetroGrain(code)] : []));
+      return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
+    }
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       // The metro grain, which the place fixtures' catalog does not list.
       const code = decodeURIComponent(path.split("/metrics/")[1]);
       if (metrics[code] && (code.startsWith("CENSUS_ACS:") || code.startsWith("BLS:LAU"))) {
-        return route.fulfill({ json: { ...metrics[code], valid_geo_grains: grainsFor(code) } });
+        return route.fulfill({ json: withMetroGrain(code) });
       }
     }
     return route.fallback();

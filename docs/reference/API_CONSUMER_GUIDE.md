@@ -116,7 +116,7 @@ list.
 | Route | Answers |
 | --- | --- |
 | `GET /api/v1/catalog/sources` | Every published source system |
-| `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
+| `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`; `metric_codes` for up to 200 named rows in one read) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `county_fips`, `q`, `active_only`) — see below |
 | `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
@@ -1812,6 +1812,18 @@ A refusal is `200` with `comparable: false`; an unknown geography, metric or
 `ratio_id` is `404` naming the parameter; asking for both or neither of
 `metric_code` and `ratio_id`, the same place twice, or a pairing that is not
 served is `422`.
+
+**Many measures for the same two places.**
+`GET /api/v1/comparison/places/batch?geo_id_a=…&geo_id_b=…&metric_codes=…&ratio_ids=…`
+takes comma-separated `metric_codes` and `ratio_ids` (at most 60 in all) and
+answers each in `items`, in the order asked with metric codes first, exactly as
+`/comparison/places` answers it alone. The two places, how they relate and the
+rows are read once for the batch rather than once per measure, which is what
+lets a compare page fill a chapter in one request. With `follow_alternatives`
+(the default) a total refused as `counts_differ_in_size` also carries
+`instead`: the answer for its first offered view. An item the single route
+would refuse carries that `status` and `detail` and no `answer`; an unknown
+place is `404` for the whole batch.
 
 ## Signing in, and your account
 
