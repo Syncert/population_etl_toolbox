@@ -535,6 +535,22 @@ def acs_ingest():
                         "variables_count": vcount,
                     }
 
+        # A tract slice requests `tract_tables` only, so it carries a
+        # fingerprint of that list rather than of the whole curated list:
+        # widening the tract tables (W-4) changed no (dataset, year)
+        # fingerprint, so every tract year already loaded on the first five
+        # tables was skipped as done and never requested the rest.
+        tract_scope: dict[tuple[str, int], dict] = {}
+        for dataset, years in tract_years_by_dataset.items():
+            for year in years:
+                vhash, vcount = _variables_fingerprint(
+                    year, dataset, CONFIG.tract_tables
+                )
+                tract_scope[(dataset, year)] = {
+                    "variables_hash": vhash,
+                    "variables_count": vcount,
+                }
+
         # Build the plan. Include anything not done for current hash.
         plan: list[dict] = []
         for (dataset, year), meta in varset_meta.items():
@@ -627,8 +643,15 @@ def acs_ingest():
             # TRACT slices (by state, every county at once), for the datasets
             # that publish tracts: the 5-year estimates only.
             if year in tract_years_by_dataset.get(dataset, set()):
+                tract_meta = tract_scope[(dataset, year)]
                 for sf in tract_parent_fips(dataset):
-                    if is_done_for_current_varset(dataset, year, "tract", sf):
+                    if (
+                        dataset,
+                        year,
+                        "tract",
+                        sf,
+                        tract_meta["variables_hash"],
+                    ) in completed:
                         continue
                     plan.append(
                         {
@@ -636,8 +659,8 @@ def acs_ingest():
                             "year": year,
                             "geo_level": "tract",
                             "state_fips": sf,
-                            "variables_hash": meta["variables_hash"],
-                            "variables_count": meta["variables_count"],
+                            "variables_hash": tract_meta["variables_hash"],
+                            "variables_count": tract_meta["variables_count"],
                         }
                     )
 
