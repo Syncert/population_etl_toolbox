@@ -18,10 +18,11 @@ verify:
 
 ## Status
 
-In progress since 2026-10-31 on `claude/project-thread-hsnkrk` (the build-out
-names `feat/web-find-your-place`), branched from `dev` after A-1 (#172) and
-D-2 (#177). Everything below is built and passes in a cloud session against
-fixtures; the last criterion is a live check on OFFICE_LAB.
+Needs review. Built on `claude/project-thread-hsnkrk` (the build-out names
+`feat/web-find-your-place`), branched from `dev` after A-1 (#172) and D-2
+(#177), merged into `dev` as #186 (deef68b). Every criterion passes,
+including the live check on OFFICE_LAB against `dev` at deef68b on
+2026-10-31.
 
 ## Why
 
@@ -80,7 +81,7 @@ Travis County; location lands on the city page".
 - [x] Search unavailable (503) falls back to the catalog match, saying so.
 - [x] No raw variable code shown (the browser tier's WEB-144 check runs on
       every test).
-- [ ] Live on OFFICE_LAB after `002_gold_glossary_schema.sql` and
+- [x] Live on OFFICE_LAB after `002_gold_glossary_schema.sql` and
       `refresh_geo_search()` (A-1 step 3): typing "Austin" on the home page
       offers Austin city, Travis County and the Austin metro; Austin City
       Hall (30.2650, -97.7470) lands on `/us/texas/austin-city`.
@@ -109,3 +110,10 @@ on it), Chromium from `/opt/pw-browsers`:
 | `npx playwright test find-your-place` | 11 passed |
 | `npm --prefix apps/web run check:bundle` | passes after merging `dev` with D-6 (#183): `/layout` 427.2 kB of 507 kB (507.1 kB before, on this branch alone) |
 | After merging `dev` at 88ba427 (D-6, #187): `test:unit` / full `test:browser` / `pytest tests/unit -m unit` | 896 / 263 / 2,818 passed; catalog total 659 from the ranges table, unchanged by this branch |
+
+Live check, OFFICE_LAB, 2026-10-31, against `dev` at deef68b (web and API
+images rebuilt, A-1 step 3 applied): typing "Austin" on the home page lists
+Austin city, Travis County and the Austin metro in that order; picking
+Austin city opens `/us/texas/austin-city`; "Use my location" at
+30.265, -97.747 lands on the same page; the response header carries
+`Permissions-Policy: geolocation=(self)`. Passed.
