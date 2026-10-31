@@ -688,8 +688,10 @@ def acs_ingest():
                 CONFIG.backfill_reserve_fraction,
             )
 
-        # About 8 batches per (dataset, year) once place slices are planned.
-        batches = chunk_list(plan, chunk_size=25)
+        # Batches of eight, so a backfill year's 52 state slices spread over
+        # the `census_api` pool's slots: in batches of 25 a tract year ran two
+        # sequential batches and its download took 30 minutes (2026-10-31).
+        batches = chunk_list(plan, chunk_size=8)
         return batches
 
     # -----------------------------
