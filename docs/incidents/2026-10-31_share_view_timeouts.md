@@ -211,6 +211,35 @@ EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM gold_bls.mv_bls_latest
  WHERE metric_code = 'BLS:LAU:UNEMP_RATE' AND geo_id LIKE 'state:55|county:%';
 ```
 
+## Measured on OFFICE_LAB (2026-10-31)
+
+After #190's indexes (all three valid) and an API rebuilt from dev `fc6a2d5`:
+
+| Read | Before | After |
+|---|---|---|
+| `/observations/periods`, B17001_002 | timed out at 15 s | 0.10 s (index-only scan, 49.7 ms in EXPLAIN) |
+| `/observations/releases` | 16.8–16.9 s | 0.16 s (index-only scan on the `rpt` partitions, 391 ms) |
+| Count of one metric at one grain | full scan | 0.7 ms |
+| Dane County, People → Share | "Reading…" for more than 2 min | passes; "of total population (survey)" shown beside 9 percents |
+
+`/place/distinctive?geo_id=state:55|county:025`:
+
+| Step | Time |
+|---|---|
+| Before #192 | 11.3 s |
+| After #192 (siblings named) | 9.9 s |
+| After #196 (`pep_fact_metric_geo_year_idx`) | 0.77 s uncached, 0.003 s cached |
+
+- `pep_fact_metric_geo_year_idx` built with `CONCURRENTLY` in 6 min 01 s, and its `ANALYZE` took 1.2 s.
+- In the RBIRTH EXPLAIN, `fact_population_estimate` has no sequential scan. It is a bitmap index scan on the new index (204k rows), alongside the primary-key bitmap, and execution took 1.92 s.
+- The only sequential scans left are on two small tables, `pep_dataset` and `release_load`. There are also 75k index probes into `dim_geo_latest`.
+- The CDC and BLS EXPLAINs were not needed.
+
+Runbook notes from the run, already folded in above:
+
+- The ATTACH generator needs schema-qualified `to_regclass()`.
+- `VACUUM (ANALYZE)` failed resizing `/dev/shm` for parallel workers; `VACUUM (ANALYZE, PARALLEL 0)` is the fallback.
+
 ## Not changed
 
 - A per-metric period/release summary table was considered and not built.
