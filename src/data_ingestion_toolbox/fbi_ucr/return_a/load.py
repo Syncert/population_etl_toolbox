@@ -47,6 +47,8 @@ from data_ingestion_toolbox.capture import (
 
 from ..registry import STATE_CODE_CONTRACT
 from .crosswalk import CountyRef, CrosswalkRow, build_crosswalk
+from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import refresh_county_agency_rate
+
 from .fetch import FetchedFile, fetch_year, unzip_text
 from .layout import ReturnARecord, iter_records
 from .registry import RETURN_A_PRODUCTS
@@ -695,6 +697,7 @@ def publish(cursor: Any, release_key: str) -> None:
             """,
             {"product": product.product_id, "release": release_key},
         )
+        refresh_county_agency_rate(cursor, product.product_id)
 
 
 def load(

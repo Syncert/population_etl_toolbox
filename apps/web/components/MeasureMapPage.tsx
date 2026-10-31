@@ -68,6 +68,7 @@ import type { ObservationRow } from "../lib/explorerViewModel";
 import { denominatorText, derivedMapRow, getDerivedRatios, pairingFor, viewChoices, viewKey } from "../lib/derivedViews";
 import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
 import { DraftViewMark, ViewToggle } from "./DerivedView";
+import { isSingleAgeLine } from "../lib/ageLines";
 
 const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), { ssr: false });
 
@@ -699,7 +700,7 @@ function MeasureSwitcher({ current }: { current: string }) {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       searchMetrics({ q: query.trim(), active_only: "true", limit: "8" }, { signal: controller.signal })
-        .then((payload) => { if (!controller.signal.aborted) setResults((payload.items || []).filter((item) => item.metric_code !== current)); })
+        .then((payload) => { if (!controller.signal.aborted) setResults((payload.items || []).filter((item) => item.metric_code !== current && !isSingleAgeLine(item.metric_code))); })
         .catch(() => { if (!controller.signal.aborted) setResults([]); });
     }, 250);
     return () => { controller.abort(); window.clearTimeout(timer); };

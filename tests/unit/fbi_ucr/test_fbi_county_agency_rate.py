@@ -10,6 +10,7 @@ warehouse tier proves the arithmetic on the reviewed Wisconsin fixture in
 from __future__ import annotations
 
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,56 @@ def _body(name: str) -> str:
         re.DOTALL,
     )
     assert match is not None, f"gold_fbi.{name} is not defined"
-    return match.group("body")
+    body = match.group("body")
+    if name == "county_agency_rate":
+        # The served view reads rows computed at publication; the arithmetic
+        # lives in the function that computes them, and both are the rate.
+        return _rate_rows_body() + body
+    return body
+
+
+def _rate_rows_body() -> str:
+    sql = GOLD_DDL.read_text(encoding="utf-8")
+    match = re.search(
+        r"FUNCTION gold_fbi\.county_agency_rate_rows\(.*?\$rate\$\n(?P<body>.*?)\$rate\$",
+        sql,
+        re.DOTALL,
+    )
+    assert match is not None, "gold_fbi.county_agency_rate_rows is not defined"
+    return textwrap.dedent(match.group("body"))
+
+
+def test_the_rate_is_computed_at_publication_not_per_read() -> None:
+    """Covers: ETL-106 — a county read is an index lookup, never a national sum.
+
+    Computed on read, the rate summed every agency-month in the country
+    before a county filter applied: with every Return A agency loaded, one
+    county card took over two minutes.
+    """
+    sql = GOLD_DDL.read_text(encoding="utf-8")
+    view = re.search(
+        r"CREATE OR REPLACE VIEW gold_fbi\.county_agency_rate AS(?P<body>.*?);\s*\n",
+        sql,
+        re.DOTALL,
+    ).group("body")
+    assert "FROM gold_fbi.county_agency_rate_month AS served" in view
+    assert "GROUP BY" not in view and "SUM(" not in view
+    rows = _rate_rows_body()
+    assert "WHERE observation.product_id = p_product_id" in rows
+    for index in (
+        "fbi_county_agency_rate_geo_idx\n"
+        "    ON gold_fbi.county_agency_rate_month (\n"
+        "        geo_id, product_id, measure_id, period_start DESC",
+        "fbi_county_agency_rate_state_idx\n"
+        "    ON gold_fbi.county_agency_rate_month (\n"
+        "        state_fips, product_id, measure_id, period_start DESC",
+    ):
+        assert index in sql
+    # Both ways a release is published recompute that product's rows in the
+    # publishing transaction.
+    package = GOLD_DDL.parents[2]
+    for path in (package / "gold_fbi/publisher.py", package / "return_a/load.py"):
+        assert "refresh_county_agency_rate(cursor," in path.read_text(encoding="utf-8")
 
 
 def test_the_rate_reads_only_fbi_figures() -> None:

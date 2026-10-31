@@ -83,6 +83,9 @@ class _Plan:
     #: below the window, so only that slice is ranked.
     probe: str | None = None
     note: str | None = None
+    #: A reviewed equivalent of ``relation`` read in its place: same rows,
+    #: fewer joins. ``relation`` is still what the page names.
+    from_sql: str | None = None
 
 
 #: Census PEP's as-released view ranks every fact row by capture
@@ -96,6 +99,37 @@ _PROBES: dict[str, tuple[str, str]] = {
         "Measured on POPESTIMATE, the population estimate every PEP vintage "
         "publishes; row counts are POPESTIMATE rows only.",
     ),
+}
+
+
+#: FBI UCR's latest relation joins every observation to its participation,
+#: measure and release rows to project columns coverage never reads; with
+#: every Return A agency loaded (about 13M rows) it passed the 20 s ceiling.
+#: The grain (``subject_type``) and period are on the fact itself, every fact
+#: has its participation and measure rows (foreign keys), so reading the fact
+#: of each product's newest published release, with the same geography
+#: filter, counts exactly the rows ``latest_release_observation`` serves.
+_FROM_SQL: dict[str, str] = {
+    "FBI_UCR": """(
+        SELECT fact.subject_type, fact.period_start
+        FROM silver_fbi.fact_crime_observation AS fact
+        JOIN (
+            SELECT release.product_id, release.release_key
+            FROM silver_fbi.dim_ucr_dataset_release AS release
+            JOIN (
+                SELECT product_id, MAX(refresh_date) AS refresh_date
+                FROM silver_fbi.dim_ucr_dataset_release
+                WHERE status = 'published'
+                GROUP BY product_id
+            ) AS newest
+              ON newest.product_id = release.product_id
+             AND newest.refresh_date = release.refresh_date
+            WHERE release.status = 'published'
+        ) AS latest
+          ON latest.product_id = fact.product_id
+         AND latest.release_key = fact.release_key
+        WHERE fact.geography_status NOT IN ('ambiguous', 'unsupported')
+    ) AS fbi_latest""",
 }
 
 
@@ -115,6 +149,7 @@ def _plan(catalog_source_code: str) -> _Plan | None:
         period_expression=dispatch.period_start_expression,
         probe=probe,
         note=note,
+        from_sql=_FROM_SQL.get(catalog_source_code),
     )
 
 
@@ -154,7 +189,7 @@ def _scan_sql(plan: _Plan) -> str:
                 SELECT {group_by} AS raw_grain,
                        {period} AS raw_period,
                        COUNT(*) AS row_count
-                FROM {plan.relation}
+                FROM {plan.from_sql or plan.relation}
                 WHERE {period} IS NOT NULL{probe}
                 GROUP BY 1, 2
             ) AS by_raw

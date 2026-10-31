@@ -1,10 +1,11 @@
 """Return A master files load every agency, resumably (ETL-107).
 
-The fixture is 47 verbatim 2023 records from the FBI's ``reta-2023.txt``:
+The fixture is 49 verbatim 2023 records from the FBI's ``reta-2023.txt``:
 every agency in Wisconsin's Dane (FBI county 013) and Brown (005) counties,
 Richland County's (052), three Travis County, Texas, agencies, Camden County
-Police (New Jersey, the year's only negative entry) and Wisconsin Dells (three
-counties). The load runs through a stand-in download that serves the
+Police (New Jersey, the year's only negative entry), Wisconsin Dells (three
+counties), DC Police (a population under county code 000) and Ridgetop,
+Tennessee (a second population group with a blank code). The load runs through a stand-in download that serves the
 fixture as the zip the CDE serves.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import io
+import re
 import zipfile
 from collections.abc import Callable, Iterator
 from datetime import date
@@ -138,7 +140,18 @@ def test_every_agency_loads_and_dane_county_is_read_with_madison(
     summary = load(return_a_warehouse, [2023], fetch=_fetch)
     assert summary["release_key"] == RELEASE
     assert [item["status"] for item in summary["years"]] == ["loaded"]
-    assert summary["years"][0]["records"] == 47
+    assert summary["years"][0]["records"] == 49
+    # DC Police's population names no county: it loads, with no county link.
+    assert (
+        _rows(
+            return_a_warehouse,
+            """
+            SELECT geo_id FROM silver_fbi.agency_geography_relationship
+            WHERE ori = 'DCMPD0000' AND relationship_type = 'county'
+            """,
+        )
+        == []
+    )
 
     # The Sheriff's January matches the CDE's own summarized row (6), as do
     # Fitchburg (13) and Madison (71).
@@ -399,3 +412,104 @@ def test_the_derived_route_serves_the_county_rate_from_the_warehouse(
         "569830",
     )
     assert dane.coverage.coverage_share == "0.9741"
+
+
+def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-106 — the served county rate is computed once, read by index.
+
+    Computed on read, the rate summed every agency-month in the country
+    before the county filter applied: a county card took over two minutes
+    once every Return A agency was loaded. The publication now computes it
+    (DQ-FBI-014 holds it to that), and a county read never aggregates.
+    """
+    from data_ingestion_toolbox.quality.sources import (
+        fbi_county_agency_rate_is_current,
+    )
+
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    reader = return_a_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_fbi.county_agency_rate_month "
+                "WHERE product_id = 'return_a_violent_crime' AND geo_id = %s",
+                (DANE,),
+            )
+            assert cursor.fetchone()[0] == 12
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
+
+            cursor.execute("SET LOCAL enable_seqscan = off")
+            cursor.execute(
+                "EXPLAIN (COSTS OFF) SELECT * FROM gold_fbi.latest_county_agency_rate "
+                "WHERE product_id = 'return_a_violent_crime' "
+                "AND measure_id = %s AND geo_id = %s "
+                "ORDER BY period_start DESC LIMIT 1",
+                ("V:offense:absolute_total", DANE),
+            )
+            plan = "\n".join(row[0] for row in cursor.fetchall())
+            # Through the geography index or the key (release, measure,
+            # county); either way one county's rows, never a national sum.
+            assert re.search(r"Index Scan using \w+ on county_agency_rate_month", plan)
+            assert "agency_geography_relationship" not in plan
+            assert "fact_crime_observation" not in plan
+            cursor.execute("RESET enable_seqscan")
+
+            # A publication that skipped the refresh is caught...
+            cursor.execute(
+                "UPDATE silver_fbi.dim_ucr_dataset_release "
+                "SET published_at = published_at + INTERVAL '1 hour' "
+                "WHERE product_id = 'return_a_property_crime'"
+            )
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert outcomes[0].result == "fail"
+            assert outcomes[0].evidence == [
+                "return_a_property_crime computed before its newest publication"
+            ]
+            # ...and so is a product whose rows were never computed.
+            cursor.execute(
+                "DELETE FROM gold_fbi.county_agency_rate_month "
+                "WHERE product_id = 'return_a_violent_crime'"
+            )
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert outcomes[0].evidence == [
+                "return_a_property_crime computed before its newest publication",
+                "return_a_violent_crime never computed",
+            ]
+    finally:
+        reader.rollback()
+        reader.close()
+
+
+def test_the_admin_coverage_read_counts_what_the_latest_view_serves(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: API-183 — FBI coverage read from the facts equals the served view.
+
+    The admin Source Map read FBI UCR through ``latest_release_observation``,
+    whose participation, measure and release joins it never needs; with every
+    Return A agency loaded it passed the 20 s ceiling. It now reads the fact of
+    each product's newest published release, which must count the same rows
+    per grain and year as the view.
+    """
+    from dataclasses import replace
+
+    from apps.api.services import warehouse_coverage as coverage
+
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    plan = coverage._plan("FBI_UCR")
+    assert plan is not None and plan.from_sql is not None
+    reader = return_a_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(coverage._scan_sql(plan))
+            fast = cursor.fetchall()
+            cursor.execute(coverage._scan_sql(replace(plan, from_sql=None)))
+            served = cursor.fetchall()
+    finally:
+        reader.rollback()
+        reader.close()
+    assert fast == served
+    assert any(row[0] == "AGENCY" and row[4] > 0 for row in fast)

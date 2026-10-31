@@ -18,10 +18,11 @@ verify:
 
 ## Status
 
-To do, 2026-10-31. The web side of
-[`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
+In progress, 2026-10-31 (built against contract-shaped fixtures; the live check
+waits for the API). The web side of
+[`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
-contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
+contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](API_AGE_AND_SEX_STRUCTURE_PLAN.md)
 and can be built against stubbed answers in that shape while the API is
 built; the live check waits for the API to merge.
 
@@ -92,8 +93,49 @@ illustrative numbers).
    Wisconsin and a Dane County tract render with real values; screenshots
    recorded.
 
+## Evidence (2026-10-31)
+
+Built:
+
+- `lib/ageStructure.ts` (fetchers, toggle model, formatting; reads, never
+  recomputes), `lib/ageLines.ts` (which B01001 lines are single age lines).
+- `components/AgePyramid.tsx` (+ table view), `AgeDifferenceBars.tsx`,
+  `AgeSummaryCards.tsx`, `AgeStructureHistory.tsx` (small multiples, one per
+  broad group, each on its own scale, plus a table), `CohortChart.tsx`,
+  `AgeAndSexSection.tsx` (the People chapter section and the toggle),
+  `ComparePyramids.tsx` (compare page, one shared axis, one request with
+  `compare_geo_ids`), `AgeLineNotMapped.tsx` (`/map/<single age line>`).
+- All age components are loaded with `next/dynamic` from the place and
+  compare pages; `/layout`, `/explore` and `/map` are unchanged in size
+  (`check:bundle`: every route within budget).
+- Colours: the site's first two categorical slots (`seriesStroke(0)`,
+  `seriesStroke(1)`: #0b6b57 men, #8c3b17 women). The dataviz validator passes
+  lightness, CVD separation (worst ΔE 8.4, deutan), normal-vision floor (19.0)
+  and contrast; it flags #0b6b57's chroma (0.087) as low. Kept as the site's
+  slot; sex is also carried by side, legend and every label.
+- The site has no dark theme, so "light and dark" is light only here.
+- Tracts have no page yet (D-4) and the compare page addresses no tract, so
+  unreliable and absent bands are proved in the unit tier on a tract
+  fixture; the section will appear on tract and metro pages through the same
+  component when those pages exist.
+
+Validation (local, fixtures):
+
+- `npm run typecheck`, `npm run lint`: clean.
+- `npm run test:unit`: 73 files, 956 tests passed (16 in
+  `tests/frontend/unit/age-structure.test.jsx`).
+- `npm run build`, `npm run check:bundle`: every route within budget.
+- `tests/frontend/browser/age-structure.spec.js`: 9 passed, against a scratch
+  copy of the OpenAPI snapshot carrying the three age routes. The committed
+  snapshot comes from the API PR; the served-contract check fails every place
+  page's age request until it lands, so this PR merges after it.
+- Catalog: WEB-152, recounted to 679.
+
+Remaining: merge dev after the API PR, rerun the full browser tier against
+the real snapshot, then the live check on OFFICE_LAB (acceptance 8).
+
 ## Checkpoint
 
-Next pickup: stub `/age-structure` answers for Madison and Dane County in the
-shape the API plan fixes, then build `AgePyramid` and the toggle against
-them.
+Next pickup: merge dev once the API part 1 PR has landed; rerun
+`npm run test:browser`; then the OFFICE_LAB live check with screenshots of
+Madison, Dane County, Wisconsin and a Dane County tract.

@@ -85,6 +85,7 @@ import type { GeoLevel } from "../lib/urlState";
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
+const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
 
 const CATALOG_PAGE_SIZE = 1000;
@@ -1013,7 +1014,12 @@ function Chapter({
           answers={answers}
         />
       ) : null}
-      {chapter.id === "people" && pageLevel === "COUNTY" && own ? <MigrationFlows geoId={own.geoId} /> : null}
+      {chapter.id === "people" && own ? <AgeAndSexSection geoId={own.geoId} /> : null}
+      {/* IRS SOI publishes county-to-county flows only, so the read names the
+          page's county itself, never the chapter's first level: that is the
+          state while the address is still resolving, and a state is the
+          API's 422 (two refused reads on every county page load). */}
+      {chapter.id === "people" && pageLevel === "COUNTY" && county ? <MigrationFlows geoId={county.geo_id} /> : null}
       {chapter.id === "change" && pageLevel === "COUNTY" ? (
         <p className="subtle" data-testid="change-migration-note">
           <a className="text-link" href="#people">Where people came from and went</a>, from IRS tax returns, is in People.{" "}
