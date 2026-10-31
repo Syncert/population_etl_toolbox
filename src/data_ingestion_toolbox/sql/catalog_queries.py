@@ -126,8 +126,14 @@ def _build_metric_where(
     active_only: Optional[bool],
     q: Optional[str],
     params: dict,
+    metric_codes: Optional[Sequence[str]] = None,
 ) -> str:
     clauses: list[str] = []
+    if metric_codes:
+        # A page that shows a dozen measures reads their rows in one request
+        # rather than one request each; the browser sends six at a time.
+        clauses.append("metric_code = ANY(:metric_codes)")
+        params["metric_codes"] = list(metric_codes)
     if source_code:
         clauses.append("UPPER(source_code) = UPPER(:source_code)")
         params["source_code"] = source_code
@@ -148,9 +154,10 @@ def build_metrics_queries(
     q: Optional[str],
     limit: int,
     offset: int,
+    metric_codes: Optional[Sequence[str]] = None,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(source_code, active_only, q, params)
+    where = _build_metric_where(source_code, active_only, q, params, metric_codes)
     list_q = text(
         f"SELECT {_METRIC_COLUMNS} FROM {METRIC_RELATION} WHERE {where} "
         "ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -346,6 +353,97 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
     JOIN {GEOGRAPHY_RELATION} AS geography
          ON geography.geo_id = related.other_geo_id
     WHERE NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
+    ORDER BY related.relationship, geography.geo_id, related.geography_vintage DESC
+    """
+)
+
+
+#: How one geography relates to one other, from the first one's point of view:
+#: exactly the rows of ``GEOGRAPHY_RELATED_QUERY`` for ``:geo_id`` whose other
+#: place is ``:other_geo_id``, with the other place pinned inside every branch.
+#:
+#: The cross-level comparison (ADR-0010) needs only whether its two places nest
+#: or overlap. Reading the finer place's whole related list for that cost about
+#: seven seconds on the full warehouse for every measure asked (2026-10-31);
+#: with both ends constant, each branch starts from two known places rather
+#: than every place related to one of them.
+GEOGRAPHY_PAIR_RELATIONSHIP_QUERY: TextClause = text(
+    f"""
+    WITH related AS (
+        SELECT relationship.related_geo_id AS other_geo_id,
+               relationship.relationship_type AS relationship,
+               relationship.geography_vintage,
+               relationship.overlap_area_m2,
+               relationship.overlap_weight,
+               relationship.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS relationship
+        WHERE relationship.geo_id = :geo_id
+          AND relationship.related_geo_id = :other_geo_id
+        UNION ALL
+        SELECT relationship.geo_id,
+               CASE relationship.relationship_type
+                   WHEN 'contains' THEN 'part_of'
+                   ELSE relationship.relationship_type
+               END,
+               relationship.geography_vintage,
+               relationship.overlap_area_m2,
+               relationship.overlap_weight,
+               relationship.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS relationship
+        WHERE relationship.related_geo_id = :geo_id
+          AND relationship.geo_id = :other_geo_id
+          AND relationship.relationship_type IN ('contains', 'intersects')
+        UNION ALL
+        SELECT ancestor.geo_id,
+               'part_of',
+               ancestor.geography_vintage,
+               ancestor.overlap_area_m2,
+               ancestor.overlap_weight,
+               ancestor.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS parent_link
+        JOIN {RELATIONSHIP_RELATION} AS ancestor
+             ON ancestor.related_geo_id = parent_link.geo_id
+            AND ancestor.relationship_type = 'contains'
+        WHERE parent_link.related_geo_id = :geo_id
+          AND parent_link.relationship_type = 'contains'
+          AND ancestor.geo_id = :other_geo_id
+        UNION ALL
+        SELECT metro_link.geo_id,
+               'intersects',
+               MAX(metro_link.geography_vintage),
+               SUM(place_county.overlap_area_m2),
+               SUM(place_county.overlap_weight),
+               MIN(metro_link.evidence_source)
+        FROM {RELATIONSHIP_RELATION} AS place_county
+        JOIN {RELATIONSHIP_RELATION} AS metro_link
+             ON metro_link.related_geo_id = place_county.geo_id
+            AND metro_link.relationship_type = 'contains'
+        JOIN {GEOGRAPHY_RELATION} AS county
+             ON county.geo_id = place_county.geo_id
+            AND county.geo_level = 'COUNTY'
+        JOIN {GEOGRAPHY_RELATION} AS metro
+             ON metro.geo_id = metro_link.geo_id
+            AND metro.geo_level = 'METRO'
+        WHERE place_county.related_geo_id = :geo_id
+          AND place_county.relationship_type = 'intersects'
+          AND metro_link.geo_id = :other_geo_id
+        GROUP BY metro_link.geo_id
+    )
+    SELECT DISTINCT ON (related.relationship, geography.geo_id)
+           related.relationship,
+           geography.geo_id,
+           geography.geo_level,
+           geography.geo_name,
+           geography.state_fips,
+           related.geography_vintage,
+           related.overlap_area_m2,
+           related.overlap_weight,
+           related.evidence_source
+    FROM related
+    JOIN {GEOGRAPHY_RELATION} AS geography
+         ON geography.geo_id = related.other_geo_id
+    WHERE geography.geo_id = :other_geo_id
+      AND NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
     ORDER BY related.relationship, geography.geo_id, related.geography_vintage DESC
     """
 )

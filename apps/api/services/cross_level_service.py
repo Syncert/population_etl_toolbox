@@ -42,6 +42,8 @@ from sqlalchemy.orm import Session
 from apps.api.registry import normalize_geo_level
 from apps.api.schemas.cross_level import (
     ComparisonAlternative,
+    PlacesBatchItem,
+    PlacesComparisonBatchResponse,
     PlacesComparisonResponse,
     PlacesContainment,
     PlacesNote,
@@ -49,12 +51,13 @@ from apps.api.schemas.cross_level import (
     PlacesSide,
 )
 from apps.api.schemas.labels import label_fields
-from apps.api.services.comparison_service import _resolved
-from apps.api.services.contracts import require_relation
+from apps.api.services.comparison_service import UnknownAnalysisMetric, _resolved
+from apps.api.services.contracts import require_relation, session_memo
 from apps.api.services.derived_ratio_service import UnknownRatio, pair_rows
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     observations_for_geographies,
+    prefetch_observations_for_geographies,
 )
 from data_ingestion_toolbox.semantics.definitions import definition_for, measure_kind
 from data_ingestion_toolbox.semantics.derived_ratios import (
@@ -64,7 +67,7 @@ from data_ingestion_toolbox.semantics.derived_ratios import (
 )
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_IDENTITY_QUERY,
-    GEOGRAPHY_RELATED_QUERY,
+    GEOGRAPHY_PAIR_RELATIONSHIP_QUERY,
     GEOGRAPHY_RELATION,
     RELATIONSHIP_RELATION,
 )
@@ -369,7 +372,25 @@ def code_refusal(code_a: str, code_b: str) -> Optional[PlacesRefusal]:
 # ---------------------------------------------------------------------------
 
 
+#: The pair's geographies and how they relate, read once per request: a batch
+#: answers a dozen measures for the same two places.
+_PAIR_KEY = "apps.api.cross_level_pair"
+
+
 def _geographies(db: Session, geo_id_a: str, geo_id_b: str) -> tuple[Mapping, Mapping]:
+    memo = session_memo(db, _PAIR_KEY)
+    key = ("geographies", geo_id_a, geo_id_b)
+    if memo is not None and key in memo:
+        return memo[key]
+    found = _read_geographies(db, geo_id_a, geo_id_b)
+    if memo is not None:
+        memo[key] = found
+    return found
+
+
+def _read_geographies(
+    db: Session, geo_id_a: str, geo_id_b: str
+) -> tuple[Mapping, Mapping]:
     require_relation(db, GEOGRAPHY_RELATION)
     rows = {
         row["geo_id"]: row
@@ -386,6 +407,17 @@ def _geographies(db: Session, geo_id_a: str, geo_id_b: str) -> tuple[Mapping, Ma
 
 
 def _containment(db: Session, geography_a: Mapping, geography_b: Mapping):
+    memo = session_memo(db, _PAIR_KEY)
+    key = ("containment", geography_a["geo_id"], geography_b["geo_id"])
+    if memo is not None and key in memo:
+        return memo[key]
+    found = _read_containment(db, geography_a, geography_b)
+    if memo is not None:
+        memo[key] = found
+    return found
+
+
+def _read_containment(db: Session, geography_a: Mapping, geography_b: Mapping):
     level_a = normalize_geo_level(str(geography_a.get("geo_level") or ""))
     level_b = normalize_geo_level(str(geography_b.get("geo_level") or ""))
     if "NATIONAL" in (level_a, level_b):
@@ -393,10 +425,17 @@ def _containment(db: Session, geography_a: Mapping, geography_b: Mapping):
     rows_from = (
         "a" if _LEVEL_RANK.get(level_a, 99) <= _LEVEL_RANK.get(level_b, 99) else "b"
     )
-    finer = geography_a if rows_from == "a" else geography_b
+    finer, other = (
+        (geography_a, geography_b) if rows_from == "a" else (geography_b, geography_a)
+    )
     require_relation(db, RELATIONSHIP_RELATION)
+    # Only the finer place's rows that name the other place: the same rows
+    # its whole related list would match, without reading that list.
     rows = (
-        db.execute(GEOGRAPHY_RELATED_QUERY, {"geo_id": finer["geo_id"]})
+        db.execute(
+            GEOGRAPHY_PAIR_RELATIONSHIP_QUERY,
+            {"geo_id": finer["geo_id"], "other_geo_id": other["geo_id"]},
+        )
         .mappings()
         .all()
     )
@@ -779,4 +818,117 @@ def compare_places(
         derivations=derivations,
         notes=notes,
         caveats=caveats,
+    )
+
+
+#: The most measures one batch answers; a page splits a longer list.
+BATCH_MOST = 60
+
+
+def _pairing_reads(pairing: Optional[RatioPairing]) -> list[str]:
+    if pairing is None:
+        return []
+    if pairing.kind == "provider_rate":
+        return [str(pairing.provider_rate)]
+    return [pairing.numerator, str(pairing.denominator)]
+
+
+def _batch_item(
+    db: Session,
+    geo_id_a: str,
+    geo_id_b: str,
+    metric_code: Optional[str],
+    ratio_id: Optional[str],
+    follow_alternatives: bool,
+) -> PlacesBatchItem:
+    item = PlacesBatchItem(metric_code=metric_code, ratio_id=ratio_id)
+    try:
+        answer = compare_places(
+            db, geo_id_a, geo_id_b, metric_code=metric_code, ratio_id=ratio_id
+        )
+    except UnknownAnalysisMetric:
+        return item.model_copy(
+            update={"status": 404, "detail": "metric_code not found"}
+        )
+    except UnknownRatio:
+        return item.model_copy(update={"status": 404, "detail": "ratio_id not found"})
+    except NeutralQueryError as exc:
+        return item.model_copy(update={"status": 422, "detail": exc.detail})
+    instead: Optional[PlacesComparisonResponse] = None
+    refusal = answer.refusal
+    if (
+        follow_alternatives
+        and refusal is not None
+        and refusal.reason == "counts_differ_in_size"
+        and refusal.alternatives
+    ):
+        try:
+            instead = compare_places(
+                db, geo_id_a, geo_id_b, ratio_id=refusal.alternatives[0].ratio_id
+            )
+        except (UnknownRatio, NeutralQueryError):
+            # The refusal still stands and names the view; it is just not shown.
+            instead = None
+    return item.model_copy(update={"answer": answer, "instead": instead})
+
+
+def compare_places_batch(
+    db: Session,
+    geo_id_a: str,
+    geo_id_b: str,
+    metric_codes: Sequence[str] = (),
+    ratio_ids: Sequence[str] = (),
+    follow_alternatives: bool = True,
+) -> PlacesComparisonBatchResponse:
+    """Several measures for the same two places in one request (ADR-0010).
+
+    Each item is exactly what ``/comparison/places`` answers for it alone.
+    The two places, how they relate, and every metric's rows are read once
+    for the whole batch, one statement per source relation where the source
+    allows it, instead of once per measure. A measure the request cannot
+    answer carries the status its own request would have had; only an
+    unknown place fails the whole batch, because it fails every item.
+    """
+    if not metric_codes and not ratio_ids:
+        raise NeutralQueryError("name at least one metric_code or ratio_id")
+    if len(metric_codes) + len(ratio_ids) > BATCH_MOST:
+        raise NeutralQueryError(
+            f"a batch answers at most {BATCH_MOST} measures; split the request"
+        )
+    if geo_id_a == geo_id_b:
+        raise NeutralQueryError("geo_id_a and geo_id_b name the same place")
+    geography_a, geography_b = _geographies(db, geo_id_a, geo_id_b)
+    cross_level = normalize_geo_level(
+        str(geography_a.get("geo_level") or "")
+    ) != normalize_geo_level(str(geography_b.get("geo_level") or ""))
+
+    reads: list[str] = []
+    for code in metric_codes:
+        reads.append(code)
+        if (
+            follow_alternatives
+            and cross_level
+            and measure_kind(code)[0] not in COMPARABLE_KINDS
+        ):
+            offered = count_alternatives(code)
+            if offered:
+                reads.extend(_pairing_reads(pairing_for(offered[0].ratio_id)))
+    for ratio_id in ratio_ids:
+        reads.extend(_pairing_reads(pairing_for(ratio_id)))
+    prefetch_observations_for_geographies(
+        db,
+        reads,
+        SCOPE,
+        [str(geography_a["geo_id"]), str(geography_b["geo_id"])],
+    )
+
+    items = [
+        _batch_item(db, geo_id_a, geo_id_b, code, None, follow_alternatives)
+        for code in metric_codes
+    ] + [
+        _batch_item(db, geo_id_a, geo_id_b, None, ratio_id, follow_alternatives)
+        for ratio_id in ratio_ids
+    ]
+    return PlacesComparisonBatchResponse(
+        geo_id_a=geo_id_a, geo_id_b=geo_id_b, items=items
     )

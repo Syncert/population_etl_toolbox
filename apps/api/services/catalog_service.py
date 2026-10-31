@@ -15,6 +15,7 @@ advertise a route the application does not serve.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -78,6 +79,7 @@ def list_metrics(
     q: Optional[str],
     limit: int,
     offset: int,
+    metric_codes: Optional[Sequence[str]] = None,
 ) -> MetricListResponse:
     require_relation(db, METRIC_RELATION)
     list_query, count_query, params = build_metrics_queries(
@@ -86,6 +88,7 @@ def list_metrics(
         q=q,
         limit=limit,
         offset=offset,
+        metric_codes=metric_codes,
     )
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()

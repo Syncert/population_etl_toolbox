@@ -127,3 +127,27 @@ class PlacesComparisonResponse(BaseModel):
     derivations: list[str]
     notes: list[PlacesNote]
     caveats: list[str]
+
+
+class PlacesBatchItem(BaseModel):
+    """One measure of a batch: its answer, or the status its own request had.
+
+    ``instead`` is the first view a refused total offered (its per-capita or
+    share pairing), answered in the same request so the reader does not wait
+    for a second round trip; ``null`` when there was nothing to follow.
+    """
+
+    metric_code: Optional[str] = None
+    ratio_id: Optional[str] = None
+    status: int = 200
+    detail: Optional[str] = None
+    answer: Optional[PlacesComparisonResponse] = None
+    instead: Optional[PlacesComparisonResponse] = None
+
+
+class PlacesComparisonBatchResponse(BaseModel):
+    """Several measures for the same two places, in the order asked."""
+
+    geo_id_a: str
+    geo_id_b: str
+    items: list[PlacesBatchItem]

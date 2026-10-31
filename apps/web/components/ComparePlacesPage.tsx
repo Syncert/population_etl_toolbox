@@ -19,14 +19,13 @@ import { useRouter } from "next/navigation";
 import { ArrowLeftRight } from "lucide-react";
 import StatusPill from "./StatusPill";
 import {
-  ApiError,
   apiErrorMessage,
   apiFetch,
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
   getComparisonPreflight,
-  getMetric,
+  getMetricsByCode,
 } from "../lib/api/client";
 import type { CollectionResponse, ComparisonPreflight, GeographySummary, MetricSummary, Observation } from "../lib/api/types";
 import { buildExplorerSources } from "../lib/explorerSources";
@@ -58,7 +57,7 @@ import type { LevelPlace, PlaceChapter, PlaceLevel, PlaceMeasure } from "../lib/
 import { COMPARE_GEO_ID, barPosition, compareHref, compareMeasure, intervalsOverlap, pairPath } from "../lib/placeComparison";
 import type { ComparedPlace, ComparedRow, NotComparableRow } from "../lib/placeComparison";
 import type { CompareLevel } from "../lib/crossLevelComparison";
-import { isCrossLevel, levelWords } from "../lib/crossLevelComparison";
+import { getPlacesComparisonBatch, isCrossLevel, levelWords } from "../lib/crossLevelComparison";
 import { getDerivedRatios, pairingFor, viewChoices } from "../lib/derivedViews";
 import type { DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
 import { groupNearby, relatedPath } from "../lib/placeRelationships";
@@ -66,7 +65,8 @@ import type { RelatedResponse } from "../lib/placeRelationships";
 import { comparisonHref } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 import { ViewToggle } from "./DerivedView";
-import PlacesAnswer from "./PlacesAnswer";
+import PlacesAnswer, { askedFor } from "./PlacesAnswer";
+import type { ChapterBatch } from "./PlacesAnswer";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 
@@ -274,17 +274,8 @@ export default function ComparePlacesPage({ a: addressA, b: addressB }: { a: Sid
           router.replace(compareHref(linkOf(a), linkOf(b)));
         }
         setSides({ a, b });
-        const found = new Map<string, MetricSummary>();
-        await Promise.all(
-          placeChapterMetricCodes().map(async (code) => {
-            try {
-              const metric = await getMetric(code, { signal });
-              if (metric?.metric_code) found.set(metric.metric_code, metric);
-            } catch (error) {
-              if (!(error instanceof ApiError && error.status === 404)) throw error;
-            }
-          }),
-        );
+        // One catalog read for every chapter's codes, not one per code.
+        const found = await getMetricsByCode(placeChapterMetricCodes(), { signal });
         if (!signal.aborted) setMetrics(found);
       } catch (error) {
         if (!signal.aborted) setProblem(apiErrorMessage(error));
@@ -588,6 +579,35 @@ function CompareChapter({
   // view), at one level when the switch chooses one.
   const shownViewable = cross ? viewable : viewable.filter(({ code }) => switched(code));
 
+  // Every row this chapter asks `/comparison/places` for, asked in one
+  // request: one request per row paid for the pair and its reads each time,
+  // and the browser sends only six requests at a time to one host.
+  const askedRows = (cross ? all : [...measures.filter(({ code }) => switched(code)), ...shownViewable]).map(({ code }) =>
+    askedFor(code, switched(code)),
+  );
+  const askedKey = askedRows.map((asked) => asked.ratioId ? `r:${asked.ratioId}` : `m:${asked.metricCode}`).join(",");
+  const [batch, setBatch] = useState<ChapterBatch>({ state: "loading" });
+  useEffect(() => {
+    if (!askedRows.length) return;
+    const controller = new AbortController();
+    setBatch({ state: "loading" });
+    getPlacesComparisonBatch(
+      {
+        geo_id_a: a.place.geoId,
+        geo_id_b: b.place.geoId,
+        metricCodes: askedRows.flatMap((asked) => (asked.metricCode ? [asked.metricCode] : [])),
+        ratioIds: askedRows.flatMap((asked) => (asked.ratioId ? [asked.ratioId] : [])),
+      },
+      { signal: controller.signal },
+    )
+      .then((items) => { if (!controller.signal.aborted) setBatch({ state: "ok", items }); })
+      // An API without the batch route: each row asks for itself.
+      .catch(() => { if (!controller.signal.aborted) setBatch({ state: "failed" }); });
+    return () => controller.abort();
+    // `askedKey` names exactly what `askedRows` asks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askedKey, a.place.geoId, b.place.geoId]);
+
   if (!all.length) return null;
   const toggle = (
     <ViewToggle choices={choices} value={view} onChange={setView} pairings={viewPairings} label="Show counts as" testId={`compare-chapter-${chapter.id}-view`} />
@@ -608,6 +628,7 @@ function CompareChapter({
             unit={metricUnit(metric)}
             a={a.place}
             b={b.place}
+            batch={batch}
           />
         ))}
       </section>
@@ -663,13 +684,14 @@ function CompareChapter({
               unit={pairing.unit}
               a={a.place}
               b={b.place}
+              batch={batch}
             />
           );
         }
         return outcome.row ? <PairedRow key={measure.id} row={outcome.row} a={a.place.name} b={b.place.name} /> : null;
       })}
       {shownViewable.map(({ measure, code }) => (
-        <PlacesAnswer key={measure.id} measureId={measure.id} label={measure.label} metricCode={code} pairing={switched(code)} unit="" a={a.place} b={b.place} />
+        <PlacesAnswer key={measure.id} measureId={measure.id} label={measure.label} metricCode={code} pairing={switched(code)} unit="" a={a.place} b={b.place} batch={batch} />
       ))}
       {trendRow && trendMeasure ? (
         <PlaceTrend

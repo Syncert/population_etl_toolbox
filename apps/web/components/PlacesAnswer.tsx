@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { apiErrorMessage } from "../lib/api/client";
 import {
+  batchKey,
   containmentSentence,
   differenceText,
   getPlacesComparison,
@@ -20,14 +21,36 @@ import {
   sideValue,
   sideValueText,
 } from "../lib/crossLevelComparison";
-import type { ComparedSide, ComparisonAlternative, PlacesComparison } from "../lib/crossLevelComparison";
+import type { ComparedSide, ComparisonAlternative, PlacesBatchItem, PlacesComparison } from "../lib/crossLevelComparison";
 import { DRAFT_VIEW_TEXT } from "../lib/derivedViews";
 import type { DerivedRatioPairing } from "../lib/derivedViews";
 
-interface Asked {
+export interface Asked {
   /** A count's or rate's own code, or a pairing's ratio id. */
   metricCode?: string;
   ratioId?: string;
+}
+
+/**
+ * The chapter's batch, when it asked one: still reading, answered (the
+ * items by `batchKey`), or failed, when each row asks for itself as before.
+ */
+export type ChapterBatch = { state: "loading" } | { state: "ok"; items: Map<string, PlacesBatchItem> } | { state: "failed" };
+
+/** What a row asks, the same way the chapter's batch asks it. */
+export function askedFor(metricCode: string, pairing: DerivedRatioPairing | null): Asked {
+  return pairing ? { ratioId: pairing.ratio_id } : { metricCode };
+}
+
+function fromBatch(item: PlacesBatchItem | undefined): Answered {
+  if (!item) return { state: "error", error: "the batch did not answer this measure" };
+  if (!item.answer) return { state: "error", error: item.detail || `the request failed (${item.status})` };
+  const alternative = item.answer.refusal?.reason === "counts_differ_in_size" ? item.answer.refusal.alternatives?.[0] : undefined;
+  return {
+    state: "ok",
+    answer: item.answer,
+    ...(alternative && item.instead ? { instead: { alternative, answer: item.instead } } : {}),
+  };
 }
 
 interface Answered {
@@ -46,6 +69,7 @@ export default function PlacesAnswer({
   unit,
   a,
   b,
+  batch,
 }: {
   measureId: string;
   label: string;
@@ -55,11 +79,15 @@ export default function PlacesAnswer({
   unit: string;
   a: ComparedSide;
   b: ComparedSide;
+  /** The chapter's batch answer; without one, or when it failed, the row asks for itself. */
+  batch?: ChapterBatch;
 }) {
   const [answered, setAnswered] = useState<Answered>({ state: "loading" });
-  const asked: Asked = pairing ? { ratioId: pairing.ratio_id } : { metricCode };
+  const asked: Asked = askedFor(metricCode, pairing);
+  const ownRequest = !batch || batch.state === "failed";
 
   useEffect(() => {
+    if (!ownRequest) return;
     const controller = new AbortController();
     const { signal } = controller;
     const ask = (question: Asked) =>
@@ -85,18 +113,19 @@ export default function PlacesAnswer({
     return () => controller.abort();
     // `asked` is derived from `pairing` and `metricCode`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairing?.ratio_id, metricCode, a.geoId, b.geoId]);
+  }, [pairing?.ratio_id, metricCode, a.geoId, b.geoId, ownRequest]);
 
   const testId = `compare-row-${measureId}`;
-  if (answered.state !== "ok" || !answered.answer) {
+  const current: Answered = ownRequest ? answered : batch?.state === "ok" ? fromBatch(batch.items.get(batchKey(asked))) : { state: "loading" };
+  if (current.state !== "ok" || !current.answer) {
     return (
-      <div className="paired-row" data-testid={testId} data-state={answered.state}>
+      <div className="paired-row" data-testid={testId} data-state={current.state}>
         <h3>{pairing ? pairing.label : label}</h3>
-        <p className="subtle">{answered.state === "loading" ? "Reading both places…" : `This comparison could not be read: ${answered.error}`}</p>
+        <p className="subtle">{current.state === "loading" ? "Reading both places…" : `This comparison could not be read: ${current.error}`}</p>
       </div>
     );
   }
-  const { answer, instead } = answered;
+  const { answer, instead } = current;
   const shown = answer.comparable ? answer : instead?.answer.comparable ? instead.answer : null;
   // A side with no value is refused (`not_published`); the side that has
   // one is still shown, beside "Not published for this place".

@@ -188,3 +188,35 @@ test("a place page always offers its state and the nation to compare with", asyn
   await expect(offer.getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/dane-county/vs/us/wisconsin");
   await expect(offer.getByRole("link", { name: "the United States" })).toHaveAttribute("href", "/us/wisconsin/dane-county/vs/us");
 });
+
+test("a compare page asks one batch per chapter and one catalog read, not one request per row", async ({ page }) => {
+  // OFFICE_LAB: one request per row and per code (241 for Dane County beside
+  // Wisconsin) queued six at a time behind a seven-second pair read each.
+  const asked = { single: 0, batch: 0, metricCodes: 0, metricList: 0 };
+  page.on("request", (request) => {
+    const { pathname } = new URL(request.url());
+    if (pathname === "/api/v1/comparison/places") asked.single += 1;
+    if (pathname === "/api/v1/comparison/places/batch") asked.batch += 1;
+    if (pathname.startsWith("/api/v1/catalog/metrics/")) asked.metricCodes += 1;
+    if (pathname === "/api/v1/catalog/metrics") asked.metricList += 1;
+  });
+  await open(page, "/us/wisconsin/dane-county/vs/us/wisconsin");
+  const poverty = page.getByTestId("compare-row-below-poverty");
+  await expect(poverty).toHaveAttribute("data-state", "ok");
+  await expect(poverty).toContainText("Shown instead: Share of people below the poverty level");
+  await expect(page.getByTestId("compare-row-median-household-income")).toHaveAttribute("data-state", "ok");
+  expect(asked.single).toBe(0);
+  expect(asked.metricCodes).toBe(0);
+  expect(asked.metricList).toBe(1);
+  const chapters = await page.locator('[data-testid^="compare-chapter-"][data-view]').count();
+  expect(asked.batch).toBe(chapters);
+});
+
+test("without the batch route each row still asks for itself", async ({ page }) => {
+  await installCrossLevelFixtures(page);
+  await page.route("**/api/v1/comparison/places/batch**", (route) => route.fulfill({ status: 404, json: { detail: "Not Found" } }));
+  await page.goto("/us/wisconsin/dane-county/vs/us/wisconsin");
+  await expect(page.getByTestId("compare-places")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("compare-row-median-household-income")).toHaveAttribute("data-state", "ok");
+  await expect(page.getByTestId("compare-row-below-poverty")).toContainText("Shown instead: Share of people below the poverty level");
+});
