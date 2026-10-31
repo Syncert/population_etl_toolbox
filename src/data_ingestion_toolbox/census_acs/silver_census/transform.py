@@ -1510,9 +1510,18 @@ def _upsert_silver_rows(
         ) ON COMMIT PRESERVE ROWS;
     """
 
-    insert_temp_sql = """
-        INSERT INTO temp_census_upsert VALUES %s;
-    """
+    copy_temp_sql = r"COPY temp_census_upsert FROM STDIN WITH (FORMAT csv, NULL '\N')"
+
+    def _copy_buffer(batch_df: pl.DataFrame) -> io.BytesIO:
+        frame = batch_df.select(upsert_cols).with_columns(
+            pl.lit(suffix[0]).alias("source_system"),
+            pl.lit(suffix[1]).alias("load_batch_id"),
+            pl.lit(suffix[2].isoformat()).alias("ingested_at"),
+        )
+        buffer = io.BytesIO()
+        frame.write_csv(buffer, include_header=False, null_value=r"\N")
+        buffer.seek(0)
+        return buffer
 
     merge_sql = """
         INSERT INTO silver_census.fact_demographics (
@@ -1625,14 +1634,17 @@ def _upsert_silver_rows(
             for batch_idx in range(num_batches):
                 offset = batch_idx * _UPSERT_SUB_BATCH_SIZE
                 batch_df = df.slice(offset, _UPSERT_SUB_BATCH_SIZE)
-                records = [row + suffix for row in batch_df.select(upsert_cols).rows()]
 
                 with conn.cursor() as cur:
                     if batch_idx == 0:
                         cur.execute(create_temp_sql)
                     else:
                         cur.execute("TRUNCATE temp_census_upsert;")
-                    execute_values(cur, insert_temp_sql, records, page_size=10000)
+                    # COPY a CSV polars writes, rather than building a Python
+                    # tuple per row for `execute_values` to format: that was
+                    # the Python half of each slice, which held the GIL and
+                    # kept eight transform threads to 1.7 cores (2026-10-31).
+                    cur.copy_expert(copy_temp_sql, _copy_buffer(batch_df))
                     cur.execute(merge_sql)
                     changed_now = (
                         cur.rowcount
@@ -1646,7 +1658,7 @@ def _upsert_silver_rows(
                     "input=%s, changed=%s",
                     batch_idx + 1,
                     num_batches,
-                    len(records),
+                    batch_df.height,
                     changed_now,
                 )
     except Exception:
