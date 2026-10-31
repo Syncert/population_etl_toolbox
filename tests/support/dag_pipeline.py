@@ -13,6 +13,8 @@ orchestration defect rather than a mocking artifact.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -620,6 +622,39 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(geography_pipeline, "parse_boundary_capture", parse_geometry)
+
+    # The CBSA cartographic boundary (tiles-places-and-metros): one box per
+    # CBSA the reviewed delineation excerpt lists, north of the state lattice
+    # so a metro polygon never overlaps a fixture county or place.
+    from data_ingestion_toolbox.silver_ref import area_geography
+
+    def parse_metro_geometry(
+        payload: bytes, *, geo_type: str, boundary_vintage: int
+    ) -> list[Any]:
+        if geo_type != "metro":
+            return parse_geometry(
+                payload, geo_type=geo_type, boundary_vintage=boundary_vintage
+            )
+        excerpt = (AREA_FIXTURES / "cbsa-est2024-alldata.excerpt.csv").read_text(
+            encoding="latin-1"
+        )
+        codes = sorted(
+            {
+                row["CBSA"]
+                for row in csv.DictReader(io.StringIO(excerpt))
+                if row.get("CBSA")
+            }
+        )
+        return [
+            geography_pipeline.GeometryRecord(
+                geography_pipeline.canonical_geo_id("metro", area_code=code),
+                boundary_vintage,
+                _boundary_polygon(-100.0 + ordinal, 45.0, -100.0 + ordinal + 0.5, 45.5),
+            )
+            for ordinal, code in enumerate(codes)
+        ]
+
+    monkeypatch.setattr(area_geography, "parse_boundary_capture", parse_metro_geometry)
     # The fixture publishes one bounded set of tracts for every vintage, so the
     # decade relationship files have no parts to cross; their capture still
     # runs (tract-crosswalk), and the parse is tested against real excerpts.
