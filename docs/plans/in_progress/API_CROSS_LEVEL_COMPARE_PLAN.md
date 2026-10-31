@@ -101,12 +101,12 @@ metric's latest relation through `observations_for_geographies`), so nothing
 new is needed in the warehouse. What a cloud session cannot see is real
 answers. On OFFICE_LAB, with the API image rebuilt from this branch:
 
-1. `curl "localhost:8000/api/v1/comparison/places?metric_code=CENSUS_ACS:acs5:B19013_001&geo_id_a=1600000US4805000&geo_id_b=0500000US48453"`
+1. `curl "localhost:8000/api/v1/comparison/places?metric_code=CENSUS_ACS:acs5:B19013_001&geo_id_a=state:48%7Cplace:05000&geo_id_b=state:48%7Ccounty:453"`
    (Austin and Travis County): expect `comparable: true`, both values for one
    period, `containment.relationship: intersects` with a share, no difference.
-2. Same with `metric_code=CENSUS_ACS:acs5:B17001_002`, `geo_id_a=0500000US55025`,
-   `geo_id_b=0400000US55` (Dane County, Wisconsin): expect `comparable: false`,
+2. Same with `metric_code=CENSUS_ACS:acs5:B17001_002`, `geo_id_a=state:55|county:025`,
+   `geo_id_b=state:55` (Dane County, Wisconsin): expect `comparable: false`,
    `counts_differ_in_size`, `containment.relationship: contains` from b's side
    (`part_of`).
-3. `metric_code=BLS:LAU:UNEMP_RATE` for an Austin metro id beside
-   `0100000US`: expect `comparable: true`, `part_of`.
+3. `metric_code=BLS:LAU:UNEMP_RATE` for `cbsa:12420` (Austin metro) beside
+   `us:1`: expect `comparable: true`, `part_of`.

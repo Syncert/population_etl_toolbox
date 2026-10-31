@@ -50,11 +50,11 @@ POVERTY = "CENSUS_ACS:acs5:B17001_002"
 POVERTY_UNIVERSE = "CENSUS_ACS:acs5:B17001_001"
 POPULATION = "CENSUS_PEP:POPESTIMATE"
 
-AUSTIN = {"geo_id": "1600000US4805000", "geo_level": "PLACE", "geo_name": "Austin"}
-TRAVIS = {"geo_id": "0500000US48453", "geo_level": "COUNTY", "geo_name": "Travis"}
-DALLAS = {"geo_id": "0500000US48113", "geo_level": "COUNTY", "geo_name": "Dallas"}
-TEXAS = {"geo_id": "0400000US48", "geo_level": "STATE", "geo_name": "Texas"}
-NATION = {"geo_id": "0100000US", "geo_level": "NATIONAL", "geo_name": "United States"}
+AUSTIN = {"geo_id": "state:48|place:05000", "geo_level": "PLACE", "geo_name": "Austin"}
+TRAVIS = {"geo_id": "state:48|county:453", "geo_level": "COUNTY", "geo_name": "Travis"}
+DALLAS = {"geo_id": "state:48|county:113", "geo_level": "COUNTY", "geo_name": "Dallas"}
+TEXAS = {"geo_id": "state:48", "geo_level": "STATE", "geo_name": "Texas"}
+NATION = {"geo_id": "us:1", "geo_level": "NATIONAL", "geo_name": "United States"}
 GEOGRAPHIES = {g["geo_id"]: g for g in (AUSTIN, TRAVIS, DALLAS, TEXAS, NATION)}
 
 
@@ -473,7 +473,7 @@ def test_a_different_program_on_side_b_is_refused(client, served) -> None:
 @pytest.mark.parametrize(
     ("params", "status", "detail"),
     [
-        ({"geo_id_a": "0500000US99999"}, 404, "geo_id_a not found"),
+        ({"geo_id_a": "state:99|county:999"}, 404, "geo_id_a not found"),
         ({"metric_code": "NOT:A:METRIC"}, 404, "metric_code not found"),
         ({"metric_code": None, "ratio_id": "nope"}, 404, "ratio_id not found"),
         ({"ratio_id": "poverty_share:acs5"}, 422, "exactly one"),
