@@ -90,6 +90,13 @@ CRITERION_HINT_PATTERN = re.compile(
 #: Plans whose criteria match a hint above and were read anyway, with what the
 #: reader concluded. An entry here is a claim that a person looked.
 CRITERION_HINTS_REVIEWED: dict[str, str] = {
+    "web-place-maps": (
+        "The word is in 'no warehouse rule is copied into client code', a rule "
+        "the unit and browser tiers check against stubbed API answers and "
+        "synthetic tiles. The OFFICE_LAB look at real tiles is a hand-off check "
+        "recorded in the plan, like every web plan's live check; the code is "
+        "built and verified in the cloud."
+    ),
     "map-bundle-and-browser-cache": (
         "Names the served-request log and the bundle budget, both of which are "
         "the browser tier and the Next build. No service."

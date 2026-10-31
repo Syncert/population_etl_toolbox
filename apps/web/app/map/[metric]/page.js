@@ -26,11 +26,25 @@ export async function generateMetadata({ params }) {
 export default async function MeasureMapRoute({ params, searchParams }) {
   const metric = metricFrom((await params).metric);
   if (!metric) notFound();
-  const { period, release, view } = await searchParams;
+  const { period, release, view, grain, state } = await searchParams;
   const requested = typeof period === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period) ? period : undefined;
   // An earlier release, by the identity `/observations/releases` lists.
   const requestedRelease = typeof release === "string" && /^[A-Za-z0-9._:-]{1,40}$/.test(release) ? release : undefined;
   // A per-capita or share view of the measure (web-per-capita-toggle).
   const requestedView = view === "per_capita" || view === "share" ? view : undefined;
-  return <MeasureMapPage key={metric} metricCode={metric} requestedPeriod={requested} requestedRelease={requestedRelease} requestedView={requestedView} />;
+  // The grain to draw (web-place-maps), checked against the catalog's grains
+  // on the page, and the state a city or tract map is drawn in.
+  const requestedGrain = typeof grain === "string" && /^[A-Za-z_]{1,20}$/.test(grain) ? grain.toUpperCase() : undefined;
+  const requestedState = typeof state === "string" && /^\d{2}$/.test(state) ? state : undefined;
+  return (
+    <MeasureMapPage
+      key={metric}
+      metricCode={metric}
+      requestedPeriod={requested}
+      requestedRelease={requestedRelease}
+      requestedView={requestedView}
+      requestedGrain={requestedGrain}
+      requestedState={requestedState}
+    />
+  );
 }
