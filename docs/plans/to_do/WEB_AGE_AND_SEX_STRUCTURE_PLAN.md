@@ -21,7 +21,7 @@ verify:
 To do, 2026-10-31. The web side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
-contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](API_AGE_AND_SEX_STRUCTURE_PLAN.md)
+contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
 and can be built against stubbed answers in that shape while the API is
 built; the live check waits for the API to merge.
 

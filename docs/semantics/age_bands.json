@@ -1,0 +1,385 @@
+{
+  "description": "Age band schemes for sex-by-age tables (ADR-0013). Each output band names the provider lines it is the sum of, per sex; nothing is grouped by reading labels.",
+  "schemes": [
+    {
+      "scheme_id": "acs_b01001_five_year",
+      "version": 1,
+      "status": "draft",
+      "label": "Eighteen five-year age groups from the ACS sex-by-age table",
+      "table_id": "B01001",
+      "source_code": "CENSUS_ACS",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "totals": {
+        "all": "B01001_001",
+        "men": "B01001_002",
+        "women": "B01001_026"
+      },
+      "median_age": {
+        "table_id": "B01002",
+        "all": "B01002_001",
+        "men": "B01002_002",
+        "women": "B01002_003"
+      },
+      "bands": [
+        {
+          "band_id": "0-4",
+          "age_start": 0,
+          "age_end": 4,
+          "label": "0 to 4",
+          "men": [
+            "B01001_003"
+          ],
+          "women": [
+            "B01001_027"
+          ]
+        },
+        {
+          "band_id": "5-9",
+          "age_start": 5,
+          "age_end": 9,
+          "label": "5 to 9",
+          "men": [
+            "B01001_004"
+          ],
+          "women": [
+            "B01001_028"
+          ]
+        },
+        {
+          "band_id": "10-14",
+          "age_start": 10,
+          "age_end": 14,
+          "label": "10 to 14",
+          "men": [
+            "B01001_005"
+          ],
+          "women": [
+            "B01001_029"
+          ]
+        },
+        {
+          "band_id": "15-19",
+          "age_start": 15,
+          "age_end": 19,
+          "label": "15 to 19",
+          "men": [
+            "B01001_006",
+            "B01001_007"
+          ],
+          "women": [
+            "B01001_030",
+            "B01001_031"
+          ]
+        },
+        {
+          "band_id": "20-24",
+          "age_start": 20,
+          "age_end": 24,
+          "label": "20 to 24",
+          "men": [
+            "B01001_008",
+            "B01001_009",
+            "B01001_010"
+          ],
+          "women": [
+            "B01001_032",
+            "B01001_033",
+            "B01001_034"
+          ]
+        },
+        {
+          "band_id": "25-29",
+          "age_start": 25,
+          "age_end": 29,
+          "label": "25 to 29",
+          "men": [
+            "B01001_011"
+          ],
+          "women": [
+            "B01001_035"
+          ]
+        },
+        {
+          "band_id": "30-34",
+          "age_start": 30,
+          "age_end": 34,
+          "label": "30 to 34",
+          "men": [
+            "B01001_012"
+          ],
+          "women": [
+            "B01001_036"
+          ]
+        },
+        {
+          "band_id": "35-39",
+          "age_start": 35,
+          "age_end": 39,
+          "label": "35 to 39",
+          "men": [
+            "B01001_013"
+          ],
+          "women": [
+            "B01001_037"
+          ]
+        },
+        {
+          "band_id": "40-44",
+          "age_start": 40,
+          "age_end": 44,
+          "label": "40 to 44",
+          "men": [
+            "B01001_014"
+          ],
+          "women": [
+            "B01001_038"
+          ]
+        },
+        {
+          "band_id": "45-49",
+          "age_start": 45,
+          "age_end": 49,
+          "label": "45 to 49",
+          "men": [
+            "B01001_015"
+          ],
+          "women": [
+            "B01001_039"
+          ]
+        },
+        {
+          "band_id": "50-54",
+          "age_start": 50,
+          "age_end": 54,
+          "label": "50 to 54",
+          "men": [
+            "B01001_016"
+          ],
+          "women": [
+            "B01001_040"
+          ]
+        },
+        {
+          "band_id": "55-59",
+          "age_start": 55,
+          "age_end": 59,
+          "label": "55 to 59",
+          "men": [
+            "B01001_017"
+          ],
+          "women": [
+            "B01001_041"
+          ]
+        },
+        {
+          "band_id": "60-64",
+          "age_start": 60,
+          "age_end": 64,
+          "label": "60 to 64",
+          "men": [
+            "B01001_018",
+            "B01001_019"
+          ],
+          "women": [
+            "B01001_042",
+            "B01001_043"
+          ]
+        },
+        {
+          "band_id": "65-69",
+          "age_start": 65,
+          "age_end": 69,
+          "label": "65 to 69",
+          "men": [
+            "B01001_020",
+            "B01001_021"
+          ],
+          "women": [
+            "B01001_044",
+            "B01001_045"
+          ]
+        },
+        {
+          "band_id": "70-74",
+          "age_start": 70,
+          "age_end": 74,
+          "label": "70 to 74",
+          "men": [
+            "B01001_022"
+          ],
+          "women": [
+            "B01001_046"
+          ]
+        },
+        {
+          "band_id": "75-79",
+          "age_start": 75,
+          "age_end": 79,
+          "label": "75 to 79",
+          "men": [
+            "B01001_023"
+          ],
+          "women": [
+            "B01001_047"
+          ]
+        },
+        {
+          "band_id": "80-84",
+          "age_start": 80,
+          "age_end": 84,
+          "label": "80 to 84",
+          "men": [
+            "B01001_024"
+          ],
+          "women": [
+            "B01001_048"
+          ]
+        },
+        {
+          "band_id": "85+",
+          "age_start": 85,
+          "age_end": null,
+          "label": "85 and over",
+          "men": [
+            "B01001_025"
+          ],
+          "women": [
+            "B01001_049"
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "group_id": "under_18",
+          "label": "Under 18",
+          "men": [
+            "B01001_003",
+            "B01001_004",
+            "B01001_005",
+            "B01001_006"
+          ],
+          "women": [
+            "B01001_027",
+            "B01001_028",
+            "B01001_029",
+            "B01001_030"
+          ]
+        },
+        {
+          "group_id": "age_18_64",
+          "label": "18 to 64",
+          "men": [
+            "B01001_007",
+            "B01001_008",
+            "B01001_009",
+            "B01001_010",
+            "B01001_011",
+            "B01001_012",
+            "B01001_013",
+            "B01001_014",
+            "B01001_015",
+            "B01001_016",
+            "B01001_017",
+            "B01001_018",
+            "B01001_019"
+          ],
+          "women": [
+            "B01001_031",
+            "B01001_032",
+            "B01001_033",
+            "B01001_034",
+            "B01001_035",
+            "B01001_036",
+            "B01001_037",
+            "B01001_038",
+            "B01001_039",
+            "B01001_040",
+            "B01001_041",
+            "B01001_042",
+            "B01001_043"
+          ]
+        },
+        {
+          "group_id": "age_65_plus",
+          "label": "65 and over",
+          "men": [
+            "B01001_020",
+            "B01001_021",
+            "B01001_022",
+            "B01001_023",
+            "B01001_024",
+            "B01001_025"
+          ],
+          "women": [
+            "B01001_044",
+            "B01001_045",
+            "B01001_046",
+            "B01001_047",
+            "B01001_048",
+            "B01001_049"
+          ]
+        },
+        {
+          "group_id": "age_85_plus",
+          "label": "85 and over",
+          "men": [
+            "B01001_025"
+          ],
+          "women": [
+            "B01001_049"
+          ]
+        }
+      ],
+      "indicators": [
+        {
+          "indicator_id": "child_dependency_ratio",
+          "label": "Child dependency ratio",
+          "numerator": "under_18",
+          "denominator": "age_18_64",
+          "scale": 100,
+          "unit": "per 100 people aged 18 to 64"
+        },
+        {
+          "indicator_id": "old_age_dependency_ratio",
+          "label": "Old-age dependency ratio",
+          "numerator": "age_65_plus",
+          "denominator": "age_18_64",
+          "scale": 100,
+          "unit": "per 100 people aged 18 to 64"
+        },
+        {
+          "indicator_id": "total_dependency_ratio",
+          "label": "Total dependency ratio",
+          "numerator": [
+            "under_18",
+            "age_65_plus"
+          ],
+          "denominator": "age_18_64",
+          "scale": 100,
+          "unit": "per 100 people aged 18 to 64"
+        },
+        {
+          "indicator_id": "sex_ratio",
+          "label": "Sex ratio",
+          "numerator": "men",
+          "denominator": "women",
+          "scale": 100,
+          "unit": "men per 100 women"
+        }
+      ],
+      "owner": "data-eng",
+      "reviewer": "Nick",
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": null,
+      "rationale": "B01001 publishes 23 unequal age groups per sex; summing the declared lines gives 18 equal five-year groups, so a one-year group does not read as a dent in a pyramid (ADR-0013 rule 1). The broad groups and dependency ratios follow the Bureau's S0101 definitions (under 18, 18 to 64, 65 and over).",
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B01001",
+        "https://data.census.gov/table/ACSST5Y2023.S0101",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
+    }
+  ]
+}
