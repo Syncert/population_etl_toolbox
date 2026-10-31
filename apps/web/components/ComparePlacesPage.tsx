@@ -376,7 +376,7 @@ function PairedRow({ row, a, b }: { row: ComparedRow; a: string; b: string }) {
   return (
     <div className="paired-row" data-testid={`compare-row-${row.measureId}`} data-period={row.period}>
       <h3>{row.label}</h3>
-      <p className="subtle">{row.metricCode} · {row.period}{unit ? ` · ${unit}` : ""}</p>
+      <p className="subtle"><span title={row.metricCode} data-metric-code={row.metricCode}>{row.period}</span>{unit ? ` · ${unit}` : ""}</p>
       {[{ name: a, entry: row.a }, { name: b, entry: row.b }].map(({ name, entry }) => {
         const margin = marginOfErrorText(entry.row);
         return (

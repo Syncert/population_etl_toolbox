@@ -21,6 +21,20 @@ export interface SourceSummary {
   [key: string]: unknown;
 }
 
+/**
+ * Where a served `metric_label` came from (A-2): the registry entry's review
+ * status, or `provider` for the publisher's own label.
+ */
+export type MetricLabelStatus = "approved" | "draft" | "needs_review" | "deprecated" | "provider";
+
+/** The plain labels a two-sided response serves beside its two codes (A-2). */
+export interface PairLabels {
+  metric_label_a?: string | null;
+  metric_label_status_a?: MetricLabelStatus | null;
+  metric_label_b?: string | null;
+  metric_label_status_b?: MetricLabelStatus | null;
+}
+
 /** A metric's plain-language definition, as the API serves it (A-2). */
 export interface MetricDefinition {
   label: string;
@@ -28,7 +42,7 @@ export interface MetricDefinition {
   unit?: string | null;
   universe?: string | null;
   caveat?: string | null;
-  status: string;
+  status: MetricLabelStatus;
   version: number;
   citations: string[];
 }
@@ -39,7 +53,7 @@ export interface MetricSummary {
   /** The plain label to show (A-2); `metric_display_name` is the provider's. */
   metric_label?: string | null;
   /** `approved`, `draft` (not yet reviewed) or `provider` (no entry yet). */
-  metric_label_status?: string | null;
+  metric_label_status?: MetricLabelStatus | null;
   definition?: MetricDefinition | null;
   source_code?: string | null;
   source_object_type?: string | null;
@@ -245,7 +259,7 @@ export interface ComparisonRule {
  * 404. `/comparison` enforces exactly this verdict, so a client that
  * preflights first can trust it.
  */
-export interface ComparisonPreflight {
+export interface ComparisonPreflight extends PairLabels {
   metric_code_a?: string;
   metric_code_b?: string;
   source_code_a?: string | null;
@@ -289,7 +303,7 @@ export interface ComparisonRow {
 }
 
 /** An aligned comparison, served only for pairs the policy accepts. */
-export interface ComparisonResponse {
+export interface ComparisonResponse extends PairLabels {
   metric_code_a?: string;
   metric_code_b?: string;
   source_code_a?: string | null;
@@ -552,7 +566,7 @@ export interface CorrelationStatistic {
 }
 
 /** `GET /comparison/correlation`: the statistic, its coverage, its caveats. */
-export interface ComparisonCorrelation extends CorrelationStatistic {
+export interface ComparisonCorrelation extends CorrelationStatistic, PairLabels {
   metric_code_a?: string;
   metric_code_b?: string;
   source_code_a?: string | null;
@@ -573,6 +587,8 @@ export interface ComparisonCorrelation extends CorrelationStatistic {
 /** One measure as `/comparison/matrix` read it. */
 export interface MatrixMetricSummary {
   metric_code?: string;
+  metric_label?: string | null;
+  metric_label_status?: MetricLabelStatus | null;
   source_code?: string | null;
   units?: string | null;
   valid_time_grains?: string[];

@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   DISPLAY_LOCALE,
   displayMetricName,
+  metricNameNote,
   formatDate,
   formatNumber,
   formatTime,
@@ -62,6 +63,18 @@ describe("frontend formatting and saved-chart persistence", () => {
         metric_label_status: "draft",
       }),
     ).toBe("Gini index of income inequality");
+  });
+
+  test("a metric's hover text says whether its label is reviewed, then its code", () => {
+    // Covers: WEB-144 — the code leaves the visible name but stays findable.
+    expect(
+      metricNameNote({ metric_code: "CENSUS_ACS:acs5:B19083_001", metric_label_status: "draft" }),
+    ).toBe("Plain label awaiting review · CENSUS_ACS:acs5:B19083_001");
+    expect(metricNameNote({ metric_code: "BLS:x", metric_label_status: "provider" })).toBe(
+      "The publisher's own label · BLS:x",
+    );
+    expect(metricNameNote({ metric_code: "BLS:x", metric_label_status: "approved" })).toBe("BLS:x");
+    expect(metricNameNote(null, "BLS:y")).toBe("BLS:y");
   });
 
   test("formats numbers, dates and times in the one chosen locale", () => {

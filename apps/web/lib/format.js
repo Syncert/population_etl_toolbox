@@ -94,3 +94,21 @@ export function displayMetricName(metric) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/**
+ * What a metric's name is, for its hover text: the API's label status (A-2)
+ * in words, then the metric code, which a reader no longer sees in the text.
+ * A draft label is shown by default until Nick reviews it, and says so here;
+ * with `METRIC_LABELS_REVIEWED_ONLY` the API serves the provider's instead.
+ */
+export function metricNameNote(metric, code) {
+  const status = metric && typeof metric === "object" ? metric.metric_label_status : null;
+  const metricCode = code || (metric && typeof metric === "object" ? metric.metric_code : metric) || "";
+  const prefix =
+    status === "draft" || status === "needs_review"
+      ? "Plain label awaiting review"
+      : status === "provider"
+        ? "The publisher's own label"
+        : "";
+  return [prefix, metricCode].filter(Boolean).join(" · ");
+}

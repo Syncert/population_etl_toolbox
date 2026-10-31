@@ -1778,7 +1778,7 @@ export default function WorkbenchPage() {
                     key={String(metric.metric_code)}
                     value={String(metric.metric_code)}
                   >
-                    {metricLabel(metric)} ({String(metric.metric_code)})
+                    {metricLabel(metric)}
                   </option>
                 ))}
               </select>
@@ -1977,7 +1977,7 @@ export default function WorkbenchPage() {
             <ul className="notice error" data-testid="workbench-series-errors">
               {errors.map((row) => (
                 <li key={row.entry.key}>
-                  {row.entry.series.metricCode}: {row.error}
+                  {metricLabel(metricIndex[row.entry.series.metricCode]) || row.entry.series.metricCode}: {row.error}
                 </li>
               ))}
             </ul>
@@ -2240,7 +2240,7 @@ export default function WorkbenchPage() {
                 .map((entry) => (
                   <span key={entry.level} data-absent-grain={entry.level}>
                     {` ${GEO_GRAIN_LABELS[entry.level]?.one || entry.level} is ` +
-                      `not offered because ${entry.withoutIt.join(", ")} ` +
+                      `not offered because ${entry.withoutIt.map((code) => metricLabel(metricIndex[code]) || code).join(", ")} ` +
                       `${entry.withoutIt.length === 1 ? "does" : "do"} not publish it.`}
                   </span>
                 ))}
