@@ -167,8 +167,10 @@ Fixed on the next follow-up:
   (`/catalog/metrics?metric_codes=`).
 - Against the fixtures the page now asks 15 requests instead of 241.
 
-Still slow until the related query itself is rewritten: a place page's
-"Nearby and related" (`/catalog/geographies/{id}/related`, 7.9 s uncached).
-That rewrite is the next change.
+- The related read itself (`GEOGRAPHY_RELATED_QUERY`, behind a place page's
+  "Nearby and related", 7.9 s uncached) reads each step from an array of
+  known places, and its names by key, over a new bridge index
+  `ix_bridge_geo_relationship_version_related` (related place first), which
+  OFFICE_LAB built concurrently before the merge (119 MB, 2.1M rows).
 
-Re-time both pages after this merges.
+Re-time both pages and Dane County's related list after this merges.

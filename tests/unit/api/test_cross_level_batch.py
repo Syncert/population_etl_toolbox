@@ -4,7 +4,8 @@ Covers: API-178 (`/comparison/places/batch` answers each measure exactly as
         `/comparison/places` answers it alone, follows a refused total's
         offered view on the server, reads the pair's geographies and
         containment once per request, reads containment only for the two
-        places compared, and reads a source's metrics in one statement;
+        places compared through the related read, which starts each step from
+        known places, and reads a source's metrics in one statement;
         `/catalog/metrics?metric_codes=` reads named rows in one request).
 """
 
@@ -21,6 +22,7 @@ from apps.api.services import cross_level_service, neutral_observations_service
 from data_ingestion_toolbox.semantics.derived_ratios import SERVE_DRAFTS_ENV
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_PAIR_RELATIONSHIP_QUERY,
+    GEOGRAPHY_RELATED_QUERY_SQL,
     build_metrics_queries,
 )
 from tests.unit.api import test_cross_level_compare as single
@@ -190,16 +192,29 @@ def test_the_pair_is_read_once_per_request(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_containment_reads_only_the_two_places() -> None:
-    """Covers: API-178 — the pair query pins both places in every branch."""
+    """Covers: API-178 — containment reads the pair query for the two places."""
     db = _Session()
     cross_level_service._read_containment(db, AUSTIN, TRAVIS)
     pair = [(s, p) for s, p in db.statements if s is GEOGRAPHY_PAIR_RELATIONSHIP_QUERY]
     assert pair, "containment did not read the pair relationship query"
     assert pair[0][1] == {"geo_id": AUSTIN["geo_id"], "other_geo_id": TRAVIS["geo_id"]}
-    sql = GEOGRAPHY_PAIR_RELATIONSHIP_QUERY.text
-    # Four UNION branches and the outer join each name the other place.
-    assert sql.count(":other_geo_id") == 5
-    assert sql.count("UNION ALL") == 3
+    # The related read, filtered to the other place, so the two cannot disagree.
+    assert GEOGRAPHY_PAIR_RELATIONSHIP_QUERY.text == (
+        f"SELECT * FROM ({GEOGRAPHY_RELATED_QUERY_SQL}) AS pair "
+        "WHERE pair.geo_id = :other_geo_id"
+    )
+
+
+def test_the_related_read_starts_every_step_from_known_places() -> None:
+    """Covers: API-178 — each step after the first reads by an array of known
+    identities, and the names are read by key, never by a guessed join."""
+    sql = GEOGRAPHY_RELATED_QUERY_SQL
+    assert sql.count("= ANY(ARRAY(") == 3
+    assert "ancestor.related_geo_id = ANY(ARRAY(" in sql
+    assert "metro_link.related_geo_id = ANY(ARRAY(" in sql
+    assert "geography.geo_id = ANY(ARRAY(SELECT other_geo_id FROM related))" in sql
+    # Every step is read once, before the next starts from it.
+    assert sql.count("AS MATERIALIZED (") == 6
 
 
 def test_a_sources_metrics_are_read_in_one_statement(

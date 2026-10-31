@@ -281,9 +281,8 @@ def build_geographies_queries(
 #: nothing makes the place nest in it: ``overlap_weight`` is the share of the
 #: place inside that metro's counties (the sum of its county overlaps) and the
 #: vintage and evidence are the delineation's that put those counties in it.
-GEOGRAPHY_RELATED_QUERY: TextClause = text(
-    f"""
-    WITH related AS (
+GEOGRAPHY_RELATED_QUERY_SQL = f"""
+    WITH outward AS MATERIALIZED (
         SELECT relationship.related_geo_id AS other_geo_id,
                relationship.relationship_type AS relationship,
                relationship.geography_vintage,
@@ -292,12 +291,10 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
                relationship.evidence_source
         FROM {RELATIONSHIP_RELATION} AS relationship
         WHERE relationship.geo_id = :geo_id
-        UNION ALL
-        SELECT relationship.geo_id,
-               CASE relationship.relationship_type
-                   WHEN 'contains' THEN 'part_of'
-                   ELSE relationship.relationship_type
-               END,
+    ),
+    inward AS MATERIALIZED (
+        SELECT relationship.geo_id AS other_geo_id,
+               relationship.relationship_type,
                relationship.geography_vintage,
                relationship.overlap_area_m2,
                relationship.overlap_weight,
@@ -305,39 +302,73 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
         FROM {RELATIONSHIP_RELATION} AS relationship
         WHERE relationship.related_geo_id = :geo_id
           AND relationship.relationship_type IN ('contains', 'intersects')
-        UNION ALL
-        SELECT ancestor.geo_id,
-               'part_of',
+    ),
+    -- Each later step starts from an array of known identities, so each read
+    -- is an index probe rather than a join the planner has to guess the size
+    -- of (8.7 s for one county on OFFICE_LAB, 2026-10-31).
+    ancestors AS MATERIALIZED (
+        SELECT ancestor.geo_id AS other_geo_id,
                ancestor.geography_vintage,
                ancestor.overlap_area_m2,
                ancestor.overlap_weight,
                ancestor.evidence_source
-        FROM {RELATIONSHIP_RELATION} AS parent_link
-        JOIN {RELATIONSHIP_RELATION} AS ancestor
-             ON ancestor.related_geo_id = parent_link.geo_id
-            AND ancestor.relationship_type = 'contains'
-        WHERE parent_link.related_geo_id = :geo_id
-          AND parent_link.relationship_type = 'contains'
-        UNION ALL
-        SELECT metro_link.geo_id,
-               'intersects',
-               MAX(metro_link.geography_vintage),
-               SUM(place_county.overlap_area_m2),
-               SUM(place_county.overlap_weight),
-               MIN(metro_link.evidence_source)
-        FROM {RELATIONSHIP_RELATION} AS place_county
-        JOIN {RELATIONSHIP_RELATION} AS metro_link
-             ON metro_link.related_geo_id = place_county.geo_id
-            AND metro_link.relationship_type = 'contains'
+        FROM {RELATIONSHIP_RELATION} AS ancestor
+        WHERE ancestor.related_geo_id = ANY(ARRAY(
+                SELECT other_geo_id FROM inward WHERE relationship_type = 'contains'
+              ))
+          AND ancestor.relationship_type = 'contains'
+    ),
+    county_overlaps AS MATERIALIZED (
+        SELECT inward.other_geo_id AS county_geo_id,
+               inward.overlap_area_m2,
+               inward.overlap_weight
+        FROM inward
         JOIN {GEOGRAPHY_RELATION} AS county
-             ON county.geo_id = place_county.geo_id
+             ON county.geo_id = inward.other_geo_id
             AND county.geo_level = 'COUNTY'
+        WHERE inward.relationship_type = 'intersects'
+    ),
+    metro_links AS MATERIALIZED (
+        SELECT metro_link.geo_id AS metro_geo_id,
+               metro_link.related_geo_id AS county_geo_id,
+               metro_link.geography_vintage,
+               metro_link.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS metro_link
+        WHERE metro_link.related_geo_id = ANY(ARRAY(
+                SELECT county_geo_id FROM county_overlaps
+              ))
+          AND metro_link.relationship_type = 'contains'
+    ),
+    related AS MATERIALIZED (
+        SELECT other_geo_id, relationship, geography_vintage, overlap_area_m2,
+               overlap_weight, evidence_source
+        FROM outward
+        UNION ALL
+        SELECT other_geo_id,
+               CASE relationship_type
+                   WHEN 'contains' THEN 'part_of'
+                   ELSE relationship_type
+               END,
+               geography_vintage, overlap_area_m2, overlap_weight, evidence_source
+        FROM inward
+        UNION ALL
+        SELECT other_geo_id, 'part_of', geography_vintage, overlap_area_m2,
+               overlap_weight, evidence_source
+        FROM ancestors
+        UNION ALL
+        SELECT metro_links.metro_geo_id,
+               'intersects',
+               MAX(metro_links.geography_vintage),
+               SUM(county_overlaps.overlap_area_m2),
+               SUM(county_overlaps.overlap_weight),
+               MIN(metro_links.evidence_source)
+        FROM metro_links
+        JOIN county_overlaps
+             ON county_overlaps.county_geo_id = metro_links.county_geo_id
         JOIN {GEOGRAPHY_RELATION} AS metro
-             ON metro.geo_id = metro_link.geo_id
+             ON metro.geo_id = metro_links.metro_geo_id
             AND metro.geo_level = 'METRO'
-        WHERE place_county.related_geo_id = :geo_id
-          AND place_county.relationship_type = 'intersects'
-        GROUP BY metro_link.geo_id
+        GROUP BY metro_links.metro_geo_id
     )
     SELECT DISTINCT ON (related.relationship, geography.geo_id)
            related.relationship,
@@ -352,100 +383,24 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
     FROM related
     JOIN {GEOGRAPHY_RELATION} AS geography
          ON geography.geo_id = related.other_geo_id
-    WHERE NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
+    -- The names for exactly these places, by key: the catalog view computes a
+    -- name per row, and a join it chose to hash computed one for all of them.
+    WHERE geography.geo_id = ANY(ARRAY(SELECT other_geo_id FROM related))
+      AND NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
     ORDER BY related.relationship, geography.geo_id, related.geography_vintage DESC
-    """
-)
+"""
+
+GEOGRAPHY_RELATED_QUERY: TextClause = text(GEOGRAPHY_RELATED_QUERY_SQL)
 
 
 #: How one geography relates to one other, from the first one's point of view:
-#: exactly the rows of ``GEOGRAPHY_RELATED_QUERY`` for ``:geo_id`` whose other
-#: place is ``:other_geo_id``, with the other place pinned inside every branch.
-#:
-#: The cross-level comparison (ADR-0010) needs only whether its two places nest
-#: or overlap. Reading the finer place's whole related list for that cost about
-#: seven seconds on the full warehouse for every measure asked (2026-10-31);
-#: with both ends constant, each branch starts from two known places rather
-#: than every place related to one of them.
+#: exactly the rows of ``GEOGRAPHY_RELATED_QUERY`` for ``:geo_id`` that name
+#: ``:other_geo_id``. The cross-level comparison (ADR-0010) needs only whether
+#: its two places nest or overlap; it is the related read, filtered, so the two
+#: cannot disagree.
 GEOGRAPHY_PAIR_RELATIONSHIP_QUERY: TextClause = text(
-    f"""
-    WITH related AS (
-        SELECT relationship.related_geo_id AS other_geo_id,
-               relationship.relationship_type AS relationship,
-               relationship.geography_vintage,
-               relationship.overlap_area_m2,
-               relationship.overlap_weight,
-               relationship.evidence_source
-        FROM {RELATIONSHIP_RELATION} AS relationship
-        WHERE relationship.geo_id = :geo_id
-          AND relationship.related_geo_id = :other_geo_id
-        UNION ALL
-        SELECT relationship.geo_id,
-               CASE relationship.relationship_type
-                   WHEN 'contains' THEN 'part_of'
-                   ELSE relationship.relationship_type
-               END,
-               relationship.geography_vintage,
-               relationship.overlap_area_m2,
-               relationship.overlap_weight,
-               relationship.evidence_source
-        FROM {RELATIONSHIP_RELATION} AS relationship
-        WHERE relationship.related_geo_id = :geo_id
-          AND relationship.geo_id = :other_geo_id
-          AND relationship.relationship_type IN ('contains', 'intersects')
-        UNION ALL
-        SELECT ancestor.geo_id,
-               'part_of',
-               ancestor.geography_vintage,
-               ancestor.overlap_area_m2,
-               ancestor.overlap_weight,
-               ancestor.evidence_source
-        FROM {RELATIONSHIP_RELATION} AS parent_link
-        JOIN {RELATIONSHIP_RELATION} AS ancestor
-             ON ancestor.related_geo_id = parent_link.geo_id
-            AND ancestor.relationship_type = 'contains'
-        WHERE parent_link.related_geo_id = :geo_id
-          AND parent_link.relationship_type = 'contains'
-          AND ancestor.geo_id = :other_geo_id
-        UNION ALL
-        SELECT metro_link.geo_id,
-               'intersects',
-               MAX(metro_link.geography_vintage),
-               SUM(place_county.overlap_area_m2),
-               SUM(place_county.overlap_weight),
-               MIN(metro_link.evidence_source)
-        FROM {RELATIONSHIP_RELATION} AS place_county
-        JOIN {RELATIONSHIP_RELATION} AS metro_link
-             ON metro_link.related_geo_id = place_county.geo_id
-            AND metro_link.relationship_type = 'contains'
-        JOIN {GEOGRAPHY_RELATION} AS county
-             ON county.geo_id = place_county.geo_id
-            AND county.geo_level = 'COUNTY'
-        JOIN {GEOGRAPHY_RELATION} AS metro
-             ON metro.geo_id = metro_link.geo_id
-            AND metro.geo_level = 'METRO'
-        WHERE place_county.related_geo_id = :geo_id
-          AND place_county.relationship_type = 'intersects'
-          AND metro_link.geo_id = :other_geo_id
-        GROUP BY metro_link.geo_id
-    )
-    SELECT DISTINCT ON (related.relationship, geography.geo_id)
-           related.relationship,
-           geography.geo_id,
-           geography.geo_level,
-           geography.geo_name,
-           geography.state_fips,
-           related.geography_vintage,
-           related.overlap_area_m2,
-           related.overlap_weight,
-           related.evidence_source
-    FROM related
-    JOIN {GEOGRAPHY_RELATION} AS geography
-         ON geography.geo_id = related.other_geo_id
-    WHERE geography.geo_id = :other_geo_id
-      AND NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
-    ORDER BY related.relationship, geography.geo_id, related.geography_vintage DESC
-    """
+    f"SELECT * FROM ({GEOGRAPHY_RELATED_QUERY_SQL}) AS pair "
+    "WHERE pair.geo_id = :other_geo_id"
 )
 
 #: The catalog's names for a page of geographies, by id. An observation row
