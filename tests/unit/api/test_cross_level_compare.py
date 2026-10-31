@@ -14,6 +14,7 @@ Covers: API-175 (mixed grains are accepted; a median, mean, rate, share or
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -40,6 +41,7 @@ from data_ingestion_toolbox.semantics.definitions import (
     parse_registry,
     registry,
 )
+from data_ingestion_toolbox.semantics import derived_ratios
 from data_ingestion_toolbox.semantics.derived_ratios import SERVE_DRAFTS_ENV
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -282,6 +284,15 @@ def served(monkeypatch: pytest.MonkeyPatch):
     return rows, relationships, reads
 
 
+def _as_drafts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shipped pairings, each set back to draft (Nick approved them all)."""
+    drafts = {
+        ratio_id: dataclasses.replace(pairing, status="draft")
+        for ratio_id, pairing in derived_ratios.load_registry().items()
+    }
+    monkeypatch.setattr(derived_ratios, "load_registry", lambda *args: drafts)
+
+
 def _get(client, **params):
     return client.get("/api/v1/comparison/places", params=params)
 
@@ -349,6 +360,7 @@ def test_a_refused_count_with_no_served_view_says_so(
     client, served, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Covers: API-175 — a draft pairing is not offered unless drafts are served."""
+    _as_drafts(monkeypatch)
     monkeypatch.delenv(SERVE_DRAFTS_ENV, raising=False)
     body = _get(
         client, metric_code=POVERTY, geo_id_a=TRAVIS["geo_id"], geo_id_b=TEXAS["geo_id"]
@@ -534,6 +546,7 @@ def test_a_draft_pairing_is_refused_unless_drafts_are_served(
     client, served, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Covers: API-175 — the ADR-0009 serving gate applies here too."""
+    _as_drafts(monkeypatch)
     monkeypatch.delenv(SERVE_DRAFTS_ENV, raising=False)
     response = _get(
         client,

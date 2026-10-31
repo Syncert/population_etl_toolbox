@@ -17,7 +17,8 @@ verify:
 Needs review (v1.0 build-out, item A-3). Built 2026-10-31 on branch
 `feat/api-per-capita-and-shares` (#175), with the provider-rate fix (#179)
 and the state filter for PEP and SAIPE/SAHIE (below); every warehouse check
-passed on OFFICE_LAB. What remains is Nick's review of the drafted pairings. Governed by
+passed on OFFICE_LAB. Nick approved all 35 pairings on 2026-10-31, so every
+pairing is served without the draft opt-in. Governed by
 [ADR-0009](../../decisions/0009-per-capita-and-share-views.md), accepted by
 Nick on 2026-10-26, so no new ADR is needed. Unblocks A-4 (cross-level
 comparison) and D-6 (the per-capita toggle).
@@ -151,4 +152,11 @@ for one state's counties, so this was worth fixing here.
 
 - Keep the ACS MOE annotation in gold so controlled margins are known per
   row rather than declared per level.
-- Nick reviews the drafted pairings; each becomes `approved` with his name.
+- ~~Nick reviews the drafted pairings~~: approved, all 35, 2026-10-31.
+- The SAIPE/SAHIE and PEP state filter (#181) compares the first segment of
+  `geo_id` after the latest view's `DISTINCT ON`. On OFFICE_LAB, SAIPE poverty
+  for Texas counties took 39 ms uncached (508 rows before the newest-per-
+  geography reduction; 3,062 rows removed by the filter after the view's
+  Unique step). Right at this size. If SAE grows by orders of magnitude, add
+  an expression index on `split_part(geo_id, '|', 1)` or carry `state_fips`
+  in the view.

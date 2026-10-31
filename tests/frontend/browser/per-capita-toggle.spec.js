@@ -8,11 +8,13 @@ import { DERIVED_RATIOS, installPlaceFixtures } from "../support/placeScenarios.
 // view and a share only where a served pairing allows it; each derived value
 // names its denominator, its period and its margin's method beside the
 // county, its state and the nation; a value the API could not compute reads
-// as its reason; a draft pairing is marked "Draft view awaiting review"; the
+// as its reason; an approved pairing carries no draft mark, and a draft one
+// is marked "Draft view awaiting review"; the
 // FBI's rate names its denominator, and a county reads as unpublished rather
 // than as a county rate the FBI never published; the county map offers the
 // same views and keeps the view in its address. The pairings are the
-// registry's drafts as the API serves them with DERIVED_RATIOS_SERVE_DRAFTS=1;
+// registry's, all approved by Nick on 2026-10-31; the map test serves them as
+// drafts, as DERIVED_RATIOS_SERVE_DRAFTS=1 would before an approval;
 // every value is a synthetic UI fixture, not a published statistic.
 
 async function ready(page, path) {
@@ -38,7 +40,7 @@ test("reported violent crime: a county reads against its state on the FBI's own 
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("Wisconsin");
   const denominator = page.getByTestId("card-violent-crime-rate-denominator");
   await expect(denominator).toHaveText(/Per 100,000 people, denominator: population covered by reporting agencies, as the publisher computed it\./);
-  await expect(denominator.locator("[data-pairing-status='draft']")).toHaveText("(Draft view awaiting review)");
+  await expect(denominator.locator("[data-pairing-status='draft']")).toHaveCount(0);
   // No count of offenses is on the page to divide, so no toggle is offered.
   await expect(page.getByTestId("chapter-safety-view")).toHaveCount(0);
   await safety.screenshot({ path: "test-results/per-capita/county-violent-crime.png" });
@@ -63,7 +65,7 @@ test("a share names its denominator for the county, its state and the nation", a
     await expect(line).toContainText("of total population (survey)");
     await expect(line).toContainText("2019-01-01 – 2023-12-31");
     await expect(line).toContainText("margin of error ±0.8 (Census Bureau formula for a derived proportion)");
-    await expect(line.locator("[data-pairing-status='draft']")).toHaveText("(Draft view awaiting review)");
+    await expect(line.locator("[data-pairing-status='draft']")).toHaveCount(0);
   }
   // A measure the registry pairs with nothing keeps its count, and says so.
   await expect(page.getByTestId("chapter-people").locator("[data-testid$='-count-only']").first()).toContainText("showing the count");
@@ -139,13 +141,13 @@ async function installMap(page) {
       metric_code: POVERTY, metric_display_name: "People below the poverty level (UI fixture)", metric_label: "People below the poverty level", metric_label_status: "draft",
       source_code: "CENSUS_ACS", units: null, valid_geo_grains: ["COUNTY", "STATE", "NATIONAL"], measure_kind: "count", aggregation_characteristic: "additive" } });
     if (path === "/api/v1/catalog/derived-ratios") {
-      const items = DERIVED_RATIOS.filter((ratio) => ratio.numerator === params.get("numerator"));
+      const items = DERIVED_RATIOS.filter((ratio) => ratio.numerator === params.get("numerator")).map((ratio) => ({ ...ratio, status: "draft" }));
       return route.fulfill({ json: { total: items.length, items } });
     }
     if (path === "/api/v1/observations/periods") return route.fulfill({ json: { metric_code: POVERTY, total: 1, limit: 200, offset: 0, items: [{ period_start: "2019-01-01", period_end: "2023-12-31", observation_count: 3 }] } });
     const period = { period_start: "2019-01-01", period_end: "2023-12-31", release: "2023" };
     if (path === "/api/v1/observations/derived") {
-      const ratio = DERIVED_RATIOS.find((item) => item.ratio_id === params.get("ratio_id"));
+      const ratio = { ...DERIVED_RATIOS.find((item) => item.ratio_id === params.get("ratio_id")), status: "draft" };
       const items = Object.entries({ "001": "9.10", "025": "10.42", "105": null }).map(([fips, value]) => ({
         ratio_id: ratio.ratio_id, derived: true, pairing_status: "draft", pairing_version: 1, geo_id: `state:55|county:${fips}`, geo_level: "COUNTY", ...period,
         value, unit: "percent", scale: 100, margin_of_error: value ? "0.81" : null, margin_of_error_method: value ? "proportion" : "unavailable",

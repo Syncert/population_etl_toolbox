@@ -166,8 +166,8 @@ export const RELATED = {
 };
 
 // Per-capita and share pairings (web-per-capita-toggle) as the catalog lists
-// them with DERIVED_RATIOS_SERVE_DRAFTS=1: the registry's own entries, every
-// one a draft and served. ACS entries exist once per dataset.
+// them: the registry's own entries, every one approved (2026-10-31) and
+// served. ACS entries exist once per dataset.
 // Both runners start in apps/web or at the repository root.
 const RATIOS_PATH = ["../../docs/semantics/derived_ratios.json", "docs/semantics/derived_ratios.json"]
   .map((path) => resolve(process.cwd(), path))

@@ -10,6 +10,7 @@ Covers: API-173 (a derived value divides the numerator row by the
 
 from __future__ import annotations
 
+import dataclasses
 from decimal import Decimal
 from typing import Any
 
@@ -33,6 +34,7 @@ from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     observations_for_geographies,
 )
+from data_ingestion_toolbox.semantics import derived_ratios
 from data_ingestion_toolbox.semantics.derived_ratios import (
     SERVE_DRAFTS_ENV,
     load_registry,
@@ -359,8 +361,11 @@ def test_a_draft_pairing_is_refused_unless_opted_in(
     client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Covers: API-174 — ADR-0009 rule 1: only approved pairings are served."""
-    if pairing_for("poverty_share:acs5").status == "approved":
-        pytest.skip("the pairing has been approved")
+    drafts = {
+        ratio_id: dataclasses.replace(pairing, status="draft")
+        for ratio_id, pairing in derived_ratios.load_registry().items()
+    }
+    monkeypatch.setattr(derived_ratios, "load_registry", lambda *args: drafts)
     monkeypatch.delenv(SERVE_DRAFTS_ENV, raising=False)
     calls: list = []
     monkeypatch.setattr(
@@ -427,7 +432,7 @@ def test_the_route_divides_the_numerators_page_by_its_denominators(
     assert row["value"] == "20.00"
     assert row["margin_of_error"] == "1.83"
     assert row["derived"] is True
-    assert row["pairing_status"] == "draft"
+    assert row["pairing_status"] == "approved"
 
 
 def test_a_provider_rate_is_served_as_the_providers(
