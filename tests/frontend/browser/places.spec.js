@@ -66,8 +66,10 @@ test("a county page draws three levels, labels state context, and states its gap
 
   const safety = page.getByTestId("chapter-safety");
   await expect(safety).toHaveAttribute("data-read-grain", "STATE");
-  await expect(page.getByTestId("chapter-safety-state-context")).toContainText("The figures below are Wisconsin's, not Dane County's");
-  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("Not published at county grain");
+  // The FBI publishes no county rate; the county's is computed from its own
+  // agencies' reports and says whom it covers (ADR-0012, WEB-150).
+  await expect(page.getByTestId("chapter-safety-state-context")).toContainText("The figures for Wisconsin and the nation are the FBI's");
+  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("computed from agency reports");
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("(state context)");
 
   // NASS publishes no Dane County cell in the fixture.

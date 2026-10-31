@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it.",
+  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it. An `agency_rate` entry (ADR-0012) is a county crime rate computed in gold from FBI agency reports: the reporting agencies' offenses over their own FBI populations, beside the FBI rate it names in `reads_beside`.",
   "entries": [
     {
       "ratio_id": "poverty_share",
@@ -1016,6 +1016,66 @@
       "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
       "limitations": [
         "The rate covers the population of agencies that reported; a missing agency report is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+      ]
+    },
+    {
+      "ratio_id": "violent_crime_county_agency_rate",
+      "kind": "agency_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people covered by reporting agencies in this county",
+      "label": "Violent crime per 100,000 people, computed from agency reports",
+      "numerator": "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
+      "reads_beside": "FBI_UCR:summarized_violent_crime:V:offense:rate",
+      "geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "FBI population of the agencies serving only this county that reported",
+      "universe": "people covered by the reporting agencies that serve only this county",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): violent offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds.",
+      "limitations": [
+        "Agencies serving more than one county, and agencies with no published population, are left out of both sides.",
+        "The rate describes the people its reporting agencies cover, not every county resident: where a sheriff and town police both serve a county, each agency's population is its own jurisdiction's.",
+        "No rate is shown when no agency reported, when only multi-county agencies reported, or when the reporting agencies cover under half the population the county's agencies serve.",
+        "Monthly, like the agency reports it divides; never rolled up into a year. Not comparable with a Census per-capita figure."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+      ]
+    },
+    {
+      "ratio_id": "property_crime_county_agency_rate",
+      "kind": "agency_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people covered by reporting agencies in this county",
+      "label": "Property crime per 100,000 people, computed from agency reports",
+      "numerator": "FBI_UCR:summarized_property_crime:P:offense:absolute_total",
+      "reads_beside": "FBI_UCR:summarized_property_crime:P:offense:rate",
+      "geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "FBI population of the agencies serving only this county that reported",
+      "universe": "people covered by the reporting agencies that serve only this county",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): property offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds.",
+      "limitations": [
+        "Agencies serving more than one county, and agencies with no published population, are left out of both sides.",
+        "The rate describes the people its reporting agencies cover, not every county resident: where a sheriff and town police both serve a county, each agency's population is its own jurisdiction's.",
+        "No rate is shown when no agency reported, when only multi-county agencies reported, or when the reporting agencies cover under half the population the county's agencies serve.",
+        "Monthly, like the agency reports it divides; never rolled up into a year. Not comparable with a Census per-capita figure."
       ],
       "citations": [
         "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"

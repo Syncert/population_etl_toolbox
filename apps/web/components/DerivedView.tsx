@@ -5,7 +5,9 @@
 
 import {
   DRAFT_VIEW_TEXT,
+  agenciesText,
   choiceLabel,
+  coverageText,
   denominatorText,
   derivedMarginText,
   derivedPeriodText,
@@ -107,6 +109,49 @@ export function DerivedValue({
       <span className="subtle">{denominatorText(pairing)}</span>
       {period ? <span className="subtle"> · {period}</span> : null}
       {margin ? <span className="subtle"> · {margin}</span> : null}{" "}
+      <DraftViewMark pairing={{ status: row.pairing_status, version: row.pairing_version }} />
+    </span>
+  );
+}
+
+/**
+ * A county crime rate computed from agency reports (ADR-0012), with whom it
+ * covers in plain words beside the figure, the agencies behind it on hover,
+ * and a refused month's reason with the same coverage, never a zero.
+ */
+export function AgencyRateValue({
+  pairing,
+  row,
+  pending,
+  error,
+  testId,
+}: {
+  pairing: DerivedRatioPairing;
+  row: DerivedRatioObservation | null;
+  pending?: boolean;
+  error?: string;
+  testId: string;
+}) {
+  if (pending) return <span data-testid={testId}>Reading…</span>;
+  if (error) return <span data-testid={testId}>{error}</span>;
+  if (!row) return <span data-testid={testId} data-available="false">No county rate from agency reports</span>;
+  const period = derivedPeriodText(row);
+  const available = row.value !== null && row.value !== undefined && !row.unavailable_reason;
+  const agencies = agenciesText(row.coverage);
+  return (
+    <span
+      data-testid={testId}
+      data-ratio-id={pairing.ratio_id}
+      data-available={available ? "true" : "false"}
+      data-unavailable-reason={row.unavailable_reason || undefined}
+      data-derived="true"
+      title={agencies || undefined}
+    >
+      <strong>{derivedValueText(row)}</strong>{" "}
+      <span className="subtle">computed from agency reports</span>
+      {period ? <span className="subtle"> · {period}</span> : null}
+      <span className="subtle" data-testid={`${testId}-coverage`}> · {coverageText(row.coverage)}</span>
+      {agencies ? <span className="sr-only"> ({agencies})</span> : null}{" "}
       <DraftViewMark pairing={{ status: row.pairing_status, version: row.pairing_version }} />
     </span>
   );

@@ -178,7 +178,8 @@ export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || [nu
   label: entry.label, unit: entry.unit, scale: entry.scale,
   numerator: dataset ? entry.numerator.replace("{dataset}", dataset) : entry.numerator,
   denominator: entry.denominator ? (dataset ? entry.denominator.replace("{dataset}", dataset) : entry.denominator) : null,
-  provider_rate: entry.provider_rate || null, dataset, denominator_label: entry.denominator_label, universe: entry.universe,
+  provider_rate: entry.provider_rate || null, reads_beside: entry.reads_beside || null, geo_levels: entry.geo_levels || [],
+  dataset, denominator_label: entry.denominator_label, universe: entry.universe,
   numerator_is_subset: Boolean(entry.numerator_is_subset), status: entry.status, version: entry.version, reviewer: entry.reviewer,
   served: true, refusal_reason: null, limitations: entry.limitations || [], citations: entry.citations || [],
 })));
@@ -188,6 +189,7 @@ export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || [nu
 function derivedRows(ratio, geoId) {
   const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geoId);
   if (!place) return [];
+  if (ratio.kind === "agency_rate") return agencyRateRows(ratio, place);
   const metric = metrics[ratio.provider_rate || ratio.numerator];
   if (ratio.kind === "provider_rate" && metric && !metric.valid_geo_grains.includes(place.geo_level)) return [];
   if (ratio.numerator.startsWith("FBI_UCR:") && !["STATE", "NATIONAL"].includes(place.geo_level)) return [];
@@ -206,6 +208,29 @@ function derivedRows(ratio, geoId) {
     unavailable_reason: missing ? "different_period" : null,
     numerator: provider ? null : input(ratio.numerator, "1200"), denominator: provider || missing ? null : input(ratio.denominator, "11000"),
     provider_rate: provider ? input(ratio.provider_rate, value) : null,
+  }];
+}
+
+// A county rate computed from agency reports (ADR-0012), as the gold view
+// serves it: Dane County's single-county agencies cover all their people;
+// in Rock County only one small agency reported, under the 50 % floor, so the
+// month is refused and still shows its coverage. Counties only.
+function agencyRateRows(ratio, place) {
+  if (place.geo_level !== "COUNTY") return [];
+  const refused = place.geo_id === "state:55|county:105";
+  const coverage = refused
+    ? { covered_population: "9000", linked_population: "41000", coverage_share: "0.2195", coverage_floor: "0.5",
+      contributing_agencies: ["WI0530300"], excluded_multi_county_agencies: ["WI0540300"], non_reporting_agencies: ["WI0530000", "WI0530100"], unknown_population_agencies: [] }
+    : { covered_population: "115648", linked_population: "115648", coverage_share: "1.0000", coverage_floor: "0.5",
+      contributing_agencies: ["WI0130000", "WI0137000"], excluded_multi_county_agencies: ["WI0540300"], non_reporting_agencies: [], unknown_population_agencies: [] };
+  return [{
+    ratio_id: ratio.ratio_id, derived: true, pairing_status: ratio.status, pairing_version: ratio.version,
+    geo_id: place.geo_id, geo_level: "COUNTY", geo_name: place.geo_name,
+    period_start: "2024-12-01", period_end: "2024-12-31", release: "fixture-2025",
+    value: refused ? null : "11.24", unit: ratio.unit, scale: ratio.scale, margin_of_error: null, margin_of_error_method: "none",
+    unavailable_reason: refused ? "coverage_below_floor" : null,
+    numerator: { metric_code: ratio.numerator, release: "fixture-2025", period_start: "2024-12-01", period_end: "2024-12-31", value: refused ? "3" : "13", value_status: "reported" },
+    denominator: null, provider_rate: null, coverage,
   }];
 }
 

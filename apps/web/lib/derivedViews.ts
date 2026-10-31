@@ -8,13 +8,21 @@
 import { apiFetch } from "./api/client";
 import type { QueryParams, RequestOptions } from "./api/client";
 import { formatObservationValue } from "./explorerViewModel";
+import { formatNumber } from "./format";
 import type { ObservationRow } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
-export type DerivedKind = "share" | "per_capita" | "provider_rate";
+export type DerivedKind = "share" | "per_capita" | "provider_rate" | "agency_rate";
 export type PairingStatus = "approved" | "draft" | "needs_review" | "deprecated";
 export type MarginMethod = "proportion" | "ratio" | "ratio_fallback" | "unavailable" | "provider" | "none";
-export type UnavailableReason = "different_period" | "denominator_missing" | "denominator_zero" | "suppressed_input";
+export type UnavailableReason =
+  | "different_period"
+  | "denominator_missing"
+  | "denominator_zero"
+  | "suppressed_input"
+  | "no_reporting_agency"
+  | "only_multi_county_agencies"
+  | "coverage_below_floor";
 
 /** One pairing as `GET /api/v1/catalog/derived-ratios` lists it. */
 export interface DerivedRatioPairing {
@@ -27,6 +35,9 @@ export interface DerivedRatioPairing {
   numerator: string;
   denominator?: string | null;
   provider_rate?: string | null;
+  /** `agency_rate` only: the provider rate it stands beside, and its levels. */
+  reads_beside?: string | null;
+  geo_levels?: string[];
   dataset?: string | null;
   denominator_label: string;
   universe: string;
@@ -50,6 +61,18 @@ export interface DerivedRatioInput {
   margin_of_error_controlled?: boolean;
 }
 
+/** Whom a county agency rate covers (ADR-0012); every figure is the FBI's. */
+export interface DerivedRatioCoverage {
+  covered_population?: string | null;
+  linked_population?: string | null;
+  coverage_share?: string | null;
+  coverage_floor: string;
+  contributing_agencies: string[];
+  excluded_multi_county_agencies: string[];
+  non_reporting_agencies: string[];
+  unknown_population_agencies: string[];
+}
+
 /** One row of `GET /api/v1/observations/derived`. */
 export interface DerivedRatioObservation {
   ratio_id: string;
@@ -71,6 +94,7 @@ export interface DerivedRatioObservation {
   numerator?: DerivedRatioInput | null;
   denominator?: DerivedRatioInput | null;
   provider_rate?: DerivedRatioInput | null;
+  coverage?: DerivedRatioCoverage | null;
 }
 
 export interface DerivedRatioPage {
@@ -97,7 +121,14 @@ export function pairingFor(
   choice: ViewChoice,
 ): DerivedRatioPairing | null {
   if (choice === "count") return null;
-  return pairings.find((pairing) => pairing.served && pairing.numerator === metricCode && choiceOf(pairing.kind) === choice) || null;
+  // A county agency rate is not a view of the count: it stands in the rate
+  // card's county row, where the FBI publishes none (ADR-0012).
+  return pairings.find((pairing) => pairing.served && pairing.kind !== "agency_rate" && pairing.numerator === metricCode && choiceOf(pairing.kind) === choice) || null;
+}
+
+/** The served county rate computed from agency reports that stands beside this FBI rate, if any. */
+export function agencyRateFor(pairings: readonly DerivedRatioPairing[], metricCode: string): DerivedRatioPairing | null {
+  return pairings.find((pairing) => pairing.served && pairing.kind === "agency_rate" && pairing.reads_beside === metricCode) || null;
 }
 
 /** The provider's own rate this metric is, if a pairing names it as one. */
@@ -149,10 +180,42 @@ const UNAVAILABLE_TEXT: Record<UnavailableReason, string> = {
   denominator_missing: "The denominator is not published here",
   denominator_zero: "The denominator is zero",
   suppressed_input: "An input is withheld or not a usable number",
+  no_reporting_agency: "No agency serving this county reported this month",
+  only_multi_county_agencies: "Only agencies that also serve other counties reported",
+  coverage_below_floor: "Too few agencies reported to give a rate",
 };
 
 export function unavailableText(reason: string | null | undefined): string {
   return (reason && UNAVAILABLE_TEXT[reason as UnavailableReason]) || "No value";
+}
+
+/**
+ * Whom a county agency rate covers, in the words ADR-0012 rule 3 puts beside
+ * the figure: "covers 115,648 people, 100 % of the population its agencies
+ * serve". A refused month says the same, so the reason is visible.
+ */
+export function coverageText(coverage: DerivedRatioCoverage | null | undefined): string {
+  if (!coverage) return "";
+  const covered = Number(coverage.covered_population);
+  const share = Number(coverage.coverage_share);
+  if (coverage.covered_population === null || coverage.covered_population === undefined || !Number.isFinite(covered)) {
+    return "no reporting agency serving only this county published a population";
+  }
+  const people = `covers ${formatNumber(covered, { maximumFractionDigits: 0 })} ${covered === 1 ? "person" : "people"}`;
+  if (coverage.coverage_share === null || coverage.coverage_share === undefined || !Number.isFinite(share)) return people;
+  return `${people}, ${formatNumber(Math.floor(share * 100), { maximumFractionDigits: 0 })} % of the population its agencies serve`;
+}
+
+/** The agencies behind a county rate, for its tooltip and the reader who looks. */
+export function agenciesText(coverage: DerivedRatioCoverage | null | undefined): string {
+  if (!coverage) return "";
+  const count = (items: string[], one: string, many: string) => (items.length ? `${items.length} ${items.length === 1 ? one : many}` : "");
+  return [
+    count(coverage.contributing_agencies, "reporting agency", "reporting agencies"),
+    count(coverage.non_reporting_agencies, "agency that did not report", "agencies that did not report"),
+    count(coverage.excluded_multi_county_agencies, "agency left out because it also serves other counties", "agencies left out because they also serve other counties"),
+    count(coverage.unknown_population_agencies, "agency left out with no published population", "agencies left out with no published population"),
+  ].filter(Boolean).join("; ");
 }
 
 const MARGIN_METHOD_TEXT: Record<MarginMethod, string> = {
