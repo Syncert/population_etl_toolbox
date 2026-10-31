@@ -732,3 +732,54 @@ def test_an_acs_backfill_year_refuses_when_the_disk_cannot_hold_it(
             assert [
                 unit for batch in callable_(targets, dag_run=Run()) for unit in batch
             ]
+
+
+def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-083 — a tract slice is done only for the tract tables it was loaded with.
+
+    The tract list was widened from five tables to twenty-two (W-4), but a
+    tract slice carried the fingerprint of the whole curated list, which did
+    not change, so every tract year loaded on five tables was skipped as done.
+    """
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    config = callable_.__globals__["CONFIG"]
+
+    def fingerprint(year, dataset, tables=None):
+        if tables is None:
+            return ("whole-list", 30)
+        assert list(tables) == list(config.tract_tables)
+        return ("tract-list", 22)
+
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", fingerprint
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}]
+
+    def plan(loaded_with: str) -> list[dict]:
+        completed = [
+            ("acs5", 2019, "tract", fips, loaded_with)
+            for fips in callable_.__globals__["tract_parent_fips"]("acs5")
+        ]
+        database = RecordingDatabase(fetches=[completed])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return [unit for batch in callable_(targets, dag_run=Run()) for unit in batch]
+
+    replanned = plan("whole-list")
+    assert replanned and {unit["geo_level"] for unit in replanned} == {"tract"}
+    assert {unit["variables_hash"] for unit in replanned} == {"tract-list"}
+    assert plan("tract-list") == []
