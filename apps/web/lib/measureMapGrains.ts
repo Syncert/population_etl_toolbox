@@ -65,9 +65,25 @@ export function newestPeriodYear(rows: readonly Record<string, unknown>[]): numb
   return newest;
 }
 
+/**
+ * How many years later than the period a boundary vintage may be and still be
+ * drawn. Boundaries change slowly -- a few annexations, a handful of new or
+ * dissolved places a year -- so a value drawn on boundaries one to three
+ * years newer than its period is nearly the right shape, and the page says
+ * which. Beyond that the map is withheld and the table carries the values.
+ */
+export const MAX_LATER_VINTAGE_GAP = 3;
+
 /** The boundary a grain is drawn on, or why it is not drawn. */
 export type MapBoundary =
-  | { drawn: true; layer: TileLayer; vintage: number | null; tileTemplate: string }
+  | {
+      drawn: true;
+      layer: TileLayer;
+      vintage: number | null;
+      tileTemplate: string;
+      /** True when no vintage at or before the period is held and a later one is drawn. */
+      later: boolean;
+    }
   | { drawn: false; reason: "no-layer" | "no-vintage"; layer: TileLayer | null };
 
 /**
@@ -75,8 +91,9 @@ export type MapBoundary =
  *
  * A versioned layer draws the newest vintage it holds that is not later than
  * the period: the boundaries in force when the value was measured, or the
- * nearest earlier set the layer holds. A layer holding nothing that old draws
- * nothing -- a value is never drawn on a later period's shapes -- and an
+ * nearest earlier set the layer holds. When it holds none that old, it draws
+ * the earliest later vintage within `MAX_LATER_VINTAGE_GAP` years, marked
+ * `later` so the page says so; past that gap it draws nothing. An
  * unversioned layer draws the current boundaries it carries.
  */
 export function boundaryForGrain(
@@ -88,15 +105,24 @@ export function boundaryForGrain(
   if (!layer) return { drawn: false, reason: "no-layer", layer: null };
   if (!layer.versioned) {
     const template = versionedTileTemplate(layer);
-    return template ? { drawn: true, layer, vintage: null, tileTemplate: template } : { drawn: false, reason: "no-layer", layer };
+    return template
+      ? { drawn: true, layer, vintage: null, tileTemplate: template, later: false }
+      : { drawn: false, reason: "no-layer", layer };
   }
-  const held = [...layer.vintages]
-    .filter((entry) => year === null || entry.boundary_vintage <= year)
-    .sort((left, right) => right.boundary_vintage - left.boundary_vintage);
-  const vintage = held[0]?.boundary_vintage;
+  const years = layer.vintages.map((entry) => entry.boundary_vintage).sort((left, right) => left - right);
+  const atOrBefore = years.filter((vintage) => year === null || vintage <= year);
+  let vintage = atOrBefore[atOrBefore.length - 1];
+  let later = false;
+  if (vintage === undefined && year !== null) {
+    const nextLater = years.find((held) => held > year);
+    if (nextLater !== undefined && nextLater - year <= MAX_LATER_VINTAGE_GAP) {
+      vintage = nextLater;
+      later = true;
+    }
+  }
   if (vintage === undefined) return { drawn: false, reason: "no-vintage", layer };
   const template = versionedTileTemplate(layer, vintage);
-  return template ? { drawn: true, layer, vintage, tileTemplate: template } : { drawn: false, reason: "no-vintage", layer };
+  return template ? { drawn: true, layer, vintage, tileTemplate: template, later } : { drawn: false, reason: "no-vintage", layer };
 }
 
 /** The sentence that names the boundary a map is drawn on, or why there is none. */
@@ -104,13 +130,15 @@ export function boundarySentence(boundary: MapBoundary, grain: MapGrain, year: n
   const noun = nounFor(grain);
   const singular = grain === "PLACE" ? "city and town" : noun.one;
   if (boundary.drawn) {
-    return boundary.vintage === null
-      ? `Drawn on the current ${singular} boundaries.`
-      : `Drawn on the ${boundary.vintage} ${singular} boundaries.`;
+    if (boundary.vintage === null) return `Drawn on the current ${singular} boundaries.`;
+    if (boundary.later && year !== null) {
+      return `Drawn on the ${boundary.vintage} ${singular} boundaries; ${year} boundaries are not yet held, so a few ${noun.many} may differ from the shapes the values were measured on.`;
+    }
+    return `Drawn on the ${boundary.vintage} ${singular} boundaries.`;
   }
   if (boundary.reason === "no-vintage") {
     const held = (boundary.layer?.vintages || []).map((entry) => entry.boundary_vintage).sort((a, b) => a - b);
-    return `No ${singular} boundaries ${year ? `from ${year} or earlier ` : ""}are held${held.length ? ` (held: ${held.join(", ")})` : ""}, and a value is never drawn on another period's shapes. Every value is in the table below.`;
+    return `No ${singular} boundaries ${year ? `from ${year} or up to ${MAX_LATER_VINTAGE_GAP} years after it ` : ""}are held${held.length ? ` (held: ${held.join(", ")})` : ""}, so the map is not drawn on shapes that far from the period. Every value is in the table below.`;
   }
   return `No map layer draws ${noun.many} here; every value is in the table below.`;
 }

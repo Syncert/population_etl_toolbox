@@ -205,7 +205,7 @@ def test_the_newest_values_batch_answers_each_pair_as_the_single_read(
     ranked_county: tuple[TestClient, str],
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: API-179 — one batch, every pair the single route's own answer:
+    """Covers: API-180 — one batch, every pair the single route's own answer:
     the newest of two periods, a withheld value, a place with no row, and a
     metric the catalog does not hold."""
     client, metric = ranked_county

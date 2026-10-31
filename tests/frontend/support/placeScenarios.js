@@ -258,7 +258,7 @@ function locateAnswer(lat, lon) {
 
 export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null, onBatchItem = null } = {}) {
   // One `/observations` read, as the single route answers it; the batch
-  // route answers each of its pairs from the same function (API-179).
+  // route answers each of its pairs from the same function (API-180).
   const answerObservations = (params) => {
     if (COST_METRICS[params.get("metric_code")]) {
       const code = params.get("metric_code");

@@ -219,7 +219,7 @@ def test_the_newest_values_batch_executes_for_its_source(
     monkeypatch: pytest.MonkeyPatch,
     source_code: str,
 ) -> None:
-    """Covers: API-179 — two metrics of one source over two places is one
+    """Covers: API-180 — two metrics of one source over two places is one
     statement the warehouse accepts, or the reduction's own refusal."""
     dispatch = OBSERVATION_DISPATCH[source_code]
     codes = [f"{UNMATCHABLE_METRIC}:a", f"{UNMATCHABLE_METRIC}:b"]

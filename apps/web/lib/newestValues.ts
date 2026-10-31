@@ -5,7 +5,7 @@
 // place, about 160 for a county, and the browser queues them six at a time,
 // so the page waited on the queue, not on the warehouse. The API answers the
 // same reads as one batch: each item is exactly what the single read
-// (`buildNewestValueRequest`) returns for its pair (API-179).
+// (`buildNewestValueRequest`) returns for its pair (API-180).
 
 import { apiFetch } from "./api/client";
 import type { RequestOptions } from "./api/client";

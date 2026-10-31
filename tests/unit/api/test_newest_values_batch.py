@@ -1,6 +1,6 @@
 """API unit tests: many measures' newest values for a few places, one request.
 
-Covers: API-179 (`/observations/newest/batch` answers each metric and place
+Covers: API-180 (`/observations/newest/batch` answers each metric and place
         as the single newest read does, in the order asked; the metrics a
         relation holds are one `UNION ALL` statement whose branches are each
         the single read's reduction; an unknown metric is `404` per item, a
@@ -117,7 +117,7 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict]:
 
 
 def test_a_relations_metrics_are_one_statement_of_single_reads(catalog) -> None:
-    """Covers: API-179 — one UNION ALL per relation, each branch the reduction."""
+    """Covers: API-180 — one UNION ALL per relation, each branch the reduction."""
     acs = OBSERVATION_DISPATCH["CENSUS_ACS"].latest_relation
     db = _Session({acs: [_row(INCOME, COUNTY, "97169"), _row(AGE, STATE, "40.1")]})
     answers = neutral.newest_values_batch(
@@ -152,7 +152,7 @@ def test_a_relations_metrics_are_one_statement_of_single_reads(catalog) -> None:
 
 
 def test_a_metric_the_single_read_refuses_is_refused_per_item(catalog) -> None:
-    """Covers: API-179 — the reduction's own refusal, and an absent relation."""
+    """Covers: API-180 — the reduction's own refusal, and an absent relation."""
     dispatch = OBSERVATION_DISPATCH["FBI_UCR"]
     refusal = neutral.reduction_refusal(dispatch, "newest_per_geography")
     answers = neutral.newest_values_batch(_Session({}), [CRIME], [STATE])
@@ -165,7 +165,7 @@ def test_a_metric_the_single_read_refuses_is_refused_per_item(catalog) -> None:
 def test_an_absent_relation_is_503_for_its_metrics_only(
     catalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: API-179 — one missing relation does not fail the batch."""
+    """Covers: API-180 — one missing relation does not fail the batch."""
     bea = OBSERVATION_DISPATCH["BEA"].latest_relation
 
     def require(db, relation):
@@ -209,7 +209,7 @@ def client():
     ],
 )
 def test_an_empty_or_oversized_batch_is_explained(client, params: dict) -> None:
-    """Covers: API-179 — the caller splits a batch the route will not read."""
+    """Covers: API-180 — the caller splits a batch the route will not read."""
     assert (
         client.get("/api/v1/observations/newest/batch", params=params).status_code
         == 422
@@ -219,7 +219,7 @@ def test_an_empty_or_oversized_batch_is_explained(client, params: dict) -> None:
 def test_the_route_answers_in_the_order_asked(
     client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: API-179 — items are the service's answers, deduplicated input."""
+    """Covers: API-180 — items are the service's answers, deduplicated input."""
     seen: dict[str, Any] = {}
 
     def batch(db, codes, places):

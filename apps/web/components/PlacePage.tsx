@@ -448,7 +448,7 @@ export default function PlacePage({
     };
 
     // A chapter's newest values for the same places, as one request: each
-    // item is the single read's answer for its pair (API-179). A batch that
+    // item is the single read's answer for its pair (API-180). A batch that
     // fails, or misses a pair, falls back to the single reads it stands for.
     const askNewestBatch = (pairs: { measure: ResolvedPlaceMeasure; geoId: string }[]) => async () => {
       const codes = pairs.map((pair) => pair.measure.metricCode);

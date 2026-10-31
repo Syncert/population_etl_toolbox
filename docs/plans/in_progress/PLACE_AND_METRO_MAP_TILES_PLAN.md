@@ -132,9 +132,12 @@ Two things make it more than "add two table sources":
       build and bundle budgets pass. Martin live tier: CI (`martin-integration`).
 - [x] On OFFICE_LAB: metro boundaries loaded, refresh run, real tiles
       measured against the budget (dev 0f71e5c, 2026-10-31; see Live results).
-- [ ] On OFFICE_LAB, after the follow-up: coverage re-measured across every
+- [x] On OFFICE_LAB, after the follow-up: coverage re-measured across every
       served source, New York z6 re-measured with headroom, vintage spot
-      check 2025 vs 1999 (Hand-off steps 5 and 6).
+      check 2025 vs 1999 (dev 610667e; see Re-measure).
+- [ ] ACS served at METRO on OFFICE_LAB (a load to run, not code: see
+      ACS at metro grain), then `published_by_source` lists
+      `gold_census.mv_acs_latest` for METRO.
 
 ## Implementation evidence (cloud session, 2026-10-31)
 
@@ -205,6 +208,42 @@ Three findings, fixed in the follow-up PR:
   dropped). The script also lists tiles above 90% of the budget under
   `near_budget`, so headroom shrinking shows up before a tile fails.
 - **Austin's tile.** Austin is in `10/233/422`, not `421`.
+
+### Re-measure on OFFICE_LAB (dev 610667e, 2026-10-31)
+
+Ledger DDL applied (including `gold.tile_simplified`), Martin restarted healthy.
+
+| Check | Result |
+|---|---|
+| `measure_tile_layers.py` | exit 0; `over_budget` and `near_budget` empty |
+| Largest tile | New York places `6/18/24`: 423,774 B (was 514,278 before pixel simplification) |
+| PLACE coverage (2025) | 32,629 polygons; 34,026 published; 1,462 published without a polygon; 65 polygons uncoloured. By source: ACS 33,775, FCC BDC 32,018, PEP 19,483 |
+| METRO coverage (2023) | 925 polygons; 925 published; 0 uncoloured. By source: BEA 925, BLS LAUS 387; **ACS none** |
+| Step 6, Austin `10/233/422` | 200 (6,044 B) with `?vintage=2025` and with no vintage; 204 with `?vintage=1999` |
+| `/api/v1/catalog/tile-layers` | places [2025, default, 32,629], metros [2023, default, 925], each with a vintage `tile_template` |
+
+The 1,462 places published without a polygon are geographies some source
+serves that the 2025 cartographic file does not draw; which sources and why
+(retired or renamed place codes, or places outside the file) is not yet
+broken down. The map cannot draw them and does not invent a shape.
+
+### ACS at metro grain: a load that has not run
+
+ACS published no METRO rows on OFFICE_LAB, and D-8 saw the same gap from
+the other side (no "Metros" in the map's "Draw by" list for an ACS
+measure). Both read one relation: the catalog derives an ACS metric's
+grains from the rows `gold_census.mv_acs_latest` serves
+(`gold_census.metric_publisher`), and the coverage read asks the same
+relation. The code path is whole: in the Airflow pipeline harness a
+captured ACS metro response (`cbsa:10180`) is transformed, served at METRO
+and listed as a METRO grain in `gold_glossary.dim_metric_catalog`, now
+pinned by `test_orchestrated_run_serves_acs_at_metro_grain_and_the_catalog_says_so`.
+The ACS metro grain (W-7 part 1, migration 036) merged with its live
+one-year metro run still outstanding, so no metro slice has been captured
+on OFFICE_LAB. The fix is a backfill run per year, smallest first:
+`acs_ingest` with `{"acs_backfill": {"year": 2024, "geo_level": "metro"}}`
+(one request per dataset, every CBSA at once), then the scheduled years
+`metro_year_scope` declares (2005–2024).
 
 ### Data gap: historical place polygons
 

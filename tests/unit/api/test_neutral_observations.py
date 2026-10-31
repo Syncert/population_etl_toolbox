@@ -826,6 +826,51 @@ def _cdc_suppressed_row() -> dict[str, Any]:
     }
 
 
+def test_an_observation_page_carries_its_own_total() -> None:
+    """Covers: API-179 — one read per page, the total counted by the page.
+
+    Counting and then listing ran the relation (and, for a reduced read, its
+    ranking) twice per page: a city map of one state read every place row of
+    the metric four times over two pages. The page now counts with
+    `COUNT(*) OVER ()` before LIMIT; only a page past the end asks for the
+    separate count, so an offset past the last row still reports the total.
+    """
+    row = {**_cdc_suppressed_row(), "page_total": 1234}
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[row], total=99)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _CDC_METRIC["metric_code"]},
+        )
+    finally:
+        _clear_overrides()
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1234
+    reads = _dispatched(session)
+    assert len(reads) == 1
+    assert "COUNT(*) OVER () AS page_total" in reads[0]
+    assert "page_total" not in response.json()["items"][0]
+
+    empty = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[], total=1234)
+    client = _client_with(empty)
+    try:
+        past_end = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _CDC_METRIC["metric_code"], "offset": 5000},
+        )
+        first = client.get(
+            "/api/v1/observations", params={"metric_code": _CDC_METRIC["metric_code"]}
+        )
+    finally:
+        _clear_overrides()
+    assert past_end.json()["total"] == 1234
+    assert first.json()["total"] == 0
+    assert (
+        sum(sql.lstrip().startswith("SELECT COUNT(") for sql in _dispatched(empty)) == 1
+    )
+
+
 def test_suppressed_values_stay_null_with_their_published_status() -> None:
     """Covers: API-044 — suppression survives; nothing becomes zero."""
     session = _DispatchSession(
@@ -1170,8 +1215,9 @@ def test_newest_per_geography_ranks_inside_the_source_relation() -> None:
         assert "newest_period_rank = 1" in sql
         # Ranked before projection, over the source's own relation.
         assert "FROM gold_pep.population_estimate_latest" in sql
-    # The count answers over the reduced set, so total and page agree.
-    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+    # The total is counted over the reduced set by the page itself, so total
+    # and page agree and the ranking runs once per page.
+    assert any("COUNT(*) OVER () AS page_total" in sql for sql in dispatched)
 
 
 def test_newest_per_geography_keeps_the_declared_filters() -> None:
@@ -1313,7 +1359,7 @@ def test_newest_release_per_period_ranks_by_the_declared_release_order() -> None
         assert "newest_release_rank = 1" in sql
         # Ranked inside the source's own as-released relation.
         assert "FROM gold_pep.population_estimate_revision" in sql
-    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+    assert any("COUNT(*) OVER () AS page_total" in sql for sql in dispatched)
 
 
 def test_newest_release_per_period_keeps_the_declared_filters() -> None:
