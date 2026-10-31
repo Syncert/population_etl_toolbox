@@ -50,6 +50,8 @@ test("reported violent crime: a county reads against its state on the FBI's own 
   await expect(rate.locator("[data-pairing-status='draft']")).toHaveCount(0);
   await expect(county).not.toContainText("Not published at county grain");
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("Wisconsin");
+  // The FBI's unit code reads in words, never as "per_100000_population".
+  await expect(safety).not.toContainText("per_100000_population");
   const denominator = page.getByTestId("card-violent-crime-rate-denominator");
   await expect(denominator).toHaveText(/Per 100,000 people, denominator: population covered by reporting agencies, as the publisher computed it\./);
   await expect(denominator.locator("[data-pairing-status='draft']")).toHaveCount(0);

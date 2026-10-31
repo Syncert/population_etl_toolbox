@@ -3765,6 +3765,7 @@
         "excluded_multi_county_agencies": "array<string>",
         "linked_population": "string | null",
         "non_reporting_agencies": "array<string>",
+        "not_loaded_agencies": "array<string>",
         "unknown_population_agencies": "array<string>"
       },
       "required": [

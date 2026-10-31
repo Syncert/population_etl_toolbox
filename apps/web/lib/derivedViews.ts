@@ -22,7 +22,8 @@ export type UnavailableReason =
   | "suppressed_input"
   | "no_reporting_agency"
   | "only_multi_county_agencies"
-  | "coverage_below_floor";
+  | "coverage_below_floor"
+  | "agencies_not_loaded";
 
 /** One pairing as `GET /api/v1/catalog/derived-ratios` lists it. */
 export interface DerivedRatioPairing {
@@ -71,6 +72,8 @@ export interface DerivedRatioCoverage {
   excluded_multi_county_agencies: string[];
   non_reporting_agencies: string[];
   unknown_population_agencies: string[];
+  /** Agencies serving only this county whose reports are not loaded; any refuses the month. */
+  not_loaded_agencies?: string[];
 }
 
 /** One row of `GET /api/v1/observations/derived`. */
@@ -183,6 +186,7 @@ const UNAVAILABLE_TEXT: Record<UnavailableReason, string> = {
   no_reporting_agency: "No agency serving this county reported this month",
   only_multi_county_agencies: "Only agencies that also serve other counties reported",
   coverage_below_floor: "Too few agencies reported to give a rate",
+  agencies_not_loaded: "Reports from some agencies serving this county are not loaded yet",
 };
 
 export function unavailableText(reason: string | null | undefined): string {
@@ -202,6 +206,10 @@ export function coverageText(coverage: DerivedRatioCoverage | null | undefined):
     return "no reporting agency serving only this county published a population";
   }
   const people = `covers ${formatNumber(covered, { maximumFractionDigits: 0 })} ${covered === 1 ? "person" : "people"}`;
+  const missing = coverage.not_loaded_agencies?.length ?? 0;
+  if (missing) {
+    return `${people}; ${formatNumber(missing, { maximumFractionDigits: 0 })} ${missing === 1 ? "agency" : "agencies"} serving this county ${missing === 1 ? "is" : "are"} not loaded yet`;
+  }
   if (coverage.coverage_share === null || coverage.coverage_share === undefined || !Number.isFinite(share)) return people;
   return `${people}, ${formatNumber(Math.floor(share * 100), { maximumFractionDigits: 0 })} % of the population its agencies serve`;
 }
@@ -215,6 +223,7 @@ export function agenciesText(coverage: DerivedRatioCoverage | null | undefined):
     count(coverage.non_reporting_agencies, "agency that did not report", "agencies that did not report"),
     count(coverage.excluded_multi_county_agencies, "agency left out because it also serves other counties", "agencies left out because they also serve other counties"),
     count(coverage.unknown_population_agencies, "agency left out with no published population", "agencies left out with no published population"),
+    count(coverage.not_loaded_agencies ?? [], "agency whose reports are not loaded", "agencies whose reports are not loaded"),
   ].filter(Boolean).join("; ");
 }
 

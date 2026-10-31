@@ -720,6 +720,17 @@ export function observationUnit(item: ObservationRow | null | undefined): string
   return String(item?.unit || item?.units || "value");
 }
 
+/** Machine unit codes some publishers serve, in the words a reader sees. */
+const UNIT_WORDS: Record<string, string> = {
+  per_100000_population: "per 100,000 people",
+};
+
+/** A served unit in plain words: known codes are named, anything else is shown as published. */
+export function unitText(unit: unknown): string {
+  const raw = String(unit || "");
+  return UNIT_WORDS[raw] ?? raw;
+}
+
 export function marginOfErrorText(item: ObservationRow | null | undefined): string {
   const marginOfError = Number(item?.margin_of_error);
   if (Number.isFinite(marginOfError) && marginOfError >= 0) {

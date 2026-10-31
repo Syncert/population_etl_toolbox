@@ -13,6 +13,7 @@ import {
   pairingFor,
   viewChoices,
 } from "../../../apps/web/lib/derivedViews.ts";
+import { unitText } from "../../../apps/web/lib/explorerViewModel.ts";
 
 const VIOLENT_COUNT = "FBI_UCR:summarized_violent_crime:V:offense:absolute_total";
 const VIOLENT_RATE = "FBI_UCR:summarized_violent_crime:V:offense:rate";
@@ -43,12 +44,17 @@ describe("county agency rate", () => {
     expect(coverageText(coverage({ covered_population: "1", coverage_share: null }))).toBe("covers 1 person");
     expect(coverageText(coverage({ covered_population: null, coverage_share: null }))).toBe("no reporting agency serving only this county published a population");
     expect(coverageText(null)).toBe("");
+    // Unloaded agencies leave coverage unjudged; the count says so.
+    expect(coverageText(coverage({ coverage_share: null, not_loaded_agencies: ["WI0130100"] }))).toBe("covers 115,648 people; 1 agency serving this county is not loaded yet");
+    expect(coverageText(coverage({ coverage_share: null, not_loaded_agencies: ["A", "B"] }))).toBe("covers 115,648 people; 2 agencies serving this county are not loaded yet");
   });
 
   test("the agencies behind it are counted for the tooltip", () => {
     expect(agenciesText(coverage({}))).toBe("2 reporting agencies; 1 agency left out because it also serves other counties");
     expect(agenciesText(coverage({ contributing_agencies: ["A"], non_reporting_agencies: ["B", "C"], excluded_multi_county_agencies: [], unknown_population_agencies: ["D"] })))
       .toBe("1 reporting agency; 2 agencies that did not report; 1 agency left out with no published population");
+    expect(agenciesText(coverage({ not_loaded_agencies: ["WI0130100"] })))
+      .toBe("2 reporting agencies; 1 agency left out because it also serves other counties; 1 agency whose reports are not loaded");
   });
 
   test("a refused month reads as its reason, never as zero", () => {
@@ -57,5 +63,12 @@ describe("county agency rate", () => {
     expect(derivedValueText({ ...base, value: null, unavailable_reason: "coverage_below_floor" })).toBe("Too few agencies reported to give a rate");
     expect(derivedValueText({ ...base, value: null, unavailable_reason: "no_reporting_agency" })).toBe("No agency serving this county reported this month");
     expect(derivedValueText({ ...base, value: null, unavailable_reason: "only_multi_county_agencies" })).toBe("Only agencies that also serve other counties reported");
+    expect(derivedValueText({ ...base, value: null, unavailable_reason: "agencies_not_loaded" })).toBe("Reports from some agencies serving this county are not loaded yet");
+  });
+
+  test("the FBI's unit code reads in words", () => {
+    expect(unitText("per_100000_population")).toBe("per 100,000 people");
+    expect(unitText("dollars")).toBe("dollars");
+    expect(unitText(null)).toBe("");
   });
 });
