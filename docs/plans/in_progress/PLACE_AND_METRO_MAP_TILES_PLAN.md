@@ -203,6 +203,183 @@ Not run: a cloud session cannot reach the warehouse or the running Martin.
    against `?vintage=2024` (Austin area) decode to different Austin
    boundaries, and `?vintage=1999` is empty.
 
+### Results on OFFICE_LAB (2026-10-31, dev at 0f71e5c)
+
+1. `scripts/apply_warehouse_manifest.py --only-flagged`: applied and recorded
+   `glossary-schema` and `contract-views` before Martin restarted.
+2. Area sync: `metro_boundaries` 925, `unlisted_metro_boundaries` 10; 10
+   `boundary_not_in_delineation` rows in `silver_ref.geography_resolution`
+   (Puerto Rico's CBSAs). 5 s.
+3. `CALL gold_glossary.refresh_tile_boundaries();` 4.07 s, rerun 1.88 s.
+   `gold.tile_layer_vintage`: METRO 2023 (925, default), PLACE 2025 (32,629,
+   default).
+4. Martin restarted healthy; `/tiles/places` and `/tiles/metros` return
+   TileJSON with `vector_layers`; `/api/v1/catalog/tile-layers` returns 200.
+5. `measure_tile_layers.py` exited 0 (summary below; the New York places tile
+   6/18/24 is 514,278 B of the 524,288 budget). METRO coverage reports
+   `published: 0` although ACS, LAUS and BEA publish metros: a defect in the
+   coverage query, followed up by the A-6 thread.
+6. Not passable as written: the warehouse holds place geometries for the 2025
+   vintage only, so `10/233/422?vintage=2010` and `?vintage=2024` are empty
+   (204) like `?vintage=1999`; the default and `?vintage=2025` return 200
+   (6,224 B). Historical place boundaries (TIGER place shapefiles per vintage,
+   2010-2024) are a recorded Wave W gap, after W-8.
+
+```json
+{
+  "budget_bytes": 524288,
+  "tiles": [
+    {
+      "layer": "metros",
+      "area": "world",
+      "tile": "0/0/0",
+      "status": 200,
+      "bytes": 100171,
+      "features": 925
+    },
+    {
+      "layer": "places",
+      "area": "new-york",
+      "tile": "6/18/24",
+      "status": 200,
+      "bytes": 514278,
+      "features": 2925
+    },
+    {
+      "layer": "places",
+      "area": "new-york",
+      "tile": "8/75/96",
+      "status": 200,
+      "bytes": 96189,
+      "features": 508
+    },
+    {
+      "layer": "places",
+      "area": "new-york",
+      "tile": "10/301/385",
+      "status": 200,
+      "bytes": 2102,
+      "features": 7
+    },
+    {
+      "layer": "places",
+      "area": "los-angeles",
+      "tile": "6/10/25",
+      "status": 200,
+      "bytes": 74250,
+      "features": 360
+    },
+    {
+      "layer": "places",
+      "area": "los-angeles",
+      "tile": "8/43/102",
+      "status": 200,
+      "bytes": 23890,
+      "features": 88
+    },
+    {
+      "layer": "places",
+      "area": "los-angeles",
+      "tile": "10/175/408",
+      "status": 200,
+      "bytes": 5968,
+      "features": 19
+    },
+    {
+      "layer": "places",
+      "area": "austin",
+      "tile": "6/14/26",
+      "status": 200,
+      "bytes": 157527,
+      "features": 638
+    },
+    {
+      "layer": "places",
+      "area": "austin",
+      "tile": "8/58/105",
+      "status": 200,
+      "bytes": 46394,
+      "features": 114
+    },
+    {
+      "layer": "places",
+      "area": "austin",
+      "tile": "10/233/421",
+      "status": 200,
+      "bytes": 9066,
+      "features": 24
+    },
+    {
+      "layer": "metros",
+      "area": "new-york",
+      "tile": "4/4/6",
+      "status": 200,
+      "bytes": 169693,
+      "features": 358
+    },
+    {
+      "layer": "metros",
+      "area": "new-york",
+      "tile": "8/75/96",
+      "status": 200,
+      "bytes": 3281,
+      "features": 3
+    },
+    {
+      "layer": "metros",
+      "area": "los-angeles",
+      "tile": "4/2/6",
+      "status": 200,
+      "bytes": 34146,
+      "features": 51
+    },
+    {
+      "layer": "metros",
+      "area": "los-angeles",
+      "tile": "8/43/102",
+      "status": 200,
+      "bytes": 1773,
+      "features": 3
+    },
+    {
+      "layer": "metros",
+      "area": "austin",
+      "tile": "4/3/6",
+      "status": 200,
+      "bytes": 88062,
+      "features": 243
+    },
+    {
+      "layer": "metros",
+      "area": "austin",
+      "tile": "8/58/105",
+      "status": 200,
+      "bytes": 1916,
+      "features": 2
+    }
+  ],
+  "over_budget": [],
+  "coverage": [
+    {
+      "grain": "PLACE",
+      "default_vintage": 2025,
+      "polygons": 32629,
+      "published": 32631,
+      "published_without_polygon": 319,
+      "polygons_left_uncoloured": 317
+    },
+    {
+      "grain": "METRO",
+      "default_vintage": 2023,
+      "polygons": 925,
+      "published": 0,
+      "published_without_polygon": 0,
+      "polygons_left_uncoloured": 925
+    }
+  ]
+}
+```
+
 ## What this plan deliberately does not do
 
 - It does not draw places or metros on any web page (D-8).
