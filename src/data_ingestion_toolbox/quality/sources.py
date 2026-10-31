@@ -698,6 +698,62 @@ def fbi_county_agency_rate_agreement(
     ]
 
 
+def fbi_county_agency_rate_is_current(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FBI-014 — the served county rate was computed after its publication.
+
+    ``gold_fbi.county_agency_rate_month`` is recomputed per product in the
+    transaction that publishes it, so its rows are never older than the
+    product's newest publication. A product with county-linked agencies
+    and a published release but no served rows was never computed (a
+    deployment that skipped the first fill); one whose rows predate its
+    newest publication was published by a path that skipped the refresh.
+    """
+    del scope
+    object_name = "gold_fbi.county_agency_rate_month"
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH published AS (
+            SELECT product_id, MAX(published_at) AS published_at
+              FROM silver_fbi.dim_ucr_dataset_release
+             WHERE status = 'published'
+             GROUP BY product_id
+        ), served AS (
+            SELECT product_id, MIN(refreshed_at) AS refreshed_at
+              FROM gold_fbi.county_agency_rate_month
+             GROUP BY product_id
+        )
+        SELECT published.product_id || CASE
+                   WHEN served.product_id IS NULL THEN ' never computed'
+                   ELSE ' computed before its newest publication'
+               END
+          FROM published
+          LEFT JOIN served USING (product_id)
+         WHERE (served.product_id IS NULL
+                AND EXISTS (
+                    SELECT 1
+                      FROM silver_fbi.agency_geography_relationship AS link
+                     WHERE link.product_id = published.product_id
+                       AND link.relationship_type = 'county'
+                       AND link.resolution_status = 'resolved'
+                ))
+            OR served.refreshed_at < published.published_at
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            object_name,
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def fbi_return_a_matches_cde(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -3047,6 +3103,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-004": fbi_aggregation_boundary,
     "DQ-FBI-010": fbi_county_agency_rate_agreement,
     "DQ-FBI-011": fbi_return_a_matches_cde,
+    "DQ-FBI-014": fbi_county_agency_rate_is_current,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-ERS-002": ers_file_reconciliation,

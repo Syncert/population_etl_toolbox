@@ -120,6 +120,12 @@ against the CDE's published totals where both exist (DQ-FBI-011). On the
 2023 file, Dane County's January covers 555,061 of 569,830 people (97 %),
 Madison included.
 
+With every agency loaded, computing the rate on read took over two minutes
+per county, because the whole country's agency-months were summed before
+the county filter applied. The rate is therefore computed once per product
+when that product is published (`gold_fbi.county_agency_rate_month`), and
+DQ-FBI-014 fails if a publication skipped it. The rule itself is unchanged.
+
 ## Consequences
 
 - A county page can show "violent offenses per 100,000 people covered by
