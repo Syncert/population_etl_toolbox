@@ -1,6 +1,7 @@
 # ADR-0012: A county crime rate from the FBI's own agency figures
 
-- **Status:** Proposed 2026-10-31. Awaiting acceptance by the repository owner (Nick).
+- **Status:** Accepted 2026-10-31 by the repository owner (Nick), with a 50 % coverage floor
+  and the reported population visible on every county rate; proposed the same day.
 - **Date:** 2026-10-31
 - **Decision owners:** Repository owner and data-product maintainers
 - **Amends:** [ADR-0009](0009-per-capita-and-share-views.md). This adds one
@@ -56,11 +57,22 @@ computed the FBI's way, from one program, with no Census figure involved.
    - the contributing agencies;
    - the agencies excluded as multi-county;
    - the agencies linked to the county that did not report that month;
-   - the covered population, as the FBI's own figure.
+   - the covered population (the reporting agencies' FBI population);
+   - the linked population (every single-county linked agency's FBI
+     population for that month, reporting or not);
+   - the coverage share, which is covered population over linked population.
 
-   It is unavailable with a reason, never zero, in two cases:
+   Coverage is measured inside the FBI program, so no Census figure enters
+   it either.
+
+   The rate is unavailable with a reason, never zero, in three cases:
    - no linked agency reported (`no_reporting_agency`);
-   - every reporting agency was multi-county (`only_multi_county_agencies`).
+   - every reporting agency was multi-county (`only_multi_county_agencies`);
+   - the coverage share is under 50 % (`coverage_below_floor`).
+
+   Every county rate shows its coverage where the reader sees the figure:
+   "covers N people, X % of the population its agencies serve". A refused
+   month shows the same numbers, so the reader can see why it was refused.
 4. **It is derived and named as such.** The pairing is one draft entry in
    `docs/semantics/derived_ratios.json` with kind `agency_rate`. It is served
    through `/observations/derived` like every other pairing. It is labelled
@@ -111,13 +123,9 @@ computed the FBI's way, from one program, with no Census figure involved.
 - **Keep the state rate only (status quo).** This was the recommended option
   on the D-6 card. Nick chose this amendment instead on 2026-10-31.
 
-## Open questions for acceptance
+## Settled at acceptance
 
-1. **Coverage floor.** Should a county-month also be refused when the covered
-   population is below some share of the county's agencies' total
-   population, for example under 50 % of linked agencies reporting? The
-   draft refuses only on zero coverage, and publishes the coverage in every
-   other case.
-2. **Which crime types.** The draft limits this to the two FBI products that
-   have state rates: violent crime and property crime. Other products would
-   follow one reviewed pairing at a time.
+1. **Coverage floor:** 50 %, as rule 3 states. A county-month under it is
+   refused, and the refusal shows the coverage.
+2. **Crime types:** violent crime and property crime, the two FBI products
+   with state rates. Other products follow one reviewed pairing at a time.
