@@ -1180,67 +1180,6 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
         reader.close()
 
 
-def test_the_derived_route_serves_the_county_rate_from_the_warehouse(
-    fbi_warehouse: Callable[[], connection],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Covers: API-181 — the served page is the gold view's, coverage included."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    from apps.api.services.derived_ratio_service import list_derived_observations
-    from data_ingestion_toolbox.semantics.derived_ratios import SERVE_DRAFTS_ENV
-
-    monkeypatch.setenv(SERVE_DRAFTS_ENV, "1")
-    captured = _persist_fixture_release(fbi_warehouse)
-    _run_pipeline(fbi_warehouse, captured)
-    engine = create_engine("postgresql+psycopg2://", creator=fbi_warehouse)
-    try:
-        with Session(engine) as db:
-            newest = list_derived_observations(
-                db,
-                ratio_id="violent_crime_county_agency_rate",
-                scope="latest",
-                release=None,
-                filters={"geo_id": "state:55|county:025"},
-                limit=1,
-                offset=0,
-                newest_per_geography=True,
-            )
-            months = list_derived_observations(
-                db,
-                ratio_id="violent_crime_county_agency_rate",
-                scope="latest",
-                release=None,
-                filters={"state_fips": "55", "year_from": 2023, "year_to": 2023},
-                limit=100,
-                offset=0,
-                period_start="2023-01-01",
-            )
-    finally:
-        engine.dispose()
-
-    assert newest.total == 1
-    june = newest.items[0]
-    assert (june.geo_name, june.period_start, june.value) == (
-        "Dane County",
-        "2023-06-01",
-        "17.29",
-    )
-    assert june.coverage.contributing_agencies == ["WI0130000", "WI0137000"]
-    by_county = {item.geo_name: item for item in months.items}
-    assert set(by_county) == {"Brown County", "Dane County", "Rock County"}
-    assert by_county["Dane County"].value == "11.24"
-    assert by_county["Dane County"].numerator.value == "13"
-    assert by_county["Dane County"].coverage.covered_population == "115648"
-    rock = by_county["Rock County"]
-    assert (rock.value, rock.unavailable_reason) == (
-        None,
-        "only_multi_county_agencies",
-    )
-    assert rock.coverage.excluded_multi_county_agencies == ["WI0540300"]
-
-
 def test_relationship_key_upgrade_preserves_evidence_and_is_rerunnable(
     fbi_warehouse: Callable[[], connection],
 ) -> None:

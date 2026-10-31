@@ -22,8 +22,30 @@ every other agency are missing. The county view now refuses such months as
 so that the refusal clears.
 
 Path chosen: the CDE bulk "Return A" master files. The per-agency CDE API is
-not viable: OFFICE_LAB's key returned `X-RateLimit-Limit: 10`, and every
-agency would need about 37,000 calls (18.5k agencies × violent and property).
+not practical: every agency would need about 37,000 calls (18.5k agencies ×
+violent and property), and the API is unreliable (4 of 7 calls in one
+20-minute probe answered 503). Its limit is about 10 requests a second, not an
+hourly cap, so the 58-call agency directory is cheap if it is ever needed.
+
+**Built (2026-10-31):** `data_ingestion_toolbox.fbi_ucr.return_a` (layout,
+crosswalk, resumable per-year load, DQ-FBI-011), migration 040, catalog
+ETL-107. The county-rate pairings read `return_a_violent_crime` and
+`return_a_property_crime` (version 2). A year whose signed URL, download or
+file fails is recorded (its capture request marked failed, the year listed in
+`failed_years`) and the run moves on; the release publishes only once every
+requested year is in, and the command exits non-zero so the operator reruns.
+
+The nationwide CDE agency directory crawl was skipped: the Return A file is
+the directory now. Each record carries the agency's ORI, name, population
+group, county codes with population slices, and its "covered by" ORI, which
+is what `dim_agency`, `dim_agency_version` and the county links are built
+from.
+
+Follow-ups, not in v1:
+- the 2026 year-to-date file (`reta-2026.zip`) as a provisional year, loaded
+  once the registry's `period_end` moves past 12-2025;
+- the 28 detailed offense measures;
+- DQ-FBI-012/013 as warehouse rules (the parser enforces both per record).
 
 ## What OFFICE_LAB found (2026-10-31, nothing loaded)
 
