@@ -1,6 +1,6 @@
 """The per-capita and share pairing registry keeps its contract (ADR-0009).
 
-Covers: ETL-103
+Covers: ETL-104
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def _parse(*entries: dict) -> dict:
 
 
 def test_an_acs_entry_expands_to_one_pairing_per_dataset() -> None:
-    """Covers: ETL-103 — a 5-year count is only ever divided by a 5-year total."""
+    """Covers: ETL-104 — a 5-year count is only ever divided by a 5-year total."""
     pairings = _parse(_entry())
     assert sorted(pairings) == ["poverty_share:acs1", "poverty_share:acs5"]
     five = pairings["poverty_share:acs5"]
@@ -95,13 +95,13 @@ def test_an_acs_entry_expands_to_one_pairing_per_dataset() -> None:
     ],
 )
 def test_the_registry_refuses_a_broken_pairing(overrides: dict, message: str) -> None:
-    """Covers: ETL-103 — nothing is paired across programs, periods or universes."""
+    """Covers: ETL-104 — nothing is paired across programs, periods or universes."""
     with pytest.raises(RatioRegistryError, match=message):
         _parse(_entry(**overrides))
 
 
 def test_a_rate_the_provider_publishes_is_never_recomputed() -> None:
-    """Covers: ETL-103 — ADR-0009 rule 5: provider rates take precedence."""
+    """Covers: ETL-104 — ADR-0009 rule 5: provider rates take precedence."""
     provider = _entry(
         ratio_id="violent_crime_rate",
         kind="provider_rate",
@@ -131,7 +131,7 @@ def test_a_rate_the_provider_publishes_is_never_recomputed() -> None:
 
 
 def test_a_provider_rate_names_no_denominator() -> None:
-    """Covers: ETL-103 — a provider rate is the provider's, with no denominator of ours."""
+    """Covers: ETL-104 — a provider rate is the provider's, with no denominator of ours."""
     with pytest.raises(RatioRegistryError, match="provider_rate"):
         _parse(
             _entry(
@@ -147,7 +147,7 @@ def test_a_provider_rate_names_no_denominator() -> None:
 def test_only_approved_pairings_are_served_unless_drafts_are_opted_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-103 — a draft is a proposal, not a served view."""
+    """Covers: ETL-104 — a draft is a proposal, not a served view."""
     draft = _parse(_entry(status="draft"))["poverty_share:acs5"]
     approved = _parse(_entry())["poverty_share:acs5"]
     monkeypatch.delenv(SERVE_DRAFTS_ENV, raising=False)
@@ -161,7 +161,7 @@ def test_only_approved_pairings_are_served_unless_drafts_are_opted_in(
 
 
 def test_the_shipped_registry_loads_and_matches_its_schema_fields() -> None:
-    """Covers: ETL-103 — every entry carries the schema's required fields and no others."""
+    """Covers: ETL-104 — every entry carries the schema's required fields and no others."""
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     item = schema["properties"]["entries"]["items"]
     allowed = set(item["properties"])
@@ -174,7 +174,7 @@ def test_the_shipped_registry_loads_and_matches_its_schema_fields() -> None:
 
 
 def test_every_numerator_is_a_metric_the_place_pages_define() -> None:
-    """Covers: ETL-103 — a pairing divides a measure readers already see, by its code."""
+    """Covers: ETL-104 — a pairing divides a measure readers already see, by its code."""
     defined = set(definitions())
     for pairing in load_registry().values():
         if pairing.derived:

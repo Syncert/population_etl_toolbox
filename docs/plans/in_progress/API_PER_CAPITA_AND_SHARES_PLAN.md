@@ -101,7 +101,7 @@ this plan serves them.
 | `python -m pytest tests/unit -q` | 2,746 passed (new: `tests/unit/api/test_derived_ratios.py` 22, `tests/unit/semantics/test_derived_ratio_registry.py` 16) |
 | `python -m ruff format --check .` ; `python -m ruff check .` (ruff 0.15.16, the pinned version) | clean |
 | OpenAPI snapshot | regenerated: two new operations, `/catalog/derived-ratios` and `/observations/derived` |
-| Catalog register | ETL-103, API-173, API-174 added; API-171/172 belong to the place search PR (#172) |
+| Catalog register | ETL-104, API-173, API-174 added; API-171/172 belong to the place search PR (#172) |
 | DAG tier | not run here (no Airflow in the cloud container); this change touches no DAG |
 | Database integration tier, warehouse checks | not run here; handed to OFFICE_LAB (see below) |
 
