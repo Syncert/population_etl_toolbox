@@ -76,5 +76,9 @@ WEB-145 (frontend unit, frontend browser).
 - Not verified here: the running site. A-3 serves pairings only with
   `DERIVED_RATIOS_SERVE_DRAFTS=1`. #179 fixed the FBI pairing answering
   `suppressed_input`; the place cards read the FBI rate itself either way.
-- The `/layout` bundle had 0.2 kB of headroom on `dev`, so the styles reuse
-  `command-row`, `segmented-control` and `subtle` and add three rules.
+- The `/layout` bundle had 0.2 kB of headroom on `dev`. MapLibre's 83 kB
+  stylesheet was imported by the global sheet, so every page's layout carried
+  it; `components/useMapLibre.ts` now fetches it with the library when a map
+  is drawn. `/layout` is 426.9 of 507 kB; `/explore` 493.4 of 550 kB.
+  `explorer.spec.js` asserts a drawn map has the stylesheet (it fails, with
+  the canvas `static`, when the import is removed).
