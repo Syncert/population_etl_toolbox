@@ -487,6 +487,8 @@ def _serve_step_by_state(
                 f"CALL {config.latest_procedure}(%s, %s)",
                 (chunk["start"], chunk["end"]),
             )
+            # Each state's own timings, so a slow state is visible.
+            _forward_procedure_notices(conn, log)
             conn.commit()
 
     log.info(

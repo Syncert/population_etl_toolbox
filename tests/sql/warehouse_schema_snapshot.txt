@@ -3429,6 +3429,7 @@ CASE dataset_code
     ELSE 9
 END), vintage_year DESC)
     index ix_rpt_acs_observations_dataset_vintage CREATE INDEX ix_rpt_acs_observations_dataset_vintage ON ONLY gold_census.rpt_acs_observations USING btree (dataset_code, vintage_year)
+    index ix_rpt_acs_observations_level_state CREATE INDEX ix_rpt_acs_observations_level_state ON ONLY gold_census.rpt_acs_observations USING btree (geo_level, state_fips, observation_date)
     index ix_rpt_acs_observations_metric_date CREATE INDEX ix_rpt_acs_observations_metric_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, observation_date)
     index ix_rpt_acs_observations_metric_geo_date CREATE INDEX ix_rpt_acs_observations_metric_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, geo_id, observation_date)
     index ix_rpt_acs_observations_metric_release_period CREATE INDEX ix_rpt_acs_observations_metric_release_period ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date, observation_date, duration_start, duration_end)

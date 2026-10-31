@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import StatusPill from "./StatusPill";
 import {
@@ -69,8 +69,9 @@ import type {
   ResolvedChapter,
   ResolvedPlaceMeasure,
 } from "../lib/placeChapters";
+import { COMPARE_GEO_ID, compareHref } from "../lib/placeComparison";
 import { crossCountyNote, groupNearby, isEmpty, partOfShareText, relatedPath, shareText } from "../lib/placeRelationships";
-import type { NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
+import type { NearbyEntry, NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
 import { rankSentence, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
@@ -147,6 +148,7 @@ export default function PlacePage({
   countySegment?: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   // The third segment names a county or, failing that, a city or town; which
   // one is known once the address resolves (acs-place-grain).
   const [localLevel, setLocalLevel] = useState<"COUNTY" | "PLACE">("COUNTY");
@@ -622,6 +624,7 @@ export default function PlacePage({
                   <li key={entry.geoId} data-geo-id={entry.geoId}>
                     {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
                     {entry.share !== null ? <span className="subtle"> · {shareText(entry)}</span> : null}
+                    <CompareLink from={place} path={pathname} entry={entry} />
                   </li>
                 ))}
               </ul>
@@ -632,7 +635,10 @@ export default function PlacePage({
               <h3>Neighbouring counties</h3>
               <ul className="place-index">
                 {nearby.neighbours.map((entry) => (
-                  <li key={entry.geoId}>{entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}</li>
+                  <li key={entry.geoId}>
+                    {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
+                    <CompareLink from={place} path={pathname} entry={entry} />
+                  </li>
                 ))}
               </ul>
             </div>
@@ -645,6 +651,7 @@ export default function PlacePage({
                   <li key={entry.geoId}>
                     {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
                     {entry.share !== null ? <span className="subtle"> · {Math.round(entry.share * 100)}% of this place</span> : null}
+                    <CompareLink from={place} path={pathname} entry={entry} />
                   </li>
                 ))}
               </ul>
@@ -658,6 +665,7 @@ export default function PlacePage({
                   <li key={entry.geoId} data-geo-id={entry.geoId}>
                     {entry.href ? <Link href={entry.href}>{entry.name}</Link> : entry.name}
                     {partOfShareText(entry) ? <span className="subtle"> · {partOfShareText(entry)}</span> : null}
+                    <CompareLink from={place} path={pathname} entry={entry} />
                   </li>
                 ))}
               </ul>
@@ -1308,5 +1316,21 @@ function WhatStandsOut({ response, siblingsName }: { response: DistinctiveRespon
         ) : null}
       </div>
     </section>
+  );
+}
+
+/**
+ * "compare" beside a related place: this place and that one side by side,
+ * at one level or across two (web-cross-level-compare).
+ */
+function CompareLink({ from, path, entry }: { from: GeographySummary | null; path: string | null; entry: NearbyEntry }) {
+  if (!from || !path || !COMPARE_GEO_ID.test(from.geo_id) || !COMPARE_GEO_ID.test(entry.geoId)) return null;
+  return (
+    <>
+      {" · "}
+      <Link className="text-link" href={compareHref({ geoId: from.geo_id, path }, { geoId: entry.geoId, path: entry.href })} aria-label={`Compare with ${entry.name}`} data-testid="place-nearby-compare">
+        compare
+      </Link>
+    </>
   );
 }

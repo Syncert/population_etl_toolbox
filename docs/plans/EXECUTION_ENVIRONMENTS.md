@@ -52,7 +52,7 @@ grep was looking for.
 | --- | --- | --- | --- |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
-| [`web-find-your-place`](in_progress/WEB_FIND_YOUR_PLACE_PLAN.md) | low | `browser` | `api-place-search`, `find-your-place-home` |
+| [`web-cross-level-compare`](in_progress/WEB_CROSS_LEVEL_COMPARE_PLAN.md) | medium | `browser` | `api-cross-level-compare`, `web-per-capita-toggle` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
