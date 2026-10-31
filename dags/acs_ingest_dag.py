@@ -852,8 +852,12 @@ def acs_ingest():
     planned = mark_slices_planned(batches)
     batches >> planned
 
-    # 4) Execute mapped ingestion batches
+    # 4) Execute mapped ingestion batches, after the slices are marked
+    # planned: marking resets a slice's `started_at`, so a batch that started
+    # alongside it (the 2024 metro run, 2026-10-31) finished a slice with no
+    # start and broke the slice ledger's CHECK.
     raw_ingest = ingest_batch.expand(batch=batches)
+    planned >> raw_ingest
 
     silver_schema = ensure_silver_schema()
     silver_transform = transform_to_silver()
