@@ -182,5 +182,15 @@ Re-time both pages and Dane County's related list after this merges.
 2. `GET /api/v1/catalog/geographies/state%3A55%7Ccounty%3A025/related`,
    uncached: 0.63 s (was 7.88 s); the related read alone 646 ms for Dane
    County (was 8,723 ms) and 41 ms for Madison city.
+3. Dane County's "Nearby and related" section, by eye: present and filled,
+   "Within this county" lists Black Earth, Blue Mounds, Cottage Grove, Cross
+   Plains, Dane, Deerfield, DeForest, Fitchburg, Madison city, Maple Bluff,
+   Marshall and more, each with a compare link; neighbours and "Part of"
+   below it.
+4. The seven chapter batches for Rock County beside Wisconsin, uncached, in
+   parallel (page filled in 4.6 s): PEP 725 ms, work and money 663, NASS
+   corn 599, FBI 526, health 390, housing 389, people 305. No batch
+   dominates, so no EXPLAIN was needed; the rest of the time is page and
+   catalog work outside the batches.
 
 Every criterion has passed live, so the plan moves to needs_review.
