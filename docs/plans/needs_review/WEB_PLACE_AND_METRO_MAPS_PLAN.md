@@ -19,12 +19,12 @@ verify:
 
 ## Status
 
-In progress since 2026-10-31 on `claude/project-thread-1kgyhx` (the build-out
-names `feat/web-place-maps`; cloud sessions push only to their session
-branch), branched from `dev` at `24a12c8` (A-6, #191). First PR #198 merged
-2026-10-31 (`1dde1d0`). The OFFICE_LAB live check that day found three things
-(see "Live check 1"); the follow-up PR, branched from `dev` at `610667e`,
-answers them. Last updated 2026-10-31.
+Needs review since 2026-10-31. Built on `claude/project-thread-1kgyhx` in
+three PRs into `dev`: #198 (`1dde1d0`), #203 (`3eb273e`) and #210
+(`923d777`, Nick's newest-boundary rule, older periods read from their
+release, API-182 and its index). Every OFFICE_LAB re-check passed after #210
+(see "Live check 3"). Metro maps await the ACS metro backfill (A-6), which
+needs no web change. Last updated 2026-10-31.
 
 ## Why
 
@@ -80,8 +80,8 @@ gap 6 of the October web-readiness review.
 - [x] Quantile bands and the uncoloured rule hold at every grain.
 - [x] The web reads only the API; no warehouse rule is copied into client code.
 - [x] Unit, lint, typecheck, build, bundle budgets and browser tests pass.
-- [ ] On OFFICE_LAB: real tiles drawn for Texas places and for metros (see
-      Hand-off).
+- [x] On OFFICE_LAB: real tiles drawn for Texas places (live check 3);
+      metros draw once the ACS metro slice is served (A-6 backfill).
 
 ## Implementation
 
@@ -273,6 +273,36 @@ Rebuild web and API from `dev`, then:
 - 6 again: time the Texas place and Wisconsin tract pages end to end (the
   statements themselves are now 8 to 10 ms).
 
+## Live check 3 (OFFICE_LAB, after #210, 2026-10-31, relayed)
+
+- 2 passed: the Texas places map draws with the asterisk on the legend title,
+  the note and tooltip "City and town boundaries last updated 2025, the most
+  recent held.", and the starred sentence.
+- 4 passed: the period list offers "2018-01-01 – 2022-12-31 (2022 release, as
+  published)", and the 2022 release renders with "the values are for 2022".
+- Timing: first load 31 s to network idle, but the slowest single request was
+  0.88 s, so the wait is tiles and idle connections, not the API. The Austin
+  place page took 11.2 s with 103 requests. HAR: `tx_place_map.har` on
+  OFFICE_LAB.
+
+## Follow-ups (not built)
+
+- **Tile wait.** Opening on a whole state at the place layer's minzoom (6)
+  asks for every tile covering Texas, each up to ~420 KB of the whole
+  nation's places, behind the browser's six connections to one host.
+  Cheap candidates, in order: (1) a `state_fips` argument on the Martin place
+  function source so a state map's tiles carry only that state's shapes (the
+  page already filters client-side); (2) long `Cache-Control` on versioned
+  tile URLs (a vintage's tiles never change) so a second visit is free;
+  (3) HTTP/2 on the tile proxy so the tiles stop queueing on six connections;
+  (4) open one zoom closer on the state's largest city and let the reader
+  zoom out. Measure each against the HAR before building.
+- **Partition pruning.** See "Index on OFFICE_LAB" above: an
+  `observation_date` predicate would read one partition, once the
+  vintage-year check holds.
+- **Austin place page** (103 requests, 11.2 s) belongs to the place page's
+  own plan, not this one.
+
 ## Next pickup
 
-The re-checks above, then move this plan to `needs_review/`.
+Review. Nothing is left to build here.

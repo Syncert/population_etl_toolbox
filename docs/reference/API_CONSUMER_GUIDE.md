@@ -765,12 +765,16 @@ the nation is a `422`. Each row is `derived: true`, carries the offenses as
   published population, reporting or not; `coverage_share` is one over the
   other, and `coverage_floor` is 0.5;
 - `contributing_agencies`, `excluded_multi_county_agencies`,
-  `non_reporting_agencies` and `unknown_population_agencies`, as FBI ORIs.
+  `non_reporting_agencies`, `unknown_population_agencies` and
+  `not_loaded_agencies`, as FBI ORIs.
 
-A month with no reporting agency, only agencies that also serve other
-counties, or coverage under the floor has no value and says why in
-`unavailable_reason` (`no_reporting_agency`, `only_multi_county_agencies`,
-`coverage_below_floor`), never a zero. Show the coverage beside the figure:
+A month with an agency serving only this county whose reports are not
+loaded, no reporting agency, only agencies that also serve other counties,
+or coverage under the floor has no value and says why in
+`unavailable_reason` (`agencies_not_loaded`, `no_reporting_agency`,
+`only_multi_county_agencies`, `coverage_below_floor`), never a zero. An
+`agencies_not_loaded` month also leaves `coverage_share` empty: without those
+agencies' populations the coverage cannot be judged. Show the coverage beside the figure:
 the rate describes the people its reporting agencies cover, not every
 resident, and it is not comparable with a Census per-capita figure. Its rows
 are ordered by period, county and release, and `newest_per_geography` keeps

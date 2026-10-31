@@ -5089,6 +5089,7 @@ v gold_fbi.county_agency_rate
     column counted_entity_note text
     column methodology_url text
     column documentation_url text
+    column not_loaded_oris text[]
     body WITH agency_month AS (
     body          SELECT DISTINCT observation.product_id,
     body             observation.release_key,
@@ -5143,6 +5144,21 @@ v gold_fbi.county_agency_rate
     body             count(*) FILTER (WHERE classified.is_single_county AND classified.is_reported) AS single_county_reporting_rows
     body            FROM classified
     body           GROUP BY classified.product_id, classified.release_key, classified.measure_id, classified.geo_id, classified.period, classified.period_start, classified.period_end
+    body         ), not_loaded AS (
+    body          SELECT summed.product_id,
+    body             summed.release_key,
+    body             summed.measure_id,
+    body             summed.geo_id,
+    body             summed.period,
+    body             array_agg(DISTINCT link.ori ORDER BY link.ori) AS oris
+    body            FROM summed
+    body              JOIN silver_fbi.agency_geography_relationship link ON link.product_id = summed.product_id AND link.geo_id = summed.geo_id AND link.relationship_type = 'county'::text AND link.resolution_status = 'resolved'::text AND summed.period_start >= link.effective_start AND summed.period_end <= link.effective_end
+    body           WHERE NOT (EXISTS ( SELECT 1
+    body                    FROM silver_fbi.fact_crime_observation loaded
+    body                   WHERE loaded.product_id = summed.product_id AND loaded.measure_id = summed.measure_id AND loaded.subject_type = 'agency'::text AND loaded.subject_code = link.ori AND loaded.period = summed.period AND loaded.release_key = summed.release_key)) AND (( SELECT count(DISTINCT sibling.geo_id) AS count
+    body                    FROM silver_fbi.agency_geography_relationship sibling
+    body                   WHERE sibling.relationship_type = 'county'::text AND sibling.resolution_status = 'resolved'::text AND sibling.product_id = link.product_id AND sibling.ori = link.ori AND summed.period_start >= sibling.effective_start AND summed.period_end <= sibling.effective_end)) = 1
+    body           GROUP BY summed.product_id, summed.release_key, summed.measure_id, summed.geo_id, summed.period
     body         ), assessed AS (
     body          SELECT summed.product_id,
     body             summed.release_key,
@@ -5160,17 +5176,20 @@ v gold_fbi.county_agency_rate
     body             summed.unknown_population_oris,
     body             summed.reporting_rows,
     body             summed.single_county_reporting_rows,
+    body             not_loaded.oris AS not_loaded_oris,
     body                 CASE
-    body                     WHEN summed.linked_population > 0::numeric THEN summed.covered_population / summed.linked_population
+    body                     WHEN summed.linked_population > 0::numeric AND not_loaded.oris IS NULL THEN summed.covered_population / summed.linked_population
     body                     ELSE NULL::numeric
     body                 END AS coverage_share,
     body                 CASE
+    body                     WHEN not_loaded.oris IS NOT NULL THEN 'agencies_not_loaded'::text
     body                     WHEN summed.reporting_rows = 0 THEN 'no_reporting_agency'::text
     body                     WHEN summed.single_county_reporting_rows = 0 THEN 'only_multi_county_agencies'::text
     body                     WHEN summed.covered_population IS NULL OR summed.linked_population IS NULL OR summed.linked_population = 0::numeric OR summed.covered_population = 0::numeric OR summed.covered_population < (0.5 * summed.linked_population) THEN 'coverage_below_floor'::text
     body                     ELSE NULL::text
     body                 END AS unavailable_reason
     body            FROM summed
+    body              LEFT JOIN not_loaded ON not_loaded.product_id = summed.product_id AND not_loaded.release_key = summed.release_key AND not_loaded.measure_id = summed.measure_id AND not_loaded.geo_id = summed.geo_id AND not_loaded.period = summed.period
     body         )
     body  SELECT assessed.product_id,
     body     assessed.release_key,
@@ -5209,7 +5228,8 @@ v gold_fbi.county_agency_rate
     body     ((((('Offenses reported by the agencies serving only this county, divided '::text || 'by those agencies'' FBI-published populations, times 100,000 '::text) || '(ADR-0012). Agencies serving more than one county, and agencies '::text) || 'with no published population, are left out of both sides. No '::text) || 'rate is given when no agency reported, when only multi-county '::text) || 'agencies reported, or when the reporting agencies cover under '::text) || 'half the population the county''s agencies serve.'::text AS methodology_note,
     body     release.counted_entity_note,
     body     release.methodology_url,
-    body     release.documentation_url
+    body     release.documentation_url,
+    body     COALESCE(assessed.not_loaded_oris, ARRAY[]::text[]) AS not_loaded_oris
     body    FROM assessed
     body      JOIN silver_fbi.dim_offense_measure measure ON measure.product_id = assessed.product_id AND measure.measure_id = assessed.measure_id
     body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = assessed.product_id AND release.release_key = assessed.release_key
@@ -5486,6 +5506,7 @@ v gold_fbi.latest_county_agency_rate
     column counted_entity_note text
     column methodology_url text
     column documentation_url text
+    column not_loaded_oris text[]
     body SELECT rate.product_id,
     body     rate.release_key,
     body     rate.refresh_date,
@@ -5520,7 +5541,8 @@ v gold_fbi.latest_county_agency_rate
     body     rate.methodology_note,
     body     rate.counted_entity_note,
     body     rate.methodology_url,
-    body     rate.documentation_url
+    body     rate.documentation_url,
+    body     rate.not_loaded_oris
     body    FROM gold_fbi.county_agency_rate rate
     body      JOIN ( SELECT dim_ucr_dataset_release.product_id,
     body             max(dim_ucr_dataset_release.refresh_date) AS refresh_date

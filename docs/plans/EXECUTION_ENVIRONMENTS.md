@@ -46,13 +46,12 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**3 plans.**
+**2 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
-| [`web-place-maps`](in_progress/WEB_PLACE_AND_METRO_MAPS_PLAN.md) | medium | `browser` | `tiles-places-and-metros`, `one-measure-every-county-map`, `web-per-capita-toggle` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
@@ -97,12 +96,14 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**6 plans.**
+**8 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-place-tract-history-backfill`](in_progress/ACS_PLACE_AND_TRACT_HISTORY_BACKFILL_PLAN.md) | high | `postgres` | `acs-place-grain`, `sub-county-geography` |
+| [`age-and-sex-structure-views`](to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md) | high | `browser`, `postgres` | `place-pages`, `api-per-capita-and-shares`, `web-cross-level-compare` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
+| [`fbi-return-a-bulk-load`](to_do/FBI_RETURN_A_BULK_LOAD_PLAN.md) | high | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
