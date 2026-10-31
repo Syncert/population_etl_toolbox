@@ -313,7 +313,9 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
     )
 
 
-@pytest.mark.parametrize("route", ["/api/v1/observations/periods", "/api/v1/observations/releases"])
+@pytest.mark.parametrize(
+    "route", ["/api/v1/observations/periods", "/api/v1/observations/releases"]
+)
 def test_grouped_listings_read_the_relation_once(route: str) -> None:
     """Covers: API-160 — a page carries its own group total; no second scan.
 
@@ -352,7 +354,9 @@ def test_grouped_listings_read_the_relation_once(route: str) -> None:
         _clear_overrides()
     assert past_end.json()["total"] == 7, "past the last group, the count still answers"
     assert first.json()["total"] == 0
-    assert sum(sql.lstrip().startswith("SELECT COUNT(") for sql in _dispatched(empty)) == 1
+    assert (
+        sum(sql.lstrip().startswith("SELECT COUNT(") for sql in _dispatched(empty)) == 1
+    )
 
 
 def test_acs_grain_filter_is_plain_equality() -> None:
