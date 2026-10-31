@@ -209,7 +209,54 @@ function derivedRows(ratio, geoId) {
   }];
 }
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null } = {}) {
+// The place search (A-1) as the API answers it: each group is one matched
+// name followed by the county and metro it brings along. Austin's rows
+// demonstrate the build-out's example (Texas has no page fixture); Madison's
+// and Rock's open the Wisconsin pages above.
+const searchRow = (geo_id, geo_level, geo_name, short_name, state, page_path, population, extra = {}) => ({
+  geo_id, geo_level, geo_name, short_name, match: "exact", matched_via: null,
+  state_fips: state?.[0] ?? null, state_name: state?.[1] ?? null, county_geo_id: null, county_name: null,
+  population, population_year: population === null ? null : 2023, population_metric_code: population === null ? null : "CENSUS_ACS:acs5:B01003_001",
+  page_path, ...extra,
+});
+const via = (city) => ({ match: "contains_match", matched_via: { geo_id: city.geo_id, geo_name: city.geo_name } });
+const TX = ["48", "Texas"];
+const WI = ["55", "Wisconsin"];
+const AUSTIN_CITY = searchRow("state:48|place:05000", "PLACE", "Austin city", "Austin", TX, "/us/texas/austin-city", 967862);
+const MADISON_CITY = searchRow("state:55|place:48000", "PLACE", "Madison city", "Madison", WI, "/us/wisconsin/madison-city", 269196);
+export const SEARCH_GROUPS = [
+  [AUSTIN_CITY,
+    searchRow("state:48|county:453", "COUNTY", "Travis County", "Travis", TX, "/us/texas/travis-county", 1290188, via(AUSTIN_CITY)),
+    searchRow("cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX Metro Area", "Austin-Round Rock-San Marcos", TX, null, 2421115, via(AUSTIN_CITY))],
+  [searchRow("state:48|county:015", "COUNTY", "Austin County", "Austin", TX, "/us/texas/austin-county", 30707)],
+  [MADISON_CITY,
+    searchRow("state:55|county:025", "COUNTY", "Dane County", "Dane", WI, "/us/wisconsin/dane-county", 561504, via(MADISON_CITY)),
+    searchRow("cbsa:31540", "METRO", "Madison, WI Metro Area", "Madison", WI, null, 680796, via(MADISON_CITY))],
+  [searchRow("state:55|county:105", "COUNTY", "Rock County", "Rock", WI, "/us/wisconsin/rock-county", 163687)],
+  [searchRow("state:55|place:99999", "PLACE", "Crossing city", "Crossing", WI, "/us/wisconsin/crossing-city", 12000)],
+  [searchRow("state:55", "STATE", "Wisconsin", "Wisconsin", WI, "/us/wisconsin", 5882128)],
+];
+
+// Where "use my location" points land: inside Madison, in Rock County
+// outside every city, and anywhere else outside the covered states.
+export const LOCATIONS = {
+  madison: { latitude: 43.074678, longitude: -89.384123 },
+  rockCounty: { latitude: 42.701234, longitude: -89.155678 },
+  atSea: { latitude: 40, longitude: -40 },
+};
+function locateAnswer(lat, lon) {
+  const state = { geo_id: "state:55", geo_level: "STATE", geo_name: "Wisconsin", boundary_vintage: 2024, page_path: "/us/wisconsin" };
+  const dane = { geo_id: "state:55|county:025", geo_level: "COUNTY", geo_name: "Dane County", boundary_vintage: 2024, page_path: "/us/wisconsin/dane-county" };
+  const rock = { geo_id: "state:55|county:105", geo_level: "COUNTY", geo_name: "Rock County", boundary_vintage: 2024, page_path: "/us/wisconsin/rock-county" };
+  if (Math.abs(lat - 43.07) < 0.1 && Math.abs(lon + 89.4) < 0.1) {
+    const place = { geo_id: "state:55|place:48000", geo_level: "PLACE", geo_name: "Madison city", boundary_vintage: 2024, page_path: "/us/wisconsin/madison-city" };
+    return { landing: place, state, county: dane, place, tract: null, zcta: null, metro: { geo_id: "cbsa:31540", geo_level: "METRO", geo_name: "Madison, WI Metro Area", boundary_vintage: 2023, page_path: null } };
+  }
+  if (Math.abs(lat - 42.7) < 0.1 && Math.abs(lon + 89.15) < 0.1) return { landing: rock, state, county: rock, place: null, tract: null, zcta: null, metro: null };
+  return null;
+}
+
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -244,6 +291,18 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       ] : [];
       return route.fulfill({ json: { derived: true, geo_id: geoId, geo_level: geoId.includes("county") ? "COUNTY" : "STATE", parent_scope: "state:55", minimum_siblings: 10,
         method: "UI fixture", ranked, not_ranked: [{ metric_code: "CDC:places_county:OBESITY:AgeAdjPrv", reason: "not published at COUNTY (UI fixture)" }] } });
+    }
+    if (path === "/api/v1/catalog/geographies/search") {
+      if (searchUnavailable) return route.fulfill({ status: 503, json: { detail: "database unavailable" } });
+      const typed = (params.get("q") || "").trim().toLowerCase();
+      const limit = Number(params.get("limit") || 10);
+      const items = SEARCH_GROUPS.filter(([primary]) => primary.short_name.toLowerCase().startsWith(typed)).flat().slice(0, limit);
+      return route.fulfill({ json: { query: typed, limit, items } });
+    }
+    if (path === "/api/v1/catalog/geographies/locate") {
+      onLocate?.(url.search);
+      const answer = locateAnswer(Number(params.get("lat")), Number(params.get("lon")));
+      return answer ? route.fulfill({ json: answer }) : route.fulfill({ status: 404, json: { detail: "no geography contains this point" } });
     }
     if (path === "/api/v1/catalog/geographies") {
       const grain = params.get("geo_level");
