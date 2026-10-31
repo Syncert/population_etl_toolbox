@@ -6,8 +6,10 @@ import time
 import uuid
 import csv
 import io
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, date
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -88,6 +90,17 @@ class TransformMetrics:
     total_inserted: int = 0
     total_updated: int = 0
     errors_encountered: list[str] = field(default_factory=list)
+
+    def absorb(self, other: "TransformMetrics") -> None:
+        """Add another slice's counters into these (parallel slices)."""
+        for item in fields(self):
+            value = getattr(other, item.name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if item.name in {"chunk_input_rows", "chunk_output_rows"}:
+                continue
+            setattr(self, item.name, getattr(self, item.name) + value)
+        self.errors_encountered.extend(other.errors_encountered)
 
     def log_pre_transform(self) -> None:
         """Log pre-transform diagnostics."""
@@ -223,6 +236,11 @@ class TransformMetrics:
         if self.errors_encountered:
             for err in self.errors_encountered:
                 logger.error("[%s SUMMARY] Error: %s", self.dataset_name, err)
+
+
+def _transform_workers() -> int:
+    """How many slices of one year transform at once (`AcsConfig.transform_workers`)."""
+    return RAW_CONFIG.transform_workers
 
 
 def _get_hook() -> PostgresHook:
@@ -1720,6 +1738,7 @@ def transform_census_to_silver(
     _assert_geo_dimension_coverage(hook, datasets_by_year or None)
 
     inserted_total = 0
+    metrics_lock = threading.Lock()
 
     # ── pre-load shared dimensions ────────────────────────────────────
     logger.info("[CENSUS_ACS] Pre-loading variable metadata...")
@@ -1758,6 +1777,7 @@ def transform_census_to_silver(
                 f"{metrics.raw_rows_by_year[y]:,}",
                 len(raw_slices),
             )
+        pending = [raw_slice for raw_slice in raw_slices if raw_slice.key not in done]
         for raw_slice in raw_slices:
             if raw_slice.key in done:
                 logger.info(
@@ -1767,30 +1787,32 @@ def transform_census_to_silver(
                     raw_slice.key,
                     resume_key,
                 )
-                continue
-            fingerprint = slice_fingerprint(hook, y, raw_slice, context)
+
+        def transform_slice(raw_slice: RawSlice, year: int = y) -> int:
+            """Transform and upsert one slice; its own metrics, its own sessions."""
+            fingerprint = slice_fingerprint(hook, year, raw_slice, context)
             if finished.get(raw_slice.key) == fingerprint:
                 logger.info(
                     "[CENSUS_ACS CHUNK] Year=%s slice=%s unchanged since an "
                     "earlier run finished it; skipping",
-                    y,
+                    year,
                     raw_slice.key,
                 )
-                continue
-
-            raw = _fetch_raw_frame(hook, y, raw_slice)
+                return 0
+            slice_metrics = TransformMetrics(dataset_name="CENSUS_ACS")
+            raw = _fetch_raw_frame(hook, year, raw_slice)
             changed = 0
             if not raw.is_empty():
-                metrics.log_chunk_start(y, raw.height)
+                slice_metrics.log_chunk_start(year, raw.height)
                 df_silver = _transform_rows_to_silver_df(
                     hook,
                     raw,
-                    metrics,
+                    slice_metrics,
                     meta_df=meta_df,
                     time_df=time_df,
                     geo_df=geo_df,
                 )
-                metrics.total_processed += raw.height
+                slice_metrics.total_processed += raw.height
                 if not df_silver.is_empty():
                     transformed_count = df_silver.height
 
@@ -1804,19 +1826,38 @@ def transform_census_to_silver(
                         datetime.now(timezone.utc) - insert_start
                     ).total_seconds()
 
-                    already_existed = transformed_count - changed
-                    metrics.rows_already_existed += already_existed
-                    metrics.rows_net_new += changed
-                    metrics.chunk_output_rows = transformed_count
-                    metrics.log_chunk_complete(y)
-                    metrics.log_insert_complete(changed, insert_duration)
-                    inserted_total += changed
-                    metrics.total_inserted += changed
+                    slice_metrics.rows_already_existed += transformed_count - changed
+                    slice_metrics.rows_net_new += changed
+                    slice_metrics.chunk_output_rows = transformed_count
+                    slice_metrics.log_chunk_complete(year)
+                    slice_metrics.log_insert_complete(changed, insert_duration)
+                    slice_metrics.total_inserted += changed
                 # Let the slice go before the next one is read.
                 df_silver = None
             raw = None
-            _record_slice_complete(hook, resume_key, y, raw_slice.key, changed)
-            _record_slice_fingerprint(hook, y, raw_slice.key, fingerprint, changed)
+            _record_slice_complete(hook, resume_key, year, raw_slice.key, changed)
+            _record_slice_fingerprint(hook, year, raw_slice.key, fingerprint, changed)
+            with metrics_lock:
+                metrics.absorb(slice_metrics)
+            return changed
+
+        # Slices write disjoint rows (one dataset, level and state each), so
+        # several run at once, each in its own sessions: one slice at a time
+        # left all but one core idle on the 32-core internal stack.
+        workers = max(1, min(_transform_workers(), len(pending)))
+        if workers == 1:
+            inserted_total += sum(transform_slice(item) for item in pending)
+        else:
+            logger.info(
+                "[CENSUS_ACS CHUNK] Year=%s: %s slices on %s workers",
+                y,
+                len(pending),
+                workers,
+            )
+            with ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="acs-slice"
+            ) as pool:
+                inserted_total += sum(pool.map(transform_slice, pending))
 
     metrics.log_transform_summary()
     logger.info("Inserted %s Census silver rows total", inserted_total)

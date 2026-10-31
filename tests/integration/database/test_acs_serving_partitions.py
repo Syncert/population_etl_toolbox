@@ -318,3 +318,61 @@ def test_a_grain_step_never_holds_another_grain_of_its_year(
         county_rows_while("CALL gold_census.refresh_rpt_acs_observations(%s, %s)", year)
         is None
     )
+
+
+def test_a_state_refresh_touches_only_its_own_state(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-065 -- several sessions publish a grain's states at once.
+
+    A tract or place step is published one state per session; each session's
+    clearing must stop at its state, or a slower session would erase what a
+    faster one had just written. A state named without its grains is refused,
+    since that would truncate the whole year partition.
+    """
+    year = SCRATCH_YEAR + 1
+    database = postgres_connection_factory()
+    try:
+        with database.cursor() as cursor:
+            for state in ("10", "55"):
+                cursor.execute(
+                    f"""
+                    INSERT INTO {RELATION} (
+                        observation_date, as_of_date, updated_at, geo_id, geo_level,
+                        state_fips, value, dataset_code, vintage_year, table_id,
+                        variable_code, estimate_value, metric_code
+                    )
+                    SELECT MAKE_DATE(%s, 1, 1), MAKE_DATE(%s, 1, 1), NOW(),
+                           'state:' || %s || '|county:001|tract:' || LPAD(g::TEXT, 6, '0'),
+                           'TRACT', %s, g, 'acs5', %s, 'B99999', 'B99999_001E', g,
+                           'CENSUS_ACS:acs5:B99999_001E'
+                    FROM generate_series(1, 5) AS g
+                    """,
+                    (year, year, state, state, year),
+                )
+            database.commit()
+            cursor.execute(
+                "CALL gold_census.refresh_rpt_acs_observations(%s, %s, %s, %s)",
+                (f"{year}-01-01", f"{year}-12-31", ["TRACT"], "10"),
+            )
+            database.commit()
+            cursor.execute(
+                f"SELECT state_fips, COUNT(*) FROM {RELATION} "
+                "WHERE observation_date = MAKE_DATE(%s, 1, 1) GROUP BY 1",
+                (year,),
+            )
+            assert dict(cursor.fetchall()) == {"55": 5}
+            with pytest.raises(Exception, match="names its grains"):
+                cursor.execute(
+                    "CALL gold_census.refresh_rpt_acs_observations(%s, %s, NULL, %s)",
+                    (f"{year}-01-01", f"{year}-12-31", "55"),
+                )
+            database.rollback()
+    finally:
+        with database.cursor() as cursor:
+            cursor.execute(
+                f"DELETE FROM {RELATION} WHERE observation_date = MAKE_DATE(%s, 1, 1)",
+                (year,),
+            )
+        database.commit()
+        database.close()
