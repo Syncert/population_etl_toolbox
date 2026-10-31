@@ -551,6 +551,19 @@ _REFERENCE_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first reference load",
     ),
     _obj(
+        "silver_ref.tract_decade_crosswalk",
+        "reference",
+        "SHARED",
+        grain="earlier_vintage, earlier_geo_sk, later_geo_sk",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method=(
+            "one row per part of a 2000 or 2010 census tract lying in a tract "
+            "of the next census, from the Bureau's relationship files"
+        ),
+        cadence="per tract relationship file release",
+        empty_behavior="empty only before the decade tract references load",
+    ),
+    _obj(
         "silver_ref.geography_resolution",
         "reference",
         "SHARED",
@@ -678,6 +691,42 @@ _GLOSSARY_OBJECTS: tuple[WarehouseObject, ...] = (
         cadence="per geography vintage",
         empty_behavior="empty only before the first reference load",
     ),
+    _obj(
+        "gold_glossary.geo_search",
+        "glossary",
+        "SHARED",
+        grain="geo_id (current state, county, metro, place and ZCTA)",
+        lineage="gold_glossary.dim_geography, gold_glossary.geo_relationship, "
+        "gold_census.mv_acs_latest",
+        scope_method="whole rebuild by gold_glossary.refresh_geo_search() in one "
+        "transaction, after the geography projection refresh",
+        cadence="daily, with glossary_reconciliation",
+        empty_behavior="empty only before the first reconciliation run after the "
+        "first reference load",
+    ),
+    _obj(
+        "gold_glossary.tile_boundary_version",
+        "glossary",
+        "SHARED",
+        grain="geo_id, boundary_vintage (PLACE and METRO boundaries, every vintage)",
+        lineage="silver_ref.dim_geo_geometry_version, silver_ref.dim_geo_entity, "
+        "silver_ref.dim_geo_entity_version",
+        scope_method="incremental: gold_glossary.refresh_tile_boundaries() rewrites "
+        "a boundary only when its checksum or attributes changed and removes one "
+        "the reference no longer holds, after the geography projection refresh",
+        cadence="daily, with glossary_reconciliation",
+        empty_behavior="empty only before the first place or metro boundary load",
+    ),
+    _obj(
+        "gold_glossary.geo_boundary",
+        "glossary",
+        "SHARED",
+        grain="geo_id (current geographies with a boundary)",
+        lineage="gold_glossary.dim_geo_latest",
+        scope_method="view over the geography projection, current boundaries only",
+        cadence="per geography vintage",
+        empty_behavior="empty only before the first boundary load",
+    ),
 )
 
 _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
@@ -717,6 +766,13 @@ _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
             "tile_tract",
             "geo_id (TRACT, current, with geometry)",
             "gold_glossary.dim_geo_latest",
+        ),
+        # What the place and metro tile layers hold per vintage
+        # (tiles-places-and-metros); the tile functions read the same table.
+        (
+            "tile_layer_vintage",
+            "geo_level, boundary_vintage (PLACE and METRO)",
+            "gold_glossary.tile_boundary_version",
         ),
         ("dim_geography", "geo_id (projection)", "gold_glossary.dim_geography"),
         (
@@ -806,6 +862,16 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first ACS capture",
     ),
     _obj(
+        "silver_census.transform_slice_state",
+        "silver",
+        "CENSUS_ACS",
+        grain="year, slice_key",
+        lineage="silver_census.observation_revision",
+        scope_method="one row per transform slice, with the content it last finished against",
+        cadence="per ACS silver transform",
+        empty_behavior="empty before the first ACS silver transform",
+    ),
+    _obj(
         "silver_census.transform_checkpoint",
         "silver",
         "CENSUS_ACS",
@@ -874,6 +940,19 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="latest-vintage projection",
         cadence="per publication",
         empty_behavior="empty only before the first publication",
+    ),
+    _obj(
+        "gold_census.acs_tract_comparable",
+        "serving",
+        "CENSUS_ACS",
+        grain="geo_id (2020 tract), observation_date, dataset_code, variable_code",
+        lineage=("gold_census.rpt_acs_observations, silver_ref.tract_decade_crosswalk"),
+        scope_method=(
+            "derived: earlier-decade tract counts apportioned to 2020 tracts; "
+            "count tables only"
+        ),
+        cadence="a view, current with its two inputs",
+        empty_behavior="empty until the tract crosswalk is loaded",
     ),
     _obj(
         "gold_census.fact_observation",
@@ -1513,6 +1592,26 @@ _CDC_OBJECTS: tuple[WarehouseObject, ...] = (
 
 _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
     _obj(
+        "control.fbi_return_a_year",
+        "control",
+        "FBI_UCR",
+        grain="release_key, data_year",
+        lineage="raw_capture.response_capture",
+        scope_method="years requested of fbi_ucr/return_a/load.py",
+        cadence="per Return A load",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
+        "silver_fbi.return_a_county_crosswalk",
+        "silver",
+        "FBI_UCR",
+        grain="release_key, data_year, state_code, fbi_county_code",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_current",
+        scope_method="every FBI county code a loaded Return A year uses",
+        cadence="per Return A load",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
         "control.fbi_ucr_release",
         "control",
         "FBI_UCR",
@@ -1739,6 +1838,32 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         grain="product_id, measure_id, county geo_id, period "
         "(latest refresh per product)",
         lineage="gold_fbi.county_rollup",
+        scope_method="latest-refresh projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_fbi.county_agency_rate",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period "
+        "(declared-derived rate; ADR-0012)",
+        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
+        scope_method="reported offenses of single-county agencies over those "
+        "agencies' FBI populations, per 100,000; multi-county agencies and "
+        "agencies without a published population are excluded from both "
+        "sides; refused under 50 percent coverage",
+        cadence="per publication",
+        empty_behavior="a county-month with no usable report carries a refusal "
+        "reason and no rate, never a zero",
+    ),
+    _obj(
+        "gold_fbi.latest_county_agency_rate",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, measure_id, county geo_id, period "
+        "(latest refresh per product)",
+        lineage="gold_fbi.county_agency_rate",
         scope_method="latest-refresh projection, never a replacement",
         cadence="per publication",
         empty_behavior="empty only before the first published release",
@@ -1978,7 +2103,10 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         "BEA",
         grain="table_code, line_code, geo_id, year, capture_id",
         lineage="silver_bea.observation_revision, silver_ref.geography_resolution",
-        scope_method="registered tables x registered lines x nation, states and counties",
+        scope_method=(
+            "registered tables x registered lines x nation, states and counties, "
+            "and metro areas summed from their counties (marked by derivation)"
+        ),
         cadence="per BEA replay",
         empty_behavior="a withheld or unavailable cell keeps its status and no number, never zero",
     ),
@@ -4089,6 +4217,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.fact_acs_observation",
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
+            "gold_census.acs_tract_comparable",
         ),
         automation="enforced",
         automation_note=(
@@ -4098,7 +4227,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "the silver one -- they add the geography and the metric code the "
             "catalog publishes -- and both are declared below and checked "
             "against the warehouse. `fact_acs_observation` carries no index "
-            "because it is a view over the silver fact."
+            "because it is a view over the silver fact; `acs_tract_comparable` "
+            "is a view grouped by its own grain, so it holds one row per 2020 "
+            "tract, release and variable by construction."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -5031,6 +5162,29 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 ("metric_code", "geo_id", "subject_code", "grain", "window_start"),
             ),
         ),
+    ),
+    _rule(
+        "DQ-FBI-010",
+        "BLOCK",
+        "reconciliation",
+        "A county crime rate (ADR-0012) divides the reported offenses of "
+        "exactly the agencies it lists as contributing by exactly their FBI "
+        "populations; no contributing agency is also excluded as "
+        "multi-county; a rate is present exactly when no refusal reason is; "
+        "and no rate is published under the 50 percent coverage floor.",
+        (
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
+        ),
+    ),
+    _rule(
+        "DQ-FBI-011",
+        "WARN",
+        "reconciliation",
+        "Violent and property totals summed from the Return A master file's "
+        "offense components equal the CDE's published totals for every "
+        "agency and month both publish.",
+        ("gold_fbi.latest_release_observation",),
     ),
     # -- USDA NASS ---------------------------------------------------------
     _rule(

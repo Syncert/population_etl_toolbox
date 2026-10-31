@@ -12,7 +12,11 @@ carry those codes beside their members:
 * the Population Estimates CBSA file (``cbsa-est<v>-alldata.csv``) lists each
   metropolitan and micropolitan statistical area by its OMB code, followed by
   its component counties by ``STCOU``, under the delineation the estimates
-  use.
+  use;
+* the Census cartographic boundary file of the same delineation
+  (``cb_<delineation>_us_cbsa_500k.zip``) gives each CBSA its polygon, loaded
+  as a geometry version whose boundary vintage is the delineation vintage
+  (tiles-places-and-metros).
 
 Membership is taken from those codes and never from a name. A member the
 shared reference does not hold -- a county the delineation names that the
@@ -46,8 +50,11 @@ from data_ingestion_toolbox.silver_ref.geography_contract import canonical_geo_i
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     HTTP_MAX_ATTEMPTS,
     SOURCE_CODE,
+    BOUNDARY_ROOT,
     GeographyRecord,
     GeographyRepository,
+    GeometryRecord,
+    parse_boundary_capture,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +79,10 @@ class AreaRelease:
     delineation_vintage: int
     states_url: str
     cbsa_url: str
+    #: The Census cartographic boundary of the same delineation's CBSAs
+    #: (tiles-places-and-metros). The metro tile layer draws these polygons;
+    #: a metro is never drawn as the union of its member counties.
+    cbsa_boundary_url: str
 
 
 AREA_RELEASES: dict[int, AreaRelease] = {
@@ -81,6 +92,7 @@ AREA_RELEASES: dict[int, AreaRelease] = {
         delineation_vintage=2023,
         states_url=f"{POPEST_ROOT}/2020-2024/state/totals/NST-EST2024-ALLDATA.csv",
         cbsa_url=f"{POPEST_ROOT}/2020-2024/metro/totals/cbsa-est2024-alldata.csv",
+        cbsa_boundary_url=f"{BOUNDARY_ROOT}2023/shp/cb_2023_us_cbsa_500k.zip",
     ),
 }
 LATEST_AREA_RELEASE = max(AREA_RELEASES)
@@ -308,6 +320,66 @@ def publish_area_snapshot(
     return {"areas": loaded, "memberships": related, "unmapped_members": len(missing)}
 
 
+def publish_metro_boundaries(
+    repository: GeographyRepository,
+    boundaries: list[GeometryRecord],
+    *,
+    listed_geo_ids: set[str],
+    delineation_vintage: int,
+    capture_id: UUID,
+    connection: Any,
+) -> dict[str, int]:
+    """Load the CBSA polygons of the CBSAs the delineation file listed.
+
+    The boundary file covers every CBSA, Puerto Rico's included; the
+    estimates delineation the reference reads does not list Puerto Rico. A
+    polygon for a CBSA the reference does not hold has no identity to attach
+    to, so it is recorded ``unmapped`` with the delineation vintage rather
+    than loaded under an invented one or dropped without a trace.
+    """
+    listed = [row for row in boundaries if row.geo_id in listed_geo_ids]
+    unlisted = sorted(
+        {row.geo_id for row in boundaries if row.geo_id not in listed_geo_ids}
+    )
+    loaded = repository.load_geometries(
+        listed, capture_id=capture_id, connection=connection
+    )
+    with connection.cursor() as cursor:
+        for geo_id in unlisted:
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.geography_resolution (
+                    provider_source, provider_dataset, source_geo_type,
+                    source_code, source_vintage, status, reason_code,
+                    evidence_capture_id
+                ) VALUES (%s, %s, 'metro', %s, %s, 'unmapped',
+                          'boundary_not_in_delineation', %s)
+                ON CONFLICT (
+                    provider_source, provider_dataset, source_geo_type,
+                    source_code, source_vintage
+                ) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    reason_code = EXCLUDED.reason_code,
+                    evidence_capture_id = EXCLUDED.evidence_capture_id,
+                    resolved_at = NOW()
+                """,
+                (
+                    SOURCE_CODE,
+                    "census_cbsa_boundary",
+                    geo_id.split(":", 1)[1],
+                    delineation_vintage,
+                    str(capture_id),
+                ),
+            )
+    if unlisted:
+        logger.warning(
+            "census_cbsa_boundary: %d polygon(s) for CBSAs the delineation does "
+            "not list, recorded unmapped",
+            len(unlisted),
+        )
+    return {"metro_boundaries": loaded, "unlisted_metro_boundaries": len(unlisted)}
+
+
 def sync_area_geography(source_year: int | None = None) -> dict[str, int]:
     """Capture one vintage's region and CBSA files and publish both.
 
@@ -330,6 +402,7 @@ def sync_area_geography(source_year: int | None = None) -> dict[str, int]:
             for product, url in (
                 ("regions_and_divisions", release.states_url),
                 ("cbsa_delineation", release.cbsa_url),
+                ("cbsa_boundary", release.cbsa_boundary_url),
             ):
                 parameters = {
                     "geography_vintage": release.vintage,
@@ -374,9 +447,17 @@ def sync_area_geography(source_year: int | None = None) -> dict[str, int]:
                 captured[product] = capture_id
 
         snapshots: list[tuple[AreaSnapshot, UUID]] = []
+        boundaries: list[GeometryRecord] = []
         for product, capture_id in captured.items():
             payload = load_captured_payload(factory, capture_id)
             try:
+                if product == "cbsa_boundary":
+                    boundaries = parse_boundary_capture(
+                        payload,
+                        geo_type="metro",
+                        boundary_vintage=release.delineation_vintage,
+                    )
+                    continue
                 snapshot = (
                     parse_regions_and_divisions(payload, vintage=release.vintage)
                     if product == "regions_and_divisions"
@@ -398,11 +479,29 @@ def sync_area_geography(source_year: int | None = None) -> dict[str, int]:
         counts = {"areas": 0, "memberships": 0, "unmapped_members": 0}
         publication = factory()
         try:
+            listed_metros: set[str] = set()
             for snapshot, capture_id in snapshots:
                 for key, value in publish_area_snapshot(
                     repository, snapshot, capture_id=capture_id, connection=publication
                 ).items():
                     counts[key] += value
+                listed_metros.update(
+                    record.geo_id
+                    for record in snapshot.records
+                    if record.geo_type == "metro"
+                )
+            # After the identities, in the same transaction: a polygon is
+            # attached only to a CBSA this delineation listed.
+            counts.update(
+                publish_metro_boundaries(
+                    repository,
+                    boundaries,
+                    listed_geo_ids=listed_metros,
+                    delineation_vintage=release.delineation_vintage,
+                    capture_id=captured["cbsa_boundary"],
+                    connection=publication,
+                )
+            )
             publication.commit()
         except BaseException:
             publication.rollback()

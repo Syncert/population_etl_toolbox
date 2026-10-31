@@ -66,8 +66,10 @@ test("a county page draws three levels, labels state context, and states its gap
 
   const safety = page.getByTestId("chapter-safety");
   await expect(safety).toHaveAttribute("data-read-grain", "STATE");
-  await expect(page.getByTestId("chapter-safety-state-context")).toContainText("The figures below are Wisconsin's, not Dane County's");
-  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("Not published at county grain");
+  // The FBI publishes no county rate; the county's is computed from its own
+  // agencies' reports and says whom it covers (ADR-0012, WEB-150).
+  await expect(page.getByTestId("chapter-safety-state-context")).toContainText("The figures for Wisconsin and the nation are the FBI's");
+  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("computed from agency reports");
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("(state context)");
 
   // NASS publishes no Dane County cell in the fixture.
@@ -118,7 +120,10 @@ test("within this county paints tracts, counts the uncoloured one, and tabulates
   );
   await expect(page.getByTestId("within-county-map")).toHaveAttribute("data-colored-values", "2");
   await page.getByTestId("within-county-measure").selectOption("CENSUS_ACS:acs5:B25064_001");
-  await expect(page.getByTestId("within-county-table")).toContainText("Median gross rent by Census tract");
+  // The caption names the release's period between the measure and the grain.
+  await expect(page.getByTestId("within-county-table").locator("caption")).toHaveText(
+    /^Median gross rent, .+ by Census tract$/,
+  );
 });
 
 // Covers: WEB-137 — bea-regional-accounts: BEA per capita income and real GDP
@@ -148,6 +153,18 @@ test("a state page has no within-this-county section", async ({ page }) => {
   await expect(page.getByTestId("within-county")).toHaveCount(0);
 });
 
+// Covers: WEB-144 — a reader never sees a provider's label path or a
+// variable code as a name, on any level's page; codes stay in attributes.
+test("no place page shows an Estimate!! label path or a bare variable code", async ({ page }) => {
+  for (const path of ["/us", "/us/wisconsin", "/us/wisconsin/dane-county", "/us/wisconsin/crossing-city"]) {
+    await ready(page, path);
+    const text = await page.locator("main").innerText();
+    expect(text, path).not.toMatch(/Estimate!!/);
+    const code = text.match(/.{0,60}\b[BC]\d{5}_\d{3}[EM]?\b.{0,20}/);
+    expect(code?.[0] ?? null, path).toBeNull();
+  }
+});
+
 // Covers: WEB-135 — bls-qcew-county-wages: the county page shows jobs located
 // here beside residents who work, each labelled with how it was counted, and
 // an industry mix of private jobs that states a withheld sector.
@@ -157,7 +174,7 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await expect(page.getByTestId("card-qcew-jobs")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-qcew-jobs-basis")).toHaveText("Jobs located here, counted by employers (QCEW)");
   await expect(page.getByTestId("card-unemployment-rate-basis")).toHaveText("Residents who work, counted where they live (LAUS)");
-  await expect(page.getByTestId("card-qcew-jobs")).toContainText("BLS_QCEW:employment:10:0");
+  await expect(page.getByTestId("card-qcew-jobs").locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "BLS_QCEW:employment:10:0");
   await expect(page.getByTestId("card-qcew-jobs-county")).toContainText("jobs");
   await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
 
@@ -203,7 +220,7 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(model).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
   await expect(page.getByTestId("card-saipe-median-household-income-basis")).toHaveText("Model-based annual estimate (SAIPE)");
-  await expect(model).toContainText("CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
+  await expect(model.locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
   await expect(survey).not.toContainText("CENSUS_SAIPE_SAHIE");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("margin of error");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("confidence lower");
@@ -260,7 +277,7 @@ test("an unknown place is a not-found page with search and no chart", async ({ p
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("There is no place at this address");
   await expect(page.locator(".place-trend, .place-card")).toHaveCount(0);
   await page.getByRole("searchbox", { name: "Search places" }).fill("rock");
-  await expect(page.getByTestId("place-search-results").getByRole("link", { name: "Rock County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/rock-county");
+  await expect(page.getByTestId("place-search-results").getByRole("link", { name: "Rock County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/rock-county");
   await noViolations(page);
 
   const response = await page.goto("/us/Not%20A%20Place");
@@ -274,10 +291,12 @@ test("nearby and related: a place crossing two counties is noted on both pages",
   const nearby = page.getByTestId("place-nearby");
   await expect(nearby.getByTestId("place-nearby-within")).toContainText("Crossing city");
   await expect(nearby.getByTestId("place-nearby-within")).toContainText("60% of it lies in this county; the rest is in another county");
-  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Rock County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/rock-county");
+  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Rock County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/rock-county");
   // A neighbour in another state is addressed by its FIPS, which settles on its name.
-  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Hennepin County, Minnesota" })).toHaveAttribute("href", "/us/minnesota/27053");
-  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link")).toHaveText(["Wisconsin", "United States"]);
+  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Hennepin County, Minnesota", exact: true })).toHaveAttribute("href", "/us/minnesota/27053");
+  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link").and(page.locator(':not([data-testid="place-nearby-compare"])'))).toHaveText(["Wisconsin", "United States"]);
+  // Each related place links its comparison (WEB-146).
+  await expect(nearby.getByTestId("place-nearby-part-of").getByTestId("place-nearby-compare")).toHaveCount(3);
   await expect(nearby).toContainText("vintage 2025");
 
   await ready(page, "/us/wisconsin/rock-county");
@@ -295,9 +314,11 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Crossing city, Wisconsin");
   await expect(page.locator(".section-kicker").first()).toHaveText("City or town");
 
-  // Three levels: the place, its state, the nation.
+  // Four levels: the place, the county holding most of it, its state, the
+  // nation.
   const income = page.getByTestId("card-median-household-income");
-  await expect(income.locator("tbody tr")).toHaveCount(3);
+  await expect(income.locator("tbody tr")).toHaveCount(4);
+  await expect(income).toContainText("Dane County");
   await expect(page.getByTestId("card-median-household-income-place")).toContainText("Crossing city");
   await expect(page.getByTestId("card-median-household-income-place")).toContainText("margin of error");
   // BLS publishes no place: said in the card, not borrowed from a county.
@@ -307,10 +328,10 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
     "Crossing city crosses county lines: it lies in Dane County (60%) and Rock County (40%). A county's figures describe the whole county, not this place.",
   );
   const counties = page.getByTestId("place-nearby-counties");
-  await expect(counties.getByRole("link", { name: "Dane County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/dane-county");
+  await expect(counties.getByRole("link", { name: "Dane County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/dane-county");
   // Its metro, reached through the counties it lies in, with the share inside.
   const metro = page.getByTestId("place-nearby-part-of").locator('li[data-geo-id="cbsa:31540"]');
-  await expect(metro).toHaveText("Madison, WI · 60% of this place lies in its counties");
+  await expect(metro).toHaveText("Madison, WI · 60% of this place lies in its counties · compare");
 
   await expect(page.getByTestId("chapter-safety")).toHaveCount(0);
   await expect(page.getByTestId("chapter-land-farms")).toHaveCount(0);
@@ -327,7 +348,7 @@ test("a city addressed by its FIPS settles on its name, and a county links to it
   await ready(page, "/us/wisconsin/5599999");
   await expect(page).toHaveURL(/\/us\/wisconsin\/crossing-city$/);
   await ready(page, "/us/wisconsin/dane-county");
-  await expect(page.getByTestId("place-nearby-within").getByRole("link", { name: "Crossing city, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/5599999");
+  await expect(page.getByTestId("place-nearby-within").getByRole("link", { name: "Crossing city, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/5599999");
   await ready(page, "/us/wisconsin/madison-city");
   await expect(page.getByTestId("place-cross-county")).toHaveText("Madison city lies in Dane County.");
 });
@@ -349,7 +370,9 @@ test("what stands out lists the highest and lowest measures apart, with withheld
   const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
   await expect(income).toContainText("Higher than 68 of 70 Wisconsin counties with a published value (1 withheld a value)");
   await expect(income.getByRole("link", { name: "See every county on a map" })).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
-  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age (UI fixture)");
+  // Named by the API's plain label (WEB-144), not the provider's.
+  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age");
+  await expect(section.getByTestId("place-standout-lowest")).not.toContainText("Median age (UI fixture)");
   await expect(section).not.toContainText(/score|overall/i);
 });
 

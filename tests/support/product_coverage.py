@@ -43,12 +43,19 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # sources (API-165): a derived reading owned by the platform, not a
     # provider data product.
     "/api/v1/place/distinctive",
+    # Age and sex structure (ADR-0013): sums and ratios of one ACS table's
+    # lines, computed at request time; a derived reading owned by the
+    # platform, not a provider data product or warehouse publisher.
+    "/api/v1/age-structure",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:
     # a sign-in reaches no source, no gold schema, and no warehouse row.
     "/api/v1/auth",
     "/api/v1/account",
+    # The admin warehouse pages describe every source at once (inventory,
+    # coverage, catalog schema); owned by the platform, not by one product.
+    "/api/v1/admin",
 )
 
 
@@ -291,6 +298,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             # latest-release projection, served by /api/v1/crime/county-rollup.
             "gold_fbi.county_rollup",
             "gold_fbi.latest_county_rollup",
+            # The county rate the FBI's way (ADR-0012), served by
+            # /api/v1/observations/derived for its agency_rate pairings.
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
         ),
         source_api_routes=("/api/v1/crime/county-rollup",),
         neutral_api_routes=("/api/v1/catalog/metrics", "/api/v1/catalog/sources"),

@@ -1,0 +1,2890 @@
+{
+  "description": "Plain-language definitions of every metric a place page shows (A-2). Each entry's wording is the place pages' own label, universe and note, moved behind the API, with a one-sentence definition from the provider's documentation. Status `draft` until the owner reviews them; served labels say so.",
+  "entries": [
+    {
+      "metric_id": "CENSUS_ACS:B01002_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B01002_001",
+        "CENSUS_ACS:acs1:B01002_001"
+      ],
+      "name": "Median age",
+      "definition": "The age that divides the population into two equal halves.",
+      "unit": "years",
+      "universe": "people",
+      "kind": "median",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B01002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B01003_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B01003_001",
+        "CENSUS_ACS:acs1:B01003_001"
+      ],
+      "name": "Total population (survey estimate)",
+      "definition": "Everyone who usually lives in the area, as the survey estimates it.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "A survey estimate with a margin of error; the official population count is the Population Estimates Program's figure.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B01003",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B09001_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B09001_001",
+        "CENSUS_ACS:acs1:B09001_001"
+      ],
+      "name": "People under 18",
+      "definition": "Residents younger than 18.",
+      "unit": "people",
+      "universe": "people under 18",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B09001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B09020_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B09020_001",
+        "CENSUS_ACS:acs1:B09020_001"
+      ],
+      "name": "People 65 and over",
+      "definition": "Residents aged 65 or older.",
+      "unit": "people",
+      "universe": "people 65 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B09020",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B11001_008",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B11001_008",
+        "CENSUS_ACS:acs1:B11001_008"
+      ],
+      "name": "Householders living alone",
+      "definition": "Households of one person: the householder lives alone.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B11001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B12001_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B12001_003",
+        "CENSUS_ACS:acs1:B12001_003"
+      ],
+      "name": "Men 15 and over who never married",
+      "definition": "Men aged 15 or older who have never been married.",
+      "unit": "people",
+      "universe": "people 15 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B12001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B12001_012",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B12001_012",
+        "CENSUS_ACS:acs1:B12001_012"
+      ],
+      "name": "Women 15 and over who never married",
+      "definition": "Women aged 15 or older who have never been married.",
+      "unit": "people",
+      "universe": "people 15 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B12001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B07001_017",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B07001_017",
+        "CENSUS_ACS:acs1:B07001_017"
+      ],
+      "name": "People in the same house as a year ago",
+      "definition": "Residents aged 1 or older who lived in the same home one year earlier.",
+      "unit": "people",
+      "universe": "people 1 year and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B07001_033",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B07001_033",
+        "CENSUS_ACS:acs1:B07001_033"
+      ],
+      "name": "People who moved within the county in the past year",
+      "definition": "Residents aged 1 or older who moved from another home in the same county during the past year.",
+      "unit": "people",
+      "universe": "people 1 year and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B05002_013",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B05002_013",
+        "CENSUS_ACS:acs1:B05002_013"
+      ],
+      "name": "Foreign-born residents",
+      "definition": "Residents who were not U.S. citizens at birth.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B05002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B21001_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B21001_002",
+        "CENSUS_ACS:acs1:B21001_002"
+      ],
+      "name": "Veterans",
+      "definition": "Civilians aged 18 or older who once served on active duty in the U.S. armed forces.",
+      "unit": "people",
+      "universe": "civilians 18 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B21001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19013_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19013_001",
+        "CENSUS_ACS:acs1:B19013_001"
+      ],
+      "name": "Median household income",
+      "definition": "The income that divides households into two equal halves, in the survey year's inflation-adjusted dollars.",
+      "unit": "dollars",
+      "universe": "households",
+      "kind": "median",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19013",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19301_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19301_001",
+        "CENSUS_ACS:acs1:B19301_001"
+      ],
+      "name": "Per capita income",
+      "definition": "Total income of residents aged 15 and over divided by the whole population, in the survey year's inflation-adjusted dollars.",
+      "unit": "dollars",
+      "universe": "people",
+      "kind": "mean",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19301",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19083_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19083_001",
+        "CENSUS_ACS:acs1:B19083_001"
+      ],
+      "name": "Gini index of income inequality",
+      "definition": "How unequally household income is spread: 0 is perfect equality and 1 is one household holding all income.",
+      "unit": "index (0 to 1)",
+      "universe": "households",
+      "kind": "index",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19083",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B17001_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B17001_002",
+        "CENSUS_ACS:acs1:B17001_002"
+      ],
+      "name": "People with income below the poverty level",
+      "definition": "People whose family income in the past 12 months was below the official poverty threshold for their family size.",
+      "unit": "people",
+      "universe": "people whose poverty status is determined",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B17001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19001_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19001_002",
+        "CENSUS_ACS:acs1:B19001_002"
+      ],
+      "name": "Households with income under $10,000",
+      "definition": "Households whose income in the past 12 months was less than $10,000.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19001_017",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19001_017",
+        "CENSUS_ACS:acs1:B19001_017"
+      ],
+      "name": "Households with income of $200,000 or more",
+      "definition": "Households whose income in the past 12 months was $200,000 or more.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23025_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23025_002",
+        "CENSUS_ACS:acs1:B23025_002"
+      ],
+      "name": "People in the labor force",
+      "definition": "People aged 16 or older who are working or looking for work, including the armed forces.",
+      "unit": "people",
+      "universe": "people 16 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23025",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23025_005",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23025_005",
+        "CENSUS_ACS:acs1:B23025_005"
+      ],
+      "name": "Unemployed people (survey count)",
+      "definition": "Civilians aged 16 or older without a job who looked for work in the past four weeks and could start.",
+      "unit": "people",
+      "universe": "people 16 and over",
+      "kind": "count",
+      "caveat": "A survey count with a margin of error; the official unemployment rate is BLS's Local Area Unemployment Statistics.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23025",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:C24050_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:C24050_001",
+        "CENSUS_ACS:acs1:C24050_001"
+      ],
+      "name": "Employed residents (industry and occupation table total)",
+      "definition": "Civilians aged 16 or older who live here and had a job, wherever the job is.",
+      "unit": "people",
+      "universe": "civilian employed people 16 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.C24050",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08301_021",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08301_021",
+        "CENSUS_ACS:acs1:B08301_021"
+      ],
+      "name": "Workers who worked from home",
+      "definition": "Workers aged 16 or older who usually worked at home last week.",
+      "unit": "workers",
+      "universe": "workers 16 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08301",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08301_010",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08301_010",
+        "CENSUS_ACS:acs1:B08301_010"
+      ],
+      "name": "Workers commuting by public transportation",
+      "definition": "Workers aged 16 or older who usually got to work by bus, train, ferry or other public transit.",
+      "unit": "workers",
+      "universe": "workers 16 and over",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08301",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08303_013",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08303_013",
+        "CENSUS_ACS:acs1:B08303_013"
+      ],
+      "name": "Workers commuting 90 minutes or more",
+      "definition": "Workers whose usual one-way trip to work took 90 minutes or longer.",
+      "unit": "workers",
+      "universe": "workers 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08303",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25001_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25001_001",
+        "CENSUS_ACS:acs1:B25001_001"
+      ],
+      "name": "Housing units",
+      "definition": "Houses, apartments, mobile homes and rooms intended as separate living quarters, occupied or vacant.",
+      "unit": "housing units",
+      "universe": "housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25001",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25003_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25003_002",
+        "CENSUS_ACS:acs1:B25003_002"
+      ],
+      "name": "Owner-occupied housing units",
+      "definition": "Occupied homes whose owner or co-owner lives in them, mortgaged or not.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25003",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25003_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25003_003",
+        "CENSUS_ACS:acs1:B25003_003"
+      ],
+      "name": "Renter-occupied housing units",
+      "definition": "Occupied homes that are not owner-occupied, whether or not cash rent is paid.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25003",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25002_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25002_003",
+        "CENSUS_ACS:acs1:B25002_003"
+      ],
+      "name": "Vacant housing units",
+      "definition": "Homes no one was living in when surveyed, including seasonal homes.",
+      "unit": "housing units",
+      "universe": "housing units",
+      "kind": "count",
+      "caveat": "Includes seasonal and other vacancies, not only units for rent or sale.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25024_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25024_002",
+        "CENSUS_ACS:acs1:B25024_002"
+      ],
+      "name": "Single-family detached units",
+      "definition": "One-unit structures detached from any other house.",
+      "unit": "housing units",
+      "universe": "housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25024",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25034_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25034_002",
+        "CENSUS_ACS:acs1:B25034_002"
+      ],
+      "name": "Units built in 2020 or later",
+      "definition": "Homes in structures first built in the vintage's newest year-built band.",
+      "unit": "housing units",
+      "universe": "housing units",
+      "kind": "count",
+      "caveat": "Census redraws the year-built bands between vintages; the band is the one this vintage published.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25034",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08201_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08201_002",
+        "CENSUS_ACS:acs1:B08201_002"
+      ],
+      "name": "Households with no vehicle available",
+      "definition": "Households with no car, van or truck kept at home for their use.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08201",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B28002_004",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B28002_004",
+        "CENSUS_ACS:acs1:B28002_004"
+      ],
+      "name": "Households with a broadband subscription of any type",
+      "definition": "Households paying for any broadband internet service, including cellular data plans.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B28002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B28002_013",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B28002_013",
+        "CENSUS_ACS:acs1:B28002_013"
+      ],
+      "name": "Households with no internet access",
+      "definition": "Households with no internet access at home.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B28002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25064_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25064_001",
+        "CENSUS_ACS:acs1:B25064_001"
+      ],
+      "name": "Median gross rent",
+      "definition": "The middle monthly rent paid by renter households, including the utilities and fuels the renter pays.",
+      "unit": "dollars per month",
+      "universe": "renter-occupied housing units paying cash rent",
+      "kind": "median",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25064",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25077_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25077_001",
+        "CENSUS_ACS:acs1:B25077_001"
+      ],
+      "name": "Median home value",
+      "definition": "The middle value of owner-occupied homes, as their owners estimate it.",
+      "unit": "dollars",
+      "universe": "owner-occupied housing units",
+      "kind": "median",
+      "caveat": "The owner's own estimate, which is what the ACS asks, with a margin of error.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25077",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B27010_017",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B27010_017",
+        "CENSUS_ACS:acs1:B27010_017"
+      ],
+      "name": "People under 19 with no health insurance",
+      "definition": "Children and teenagers under 19 with no health coverage of any kind.",
+      "unit": "people",
+      "universe": "civilian noninstitutionalized people",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B27010_033",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B27010_033",
+        "CENSUS_ACS:acs1:B27010_033"
+      ],
+      "name": "People 19 to 34 with no health insurance",
+      "definition": "People aged 19 to 34 with no health coverage of any kind.",
+      "unit": "people",
+      "universe": "civilian noninstitutionalized people",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B27010_050",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B27010_050",
+        "CENSUS_ACS:acs1:B27010_050"
+      ],
+      "name": "People 35 to 64 with no health insurance",
+      "definition": "People aged 35 to 64 with no health coverage of any kind.",
+      "unit": "people",
+      "universe": "civilian noninstitutionalized people",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B27010_066",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B27010_066",
+        "CENSUS_ACS:acs1:B27010_066"
+      ],
+      "name": "People 65 and over with no health insurance",
+      "definition": "People aged 65 or older with no health coverage of any kind.",
+      "unit": "people",
+      "universe": "civilian noninstitutionalized people",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:POPESTIMATE",
+      "metric_codes": [
+        "CENSUS_PEP:POPESTIMATE"
+      ],
+      "name": "Resident population estimate",
+      "definition": "The Census Bureau's official estimate of everyone who usually lives here on July 1.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "Population Estimates Program vintage, a different method from the survey estimates. An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Population Estimates Program vintage, a different method from the survey estimates. An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:BIRTHS",
+      "metric_codes": [
+        "CENSUS_PEP:BIRTHS"
+      ],
+      "name": "Births",
+      "definition": "Births to residents during the year ending July 1.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:DEATHS",
+      "metric_codes": [
+        "CENSUS_PEP:DEATHS"
+      ],
+      "name": "Deaths",
+      "definition": "Deaths of residents during the year ending July 1.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:DOMESTICMIG",
+      "metric_codes": [
+        "CENSUS_PEP:DOMESTICMIG"
+      ],
+      "name": "Net domestic migration",
+      "definition": "People who moved here from elsewhere in the U.S. minus people who moved away to elsewhere in the U.S.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:INTERNATIONALMIG",
+      "metric_codes": [
+        "CENSUS_PEP:INTERNATIONALMIG"
+      ],
+      "name": "Net international migration",
+      "definition": "People who moved here from abroad minus people who moved abroad.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:NPOPCHG",
+      "metric_codes": [
+        "CENSUS_PEP:NPOPCHG"
+      ],
+      "name": "Numeric population change",
+      "definition": "The change in the population estimate over the year ending July 1.",
+      "unit": "people",
+      "universe": "people",
+      "kind": "count",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:RNETMIG",
+      "metric_codes": [
+        "CENSUS_PEP:RNETMIG"
+      ],
+      "name": "Net migration rate",
+      "definition": "Net domestic and international migration per 1,000 residents, as the program published it.",
+      "unit": "per 1,000 residents",
+      "universe": "people",
+      "kind": "rate",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_PEP:RNATURALCHG",
+      "metric_codes": [
+        "CENSUS_PEP:RNATURALCHG"
+      ],
+      "name": "Natural change rate (births minus deaths)",
+      "definition": "Births minus deaths per 1,000 residents, as the program published it.",
+      "unit": "per 1,000 residents",
+      "universe": "people",
+      "kind": "rate",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS:LAU:UNEMP_RATE",
+      "metric_codes": [
+        "BLS:LAU:UNEMP_RATE"
+      ],
+      "name": "Unemployment rate",
+      "definition": "The share of the civilian labor force living here that is unemployed, as Local Area Unemployment Statistics estimates it.",
+      "unit": "percent",
+      "universe": "civilian labor force, by residence",
+      "kind": "rate",
+      "caveat": "Counts residents who work, wherever the job is; a different universe from jobs located here.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts residents who work, wherever the job is; a different universe from jobs located here."
+      ],
+      "citations": [
+        "https://www.bls.gov/lau/lauov.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:10:0",
+      "metric_codes": [
+        "BLS_QCEW:employment:10:0"
+      ],
+      "name": "Jobs located here",
+      "definition": "Jobs at employers covered by unemployment insurance in this place, wherever the worker lives.",
+      "unit": "jobs",
+      "universe": "covered jobs, by place of work",
+      "kind": "count",
+      "caveat": "Counts jobs, not people; excludes the self-employed and some agricultural and federal jobs.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs, not people; excludes the self-employed and some agricultural and federal jobs."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:avg_weekly_wage:10:0",
+      "metric_codes": [
+        "BLS_QCEW:avg_weekly_wage:10:0"
+      ],
+      "name": "Average weekly wage of jobs located here",
+      "definition": "Total covered wages divided by covered jobs and by the weeks in the period.",
+      "unit": "dollars per week",
+      "universe": "covered jobs, by place of work",
+      "kind": "mean",
+      "caveat": "An average across all covered jobs, so a few high wages raise it; not a typical wage.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An average across all covered jobs, so a few high wages raise it; not a typical wage."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC1:3",
+      "metric_codes": [
+        "BEA:CAINC1:3"
+      ],
+      "name": "Per capita personal income",
+      "definition": "All personal income of residents, including transfer receipts and employer contributions, divided by BEA's population.",
+      "unit": "dollars",
+      "universe": "residents",
+      "kind": "mean",
+      "caveat": "Current dollars, not adjusted for inflation; not the survey's household income.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, not adjusted for inflation; not the survey's household income."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAGDP1:1",
+      "metric_codes": [
+        "BEA:CAGDP1:1"
+      ],
+      "name": "Gross domestic product, real",
+      "definition": "The value of goods and services produced by businesses and governments located here, in chained 2017 dollars.",
+      "unit": "thousands of chained 2017 dollars",
+      "universe": "production located here",
+      "kind": "count",
+      "caveat": "Chained dollars: years compare without inflation, but components do not add exactly.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Chained dollars: years compare without inflation, but components do not add exactly."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/gdp/gdp-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_SAIPE_SAHIE:saipe:SAEMHI",
+      "metric_codes": [
+        "CENSUS_SAIPE_SAHIE:saipe:SAEMHI"
+      ],
+      "name": "Median household income, single year",
+      "definition": "The Census Bureau's model-based estimate of median household income for one year.",
+      "unit": "dollars",
+      "universe": "households",
+      "kind": "median",
+      "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate with a 90 percent interval, not the survey estimate."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/saipe/about.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRTALL",
+      "metric_codes": [
+        "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRTALL"
+      ],
+      "name": "People in poverty, all ages",
+      "definition": "The share of people whose income is below the poverty threshold, as the Bureau's one-year model estimates it.",
+      "unit": "percent",
+      "universe": "people whose poverty status is determined",
+      "kind": "rate",
+      "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate with a 90 percent interval, not the survey estimate."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/saipe/about.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVALL",
+      "metric_codes": [
+        "CENSUS_SAIPE_SAHIE:saipe:SAEPOVALL"
+      ],
+      "name": "People in poverty, all ages, single year",
+      "definition": "The number of people whose income is below the poverty threshold, as the Bureau's one-year model estimates it.",
+      "unit": "people",
+      "universe": "people whose poverty status is determined",
+      "kind": "count",
+      "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate with a 90 percent interval, not the survey estimate."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/saipe/about.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRT0_17",
+      "metric_codes": [
+        "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRT0_17"
+      ],
+      "name": "Children under 18 in poverty",
+      "definition": "The share of children under 18 living below the poverty threshold, as the Bureau's one-year model estimates it.",
+      "unit": "percent",
+      "universe": "related children and others under 18",
+      "kind": "rate",
+      "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate with a 90 percent interval, not the survey estimate."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/saipe/about.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_SAIPE_SAHIE:sahie:PCTUI",
+      "metric_codes": [
+        "CENSUS_SAIPE_SAHIE:sahie:PCTUI"
+      ],
+      "name": "Uninsured people under 65",
+      "definition": "The share of people under 65 with no health insurance, as the Bureau's one-year model estimates it.",
+      "unit": "percent",
+      "universe": "people under 65, all incomes",
+      "kind": "rate",
+      "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate with a 90 percent interval, not the survey estimate."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/sahie/about.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_SAIPE_SAHIE:sahie:NUI",
+      "metric_codes": [
+        "CENSUS_SAIPE_SAHIE:sahie:NUI"
+      ],
+      "name": "Uninsured people under 65, single year",
+      "definition": "The number of people under 65 with no health insurance, as the Bureau's one-year model estimates it.",
+      "unit": "people",
+      "universe": "people under 65, all incomes",
+      "kind": "count",
+      "caveat": "A model-based estimate with a 90 percent interval, not the survey estimate.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate with a 90 percent interval, not the survey estimate."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/sahie/about.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CDC:places_county:OBESITY:AgeAdjPrv",
+      "metric_codes": [
+        "CDC:places_county:OBESITY:AgeAdjPrv"
+      ],
+      "name": "Obesity among adults (age-adjusted)",
+      "definition": "The share of adults 18 and over with a body mass index of 30 or more, age-adjusted so places with older or younger populations compare.",
+      "unit": "percent",
+      "universe": "adults 18 and over",
+      "kind": "rate",
+      "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate from survey responses with a confidence interval, not a clinical count."
+      ],
+      "citations": [
+        "https://www.cdc.gov/places/methodology/index.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CDC:places_county:DIABETES:AgeAdjPrv",
+      "metric_codes": [
+        "CDC:places_county:DIABETES:AgeAdjPrv"
+      ],
+      "name": "Diagnosed diabetes among adults (age-adjusted)",
+      "definition": "The share of adults 18 and over ever told by a doctor they have diabetes, age-adjusted.",
+      "unit": "percent",
+      "universe": "adults 18 and over",
+      "kind": "rate",
+      "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate from survey responses with a confidence interval, not a clinical count."
+      ],
+      "citations": [
+        "https://www.cdc.gov/places/methodology/index.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "FBI_UCR:summarized_violent_crime:V:offense:rate",
+      "metric_codes": [
+        "FBI_UCR:summarized_violent_crime:V:offense:rate"
+      ],
+      "name": "Violent crime rate, as the program published it",
+      "definition": "Murder, rape, robbery and aggravated assault reported by law enforcement, per 100,000 people in the agencies' coverage.",
+      "unit": "per 100,000 people",
+      "universe": "population covered by reporting agencies",
+      "kind": "rate",
+      "caveat": "Reported offenses only, from the agencies that reported; a period no agency reported is not zero crime.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Reported offenses only, from the agencies that reported; a period no agency reported is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "FBI_UCR:summarized_property_crime:P:offense:rate",
+      "metric_codes": [
+        "FBI_UCR:summarized_property_crime:P:offense:rate"
+      ],
+      "name": "Property crime rate, as the program published it",
+      "definition": "Burglary, larceny-theft and motor vehicle theft reported by law enforcement, per 100,000 people in the agencies' coverage.",
+      "unit": "per 100,000 people",
+      "universe": "population covered by reporting agencies",
+      "kind": "rate",
+      "caveat": "Reported offenses only, from the agencies that reported; a period no agency reported is not zero crime.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Reported offenses only, from the agencies that reported; a period no agency reported is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_BPS:units:1_unit:annual",
+      "metric_codes": [
+        "CENSUS_BPS:units:1_unit:annual"
+      ],
+      "name": "Single-family homes authorized, newest year",
+      "definition": "New one-unit homes authorized by building permits in the year.",
+      "unit": "housing units",
+      "universe": "new privately owned housing units",
+      "kind": "count",
+      "caveat": "Authorized, not started or completed; the Bureau imputes for jurisdictions that did not report.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Authorized, not started or completed; the Bureau imputes for jurisdictions that did not report."
+      ],
+      "citations": [
+        "https://www.census.gov/construction/bps/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_BPS:units:5_plus_units:annual",
+      "metric_codes": [
+        "CENSUS_BPS:units:5_plus_units:annual"
+      ],
+      "name": "Homes in buildings of 5 or more units authorized, newest year",
+      "definition": "New homes in buildings of five or more units authorized by building permits in the year.",
+      "unit": "housing units",
+      "universe": "new privately owned housing units",
+      "kind": "count",
+      "caveat": "Authorized, not started or completed; the Bureau imputes for jurisdictions that did not report.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Authorized, not started or completed; the Bureau imputes for jurisdictions that did not report."
+      ],
+      "citations": [
+        "https://www.census.gov/construction/bps/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CENSUS_BPS:units:1_unit:monthly",
+      "metric_codes": [
+        "CENSUS_BPS:units:1_unit:monthly"
+      ],
+      "name": "Single-family homes authorized, by month",
+      "definition": "New one-unit homes authorized by building permits in each month.",
+      "unit": "housing units",
+      "universe": "new privately owned housing units",
+      "kind": "count",
+      "caveat": "Authorized, not started or completed; monthly figures are only from jurisdictions that report monthly.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Authorized, not started or completed; monthly figures are only from jurisdictions that report monthly."
+      ],
+      "citations": [
+        "https://www.census.gov/construction/bps/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:81",
+      "metric_codes": [
+        "BEA:CAINC5N:81"
+      ],
+      "name": "Earnings by place of work: Farm",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in farm.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:100",
+      "metric_codes": [
+        "BEA:CAINC5N:100"
+      ],
+      "name": "Earnings by place of work: Forestry, fishing, and related activities",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in forestry, fishing, and related activities.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:200",
+      "metric_codes": [
+        "BEA:CAINC5N:200"
+      ],
+      "name": "Earnings by place of work: Mining, quarrying, and oil and gas extraction",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in mining, quarrying, and oil and gas extraction.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:300",
+      "metric_codes": [
+        "BEA:CAINC5N:300"
+      ],
+      "name": "Earnings by place of work: Utilities",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in utilities.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:400",
+      "metric_codes": [
+        "BEA:CAINC5N:400"
+      ],
+      "name": "Earnings by place of work: Construction",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in construction.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:500",
+      "metric_codes": [
+        "BEA:CAINC5N:500"
+      ],
+      "name": "Earnings by place of work: Manufacturing",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in manufacturing.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:600",
+      "metric_codes": [
+        "BEA:CAINC5N:600"
+      ],
+      "name": "Earnings by place of work: Wholesale trade",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in wholesale trade.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:700",
+      "metric_codes": [
+        "BEA:CAINC5N:700"
+      ],
+      "name": "Earnings by place of work: Retail trade",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in retail trade.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:800",
+      "metric_codes": [
+        "BEA:CAINC5N:800"
+      ],
+      "name": "Earnings by place of work: Transportation and warehousing",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in transportation and warehousing.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:900",
+      "metric_codes": [
+        "BEA:CAINC5N:900"
+      ],
+      "name": "Earnings by place of work: Information",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in information.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1000",
+      "metric_codes": [
+        "BEA:CAINC5N:1000"
+      ],
+      "name": "Earnings by place of work: Finance and insurance",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in finance and insurance.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1100",
+      "metric_codes": [
+        "BEA:CAINC5N:1100"
+      ],
+      "name": "Earnings by place of work: Real estate and rental and leasing",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in real estate and rental and leasing.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1200",
+      "metric_codes": [
+        "BEA:CAINC5N:1200"
+      ],
+      "name": "Earnings by place of work: Professional, scientific, and technical services",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in professional, scientific, and technical services.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1300",
+      "metric_codes": [
+        "BEA:CAINC5N:1300"
+      ],
+      "name": "Earnings by place of work: Management of companies and enterprises",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in management of companies and enterprises.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1400",
+      "metric_codes": [
+        "BEA:CAINC5N:1400"
+      ],
+      "name": "Earnings by place of work: Administrative and waste services",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in administrative and waste services.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1500",
+      "metric_codes": [
+        "BEA:CAINC5N:1500"
+      ],
+      "name": "Earnings by place of work: Educational services",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in educational services.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1600",
+      "metric_codes": [
+        "BEA:CAINC5N:1600"
+      ],
+      "name": "Earnings by place of work: Health care and social assistance",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in health care and social assistance.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1700",
+      "metric_codes": [
+        "BEA:CAINC5N:1700"
+      ],
+      "name": "Earnings by place of work: Arts, entertainment, and recreation",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in arts, entertainment, and recreation.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1800",
+      "metric_codes": [
+        "BEA:CAINC5N:1800"
+      ],
+      "name": "Earnings by place of work: Accommodation and food services",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in accommodation and food services.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:1900",
+      "metric_codes": [
+        "BEA:CAINC5N:1900"
+      ],
+      "name": "Earnings by place of work: Other services",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in other services.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BEA:CAINC5N:2000",
+      "metric_codes": [
+        "BEA:CAINC5N:2000"
+      ],
+      "name": "Earnings by place of work: Government and government enterprises",
+      "definition": "Wages, salaries, supplements and proprietors' income earned at workplaces here in government and government enterprises.",
+      "unit": "thousands of dollars",
+      "universe": "earnings by place of work",
+      "kind": "count",
+      "caveat": "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars by place of work; BEA withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:11:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:11:5"
+      ],
+      "name": "Private jobs located here: Agriculture, forestry, fishing and hunting",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in agriculture, forestry, fishing and hunting (NAICS 11).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:21:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:21:5"
+      ],
+      "name": "Private jobs located here: Mining, quarrying, and oil and gas extraction",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in mining, quarrying, and oil and gas extraction (NAICS 21).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:22:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:22:5"
+      ],
+      "name": "Private jobs located here: Utilities",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in utilities (NAICS 22).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:23:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:23:5"
+      ],
+      "name": "Private jobs located here: Construction",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in construction (NAICS 23).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:31-33:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:31-33:5"
+      ],
+      "name": "Private jobs located here: Manufacturing",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in manufacturing (NAICS 31-33).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:42:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:42:5"
+      ],
+      "name": "Private jobs located here: Wholesale trade",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in wholesale trade (NAICS 42).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:44-45:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:44-45:5"
+      ],
+      "name": "Private jobs located here: Retail trade",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in retail trade (NAICS 44-45).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:48-49:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:48-49:5"
+      ],
+      "name": "Private jobs located here: Transportation and warehousing",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in transportation and warehousing (NAICS 48-49).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:51:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:51:5"
+      ],
+      "name": "Private jobs located here: Information",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in information (NAICS 51).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:52:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:52:5"
+      ],
+      "name": "Private jobs located here: Finance and insurance",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in finance and insurance (NAICS 52).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:53:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:53:5"
+      ],
+      "name": "Private jobs located here: Real estate and rental and leasing",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in real estate and rental and leasing (NAICS 53).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:54:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:54:5"
+      ],
+      "name": "Private jobs located here: Professional, scientific, and technical services",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in professional, scientific, and technical services (NAICS 54).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:55:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:55:5"
+      ],
+      "name": "Private jobs located here: Management of companies and enterprises",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in management of companies and enterprises (NAICS 55).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:56:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:56:5"
+      ],
+      "name": "Private jobs located here: Administrative and waste services",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in administrative and waste services (NAICS 56).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:61:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:61:5"
+      ],
+      "name": "Private jobs located here: Educational services",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in educational services (NAICS 61).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:62:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:62:5"
+      ],
+      "name": "Private jobs located here: Health care and social assistance",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in health care and social assistance (NAICS 62).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:71:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:71:5"
+      ],
+      "name": "Private jobs located here: Arts, entertainment, and recreation",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in arts, entertainment, and recreation (NAICS 71).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:72:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:72:5"
+      ],
+      "name": "Private jobs located here: Accommodation and food services",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in accommodation and food services (NAICS 72).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:81:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:81:5"
+      ],
+      "name": "Private jobs located here: Other services",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in other services (NAICS 81).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:92:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:92:5"
+      ],
+      "name": "Private jobs located here: Public administration",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in public administration (NAICS 92).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "BLS_QCEW:employment:99:5",
+      "metric_codes": [
+        "BLS_QCEW:employment:99:5"
+      ],
+      "name": "Private jobs located here: Unclassified",
+      "definition": "Privately owned jobs covered by unemployment insurance at employers here in unclassified (NAICS 99).",
+      "unit": "jobs",
+      "universe": "private jobs located here",
+      "kind": "count",
+      "caveat": "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Counts jobs by place of work; BLS withholds a sector to avoid disclosing one employer, which is not zero."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-26",
+      "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "EIA:EPMR",
+      "metric_codes": [
+        "EIA:EPMR"
+      ],
+      "name": "Regular gasoline, average retail price",
+      "definition": "The average retail price of a gallon of regular-grade gasoline, from EIA's weekly survey of retail stations.",
+      "unit": "dollars per gallon",
+      "universe": "retail gasoline stations",
+      "kind": "mean",
+      "caveat": "Published for the nation and a small set of states, not for counties or cities; a county page shows the containing area's price and names it.",
+      "intended_use": "Show what a gallon of gas costs in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation and a small set of states, not for counties or cities; a county page shows the containing area's price and names it.",
+        "Weekly prices are never averaged into an annual figure by this platform."
+      ],
+      "citations": [
+        "https://www.eia.gov/petroleum/gasdiesel/",
+        "https://www.eia.gov/dnav/pet/pet_pri_gnd_dcus_nus_w.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BLS:APU_gasoline_regular_region",
+      "metric_codes": [
+        "BLS:APU010074714",
+        "BLS:APU020074714",
+        "BLS:APU030074714",
+        "BLS:APU040074714"
+      ],
+      "name": "Regular gasoline, average price (Census region)",
+      "definition": "The average price BLS records for a gallon of unleaded regular gasoline in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per gallon",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; used only where EIA publishes no state price.",
+      "intended_use": "Show what a gallon of gas costs where no state price exists.",
+      "limitations": [
+        "A regional urban average, not a local price; used only where EIA publishes no state price."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BLS:CUUR_food_at_home",
+      "metric_codes": [
+        "BLS:CUUR0000SAF11",
+        "BLS:CUUR0100SAF11",
+        "BLS:CUUR0200SAF11",
+        "BLS:CUUR0300SAF11",
+        "BLS:CUUR0400SAF11",
+        "BLS:CUUR0110SAF11",
+        "BLS:CUUR0120SAF11",
+        "BLS:CUUR0230SAF11",
+        "BLS:CUUR0240SAF11",
+        "BLS:CUUR0350SAF11",
+        "BLS:CUUR0360SAF11",
+        "BLS:CUUR0370SAF11",
+        "BLS:CUUR0480SAF11",
+        "BLS:CUUR0490SAF11"
+      ],
+      "name": "Food at home prices (Consumer Price Index)",
+      "definition": "The Consumer Price Index for food bought at grocery stores and other stores for eating at home, for all urban consumers in the area, not seasonally adjusted.",
+      "unit": "index",
+      "universe": "all urban consumers in the area",
+      "kind": "index",
+      "caveat": "An index whose level depends on each area's own base, so only its change over a year is meaningful; levels of two areas are never compared.",
+      "intended_use": "Show how fast grocery prices have changed in the nearest area BLS publishes.",
+      "limitations": [
+        "An index whose level depends on each area's own base, so only its change over a year is meaningful; levels of two areas are never compared."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/",
+        "https://www.bls.gov/cpi/additional-resources/geographic-revision-2018.htm"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BEA:RPP_all_items",
+      "metric_codes": [
+        "BEA:MARPP:1",
+        "BEA:SARPP:1"
+      ],
+      "name": "Regional price parity, all items",
+      "definition": "How the overall price level of goods and services in the area compares with the national average, set at 100.",
+      "unit": "index (U.S. = 100)",
+      "universe": "metropolitan area or state",
+      "kind": "index",
+      "caveat": "A level relative to the nation in one year; it is not a measure of inflation, and parities from different years are on different national bases.",
+      "intended_use": "Show whether everyday costs in the area run above or below the national average.",
+      "limitations": [
+        "A level relative to the nation in one year; it is not a measure of inflation, and parities from different years are on different national bases."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31"
+    }
+  ]
+}

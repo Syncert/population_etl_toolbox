@@ -90,6 +90,226 @@
         "account"
       ]
     },
+    "GET /api/v1/admin/warehouse/coverage/{source_code}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "refresh",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SourceCoverageResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "admin"
+      ]
+    },
+    "GET /api/v1/admin/warehouse/schema": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:WarehouseSchemaResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "admin"
+      ]
+    },
+    "GET /api/v1/admin/warehouse/sources": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:WarehouseSourcesResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "admin"
+      ]
+    },
+    "GET /api/v1/age-structure": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "compare_geo_ids",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeStructureResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
+    "GET /api/v1/age-structure/cohorts": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 4,
+            "minLength": 4
+          },
+          "in": "query",
+          "name": "from_release",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 4,
+            "minLength": 4
+          },
+          "in": "query",
+          "name": "to_release",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeCohortsResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
+    "GET /api/v1/age-structure/history": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "include_bands",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "default": "non_overlapping",
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "periods",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeStructureHistoryResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
     "GET /api/v1/analysis-configurations": {
       "parameters": [
         {
@@ -291,6 +511,37 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/derived-ratios": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "numerator",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "served_only",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "responses": {
+        "200": "application/json:DerivedRatioCatalogResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/freshness": {
       "parameters": [],
       "responses": {
@@ -380,6 +631,89 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/geographies/locate": {
+      "parameters": [
+        {
+          "constraints": {
+            "maximum": 90,
+            "minimum": -90
+          },
+          "in": "query",
+          "name": "lat",
+          "required": true,
+          "type": "number"
+        },
+        {
+          "constraints": {
+            "maximum": 180,
+            "minimum": -180
+          },
+          "in": "query",
+          "name": "lon",
+          "required": true,
+          "type": "number"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographyLocateResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/geographies/search": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "grain",
+          "required": false,
+          "type": "array<string> | null"
+        },
+        {
+          "constraints": {
+            "default": 10,
+            "maximum": 25,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "q",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographySearchResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/geographies/{geo_id}/related": {
       "parameters": [
         {
@@ -422,6 +756,15 @@
           "name": "limit",
           "required": false,
           "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 8000
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": false,
+          "type": "string | null"
         },
         {
           "constraints": {
@@ -491,6 +834,18 @@
       "parameters": [],
       "responses": {
         "200": "application/json:array<SourceSystem>",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/tile-layers": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:TileLayerCatalogResponse",
         "422": "application/json:ErrorDetail | HTTPValidationError",
         "429": "application/json:ErrorDetail",
         "503": "application/json:ErrorDetail"
@@ -956,6 +1311,137 @@
       ],
       "responses": {
         "200": "application/json:ComparisonMatrixResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/v1/comparison/places": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_b",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "period_start",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "ratio_id",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:PlacesComparisonResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/v1/comparison/places/batch": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": true
+          },
+          "in": "query",
+          "name": "follow_alternatives",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_b",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 8000
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 8000
+          },
+          "in": "query",
+          "name": "ratio_ids",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:PlacesComparisonBatchResponse",
         "404": "application/json:ErrorDetail",
         "422": "application/json:ErrorDetail | HTTPValidationError",
         "429": "application/json:ErrorDetail",
@@ -1679,6 +2165,157 @@
         "observations"
       ]
     },
+    "GET /api/v1/observations/derived": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 3
+          },
+          "in": "query",
+          "name": "county_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "newest_per_geography",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "newest_release_per_period",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "period_start",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "ratio_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": "latest",
+            "enum": [
+              "latest",
+              "as_released"
+            ]
+          },
+          "in": "query",
+          "name": "scope",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1700
+          },
+          "in": "query",
+          "name": "year_from",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1700
+          },
+          "in": "query",
+          "name": "year_to",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:DerivedRatioListResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
     "GET /api/v1/observations/latest": {
       "parameters": [
         {
@@ -1734,6 +2371,39 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/v1/observations/newest/batch": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 1000,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_ids",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 12000,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NewestValuesBatchResponse",
         "422": "application/json:ErrorDetail | HTTPValidationError",
         "429": "application/json:ErrorDetail",
         "503": "application/json:ErrorDetail"
@@ -2686,6 +3356,193 @@
         "created_at"
       ]
     },
+    "AgeBandLines": {
+      "properties": {
+        "men": "array<string>",
+        "women": "array<string>"
+      },
+      "required": [
+        "men",
+        "women"
+      ]
+    },
+    "AgeBandResult": {
+      "properties": {
+        "age_end": "integer | null",
+        "age_start": "integer",
+        "band_id": "string",
+        "label": "string",
+        "lines": "AgeBandLines",
+        "men": "AgeBandSide",
+        "women": "AgeBandSide"
+      },
+      "required": [
+        "age_start",
+        "band_id",
+        "label",
+        "lines",
+        "men",
+        "women"
+      ]
+    },
+    "AgeBandSide": {
+      "properties": {
+        "count": "string | null",
+        "count_moe": "string | null",
+        "cv_percent": "string | null",
+        "reliable": "boolean",
+        "share": "string | null",
+        "share_moe": "string | null",
+        "unavailable_reason": "string | null"
+      },
+      "required": []
+    },
+    "AgeCohortsResponse": {
+      "properties": {
+        "caveat": "string",
+        "comparable": "boolean",
+        "dataset": "string",
+        "from": "CohortPeriod | null",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "items": "array<CohortItem>",
+        "refusal": "CohortRefusal | null",
+        "scheme": "AgeScheme",
+        "to": "CohortPeriod | null",
+        "years_apart": "integer | null"
+      },
+      "required": [
+        "caveat",
+        "comparable",
+        "dataset",
+        "geo_id",
+        "scheme"
+      ]
+    },
+    "AgeCount": {
+      "properties": {
+        "count": "string | null",
+        "count_moe": "string | null"
+      },
+      "required": []
+    },
+    "AgeIndicators": {
+      "properties": {
+        "age_18_64": "AgeShare",
+        "age_65_plus": "AgeShare",
+        "age_85_plus": "AgeShare",
+        "child_dependency_ratio": "AgeRatio",
+        "old_age_dependency_ratio": "AgeRatio",
+        "sex_ratio": "AgeRatio",
+        "total_dependency_ratio": "AgeRatio",
+        "under_18": "AgeShare"
+      },
+      "required": [
+        "age_18_64",
+        "age_65_plus",
+        "age_85_plus",
+        "child_dependency_ratio",
+        "old_age_dependency_ratio",
+        "sex_ratio",
+        "total_dependency_ratio",
+        "under_18"
+      ]
+    },
+    "AgeRatio": {
+      "properties": {
+        "moe": "string | null",
+        "moe_method": "string",
+        "unavailable_reason": "string | null",
+        "unit": "string",
+        "value": "string | null"
+      },
+      "required": [
+        "unit"
+      ]
+    },
+    "AgeScheme": {
+      "properties": {
+        "scheme_id": "string",
+        "status": "string",
+        "version": "integer"
+      },
+      "required": [
+        "scheme_id",
+        "status",
+        "version"
+      ]
+    },
+    "AgeShare": {
+      "properties": {
+        "count": "string | null",
+        "count_moe": "string | null",
+        "share": "string | null",
+        "share_moe": "string | null",
+        "unavailable_reason": "string | null"
+      },
+      "required": []
+    },
+    "AgeStructureHistoryResponse": {
+      "properties": {
+        "dataset": "string",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "items": "array<AgeStructurePlace>",
+        "periods": "string",
+        "scheme": "AgeScheme"
+      },
+      "required": [
+        "dataset",
+        "geo_id",
+        "items",
+        "periods",
+        "scheme"
+      ]
+    },
+    "AgeStructurePlace": {
+      "properties": {
+        "bands": "array<AgeBandResult>",
+        "derived": "boolean",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "indicators": "AgeIndicators | null",
+        "median_age": "MedianAge | null",
+        "men": "AgeCount",
+        "overlap_weight": "number | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "reference_level": "string | null",
+        "release": "string | null",
+        "role": "string",
+        "total": "AgeCount",
+        "unavailable_reason": "string | null",
+        "women": "AgeCount"
+      },
+      "required": [
+        "geo_id",
+        "role"
+      ]
+    },
+    "AgeStructureResponse": {
+      "properties": {
+        "dataset": "string",
+        "default_reference_geo_id": "string | null",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "places": "array<AgeStructurePlace>",
+        "scheme": "AgeScheme"
+      },
+      "required": [
+        "dataset",
+        "geo_id",
+        "places",
+        "scheme"
+      ]
+    },
     "AlignmentDocument": {
       "properties": {
         "geo_level": "string",
@@ -2719,6 +3576,132 @@
         "kind"
       ]
     },
+    "AtlasBox": {
+      "properties": {
+        "columns": "array<array<string>>",
+        "height": "integer",
+        "kind": "string",
+        "layer": "string",
+        "more_columns": "integer",
+        "name": "string",
+        "partitions": "integer",
+        "shared": "boolean",
+        "width": "integer",
+        "x": "integer",
+        "y": "integer"
+      },
+      "required": [
+        "columns",
+        "height",
+        "kind",
+        "layer",
+        "more_columns",
+        "name",
+        "partitions",
+        "shared",
+        "width",
+        "x",
+        "y"
+      ]
+    },
+    "AtlasDomain": {
+      "properties": {
+        "boxes": "array<AtlasBox>",
+        "caption": "string",
+        "edges": "array<AtlasEdge>",
+        "height": "integer",
+        "id": "string",
+        "source_code": "string | null",
+        "tables": "integer",
+        "title": "string",
+        "views": "integer",
+        "width": "integer"
+      },
+      "required": [
+        "boxes",
+        "caption",
+        "edges",
+        "height",
+        "id",
+        "source_code",
+        "tables",
+        "title",
+        "views",
+        "width"
+      ]
+    },
+    "AtlasEdge": {
+      "properties": {
+        "columns": "array<string>",
+        "from": "string",
+        "kind": "string",
+        "to": "string"
+      },
+      "required": [
+        "columns",
+        "from",
+        "kind",
+        "to"
+      ]
+    },
+    "AtlasForeignKey": {
+      "properties": {
+        "columns": "array<string>",
+        "references": "string"
+      },
+      "required": [
+        "columns",
+        "references"
+      ]
+    },
+    "AtlasRelation": {
+      "properties": {
+        "columns": "array<array<any>>",
+        "domain": "string | null",
+        "estimated_rows": "integer | null",
+        "foreign_keys": "array<AtlasForeignKey>",
+        "index_count": "integer",
+        "kind": "string",
+        "layer": "string",
+        "name": "string",
+        "partition_key": "string | null",
+        "partitions": "integer",
+        "primary_key": "array<string>",
+        "reads_from": "array<string>",
+        "uniques": "array<string>"
+      },
+      "required": [
+        "columns",
+        "domain",
+        "estimated_rows",
+        "foreign_keys",
+        "index_count",
+        "kind",
+        "layer",
+        "name",
+        "partition_key",
+        "partitions",
+        "primary_key",
+        "reads_from",
+        "uniques"
+      ]
+    },
+    "AtlasStats": {
+      "properties": {
+        "foreign_keys": "integer",
+        "partitions": "integer",
+        "schemas": "integer",
+        "tables": "integer",
+        "views": "integer"
+      },
+      "required": [
+        "foreign_keys",
+        "partitions",
+        "schemas",
+        "tables",
+        "views"
+      ]
+    },
     "BlockValidation": {
       "properties": {
         "block_id": "string",
@@ -2739,6 +3722,28 @@
       "required": [
         "items",
         "total"
+      ]
+    },
+    "CatalogSummary": {
+      "properties": {
+        "current_metrics": "integer",
+        "geo_grains": "array<string>",
+        "last_harvested": "string | null",
+        "metrics": "integer",
+        "newest_publication": "string | null",
+        "newest_watermark": "string | null",
+        "stale_metrics": "integer",
+        "time_grains": "array<string>"
+      },
+      "required": [
+        "current_metrics",
+        "geo_grains",
+        "last_harvested",
+        "metrics",
+        "newest_publication",
+        "newest_watermark",
+        "stale_metrics",
+        "time_grains"
       ]
     },
     "CdcObservation": {
@@ -2817,6 +3822,68 @@
         "total"
       ]
     },
+    "CohortItem": {
+      "properties": {
+        "from_band": "string",
+        "men": "CohortSide",
+        "to_band": "string",
+        "women": "CohortSide"
+      },
+      "required": [
+        "from_band",
+        "men",
+        "to_band",
+        "women"
+      ]
+    },
+    "CohortPeriod": {
+      "properties": {
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "release": "string"
+      },
+      "required": [
+        "release"
+      ]
+    },
+    "CohortRefusal": {
+      "properties": {
+        "detail": "string",
+        "reason": "string"
+      },
+      "required": [
+        "detail",
+        "reason"
+      ]
+    },
+    "CohortSide": {
+      "properties": {
+        "change": "string | null",
+        "change_moe": "string | null",
+        "from_count": "string | null",
+        "from_count_moe": "string | null",
+        "intervals_overlap": "boolean | null",
+        "to_count": "string | null",
+        "to_count_moe": "string | null"
+      },
+      "required": []
+    },
+    "ComparisonAlternative": {
+      "properties": {
+        "href": "string",
+        "label": "string",
+        "pairing_status": "string",
+        "ratio_id": "string",
+        "unit": "string"
+      },
+      "required": [
+        "href",
+        "label",
+        "pairing_status",
+        "ratio_id",
+        "unit"
+      ]
+    },
     "ComparisonCorrelationResponse": {
       "properties": {
         "caveats": "array<string>",
@@ -2828,6 +3895,10 @@
         "geographies_b": "integer",
         "metric_code_a": "string",
         "metric_code_b": "string",
+        "metric_label_a": "string | null",
+        "metric_label_b": "string | null",
+        "metric_label_status_a": "string | null",
+        "metric_label_status_b": "string | null",
         "n": "integer",
         "pearson_r": "number | null",
         "period_a": "string | null",
@@ -2877,6 +3948,10 @@
         "derivations": "array<string>",
         "metric_code_a": "string",
         "metric_code_b": "string",
+        "metric_label_a": "string | null",
+        "metric_label_b": "string | null",
+        "metric_label_status_a": "string | null",
+        "metric_label_status_b": "string | null",
         "rules": "array<CompatibilityFinding>",
         "source_code_a": "string | null",
         "source_code_b": "string | null"
@@ -2898,6 +3973,10 @@
         "limit": "integer",
         "metric_code_a": "string",
         "metric_code_b": "string",
+        "metric_label_a": "string | null",
+        "metric_label_b": "string | null",
+        "metric_label_status_a": "string | null",
+        "metric_label_status_b": "string | null",
         "offset": "integer",
         "source_code_a": "string | null",
         "source_code_b": "string | null",
@@ -3059,11 +4138,157 @@
         "value"
       ]
     },
+    "DerivedRatioCatalogResponse": {
+      "properties": {
+        "items": "array<DerivedRatioPairing>",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "total"
+      ]
+    },
+    "DerivedRatioCoverage": {
+      "properties": {
+        "contributing_agencies": "array<string>",
+        "coverage_floor": "string",
+        "coverage_share": "string | null",
+        "covered_population": "string | null",
+        "excluded_multi_county_agencies": "array<string>",
+        "linked_population": "string | null",
+        "non_reporting_agencies": "array<string>",
+        "not_loaded_agencies": "array<string>",
+        "unknown_population_agencies": "array<string>"
+      },
+      "required": [
+        "contributing_agencies",
+        "coverage_floor",
+        "excluded_multi_county_agencies",
+        "non_reporting_agencies",
+        "unknown_population_agencies"
+      ]
+    },
+    "DerivedRatioInput": {
+      "properties": {
+        "margin_of_error": "string | null",
+        "margin_of_error_controlled": "boolean",
+        "metric_code": "string",
+        "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "release": "string | null",
+        "value": "string | null",
+        "value_status": "string | null"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
+    "DerivedRatioListResponse": {
+      "properties": {
+        "items": "array<DerivedRatioObservation>",
+        "limit": "integer",
+        "offset": "integer",
+        "ratio": "DerivedRatioPairing",
+        "release": "string | null",
+        "scope": "string",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "ratio",
+        "scope",
+        "total"
+      ]
+    },
+    "DerivedRatioObservation": {
+      "properties": {
+        "coverage": "DerivedRatioCoverage | null",
+        "denominator": "DerivedRatioInput | null",
+        "derived": "boolean",
+        "geo_id": "string | null",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "margin_of_error": "string | null",
+        "margin_of_error_method": "string",
+        "numerator": "DerivedRatioInput | null",
+        "pairing_status": "string",
+        "pairing_version": "integer",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "provider_rate": "DerivedRatioInput | null",
+        "ratio_id": "string",
+        "release": "string | null",
+        "scale": "integer",
+        "unavailable_reason": "string | null",
+        "unit": "string",
+        "value": "string | null"
+      },
+      "required": [
+        "derived",
+        "margin_of_error_method",
+        "pairing_status",
+        "pairing_version",
+        "ratio_id",
+        "scale",
+        "unit"
+      ]
+    },
+    "DerivedRatioPairing": {
+      "properties": {
+        "citations": "array<string>",
+        "dataset": "string | null",
+        "denominator": "string | null",
+        "denominator_label": "string",
+        "derived": "boolean",
+        "geo_levels": "array<string>",
+        "kind": "string",
+        "label": "string",
+        "limitations": "array<string>",
+        "numerator": "string",
+        "numerator_is_subset": "boolean",
+        "provider_rate": "string | null",
+        "ratio_id": "string",
+        "reads_beside": "string | null",
+        "refusal_reason": "string | null",
+        "reviewer": "string",
+        "scale": "integer",
+        "served": "boolean",
+        "status": "string",
+        "unit": "string",
+        "universe": "string",
+        "version": "integer"
+      },
+      "required": [
+        "citations",
+        "denominator_label",
+        "derived",
+        "kind",
+        "label",
+        "limitations",
+        "numerator",
+        "numerator_is_subset",
+        "ratio_id",
+        "reviewer",
+        "scale",
+        "served",
+        "status",
+        "unit",
+        "universe",
+        "version"
+      ]
+    },
     "DistinctiveMeasure": {
       "properties": {
         "caveats": "array<string>",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "percentile_rank": "number",
         "period_start": "string | null",
         "request": "string",
@@ -3131,6 +4356,9 @@
         "items": "array<DistributionBin>",
         "max_value": "number | null",
         "metric_code": "string",
+        "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "min_value": "number | null",
         "period": "string | null",
         "periods_differ": "boolean",
@@ -3284,6 +4512,21 @@
         "total"
       ]
     },
+    "GeographyLocateResponse": {
+      "properties": {
+        "county": "LocatedGeography | null",
+        "landing": "LocatedGeography",
+        "metro": "LocatedGeography | null",
+        "place": "LocatedGeography | null",
+        "state": "LocatedGeography",
+        "tract": "LocatedGeography | null",
+        "zcta": "LocatedGeography | null"
+      },
+      "required": [
+        "landing",
+        "state"
+      ]
+    },
     "GeographyRelatedResponse": {
       "properties": {
         "geo_id": "string",
@@ -3316,6 +4559,81 @@
         "relationship"
       ]
     },
+    "GeographySearchItem": {
+      "properties": {
+        "county_geo_id": "string | null",
+        "county_name": "string | null",
+        "geo_id": "string",
+        "geo_level": "string",
+        "geo_name": "string",
+        "match": "string",
+        "matched_via": "GeographySearchVia | null",
+        "page_path": "string | null",
+        "population": "number | null",
+        "population_metric_code": "string | null",
+        "population_year": "integer | null",
+        "short_name": "string",
+        "state_fips": "string | null",
+        "state_name": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "geo_level",
+        "geo_name",
+        "match",
+        "short_name"
+      ]
+    },
+    "GeographySearchResponse": {
+      "properties": {
+        "items": "array<GeographySearchItem>",
+        "limit": "integer",
+        "query": "string"
+      },
+      "required": [
+        "items",
+        "limit",
+        "query"
+      ]
+    },
+    "GeographySearchVia": {
+      "properties": {
+        "geo_id": "string",
+        "geo_name": "string"
+      },
+      "required": [
+        "geo_id",
+        "geo_name"
+      ]
+    },
+    "GrainCoverage": {
+      "properties": {
+        "column": "string",
+        "first_year": "integer | null",
+        "grain": "string | null",
+        "last_year": "integer | null",
+        "row_count": "integer | null",
+        "years": "array<integer>"
+      },
+      "required": [
+        "column",
+        "first_year",
+        "grain",
+        "last_year",
+        "row_count",
+        "years"
+      ]
+    },
+    "GrainMark": {
+      "properties": {
+        "grain": "string",
+        "mark": "string"
+      },
+      "required": [
+        "grain",
+        "mark"
+      ]
+    },
     "HTTPValidationError": {
       "properties": {
         "detail": "array<ValidationError>"
@@ -3330,6 +4648,19 @@
       "required": [
         "service",
         "status"
+      ]
+    },
+    "LocatedGeography": {
+      "properties": {
+        "boundary_vintage": "integer | null",
+        "geo_id": "string",
+        "geo_level": "string",
+        "geo_name": "string | null",
+        "page_path": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "geo_level"
       ]
     },
     "MatrixCell": {
@@ -3347,6 +4678,9 @@
       "properties": {
         "geographies": "integer",
         "metric_code": "string",
+        "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "period": "string | null",
         "periods_differ": "boolean",
         "source_code": "string | null",
@@ -3385,14 +4719,37 @@
       },
       "required": []
     },
+    "MedianAge": {
+      "properties": {
+        "all": "MedianAgeValue",
+        "derived": "boolean",
+        "men": "MedianAgeValue",
+        "women": "MedianAgeValue"
+      },
+      "required": [
+        "all",
+        "men",
+        "women"
+      ]
+    },
+    "MedianAgeValue": {
+      "properties": {
+        "moe": "string | null",
+        "value": "string | null"
+      },
+      "required": []
+    },
     "MetricCapability": {
       "properties": {
         "aggregation_characteristic": "string | null",
+        "definition": "MetricDefinitionSummary | null",
         "freshness_state": "string | null",
         "harvested_at": "string(date-time) | null",
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "observation_dimensions": "array<string>",
         "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
@@ -3420,11 +4777,14 @@
     "MetricCatalog": {
       "properties": {
         "aggregation_characteristic": "string | null",
+        "definition": "MetricDefinitionSummary | null",
         "freshness_state": "string | null",
         "harvested_at": "string(date-time) | null",
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "physical_lineage": "object | null",
         "publication_time": "string(date-time) | null",
         "publisher_contract_version": "string | null",
@@ -3439,6 +4799,25 @@
       },
       "required": [
         "metric_code"
+      ]
+    },
+    "MetricDefinitionSummary": {
+      "properties": {
+        "caveat": "string | null",
+        "citations": "array<string>",
+        "definition": "string",
+        "label": "string",
+        "status": "string",
+        "unit": "string | null",
+        "universe": "string | null",
+        "version": "integer"
+      },
+      "required": [
+        "citations",
+        "definition",
+        "label",
+        "status",
+        "version"
       ]
     },
     "MetricListResponse": {
@@ -3820,6 +5199,8 @@
         "geo_name": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "period_end": "string | null",
         "period_start": "string | null",
         "release": "string | null",
@@ -3858,9 +5239,37 @@
         "total"
       ]
     },
+    "NewestValuesBatchItem": {
+      "properties": {
+        "detail": "string | null",
+        "geo_id": "string",
+        "metric_code": "string",
+        "observations": "NeutralObservationListResponse | null",
+        "status": "integer"
+      },
+      "required": [
+        "geo_id",
+        "metric_code",
+        "status"
+      ]
+    },
+    "NewestValuesBatchResponse": {
+      "properties": {
+        "geo_ids": "array<string>",
+        "items": "array<NewestValuesBatchItem>",
+        "metric_codes": "array<string>"
+      },
+      "required": [
+        "geo_ids",
+        "items",
+        "metric_codes"
+      ]
+    },
     "NotRankedMeasure": {
       "properties": {
         "metric_code": "string",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "reason": "string"
       },
       "required": [
@@ -3903,6 +5312,8 @@
         "margin_of_error_pct": "string | null",
         "metric_code": "string | null",
         "metric_display_name": "string | null",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
         "observation_date": "any | null",
         "period": "string | null",
         "release_date": "any | null",
@@ -3996,6 +5407,120 @@
       },
       "required": [
         "valid"
+      ]
+    },
+    "PlacesBatchItem": {
+      "properties": {
+        "answer": "PlacesComparisonResponse | null",
+        "detail": "string | null",
+        "instead": "PlacesComparisonResponse | null",
+        "metric_code": "string | null",
+        "ratio_id": "string | null",
+        "status": "integer"
+      },
+      "required": []
+    },
+    "PlacesComparisonBatchResponse": {
+      "properties": {
+        "geo_id_a": "string",
+        "geo_id_b": "string",
+        "items": "array<PlacesBatchItem>"
+      },
+      "required": [
+        "geo_id_a",
+        "geo_id_b",
+        "items"
+      ]
+    },
+    "PlacesComparisonResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "comparable": "boolean",
+        "containment": "PlacesContainment",
+        "cross_level": "boolean",
+        "derivations": "array<string>",
+        "derived": "boolean",
+        "difference": "string | null",
+        "intervals_overlap": "boolean | null",
+        "measure_kind": "string",
+        "measure_kind_status": "string",
+        "metric_code": "string | null",
+        "metric_code_b": "string | null",
+        "notes": "array<PlacesNote>",
+        "period_basis": "string | null",
+        "ratio_id": "string | null",
+        "refusal": "PlacesRefusal | null",
+        "side_a": "PlacesSide",
+        "side_b": "PlacesSide"
+      },
+      "required": [
+        "caveats",
+        "comparable",
+        "containment",
+        "cross_level",
+        "derivations",
+        "derived",
+        "measure_kind",
+        "measure_kind_status",
+        "notes",
+        "side_a",
+        "side_b"
+      ]
+    },
+    "PlacesContainment": {
+      "properties": {
+        "evidence_source": "string | null",
+        "geography_vintage": "integer | null",
+        "relationship": "string",
+        "share_of_smaller_inside_larger": "number | null",
+        "smaller_side": "string | null"
+      },
+      "required": [
+        "relationship"
+      ]
+    },
+    "PlacesNote": {
+      "properties": {
+        "detail": "string",
+        "reason": "string"
+      },
+      "required": [
+        "detail",
+        "reason"
+      ]
+    },
+    "PlacesRefusal": {
+      "properties": {
+        "alternatives": "array<ComparisonAlternative>",
+        "detail": "string",
+        "reason": "string"
+      },
+      "required": [
+        "detail",
+        "reason"
+      ]
+    },
+    "PlacesSide": {
+      "properties": {
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "interval_high": "string | null",
+        "interval_low": "string | null",
+        "margin_of_error": "string | null",
+        "metric_code": "string",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "published": "boolean | null",
+        "release": "string | null",
+        "value": "string | null",
+        "value_status": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "metric_code"
       ]
     },
     "PopulationScenarioPoint": {
@@ -4248,6 +5773,36 @@
         "status"
       ]
     },
+    "SourceCoverageResponse": {
+      "properties": {
+        "cached": "boolean",
+        "catalog_source_code": "string | null",
+        "elapsed_ms": "integer",
+        "grains": "array<GrainCoverage>",
+        "measured_at": "string",
+        "method": "string | null",
+        "note": "string | null",
+        "relation": "string | null",
+        "row_count": "integer | null",
+        "row_count_is_estimate": "boolean",
+        "source_code": "string",
+        "status": "string"
+      },
+      "required": [
+        "cached",
+        "catalog_source_code",
+        "elapsed_ms",
+        "grains",
+        "measured_at",
+        "method",
+        "note",
+        "relation",
+        "row_count",
+        "row_count_is_estimate",
+        "source_code",
+        "status"
+      ]
+    },
     "SourceFreshness": {
       "properties": {
         "current_count": "integer",
@@ -4279,6 +5834,58 @@
         "source_name"
       ]
     },
+    "TileLayer": {
+      "properties": {
+        "available": "boolean",
+        "default_vintage": "integer | null",
+        "grains": "array<string>",
+        "join_key": "string",
+        "layer_id": "string",
+        "maxzoom": "integer",
+        "minzoom": "integer",
+        "name_field": "string",
+        "source_layer": "string",
+        "tile_template": "string",
+        "versioned": "boolean",
+        "vintages": "array<TileLayerVintage>"
+      },
+      "required": [
+        "available",
+        "grains",
+        "join_key",
+        "layer_id",
+        "maxzoom",
+        "minzoom",
+        "name_field",
+        "source_layer",
+        "tile_template",
+        "versioned"
+      ]
+    },
+    "TileLayerCatalogResponse": {
+      "properties": {
+        "layers": "array<TileLayer>",
+        "uncoloured_rule": "string"
+      },
+      "required": [
+        "layers",
+        "uncoloured_rule"
+      ]
+    },
+    "TileLayerVintage": {
+      "properties": {
+        "boundary_vintage": "integer",
+        "feature_count": "integer",
+        "is_default": "boolean",
+        "tile_template": "string"
+      },
+      "required": [
+        "boundary_vintage",
+        "feature_count",
+        "is_default",
+        "tile_template"
+      ]
+    },
     "ValidationError": {
       "properties": {
         "ctx": "object",
@@ -4291,6 +5898,80 @@
         "loc",
         "msg",
         "type"
+      ]
+    },
+    "WarehouseSchemaResponse": {
+      "properties": {
+        "domains": "array<AtlasDomain>",
+        "read_at": "string",
+        "relations": "array<AtlasRelation>",
+        "stats": "AtlasStats"
+      },
+      "required": [
+        "domains",
+        "read_at",
+        "relations",
+        "stats"
+      ]
+    },
+    "WarehouseSourceEntry": {
+      "properties": {
+        "cadence": "string",
+        "catalog": "CatalogSummary | null",
+        "catalog_source_code": "string | null",
+        "code": "string",
+        "control": "array<string>",
+        "credential": "string",
+        "dag": "string",
+        "datasets": "array<string>",
+        "declared_years": "array<array<integer>>",
+        "gold": "array<string>",
+        "grains": "array<GrainMark>",
+        "measures": "string",
+        "module": "string",
+        "name": "string",
+        "publisher": "string",
+        "raw": "array<string>",
+        "release": "string",
+        "silver": "array<string>",
+        "topic": "string",
+        "years_note": "string"
+      },
+      "required": [
+        "cadence",
+        "catalog",
+        "catalog_source_code",
+        "code",
+        "control",
+        "credential",
+        "dag",
+        "datasets",
+        "declared_years",
+        "gold",
+        "grains",
+        "measures",
+        "module",
+        "name",
+        "publisher",
+        "raw",
+        "release",
+        "silver",
+        "topic",
+        "years_note"
+      ]
+    },
+    "WarehouseSourcesResponse": {
+      "properties": {
+        "catalog_read_at": "string",
+        "grains": "array<array<string>>",
+        "sources": "array<WarehouseSourceEntry>",
+        "topics": "array<string>"
+      },
+      "required": [
+        "catalog_read_at",
+        "grains",
+        "sources",
+        "topics"
       ]
     }
   }

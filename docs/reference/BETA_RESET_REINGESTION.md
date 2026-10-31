@@ -343,15 +343,15 @@ beside its months.
 
 `acs_ingest` requests five levels per dataset and year: the nation, all
 states, each county parent's counties, and -- for the newest year only, by
-default (`AcsConfig.place_recent_years`) -- each state's places. The place
+default (`AcsConfig.place_year_scope`, `"newest"`) -- each state's places. The place
 slices are the large ones. One 5-year year is 52 place slices of 77 requests
 each (3,844 curated variables in chunks of 50), about 4,000 requests, and
 about 62 million facts for some 32,000 places against the counties' 6.2
 million; the 1-year estimates add 50 smaller slices (their 649 places of
 65,000 or more; Vermont and West Virginia have none and are never asked).
 Expect the first place load to dominate the run and the silver transform and
-`mv_acs_latest` refresh to grow roughly tenfold. Raise `place_recent_years`
-only with that volume in mind. A place the shared reference does not carry
+`mv_acs_latest` refresh to grow roughly tenfold. Widen `place_year_scope`
+(for example to `"2009-2024"`) only with that volume in mind. A place the shared reference does not carry
 is recorded `unmapped` in `silver_ref.geography_resolution` with the year it
 was requested under and left out of the facts; unlike a missing state or
 county it does not stop the transform.
@@ -1050,3 +1050,171 @@ Three operator rules follow:
 3. Confirm the ingest pause actually held. On this run `acs_ingest` was
    unpaused through the UI before the re-serve started; it was harmless only
    because the schedule is monthly.
+
+## 8. Backups of the internal stack
+
+The internal stack's warehouse lives on a two-drive stripe (H: on OFFICE_LAB,
+Docker's data disk) with no redundancy: one drive failing loses the volume.
+Two copies are kept on drives outside it (E:, F: or G:).
+
+**Raw captures, nightly.** `raw_capture_export` (DAG-019) writes every
+capture to `CAPTURE_EXPORT_ROOT`. Set `BACKUP_HOST_DIR` in
+`infra/docker/stack.env` to a directory on another drive (it is mounted into
+Airflow at `/opt/backups`) and `CAPTURE_EXPORT_ROOT=/opt/backups/captures`,
+then recreate the Airflow containers with `make deploy-up`. Unset, the export
+refuses rather than writing into the volume it protects.
+
+**The warehouse, weekly.** `scripts/backup_warehouse.py` (ENV-025):
+
+```powershell
+# One dump now (directory format, parallel, zstd), then keep the newest two.
+python scripts/backup_warehouse.py dump --target E:/population_backups/warehouse --jobs 6
+python scripts/backup_warehouse.py prune --target E:/population_backups/warehouse --keep 2
+# Schedule both, Sundays 03:00, skipping while a load or refresh is running.
+powershell -ExecutionPolicy Bypass -File scripts\register_backup_task.ps1 -Target E:\population_backups\warehouse
+```
+
+`pg_dump` runs in a throwaway container of the warehouse's own image on the
+stack's network, so nothing is installed on the host and the client always
+matches the server. A dump is written as `warehouse-<UTC>.partial` and renamed
+only when `pg_dump` succeeds; `manifest.json` beside it records the database
+size, the dump size, the duration and exact row counts of every table under
+2 GiB. Set `APP_API_DSN` and the account deletion log is exported into the
+dump directory too (ADR-0005 s5; see "Restoring an `app_api` backup" above).
+As the warehouse grows past what one drive holds twice, point alternate weeks
+at different drives rather than lowering `--keep` to one.
+
+**The restore drill.** A backup is only known to work once it has been
+restored:
+
+```powershell
+python scripts/backup_warehouse.py restore-drill --target E:/population_backups/warehouse --jobs 6
+```
+
+It restores the newest complete dump into `population_etl_restore_drill` on
+the same server (it needs free space about the size of the database), applies
+the deletion log when `APP_API_DRILL_DSN` names that database, compares row
+counts with the manifest, writes `restore-drill.json` beside the dump and
+drops the scratch database. Any count that differs fails the drill. A real
+restore is the same `pg_restore` into the production database name, followed
+by `apply_deletion_log.py --apply` before the API serves traffic.
+
+The first dump and restore drill are recorded in the warehouse backups
+plan (`docs/plans/needs_review/WAREHOUSE_BACKUPS_PLAN.md`).
+
+## 9. Backfilling ACS and census history
+
+The scheduled `acs_ingest` run keeps the newest years current. History --
+every ACS place and tract year, the metro grain, and the 2000 and 1990
+censuses -- is loaded by operator backfill runs, one year and one grain per
+run (`acs-place-and-tract-history`, W-10).
+
+### Order
+
+1. `silver_ref` first: every decade's place and tract identities (1990, 2000,
+   2010s, 2020s), the CBSA delineation and the tract decade crosswalk. A
+   backfill run refuses (`require_shared_geography`) without them, and a
+   transform refuses a year whose geographies the reference lacks.
+2. Tracts, newest year first, then places newest first, then metro, then the
+   census years (`--grain area`, `place`, `tract` for 2000; the 1990 loader
+   below). Newest first, so a stop at any point leaves a contiguous recent
+   history.
+3. After the last load, the weekly data-quality run
+   (`warehouse_data_quality` with conf `{"cadence": "weekly"}`) must pass its
+   data rules before the history is called published.
+
+### Commands
+
+On the internal stack, from the checkout, with the stack up:
+
+```bash
+# One grain over a range of years, newest first, one acs_ingest run per year.
+python scripts/run_acs_backfill.py --grain tract --years 2024-2010     --log /h/backfill-logs/backfill-tract.jsonl
+python scripts/run_acs_backfill.py --grain place --years 2024-2005     --log /h/backfill-logs/backfill-place.jsonl
+python scripts/run_acs_backfill.py --grain area --years 2000
+
+# The 1990 census (STF1A and STF3A dBase files): capture, replay,
+# transform, gold dimensions, serve. Resumes by state.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_acs.load_1990
+
+# FBI Return A master files: every agency's monthly offenses, one national
+# file a year. Apply migration 040 first. Resumes by year; a rerun skips a
+# year already loaded from the same file. Then back to 1985 the same way.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.fbi_ucr.return_a.load --years 2025-2015
+```
+
+Run a long driver detached so it survives the terminal. On Windows,
+`nohup` or `setsid` from a tool shell does not survive; start Git Bash with
+`Start-Process -WindowStyle Hidden "C:\Program Files\Git\bin\bash.exe"
+-ArgumentList '-c "<script> >> /h/backfill-logs/driver.log 2>&1"'`.
+
+Each run is `acs_ingest` with conf `{"acs_backfill": {"year": Y,
+"geo_level": G}}`. The driver writes one JSON line per year (state, hours,
+database bytes before and after) and stops at the first run that does not
+succeed. It waits on a run of the same year and grain already queued or
+running rather than starting a second.
+
+### Expected duration and size (internal stack, measured)
+
+| Grain | Years | Hours per year | GiB per year |
+| --- | --- | --- | --- |
+| place, full curated list | 2023 (first, before the latest-row skip) | 17.8 | 145 |
+| place, full curated list | 2018-2021 | 4.5-5.5 | 87-111 |
+| place, full curated list | 2010-2017 | 2.6-3.0 | 46-58 |
+| place | 2009 | 2.0 | 26 |
+| place, 1-year only | 2005-2008 | 1.1 | 2 |
+| tract, 18 of 22 tables published | 2009 | 1.8 | 31 |
+| tract, 22 tables | 2024 (first wide year) | see the backfill plan | about 66 projected |
+| Census 2000 place / area | 2000 | 3.7 / 0.9 | 2 / 3 |
+
+These were measured on the single-session path. From #173 a year's
+transform slices run on `ACS_TRANSFORM_WORKERS` threads and a tract or place
+step is published a state per session (`ACS_SERVING_WORKERS`); the backfill
+plan records per-step times on that path.
+
+### Guards that stop a run, and what each means
+
+- **Disk.** A run refuses when its projected bytes would leave less than
+  `backfill_reserve_fraction` (20%) of the warehouse disk free.
+- **Shared geography.** `require_shared_geography` fails before any request
+  when `silver_ref` has not loaded.
+- **Zero rows served.** A chunk that serves no report rows while silver
+  holds publishable rows for its year fails instead of being checkpointed:
+  usually the year's gold table and variable rows were never built
+  (`refresh_acs_elements`).
+- **Manifest ledger.** After pulling DDL changes, record them with
+  `python -m scripts.apply_warehouse_manifest --only-flagged`. Never re-apply
+  the whole manifest on the populated warehouse: migration 027 re-validates
+  its constraints over every ACS fact under an exclusive lock.
+
+### Resume
+
+Re-run the same driver command. A slice is skipped only when it finished
+for the *current* variable set (tract slices fingerprint `tract_tables`,
+older place years `place_history_tables`); a transform slice is skipped when
+an earlier run finished it against the same content; a grain step is
+re-served only when silver changed it. A year that failed part way is
+re-run from its first unfinished slice.
+
+### Stop safely
+
+1. Stop the driver process. The `acs_ingest` run already started goes on
+   to finish or fail on its own.
+2. To stop that run too, mark it failed in Airflow and terminate its
+   warehouse statement (`pg_terminate_backend`); `airflow tasks clear`
+   alone leaves the statement running and can leave the task in
+   `restarting`.
+3. A run stopped this way leaves its `control.ingestion_run` row
+   `running`. Mark it `failed` with a reason so the quality finalizer
+   accounts for its requests (DQ-SHARED-002).
+
+### Pitfalls the history load taught
+
+- Widening a table list must change the slice fingerprint, or every year
+  already loaded is skipped as done (the tract list, 2026-10-31).
+- A view column computed from a fact column (`observation_date`) defeats
+  the fact's index; check `EXPLAIN` for any step that reads
+  `silver_census.fact_demographics`.
+- Two drivers for the same work started duplicate runs; the driver now
+  waits on the one in flight.
+

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from dataclasses import replace
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -989,6 +990,191 @@ def test_county_rollup_retains_reported_zero_and_partial_coverage(
             )
             cursor.execute(query)
             assert cursor.fetchall() == []
+    finally:
+        reader.rollback()
+        reader.close()
+
+
+def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-106, DQ-FBI-010 — a county rate the FBI's way (ADR-0012).
+
+    Dane County's single-county agencies are the Sheriff (85,648 people) and
+    Fitchburg (30,000); Edgerton also serves Rock County, so it is left out of
+    both sides in each. Rock County, served only by Edgerton, has no rate.
+    """
+    from data_ingestion_toolbox.quality.sources import (
+        fbi_county_agency_rate_agreement,
+    )
+
+    captured = _persist_fixture_release(fbi_warehouse)
+    _run_pipeline(fbi_warehouse, captured)
+    reader = fbi_warehouse()
+    query = """
+        SELECT ROUND(rate, 4), unavailable_reason, offenses,
+               covered_population, linked_population,
+               ROUND(coverage_share, 4), contributing_oris,
+               excluded_multi_county_oris, non_reporting_oris,
+               unknown_population_oris
+        FROM gold_fbi.latest_county_agency_rate
+        WHERE product_id = 'summarized_violent_crime'
+          AND geo_id = %s AND period = %s
+    """
+    try:
+        with reader.cursor() as cursor:
+            dane = ("state:55|county:025", "01-2023")
+            cursor.execute(query, dane)
+            # (6 + 7) offenses over 115,648 people covered, per 100,000.
+            assert cursor.fetchall() == [
+                (
+                    Decimal("11.2410"),
+                    None,
+                    Decimal("13"),
+                    Decimal("115648"),
+                    Decimal("115648"),
+                    Decimal("1.0000"),
+                    ["WI0130000", "WI0137000"],
+                    ["WI0540300"],
+                    [],
+                    [],
+                )
+            ]
+            cursor.execute(query, ("state:55|county:105", "01-2023"))
+            assert cursor.fetchall() == [
+                (
+                    None,
+                    "only_multi_county_agencies",
+                    None,
+                    None,
+                    None,
+                    None,
+                    [],
+                    ["WI0540300"],
+                    [],
+                    [],
+                )
+            ]
+            # Fitchburg does not report: the Sheriff alone covers 74 percent.
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_crime_observation
+                SET value = NULL, value_status = 'not_reported'
+                WHERE subject_code = 'WI0137000' AND period = '01-2023'
+                  AND measure_id = 'V:offense:absolute_total'
+                """
+            )
+            cursor.execute(query, dane)
+            rate, reason, offenses, covered, linked, share, *lists = cursor.fetchone()
+            assert (rate, reason, offenses, covered, linked, share) == (
+                Decimal("7.0054"),
+                None,
+                Decimal("6"),
+                Decimal("85648"),
+                Decimal("115648"),
+                Decimal("0.7406"),
+            )
+            assert lists == [["WI0130000"], ["WI0540300"], ["WI0137000"], []]
+            # The Sheriff does not report either: only Edgerton, which also
+            # serves Rock County, reported, and then nothing did.
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_crime_observation
+                SET value = NULL, value_status = 'not_reported'
+                WHERE subject_code = 'WI0130000' AND period = '01-2023'
+                  AND measure_id = 'V:offense:absolute_total'
+                """
+            )
+            cursor.execute(query, dane)
+            assert cursor.fetchone()[:2] == (None, "only_multi_county_agencies")
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_crime_observation
+                SET value = NULL, value_status = 'not_reported'
+                WHERE subject_code = 'WI0540300' AND period = '01-2023'
+                  AND measure_id = 'V:offense:absolute_total'
+                """
+            )
+            cursor.execute(query, dane)
+            assert cursor.fetchone()[:2] == (None, "no_reporting_agency")
+            # Fitchburg alone reports: 30,000 of 115,648 is under the floor,
+            # and the refused row still shows the coverage it was refused on.
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_crime_observation
+                SET value = 7, value_status = 'reported'
+                WHERE subject_code = 'WI0137000' AND period = '01-2023'
+                  AND measure_id = 'V:offense:absolute_total'
+                """
+            )
+            cursor.execute(query, dane)
+            row = cursor.fetchone()
+            assert row[:6] == (
+                None,
+                "coverage_below_floor",
+                Decimal("7"),
+                Decimal("30000"),
+                Decimal("115648"),
+                Decimal("0.2594"),
+            )
+            assert row[8] == ["WI0130000"]
+            # An agency with no published population is left out of both
+            # sides and named; the rate stands on the agencies that remain.
+            cursor.execute(
+                """
+                UPDATE silver_fbi.fact_reporting_participation
+                SET population = NULL
+                WHERE subject_code = 'WI0137000' AND period = '02-2023'
+                """
+            )
+            cursor.execute(query, ("state:55|county:025", "02-2023"))
+            row = cursor.fetchone()
+            assert row[1:5] == (None, Decimal("6"), Decimal("85648"), Decimal("85648"))
+            assert row[6] == ["WI0130000"]
+            assert row[9] == ["WI0137000"]
+
+            outcomes = fbi_county_agency_rate_agreement(cursor, {})
+            assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
+
+            # The directory links Madison's police to Dane County alone, but
+            # its reports were never loaded: its population is unknown, so the
+            # month is refused and Madison named rather than coverage read as
+            # complete on the agencies that were loaded.
+            cursor.execute(
+                """
+                INSERT INTO silver_fbi.dim_agency
+                    (ori, state_code, geo_sk, first_seen_release, last_seen_release)
+                SELECT 'WI0130100', state_code, geo_sk, first_seen_release,
+                       last_seen_release
+                FROM silver_fbi.dim_agency WHERE ori = 'WI0137000';
+                CREATE TEMP TABLE madison_link ON COMMIT DROP AS
+                SELECT * FROM silver_fbi.agency_geography_relationship
+                WHERE ori = 'WI0137000' AND relationship_type = 'county';
+                UPDATE madison_link
+                SET ori = 'WI0130100',
+                    relationship_sk = nextval(pg_get_serial_sequence(
+                        'silver_fbi.agency_geography_relationship',
+                        'relationship_sk'));
+                INSERT INTO silver_fbi.agency_geography_relationship
+                SELECT * FROM madison_link;
+                """
+            )
+            cursor.execute(
+                """
+                SELECT rate, unavailable_reason, coverage_share, not_loaded_oris
+                FROM gold_fbi.latest_county_agency_rate
+                WHERE product_id = 'summarized_violent_crime'
+                  AND geo_id = 'state:55|county:025' AND period = '03-2023'
+                """
+            )
+            assert cursor.fetchall() == [
+                (None, "agencies_not_loaded", None, ["WI0130100"])
+            ]
+            # Rock County's links are untouched and keep their own reason.
+            cursor.execute(query, ("state:55|county:105", "03-2023"))
+            assert cursor.fetchone()[:2] == (None, "only_multi_county_agencies")
+            outcomes = fbi_county_agency_rate_agreement(cursor, {})
+            assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
     finally:
         reader.rollback()
         reader.close()

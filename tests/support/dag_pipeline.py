@@ -13,6 +13,8 @@ orchestration defect rather than a mocking artifact.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -595,7 +597,71 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         geography_pipeline, "parse_legacy_county_gazetteer_capture", parse_attributes
     )
+    # Census 2000 tracts and places come from a relationship file and a
+    # fixed-width Gazetteer, and 1990's from the STF1A headers; the fixture
+    # publishes the same bounded geographies for those vintages.
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_tract_relationship_2000_capture",
+        lambda payload, *, geography_vintage: parse_attributes(
+            payload, geo_type="tract", geography_vintage=geography_vintage
+        ),
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_place_gazetteer_2000_capture",
+        lambda payload, *, geography_vintage: parse_attributes(
+            payload, geo_type="place", geography_vintage=geography_vintage
+        ),
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_stf1990_header_capture",
+        lambda payload, *, geo_type, geography_vintage: parse_attributes(
+            payload, geo_type=geo_type, geography_vintage=geography_vintage
+        ),
+    )
     monkeypatch.setattr(geography_pipeline, "parse_boundary_capture", parse_geometry)
+
+    # The CBSA cartographic boundary (tiles-places-and-metros): one box per
+    # CBSA the reviewed delineation excerpt lists, north of the state lattice
+    # so a metro polygon never overlaps a fixture county or place.
+    from data_ingestion_toolbox.silver_ref import area_geography
+
+    def parse_metro_geometry(
+        payload: bytes, *, geo_type: str, boundary_vintage: int
+    ) -> list[Any]:
+        if geo_type != "metro":
+            return parse_geometry(
+                payload, geo_type=geo_type, boundary_vintage=boundary_vintage
+            )
+        excerpt = (AREA_FIXTURES / "cbsa-est2024-alldata.excerpt.csv").read_text(
+            encoding="latin-1"
+        )
+        codes = sorted(
+            {
+                row["CBSA"]
+                for row in csv.DictReader(io.StringIO(excerpt))
+                if row.get("CBSA")
+            }
+        )
+        return [
+            geography_pipeline.GeometryRecord(
+                geography_pipeline.canonical_geo_id("metro", area_code=code),
+                boundary_vintage,
+                _boundary_polygon(-100.0 + ordinal, 45.0, -100.0 + ordinal + 0.5, 45.5),
+            )
+            for ordinal, code in enumerate(codes)
+        ]
+
+    monkeypatch.setattr(area_geography, "parse_boundary_capture", parse_metro_geometry)
+    # The fixture publishes one bounded set of tracts for every vintage, so the
+    # decade relationship files have no parts to cross; their capture still
+    # runs (tract-crosswalk), and the parse is tested against real excerpts.
+    from data_ingestion_toolbox.silver_ref import tract_crosswalk
+
+    for earlier in tract_crosswalk.PARSERS:
+        monkeypatch.setitem(tract_crosswalk.PARSERS, earlier, lambda _payload: [])
 
 
 def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -785,12 +851,13 @@ def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed BEA zips: every registered table has one."""
+    """Serve the reviewed BEA zips: every registered table's zip has one."""
     from data_ingestion_toolbox.bea import capture as bea_capture
     from data_ingestion_toolbox.bea.client import BeaFile
 
     def fetch(table: Any, **_kwargs: Any) -> BeaFile:
-        path = FIXTURE_ROOT / "bea" / f"{table.code}.zip"
+        # A table published inside another table's zip reads that zip.
+        path = FIXTURE_ROOT / "bea" / table.path.lstrip("/")
         if not path.is_file():
             raise AssertionError(f"no BEA fixture for {table.code}")
         return BeaFile(
@@ -1291,6 +1358,7 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from data_ingestion_toolbox.census_acs import ingest as acs_ingest
     from data_ingestion_toolbox.census_acs import metadata as acs_metadata
+    from data_ingestion_toolbox.census_acs.config import ACS_METRO_GEOGRAPHY
 
     def observations(
         year: int,
@@ -1310,6 +1378,8 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
             "place": (["state", "place"], [["11", "50000"]]),
             # The tract `build_sub_county_geographies` gives county 11/001.
             "tract": (["state", "county", "tract"], [["11", "001", "000100"]]),
+            # Abilene, TX: a CBSA the reviewed area excerpt publishes (W-7).
+            "metro": ([ACS_METRO_GEOGRAPHY], [["10180"]]),
         }
         if geo_level not in geographies:
             raise AssertionError(

@@ -4,7 +4,8 @@ import { installPlaceFixtures } from "../support/placeScenarios.js";
 
 // Covers: WEB-129 — two counties side by side by chapter, one shared period
 // per row with state and nation marks, preflight refusals listed rather than
-// hidden, swapping sides, and mixed grains offered the parent instead.
+// hidden, and swapping sides. Two places at different levels are
+// cross-level-compare.spec.js (WEB-146).
 
 const PAIR = "/us/wisconsin/dane-county/vs/us/wisconsin/rock-county";
 
@@ -42,14 +43,6 @@ test("swapping exchanges the sides and the address", async ({ page }) => {
   await page.getByTestId("compare-places-swap").click();
   await expect(page).toHaveURL(/\/us\/wisconsin\/rock-county\/vs\/us\/wisconsin\/dane-county$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Rock County, Wisconsin and Dane County, Wisconsin");
-});
-
-test("a county and a state are not compared; the county's state is offered", async ({ page }) => {
-  await installPlaceFixtures(page);
-  await page.goto("/us/wisconsin/dane-county/vs/us/minnesota");
-  await expect(page.getByTestId("compare-places-grain")).toBeVisible();
-  await expect(page.getByTestId("compare-places-parent-offer")).toHaveAttribute("href", "/us/wisconsin/vs/us/minnesota");
-  await expect(page.locator(".paired-row")).toHaveCount(0);
 });
 
 test("the compare picker offers neighbouring counties first", async ({ page }) => {

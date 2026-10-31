@@ -243,6 +243,14 @@ describe("the three-level card", () => {
     const card = threeLevelCard(levels, new Map([["c", { row: row(2024) }]]), (level) => level === "COUNTY");
     expect(card.rows[1].message).toBe("Not published at state grain");
   });
+
+  it("says a request is still being read rather than calling it unpublished", () => {
+    const card = threeLevelCard(levels, new Map([
+      ["c", { row: row(2024) }], ["s", { row: null, pending: true }], ["n", { row: null }],
+    ]), () => true);
+    expect(card.rows.map((entry) => entry.message)).toEqual(["", "Reading…", "Not published for this place"]);
+    expect(card.period).toBe("2024-01-01 – 2024-12-31");
+  });
 });
 
 describe("the trend", () => {

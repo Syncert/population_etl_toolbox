@@ -21,9 +21,40 @@ export interface SourceSummary {
   [key: string]: unknown;
 }
 
+/**
+ * Where a served `metric_label` came from (A-2): the registry entry's review
+ * status, or `provider` for the publisher's own label.
+ */
+export type MetricLabelStatus = "approved" | "draft" | "needs_review" | "deprecated" | "provider";
+
+/** The plain labels a two-sided response serves beside its two codes (A-2). */
+export interface PairLabels {
+  metric_label_a?: string | null;
+  metric_label_status_a?: MetricLabelStatus | null;
+  metric_label_b?: string | null;
+  metric_label_status_b?: MetricLabelStatus | null;
+}
+
+/** A metric's plain-language definition, as the API serves it (A-2). */
+export interface MetricDefinition {
+  label: string;
+  definition: string;
+  unit?: string | null;
+  universe?: string | null;
+  caveat?: string | null;
+  status: MetricLabelStatus;
+  version: number;
+  citations: string[];
+}
+
 export interface MetricSummary {
   metric_code: string;
   metric_display_name?: string | null;
+  /** The plain label to show (A-2); `metric_display_name` is the provider's. */
+  metric_label?: string | null;
+  /** `approved`, `draft` (not yet reviewed) or `provider` (no entry yet). */
+  metric_label_status?: MetricLabelStatus | null;
+  definition?: MetricDefinition | null;
   source_code?: string | null;
   source_object_type?: string | null;
   valid_geo_grains?: string[] | null;
@@ -53,6 +84,98 @@ export interface GeographySummary {
   geo_latitude?: number | string | null;
   geo_longitude?: number | string | null;
   [key: string]: unknown;
+}
+
+/** The matched city a `contains_match` search result was offered for. */
+export interface GeographySearchVia {
+  geo_id: string;
+  geo_name: string;
+}
+
+/**
+ * One geography `/catalog/geographies/search` offers for a typed name (A-1).
+ * `match` says why: `exact`, `prefix`, `word_prefix`, `fuzzy`, or
+ * `contains_match` (it contains the city named in `matched_via`).
+ * `page_path` is null for a grain with no page yet (metro, ZCTA), and
+ * `population` is null, never zero, where none is served.
+ */
+export interface GeographySearchItem {
+  geo_id: string;
+  geo_level: string;
+  geo_name: string;
+  short_name: string;
+  match: string;
+  matched_via?: GeographySearchVia | null;
+  state_fips?: string | null;
+  state_name?: string | null;
+  county_geo_id?: string | null;
+  county_name?: string | null;
+  population?: number | null;
+  population_year?: number | null;
+  population_metric_code?: string | null;
+  page_path?: string | null;
+}
+
+export interface GeographySearchResponse {
+  query: string;
+  limit: number;
+  items: GeographySearchItem[];
+}
+
+/** A geography whose current boundary covers the located point. */
+export interface LocatedGeography {
+  geo_id: string;
+  geo_level: string;
+  geo_name?: string | null;
+  boundary_vintage?: number | null;
+  page_path?: string | null;
+}
+
+/**
+ * What `/catalog/geographies/locate` answers for a point: `landing` is the
+ * city or town the point is in, else its county. The coordinates are not
+ * echoed.
+ */
+export interface GeographyLocateResponse {
+  landing: LocatedGeography;
+  state: LocatedGeography;
+  county?: LocatedGeography | null;
+  place?: LocatedGeography | null;
+  tract?: LocatedGeography | null;
+  zcta?: LocatedGeography | null;
+  metro?: LocatedGeography | null;
+}
+
+/** One boundary vintage a versioned tile layer holds (tiles-places-and-metros). */
+export interface TileLayerVintage {
+  boundary_vintage: number;
+  feature_count: number;
+  is_default: boolean;
+  tile_template: string;
+}
+
+/**
+ * One tile layer from `/catalog/tile-layers`. A versioned layer draws the
+ * vintage its template names and never another; features carry no values.
+ */
+export interface TileLayer {
+  layer_id: string;
+  source_layer: string;
+  grains: string[];
+  versioned: boolean;
+  minzoom: number;
+  maxzoom: number;
+  join_key: string;
+  name_field: string;
+  tile_template: string;
+  vintages: TileLayerVintage[];
+  default_vintage?: number | null;
+  available: boolean;
+}
+
+export interface TileLayerCatalogResponse {
+  layers: TileLayer[];
+  uncoloured_rule: string;
 }
 
 /** One versioned route that answers for a source, with its query parameters. */
@@ -228,7 +351,7 @@ export interface ComparisonRule {
  * 404. `/comparison` enforces exactly this verdict, so a client that
  * preflights first can trust it.
  */
-export interface ComparisonPreflight {
+export interface ComparisonPreflight extends PairLabels {
   metric_code_a?: string;
   metric_code_b?: string;
   source_code_a?: string | null;
@@ -272,7 +395,7 @@ export interface ComparisonRow {
 }
 
 /** An aligned comparison, served only for pairs the policy accepts. */
-export interface ComparisonResponse {
+export interface ComparisonResponse extends PairLabels {
   metric_code_a?: string;
   metric_code_b?: string;
   source_code_a?: string | null;
@@ -535,7 +658,7 @@ export interface CorrelationStatistic {
 }
 
 /** `GET /comparison/correlation`: the statistic, its coverage, its caveats. */
-export interface ComparisonCorrelation extends CorrelationStatistic {
+export interface ComparisonCorrelation extends CorrelationStatistic, PairLabels {
   metric_code_a?: string;
   metric_code_b?: string;
   source_code_a?: string | null;
@@ -556,6 +679,8 @@ export interface ComparisonCorrelation extends CorrelationStatistic {
 /** One measure as `/comparison/matrix` read it. */
 export interface MatrixMetricSummary {
   metric_code?: string;
+  metric_label?: string | null;
+  metric_label_status?: MetricLabelStatus | null;
   source_code?: string | null;
   units?: string | null;
   valid_time_grains?: string[];

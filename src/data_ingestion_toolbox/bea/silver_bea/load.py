@@ -4,7 +4,8 @@ Everything here reads the committed capture, never the network. One
 transaction per run: the line dimension, the parsed revisions and
 quarantine, the geography resolution ledger and the conformed facts land
 together or not at all, and the run is only marked ready when the counts
-reconcile.
+reconcile. A county table's run also adds each metro area summed from its
+counties (``metro.py``), marked as derived, in the same transaction.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from data_ingestion_toolbox.capture import load_captured_payload
 from ..capture import PARSER_CONTRACT_VERSION
 from ..config import SOURCE_CODE
 from ..registry import get_table
+from .metro import derive_metro_observations
 from .parse import parse_table
 
 OBSERVATION_BASIS = (
@@ -40,6 +42,47 @@ PRICE_OBSERVATION_BASIS = (
     "There is no grocery line; food is inside goods."
 )
 PRICE_METHODOLOGY_URL = "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area"
+
+#: What an implicit regional price deflator is: a price index over time, not
+#: a price level across areas.
+DEFLATOR_OBSERVATION_BASIS = (
+    "Implicit regional price deflator (2017 = 100): the area's regional price "
+    "parity times the national PCE price index. Current-dollar income divided "
+    "by it is real income in 2017 dollars."
+)
+
+_BASES = {
+    "price_level_us_100": (PRICE_OBSERVATION_BASIS, PRICE_METHODOLOGY_URL),
+    "price_index": (DEFLATOR_OBSERVATION_BASIS, PRICE_METHODOLOGY_URL),
+}
+
+#: The newest CBSA delineation's member counties, by five-digit FIPS.
+_METRO_MEMBERSHIP_SQL = """
+    WITH delineation AS (
+        SELECT relationship.geography_vintage, parent.geo_id AS metro_geo_id,
+               member.state_fips || member.county_fips AS county_code
+        FROM silver_ref.bridge_geo_relationship_version AS relationship
+        JOIN silver_ref.dim_geo_entity AS parent ON parent.geo_sk = relationship.parent_geo_sk
+        JOIN silver_ref.dim_geo_entity AS member ON member.geo_sk = relationship.related_geo_sk
+        WHERE relationship.relationship_type = 'contains'
+          AND relationship.evidence_source = 'census_cbsa_delineation'
+          AND parent.geo_type = 'metro'
+          AND member.geo_type = 'county'
+    )
+    SELECT geography_vintage, metro_geo_id, county_code
+    FROM delineation
+    WHERE geography_vintage = (SELECT MAX(geography_vintage) FROM delineation)
+"""
+
+
+def _metro_memberships(cursor: Any) -> tuple[int | None, dict[str, list[str]]]:
+    cursor.execute(_METRO_MEMBERSHIP_SQL)
+    vintage: int | None = None
+    memberships: dict[str, list[str]] = {}
+    for row_vintage, metro, county in cursor.fetchall():
+        vintage = int(row_vintage)
+        memberships.setdefault(metro, []).append(county)
+    return vintage, memberships
 
 
 class BeaReconciliationError(RuntimeError):
@@ -99,12 +142,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                             description,
                             unit,
                             table.lines[line],
-                            PRICE_OBSERVATION_BASIS
-                            if table.lines[line] == "price_level_us_100"
-                            else OBSERVATION_BASIS,
-                            PRICE_METHODOLOGY_URL
-                            if table.lines[line] == "price_level_us_100"
-                            else METHODOLOGY_URL,
+                            _BASES.get(
+                                table.lines[line], (OBSERVATION_BASIS, METHODOLOGY_URL)
+                            )[0],
+                            _BASES.get(
+                                table.lines[line], (OBSERVATION_BASIS, METHODOLOGY_URL)
+                            )[1],
                             PARSER_CONTRACT_VERSION,
                         )
                         for line, (description, unit) in sorted(lines.items())
@@ -234,6 +277,65 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 """,
                 (parsed.release_date, str(run_id)),
             )
+            derived = []
+            if table.geography == "county" and parsed.release_date is not None:
+                vintage, memberships = _metro_memberships(cursor)
+                derived = derive_metro_observations(
+                    table,
+                    parsed.observations,
+                    parsed.combined,
+                    memberships,
+                    delineation_vintage=vintage,
+                )
+            if derived:
+                execute_values(
+                    cursor,
+                    """
+                    INSERT INTO silver_bea.fact_observation (
+                        table_code, line_code, geo_id, year, capture_id, run_id,
+                        release_date, retrieved_at, geo_sk, geo_type, geography_status,
+                        value_source, value, value_status, source_record_id, derivation
+                    )
+                    SELECT derived.table_code, derived.line_code, derived.geo_id,
+                           derived.year, capture.capture_id, derived.run_id,
+                           derived.release_date, capture.retrieved_at,
+                           entity.geo_sk, 'metro',
+                           CASE WHEN entity.geo_sk IS NULL THEN 'unmapped' ELSE 'resolved' END,
+                           derived.value_source, derived.value, derived.value_status,
+                           derived.source_record_id, derived.derivation
+                    FROM (VALUES %s) AS derived (
+                        table_code, line_code, geo_id, year, capture_id, run_id,
+                        release_date, value, value_status, value_source,
+                        source_record_id, derivation
+                    )
+                    JOIN raw_capture.response_capture AS capture
+                      ON capture.capture_id = derived.capture_id
+                    LEFT JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = derived.geo_id
+                    ON CONFLICT (table_code, line_code, geo_id, year, capture_id) DO NOTHING
+                    """,
+                    [
+                        (
+                            table.code,
+                            item.line_code,
+                            item.geo_id,
+                            item.year,
+                            capture_id,
+                            str(run_id),
+                            parsed.release_date,
+                            item.value,
+                            item.value_status,
+                            item.value_source,
+                            item.source_record_id,
+                            item.derivation,
+                        )
+                        for item in derived
+                    ],
+                    template=(
+                        "(%s, %s, %s, %s::INTEGER, %s::UUID, %s::UUID, %s::DATE, "
+                        "%s::NUMERIC, %s, %s, %s, %s)"
+                    ),
+                    page_size=10000,
+                )
             cursor.execute(
                 "SELECT COUNT(*) FROM silver_bea.observation_revision WHERE run_id = %s",
                 (str(run_id),),
@@ -244,10 +346,13 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 (str(run_id),),
             )
             facts = int(cursor.fetchone()[0])
-            if revisions != len(parsed.observations) or facts != revisions:
+            if revisions != len(parsed.observations) or facts != revisions + len(
+                derived
+            ):
                 raise BeaReconciliationError(
                     f"run {run_id} reconciles {revisions} revisions and {facts} facts "
-                    f"against {len(parsed.observations)} parsed"
+                    f"against {len(parsed.observations)} parsed and "
+                    f"{len(derived)} derived"
                 )
         connection.commit()
     except BaseException:

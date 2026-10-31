@@ -6,7 +6,7 @@ import type { DistributionResponse, MetricSummary } from "./api/types";
 import { isDrawableTileGrain } from "./tileGrains";
 import { normalizeGeoLevel } from "./urlState";
 import type { ValueScale } from "./urlState";
-import { DISPLAY_LOCALE } from "./format";
+import { DISPLAY_LOCALE, displayMetricName } from "./format";
 
 // Re-exported: the grain vocabulary and its aliases are declared beside
 // `GEO_LEVELS`, and this module's callers have always reached the
@@ -184,7 +184,7 @@ export function pickPreferredMetric(
 export function metricOptions(metrics: MetricSummary[] | null | undefined): MetricOption[] {
   return (metrics || []).map((metric) => ({
     value: metric.metric_code,
-    label: `${String(metric.metric_display_name).replaceAll("!!", " › ")} (${metric.metric_code})`,
+    label: displayMetricName(metric),
     source: metric.source_code,
   }));
 }
@@ -718,6 +718,17 @@ export function observationName(item: ObservationRow | null | undefined): string
 
 export function observationUnit(item: ObservationRow | null | undefined): string {
   return String(item?.unit || item?.units || "value");
+}
+
+/** Machine unit codes some publishers serve, in the words a reader sees. */
+const UNIT_WORDS: Record<string, string> = {
+  per_100000_population: "per 100,000 people",
+};
+
+/** A served unit in plain words: known codes are named, anything else is shown as published. */
+export function unitText(unit: unknown): string {
+  const raw = String(unit || "");
+  return UNIT_WORDS[raw] ?? raw;
 }
 
 export function marginOfErrorText(item: ObservationRow | null | undefined): string {

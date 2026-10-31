@@ -186,6 +186,10 @@ def test_a_county_is_ranked_among_its_state_one_measure_at_a_time(
     assert payload["not_ranked"] == [
         {
             "metric_code": "CENSUS_ACS:acs5:NOT_PUBLISHED_ANYWHERE",
+            # No registry entry and no published label: nothing to show,
+            # and nothing guessed (API-170).
+            "metric_label": None,
+            "metric_label_status": None,
             "reason": "not published in this catalog",
         }
     ]
@@ -195,3 +199,72 @@ def test_a_county_is_ranked_among_its_state_one_measure_at_a_time(
     )
     assert missing.status_code == 404
     assert missing.json() == {"detail": "geo_id not found"}
+
+
+def test_the_newest_values_batch_answers_each_pair_as_the_single_read(
+    ranked_county: tuple[TestClient, str],
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: API-180 — one batch, every pair the single route's own answer:
+    the newest of two periods, a withheld value, a place with no row, and a
+    metric the catalog does not hold."""
+    client, metric = ranked_county
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            # An older period for one county: the newest must win in both reads.
+            cursor.execute(
+                """
+                INSERT INTO gold_census.mv_acs_latest (
+                    observation_date, duration_start, duration_end, time_sk,
+                    as_of_date, updated_at, geo_id, geo_level, state_fips,
+                    county_fips, state_name, county_name, value, dataset_code,
+                    vintage_year, table_id, variable_code, estimate_value,
+                    units, metric_code, metric_display_name
+                ) SELECT '2096-01-01', '2092-01-01', '2096-12-31', 20960101,
+                         '2097-01-01', NOW(), geo_id, geo_level, state_fips,
+                         county_fips, state_name, county_name, 1, dataset_code,
+                         2096, table_id, variable_code, 1, units, metric_code,
+                         metric_display_name
+                  FROM gold_census.mv_acs_latest
+                 WHERE metric_code = %s AND geo_id = %s
+                """,
+                (metric, f"state:{STATE}|county:005"),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    unknown = "CENSUS_ACS:acs5:NOT_PUBLISHED_ANYWHERE"
+    places = [f"state:{STATE}|county:{county}" for county in ("005", "012", "013")]
+    response = client.get(
+        "/api/v1/observations/newest/batch",
+        params={"metric_codes": f"{metric},{unknown}", "geo_ids": ",".join(places)},
+    )
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert [(item["metric_code"], item["geo_id"]) for item in items] == [
+        (code, place) for code in (metric, unknown) for place in places
+    ]
+    for item in items:
+        single = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": item["metric_code"],
+                "scope": "latest",
+                "limit": 1,
+                "newest_per_geography": "true",
+                "geo_id": item["geo_id"],
+            },
+        )
+        assert item["status"] == single.status_code
+        if single.status_code == 200:
+            assert item["observations"] == single.json()
+        else:
+            assert item["detail"] == single.json()["detail"]
+            assert item["observations"] is None
+    newest, withheld, absent = (item["observations"] for item in items[:3])
+    assert newest["items"][0]["value"] == "90"
+    assert newest["items"][0]["geo_name"] == "County 005"
+    assert withheld["items"][0]["value"] is None
+    assert absent == {**absent, "total": 0, "items": []}

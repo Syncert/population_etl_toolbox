@@ -523,6 +523,7 @@ FBI_RESOLUTION_CONFIDENCE: Mapping[str, str] = MappingProxyType(
         "exact_state_code": "exact",
         "reviewed_place_crosswalk": "reviewed",
         "county_label_match": "derived",
+        "fbi_county_code": "derived",
     }
 )
 
@@ -605,6 +606,153 @@ def fbi_aggregation_boundary(
                 else [f"rows={total}", f"distinct_agency_grain={distinct}"]
             ),
         ),
+    ]
+
+
+#: The county agency rate's own check reads the newest year of reported
+#: agency months, the window a reader sees first, so one run reads each recent
+#: county-month once rather than recomputing every month since 1985.
+FBI_COUNTY_RATE_CHECK_MONTHS = 12
+
+
+def fbi_county_agency_rate_agreement(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FBI-010 — a county rate's two sides sum the same agencies (ADR-0012).
+
+    Each recent county-month of ``gold_fbi.latest_county_agency_rate`` is
+    read back against the agency rows its contributing ORIs name: their
+    reported offenses must be its numerator and their FBI populations its
+    denominator. A contributing agency may not also be listed as excluded
+    multi-county, a rate is present exactly when no refusal reason is, and
+    no rate is published under the coverage floor.
+    """
+    del scope
+    object_name = "gold_fbi.latest_county_agency_rate"
+    bound = f"""
+        (SELECT MAX(period_start)
+                - INTERVAL '{FBI_COUNTY_RATE_CHECK_MONTHS - 1} months'
+           FROM silver_fbi.fact_crime_observation
+          WHERE subject_type = 'agency' AND value_status = 'reported')
+    """
+    total = _count(
+        cursor,
+        f"SELECT COUNT(*) FROM {object_name} WHERE period_start >= {bound}",
+    )
+    if total == 0:
+        return [RuleOutcome(object_name, "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH recent AS (
+            SELECT * FROM {object_name} WHERE period_start >= {bound}
+        ), recomputed AS (
+            SELECT rate.product_id, rate.release_key, rate.measure_id,
+                   rate.geo_id, rate.period,
+                   SUM(agency.value) AS offenses,
+                   SUM(agency.population) AS covered_population
+              FROM recent AS rate
+             CROSS JOIN LATERAL UNNEST(rate.contributing_oris) AS listed(ori)
+              JOIN gold_fbi.crime_observation AS agency
+                ON agency.product_id = rate.product_id
+               AND agency.release_key = rate.release_key
+               AND agency.measure_id = rate.measure_id
+               AND agency.subject_type = 'agency'
+               AND agency.subject_code = listed.ori
+               AND agency.period = rate.period
+               AND agency.value_status = 'reported'
+             GROUP BY rate.product_id, rate.release_key, rate.measure_id,
+                      rate.geo_id, rate.period
+        )
+        SELECT rate.product_id || ' ' || rate.geo_id || ' ' || rate.period
+          FROM recent AS rate
+          LEFT JOIN recomputed AS agencies
+            ON agencies.product_id = rate.product_id
+           AND agencies.release_key = rate.release_key
+           AND agencies.measure_id = rate.measure_id
+           AND agencies.geo_id = rate.geo_id
+           AND agencies.period = rate.period
+         WHERE (rate.unavailable_reason IS NULL) <> (rate.rate IS NOT NULL)
+            OR rate.contributing_oris && rate.excluded_multi_county_oris
+            OR (CARDINALITY(rate.contributing_oris) > 0
+                AND (agencies.offenses IS DISTINCT FROM rate.offenses
+                     OR agencies.covered_population
+                        IS DISTINCT FROM rate.covered_population))
+            OR (rate.rate IS NOT NULL
+                AND (rate.covered_population
+                         < rate.coverage_floor * rate.linked_population
+                     OR ROUND(rate.rate, 6) <> ROUND(
+                         rate.offenses * 100000 / rate.covered_population, 6
+                     )))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            object_name,
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def fbi_return_a_matches_cde(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FBI-011 — Return A totals agree with the CDE's for the same agency.
+
+    The Return A file publishes offense components, so its violent and
+    property totals are summed from them by the CDE's own definition. Where
+    the CDE also publishes an agency's total for the same month (the reviewed
+    agencies of the summarized products), the two must be equal: a mismatch
+    means the sum, the layout or a card was read wrong. Both sides are each
+    product's newest published release.
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.registry import RETURN_A_PRODUCTS
+
+    del scope
+    object_name = "gold_fbi.latest_release_observation"
+    pairs = [(item.product_id, item.mirrors_product_id) for item in RETURN_A_PRODUCTS]
+    values = ", ".join("(%s, %s)" for _ in pairs)
+    params = tuple(value for pair in pairs for value in pair)
+    compared = f"""
+        FROM (VALUES {values}) AS mirror (return_a, cde)
+        JOIN gold_fbi.latest_release_observation AS ra
+          ON ra.product_id = mirror.return_a
+        JOIN gold_fbi.latest_release_observation AS cde
+          ON cde.product_id = mirror.cde
+         AND cde.measure_id = ra.measure_id
+         AND cde.subject_type = 'agency'
+         AND cde.subject_code = ra.subject_code
+         AND cde.period = ra.period
+       WHERE ra.subject_type = 'agency'
+         AND ra.value_status = 'reported'
+         AND cde.value_status = 'reported'
+    """
+    cursor.execute(f"SELECT COUNT(*) {compared}", params)
+    if int(cursor.fetchone()[0]) == 0:
+        return [RuleOutcome(object_name, "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        SELECT ra.product_id || ' ' || ra.subject_code || ' ' || ra.period
+               || ' ' || ra.value || ' <> ' || cde.value
+        {compared}
+           AND ra.value <> cde.value
+        """,
+        order_by="1",
+        params=params,
+    )
+    return [
+        RuleOutcome(
+            object_name,
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
     ]
 
 
@@ -2897,6 +3045,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-002": fbi_participation_coverage,
     "DQ-FBI-003": fbi_reported_vs_absent,
     "DQ-FBI-004": fbi_aggregation_boundary,
+    "DQ-FBI-010": fbi_county_agency_rate_agreement,
+    "DQ-FBI-011": fbi_return_a_matches_cde,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-ERS-002": ers_file_reconciliation,

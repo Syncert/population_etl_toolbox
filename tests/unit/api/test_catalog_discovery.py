@@ -33,6 +33,9 @@ _GLOSSARY_CONTRACTS = frozenset(
         # The relationship projection beside the geography it relates
         # (nearby-and-related-places).
         "gold_glossary.geo_relationship",
+        # Finding a place by name, and by location (api-place-search).
+        "gold_glossary.geo_search",
+        "gold_glossary.geo_boundary",
     }
 )
 
@@ -155,6 +158,12 @@ def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
             detail,
             catalog_queries.GEOGRAPHY_RELATED_QUERY,
             catalog_queries.GEOGRAPHY_EXISTS_QUERY,
+            catalog_queries.GEO_SEARCH_QUERY,
+            catalog_queries.GEO_SEARCH_ROWS_QUERY,
+            catalog_queries.GEO_SEARCH_COUNTY_METROS_QUERY,
+            catalog_queries.GEO_SEARCH_SEGMENTS_QUERY,
+            catalog_queries.GEO_LOCATE_QUERY,
+            catalog_queries.GEO_LOCATE_METRO_QUERY,
         )
     ]
     for sql in rendered:

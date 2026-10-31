@@ -20,11 +20,11 @@ r control.acs_ingestion_slices
     column variables_hash_seen_at timestamp with time zone
     column last_error text
     constraint acs_ingestion_slices_check CHECK (((finished_at IS NULL) OR ((started_at IS NOT NULL) AND (started_at <= finished_at))))
-    constraint acs_ingestion_slices_dataset_check CHECK ((dataset = ANY (ARRAY['acs1'::text, 'acs5'::text])))
-    constraint acs_ingestion_slices_geo_level_tract_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text, 'place'::text, 'tract'::text])))
+    constraint acs_ingestion_slices_dataset_census_check CHECK ((dataset = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text, 'dec1990stf1'::text, 'dec1990stf3'::text])))
+    constraint acs_ingestion_slices_geo_level_metro_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text, 'place'::text, 'tract'::text, 'metro'::text])))
     constraint acs_ingestion_slices_pkey PRIMARY KEY (id)
     constraint acs_ingestion_slices_rows_loaded_check CHECK ((rows_loaded >= 0))
-    constraint acs_ingestion_slices_state_scope_tract_check CHECK ((((geo_level = ANY (ARRAY['us'::text, 'state'::text])) AND (state_fips IS NULL)) OR ((geo_level = ANY (ARRAY['county'::text, 'place'::text, 'tract'::text])) AND (state_fips IS NOT NULL) AND (state_fips ~ '^[0-9]{2}$'::text))))
+    constraint acs_ingestion_slices_state_scope_metro_check CHECK ((((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'metro'::text])) AND (state_fips IS NULL)) OR ((geo_level = ANY (ARRAY['county'::text, 'place'::text, 'tract'::text])) AND (state_fips IS NOT NULL) AND (state_fips ~ '^[0-9]{2}$'::text))))
     constraint acs_ingestion_slices_status_check CHECK ((status = ANY (ARRAY['planned'::text, 'running'::text, 'success'::text, 'empty'::text, 'failed'::text])))
     constraint acs_ingestion_slices_year_check CHECK (((year >= 2000) AND ((year)::numeric <= (EXTRACT(year FROM CURRENT_DATE) + (1)::numeric))))
     index acs_ingestion_slices_hash_idx CREATE INDEX acs_ingestion_slices_hash_idx ON control.acs_ingestion_slices USING btree (variables_hash)
@@ -494,6 +494,27 @@ r control.epa_aqs_file
     constraint epa_aqs_file_year_check CHECK (((year >= 1980) AND (year <= 2100)))
     index epa_aqs_file_capture_idx CREATE INDEX epa_aqs_file_capture_idx ON control.epa_aqs_file USING btree (capture_id)
     index epa_aqs_file_pkey CREATE UNIQUE INDEX epa_aqs_file_pkey ON control.epa_aqs_file USING btree (run_id)
+
+r control.fbi_return_a_year
+    column release_key text NOT NULL
+    column data_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column record_count integer NOT NULL
+    column observation_count bigint NOT NULL
+    column participation_count bigint NOT NULL
+    column unresolved_county_codes integer NOT NULL
+    column loaded_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fbi_return_a_year_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fbi_return_a_year_data_year_check CHECK (((data_year >= 1960) AND (data_year <= 2100)))
+    constraint fbi_return_a_year_observation_count_check CHECK ((observation_count >= 0))
+    constraint fbi_return_a_year_participation_count_check CHECK ((participation_count >= 0))
+    constraint fbi_return_a_year_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint fbi_return_a_year_pkey PRIMARY KEY (release_key, data_year)
+    constraint fbi_return_a_year_record_count_check CHECK ((record_count >= 0))
+    constraint fbi_return_a_year_release_key_check CHECK ((release_key ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text))
+    constraint fbi_return_a_year_unresolved_county_codes_check CHECK ((unresolved_county_codes >= 0))
+    index fbi_return_a_year_pkey CREATE UNIQUE INDEX fbi_return_a_year_pkey ON control.fbi_return_a_year USING btree (release_key, data_year)
 
 r control.fbi_ucr_release
     column run_id uuid NOT NULL
@@ -1394,6 +1415,18 @@ v gold.tile_boundary
     body    FROM gold_glossary.dim_geo_latest
     body   WHERE (geo_level = ANY (ARRAY[gold_glossary.geo_grain('state'::text), gold_glossary.geo_grain('county'::text)])) AND geography_state = 'current'::text AND geo_geom IS NOT NULL;
 
+v gold.tile_layer_vintage
+    column geo_level text
+    column boundary_vintage integer
+    column feature_count integer
+    column is_default boolean
+    body SELECT geo_level,
+    body     boundary_vintage,
+    body     count(*)::integer AS feature_count,
+    body     boundary_vintage = max(boundary_vintage) OVER (PARTITION BY geo_level) AS is_default
+    body    FROM gold_glossary.tile_boundary_version boundary
+    body   GROUP BY geo_level, boundary_vintage;
+
 v gold.tile_tract
     column geo_id text
     column geo_level text
@@ -1783,6 +1816,7 @@ v gold_bea.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column derivation text
     body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
     body     table_code,
     body     table_title,
@@ -1807,7 +1841,8 @@ v gold_bea.observation_latest
     body     retrieved_at,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     derivation
     body    FROM gold_bea.observation_revision revision
     body   ORDER BY metric_key, geo_id, year, release_date DESC, retrieved_at DESC, capture_id DESC;
 
@@ -1837,6 +1872,7 @@ v gold_bea.observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column derivation text
     body SELECT (fact.table_code || ':'::text) || fact.line_code AS metric_key,
     body     fact.table_code,
     body     line.table_title,
@@ -1861,7 +1897,8 @@ v gold_bea.observation_revision
     body     fact.retrieved_at,
     body     fact.source_record_id,
     body     fact.capture_id,
-    body     fact.run_id
+    body     fact.run_id,
+    body     fact.derivation
     body    FROM silver_bea.fact_observation fact
     body      JOIN silver_bea.dim_line line ON line.table_code = fact.table_code AND line.line_code = fact.line_code
     body      JOIN control.bea_table_capture capture ON capture.capture_id = fact.capture_id
@@ -3005,6 +3042,128 @@ v gold_cdc.metric_publisher
     body           ORDER BY (candidate.release_watermark::bigint) DESC
     body          LIMIT 1) release ON true;
 
+v gold_census.acs_tract_comparable
+    column geo_id text
+    column observation_date date
+    column dataset_code text
+    column vintage_year integer
+    column table_id text
+    column variable_code text
+    column metric_code text
+    column variable_label text
+    column units text
+    column comparable_value numeric
+    column comparable_status text
+    column weight_basis text
+    column source_tract_count bigint
+    column source_geo_ids text[]
+    column target_tract_vintage integer
+    column derivation text
+    body WITH tract AS (
+    body          SELECT dim_geo_entity.geo_sk,
+    body             dim_geo_entity.geo_id
+    body            FROM silver_ref.dim_geo_entity
+    body           WHERE dim_geo_entity.geo_type = 'tract'::text
+    body         ), to_2020 AS (
+    body          SELECT 2010 AS source_decade,
+    body             earlier.geo_id AS source_geo_id,
+    body             later.geo_id,
+    body             step.earlier_land_share AS weight,
+    body             step.earlier_geo_sk = step.later_geo_sk AND step.earlier_land_share = 1::numeric AND step.later_land_share = 1::numeric AS unchanged
+    body            FROM silver_ref.tract_decade_crosswalk step
+    body              JOIN tract earlier ON earlier.geo_sk = step.earlier_geo_sk
+    body              JOIN tract later ON later.geo_sk = step.later_geo_sk
+    body           WHERE step.earlier_vintage = 2010
+    body         UNION ALL
+    body          SELECT 2000,
+    body             earlier.geo_id,
+    body             later.geo_id,
+    body             first_step.earlier_population_share * second_step.earlier_land_share,
+    body             first_step.earlier_geo_sk = second_step.later_geo_sk AND first_step.earlier_land_share = 1::numeric AND first_step.later_land_share = 1::numeric AND second_step.earlier_land_share = 1::numeric AND second_step.later_land_share = 1::numeric
+    body            FROM silver_ref.tract_decade_crosswalk first_step
+    body              JOIN silver_ref.tract_decade_crosswalk second_step ON second_step.earlier_vintage = 2010 AND second_step.earlier_geo_sk = first_step.later_geo_sk
+    body              JOIN tract earlier ON earlier.geo_sk = first_step.earlier_geo_sk
+    body              JOIN tract later ON later.geo_sk = second_step.later_geo_sk
+    body           WHERE first_step.earlier_vintage = 2000
+    body         ), source AS (
+    body          SELECT published.source_code,
+    body             published.observation_date,
+    body             published.duration_start,
+    body             published.duration_end,
+    body             published.time_sk,
+    body             published.as_of_date,
+    body             published.updated_at,
+    body             published.geo_id,
+    body             published.geo_level,
+    body             published.state_fips,
+    body             published.county_fips,
+    body             published.state_name,
+    body             published.county_name,
+    body             published.place_name,
+    body             published.geo_latitude,
+    body             published.geo_longitude,
+    body             published.value,
+    body             published.dataset_code,
+    body             published.vintage_year,
+    body             published.table_id,
+    body             published.table_title,
+    body             published.variable_code,
+    body             published.variable_label,
+    body             published.concept,
+    body             published.universe,
+    body             published.denominator_hint,
+    body             published.is_publishable_default,
+    body             published.estimate_value,
+    body             published.value_status,
+    body             published.source_value,
+    body             published.capture_id,
+    body             published.margin_of_error,
+    body             published.margin_of_error_pct,
+    body             published.estimate_annotation,
+    body             published.moe_annotation,
+    body             published.value_type,
+    body             published.units,
+    body             published.metric_code,
+    body             published.metric_display_name,
+    body                 CASE
+    body                     WHEN published.vintage_year >= 2000 AND published.vintage_year <= 2009 THEN 2000
+    body                     WHEN published.vintage_year >= 2010 AND published.vintage_year <= 2019 THEN 2010
+    body                     ELSE NULL::integer
+    body                 END AS source_decade
+    body            FROM gold_census.rpt_acs_observations published
+    body           WHERE published.geo_level = 'TRACT'::text AND published.vintage_year >= 2000 AND published.vintage_year <= 2019 AND (published.table_id = ANY (ARRAY['B01001'::text, 'B01003'::text, 'B02001'::text, 'B03002'::text, 'B08301'::text, 'B08303'::text, 'B11001'::text, 'B15003'::text, 'B17001'::text, 'B23025'::text, 'B25001'::text, 'B25002'::text, 'B25003'::text, 'B25070'::text, 'B25091'::text, 'B27010'::text, 'B28002'::text]))
+    body         )
+    body  SELECT weight.geo_id,
+    body     source.observation_date,
+    body     source.dataset_code,
+    body     source.vintage_year,
+    body     source.table_id,
+    body     source.variable_code,
+    body     source.metric_code,
+    body     source.variable_label,
+    body     source.units,
+    body         CASE
+    body             WHEN bool_and(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL) THEN sum(source.estimate_value * weight.weight)
+    body             ELSE NULL::numeric
+    body         END AS comparable_value,
+    body         CASE
+    body             WHEN bool_and(weight.unchanged) AND count(*) = 1 THEN 'unchanged'::text
+    body             WHEN bool_and(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL) THEN 'apportioned'::text
+    body             ELSE 'incomplete'::text
+    body         END AS comparable_status,
+    body         CASE min(source.source_decade)
+    body             WHEN 2000 THEN 'share of 2010 population, then share of land area'::text
+    body             ELSE 'share of land area'::text
+    body         END AS weight_basis,
+    body     count(*) AS source_tract_count,
+    body     array_agg(source.geo_id ORDER BY source.geo_id) AS source_geo_ids,
+    body     2020 AS target_tract_vintage,
+    body     'decade_crosswalk'::text AS derivation
+    body    FROM source
+    body      JOIN to_2020 weight ON weight.source_geo_id = source.geo_id AND weight.source_decade = source.source_decade
+    body   WHERE weight.weight IS NULL OR weight.weight > 0::numeric
+    body   GROUP BY weight.geo_id, source.observation_date, source.dataset_code, source.vintage_year, source.table_id, source.variable_code, source.metric_code, source.variable_label, source.units;
+
 r gold_census.dim_acs_table
     column acs_table_sk bigint NOT NULL DEFAULT nextval('gold_census.dim_acs_table_acs_table_sk_seq'::regclass)
     column dataset_code text NOT NULL
@@ -3016,10 +3175,10 @@ r gold_census.dim_acs_table
     column survey_span_years integer NOT NULL
     column reference_url text
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_acs_table_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint dim_acs_table_dataset_code_census_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text, 'dec1990stf1'::text, 'dec1990stf3'::text])))
     constraint dim_acs_table_dataset_code_vintage_year_table_id_key UNIQUE (dataset_code, vintage_year, table_id)
     constraint dim_acs_table_pkey PRIMARY KEY (acs_table_sk)
-    constraint dim_acs_table_survey_span_years_check CHECK ((survey_span_years = ANY (ARRAY[1, 5])))
+    constraint dim_acs_table_survey_span_years_census_check CHECK ((survey_span_years = ANY (ARRAY[0, 1, 5])))
     index dim_acs_table_dataset_code_vintage_year_table_id_key CREATE UNIQUE INDEX dim_acs_table_dataset_code_vintage_year_table_id_key ON gold_census.dim_acs_table USING btree (dataset_code, vintage_year, table_id)
     index dim_acs_table_pkey CREATE UNIQUE INDEX dim_acs_table_pkey ON gold_census.dim_acs_table USING btree (acs_table_sk)
 
@@ -3037,7 +3196,7 @@ r gold_census.dim_acs_variable
     column is_publishable_default boolean NOT NULL DEFAULT true
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     constraint dim_acs_variable_acs_table_sk_fkey FOREIGN KEY (acs_table_sk) REFERENCES gold_census.dim_acs_table(acs_table_sk)
-    constraint dim_acs_variable_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint dim_acs_variable_dataset_code_census_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text, 'dec1990stf1'::text, 'dec1990stf3'::text])))
     constraint dim_acs_variable_dataset_code_vintage_year_variable_code_key UNIQUE (dataset_code, vintage_year, variable_code)
     constraint dim_acs_variable_pkey PRIMARY KEY (acs_variable_sk)
     constraint dim_acs_variable_value_role_check CHECK ((value_role = ANY (ARRAY['ESTIMATE'::text, 'MOE'::text, 'ANNOTATION'::text])))
@@ -3065,6 +3224,7 @@ v gold_census.fact_acs_observation
     column value_status text
     column source_value text
     column capture_id uuid
+    column state_fips character varying(2)
     body SELECT s.geo_id,
     body         CASE
     body             WHEN COALESCE(TRIM(BOTH FROM s.geo_level), ''::text) <> ''::text THEN gold_glossary.geo_grain(s.geo_level::text)
@@ -3090,7 +3250,8 @@ v gold_census.fact_acs_observation
     body     s.ingested_at AS updated_at,
     body     s.value_status,
     body     s.source_value,
-    body     s.capture_id
+    body     s.capture_id,
+    body     s.state_fips
     body    FROM silver_census.fact_demographics s
     body      JOIN gold_census.dim_acs_variable av ON av.dataset_code = s.dataset::text AND av.vintage_year = s.estimate_year AND av.variable_code = s.variable_code::text
     body   WHERE s.variable_code IS NOT NULL AND s.variable_code::text <> ''::text;
@@ -3246,6 +3407,8 @@ r gold_census.mv_acs_latest
     column metric_code text
     column metric_display_name text
     index ix_mv_acs_latest_metric_geo CREATE INDEX ix_mv_acs_latest_metric_geo ON gold_census.mv_acs_latest USING btree (metric_code, geo_id)
+    index ix_mv_acs_latest_metric_level_geo_period CREATE INDEX ix_mv_acs_latest_metric_level_geo_period ON gold_census.mv_acs_latest USING btree (metric_code, geo_level, geo_id, observation_date, duration_start, duration_end)
+    index ix_mv_acs_latest_metric_level_state_geo_period CREATE INDEX ix_mv_acs_latest_metric_level_state_geo_period ON gold_census.mv_acs_latest USING btree (metric_code, geo_level, state_fips, geo_id, observation_date, duration_start, duration_end)
     index ix_mv_acs_latest_source_metric CREATE INDEX ix_mv_acs_latest_source_metric ON gold_census.mv_acs_latest USING btree (source_code, metric_code)
     index ix_mv_acs_latest_vintage CREATE INDEX ix_mv_acs_latest_vintage ON gold_census.mv_acs_latest USING btree (dataset_code, vintage_year)
     index uq_mv_acs_latest CREATE UNIQUE INDEX uq_mv_acs_latest ON gold_census.mv_acs_latest USING btree (geo_id, dataset_code, vintage_year, variable_code, COALESCE(metric_code, ''::text))
@@ -3290,7 +3453,7 @@ p gold_census.rpt_acs_observations
     column units text
     column metric_code text
     column metric_display_name text
-    constraint rpt_acs_observations_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint rpt_acs_observations_dataset_code_census_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text, 'dec2000sf1'::text, 'dec2000sf3'::text, 'dec1990stf1'::text, 'dec1990stf3'::text])))
     constraint rpt_acs_observations_published_value_check CHECK (((value_status <> 'valid'::text) OR (estimate_value IS NOT NULL)))
     constraint rpt_acs_observations_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index ix_rpt_acs_latest_selection CREATE INDEX ix_rpt_acs_latest_selection ON ONLY gold_census.rpt_acs_observations USING btree (geo_id, variable_code, metric_code, observation_date DESC, updated_at DESC, (
@@ -3300,8 +3463,11 @@ CASE dataset_code
     ELSE 9
 END), vintage_year DESC)
     index ix_rpt_acs_observations_dataset_vintage CREATE INDEX ix_rpt_acs_observations_dataset_vintage ON ONLY gold_census.rpt_acs_observations USING btree (dataset_code, vintage_year)
+    index ix_rpt_acs_observations_level_state CREATE INDEX ix_rpt_acs_observations_level_state ON ONLY gold_census.rpt_acs_observations USING btree (geo_level, state_fips, observation_date)
     index ix_rpt_acs_observations_metric_date CREATE INDEX ix_rpt_acs_observations_metric_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, observation_date)
     index ix_rpt_acs_observations_metric_geo_date CREATE INDEX ix_rpt_acs_observations_metric_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, geo_id, observation_date)
+    index ix_rpt_acs_observations_metric_level_state_vintage CREATE INDEX ix_rpt_acs_observations_metric_level_state_vintage ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, geo_level, state_fips, vintage_year)
+    index ix_rpt_acs_observations_metric_release_period CREATE INDEX ix_rpt_acs_observations_metric_release_period ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date, observation_date, duration_start, duration_end)
     index ix_rpt_acs_observations_metric_vintage CREATE INDEX ix_rpt_acs_observations_metric_vintage ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date)
     index ix_rpt_acs_observations_source_geo_date CREATE INDEX ix_rpt_acs_observations_source_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (source_code, geo_id, observation_date)
     index ix_rpt_acs_observations_updated_at CREATE INDEX ix_rpt_acs_observations_updated_at ON ONLY gold_census.rpt_acs_observations USING btree (updated_at DESC)
@@ -4908,6 +5074,193 @@ v gold_fbi.calendar_window_observation
     body     refreshed_at::date AS as_of_date
     body    FROM gold_fbi.derived_calendar_rollup derived;
 
+v gold_fbi.county_agency_rate
+    column product_id text
+    column release_key text
+    column refresh_date date
+    column max_data_month text
+    column ucr_program text
+    column offense_code text
+    column offense_label text
+    column measure_id text
+    column measure_form text
+    column counted_entity_basis text
+    column geo_id text
+    column state_fips text
+    column county_fips text
+    column county_name text
+    column period text
+    column period_start date
+    column period_end date
+    column rate numeric
+    column unavailable_reason text
+    column offenses numeric
+    column covered_population numeric
+    column linked_population numeric
+    column coverage_share numeric
+    column coverage_floor numeric
+    column contributing_oris text[]
+    column excluded_multi_county_oris text[]
+    column non_reporting_oris text[]
+    column unknown_population_oris text[]
+    column derived boolean
+    column derivation_method text
+    column unit text
+    column methodology_note text
+    column counted_entity_note text
+    column methodology_url text
+    column documentation_url text
+    column not_loaded_oris text[]
+    body WITH agency_month AS (
+    body          SELECT DISTINCT observation.product_id,
+    body             observation.release_key,
+    body             observation.measure_id,
+    body             link.geo_id,
+    body             observation.period,
+    body             observation.period_start,
+    body             observation.period_end,
+    body             observation.subject_code AS ori,
+    body             observation.value,
+    body             observation.value_status,
+    body             observation.population,
+    body             ( SELECT count(DISTINCT sibling.geo_id) > 1
+    body                    FROM silver_fbi.agency_geography_relationship sibling
+    body                   WHERE sibling.relationship_type = 'county'::text AND sibling.resolution_status = 'resolved'::text AND sibling.product_id = observation.product_id AND sibling.ori = observation.subject_code AND observation.period_start >= sibling.effective_start AND observation.period_end <= sibling.effective_end) AS is_multi_county
+    body            FROM gold_fbi.crime_observation observation
+    body              JOIN silver_fbi.agency_geography_relationship link ON link.product_id = observation.product_id AND link.ori = observation.subject_code AND link.relationship_type = 'county'::text AND link.resolution_status = 'resolved'::text AND observation.period_start >= link.effective_start AND observation.period_end <= link.effective_end
+    body           WHERE observation.subject_type = 'agency'::text AND observation.measure_form = 'absolute_total'::text AND observation.counted_entity_basis = 'offense'::text
+    body         ), classified AS (
+    body          SELECT agency_month.product_id,
+    body             agency_month.release_key,
+    body             agency_month.measure_id,
+    body             agency_month.geo_id,
+    body             agency_month.period,
+    body             agency_month.period_start,
+    body             agency_month.period_end,
+    body             agency_month.ori,
+    body             agency_month.value,
+    body             agency_month.value_status,
+    body             agency_month.population,
+    body             agency_month.is_multi_county,
+    body             NOT agency_month.is_multi_county AS is_single_county,
+    body             agency_month.value_status = 'reported'::text AS is_reported,
+    body             agency_month.population IS NOT NULL AS has_population
+    body            FROM agency_month
+    body         ), summed AS (
+    body          SELECT classified.product_id,
+    body             classified.release_key,
+    body             classified.measure_id,
+    body             classified.geo_id,
+    body             classified.period,
+    body             classified.period_start,
+    body             classified.period_end,
+    body             sum(classified.value) FILTER (WHERE classified.is_single_county AND classified.is_reported AND classified.has_population) AS offenses,
+    body             sum(classified.population) FILTER (WHERE classified.is_single_county AND classified.is_reported AND classified.has_population) AS covered_population,
+    body             sum(classified.population) FILTER (WHERE classified.is_single_county AND classified.has_population) AS linked_population,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_single_county AND classified.is_reported AND classified.has_population) AS contributing_oris,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_multi_county) AS excluded_multi_county_oris,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_single_county AND NOT classified.is_reported) AS non_reporting_oris,
+    body             array_agg(DISTINCT classified.ori ORDER BY classified.ori) FILTER (WHERE classified.is_single_county AND classified.is_reported AND NOT classified.has_population) AS unknown_population_oris,
+    body             count(*) FILTER (WHERE classified.is_reported) AS reporting_rows,
+    body             count(*) FILTER (WHERE classified.is_single_county AND classified.is_reported) AS single_county_reporting_rows
+    body            FROM classified
+    body           GROUP BY classified.product_id, classified.release_key, classified.measure_id, classified.geo_id, classified.period, classified.period_start, classified.period_end
+    body         ), not_loaded AS (
+    body          SELECT summed.product_id,
+    body             summed.release_key,
+    body             summed.measure_id,
+    body             summed.geo_id,
+    body             summed.period,
+    body             array_agg(DISTINCT link.ori ORDER BY link.ori) AS oris
+    body            FROM summed
+    body              JOIN silver_fbi.agency_geography_relationship link ON link.product_id = summed.product_id AND link.geo_id = summed.geo_id AND link.relationship_type = 'county'::text AND link.resolution_status = 'resolved'::text AND summed.period_start >= link.effective_start AND summed.period_end <= link.effective_end
+    body           WHERE NOT (EXISTS ( SELECT 1
+    body                    FROM silver_fbi.fact_crime_observation loaded
+    body                   WHERE loaded.product_id = summed.product_id AND loaded.measure_id = summed.measure_id AND loaded.subject_type = 'agency'::text AND loaded.subject_code = link.ori AND loaded.period = summed.period AND loaded.release_key = summed.release_key)) AND (( SELECT count(DISTINCT sibling.geo_id) AS count
+    body                    FROM silver_fbi.agency_geography_relationship sibling
+    body                   WHERE sibling.relationship_type = 'county'::text AND sibling.resolution_status = 'resolved'::text AND sibling.product_id = link.product_id AND sibling.ori = link.ori AND summed.period_start >= sibling.effective_start AND summed.period_end <= sibling.effective_end)) = 1
+    body           GROUP BY summed.product_id, summed.release_key, summed.measure_id, summed.geo_id, summed.period
+    body         ), assessed AS (
+    body          SELECT summed.product_id,
+    body             summed.release_key,
+    body             summed.measure_id,
+    body             summed.geo_id,
+    body             summed.period,
+    body             summed.period_start,
+    body             summed.period_end,
+    body             summed.offenses,
+    body             summed.covered_population,
+    body             summed.linked_population,
+    body             summed.contributing_oris,
+    body             summed.excluded_multi_county_oris,
+    body             summed.non_reporting_oris,
+    body             summed.unknown_population_oris,
+    body             summed.reporting_rows,
+    body             summed.single_county_reporting_rows,
+    body             not_loaded.oris AS not_loaded_oris,
+    body                 CASE
+    body                     WHEN summed.linked_population > 0::numeric AND not_loaded.oris IS NULL THEN summed.covered_population / summed.linked_population
+    body                     ELSE NULL::numeric
+    body                 END AS coverage_share,
+    body                 CASE
+    body                     WHEN not_loaded.oris IS NOT NULL THEN 'agencies_not_loaded'::text
+    body                     WHEN summed.reporting_rows = 0 THEN 'no_reporting_agency'::text
+    body                     WHEN summed.single_county_reporting_rows = 0 THEN 'only_multi_county_agencies'::text
+    body                     WHEN summed.covered_population IS NULL OR summed.linked_population IS NULL OR summed.linked_population = 0::numeric OR summed.covered_population = 0::numeric OR summed.covered_population < (0.5 * summed.linked_population) THEN 'coverage_below_floor'::text
+    body                     ELSE NULL::text
+    body                 END AS unavailable_reason
+    body            FROM summed
+    body              LEFT JOIN not_loaded ON not_loaded.product_id = summed.product_id AND not_loaded.release_key = summed.release_key AND not_loaded.measure_id = summed.measure_id AND not_loaded.geo_id = summed.geo_id AND not_loaded.period = summed.period
+    body         )
+    body  SELECT assessed.product_id,
+    body     assessed.release_key,
+    body     release.refresh_date,
+    body     release.max_data_month,
+    body     release.ucr_program,
+    body     measure.offense_code,
+    body     measure.offense_label,
+    body     assessed.measure_id,
+    body     measure.measure_form,
+    body     measure.counted_entity_basis,
+    body     assessed.geo_id,
+    body     county.state_fips,
+    body     county.county_fips,
+    body     attribute.name AS county_name,
+    body     assessed.period,
+    body     assessed.period_start,
+    body     assessed.period_end,
+    body         CASE
+    body             WHEN assessed.unavailable_reason IS NULL THEN assessed.offenses * 100000::numeric / assessed.covered_population
+    body             ELSE NULL::numeric
+    body         END AS rate,
+    body     assessed.unavailable_reason,
+    body     assessed.offenses,
+    body     assessed.covered_population,
+    body     assessed.linked_population,
+    body     assessed.coverage_share,
+    body     0.5 AS coverage_floor,
+    body     COALESCE(assessed.contributing_oris, ARRAY[]::text[]) AS contributing_oris,
+    body     COALESCE(assessed.excluded_multi_county_oris, ARRAY[]::text[]) AS excluded_multi_county_oris,
+    body     COALESCE(assessed.non_reporting_oris, ARRAY[]::text[]) AS non_reporting_oris,
+    body     COALESCE(assessed.unknown_population_oris, ARRAY[]::text[]) AS unknown_population_oris,
+    body     true AS derived,
+    body     'agency_reported_offenses_per_covered_population'::text AS derivation_method,
+    body     'per 100,000 people covered by reporting agencies in this county'::text AS unit,
+    body     ((((('Offenses reported by the agencies serving only this county, divided '::text || 'by those agencies'' FBI-published populations, times 100,000 '::text) || '(ADR-0012). Agencies serving more than one county, and agencies '::text) || 'with no published population, are left out of both sides. No '::text) || 'rate is given when no agency reported, when only multi-county '::text) || 'agencies reported, or when the reporting agencies cover under '::text) || 'half the population the county''s agencies serve.'::text AS methodology_note,
+    body     release.counted_entity_note,
+    body     release.methodology_url,
+    body     release.documentation_url,
+    body     COALESCE(assessed.not_loaded_oris, ARRAY[]::text[]) AS not_loaded_oris
+    body    FROM assessed
+    body      JOIN silver_fbi.dim_offense_measure measure ON measure.product_id = assessed.product_id AND measure.measure_id = assessed.measure_id
+    body      JOIN silver_fbi.dim_ucr_dataset_release release ON release.product_id = assessed.product_id AND release.release_key = assessed.release_key
+    body      JOIN silver_ref.dim_geo_entity county ON county.geo_id = assessed.geo_id
+    body      LEFT JOIN LATERAL ( SELECT version.name
+    body            FROM silver_ref.dim_geo_entity_version version
+    body           WHERE version.geo_sk = county.geo_sk
+    body           ORDER BY version.geography_vintage DESC, version.ingested_at DESC
+    body          LIMIT 1) attribute ON true;
+
 v gold_fbi.county_rollup
     column product_id text
     column release_key text
@@ -5137,6 +5490,86 @@ r gold_fbi.derived_calendar_rollup
     constraint derived_calendar_rollup_method_version_check CHECK ((method_version >= 1))
     constraint fbi_rollup_value_or_reason CHECK ((((present_periods = expected_periods) AND (value IS NOT NULL) AND (refusal_reason IS NULL)) OR ((present_periods < expected_periods) AND (value IS NULL) AND (refusal_reason IS NOT NULL))))
     index uq_fbi_derived_calendar_rollup CREATE UNIQUE INDEX uq_fbi_derived_calendar_rollup ON gold_fbi.derived_calendar_rollup USING btree (metric_code, COALESCE(geo_id, ''::text), COALESCE(subject_code, ''::text), grain, window_start)
+
+v gold_fbi.latest_county_agency_rate
+    column product_id text
+    column release_key text
+    column refresh_date date
+    column max_data_month text
+    column ucr_program text
+    column offense_code text
+    column offense_label text
+    column measure_id text
+    column measure_form text
+    column counted_entity_basis text
+    column geo_id text
+    column state_fips text
+    column county_fips text
+    column county_name text
+    column period text
+    column period_start date
+    column period_end date
+    column rate numeric
+    column unavailable_reason text
+    column offenses numeric
+    column covered_population numeric
+    column linked_population numeric
+    column coverage_share numeric
+    column coverage_floor numeric
+    column contributing_oris text[]
+    column excluded_multi_county_oris text[]
+    column non_reporting_oris text[]
+    column unknown_population_oris text[]
+    column derived boolean
+    column derivation_method text
+    column unit text
+    column methodology_note text
+    column counted_entity_note text
+    column methodology_url text
+    column documentation_url text
+    column not_loaded_oris text[]
+    body SELECT rate.product_id,
+    body     rate.release_key,
+    body     rate.refresh_date,
+    body     rate.max_data_month,
+    body     rate.ucr_program,
+    body     rate.offense_code,
+    body     rate.offense_label,
+    body     rate.measure_id,
+    body     rate.measure_form,
+    body     rate.counted_entity_basis,
+    body     rate.geo_id,
+    body     rate.state_fips,
+    body     rate.county_fips,
+    body     rate.county_name,
+    body     rate.period,
+    body     rate.period_start,
+    body     rate.period_end,
+    body     rate.rate,
+    body     rate.unavailable_reason,
+    body     rate.offenses,
+    body     rate.covered_population,
+    body     rate.linked_population,
+    body     rate.coverage_share,
+    body     rate.coverage_floor,
+    body     rate.contributing_oris,
+    body     rate.excluded_multi_county_oris,
+    body     rate.non_reporting_oris,
+    body     rate.unknown_population_oris,
+    body     rate.derived,
+    body     rate.derivation_method,
+    body     rate.unit,
+    body     rate.methodology_note,
+    body     rate.counted_entity_note,
+    body     rate.methodology_url,
+    body     rate.documentation_url,
+    body     rate.not_loaded_oris
+    body    FROM gold_fbi.county_agency_rate rate
+    body      JOIN ( SELECT dim_ucr_dataset_release.product_id,
+    body             max(dim_ucr_dataset_release.refresh_date) AS refresh_date
+    body            FROM silver_fbi.dim_ucr_dataset_release
+    body           WHERE dim_ucr_dataset_release.status = 'published'::text
+    body           GROUP BY dim_ucr_dataset_release.product_id) latest ON latest.product_id = rate.product_id AND latest.refresh_date = rate.refresh_date;
 
 v gold_fbi.latest_county_rollup
     column product_id text
@@ -6782,6 +7215,26 @@ r gold_glossary.dim_source_system
     index dim_source_system_pkey CREATE UNIQUE INDEX dim_source_system_pkey ON gold_glossary.dim_source_system USING btree (source_system_sk)
     index dim_source_system_source_code_key CREATE UNIQUE INDEX dim_source_system_source_code_key ON gold_glossary.dim_source_system USING btree (source_code)
 
+v gold_glossary.geo_boundary
+    column geo_id text
+    column geo_level text
+    column geo_name text
+    column state_fips text
+    column county_fips text
+    column place_fips text
+    column boundary_vintage integer
+    column geo_geom geometry(MultiPolygon,4326)
+    body SELECT geo_id,
+    body     geo_level,
+    body     gold_glossary.geo_name(COALESCE(area_name, place_name), county_name, state_name, geo_id) AS geo_name,
+    body     state_fips,
+    body     county_fips,
+    body     place_fips,
+    body     boundary_vintage,
+    body     geo_geom
+    body    FROM gold_glossary.dim_geo_latest latest
+    body   WHERE geography_state = 'current'::text AND geo_geom IS NOT NULL;
+
 v gold_glossary.geo_relationship
     column geo_id text
     column related_geo_id text
@@ -6805,6 +7258,31 @@ v gold_glossary.geo_relationship
     body   WHERE (relationship.relationship_type = ANY (ARRAY['contains'::text, 'intersects'::text, 'adjacent'::text])) AND relationship.geography_vintage = (( SELECT max(newest.geography_vintage) AS max
     body            FROM silver_ref.bridge_geo_relationship_version newest
     body           WHERE newest.parent_geo_sk = relationship.parent_geo_sk AND newest.relationship_type = relationship.relationship_type));
+
+r gold_glossary.geo_search
+    column geo_id text NOT NULL
+    column geo_level text NOT NULL
+    column geo_name text NOT NULL
+    column short_name text NOT NULL
+    column name_words text NOT NULL
+    column short_words text NOT NULL
+    column state_fips text
+    column county_fips text
+    column place_fips text
+    column state_name text
+    column county_geo_id text
+    column county_name text
+    column population numeric
+    column population_year integer
+    column population_metric_code text
+    column boundary_vintage integer
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint ck_geo_search_grain CHECK ((geo_level = ANY (ARRAY['STATE'::text, 'COUNTY'::text, 'METRO'::text, 'PLACE'::text, 'ZCTA'::text])))
+    constraint geo_search_pkey PRIMARY KEY (geo_id)
+    index geo_search_pkey CREATE UNIQUE INDEX geo_search_pkey ON gold_glossary.geo_search USING btree (geo_id)
+    index ix_gold_glossary_geo_search_name_trgm CREATE INDEX ix_gold_glossary_geo_search_name_trgm ON gold_glossary.geo_search USING gin (name_words gin_trgm_ops)
+    index ix_gold_glossary_geo_search_short_trgm CREATE INDEX ix_gold_glossary_geo_search_short_trgm ON gold_glossary.geo_search USING gin (short_words gin_trgm_ops)
+    index ix_gold_glossary_geo_search_state CREATE INDEX ix_gold_glossary_geo_search_state ON gold_glossary.geo_search USING btree (state_fips, geo_level)
 
 r gold_glossary.publisher_harvest_state
     column source_code text NOT NULL
@@ -6836,6 +7314,27 @@ r gold_glossary.publisher_registry
     constraint publisher_registry_publisher_schema_publisher_view_key UNIQUE (publisher_schema, publisher_view)
     index publisher_registry_pkey CREATE UNIQUE INDEX publisher_registry_pkey ON gold_glossary.publisher_registry USING btree (source_code)
     index publisher_registry_publisher_schema_publisher_view_key CREATE UNIQUE INDEX publisher_registry_publisher_schema_publisher_view_key ON gold_glossary.publisher_registry USING btree (publisher_schema, publisher_view)
+
+r gold_glossary.tile_boundary_version
+    column geo_id text NOT NULL
+    column geo_level text NOT NULL
+    column boundary_vintage integer NOT NULL
+    column geo_name text NOT NULL
+    column state_fips text
+    column state_name text
+    column place_fips text
+    column area_code text
+    column lsad text
+    column latitude double precision
+    column longitude double precision
+    column geometry_checksum text NOT NULL
+    column tile_geom geometry(MultiPolygon,3857) NOT NULL
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint ck_tile_boundary_version_grain CHECK ((geo_level = ANY (ARRAY['PLACE'::text, 'METRO'::text])))
+    constraint tile_boundary_version_pkey PRIMARY KEY (geo_id, boundary_vintage)
+    index ix_gold_glossary_tile_boundary_version_geom CREATE INDEX ix_gold_glossary_tile_boundary_version_geom ON gold_glossary.tile_boundary_version USING gist (tile_geom)
+    index ix_gold_glossary_tile_boundary_version_vintage CREATE INDEX ix_gold_glossary_tile_boundary_version_vintage ON gold_glossary.tile_boundary_version USING btree (geo_level, boundary_vintage)
+    index tile_boundary_version_pkey CREATE UNIQUE INDEX tile_boundary_version_pkey ON gold_glossary.tile_boundary_version USING btree (geo_id, boundary_vintage)
 
 v gold_hud_fmr_il.measure_definition
     column measure text
@@ -9120,7 +9619,7 @@ r silver_bea.dim_line
     column methodology_url text NOT NULL
     column parser_contract_version text NOT NULL
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text, 'price_level_us_100'::text])))
+    constraint dim_line_dollar_basis_check CHECK ((dollar_basis = ANY (ARRAY['current_dollars'::text, 'chained_dollars'::text, 'per_capita_current_dollars'::text, 'persons'::text, 'price_level_us_100'::text, 'price_index'::text])))
     constraint dim_line_line_code_check CHECK ((line_code ~ '^[0-9]+$'::text))
     constraint dim_line_pkey PRIMARY KEY (table_code, line_code)
     index dim_line_pkey CREATE UNIQUE INDEX dim_line_pkey ON silver_bea.dim_line USING btree (table_code, line_code)
@@ -9142,9 +9641,11 @@ r silver_bea.fact_observation
     column value_status text NOT NULL
     column source_record_id text NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column derivation text
     constraint bea_fact_code_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
     constraint bea_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_derivation_check CHECK (((derivation IS NULL) OR (derivation = ANY (ARRAY['sum_of_member_counties'::text, 'ratio_of_member_county_sums'::text]))))
     constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'metro'::text, 'provider_area'::text])))
     constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
     constraint fact_observation_pkey PRIMARY KEY (table_code, line_code, geo_id, year, capture_id)
@@ -9604,7 +10105,7 @@ r silver_census.fact_demographics
     index idx_fact_demo_source_year CREATE INDEX idx_fact_demo_source_year ON silver_census.fact_demographics USING btree (source_system, estimate_year)
     index idx_fact_demo_table_id CREATE INDEX idx_fact_demo_table_id ON silver_census.fact_demographics USING btree (table_id)
     index idx_fact_demo_time_sk CREATE INDEX idx_fact_demo_time_sk ON silver_census.fact_demographics USING btree (time_sk)
-    index idx_fact_demo_upsert_key CREATE INDEX idx_fact_demo_upsert_key ON silver_census.fact_demographics USING btree (dataset, table_id, variable_code, geo_id, estimate_year)
+    index idx_fact_demo_year_state CREATE INDEX idx_fact_demo_year_state ON silver_census.fact_demographics USING btree (estimate_year, state_fips)
 
 r silver_census.observation_revision
     column capture_id uuid NOT NULL
@@ -9619,6 +10120,7 @@ r silver_census.observation_revision
     column county_fips_source text
     column place_fips_source text
     column tract_code_source text
+    column cbsa_source text
     column variable_name text NOT NULL
     column table_id text NOT NULL
     column measure_type text
@@ -9629,7 +10131,7 @@ r silver_census.observation_revision
     column parser_version text NOT NULL DEFAULT 'census-acs-array-v1'::text
     constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint observation_revision_check CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
-    constraint observation_revision_geo_level_tract_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text, 'place'::text, 'tract'::text])))
+    constraint observation_revision_geo_level_metro_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text, 'place'::text, 'tract'::text, 'metro'::text])))
     constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, source_column_index)
     constraint observation_revision_source_column_index_check CHECK ((source_column_index >= 0))
     constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 0))
@@ -9646,6 +10148,17 @@ r silver_census.transform_checkpoint
     constraint transform_checkpoint_pkey PRIMARY KEY (resume_key, year, slice_key)
     constraint transform_checkpoint_rows_changed_check CHECK ((rows_changed >= 0))
     index transform_checkpoint_pkey CREATE UNIQUE INDEX transform_checkpoint_pkey ON silver_census.transform_checkpoint USING btree (resume_key, year, slice_key)
+
+r silver_census.transform_slice_state
+    column year integer NOT NULL
+    column slice_key text NOT NULL
+    column content_fingerprint text NOT NULL
+    column rows_changed bigint NOT NULL
+    column completed_at timestamp with time zone NOT NULL DEFAULT now()
+    column last_changed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint transform_slice_state_pkey PRIMARY KEY (year, slice_key)
+    constraint transform_slice_state_rows_changed_check CHECK ((rows_changed >= 0))
+    index transform_slice_state_pkey CREATE UNIQUE INDEX transform_slice_state_pkey ON silver_census.transform_slice_state USING btree (year, slice_key)
 
 r silver_census_bps.dim_measure
     column measure_id text NOT NULL
@@ -10161,7 +10674,7 @@ r silver_fbi.agency_geography_relationship
     constraint agency_geography_relationship_ori_fkey FOREIGN KEY (ori) REFERENCES silver_fbi.dim_agency(ori)
     constraint agency_geography_relationship_pkey PRIMARY KEY (relationship_sk)
     constraint agency_geography_relationship_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['state'::text, 'county'::text, 'place'::text])))
-    constraint agency_geography_relationship_resolution_method_check CHECK (((resolution_method IS NULL) OR (resolution_method = ANY (ARRAY['exact_state_code'::text, 'county_label_match'::text, 'reviewed_place_crosswalk'::text]))))
+    constraint agency_geography_relationship_resolution_method_check CHECK (((resolution_method IS NULL) OR (resolution_method = ANY (ARRAY['exact_state_code'::text, 'county_label_match'::text, 'reviewed_place_crosswalk'::text, 'fbi_county_code'::text]))))
     constraint agency_geography_relationship_resolution_status_check CHECK ((resolution_status = ANY (ARRAY['resolved'::text, 'unresolved'::text, 'ambiguous'::text, 'unsupported'::text])))
     constraint fbi_agency_relationship_product_key UNIQUE (product_id, ori, relationship_type, source_label, geography_vintage, effective_start)
     index agency_geography_relationship_pkey CREATE UNIQUE INDEX agency_geography_relationship_pkey ON silver_fbi.agency_geography_relationship USING btree (relationship_sk)
@@ -10457,6 +10970,26 @@ r silver_fbi.participation_revision
     constraint participation_revision_subject_type_check CHECK ((subject_type = ANY (ARRAY['national'::text, 'state'::text, 'agency'::text])))
     index fbi_participation_revision_run_idx CREATE INDEX fbi_participation_revision_run_idx ON silver_fbi.participation_revision USING btree (run_id, product_id, release_key)
     index participation_revision_pkey CREATE UNIQUE INDEX participation_revision_pkey ON silver_fbi.participation_revision USING btree (capture_id, source_row_index)
+
+r silver_fbi.return_a_county_crosswalk
+    column release_key text NOT NULL
+    column data_year integer NOT NULL
+    column state_code text NOT NULL
+    column fbi_county_code integer NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column method text
+    column status text NOT NULL
+    column reason_code text
+    column evidence text
+    constraint return_a_county_crosswalk_check CHECK (((status <> 'resolved'::text) OR ((geo_id IS NOT NULL) AND (method IS NOT NULL))))
+    constraint return_a_county_crosswalk_fbi_county_code_check CHECK ((fbi_county_code > 0))
+    constraint return_a_county_crosswalk_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint return_a_county_crosswalk_method_check CHECK (((method IS NULL) OR (method = ANY (ARRAY['county_agency_name'::text, 'fips_order_rank'::text]))))
+    constraint return_a_county_crosswalk_pkey PRIMARY KEY (release_key, data_year, state_code, fbi_county_code)
+    constraint return_a_county_crosswalk_state_code_check CHECK ((state_code ~ '^[A-Z]{2}$'::text))
+    constraint return_a_county_crosswalk_status_check CHECK ((status = ANY (ARRAY['resolved'::text, 'unresolved'::text])))
+    index return_a_county_crosswalk_pkey CREATE UNIQUE INDEX return_a_county_crosswalk_pkey ON silver_fbi.return_a_county_crosswalk USING btree (release_key, data_year, state_code, fbi_county_code)
 
 r silver_fbi.reviewed_place_crosswalk
     column ori text NOT NULL
@@ -11414,6 +11947,7 @@ END, 1)))
     constraint fact_population_estimate_stock_sign_check CHECK (((metric_code <> ALL (ARRAY['ESTIMATESBASE'::text, 'POPESTIMATE'::text, 'CENSUSPOP'::text])) OR (value >= (0)::numeric)))
     constraint fact_population_estimate_unit_check CHECK ((unit = ANY (ARRAY['persons'::text, 'per_1000_population'::text])))
     index fact_population_estimate_pkey CREATE UNIQUE INDEX fact_population_estimate_pkey ON silver_pep.fact_population_estimate USING btree (capture_id, source_row_index, source_column_index)
+    index pep_fact_metric_geo_year_idx CREATE INDEX pep_fact_metric_geo_year_idx ON silver_pep.fact_population_estimate USING btree (metric_code, geo_id, observation_year)
     index pep_fact_natural_key_idx CREATE INDEX pep_fact_natural_key_idx ON silver_pep.fact_population_estimate USING btree (dataset_code, release_vintage, metric_code, geo_id, observation_year)
 
 r silver_pep.observation_revision
@@ -11558,6 +12092,7 @@ r silver_ref.bridge_geo_relationship_version
     constraint bridge_geo_relationship_version_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES raw_capture.response_capture(capture_id)
     index bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key CREATE UNIQUE INDEX bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key ON silver_ref.bridge_geo_relationship_version USING btree (parent_geo_sk, related_geo_sk, relationship_type, geography_vintage)
     index bridge_geo_relationship_version_pkey CREATE UNIQUE INDEX bridge_geo_relationship_version_pkey ON silver_ref.bridge_geo_relationship_version USING btree (relationship_sk)
+    index ix_bridge_geo_relationship_version_related CREATE INDEX ix_bridge_geo_relationship_version_related ON silver_ref.bridge_geo_relationship_version USING btree (related_geo_sk, relationship_type, parent_geo_sk, geography_vintage)
 
 v silver_ref.dim_geo
     column geo_sk bigint
@@ -11865,6 +12400,36 @@ r silver_ref.geography_resolution
     constraint geography_resolution_status_check CHECK ((status = ANY (ARRAY['resolved'::text, 'ambiguous'::text, 'unmapped'::text, 'unsupported'::text])))
     index geography_resolution_pkey CREATE UNIQUE INDEX geography_resolution_pkey ON silver_ref.geography_resolution USING btree (resolution_sk)
     index geography_resolution_provider_source_provider_dataset_sourc_key CREATE UNIQUE INDEX geography_resolution_provider_source_provider_dataset_sourc_key ON silver_ref.geography_resolution USING btree (provider_source, provider_dataset, source_geo_type, source_code, source_vintage)
+
+r silver_ref.tract_decade_crosswalk
+    column earlier_vintage integer NOT NULL
+    column later_vintage integer NOT NULL
+    column earlier_geo_sk bigint NOT NULL
+    column later_geo_sk bigint NOT NULL
+    column land_area_part_m2 numeric NOT NULL
+    column total_area_part_m2 numeric
+    column earlier_land_share numeric
+    column later_land_share numeric
+    column later_population_part integer
+    column later_housing_units_part integer
+    column earlier_population_share numeric
+    column source_snapshot_id uuid NOT NULL
+    column ingested_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint tract_decade_crosswalk_check CHECK ((later_vintage = (earlier_vintage + 10)))
+    constraint tract_decade_crosswalk_earlier_geo_sk_fkey FOREIGN KEY (earlier_geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint tract_decade_crosswalk_earlier_land_share_check CHECK (((earlier_land_share >= (0)::numeric) AND (earlier_land_share <= (1)::numeric)))
+    constraint tract_decade_crosswalk_earlier_population_share_check CHECK (((earlier_population_share >= (0)::numeric) AND (earlier_population_share <= (1)::numeric)))
+    constraint tract_decade_crosswalk_earlier_vintage_check CHECK ((earlier_vintage = ANY (ARRAY[2000, 2010])))
+    constraint tract_decade_crosswalk_land_area_part_m2_check CHECK ((land_area_part_m2 >= (0)::numeric))
+    constraint tract_decade_crosswalk_later_geo_sk_fkey FOREIGN KEY (later_geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint tract_decade_crosswalk_later_housing_units_part_check CHECK ((later_housing_units_part >= 0))
+    constraint tract_decade_crosswalk_later_land_share_check CHECK (((later_land_share >= (0)::numeric) AND (later_land_share <= (1)::numeric)))
+    constraint tract_decade_crosswalk_later_population_part_check CHECK ((later_population_part >= 0))
+    constraint tract_decade_crosswalk_pkey PRIMARY KEY (earlier_vintage, earlier_geo_sk, later_geo_sk)
+    constraint tract_decade_crosswalk_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint tract_decade_crosswalk_total_area_part_m2_check CHECK ((total_area_part_m2 >= (0)::numeric))
+    index tract_decade_crosswalk_later_idx CREATE INDEX tract_decade_crosswalk_later_idx ON silver_ref.tract_decade_crosswalk USING btree (later_vintage, later_geo_sk)
+    index tract_decade_crosswalk_pkey CREATE UNIQUE INDEX tract_decade_crosswalk_pkey ON silver_ref.tract_decade_crosswalk USING btree (earlier_vintage, earlier_geo_sk, later_geo_sk)
 
 r silver_usda_ers.fact_observation
     column attribute text NOT NULL

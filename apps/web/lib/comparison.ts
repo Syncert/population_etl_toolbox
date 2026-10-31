@@ -19,11 +19,12 @@ import type {
   ComparisonRow,
   ComparisonRule,
   MetricSummary,
+  PairLabels,
 } from "./api/types";
 import { metricHasNoPublishedValue, metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
-import { formatNumber } from "./format";
+import { displayMetricName, formatNumber } from "./format";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -290,6 +291,20 @@ export interface ComparisonColumn {
 }
 
 /**
+ * One side's name for a reader: the plain label the API served beside the
+ * code (A-2), else the code, else "measure A"/"measure B".
+ */
+export function pairLabel(
+  response: PairLabels | { metric_code_a?: string | null; metric_code_b?: string | null } | null | undefined,
+  side: "a" | "b",
+): string {
+  const labels = (response || {}) as PairLabels & { metric_code_a?: string | null; metric_code_b?: string | null };
+  const label = side === "a" ? labels.metric_label_a : labels.metric_label_b;
+  const code = side === "a" ? labels.metric_code_a : labels.metric_code_b;
+  return label || code || `measure ${side.toUpperCase()}`;
+}
+
+/**
  * The table columns, with each side's identity preserved in its own header
  * and every API-computed column marked derived. The derived columns are the
  * ones the response names, so a derivation this client has not heard of
@@ -298,8 +313,8 @@ export interface ComparisonColumn {
 export function comparisonColumns(
   response: ComparisonResponse | null | undefined,
 ): ComparisonColumn[] {
-  const codeA = response?.metric_code_a || "measure A";
-  const codeB = response?.metric_code_b || "measure B";
+  const codeA = pairLabel(response, "a");
+  const codeB = pairLabel(response, "b");
   const derivations = Array.isArray(response?.derivations) ? response.derivations : [];
   return [
     { key: "geography", label: "Geography", derived: false },
@@ -466,9 +481,7 @@ export function comparisonMetricOptions(
 ): { value: string; label: string }[] {
   return (Array.isArray(metrics) ? metrics : []).map((metric) => ({
     value: metric.metric_code,
-    label: metric.metric_display_name
-      ? `${metric.metric_display_name} (${metric.metric_code})`
-      : metric.metric_code,
+    label: metric.metric_label || metric.metric_display_name ? displayMetricName(metric) : metric.metric_code,
   }));
 }
 
@@ -652,8 +665,8 @@ export function describeComparisonCoverage(
   if (countA <= total && countB <= total) {
     return "";
   }
-  const codeA = response?.metric_code_a || "measure A";
-  const codeB = response?.metric_code_b || "measure B";
+  const codeA = pairLabel(response, "a");
+  const codeB = pairLabel(response, "b");
   return (
     `${formatNumber(total)} geographies are paired here. ` +
     `${codeA} publishes ${formatNumber(countA)} and ${codeB} publishes ` +

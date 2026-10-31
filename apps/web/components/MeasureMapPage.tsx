@@ -5,6 +5,11 @@
 // counties without a published value are counted and listed, never painted
 // and never printed as zero. There is no second layer and no combination of
 // measures: switching measure replaces the page's one measure.
+//
+// The same page draws every grain the catalog publishes the measure at
+// (web-place-maps): counties and metro areas nationally, cities and towns and
+// Census tracts one state at a time. The layer and its boundary vintages come
+// from `/catalog/tile-layers`, and the vintage drawn is named.
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -20,14 +25,15 @@ import {
   getCapabilities,
   getMetric,
   getSources,
+  getTileLayers,
   searchMetrics,
 } from "../lib/api/client";
-import type { GeographySummary, MetricSummary, Observation, SourceSummary } from "../lib/api/types";
-import { buildExplorerSources } from "../lib/explorerSources";
+import type { GeographySummary, MetricSummary, Observation, SourceSummary, TileLayerCatalogResponse } from "../lib/api/types";
+import { NEUTRAL_OBSERVATIONS_PATH, buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
 import { displayMetricName, formatNumber } from "../lib/format";
-import { buildMeasureMapView, earlierReleaseChoices, newestPeriodOfRelease, rankedPage, releaseOfChoice, RELEASE_CHOICE_PREFIX } from "../lib/oneMeasureMap";
+import { buildMeasureMapView, currentLatestPeriods, earlierReleaseChoices, newestPeriodOfRelease, rankedPage, releaseOfChoice, RELEASE_CHOICE_PREFIX } from "../lib/oneMeasureMap";
 import type { MapRelease, RankedCounty } from "../lib/oneMeasureMap";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
@@ -40,13 +46,36 @@ import {
   normalizeObservationRows,
   observationUncertaintyLabel,
 } from "../lib/observationAccess";
-import { PLACE_CHAPTERS, countySegment, placePath, stateSegment } from "../lib/placeChapters";
+import { PLACE_CHAPTERS, citySegment, countySegment, placePath, stateSegment } from "../lib/placeChapters";
 import { discoverTileMetadata } from "../lib/tiles";
+import {
+  STATE_SCOPED_GRAINS,
+  boundaryForGrain,
+  boundaryNote,
+  boundarySentence,
+  capitalised,
+  grainLayerFilter,
+  initialMapGrain,
+  mapGrainChoices,
+  newestPeriodYear,
+  nounFor,
+  rowInState,
+  tileMetadataForBoundary,
+} from "../lib/measureMapGrains";
+import type { MapGrain } from "../lib/measureMapGrains";
+import { uncolouredSentence } from "../lib/uncoloured";
 import type { ObservationRow } from "../lib/explorerViewModel";
+import { denominatorText, derivedMapRow, getDerivedRatios, pairingFor, viewChoices, viewKey } from "../lib/derivedViews";
+import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
+import { DraftViewMark, ViewToggle } from "./DerivedView";
+import { isSingleAgeLine } from "../lib/ageLines";
 
 const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), { ssr: false });
 
 const PAGE_SIZE = 50;
+const DERIVED_PATH = "/observations/derived";
+/** The most rows `/observations` and `/observations/derived` answer in one page. */
+const MAX_ROWS_PER_READ = 5000;
 const EXTREMES = 10;
 
 interface PeriodItem {
@@ -58,7 +87,7 @@ interface PeriodItem {
 type Load =
   | { state: "loading"; message: string }
   | { state: "unknown"; message: string }
-  | { state: "no-county"; message: string }
+  | { state: "no-grain"; message: string }
   | { state: "error"; message: string }
   | { state: "ready"; message: string };
 
@@ -70,16 +99,31 @@ export default function MeasureMapPage({
   metricCode,
   requestedPeriod,
   requestedRelease,
+  requestedView,
+  requestedGrain,
+  requestedState,
 }: {
   metricCode: string;
   requestedPeriod?: string;
   requestedRelease?: string;
+  requestedView?: ViewChoice;
+  requestedGrain?: string;
+  requestedState?: string;
 }) {
   const [load, setLoad] = useState<Load>({ state: "loading", message: "reading the measure" });
   const [metric, setMetric] = useState<MetricSummary | null>(null);
   const [source, setSource] = useState<ExplorerSource | null>(null);
   const [sourceRow, setSourceRow] = useState<SourceSummary | null>(null);
   const [counties, setCounties] = useState<GeographySummary[]>([]);
+  // The grains the measure is offered at, the one shown, and for a grain read
+  // one state at a time, the state.
+  const [grains, setGrains] = useState<MapGrain[]>([]);
+  const [grain, setGrain] = useState<MapGrain>("COUNTY");
+  const [stateFips, setStateFips] = useState(requestedState && /^\d{2}$/.test(requestedState) ? requestedState : "");
+  // The geographies of the grain shown (the state's, for a state-scoped grain).
+  const [geographies, setGeographies] = useState<GeographySummary[] | null>(null);
+  // `undefined` while reading; `null` when the route could not be read.
+  const [tileCatalog, setTileCatalog] = useState<TileLayerCatalogResponse | null | undefined>(undefined);
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [periods, setPeriods] = useState<PeriodItem[]>([]);
   const [releaseChoices, setReleaseChoices] = useState<{ value: string; label: string }[]>([]);
@@ -92,6 +136,11 @@ export default function MeasureMapPage({
   const [rowsLoaded, setRowsLoaded] = useState(false);
   const [tileMetadata, setTileMetadata] = useState<Awaited<ReturnType<typeof discoverTileMetadata>> | null>(null);
   const [page, setPage] = useState(0);
+  // The pairings that divide this count (ADR-0009), and the view chosen.
+  const [pairings, setPairings] = useState<DerivedRatioPairing[] | null>(null);
+  const [view, setView] = useState<ViewChoice>(requestedView || "count");
+  const pairing = pairings ? pairingFor(pairings, metricCode, view) : null;
+  const choices = pairings ? viewChoices(pairings, [metricCode]) : ["count" as ViewChoice];
 
   // The measure, its source, the counties, and its published periods.
   useEffect(() => {
@@ -110,22 +159,28 @@ export default function MeasureMapPage({
           throw error;
         }
         setMetric(found);
-        const grains = found.valid_geo_grains;
-        if (Array.isArray(grains) && !grains.includes("COUNTY")) {
-          setLoad({ state: "no-county", message: `${displayMetricName(found)} is not published for counties (published grains: ${grains.join(", ") || "none"}).` });
+        getDerivedRatios({ numerator: metricCode }, { signal })
+          .then((payload) => { if (!signal.aborted) setPairings(Array.isArray(payload?.items) ? payload.items : []); })
+          .catch(() => { if (!signal.aborted) setPairings([]); });
+        const offered = mapGrainChoices(found.valid_geo_grains);
+        if (!offered.length) {
+          const published = Array.isArray(found.valid_geo_grains) ? found.valid_geo_grains : [];
+          setLoad({ state: "no-grain", message: `${displayMetricName(found)} is not published for counties, metro areas, cities and towns or Census tracts (published grains: ${published.join(", ") || "none"}).` });
           return;
         }
-        const [capabilities, sourceItems, stateItems, countyItems] = await Promise.all([
+        setGrains(offered);
+        setGrain(initialMapGrain(offered, requestedGrain) || offered[0]!);
+        // The counties are read with the grain's own geographies, below: a
+        // city map needs only its state's, and a metro or tract map none.
+        const [capabilities, sourceItems, stateItems] = await Promise.all([
           getCapabilities({ signal }),
           getSources({ signal }),
           fetchAllPages<GeographySummary>("/catalog/geographies", { params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "STATE" }, pageSize: 1000, signal }),
-          fetchAllPages<GeographySummary>("/catalog/geographies", { params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "COUNTY" }, pageSize: 1000, signal }),
         ]);
         const explorerSource = buildExplorerSources(capabilities.items).find((item) => item.sourceCode === found.source_code) || null;
         setSource(explorerSource);
         setSourceRow(sourceItems.find((item) => item.source_code === found.source_code) || null);
         setStates(stateItems);
-        setCounties(countyItems);
         const periodRequest = buildPeriodListRequest(explorerSource, { metricCode, limit: 200 });
         // The latest publication keeps each county's newest value only, so a
         // period every county has a newer estimate for is listed by its
@@ -140,50 +195,141 @@ export default function MeasureMapPage({
             ? apiFetch<{ items?: MapRelease[] }>(releaseRequest.resource, { params: releaseRequest.params, signal }).catch(() => null)
             : null,
         ]);
-        const items = Array.isArray(periodPayload?.items) ? periodPayload.items : [];
-        const choices = earlierReleaseChoices(Array.isArray(releasePayload?.items) ? releasePayload.items : []);
+        const releases = Array.isArray(releasePayload?.items) ? releasePayload.items : [];
+        // A period only a few geographies still hold as their newest is read
+        // from the release that published it for every geography.
+        const { periods: items, readAsReleased } = currentLatestPeriods(
+          Array.isArray(periodPayload?.items) ? periodPayload.items : [],
+          releases,
+        );
+        const choices = earlierReleaseChoices(releases);
         setPeriods(items);
         setReleaseChoices(choices);
-        setPeriod((current) =>
-          current && (items.some((item) => item.period_start === current) || choices.some((choice) => choice.value === current))
+        setPeriod((asked) => {
+          const current = readAsReleased.get(asked) || asked;
+          return current && (items.some((item) => item.period_start === current) || choices.some((choice) => choice.value === current))
             ? current
-            : items[0]?.period_start || "",
-        );
+            : items[0]?.period_start || "";
+        });
         setLoad({ state: "ready", message: "" });
       } catch (error) {
         if (!signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
       }
     })();
-    discoverTileMetadata().then(setTileMetadata).catch(() => setTileMetadata(null));
+    getTileLayers({ signal })
+      .then((catalog) => { if (!signal.aborted) setTileCatalog(catalog); })
+      .catch(() => {
+        if (signal.aborted) return;
+        setTileCatalog(null);
+        // An API without the layer list still has its county boundary.
+        discoverTileMetadata().then(setTileMetadata).catch(() => setTileMetadata(null));
+      });
     return () => controller.abort();
+    // The grain asked for is read once, with the measure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricCode]);
+
+  const scoped = STATE_SCOPED_GRAINS.has(grain);
+  const noun = nounFor(grain);
+  // A state-scoped grain with no state chosen reads nothing yet.
+  const awaitingState = scoped && !stateFips;
+
+  // The geographies of the grain shown: every one is counted and listed,
+  // including those without a published value.
+  // A city's page address is told apart from its state's counties, so a city
+  // map reads that state's counties beside its cities, in parallel.
+  useEffect(() => {
+    if (load.state !== "ready") return;
+    if (awaitingState) {
+      setGeographies([]);
+      return;
+    }
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const read = (geoLevel: string, stateParam?: string) =>
+      fetchAllPages<GeographySummary>("/catalog/geographies", {
+        params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: geoLevel, state_fips: stateParam },
+        pageSize: 1000,
+        signal,
+      });
+    setGeographies(null);
+    const reads: Promise<[GeographySummary[], GeographySummary[] | null]> =
+      grain === "COUNTY"
+        ? read("COUNTY").then((items) => [items, items])
+        : grain === "PLACE"
+          ? Promise.all([read("PLACE", stateFips), read("COUNTY", stateFips)])
+          : read(grain, scoped ? stateFips : undefined).then((items) => [items, null]);
+    reads
+      .then(([items, countyItems]) => {
+        if (signal.aborted) return;
+        if (countyItems) setCounties(countyItems);
+        setGeographies(items);
+      })
+      .catch((error) => { if (!signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) }); });
+    return () => controller.abort();
+  }, [load.state, grain, stateFips, scoped, awaitingState]);
 
   // The one period's county values.
   useEffect(() => {
     if (load.state !== "ready" || !source) return;
+    // A derived view waits for the pairings; one the API does not serve
+    // falls back to the count.
+    if (view !== "count" && pairings === null) return;
     const controller = new AbortController();
     setRows([]);
     setRowsLoaded(false);
+    if (awaitingState) return;
     const release = releaseOfChoice(period);
+    const stateParam = scoped ? stateFips : undefined;
+    // Tracts in a large state run to several thousand rows.
+    const pageBound = release || scoped ? 50 : 5;
+    // The neutral and derived routes page up to 5,000 rows, so one state's
+    // cities, or every county or metro, is one read rather than several, each
+    // of which ranked the metric's rows again.
+    const readSize = (resource: string) => (resource === NEUTRAL_OBSERVATIONS_PATH || resource === DERIVED_PATH ? MAX_ROWS_PER_READ : 1000);
+    const atGrain = (row: { geo_level?: unknown; geo_id?: unknown }) =>
+      (row.geo_level === undefined || row.geo_level === null || String(row.geo_level).toUpperCase() === grain ||
+        (grain === "COUNTY" && String(row.geo_id).includes("county:") && !String(row.geo_id).includes("tract:"))) &&
+      (!scoped || rowInState(row.geo_id, stateFips));
+    if (pairing) {
+      const params = release
+        ? { ratio_id: pairing.ratio_id, geo_level: grain, state_fips: stateParam, scope: SCOPE_AS_RELEASED, release, limit: "1000" }
+        : { ratio_id: pairing.ratio_id, geo_level: grain, state_fips: stateParam, period_start: period || undefined, newest_per_geography: true, limit: "1000" };
+      fetchCollectionPages<DerivedRatioObservation>(DERIVED_PATH, { params, pageSize: readSize(DERIVED_PATH), maxPages: pageBound, signal: controller.signal })
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          const countyRows = result.items.filter(atGrain).map((row) => derivedMapRow(row, viewKey(pairing)));
+          setRows(release ? newestPeriodOfRelease(countyRows) : countyRows);
+          setRowsComplete(result.complete);
+          setRowsLoaded(true);
+          setPage(0);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
+        });
+      return () => controller.abort();
+    }
     const request = release
       ? buildLatestObservationRequest(source, {
           metricCode,
-          geoLevel: "COUNTY",
+          geoLevel: grain,
+          stateFips: stateParam,
           scope: SCOPE_AS_RELEASED,
           release,
           limit: "1000",
         })
       : buildLatestObservationRequest(source, {
           metricCode,
-          geoLevel: "COUNTY",
+          geoLevel: grain,
+          stateFips: stateParam,
           periodStart: period || undefined,
           newestPerGeography: true,
           limit: "1000",
         });
-    fetchCollectionPages<Observation>(request.resource, { params: request.params, pageSize: 1000, maxPages: release ? 50 : 5, signal: controller.signal })
+    fetchCollectionPages<Observation>(request.resource, { params: request.params, pageSize: readSize(request.resource), maxPages: pageBound, signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
-        const countyRows = normalizeObservationRows(source, result.items).filter((row) => row.geo_level === undefined || row.geo_level === "COUNTY" || String(row.geo_id).includes("county:"));
+        const countyRows = normalizeObservationRows(source, result.items).filter(atGrain);
         setRows(release ? newestPeriodOfRelease(countyRows) : countyRows);
         setRowsComplete(result.complete);
         setRowsLoaded(true);
@@ -193,59 +339,136 @@ export default function MeasureMapPage({
         if (!controller.signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
       });
     return () => controller.abort();
-  }, [load.state, source, metricCode, period]);
+    // `pairing` follows `pairings` and `view`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load.state, source, metricCode, period, pairings, view, grain, stateFips]);
 
   // The period is public state, so it lives in the address. Replaced in
   // place, not navigated: the rows are already being read for it.
   useEffect(() => {
-    if (!period) return;
+    if (!period || load.state !== "ready") return;
     const params = new URLSearchParams(window.location.search);
+    const before = params.toString();
     const release = releaseOfChoice(period);
     const [key, value, other] = release ? ["release", release, "period"] : ["period", period, "release"];
-    if (params.get(key) === value && !params.has(other)) return;
+    const shownView = view === "count" ? null : view;
     params.set(key, value);
     params.delete(other);
+    if (shownView) params.set("view", shownView);
+    else params.delete("view");
+    // The grain and its state are public state too; the county map is the default.
+    if (grain !== "COUNTY") params.set("grain", grain);
+    else params.delete("grain");
+    if (scoped && stateFips) params.set("state", stateFips);
+    else params.delete("state");
+    if (params.toString() === before) return;
     window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
-  }, [period]);
+  }, [period, view, grain, scoped, stateFips, load.state]);
 
-  const view = useMemo(() => (metric && rows.length ? buildMeasureMapView(metricCode, rows, counties) : null), [metric, metricCode, rows, counties]);
-  const name = metric ? displayMetricName(metric) : metricCode;
+  const shownKey = pairing ? viewKey(pairing) : metricCode;
+  const mapView = useMemo(
+    () => (metric && geographies && rows.length && rows[0]?.metric_code === shownKey ? buildMeasureMapView(shownKey, rows, geographies) : null),
+    [metric, shownKey, rows, geographies],
+  );
+  const periodYear = useMemo(() => newestPeriodYear(rows), [rows]);
+  // The boundary this grain is drawn on: from the API's layer list, or the
+  // discovered county boundary when that list could not be read.
+  const boundary = tileCatalog ? boundaryForGrain(tileCatalog, grain, periodYear) : null;
+  const drawnMetadata = boundary?.drawn ? tileMetadataForBoundary(boundary) : tileCatalog === null && grain === "COUNTY" ? tileMetadata : null;
+  const chosenState = states.find((item) => item.state_fips === stateFips) || null;
+  const initialView = useMemo(() => {
+    if (!scoped || !chosenState) return null;
+    const latitude = Number(chosenState.latitude ?? chosenState.geo_latitude);
+    const longitude = Number(chosenState.longitude ?? chosenState.geo_longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    // A state-scoped layer draws from its minimum zoom; open there.
+    return { center: [longitude, latitude] as [number, number], zoom: Math.max(6, boundary?.layer?.minzoom ?? 6) };
+  }, [scoped, chosenState, boundary?.layer?.minzoom]);
+  const where = scoped && chosenState ? ` in ${String(chosenState.state_name || chosenState.geo_name || "")}` : "";
+  const name = pairing ? pairing.label : metric ? displayMetricName(metric) : metricCode;
   const unit = rows.find((row) => row.unit || row.units) ? observationUnit(rows.find((row) => row.unit || row.units)!) : String(metric?.units || "");
 
-  if (load.state === "unknown" || load.state === "no-county" || load.state === "error" || (load.state === "ready" && rowsLoaded && (!view || view.withValue === 0))) {
+  const grainControls = (
+    <GrainControls
+      grains={grains}
+      grain={grain}
+      onGrain={(next) => { setGrain(next); setPage(0); }}
+      scoped={scoped}
+      states={states}
+      stateFips={stateFips}
+      onState={(next) => { setStateFips(next); setPage(0); }}
+    />
+  );
+
+  if (load.state === "ready" && awaitingState) {
+    return (
+      <main className="page-shell compact-page measure-map-page" data-testid="measure-map-choose-state" data-metric={metricCode}>
+        <header className="page-heading">
+          <div className="section-kicker">Map</div>
+          <h1>{name}</h1>
+          <p>
+            There are tens of thousands of {noun.many} in the country, so they are drawn one state at a time.
+            Choose a state.
+          </p>
+        </header>
+        <section className="profile-controls">{grainControls}</section>
+      </main>
+    );
+  }
+
+  if (load.state === "unknown" || load.state === "no-grain" || load.state === "error" || (load.state === "ready" && rowsLoaded && geographies !== null && (!mapView || mapView.withValue === 0))) {
     return (
       <main className="page-shell compact-page measure-map-page" data-testid="measure-map-unavailable">
         <header className="page-heading">
           <div className="section-kicker">Map</div>
           <h1>{metric ? name : "This measure cannot be mapped"}</h1>
           <p data-testid="measure-map-reason">
-            {load.state === "ready" ? `No county has a published value for ${name} in this period.` : load.message}
+            {load.state === "ready" ? `No ${noun.one} has a published value for ${name}${where} in this period.` : load.message}
           </p>
         </header>
+        {load.state === "ready" ? <section className="profile-controls">{grainControls}</section> : null}
+        {view !== "count" ? (
+          <ViewToggle choices={choices} value={view} onChange={setView} pairings={pairings || []} label="Show as" testId="measure-map-view" />
+        ) : null}
         <MeasureSwitcher current={metricCode} />
         <CountyMeasures />
       </main>
     );
   }
 
+  // Beside every derived value: the column names its denominator.
+  const valueHeading = pairing ? `${pairing.unit[0]!.toUpperCase()}${pairing.unit.slice(1)} ${denominatorText(pairing)}` : "Value";
   const linkFor = (entry: RankedCounty) => {
-    const state = states.find((item) => item.state_fips === entry.county.state_fips);
-    if (!state) return null;
+    // Counties and cities have pages; metros and tracts do not yet.
+    if (grain !== "COUNTY" && grain !== "PLACE") return null;
+    const home = states.find((item) => item.state_fips === entry.county.state_fips);
+    if (!home) return null;
     const sameState = counties.filter((item) => item.state_fips === entry.county.state_fips);
-    return placePath(stateSegment(state, states), countySegment(entry.county, sameState));
+    if (grain === "PLACE") {
+      const places = (geographies || []).filter((item) => item.state_fips === entry.county.state_fips);
+      return placePath(stateSegment(home, states), citySegment(entry.county, places, sameState));
+    }
+    return placePath(stateSegment(home, states), countySegment(entry.county, sameState));
   };
-  const withValues = view?.ranked.filter((entry) => entry.value !== null) || [];
+  const nameFor = (entry: RankedCounty) => {
+    const place = entry.county;
+    const own = String(place.county_name || place.place_name || place.geo_name || place.geo_id);
+    if (grain === "METRO") return own;
+    const stateName = place.state_name || states.find((item) => item.state_fips === place.state_fips)?.state_name;
+    return stateName ? `${own}, ${String(stateName)}` : own;
+  };
+  const withValues = mapView?.ranked.filter((entry) => entry.value !== null) || [];
   const highest = withValues.slice(0, EXTREMES);
   const lowest = withValues.slice(-EXTREMES).reverse();
-  const pages = view ? Math.max(1, Math.ceil(view.ranked.length / PAGE_SIZE)) : 1;
+  const pages = mapView ? Math.max(1, Math.ceil(mapView.ranked.length / PAGE_SIZE)) : 1;
 
   return (
-    <main className="page-shell measure-map-page" data-testid="measure-map" data-metric={metricCode} data-period={view?.period || ""}>
+    <main className="page-shell measure-map-page" data-testid="measure-map" data-metric={metricCode} data-view={pairing ? view : "count"} data-period={mapView?.period || ""} data-grain={grain} data-state={scoped ? stateFips : ""}>
       <header className="page-heading">
-        <div className="section-kicker">One measure, every county</div>
+        <div className="section-kicker">One measure, every {noun.one}{where}</div>
         <h1>{name}</h1>
         <p>
-          One measure at a time, in one period. Counties without a published value are counted and listed,
+          One measure at a time, in one period. {capitalised(noun.many)} without a published value are counted and listed,
           not painted. Nothing here combines measures or scores places.
         </p>
       </header>
@@ -269,63 +492,102 @@ export default function MeasureMapPage({
             ) : null}
           </select>
         </label>
+        <ViewToggle
+          choices={choices}
+          value={view}
+          onChange={setView}
+          pairings={pairings || []}
+          label="Show as"
+          testId="measure-map-view"
+        />
+        {grainControls}
         <MeasureSwitcher current={metricCode} />
       </section>
 
       <section className="status-row" role="status">
         <StatusPill
-          state={load.state === "ready" && view ? (rowsComplete ? "ok" : "warn") : "loading"}
-          label="Counties"
-          message={view ? `${formatNumber(view.withValue)} with a published value, ${formatNumber(view.withoutValue)} without${rowsComplete ? "" : "; the page bound cut the read short"}` : "reading county values"}
+          state={load.state === "ready" && mapView ? (rowsComplete ? "ok" : "warn") : "loading"}
+          label={capitalised(noun.many)}
+          message={mapView ? `${formatNumber(mapView.withValue)} with a published value, ${formatNumber(mapView.withoutValue)} without${rowsComplete ? "" : "; the page bound cut the read short"}` : `reading ${noun.one} values`}
           testId="measure-map-status"
         />
       </section>
 
-      {view ? (
+      {mapView ? (
         <>
           <section className="analysis-panel" aria-labelledby="map-heading">
-            <h2 id="map-heading">{name}, {view.period}</h2>
-            {tileMetadata ? (
+            <h2 id="map-heading">{name}, {mapView.period}</h2>
+            {pairing ? (
+              <p className="subtle" data-testid="measure-map-denominator" data-ratio-id={pairing.ratio_id}>
+                Every value is {pairing.unit} {denominatorText(pairing)}, computed by the API from the count and its
+                denominator for the same {noun.one}, period and release. <DraftViewMark pairing={pairing} testId="measure-map-draft" />
+              </p>
+            ) : null}
+            {drawnMetadata ? (
               <ChoroplethMap
+                key={`${grain}:${stateFips}:${drawnMetadata.tileTemplate}`}
                 rows={rows}
-                tileMetadata={tileMetadata}
-                geoLevel="COUNTY"
-                legendTitle={`${name}, ${view.period}`}
-                missingLabel={`No published value (${formatNumber(view.withoutValue)} counties)`}
+                tileMetadata={drawnMetadata}
+                geoLevel={grain}
+                layerFilter={grain === "COUNTY" ? undefined : grainLayerFilter(grain, scoped ? stateFips : null)}
+                sourceZoom={boundary?.drawn ? { minzoom: boundary.layer.minzoom, maxzoom: boundary.layer.maxzoom } : undefined}
+                initialView={initialView}
+                boundaryNote={boundary?.drawn ? { text: boundaryNote(boundary, grain), marked: boundary.marked } : null}
+                legendTitle={`${name}, ${mapView.period}`}
+                missingLabel={`No published value (${formatNumber(mapView.withoutValue)} ${noun.many})`}
                 testId="measure-map-canvas"
-                distribution={view.distribution}
+                ariaLabel={`${name}, ${mapView.period}, by ${noun.one}${where}. The tables below list every ${noun.one}, including those this map leaves uncoloured.`}
+                distribution={mapView.distribution}
               />
             ) : (
-              <p className="subtle" role="status">The map is not available here; every value is in the table below.</p>
+              <p className="subtle" role="status" data-testid="measure-map-no-map">
+                {boundary && !boundary.drawn ? boundarySentence(boundary, grain, periodYear) : "The map is not available here; every value is in the table below."}
+              </p>
             )}
+            {boundary?.drawn ? (
+              <p
+                className="subtle"
+                data-testid="measure-map-vintage"
+                data-vintage={boundary.vintage ?? "current"}
+                data-marked={boundary.marked ? "true" : "false"}
+                title={boundaryNote(boundary, grain)}
+              >
+                {boundarySentence(boundary, grain, periodYear)}
+              </p>
+            ) : null}
+            <p className="subtle" data-testid="measure-map-uncoloured">
+              {uncolouredSentence(noun, mapView.ranked.length, mapView.withValue)}
+              {mapView.offBoundary
+                ? ` ${formatNumber(mapView.offBoundary)} published ${mapView.offBoundary === 1 ? "value is" : "values are"} for ${mapView.offBoundary === 1 ? `a ${noun.one}` : noun.many} not on the current list and ${mapView.offBoundary === 1 ? "is" : "are"} neither drawn nor tabled.`
+                : ""}
+            </p>
             <p className="subtle" data-testid="measure-map-banding">
-              Each colour holds about the same number of counties, so the bands show where a county
-              stands among the others rather than how far apart the values are.
+              {`Each colour holds about the same number of ${noun.many}, so the bands show where a ${noun.one} stands among the others rather than how far apart the values are.`}
             </p>
             <ul className="measure-legend" data-testid="measure-map-legend" aria-label="Legend">
-              {view.bins.map((bin) => (
+              {mapView.bins.map((bin) => (
                 <li key={bin.binIndex} data-count={bin.count}>
-                  {formatBound(bin.lowerBound)} to {formatBound(bin.upperBound)}{unit ? ` ${unit}` : ""}: {formatNumber(bin.count)} counties
+                  {formatBound(bin.lowerBound)} to {formatBound(bin.upperBound)}{unit ? ` ${unit}` : ""}: {formatNumber(bin.count)} {noun.many}
                 </li>
               ))}
-              <li data-count={view.withoutValue}>Uncoloured, no published value: {formatNumber(view.withoutValue)} counties</li>
+              <li data-count={mapView.withoutValue}>Uncoloured, no published value: {formatNumber(mapView.withoutValue)} {noun.many}</li>
             </ul>
           </section>
 
           <section className="analysis-panel" aria-labelledby="extremes-heading">
             <h2 id="extremes-heading">Highest and lowest published values</h2>
             <p className="subtle">
-              Where a margin of error is published it is shown; counties whose intervals overlap may not differ.
+              Where a margin of error is published it is shown; {noun.many} whose intervals overlap may not differ.
             </p>
             <div className="measure-extremes">
-              <CountyTable caption="Highest published values" entries={highest} linkFor={linkFor} testId="measure-map-highest" />
-              <CountyTable caption="Lowest published values" entries={lowest} linkFor={linkFor} testId="measure-map-lowest" />
+              <CountyTable caption="Highest published values" heading={capitalised(noun.one)} valueHeading={valueHeading} entries={highest} linkFor={linkFor} nameFor={nameFor} testId="measure-map-highest" />
+              <CountyTable caption="Lowest published values" heading={capitalised(noun.one)} valueHeading={valueHeading} entries={lowest} linkFor={linkFor} nameFor={nameFor} testId="measure-map-lowest" />
             </div>
           </section>
 
           <section className="analysis-panel" aria-labelledby="all-heading">
-            <h2 id="all-heading">Every county</h2>
-            <CountyTable caption={`Every county, page ${page + 1} of ${pages}`} entries={rankedPage(view, page, PAGE_SIZE)} linkFor={linkFor} testId="measure-map-all" />
+            <h2 id="all-heading">Every {noun.one}{where}</h2>
+            <CountyTable caption={`Every ${noun.one}${where}, page ${page + 1} of ${pages}`} heading={capitalised(noun.one)} valueHeading={valueHeading} entries={rankedPage(mapView, page, PAGE_SIZE)} linkFor={linkFor} nameFor={nameFor} testId="measure-map-all" />
             <div className="command-row">
               <button type="button" className="button secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
               <button type="button" className="button secondary" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next</button>
@@ -335,12 +597,13 @@ export default function MeasureMapPage({
           <section className="analysis-panel" aria-labelledby="coverage-heading" data-testid="measure-map-coverage">
             <h2 id="coverage-heading">What this measure covers</h2>
             <dl className="place-depth">
-              <div><dt>Period</dt><dd>{view.period}</dd></div>
+              <div><dt>Period</dt><dd>{mapView.period}</dd></div>
+              <div><dt>Geography</dt><dd>{capitalised(noun.many)}{where}{boundary?.drawn && boundary.vintage !== null ? `, ${boundary.vintage} boundaries` : ""}</dd></div>
               <div><dt>Unit</dt><dd>{unit || "not published"}</dd></div>
               <div><dt>Source</dt><dd>{String(sourceRow?.source_name || metric?.source_code || "not published")}</dd></div>
               <div><dt>Measure kind</dt><dd>{String(metric?.measure_kind || "not published")}</dd></div>
               <div><dt>How it may be combined</dt><dd>{String(metric?.aggregation_characteristic || "not published")}</dd></div>
-              <div><dt>Denominator and universe</dt><dd>As the source defines it; the catalog publishes no separate denominator for this measure.</dd></div>
+              <div><dt>Denominator and universe</dt><dd>{pairing ? `${pairing.denominator_label}; the value describes ${pairing.universe}` : "As the source defines it; the catalog publishes no separate denominator for this measure."}</dd></div>
             </dl>
             {sourceRow?.reference_url ? (
               <p><a className="text-link" href={String(sourceRow.reference_url)} rel="noopener noreferrer" target="_blank">The source&apos;s own definitions and changes</a></p>
@@ -348,28 +611,28 @@ export default function MeasureMapPage({
           </section>
         </>
       ) : (
-        <p className="subtle" role="status">Reading county values…</p>
+        <p className="subtle" role="status">Reading {noun.one} values…</p>
       )}
     </main>
   );
 }
 
-function CountyTable({ caption, entries, linkFor, testId }: { caption: string; entries: RankedCounty[]; linkFor: (entry: RankedCounty) => string | null; testId: string }) {
+function CountyTable({ caption, entries, heading, linkFor, nameFor, testId, valueHeading }: { caption: string; entries: RankedCounty[]; heading: string; linkFor: (entry: RankedCounty) => string | null; nameFor: (entry: RankedCounty) => string; testId: string; valueHeading: string }) {
   return (
     <div className="table-scroll">
       <table className="place-card-table" data-testid={testId}>
         <caption>{caption}</caption>
         <thead>
-          <tr><th scope="col">County</th><th scope="col">Value</th><th scope="col">Uncertainty</th></tr>
+          <tr><th scope="col">{heading}</th><th scope="col">{valueHeading}</th><th scope="col">Uncertainty</th></tr>
         </thead>
         <tbody>
           {entries.map((entry) => {
             const href = linkFor(entry);
-            const label = `${String(entry.county.county_name || entry.county.geo_name || entry.county.geo_id)}, ${String(entry.county.state_name || "")}`.replace(/, $/, "");
+            const label = nameFor(entry);
             return (
               <tr key={entry.county.geo_id} data-geo-id={entry.county.geo_id} data-gap={entry.gap || undefined}>
                 <th scope="row">{href ? <Link href={href}>{label}</Link> : label}</th>
-                <td>{entry.value !== null && entry.row ? `${formatObservationValue(entry.row.value)} ${observationUnit(entry.row) === "value" ? "" : observationUnit(entry.row)}`.trim() : entry.gap === "missing" ? "Not published" : `Withheld${entry.gap.includes(":") ? ` (${entry.gap.split(": ")[1]})` : ""}`}</td>
+                <td>{entry.value !== null && entry.row ? `${formatObservationValue(entry.row.value, entry.row.derived !== undefined ? 2 : 1)} ${observationUnit(entry.row) === "value" ? "" : observationUnit(entry.row)}`.trim() : entry.gap === "missing" ? "Not published" : entry.row?.derived !== undefined ? String(entry.row.value_status) : `Withheld${entry.gap.includes(":") ? ` (${entry.gap.split(": ")[1]})` : ""}`}</td>
                 <td className="subtle">{entry.row && entry.value !== null ? [marginOfErrorText(entry.row) !== "Not provided" ? marginOfErrorText(entry.row) : "", observationUncertaintyLabel(entry.row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN)].filter(Boolean).join(" · ") : ""}</td>
               </tr>
             );
@@ -377,6 +640,50 @@ function CountyTable({ caption, entries, linkFor, testId }: { caption: string; e
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** The grain the measure is drawn at and, for a grain drawn one state at a time, the state. */
+function GrainControls({
+  grains,
+  grain,
+  onGrain,
+  scoped,
+  states,
+  stateFips,
+  onState,
+}: {
+  grains: MapGrain[];
+  grain: MapGrain;
+  onGrain: (grain: MapGrain) => void;
+  scoped: boolean;
+  states: GeographySummary[];
+  stateFips: string;
+  onState: (stateFips: string) => void;
+}) {
+  const sortedStates = [...states].sort((left, right) => String(left.state_name || "").localeCompare(String(right.state_name || "")));
+  return (
+    <>
+      <label>
+        Draw by
+        <select value={grain} onChange={(event) => onGrain(event.target.value as MapGrain)} disabled={grains.length < 2} data-testid="measure-map-grain">
+          {grains.map((item) => (
+            <option key={item} value={item}>{capitalised(nounFor(item).many)}</option>
+          ))}
+        </select>
+      </label>
+      {scoped ? (
+        <label>
+          State
+          <select value={stateFips} onChange={(event) => onState(event.target.value)} data-testid="measure-map-state">
+            <option value="">Choose a state</option>
+            {sortedStates.map((item) => (
+              <option key={item.geo_id} value={String(item.state_fips || "")}>{String(item.state_name || item.geo_name || "")}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </>
   );
 }
 
@@ -393,7 +700,7 @@ function MeasureSwitcher({ current }: { current: string }) {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       searchMetrics({ q: query.trim(), active_only: "true", limit: "8" }, { signal: controller.signal })
-        .then((payload) => { if (!controller.signal.aborted) setResults((payload.items || []).filter((item) => item.metric_code !== current)); })
+        .then((payload) => { if (!controller.signal.aborted) setResults((payload.items || []).filter((item) => item.metric_code !== current && !isSingleAgeLine(item.metric_code))); })
         .catch(() => { if (!controller.signal.aborted) setResults([]); });
     }, 250);
     return () => { controller.abort(); window.clearTimeout(timer); };

@@ -237,6 +237,7 @@ def test_shared_failures_are_declared_where_they_apply() -> None:
         "/api/v1/evidence-packets",
         "/api/v1/auth",
         "/api/v1/account",
+        "/api/v1/admin",
     )
     for path, item in document["paths"].items():
         for method, operation in item.items():

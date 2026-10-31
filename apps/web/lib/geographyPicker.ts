@@ -18,23 +18,30 @@ export const GEO_GRAIN_ORDER: readonly string[] = GEO_LEVELS;
 /** One grain's name in the reader's terms, singular and plural. */
 export const GEO_GRAIN_LABELS: Record<string, { one: string; many: string }> = {
   NATIONAL: { one: "National", many: "national geographies" },
+  CENSUS_REGION: { one: "Census region", many: "Census regions" },
+  CENSUS_DIVISION: { one: "Census division", many: "Census divisions" },
   STATE: { one: "State", many: "states" },
+  METRO: { one: "Metro area", many: "metro areas" },
   COUNTY: { one: "County", many: "counties" },
   PLACE: { one: "Place", many: "places" },
+  TRACT: { one: "Census tract", many: "Census tracts" },
+  PROVIDER_AREA: { one: "Provider area", many: "provider areas" },
   AGENCY: { one: "Agency", many: "agencies" },
 };
 
 /**
  * Grains that sit inside a state, and are therefore chosen after one.
  *
- * This is what bounds the read: the projection carries some 32k places, and
- * a `<select>` is not the place to load them all. COUNTY already worked this
- * way; PLACE does for the same reason. NATIONAL and STATE are not inside a
- * state, and AGENCY is not projected into the geography dimension at all --
- * its grains come from `dim_geo_current.geo_level`, which is
- * `us`/`state`/`county`/`place`.
+ * This is what bounds the read: the projection carries some 32k places and
+ * 85k tracts, and a `<select>` is not the place to load them all. COUNTY
+ * already worked this way; PLACE and TRACT do for the same reason -- a TRACT
+ * read without a state asked for every tract in the country, ran past the
+ * page cap, and told the reader no tracts were published. NATIONAL and STATE
+ * are not inside a state, and AGENCY is not projected into the geography
+ * dimension at all -- its grains come from `dim_geo_current.geo_level`,
+ * which is `us`/`state`/`county`/`place`.
  */
-export const GRAINS_WITHIN_A_STATE: readonly string[] = ["COUNTY", "PLACE"];
+export const GRAINS_WITHIN_A_STATE: readonly string[] = ["COUNTY", "PLACE", "TRACT"];
 
 /** One offered geography: the identity to send, and the name to show. */
 export interface GeographyOption {

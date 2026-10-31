@@ -44,6 +44,10 @@ export default function ChoroplethMap({
   distribution = null,
   ariaLabel,
   onFeatureClick,
+  layerFilter,
+  sourceZoom,
+  initialView,
+  boundaryNote,
 }: {
   rows: ObservationRow[];
   tileMetadata: TileMetadata | null;
@@ -57,6 +61,14 @@ export default function ChoroplethMap({
   ariaLabel?: string;
   /** Called with a clicked boundary's tile properties. */
   onFeatureClick?: (properties: Record<string, unknown>) => void;
+  /** Replaces the grain filter, for a layer drawn one state at a time (web-place-maps). */
+  layerFilter?: unknown;
+  /** The zoom range the layer publishes, as `/catalog/tile-layers` lists it. */
+  sourceZoom?: { minzoom: number; maxzoom: number };
+  /** Where the map opens, for a layer drawn one state at a time. */
+  initialView?: { center: [number, number]; zoom: number } | null;
+  /** Which boundaries the map is drawn on: the legend's note and the map's tooltip. */
+  boundaryNote?: { text: string; marked: boolean } | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { mapRef, ready, loadFailed } = useMapLibre(containerRef, true);
@@ -75,9 +87,10 @@ export default function ChoroplethMap({
       map.addSource(COMPARISON_SOURCE, {
         type: "vector",
         tiles: [boundaryTileUrl(tileMetadata.tileTemplate, window.location.origin)],
-        minzoom: 0,
-        maxzoom: 12,
+        minzoom: sourceZoom?.minzoom ?? 0,
+        maxzoom: sourceZoom?.maxzoom ?? 12,
       });
+      if (initialView) map.jumpTo(initialView);
     }
     const expression = model.expression as unknown as ExpressionSpecification;
     if (!map.getLayer(COMPARISON_LAYER)) {
@@ -98,9 +111,12 @@ export default function ChoroplethMap({
     syncLayerFilter(
       map,
       [COMPARISON_LAYER],
-      tileFilterForGeoLevel(geoLevel) as unknown as FilterSpecification,
+      (layerFilter ?? tileFilterForGeoLevel(geoLevel)) as unknown as FilterSpecification,
     );
-  }, [mapRef, ready, tileMetadata, model, geoLevel]);
+    // The source, zoom range and opening view are fixed for one instance;
+    // a caller that changes them remounts the map with a new key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapRef, ready, tileMetadata, model, geoLevel, JSON.stringify(layerFilter ?? null)]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -142,6 +158,9 @@ export default function ChoroplethMap({
         data-testid={testId}
         data-map-ready={ready ? "true" : "false"}
         data-colored-values={model.valueCount}
+        data-geo-level={geoLevel}
+        data-tile-template={tileMetadata?.tileTemplate || ""}
+        title={boundaryNote?.text}
         ref={containerRef}
         role="region"
         aria-label={ariaLabel || `${legendTitle}. The comparison table lists every value, including the geographies this map leaves uncoloured.`}
@@ -150,6 +169,7 @@ export default function ChoroplethMap({
         title={legendTitle}
         items={model.legendItems}
         ariaLabel={`${legendTitle} legend`}
+        note={boundaryNote}
       />
     </div>
   );

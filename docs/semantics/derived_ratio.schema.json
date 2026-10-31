@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://population-etl.example/schemas/derived-ratios.json",
+  "title": "Reviewed per-capita and share pairings (ADR-0009)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "description", "entries"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "description": {"type": "string", "minLength": 1},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ratio_id",
+          "kind",
+          "scale",
+          "unit",
+          "label",
+          "numerator",
+          "denominator_label",
+          "universe",
+          "status",
+          "owner",
+          "reviewer",
+          "version",
+          "effective_date",
+          "last_reviewed_date",
+          "rationale",
+          "limitations",
+          "citations"
+        ],
+        "properties": {
+          "ratio_id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "kind": {"enum": ["share", "per_capita", "provider_rate", "agency_rate"]},
+          "scale": {"enum": [1, 100, 1000, 100000]},
+          "unit": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1},
+          "numerator": {"type": "string", "minLength": 1},
+          "denominator": {"type": "string", "minLength": 1},
+          "provider_rate": {"type": "string", "minLength": 1},
+          "reads_beside": {"type": "string", "minLength": 1},
+          "geo_levels": {"type": "array", "items": {"enum": ["COUNTY"]}, "minItems": 1},
+          "datasets": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+          "denominator_label": {"type": "string", "minLength": 1},
+          "universe": {"type": "string", "minLength": 1},
+          "numerator_is_subset": {"type": "boolean"},
+          "controlled_denominator_levels": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "status": {"enum": ["draft", "approved", "deprecated", "needs_review"]},
+          "owner": {"type": "string", "minLength": 1},
+          "reviewer": {"type": "string", "minLength": 1},
+          "version": {"type": "integer", "minimum": 1},
+          "effective_date": {"type": "string", "format": "date"},
+          "last_reviewed_date": {"type": "string", "format": "date"},
+          "rationale": {"type": "string", "minLength": 1},
+          "limitations": {"type": "array", "items": {"type": "string"}},
+          "citations": {"type": "array", "items": {"type": "string", "format": "uri"}, "minItems": 1}
+        }
+      }
+    }
+  }
+}
