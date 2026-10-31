@@ -7,6 +7,13 @@ warehouse on 2026-10-31; replace it with the output of [`coverage.sql`](coverage
 
 Interactive version: [Warehouse Source Map](https://claude.ai/artifact/R8x3zkZjRAXFcPEYNr45s7). Table structures: [erd.md](erd.md).
 
+**Live version (admins):** the site's `/admin/warehouse` page shows this map and the schema atlas read from the
+warehouse each time it opens: grains and metric counts from `gold_glossary.dim_metric_catalog`, years per grain
+measured from each source's serving relation (cached six hours), and every table and view from `pg_catalog`. The
+descriptions it shows come from `apps/api/services/warehouse_inventory.py`; a unit test fails if a served source has
+no entry there, so add one with every new source. Turn the page on by listing operator labels or sign-in emails in
+`API_ADMIN_ACCOUNTS`. This file and `erd.md` are the snapshot of 2026-10-31.
+
 Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, averaged or placed from finer records) · ◌ some programs or areas only.
 
 | Source | Publisher | Nation | State | County | Metro | Place | Tract | Other | Years | Refresh | Status |

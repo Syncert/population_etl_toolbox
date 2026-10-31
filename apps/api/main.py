@@ -29,6 +29,7 @@ from apps.api.registry import platform_description
 from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
     account,
+    admin,
     catalog,
     cdc,
     comparison,
@@ -99,6 +100,8 @@ PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     # whoever asked next.
     identity.router,
     account.router,
+    # The admin warehouse pages: authenticated, allowlisted, and never cached.
+    admin.router,
 )
 
 #: The content report (API-137). A warehouse read, so it is deliberately not

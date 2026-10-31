@@ -49,6 +49,9 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # a sign-in reaches no source, no gold schema, and no warehouse row.
     "/api/v1/auth",
     "/api/v1/account",
+    # The admin warehouse pages describe every source at once (inventory,
+    # coverage, catalog schema); owned by the platform, not by one product.
+    "/api/v1/admin",
 )
 
 

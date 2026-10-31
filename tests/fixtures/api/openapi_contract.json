@@ -90,6 +90,67 @@
         "account"
       ]
     },
+    "GET /api/v1/admin/warehouse/coverage/{source_code}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "refresh",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SourceCoverageResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "admin"
+      ]
+    },
+    "GET /api/v1/admin/warehouse/schema": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:WarehouseSchemaResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "admin"
+      ]
+    },
+    "GET /api/v1/admin/warehouse/sources": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:WarehouseSourcesResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "admin"
+      ]
+    },
     "GET /api/v1/analysis-configurations": {
       "parameters": [
         {
@@ -3169,6 +3230,132 @@
         "kind"
       ]
     },
+    "AtlasBox": {
+      "properties": {
+        "columns": "array<array<string>>",
+        "height": "integer",
+        "kind": "string",
+        "layer": "string",
+        "more_columns": "integer",
+        "name": "string",
+        "partitions": "integer",
+        "shared": "boolean",
+        "width": "integer",
+        "x": "integer",
+        "y": "integer"
+      },
+      "required": [
+        "columns",
+        "height",
+        "kind",
+        "layer",
+        "more_columns",
+        "name",
+        "partitions",
+        "shared",
+        "width",
+        "x",
+        "y"
+      ]
+    },
+    "AtlasDomain": {
+      "properties": {
+        "boxes": "array<AtlasBox>",
+        "caption": "string",
+        "edges": "array<AtlasEdge>",
+        "height": "integer",
+        "id": "string",
+        "source_code": "string | null",
+        "tables": "integer",
+        "title": "string",
+        "views": "integer",
+        "width": "integer"
+      },
+      "required": [
+        "boxes",
+        "caption",
+        "edges",
+        "height",
+        "id",
+        "source_code",
+        "tables",
+        "title",
+        "views",
+        "width"
+      ]
+    },
+    "AtlasEdge": {
+      "properties": {
+        "columns": "array<string>",
+        "from": "string",
+        "kind": "string",
+        "to": "string"
+      },
+      "required": [
+        "columns",
+        "from",
+        "kind",
+        "to"
+      ]
+    },
+    "AtlasForeignKey": {
+      "properties": {
+        "columns": "array<string>",
+        "references": "string"
+      },
+      "required": [
+        "columns",
+        "references"
+      ]
+    },
+    "AtlasRelation": {
+      "properties": {
+        "columns": "array<array<any>>",
+        "domain": "string | null",
+        "estimated_rows": "integer | null",
+        "foreign_keys": "array<AtlasForeignKey>",
+        "index_count": "integer",
+        "kind": "string",
+        "layer": "string",
+        "name": "string",
+        "partition_key": "string | null",
+        "partitions": "integer",
+        "primary_key": "array<string>",
+        "reads_from": "array<string>",
+        "uniques": "array<string>"
+      },
+      "required": [
+        "columns",
+        "domain",
+        "estimated_rows",
+        "foreign_keys",
+        "index_count",
+        "kind",
+        "layer",
+        "name",
+        "partition_key",
+        "partitions",
+        "primary_key",
+        "reads_from",
+        "uniques"
+      ]
+    },
+    "AtlasStats": {
+      "properties": {
+        "foreign_keys": "integer",
+        "partitions": "integer",
+        "schemas": "integer",
+        "tables": "integer",
+        "views": "integer"
+      },
+      "required": [
+        "foreign_keys",
+        "partitions",
+        "schemas",
+        "tables",
+        "views"
+      ]
+    },
     "BlockValidation": {
       "properties": {
         "block_id": "string",
@@ -3189,6 +3376,28 @@
       "required": [
         "items",
         "total"
+      ]
+    },
+    "CatalogSummary": {
+      "properties": {
+        "current_metrics": "integer",
+        "geo_grains": "array<string>",
+        "last_harvested": "string | null",
+        "metrics": "integer",
+        "newest_publication": "string | null",
+        "newest_watermark": "string | null",
+        "stale_metrics": "integer",
+        "time_grains": "array<string>"
+      },
+      "required": [
+        "current_metrics",
+        "geo_grains",
+        "last_harvested",
+        "metrics",
+        "newest_publication",
+        "newest_watermark",
+        "stale_metrics",
+        "time_grains"
       ]
     },
     "CdcObservation": {
@@ -4002,6 +4211,34 @@
       "required": [
         "geo_id",
         "geo_name"
+      ]
+    },
+    "GrainCoverage": {
+      "properties": {
+        "column": "string",
+        "first_year": "integer | null",
+        "grain": "string | null",
+        "last_year": "integer | null",
+        "row_count": "integer | null",
+        "years": "array<integer>"
+      },
+      "required": [
+        "column",
+        "first_year",
+        "grain",
+        "last_year",
+        "row_count",
+        "years"
+      ]
+    },
+    "GrainMark": {
+      "properties": {
+        "grain": "string",
+        "mark": "string"
+      },
+      "required": [
+        "grain",
+        "mark"
       ]
     },
     "HTTPValidationError": {
@@ -5123,6 +5360,36 @@
         "status"
       ]
     },
+    "SourceCoverageResponse": {
+      "properties": {
+        "cached": "boolean",
+        "catalog_source_code": "string | null",
+        "elapsed_ms": "integer",
+        "grains": "array<GrainCoverage>",
+        "measured_at": "string",
+        "method": "string | null",
+        "note": "string | null",
+        "relation": "string | null",
+        "row_count": "integer | null",
+        "row_count_is_estimate": "boolean",
+        "source_code": "string",
+        "status": "string"
+      },
+      "required": [
+        "cached",
+        "catalog_source_code",
+        "elapsed_ms",
+        "grains",
+        "measured_at",
+        "method",
+        "note",
+        "relation",
+        "row_count",
+        "row_count_is_estimate",
+        "source_code",
+        "status"
+      ]
+    },
     "SourceFreshness": {
       "properties": {
         "current_count": "integer",
@@ -5218,6 +5485,80 @@
         "loc",
         "msg",
         "type"
+      ]
+    },
+    "WarehouseSchemaResponse": {
+      "properties": {
+        "domains": "array<AtlasDomain>",
+        "read_at": "string",
+        "relations": "array<AtlasRelation>",
+        "stats": "AtlasStats"
+      },
+      "required": [
+        "domains",
+        "read_at",
+        "relations",
+        "stats"
+      ]
+    },
+    "WarehouseSourceEntry": {
+      "properties": {
+        "cadence": "string",
+        "catalog": "CatalogSummary | null",
+        "catalog_source_code": "string | null",
+        "code": "string",
+        "control": "array<string>",
+        "credential": "string",
+        "dag": "string",
+        "datasets": "array<string>",
+        "declared_years": "array<array<integer>>",
+        "gold": "array<string>",
+        "grains": "array<GrainMark>",
+        "measures": "string",
+        "module": "string",
+        "name": "string",
+        "publisher": "string",
+        "raw": "array<string>",
+        "release": "string",
+        "silver": "array<string>",
+        "topic": "string",
+        "years_note": "string"
+      },
+      "required": [
+        "cadence",
+        "catalog",
+        "catalog_source_code",
+        "code",
+        "control",
+        "credential",
+        "dag",
+        "datasets",
+        "declared_years",
+        "gold",
+        "grains",
+        "measures",
+        "module",
+        "name",
+        "publisher",
+        "raw",
+        "release",
+        "silver",
+        "topic",
+        "years_note"
+      ]
+    },
+    "WarehouseSourcesResponse": {
+      "properties": {
+        "catalog_read_at": "string",
+        "grains": "array<array<string>>",
+        "sources": "array<WarehouseSourceEntry>",
+        "topics": "array<string>"
+      },
+      "required": [
+        "catalog_read_at",
+        "grains",
+        "sources",
+        "topics"
       ]
     }
   }

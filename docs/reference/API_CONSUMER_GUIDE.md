@@ -2127,12 +2127,36 @@ own query rather than referencing a configuration that could later change.
 chunked body streams. Over the bound answers `413 {"detail": "..."}` before
 any parsing. Public analytical reads carry no body and are unaffected.
 
+## Admin: the warehouse pages
+
+Operator reads behind the web's `/admin/warehouse` page. They describe the
+warehouse rather than serve observations, so a client building on the
+analytical routes never needs them. Every response is `private, no-store`.
+
+- `GET /api/v1/admin/warehouse/sources` — every source the warehouse loads
+  (publisher, datasets, grains, declared years, schedule, credential, the
+  tables it lands in), each joined to what `gold_glossary.dim_metric_catalog`
+  holds for it now: metric counts, served grains, newest watermark.
+- `GET /api/v1/admin/warehouse/coverage/{source_code}` — the years held at
+  each grain and the rows behind them, measured from the source's serving
+  relation. Cached six hours per API process; `?refresh=true` measures now. A
+  measurement that exceeds 20 s answers `status: "timed_out"` instead of
+  failing. Census ACS is read from its year partitions, not scanned.
+- `GET /api/v1/admin/warehouse/schema` — every warehouse table and view with
+  its columns, keys, foreign keys and view dependencies, read from the
+  Postgres catalog (cached five minutes) and laid out as one diagram per
+  source.
+
+Access: `API_ADMIN_ACCOUNTS` lists operator labels or signed-in email
+addresses. Empty turns the routes off (`404` before any credential is read).
+Otherwise a missing token is `401` and an account not on the list is `403`.
+
 ## Errors
 
 | Status | Meaning |
 | --- | --- |
 | `401` | Missing, malformed, unknown, or revoked bearer token. Identical for every case by design |
-| `403` | Authenticated, and not authorized for this act. Only `DELETE /api/v1/account` answers it: deletion needs a sign-in completed in the last few minutes, and a long-lived session is not that. Sign in again and retry |
+| `403` | Authenticated, and not authorized for this act. `DELETE /api/v1/account` answers it when the sign-in is not recent (sign in again and retry); the admin warehouse routes answer it for an account not on the deployment's admin list |
 | `404` | Unknown identifier, or a configuration you do not own (indistinguishable on purpose) |
 | `409` | Version conflict, or a name you already use |
 | `413` | The request body is over the accepted size. Refused before parsing |

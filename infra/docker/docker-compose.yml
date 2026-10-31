@@ -179,6 +179,8 @@ services:
       # declare rather than leave to accident. 0 means undeclared, and the API
       # reports it absent rather than inventing one.
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-0}
+      # Admin warehouse page allowlist (operator labels or emails); empty = off.
+      API_ADMIN_ACCOUNTS: ${API_ADMIN_ACCOUNTS:-}
     depends_on:
       - analytics_postgres
       - redis
