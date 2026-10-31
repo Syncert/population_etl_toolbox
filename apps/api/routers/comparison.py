@@ -12,7 +12,13 @@ from apps.api.services.comparison_service import (
     metric_correlation,
     preflight_metric_comparison,
 )
-from apps.api.services.cross_level_service import UnknownGeography, compare_places
+from apps.api.query_lists import code_list
+from apps.api.services.cross_level_service import (
+    BATCH_MOST,
+    UnknownGeography,
+    compare_places,
+    compare_places_batch,
+)
 from apps.api.services.derived_ratio_service import UnknownRatio
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
@@ -25,7 +31,10 @@ from apps.api.schemas import (
     ComparisonPreflightResponse,
     ComparisonResponse,
 )
-from apps.api.schemas.cross_level import PlacesComparisonResponse
+from apps.api.schemas.cross_level import (
+    PlacesComparisonBatchResponse,
+    PlacesComparisonResponse,
+)
 
 router = APIRouter(tags=["comparison"])
 
@@ -259,6 +268,64 @@ def get_places_comparison(
         ) from exc
     except UnknownRatio as exc:
         raise HTTPException(status_code=404, detail="ratio_id not found") from exc
+    except NeutralQueryError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/comparison/places/batch",
+    response_model=PlacesComparisonBatchResponse,
+    name="get_places_comparison_batch",
+    summary="Several measures in the same two places, in one request",
+    responses=NOT_FOUND,
+)
+def get_places_comparison_batch(
+    geo_id_a: str = Query(..., min_length=1, max_length=60),
+    geo_id_b: str = Query(..., min_length=1, max_length=60),
+    metric_codes: Optional[str] = Query(
+        None,
+        max_length=8000,
+        description="Comma-separated metric codes, each answered as "
+        "/comparison/places?metric_code= would answer it.",
+    ),
+    ratio_ids: Optional[str] = Query(
+        None,
+        max_length=8000,
+        description="Comma-separated pairings from /catalog/derived-ratios, each "
+        "answered as /comparison/places?ratio_id= would answer it.",
+    ),
+    follow_alternatives: bool = Query(
+        True,
+        description="Answer a refused total's first offered per-capita or share "
+        "view as the item's `instead`.",
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> PlacesComparisonBatchResponse:
+    """The compare page's chapter in one request (ADR-0010).
+
+    Every item is the answer ``/comparison/places`` gives for that measure
+    alone, in the order asked, metric codes first. The two places, how they
+    relate and the rows are read once for the batch rather than once per
+    measure. An item the route would refuse carries that status and detail;
+    an unknown place is a ``404`` for the whole batch.
+    """
+    codes = code_list(metric_codes, "metric_codes", BATCH_MOST) or []
+    ratios = code_list(ratio_ids, "ratio_ids", BATCH_MOST) or []
+    try:
+        return compare_places_batch(
+            db,
+            geo_id_a=geo_id_a,
+            geo_id_b=geo_id_b,
+            metric_codes=codes,
+            ratio_ids=ratios,
+            follow_alternatives=follow_alternatives,
+        )
+    except UnknownGeography as exc:
+        raise HTTPException(
+            status_code=404, detail=f"{exc.parameter} not found"
+        ) from exc
     except NeutralQueryError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc
     except SQLAlchemyError as exc:

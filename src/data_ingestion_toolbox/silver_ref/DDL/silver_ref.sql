@@ -216,6 +216,16 @@ CREATE TABLE IF NOT EXISTS silver_ref.bridge_geo_relationship_version (
     CHECK (overlap_weight IS NULL OR overlap_weight BETWEEN 0 AND 1)
 );
 
+-- The relationships that point at a place, by that place: what contains it,
+-- what it intersects. The unique key leads with the parent, so reading a
+-- county's state, a place's counties or a county's metro scanned the bridge
+-- (2.1M rows on OFFICE_LAB) behind every "Nearby and related" list and every
+-- cross-level comparison. On a populated warehouse build it first with
+-- `CREATE INDEX CONCURRENTLY` under this name; this statement is then a no-op.
+CREATE INDEX IF NOT EXISTS ix_bridge_geo_relationship_version_related
+    ON silver_ref.bridge_geo_relationship_version
+    (related_geo_sk, relationship_type, parent_geo_sk, geography_vintage);
+
 -- Census tracts across a decade boundary (acs-place-and-tract-history,
 -- deliverable 7): one row per part of an earlier-decade tract that lies in a
 -- later-decade tract, from the Bureau's tract relationship files. A tract

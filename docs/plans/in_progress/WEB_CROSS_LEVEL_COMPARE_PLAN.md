@@ -142,3 +142,35 @@ API started with `DERIVED_RATIOS_SERVE_DRAFTS=1`:
    address in one read, with the lists kept as the fallback.
 
 Recheck 3, 4 and 5 after the follow-up merges.
+
+## Recheck, OFFICE_LAB, 2026-10-31 (dev at 0f71e5c, #193)
+
+3 and 4 passed. The pages were still slow (Austin beside Travis County 91 s,
+Dane County beside Wisconsin 132 s) with both places resolved quickly:
+
+- One page asked 241 requests: 145 `/catalog/metrics/{code}` (8 ms each) and
+  89 `/comparison/places`, one per row plus a second for each refused total's
+  share, sent six at a time by the browser.
+- Each `/comparison/places` took about 7 s whatever the measure, and the
+  repeat came from the cache in 3 ms. The cost was the containment read:
+  `GEOGRAPHY_RELATED_QUERY` for Dane County ran 8.7 s (217 rows), the related
+  view resolving names and levels by scanning `dim_geo_latest`.
+
+Fixed on the next follow-up:
+
+- The comparison reads only the relationship between its two places
+  (`GEOGRAPHY_PAIR_RELATIONSHIP_QUERY`), and the pair once per request.
+- `GET /comparison/places/batch` answers a chapter in one request, reading a
+  source's metrics in one statement and following a refused total's share
+  on the server (API-178); the page sends one per chapter, all at once, and
+  draws each as it lands. The metric catalog is one read
+  (`/catalog/metrics?metric_codes=`).
+- Against the fixtures the page now asks 15 requests instead of 241.
+
+- The related read itself (`GEOGRAPHY_RELATED_QUERY`, behind a place page's
+  "Nearby and related", 7.9 s uncached) reads each step from an array of
+  known places, and its names by key, over a new bridge index
+  `ix_bridge_geo_relationship_version_related` (related place first), which
+  OFFICE_LAB built concurrently before the merge (119 MB, 2.1M rows).
+
+Re-time both pages and Dane County's related list after this merges.

@@ -539,6 +539,15 @@
         },
         {
           "constraints": {
+            "maxLength": 8000
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
             "default": 0,
             "maximum": 100000,
             "minimum": 0
@@ -1152,6 +1161,67 @@
       ],
       "responses": {
         "200": "application/json:PlacesComparisonResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/v1/comparison/places/batch": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": true
+          },
+          "in": "query",
+          "name": "follow_alternatives",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_b",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 8000
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 8000
+          },
+          "in": "query",
+          "name": "ratio_ids",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:PlacesComparisonBatchResponse",
         "404": "application/json:ErrorDetail",
         "422": "application/json:ErrorDetail | HTTPValidationError",
         "429": "application/json:ErrorDetail",
@@ -4604,6 +4674,29 @@
       },
       "required": [
         "valid"
+      ]
+    },
+    "PlacesBatchItem": {
+      "properties": {
+        "answer": "PlacesComparisonResponse | null",
+        "detail": "string | null",
+        "instead": "PlacesComparisonResponse | null",
+        "metric_code": "string | null",
+        "ratio_id": "string | null",
+        "status": "integer"
+      },
+      "required": []
+    },
+    "PlacesComparisonBatchResponse": {
+      "properties": {
+        "geo_id_a": "string",
+        "geo_id_b": "string",
+        "items": "array<PlacesBatchItem>"
+      },
+      "required": [
+        "geo_id_a",
+        "geo_id_b",
+        "items"
       ]
     },
     "PlacesComparisonResponse": {

@@ -336,6 +336,15 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       const items = derivedRows(ratio, params.get("geo_id"));
       return route.fulfill({ json: { ratio, scope: "latest", release: null, total: items.length, limit: Number(params.get("limit") || 100), offset: 0, items } });
     }
+    if (path === "/api/v1/catalog/metrics" && params.get("metric_codes")) {
+      // The named rows, as the per-code route answers each (API-178).
+      const items = params.get("metric_codes").split(",").flatMap((code) => {
+        if (COST_METRICS[code]) return [COST_METRICS[code]];
+        const withheld = withoutSource && code.startsWith(`${withoutSource}:`);
+        return metrics[code] && !withheld ? [metrics[code]] : [];
+      });
+      return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
+    }
     if (path === "/api/v1/catalog/metrics") return route.fulfill({ json: { total: 0, limit: 6, offset: 0, items: [] } });
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);

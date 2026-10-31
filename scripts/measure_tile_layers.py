@@ -7,11 +7,12 @@ Read-only. Two questions, both of which only a loaded warehouse can answer:
    vintage (dense metros at low and middle zooms, where a tile is largest) and
    records bytes and features per tile against ``--budget-bytes``. A tile over
    budget fails the run: it is a tile a browser would be sent.
-2. **Coverage.** For each versioned grain, how many geographies with a
-   published ACS population figure have a polygon in the default vintage, and
-   how many polygons have no published figure. The first number is what a map
+2. **Coverage.** For each versioned grain, how many geographies that any
+   served source publishes at that grain have a polygon in the default
+   vintage, and how many polygons have nothing published. The first number is what a map
    could not draw at all; the second is what it leaves uncoloured, never drawn
-   as zero. This is the precondition the D-8 paint check grades.
+   as zero. This is the precondition the D-8 paint check grades. Tiles within
+   10% of the budget are listed under ``near_budget``.
 
 Usage (OFFICE_LAB, stack up)::
 
@@ -31,6 +32,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 #: MapLibre's own guidance keeps a vector tile under about 500 KB; the county
 #: layer measured 516 KB at z4 after DB-053, so this is the same ceiling.
@@ -73,8 +75,25 @@ def samples() -> list[Sample]:
     return out
 
 
+#: A tile above this share of the budget is reported as near it: New York's z6
+#: places tile measured 514,278 B against 524,288 before simplification, and a
+#: new vintage adds vertices, so headroom is reported before it is gone.
+NEAR_BUDGET_FRACTION = 0.9
+
+
 def over_budget(measured: list[dict], budget_bytes: int) -> list[dict]:
     return [row for row in measured if row["bytes"] > budget_bytes]
+
+
+def near_budget(
+    measured: list[dict], budget_bytes: int, fraction: float = NEAR_BUDGET_FRACTION
+) -> list[dict]:
+    """Tiles inside the budget but within ``1 - fraction`` of it."""
+    return [
+        row
+        for row in measured
+        if budget_bytes * fraction < row["bytes"] <= budget_bytes
+    ]
 
 
 def _get(url: str) -> tuple[int, bytes]:
@@ -116,60 +135,118 @@ def measure_sizes(tiles_url: str) -> tuple[dict, list[dict]]:
     return catalog, measured
 
 
-COVERAGE_SQL = """
-WITH default_vintage AS (
-    SELECT geo_level, boundary_vintage
-    FROM gold.tile_layer_vintage
-    WHERE is_default
-),
-drawn AS (
-    SELECT boundary.geo_id, boundary.geo_level
-    FROM gold_glossary.tile_boundary_version AS boundary
-    JOIN default_vintage USING (geo_level, boundary_vintage)
-),
-published AS (
-    SELECT DISTINCT served.geo_id, served.geo_level
-    FROM gold_census.mv_acs_latest AS served
-    WHERE served.metric_code = 'CENSUS_ACS:acs5:B01003_001'
-      AND served.value_status = 'valid'
-      AND served.geo_level IN ('PLACE', 'METRO')
-)
-SELECT level.geo_level,
-       (SELECT boundary_vintage FROM default_vintage d WHERE d.geo_level = level.geo_level),
-       (SELECT COUNT(*) FROM drawn d WHERE d.geo_level = level.geo_level),
-       (SELECT COUNT(*) FROM published p WHERE p.geo_level = level.geo_level),
-       (SELECT COUNT(*) FROM published p
-         WHERE p.geo_level = level.geo_level
-           AND NOT EXISTS (SELECT 1 FROM drawn d WHERE d.geo_id = p.geo_id)),
-       (SELECT COUNT(*) FROM drawn d
-         WHERE d.geo_level = level.geo_level
-           AND NOT EXISTS (SELECT 1 FROM published p WHERE p.geo_id = d.geo_id))
-FROM (VALUES ('PLACE'), ('METRO')) AS level (geo_level)
+#: The polygons each grain draws at its default vintage.
+POLYGONS_SQL = """
+SELECT boundary.geo_level, boundary.boundary_vintage, boundary.geo_id
+FROM gold_glossary.tile_boundary_version AS boundary
+JOIN gold.tile_layer_vintage AS layer
+  ON layer.geo_level = boundary.geo_level
+ AND layer.boundary_vintage = boundary.boundary_vintage
+WHERE layer.is_default
 """
 
+#: The geographies one serving relation publishes at one grain. Every source's
+#: latest relation is asked, not only ACS population: on OFFICE_LAB (10-31)
+#: ACS had served no metro rows yet while LAUS and BEA did, and an
+#: ACS-population probe reported all 925 metros as having nothing published.
+#: The relation and its grain and geo_id expressions come from the API's own
+#: dispatch registry (`apps/api/registry.py`), so a source added there is
+#: measured here without an edit.
+PUBLISHED_SQL = (
+    "SELECT DISTINCT {geo_id} FROM {relation} WHERE {geo_level} = %(geo_level)s"
+)
 
-def measure_coverage(dsn: str) -> list[dict]:
+GRAINS = ("PLACE", "METRO")
+
+#: Each relation's read is bounded so one slow source cannot stall the run; a
+#: source that times out is reported under ``skipped_sources``.
+SOURCE_TIMEOUT_MS = 300_000
+
+
+def published_sources() -> list[tuple[str, str, str]]:
+    """(relation, geo_id expression, grain expression) for every served source."""
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    return sorted(
+        {
+            (
+                dispatch.latest_relation,
+                dispatch.geo_id_expression,
+                dispatch.geo_level_expression,
+            )
+            for dispatch in OBSERVATION_DISPATCH.values()
+        }
+    )
+
+
+def coverage_rows(
+    polygons: dict[str, tuple[int | None, set[str]]],
+    published: dict[str, set[str]],
+    by_source: dict[str, dict[str, int]],
+) -> list[dict]:
+    """Compare each grain's polygons with the geographies any source publishes."""
+    rows = []
+    for grain in GRAINS:
+        vintage, drawn = polygons.get(grain, (None, set()))
+        served = published.get(grain, set())
+        rows.append(
+            {
+                "grain": grain,
+                "default_vintage": vintage,
+                "polygons": len(drawn),
+                "published": len(served),
+                "published_without_polygon": len(served - drawn),
+                "polygons_left_uncoloured": len(drawn - served),
+                "published_by_source": by_source.get(grain, {}),
+            }
+        )
+    return rows
+
+
+def measure_coverage(dsn: str) -> tuple[list[dict], list[dict]]:
     import psycopg2
 
+    polygons: dict[str, tuple[int | None, set[str]]] = {}
+    published: dict[str, set[str]] = {grain: set() for grain in GRAINS}
+    by_source: dict[str, dict[str, int]] = {grain: {} for grain in GRAINS}
+    skipped: list[dict] = []
     connection = psycopg2.connect(dsn)
     try:
-        connection.set_session(readonly=True)
+        connection.set_session(readonly=True, autocommit=True)
         with connection.cursor() as cursor:
-            cursor.execute(COVERAGE_SQL)
-            rows = cursor.fetchall()
+            cursor.execute(POLYGONS_SQL)
+            for grain, vintage, geo_id in cursor.fetchall():
+                _vintage, ids = polygons.setdefault(grain, (vintage, set()))
+                ids.add(geo_id)
+            cursor.execute("SET statement_timeout = %s", (SOURCE_TIMEOUT_MS,))
+            for relation, geo_id, geo_level in published_sources():
+                for grain in GRAINS:
+                    try:
+                        cursor.execute(
+                            PUBLISHED_SQL.format(
+                                geo_id=geo_id, relation=relation, geo_level=geo_level
+                            ),
+                            {"geo_level": grain},
+                        )
+                    except psycopg2.Error as exc:
+                        skipped.append(
+                            {
+                                "relation": relation,
+                                "grain": grain,
+                                "error": str(exc).strip().splitlines()[0],
+                            }
+                        )
+                        continue
+                    ids = {row[0] for row in cursor.fetchall() if row[0]}
+                    if ids:
+                        by_source[grain][relation] = len(ids)
+                        published[grain] |= ids
     finally:
         connection.close()
-    return [
-        {
-            "grain": grain,
-            "default_vintage": vintage,
-            "polygons": polygons,
-            "published": published,
-            "published_without_polygon": missing,
-            "polygons_left_uncoloured": uncoloured,
-        }
-        for grain, vintage, polygons, published, missing, uncoloured in rows
-    ]
+    return coverage_rows(polygons, published, by_source), skipped
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -180,12 +257,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     catalog, measured = measure_sizes(args.tiles_url.rstrip("/"))
+    coverage, skipped = measure_coverage(args.dsn) if args.dsn else (None, [])
     report = {
         "budget_bytes": args.budget_bytes,
         "tilejson": catalog,
         "tiles": measured,
         "over_budget": over_budget(measured, args.budget_bytes),
-        "coverage": measure_coverage(args.dsn) if args.dsn else None,
+        "near_budget": near_budget(measured, args.budget_bytes),
+        "coverage": coverage,
+        "skipped_sources": skipped,
     }
     json.dump(report, sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")

@@ -11637,6 +11637,7 @@ END, 1)))
     constraint fact_population_estimate_stock_sign_check CHECK (((metric_code <> ALL (ARRAY['ESTIMATESBASE'::text, 'POPESTIMATE'::text, 'CENSUSPOP'::text])) OR (value >= (0)::numeric)))
     constraint fact_population_estimate_unit_check CHECK ((unit = ANY (ARRAY['persons'::text, 'per_1000_population'::text])))
     index fact_population_estimate_pkey CREATE UNIQUE INDEX fact_population_estimate_pkey ON silver_pep.fact_population_estimate USING btree (capture_id, source_row_index, source_column_index)
+    index pep_fact_metric_geo_year_idx CREATE INDEX pep_fact_metric_geo_year_idx ON silver_pep.fact_population_estimate USING btree (metric_code, geo_id, observation_year)
     index pep_fact_natural_key_idx CREATE INDEX pep_fact_natural_key_idx ON silver_pep.fact_population_estimate USING btree (dataset_code, release_vintage, metric_code, geo_id, observation_year)
 
 r silver_pep.observation_revision
@@ -11781,6 +11782,7 @@ r silver_ref.bridge_geo_relationship_version
     constraint bridge_geo_relationship_version_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES raw_capture.response_capture(capture_id)
     index bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key CREATE UNIQUE INDEX bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key ON silver_ref.bridge_geo_relationship_version USING btree (parent_geo_sk, related_geo_sk, relationship_type, geography_vintage)
     index bridge_geo_relationship_version_pkey CREATE UNIQUE INDEX bridge_geo_relationship_version_pkey ON silver_ref.bridge_geo_relationship_version USING btree (relationship_sk)
+    index ix_bridge_geo_relationship_version_related CREATE INDEX ix_bridge_geo_relationship_version_related ON silver_ref.bridge_geo_relationship_version USING btree (related_geo_sk, relationship_type, parent_geo_sk, geography_vintage)
 
 v silver_ref.dim_geo
     column geo_sk bigint
