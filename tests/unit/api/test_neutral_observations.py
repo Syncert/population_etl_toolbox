@@ -372,6 +372,49 @@ def test_acs_grain_filter_is_plain_equality() -> None:
     assert declared["geo_level"] == "geo_level = :geo_level"
 
 
+def test_an_acs_release_pin_matches_the_vintage_column() -> None:
+    """Covers: API-182 — an earlier ACS release is pinned on `vintage_year`.
+
+    `vintage_year::TEXT = :release` is a cast no index can serve, so an
+    earlier release of one state's cities read every row of the metric. A
+    canonical integer is matched on the column itself; anything else is
+    still compared as text, which answers the same (nothing for "v2022").
+    """
+    session = _DispatchSession(metric_row=dict(_ACS_METRIC))
+    client = _client_with(session)
+    try:
+        pinned = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _ACS_METRIC["metric_code"],
+                "scope": "as_released",
+                "release": "2022",
+                "geo_level": "PLACE",
+                "state_fips": "48",
+            },
+        )
+        odd = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _ACS_METRIC["metric_code"],
+                "scope": "as_released",
+                "release": "02022",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert pinned.status_code == 200, pinned.text
+    assert pinned.json()["release"] == "2022"
+    reads = _dispatched(session)
+    assert "vintage_year = :release_number" in reads[0]
+    assert "vintage_year::TEXT = :release" not in reads[0]
+    assert any(bound.get("release_number") == 2022 for bound in session.parameters)
+    assert odd.status_code == 200, odd.text
+    assert "vintage_year::TEXT = :release" in reads[-1]
+    assert any(bound.get("release") == "02022" for bound in session.parameters)
+
+
 def test_period_listing_refuses_as_released_scope() -> None:
     """Covers: API-160 — a latest-only selector cannot label released history."""
     client = _client_with(_DispatchSession(metric_row=dict(_CDC_METRIC)))

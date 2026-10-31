@@ -280,6 +280,12 @@ class ObservationDispatch:
     identity_columns: tuple[str, ...] = ()
     # -- projection onto the neutral envelope ------------------------------
     release_expression: str = ""
+    #: An integer column holding the release, when ``release_expression`` is
+    #: that column cast to text. A pinned release is then matched on the
+    #: column itself (``vintage_year = :release_number``), which an index can
+    #: serve, rather than on the cast, which none can (web-place-maps: an
+    #: earlier ACS release of one state's cities).
+    release_integer_column: str | None = None
     #: Orders releases oldest-to-newest (``release_watermark::BIGINT`` for CDC,
     #: dates elsewhere). Never carries ``DESC``.
     release_order_expression: str = ""
@@ -600,6 +606,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             lineage_relation="fact_acs_observation",
             metric_code_column="metric_code",
             release_expression="vintage_year::TEXT",
+            release_integer_column="vintage_year",
             release_order_expression="vintage_year",
             as_of_expression="as_of_date::TEXT",
             period_start_expression=_UNION_PERIOD_START,
