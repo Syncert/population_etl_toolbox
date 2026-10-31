@@ -435,8 +435,41 @@ def test_a_missing_or_withheld_side_is_not_published_never_zero(client, served) 
     assert body["side_a"]["value"] is None
     assert body["side_b"]["published"] is False
     assert body["difference"] is None
+    assert body["comparable"] is False
+    assert body["refusal"]["reason"] == "not_published"
+    assert "withheld" in body["refusal"]["detail"]
+    assert "no published value for Dallas" in body["refusal"]["detail"]
     notes = [note for note in body["notes"] if note["reason"] == "not_published"]
     assert len(notes) == 2 and all("not zero" in note["detail"] for note in notes)
+
+
+def test_a_series_the_nation_does_not_publish_is_not_compared(
+    client, served, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-176 — LAUS has no national row: refused, and named "United States".
+
+    The catalog's nation row carries its code as its name; the answer must
+    neither print "us:1" nor call one value beside nothing comparable.
+    """
+    rows, _, _ = served
+    nation = {**NATION, "geo_name": "us:1"}
+    monkeypatch.setitem(GEOGRAPHIES, NATION["geo_id"], nation)
+    rate = "BLS:LAU:UNEMP_RATE"
+    rows[rate] = [
+        _row(rate, TRAVIS, "3.7", None, period="2026-09-01", end="2026-09-30")
+    ]
+    body = _get(
+        client, metric_code=rate, geo_id_a=TRAVIS["geo_id"], geo_id_b=NATION["geo_id"]
+    ).json()
+    assert body["comparable"] is False
+    assert body["refusal"]["reason"] == "not_published"
+    assert body["refusal"]["detail"].startswith(
+        "there is no published value for United States in this series"
+    )
+    assert body["side_b"]["geo_name"] == "United States"
+    assert body["side_b"]["published"] is False
+    assert body["side_a"]["value"] == "3.7"
+    assert body["difference"] is None and body["intervals_overlap"] is None
 
 
 def test_overlapping_intervals_are_not_distinguishable(client, served) -> None:

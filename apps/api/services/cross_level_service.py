@@ -190,6 +190,42 @@ def usable_value(candidate: Optional[Mapping]) -> Optional[Decimal]:
     return _number(candidate.get("value"))
 
 
+def place_name(geography: Mapping[str, Any]) -> str:
+    """The name a reader knows a place by; the nation is "United States".
+
+    The catalog's nation row carries its code (``us:1``) as its name, which
+    is no name to print beside a figure.
+    """
+    geo_id = str(geography.get("geo_id") or "")
+    name = geography.get("geo_name")
+    level = normalize_geo_level(str(geography.get("geo_level") or ""))
+    if level == "NATIONAL" and (not name or name == geo_id):
+        return "United States"
+    return str(name or geo_id)
+
+
+def unpublished_refusal(
+    missing: Sequence[tuple[str, Mapping[str, Any], Optional[Mapping[str, Any]]]],
+) -> PlacesRefusal:
+    """Why a comparison with a side that has no value is not made.
+
+    A side with no value is not published, never zero, and two places are not
+    compared when one of them has nothing to compare (ADR-0010 rule 3).
+    """
+    parts = []
+    for _label, geography, chosen in missing:
+        name = place_name(geography)
+        if chosen is None:
+            parts.append(f"there is no published value for {name} in this series")
+        else:
+            status = chosen.get("value_status") or "no number"
+            parts.append(f"the value for {name} is withheld or missing ({status})")
+    return PlacesRefusal(
+        reason="not_published",
+        detail="; ".join(parts) + ", so there is nothing to compare it with",
+    )
+
+
 def containment_between(
     geography_a: Mapping[str, Any],
     geography_b: Mapping[str, Any],
@@ -437,7 +473,7 @@ def _side(
     return PlacesSide(
         geo_id=str(geography["geo_id"]),
         geo_level=geography.get("geo_level"),
-        geo_name=geography.get("geo_name"),
+        geo_name=place_name(geography),
         metric_code=metric_code,
         **labels,
         published=(candidate is not None) if read else None,
@@ -571,7 +607,7 @@ def compare_places(
                 PlacesNote(
                     reason="not_published",
                     detail=(
-                        f"side {label} ({geography.get('geo_name') or geography['geo_id']}) "
+                        f"side {label} ({place_name(geography)}) "
                         f"has no published value{asked}; it is not zero"
                     ),
                 )
@@ -709,6 +745,27 @@ def compare_places(
             f"the measure's kind ({kind}) is {kind_status}, not yet reviewed"
             if kind_status != "undeclared"
             else "the measure declares no kind, so it is treated as a count"
+        )
+
+    missing = [
+        (label, geography, chosen)
+        for label, geography, chosen in (
+            ("a", geography_a, chosen_a),
+            ("b", geography_b, chosen_b),
+        )
+        if usable_value(chosen) is None
+    ]
+    if missing:
+        return PlacesComparisonResponse(
+            **response,
+            comparable=False,
+            refusal=unpublished_refusal(missing),
+            period_basis=basis,
+            side_a=_side(geography_a, code_a, metric_a, chosen_a, read=True),
+            side_b=_side(geography_b, code_b, metric_b, chosen_b, read=True),
+            derivations=[],
+            notes=notes,
+            caveats=caveats,
         )
 
     return PlacesComparisonResponse(
