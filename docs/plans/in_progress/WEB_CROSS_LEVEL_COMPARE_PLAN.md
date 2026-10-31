@@ -98,8 +98,9 @@ nation", explained to an ordinary reader.
 
 - 2026-10-31, cloud session: `npm run test:unit` 66 files / 893 tests
   passed; lint and typecheck clean; `npm run build` then `check:bundle`
-  within every budget (compare routes 456.7 of 485 kB); browser
-  `cross-level-compare.spec.js` and `compare-places.spec.js` 14 passed.
+  within every budget (compare routes 456.7 of 485 kB); full browser suite
+  267 passed, including the `not_published` refusal from #187 (a side with
+  no value is refused and named, the other side still shown).
 
 ## Unverified until the warehouse answers
 
@@ -114,7 +115,8 @@ API started with `DERIVED_RATIOS_SERVE_DRAFTS=1`:
    "People with income below the poverty level" refused as a total, with
    "Shown instead: Share of people below the poverty level" for both.
 3. `http://localhost:3001/compare/places?a=cbsa:12420&b=us:1`: the Austin
-   metro beside the United States; the unemployment rate row if BLS LAUS
-   publishes the metro, else no row for it (not a zero).
+   metro beside the United States; the unemployment rate row reads "There
+   is no published figure for United States on this measure…" (LAUS has no
+   national row), with the metro's own rate still shown and no zero.
 4. The Dane County page's "Part of" list links "compare" to each of the
    above forms.

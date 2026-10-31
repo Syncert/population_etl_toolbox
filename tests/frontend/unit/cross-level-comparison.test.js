@@ -40,6 +40,11 @@ describe("the cross-level answer in a reader's words", () => {
     expect(none).toContain("left out");
   });
 
+  it("names the place with no published figure, and never calls it zero", () => {
+    const text = refusalSentence(answer({ comparable: false, refusal: { reason: "not_published", detail: "there is no published value for United States in this series" }, side_b: side({ published: false, value: null }) }), metro, nation);
+    expect(text).toBe("There is no published figure for United States on this measure, so there is nothing to compare. A missing figure is not zero.");
+  });
+
   it("names every other refusal without codes", () => {
     for (const reason of ["programs_differ", "universes_differ", "units_differ", "different_measures"]) {
       const text = refusalSentence(answer({ comparable: false, refusal: { reason, detail: "CODE_A and CODE_B", alternatives: [] } }), city, county);

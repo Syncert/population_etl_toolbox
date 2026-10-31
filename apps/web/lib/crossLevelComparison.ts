@@ -18,7 +18,7 @@ import type { PlaceLevel } from "./placeChapters";
 export type CompareLevel = PlaceLevel | "METRO";
 
 export type MeasureKind = "count" | "median" | "mean" | "rate" | "share" | "index";
-export type RefusalReason = "counts_differ_in_size" | "programs_differ" | "universes_differ" | "units_differ" | "different_measures";
+export type RefusalReason = "counts_differ_in_size" | "programs_differ" | "universes_differ" | "units_differ" | "different_measures" | "not_published";
 export type NoteReason =
   | "periods_differ"
   | "not_published"
@@ -120,6 +120,14 @@ export function refusalSentence(answer: PlacesComparison, a: ComparedSide, b: Co
       ? " It is shown as a share or per resident instead, which puts both places on one footing."
       : " No share or per-resident version of this total is published yet, so it is left out.";
     return `This is a total, and ${sizes}: the larger place nearly always has the larger total, which says nothing about either one.${offer}`;
+  }
+  if (reason === "not_published") {
+    const missing = [
+      { place: a, side: answer.side_a },
+      { place: b, side: answer.side_b },
+    ].filter(({ side }) => sideValue(side) === null).map(({ place }) => place.name);
+    const who = missing.length ? missing.join(" or ") : "one of these places";
+    return `There is no published figure for ${who} on this measure, so there is nothing to compare. A missing figure is not zero.`;
   }
   if (reason === "programs_differ") return "The two figures come from different surveys or programs that measure this in different ways, so they are not set side by side.";
   if (reason === "universes_differ") return "The two figures count different groups of people, so they are not set side by side.";

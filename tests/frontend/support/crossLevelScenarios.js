@@ -9,7 +9,8 @@
 import { AREAS, COUNTIES, DERIVED_RATIOS, NATION, PLACES, RELATED, STATES, installPlaceFixtures, metrics } from "./placeScenarios.js";
 
 const METRO = AREAS.metro;
-const KNOWN = [NATION, ...STATES, ...COUNTIES, ...PLACES, METRO];
+// The API names the nation "United States" (#187).
+const KNOWN = [{ ...NATION, geo_name: "United States" }, ...STATES, ...COUNTIES, ...PLACES, METRO];
 const SCALE = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5, "cbsa:31540": 1.2 };
 // The same split as the place fixtures: medians, means, rates and indexes
 // compare across levels; everything else is a total.
@@ -77,6 +78,8 @@ export function placesAnswer(params) {
   const period = code.startsWith("CENSUS_PEP") ? ["2024-01-01", "2024-12-31"] : ["2019-01-01", "2023-12-31"];
   const valueFor = (place) => {
     if (!grainsFor(code).includes(place.geo_level)) return null;
+    // LAUS publishes no national row: the nation's side has nothing.
+    if (code.startsWith("BLS:") && place.geo_id === "us:1") return null;
     const scale = SCALE[place.geo_id] || 1;
     return ratio ? Number((10 + scale / 10).toFixed(2)) : total ? 1000 * scale : 40 + scale;
   };
@@ -84,6 +87,13 @@ export function placesAnswer(params) {
   const sideB = side(b, code, valueFor(b), period);
   const nested = ["contains", "part_of", "intersects"].includes(base.containment.relationship);
   const both = sideA.published && sideB.published;
+  if (!both) {
+    // A side with no value is refused, not compared (#187, ADR-0010 rule 3).
+    const missing = [sideA, sideB].filter((item) => !item.published).map((item) => `there is no published value for ${item.geo_name} in this series`);
+    return { json: { ...base, comparable: false, period_basis: "newest_common",
+      refusal: { reason: "not_published", detail: `${missing.join("; ")}, so there is nothing to compare it with`, alternatives: [] },
+      side_a: sideA, side_b: sideB, difference: null, intervals_overlap: null, notes: [] } };
+  }
   const notes = [
     ...[sideA, sideB].filter((item) => !item.published).map((item) => ({ reason: "not_published", detail: `${item.geo_name} has no published value; it is not zero` })),
     ...(nested ? [{ reason: base.containment.relationship === "intersects" ? "overlapping_places" : "contained", detail: "the places overlap (UI fixture)" }] : []),

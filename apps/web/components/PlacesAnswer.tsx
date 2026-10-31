@@ -98,6 +98,9 @@ export default function PlacesAnswer({
   }
   const { answer, instead } = answered;
   const shown = answer.comparable ? answer : instead?.answer.comparable ? instead.answer : null;
+  // A side with no value is refused (`not_published`); the side that has
+  // one is still shown, beside "Not published for this place".
+  const unpublished = !shown ? [answer, instead?.answer].find((item) => item?.refusal?.reason === "not_published") ?? null : null;
   return (
     <div
       className="paired-row"
@@ -120,6 +123,17 @@ export default function PlacesAnswer({
           heading={shown === answer ? null : instead!.alternative.label}
           unit={shown === answer ? (pairing ? pairing.unit : unit) : instead!.alternative.unit}
           draft={shown === answer ? pairing?.status : "draft"}
+          a={a}
+          b={b}
+          testId={testId}
+        />
+      ) : null}
+      {unpublished ? (
+        <AnsweredValues
+          answer={unpublished}
+          heading={unpublished === answer ? null : instead!.alternative.label}
+          unit={unpublished === answer ? (pairing ? pairing.unit : unit) : instead!.alternative.unit}
+          draft={unpublished === answer ? pairing?.status : "draft"}
           a={a}
           b={b}
           testId={testId}
@@ -155,9 +169,9 @@ function AnsweredValues({
     { place: b, side: answer.side_b },
   ];
   const periods = [...new Set(sides.map(({ side }) => sidePeriod(side)).filter(Boolean))];
-  const containment = containmentSentence(answer, a, b);
-  const notes = noteSentences(answer, a, b);
-  const difference = differenceText(answer, a, b, unit, digits);
+  const containment = answer.comparable ? containmentSentence(answer, a, b) : "";
+  const notes = answer.comparable ? noteSentences(answer, a, b) : [];
+  const difference = answer.comparable ? differenceText(answer, a, b, unit, digits) : "";
   return (
     <div data-testid={`${testId}-values`} data-period-basis={answer.period_basis || undefined}>
       {heading ? (

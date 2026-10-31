@@ -81,8 +81,8 @@ test("a metro beside the nation is addressed by identity and swaps by identity",
   await open(page, "/compare/places?a=cbsa:31540&b=us:1");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Madison, WI and United States");
   await expect(page.getByTestId("compare-places-levels")).toContainText("Madison, WI is a metro area and United States is the nation.");
-  await expect(page.getByTestId("compare-row-unemployment-rate")).toHaveAttribute("data-state", "ok");
-  await expect(page.getByTestId("compare-row-unemployment-rate-containment")).toContainText("Madison, WI lies inside United States");
+  await expect(page.getByTestId("compare-row-median-household-income")).toHaveAttribute("data-state", "ok");
+  await expect(page.getByTestId("compare-row-median-household-income-containment")).toContainText("Madison, WI lies inside United States");
   await expect(page.getByTestId("compare-places-swap")).toHaveAttribute("href", "/compare/places?a=us%3A1&b=cbsa%3A31540");
 });
 
@@ -141,4 +141,20 @@ test("the picker finds a place at any level, a metro included", async ({ page })
   await results.getByRole("button", { name: "Madison, WI" }).click();
   await expect(page).toHaveURL(/\/compare\/places\?a=state%3A55%7Ccounty%3A105&b=cbsa%3A31540$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Rock County, Wisconsin and Madison, WI");
+});
+
+test("a side with no published figure is refused in plain words, and the other side still shows", async ({ page }) => {
+  // LAUS publishes no national unemployment rate: the API refuses with
+  // `not_published` (#187) rather than comparing a figure with nothing.
+  await open(page, "/compare/places?a=cbsa:31540&b=us:1");
+  const row = page.getByTestId("compare-row-unemployment-rate");
+  await expect(row).toHaveAttribute("data-state", "refused");
+  await expect(row).toHaveAttribute("data-refusal", "not_published");
+  await expect(page.getByTestId("compare-row-unemployment-rate-refusal")).toHaveText(
+    "There is no published figure for United States on this measure, so there is nothing to compare. A missing figure is not zero.",
+  );
+  await expect(row.locator('.paired-bar[data-geo-id="cbsa:31540"]')).toHaveAttribute("data-published", "true");
+  await expect(row.locator('.paired-bar[data-geo-id="us:1"]')).toContainText("Not published for this place");
+  await expect(page.getByTestId("compare-row-unemployment-rate-difference")).toHaveCount(0);
+  await expect(page.getByTestId("compare-row-unemployment-rate-containment")).toHaveCount(0);
 });
