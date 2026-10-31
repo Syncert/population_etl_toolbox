@@ -30,7 +30,7 @@ import type { CollectionResponse, GeographySummary, MetricSummary, Observation }
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
+import { formatObservationValue, marginOfErrorText, observationUnit, unitText } from "../lib/explorerViewModel";
 import { displayMetricName } from "../lib/format";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
@@ -120,7 +120,7 @@ async function inPool(tasks: (() => Promise<void>)[], limit: number): Promise<vo
 /** The row's published unit, or nothing: `observationUnit`'s "value" is a placeholder. */
 function publishedUnit(row: ObservationRow): string {
   const unit = observationUnit(row);
-  return unit === "value" ? "" : unit;
+  return unit === "value" ? "" : unitText(unit);
 }
 
 const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}`;
@@ -970,7 +970,7 @@ function Chapter({
         <PlaceTrend
           model={trend}
           label={`${trendMeasure.measure.label} trend`}
-          unit={primaryRow ? publishedUnit(primaryRow) : String(trendMeasure.metric?.units || "")}
+          unit={primaryRow ? publishedUnit(primaryRow) : unitText(trendMeasure.metric?.units)}
           testId={`chapter-${chapter.id}-trend`}
         />
       ) : null}
@@ -979,7 +979,7 @@ function Chapter({
           key={measure.measure.id}
           model={model}
           label={`${measure.measure.label} trend`}
-          unit={String(measure.metric?.units || "")}
+          unit={unitText(measure.metric?.units)}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
         />
       ))}
@@ -1399,7 +1399,7 @@ function DepthRow({
 }
 
 function StandoutRow({ measure, siblingsName }: { measure: DistinctiveMeasure; siblingsName: string }) {
-  const unit = measure.units && measure.units !== "value" ? ` ${measure.units}` : "";
+  const unit = measure.units && measure.units !== "value" ? ` ${unitText(measure.units)}` : "";
   return (
     <li data-testid={`standout-${measure.metric_code}`}>
       <strong>{displayMetricName(measure)}</strong>

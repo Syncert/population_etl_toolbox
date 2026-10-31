@@ -1135,6 +1135,46 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
 
             outcomes = fbi_county_agency_rate_agreement(cursor, {})
             assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
+
+            # The directory links Madison's police to Dane County alone, but
+            # its reports were never loaded: its population is unknown, so the
+            # month is refused and Madison named rather than coverage read as
+            # complete on the agencies that were loaded.
+            cursor.execute(
+                """
+                INSERT INTO silver_fbi.dim_agency
+                    (ori, state_code, geo_sk, first_seen_release, last_seen_release)
+                SELECT 'WI0130100', state_code, geo_sk, first_seen_release,
+                       last_seen_release
+                FROM silver_fbi.dim_agency WHERE ori = 'WI0137000';
+                CREATE TEMP TABLE madison_link ON COMMIT DROP AS
+                SELECT * FROM silver_fbi.agency_geography_relationship
+                WHERE ori = 'WI0137000' AND relationship_type = 'county';
+                UPDATE madison_link
+                SET ori = 'WI0130100',
+                    relationship_sk = nextval(pg_get_serial_sequence(
+                        'silver_fbi.agency_geography_relationship',
+                        'relationship_sk'));
+                INSERT INTO silver_fbi.agency_geography_relationship
+                SELECT * FROM madison_link;
+                """
+            )
+            cursor.execute(
+                """
+                SELECT rate, unavailable_reason, coverage_share, not_loaded_oris
+                FROM gold_fbi.latest_county_agency_rate
+                WHERE product_id = 'summarized_violent_crime'
+                  AND geo_id = 'state:55|county:025' AND period = '03-2023'
+                """
+            )
+            assert cursor.fetchall() == [
+                (None, "agencies_not_loaded", None, ["WI0130100"])
+            ]
+            # Rock County's links are untouched and keep their own reason.
+            cursor.execute(query, ("state:55|county:105", "03-2023"))
+            assert cursor.fetchone()[:2] == (None, "only_multi_county_agencies")
+            outcomes = fbi_county_agency_rate_agreement(cursor, {})
+            assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
     finally:
         reader.rollback()
         reader.close()

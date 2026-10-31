@@ -55,6 +55,7 @@ def _row(**overrides: Any) -> dict[str, Any]:
         "excluded_multi_county_oris": ["WI0540300"],
         "non_reporting_oris": [],
         "unknown_population_oris": [],
+        "not_loaded_oris": [],
         "group_total": 1,
     }
     row.update(overrides)
@@ -138,6 +139,26 @@ def test_a_refused_month_has_no_value_but_keeps_its_coverage(reason: str) -> Non
     assert row.coverage.covered_population == "30000"
     assert row.coverage.coverage_share == "0.2594"
     assert row.coverage.non_reporting_agencies == ["WI0130000"]
+
+
+def test_an_unloaded_agency_refuses_the_month_and_is_named() -> None:
+    """Covers: API-181 — an agency linked to the county alone whose reports are
+    not loaded refuses the month; coverage is never judged without it."""
+    row = agency_rate_row(
+        pairing_for(RATIO),
+        _row(
+            rate=None,
+            unavailable_reason="agencies_not_loaded",
+            coverage_share=None,
+            not_loaded_oris=["WI0130100"],
+        ),
+    )
+
+    assert row.value is None
+    assert row.unavailable_reason == "agencies_not_loaded"
+    assert row.coverage.coverage_share is None
+    assert row.coverage.not_loaded_agencies == ["WI0130100"]
+    assert _row().get("not_loaded_oris") == []
 
 
 def test_the_read_is_the_gold_view_bound_and_reduced(drafts) -> None:

@@ -65,7 +65,9 @@ computed the FBI's way, from one program, with no Census figure involved.
    Coverage is measured inside the FBI program, so no Census figure enters
    it either.
 
-   The rate is unavailable with a reason, never zero, in three cases:
+   The rate is unavailable with a reason, never zero, in four cases:
+   - an agency the directory links to the county alone has no loaded
+     reports for the month (`agencies_not_loaded`, see the amendment below);
    - no linked agency reported (`no_reporting_agency`);
    - every reporting agency was multi-county (`only_multi_county_agencies`);
    - the coverage share is under 50 % (`coverage_below_floor`).
@@ -93,6 +95,21 @@ computed the FBI's way, from one program, with no Census figure involved.
    matches the roll-up's own warehouse-first boundary. ADR-0009 rule 7
    ("computed in the API over served rows") is amended for this one product,
    because the input it needs is agency rows, which the API does not serve.
+
+### Amendment (2026-10-31): agencies whose reports are not loaded
+
+The first live run read Dane County as 100 % covered by the Sheriff and
+Fitchburg alone (about 117,000 people), because Madison's police and the
+county's other agencies had no loaded reports. An agency with no loaded
+report has no FBI population in the warehouse, so it dropped out of both the
+covered and the linked population and coverage looked complete.
+
+The linked set is therefore the agency directory's links, not the agencies
+that happen to be loaded. When any agency the directory links to the county
+alone has no loaded report for that month and release, the month is refused
+as `agencies_not_loaded`, its coverage share is left empty, and those
+agencies are listed (`not_loaded_oris`; `coverage.not_loaded_agencies` in the
+API). The refusal clears by itself once every agency's reports are loaded.
 
 ## Consequences
 

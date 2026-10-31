@@ -30,7 +30,9 @@ MarginMethod = Literal[
     "proportion", "ratio", "ratio_fallback", "unavailable", "provider", "none"
 ]
 #: Why a row has no value (ADR-0009 rule 2). Never zero.
-#: The last three are a county agency rate's refusals (ADR-0012 rule 3).
+#: The last four are a county agency rate's refusals (ADR-0012 rule 3 and
+#: its amendment: ``agencies_not_loaded`` when an agency the directory links
+#: to the county alone has no loaded reports, so coverage cannot be judged).
 UnavailableReason = Literal[
     "different_period",
     "denominator_missing",
@@ -39,6 +41,7 @@ UnavailableReason = Literal[
     "no_reporting_agency",
     "only_multi_county_agencies",
     "coverage_below_floor",
+    "agencies_not_loaded",
 ]
 
 
@@ -109,6 +112,9 @@ class DerivedRatioCoverage(BaseModel):
     excluded_multi_county_agencies: list[str]
     non_reporting_agencies: list[str]
     unknown_population_agencies: list[str]
+    #: Agencies linked to this county alone whose reports were never loaded.
+    #: Any of them refuses the month (``agencies_not_loaded``).
+    not_loaded_agencies: list[str] = []
 
 
 class DerivedRatioObservation(BaseModel):

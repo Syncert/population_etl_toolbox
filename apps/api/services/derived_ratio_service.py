@@ -419,7 +419,8 @@ _AGENCY_RATE_COLUMNS = """
     linked_population::TEXT AS linked_population,
     coverage_share::TEXT AS coverage_share,
     coverage_floor::TEXT AS coverage_floor, contributing_oris,
-    excluded_multi_county_oris, non_reporting_oris, unknown_population_oris
+    excluded_multi_county_oris, non_reporting_oris, unknown_population_oris,
+    not_loaded_oris
 """
 
 
@@ -487,6 +488,7 @@ def agency_rate_row(
             ),
             non_reporting_agencies=list(row.get("non_reporting_oris") or ()),
             unknown_population_agencies=list(row.get("unknown_population_oris") or ()),
+            not_loaded_agencies=list(row.get("not_loaded_oris") or ()),
         ),
     )
 
