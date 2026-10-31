@@ -69,6 +69,7 @@ import PlacesAnswer, { askedFor } from "./PlacesAnswer";
 import type { ChapterBatch } from "./PlacesAnswer";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+const ComparePyramids = dynamic(() => import("./ComparePyramids"));
 
 /**
  * One side of a comparison: a place-page address (no `state` is the nation)
@@ -461,6 +462,8 @@ export default function ComparePlacesPage({ a: addressA, b: addressB }: { a: Sid
       <section className="status-row" role="status">
         <StatusPill state={status.state} label="Comparison" message={status.message} testId="compare-places-status" />
       </section>
+
+      {sides && status.state === "ok" ? <ComparePyramids a={sides.a.place.geoId} b={sides.b.place.geoId} /> : null}
 
       {sides && status.state === "ok"
         ? measures.map(({ chapter, measures: chapterMeasures, viewable }) => (

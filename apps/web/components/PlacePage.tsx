@@ -85,6 +85,7 @@ import type { GeoLevel } from "../lib/urlState";
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
+const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
 
 const CATALOG_PAGE_SIZE = 1000;
@@ -1013,6 +1014,7 @@ function Chapter({
           answers={answers}
         />
       ) : null}
+      {chapter.id === "people" && own ? <AgeAndSexSection geoId={own.geoId} /> : null}
       {chapter.id === "people" && pageLevel === "COUNTY" && own ? <MigrationFlows geoId={own.geoId} /> : null}
       {chapter.id === "change" && pageLevel === "COUNTY" ? (
         <p className="subtle" data-testid="change-migration-note">
