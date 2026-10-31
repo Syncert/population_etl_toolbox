@@ -43,6 +43,9 @@ import {
 import { PLACE_CHAPTERS, countySegment, placePath, stateSegment } from "../lib/placeChapters";
 import { discoverTileMetadata } from "../lib/tiles";
 import type { ObservationRow } from "../lib/explorerViewModel";
+import { denominatorText, derivedMapRow, getDerivedRatios, pairingFor, viewChoices, viewKey } from "../lib/derivedViews";
+import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
+import { DraftViewMark, ViewToggle } from "./DerivedView";
 
 const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), { ssr: false });
 
@@ -70,10 +73,12 @@ export default function MeasureMapPage({
   metricCode,
   requestedPeriod,
   requestedRelease,
+  requestedView,
 }: {
   metricCode: string;
   requestedPeriod?: string;
   requestedRelease?: string;
+  requestedView?: ViewChoice;
 }) {
   const [load, setLoad] = useState<Load>({ state: "loading", message: "reading the measure" });
   const [metric, setMetric] = useState<MetricSummary | null>(null);
@@ -92,6 +97,11 @@ export default function MeasureMapPage({
   const [rowsLoaded, setRowsLoaded] = useState(false);
   const [tileMetadata, setTileMetadata] = useState<Awaited<ReturnType<typeof discoverTileMetadata>> | null>(null);
   const [page, setPage] = useState(0);
+  // The pairings that divide this count (ADR-0009), and the view chosen.
+  const [pairings, setPairings] = useState<DerivedRatioPairing[] | null>(null);
+  const [view, setView] = useState<ViewChoice>(requestedView || "count");
+  const pairing = pairings ? pairingFor(pairings, metricCode, view) : null;
+  const choices = pairings ? viewChoices(pairings, [metricCode]) : ["count" as ViewChoice];
 
   // The measure, its source, the counties, and its published periods.
   useEffect(() => {
@@ -110,6 +120,9 @@ export default function MeasureMapPage({
           throw error;
         }
         setMetric(found);
+        getDerivedRatios({ numerator: metricCode }, { signal })
+          .then((payload) => { if (!signal.aborted) setPairings(Array.isArray(payload?.items) ? payload.items : []); })
+          .catch(() => { if (!signal.aborted) setPairings([]); });
         const grains = found.valid_geo_grains;
         if (Array.isArray(grains) && !grains.includes("COUNTY")) {
           setLoad({ state: "no-county", message: `${displayMetricName(found)} is not published for counties (published grains: ${grains.join(", ") || "none"}).` });
@@ -161,10 +174,31 @@ export default function MeasureMapPage({
   // The one period's county values.
   useEffect(() => {
     if (load.state !== "ready" || !source) return;
+    // A derived view waits for the pairings; one the API does not serve
+    // falls back to the count.
+    if (view !== "count" && pairings === null) return;
     const controller = new AbortController();
     setRows([]);
     setRowsLoaded(false);
     const release = releaseOfChoice(period);
+    if (pairing) {
+      const params = release
+        ? { ratio_id: pairing.ratio_id, geo_level: "COUNTY", scope: SCOPE_AS_RELEASED, release, limit: "1000" }
+        : { ratio_id: pairing.ratio_id, geo_level: "COUNTY", period_start: period || undefined, newest_per_geography: true, limit: "1000" };
+      fetchCollectionPages<DerivedRatioObservation>("/observations/derived", { params, pageSize: 1000, maxPages: release ? 50 : 5, signal: controller.signal })
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          const countyRows = result.items.filter((row) => !row.geo_level || row.geo_level === "COUNTY").map((row) => derivedMapRow(row, viewKey(pairing)));
+          setRows(release ? newestPeriodOfRelease(countyRows) : countyRows);
+          setRowsComplete(result.complete);
+          setRowsLoaded(true);
+          setPage(0);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
+        });
+      return () => controller.abort();
+    }
     const request = release
       ? buildLatestObservationRequest(source, {
           metricCode,
@@ -193,7 +227,9 @@ export default function MeasureMapPage({
         if (!controller.signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
       });
     return () => controller.abort();
-  }, [load.state, source, metricCode, period]);
+    // `pairing` follows `pairings` and `view`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load.state, source, metricCode, period, pairings, view]);
 
   // The period is public state, so it lives in the address. Replaced in
   // place, not navigated: the rows are already being read for it.
@@ -202,17 +238,24 @@ export default function MeasureMapPage({
     const params = new URLSearchParams(window.location.search);
     const release = releaseOfChoice(period);
     const [key, value, other] = release ? ["release", release, "period"] : ["period", period, "release"];
-    if (params.get(key) === value && !params.has(other)) return;
+    const shownView = view === "count" ? null : view;
+    if (params.get(key) === value && !params.has(other) && params.get("view") === shownView) return;
     params.set(key, value);
     params.delete(other);
+    if (shownView) params.set("view", shownView);
+    else params.delete("view");
     window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
-  }, [period]);
+  }, [period, view]);
 
-  const view = useMemo(() => (metric && rows.length ? buildMeasureMapView(metricCode, rows, counties) : null), [metric, metricCode, rows, counties]);
-  const name = metric ? displayMetricName(metric) : metricCode;
+  const shownKey = pairing ? viewKey(pairing) : metricCode;
+  const mapView = useMemo(
+    () => (metric && rows.length && rows[0]?.metric_code === shownKey ? buildMeasureMapView(shownKey, rows, counties) : null),
+    [metric, shownKey, rows, counties],
+  );
+  const name = pairing ? pairing.label : metric ? displayMetricName(metric) : metricCode;
   const unit = rows.find((row) => row.unit || row.units) ? observationUnit(rows.find((row) => row.unit || row.units)!) : String(metric?.units || "");
 
-  if (load.state === "unknown" || load.state === "no-county" || load.state === "error" || (load.state === "ready" && rowsLoaded && (!view || view.withValue === 0))) {
+  if (load.state === "unknown" || load.state === "no-county" || load.state === "error" || (load.state === "ready" && rowsLoaded && (!mapView || mapView.withValue === 0))) {
     return (
       <main className="page-shell compact-page measure-map-page" data-testid="measure-map-unavailable">
         <header className="page-heading">
@@ -222,25 +265,30 @@ export default function MeasureMapPage({
             {load.state === "ready" ? `No county has a published value for ${name} in this period.` : load.message}
           </p>
         </header>
+        {view !== "count" ? (
+          <ViewToggle choices={choices} value={view} onChange={setView} pairings={pairings || []} label="Show as" testId="measure-map-view" />
+        ) : null}
         <MeasureSwitcher current={metricCode} />
         <CountyMeasures />
       </main>
     );
   }
 
+  // Beside every derived value: the column names its denominator.
+  const valueHeading = pairing ? `${pairing.unit[0]!.toUpperCase()}${pairing.unit.slice(1)} ${denominatorText(pairing)}` : "Value";
   const linkFor = (entry: RankedCounty) => {
     const state = states.find((item) => item.state_fips === entry.county.state_fips);
     if (!state) return null;
     const sameState = counties.filter((item) => item.state_fips === entry.county.state_fips);
     return placePath(stateSegment(state, states), countySegment(entry.county, sameState));
   };
-  const withValues = view?.ranked.filter((entry) => entry.value !== null) || [];
+  const withValues = mapView?.ranked.filter((entry) => entry.value !== null) || [];
   const highest = withValues.slice(0, EXTREMES);
   const lowest = withValues.slice(-EXTREMES).reverse();
-  const pages = view ? Math.max(1, Math.ceil(view.ranked.length / PAGE_SIZE)) : 1;
+  const pages = mapView ? Math.max(1, Math.ceil(mapView.ranked.length / PAGE_SIZE)) : 1;
 
   return (
-    <main className="page-shell measure-map-page" data-testid="measure-map" data-metric={metricCode} data-period={view?.period || ""}>
+    <main className="page-shell measure-map-page" data-testid="measure-map" data-metric={metricCode} data-view={pairing ? view : "count"} data-period={mapView?.period || ""}>
       <header className="page-heading">
         <div className="section-kicker">One measure, every county</div>
         <h1>{name}</h1>
@@ -269,31 +317,45 @@ export default function MeasureMapPage({
             ) : null}
           </select>
         </label>
+        <ViewToggle
+          choices={choices}
+          value={view}
+          onChange={setView}
+          pairings={pairings || []}
+          label="Show as"
+          testId="measure-map-view"
+        />
         <MeasureSwitcher current={metricCode} />
       </section>
 
       <section className="status-row" role="status">
         <StatusPill
-          state={load.state === "ready" && view ? (rowsComplete ? "ok" : "warn") : "loading"}
+          state={load.state === "ready" && mapView ? (rowsComplete ? "ok" : "warn") : "loading"}
           label="Counties"
-          message={view ? `${formatNumber(view.withValue)} with a published value, ${formatNumber(view.withoutValue)} without${rowsComplete ? "" : "; the page bound cut the read short"}` : "reading county values"}
+          message={mapView ? `${formatNumber(mapView.withValue)} with a published value, ${formatNumber(mapView.withoutValue)} without${rowsComplete ? "" : "; the page bound cut the read short"}` : "reading county values"}
           testId="measure-map-status"
         />
       </section>
 
-      {view ? (
+      {mapView ? (
         <>
           <section className="analysis-panel" aria-labelledby="map-heading">
-            <h2 id="map-heading">{name}, {view.period}</h2>
+            <h2 id="map-heading">{name}, {mapView.period}</h2>
+            {pairing ? (
+              <p className="subtle" data-testid="measure-map-denominator" data-ratio-id={pairing.ratio_id}>
+                Every value is {pairing.unit} {denominatorText(pairing)}, computed by the API from the count and its
+                denominator for the same county, period and release. <DraftViewMark pairing={pairing} testId="measure-map-draft" />
+              </p>
+            ) : null}
             {tileMetadata ? (
               <ChoroplethMap
                 rows={rows}
                 tileMetadata={tileMetadata}
                 geoLevel="COUNTY"
-                legendTitle={`${name}, ${view.period}`}
-                missingLabel={`No published value (${formatNumber(view.withoutValue)} counties)`}
+                legendTitle={`${name}, ${mapView.period}`}
+                missingLabel={`No published value (${formatNumber(mapView.withoutValue)} counties)`}
                 testId="measure-map-canvas"
-                distribution={view.distribution}
+                distribution={mapView.distribution}
               />
             ) : (
               <p className="subtle" role="status">The map is not available here; every value is in the table below.</p>
@@ -303,12 +365,12 @@ export default function MeasureMapPage({
               stands among the others rather than how far apart the values are.
             </p>
             <ul className="measure-legend" data-testid="measure-map-legend" aria-label="Legend">
-              {view.bins.map((bin) => (
+              {mapView.bins.map((bin) => (
                 <li key={bin.binIndex} data-count={bin.count}>
                   {formatBound(bin.lowerBound)} to {formatBound(bin.upperBound)}{unit ? ` ${unit}` : ""}: {formatNumber(bin.count)} counties
                 </li>
               ))}
-              <li data-count={view.withoutValue}>Uncoloured, no published value: {formatNumber(view.withoutValue)} counties</li>
+              <li data-count={mapView.withoutValue}>Uncoloured, no published value: {formatNumber(mapView.withoutValue)} counties</li>
             </ul>
           </section>
 
@@ -318,14 +380,14 @@ export default function MeasureMapPage({
               Where a margin of error is published it is shown; counties whose intervals overlap may not differ.
             </p>
             <div className="measure-extremes">
-              <CountyTable caption="Highest published values" entries={highest} linkFor={linkFor} testId="measure-map-highest" />
-              <CountyTable caption="Lowest published values" entries={lowest} linkFor={linkFor} testId="measure-map-lowest" />
+              <CountyTable caption="Highest published values" valueHeading={valueHeading} entries={highest} linkFor={linkFor} testId="measure-map-highest" />
+              <CountyTable caption="Lowest published values" valueHeading={valueHeading} entries={lowest} linkFor={linkFor} testId="measure-map-lowest" />
             </div>
           </section>
 
           <section className="analysis-panel" aria-labelledby="all-heading">
             <h2 id="all-heading">Every county</h2>
-            <CountyTable caption={`Every county, page ${page + 1} of ${pages}`} entries={rankedPage(view, page, PAGE_SIZE)} linkFor={linkFor} testId="measure-map-all" />
+            <CountyTable caption={`Every county, page ${page + 1} of ${pages}`} valueHeading={valueHeading} entries={rankedPage(mapView, page, PAGE_SIZE)} linkFor={linkFor} testId="measure-map-all" />
             <div className="command-row">
               <button type="button" className="button secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
               <button type="button" className="button secondary" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next</button>
@@ -335,12 +397,12 @@ export default function MeasureMapPage({
           <section className="analysis-panel" aria-labelledby="coverage-heading" data-testid="measure-map-coverage">
             <h2 id="coverage-heading">What this measure covers</h2>
             <dl className="place-depth">
-              <div><dt>Period</dt><dd>{view.period}</dd></div>
+              <div><dt>Period</dt><dd>{mapView.period}</dd></div>
               <div><dt>Unit</dt><dd>{unit || "not published"}</dd></div>
               <div><dt>Source</dt><dd>{String(sourceRow?.source_name || metric?.source_code || "not published")}</dd></div>
               <div><dt>Measure kind</dt><dd>{String(metric?.measure_kind || "not published")}</dd></div>
               <div><dt>How it may be combined</dt><dd>{String(metric?.aggregation_characteristic || "not published")}</dd></div>
-              <div><dt>Denominator and universe</dt><dd>As the source defines it; the catalog publishes no separate denominator for this measure.</dd></div>
+              <div><dt>Denominator and universe</dt><dd>{pairing ? `${pairing.denominator_label}; the value describes ${pairing.universe}` : "As the source defines it; the catalog publishes no separate denominator for this measure."}</dd></div>
             </dl>
             {sourceRow?.reference_url ? (
               <p><a className="text-link" href={String(sourceRow.reference_url)} rel="noopener noreferrer" target="_blank">The source&apos;s own definitions and changes</a></p>
@@ -354,13 +416,13 @@ export default function MeasureMapPage({
   );
 }
 
-function CountyTable({ caption, entries, linkFor, testId }: { caption: string; entries: RankedCounty[]; linkFor: (entry: RankedCounty) => string | null; testId: string }) {
+function CountyTable({ caption, entries, linkFor, testId, valueHeading }: { caption: string; entries: RankedCounty[]; linkFor: (entry: RankedCounty) => string | null; testId: string; valueHeading: string }) {
   return (
     <div className="table-scroll">
       <table className="place-card-table" data-testid={testId}>
         <caption>{caption}</caption>
         <thead>
-          <tr><th scope="col">County</th><th scope="col">Value</th><th scope="col">Uncertainty</th></tr>
+          <tr><th scope="col">County</th><th scope="col">{valueHeading}</th><th scope="col">Uncertainty</th></tr>
         </thead>
         <tbody>
           {entries.map((entry) => {
@@ -369,7 +431,7 @@ function CountyTable({ caption, entries, linkFor, testId }: { caption: string; e
             return (
               <tr key={entry.county.geo_id} data-geo-id={entry.county.geo_id} data-gap={entry.gap || undefined}>
                 <th scope="row">{href ? <Link href={href}>{label}</Link> : label}</th>
-                <td>{entry.value !== null && entry.row ? `${formatObservationValue(entry.row.value)} ${observationUnit(entry.row) === "value" ? "" : observationUnit(entry.row)}`.trim() : entry.gap === "missing" ? "Not published" : `Withheld${entry.gap.includes(":") ? ` (${entry.gap.split(": ")[1]})` : ""}`}</td>
+                <td>{entry.value !== null && entry.row ? `${formatObservationValue(entry.row.value, entry.row.derived !== undefined ? 2 : 1)} ${observationUnit(entry.row) === "value" ? "" : observationUnit(entry.row)}`.trim() : entry.gap === "missing" ? "Not published" : entry.row?.derived !== undefined ? String(entry.row.value_status) : `Withheld${entry.gap.includes(":") ? ` (${entry.gap.split(": ")[1]})` : ""}`}</td>
                 <td className="subtle">{entry.row && entry.value !== null ? [marginOfErrorText(entry.row) !== "Not provided" ? marginOfErrorText(entry.row) : "", observationUncertaintyLabel(entry.row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN)].filter(Boolean).join(" · ") : ""}</td>
               </tr>
             );
