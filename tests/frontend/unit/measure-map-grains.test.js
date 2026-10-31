@@ -1,13 +1,14 @@
 // Covers: WEB-148 — web-place-maps: the one-measure map offers exactly the
 // grains the catalog publishes a measure at, draws each on the layer
 // /catalog/tile-layers lists for it, picks the newest boundary vintage not
-// later than the period (never a later one), names it, and narrows city and
-// tract layers to one state.
+// later than the period, or else the earliest later one within three years
+// (saying so), names it, and narrows city and tract layers to one state.
 
 import { describe, expect, it } from "vitest";
 
 import {
   MAP_GRAINS,
+  MAX_LATER_VINTAGE_GAP,
   STATE_SCOPED_GRAINS,
   boundaryForGrain,
   boundarySentence,
@@ -90,10 +91,30 @@ describe("which boundary a grain is drawn on", () => {
     expect(boundarySentence(boundaryForGrain(CATALOG, "METRO", 2024), "METRO", 2024)).toBe("Drawn on the 2023 metro area boundaries.");
   });
 
-  it("never draws a period on a later vintage's shapes", () => {
+  it("draws the earliest later vintage within three years, and says so", () => {
+    // OFFICE_LAB holds only the 2025 place boundaries; ACS 2020–2024 ends in 2024.
+    const only2025 = { ...CATALOG, layers: CATALOG.layers.map((item) => (item.layer_id === "places"
+      ? { ...item, vintages: [{ boundary_vintage: 2025, feature_count: 32629, is_default: true, tile_template: "/tiles/places/{z}/{x}/{y}?vintage=2025" }] }
+      : item)) };
+    const boundary = boundaryForGrain(only2025, "PLACE", 2024);
+    expect(boundary).toMatchObject({ drawn: true, vintage: 2025, later: true, tileTemplate: "/tiles/places/{z}/{x}/{y}?vintage=2025" });
+    expect(boundarySentence(boundary, "PLACE", 2024)).toBe(
+      "Drawn on the 2025 city and town boundaries; 2024 boundaries are not yet held, so a few cities and towns may differ from the shapes the values were measured on.",
+    );
+    expect(boundaryForGrain(only2025, "PLACE", 2022)).toMatchObject({ drawn: true, vintage: 2025, later: true });
+    // A held vintage at or before the period is always preferred to a later one.
+    expect(boundaryForGrain(CATALOG, "PLACE", 2023)).toMatchObject({ drawn: true, vintage: 2020, later: false });
+    expect(MAX_LATER_VINTAGE_GAP).toBe(3);
+  });
+
+  it("withholds the map when the nearest held vintage is more than three years later", () => {
     const boundary = boundaryForGrain(CATALOG, "PLACE", 2012);
     expect(boundary).toMatchObject({ drawn: false, reason: "no-vintage" });
-    expect(boundarySentence(boundary, "PLACE", 2012)).toContain("No city and town boundaries from 2012 or earlier are held (held: 2020, 2024)");
+    expect(boundaryForGrain(CATALOG, "PLACE", 2016)).toMatchObject({ drawn: false, reason: "no-vintage" });
+    expect(boundaryForGrain(CATALOG, "PLACE", 2017)).toMatchObject({ drawn: true, vintage: 2020, later: true });
+    expect(boundarySentence(boundary, "PLACE", 2012)).toBe(
+      "No city and town boundaries from 2012 or up to 3 years after it are held (held: 2020, 2024), so the map is not drawn on shapes that far from the period. Every value is in the table below.",
+    );
   });
 
   it("draws unversioned layers on their current boundaries", () => {

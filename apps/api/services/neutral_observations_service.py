@@ -753,10 +753,17 @@ def _list_neutral_observations(
         outer_where = f"WHERE {where_sql}"
 
     count_query = text(f"SELECT COUNT(*) FROM {source_sql} {outer_where}")
+    # The page carries its own total: `COUNT(*) OVER ()` is evaluated before
+    # LIMIT, so the relation (and, for a reduced read, its ranking) is read
+    # once per page instead of once for the count and again for the rows. A
+    # city map of one state read every place row of the metric four times
+    # over two pages (web-place-maps, 2026-10-31). Only a page past the end
+    # pays for the separate count, as in `_group_total`.
     list_query = text(
         f"""
         SELECT
-            {_select_sql(dispatch)}
+            {_select_sql(dispatch)},
+            COUNT(*) OVER () AS page_total
         FROM {source_sql}
         {outer_where}
         ORDER BY {", ".join(order)}
@@ -764,9 +771,14 @@ def _list_neutral_observations(
         """
     )
 
-    total = int(db.execute(count_query, params).scalar() or 0)
     page_params = {**params, "limit": limit, "offset": offset}
     rows = db.execute(list_query, page_params).mappings().all()
+    if rows and "page_total" in rows[0]:
+        total = int(rows[0]["page_total"])
+    elif rows or offset > 0:
+        total = int(db.execute(count_query, params).scalar() or 0)
+    else:
+        total = 0
 
     display_name = metric.get("metric_display_name")
     return NeutralObservationListResponse(

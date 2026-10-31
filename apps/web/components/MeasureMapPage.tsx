@@ -29,7 +29,7 @@ import {
   searchMetrics,
 } from "../lib/api/client";
 import type { GeographySummary, MetricSummary, Observation, SourceSummary, TileLayerCatalogResponse } from "../lib/api/types";
-import { buildExplorerSources } from "../lib/explorerSources";
+import { NEUTRAL_OBSERVATIONS_PATH, buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
 import { displayMetricName, formatNumber } from "../lib/format";
@@ -71,6 +71,9 @@ import { DraftViewMark, ViewToggle } from "./DerivedView";
 const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), { ssr: false });
 
 const PAGE_SIZE = 50;
+const DERIVED_PATH = "/observations/derived";
+/** The most rows `/observations` and `/observations/derived` answer in one page. */
+const MAX_ROWS_PER_READ = 5000;
 const EXTREMES = 10;
 
 interface PeriodItem {
@@ -260,6 +263,10 @@ export default function MeasureMapPage({
     const stateParam = scoped ? stateFips : undefined;
     // Tracts in a large state run to several thousand rows.
     const pageBound = release || scoped ? 50 : 5;
+    // The neutral and derived routes page up to 5,000 rows, so one state's
+    // cities, or every county or metro, is one read rather than several, each
+    // of which ranked the metric's rows again.
+    const readSize = (resource: string) => (resource === NEUTRAL_OBSERVATIONS_PATH || resource === DERIVED_PATH ? MAX_ROWS_PER_READ : 1000);
     const atGrain = (row: { geo_level?: unknown; geo_id?: unknown }) =>
       (row.geo_level === undefined || row.geo_level === null || String(row.geo_level).toUpperCase() === grain ||
         (grain === "COUNTY" && String(row.geo_id).includes("county:") && !String(row.geo_id).includes("tract:"))) &&
@@ -268,7 +275,7 @@ export default function MeasureMapPage({
       const params = release
         ? { ratio_id: pairing.ratio_id, geo_level: grain, state_fips: stateParam, scope: SCOPE_AS_RELEASED, release, limit: "1000" }
         : { ratio_id: pairing.ratio_id, geo_level: grain, state_fips: stateParam, period_start: period || undefined, newest_per_geography: true, limit: "1000" };
-      fetchCollectionPages<DerivedRatioObservation>("/observations/derived", { params, pageSize: 1000, maxPages: pageBound, signal: controller.signal })
+      fetchCollectionPages<DerivedRatioObservation>(DERIVED_PATH, { params, pageSize: readSize(DERIVED_PATH), maxPages: pageBound, signal: controller.signal })
         .then((result) => {
           if (controller.signal.aborted) return;
           const countyRows = result.items.filter(atGrain).map((row) => derivedMapRow(row, viewKey(pairing)));
@@ -299,7 +306,7 @@ export default function MeasureMapPage({
           newestPerGeography: true,
           limit: "1000",
         });
-    fetchCollectionPages<Observation>(request.resource, { params: request.params, pageSize: 1000, maxPages: pageBound, signal: controller.signal })
+    fetchCollectionPages<Observation>(request.resource, { params: request.params, pageSize: readSize(request.resource), maxPages: pageBound, signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
         const countyRows = normalizeObservationRows(source, result.items).filter(atGrain);
