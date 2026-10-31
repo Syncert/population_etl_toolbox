@@ -351,6 +351,8 @@ def test_a_count_across_levels_is_refused_with_its_per_capita_view(
     alternatives = body["refusal"]["alternatives"]
     assert [a["ratio_id"] for a in alternatives] == ["poverty_share:acs5"]
     assert alternatives[0]["href"].startswith("/api/v1/comparison/places?ratio_id=")
+    # The web marks a draft shown instead of the total, and only a draft.
+    assert alternatives[0]["pairing_status"] == "approved"
     assert body["side_a"]["published"] is None and body["side_a"]["value"] is None
     assert body["difference"] is None
     assert reads == []

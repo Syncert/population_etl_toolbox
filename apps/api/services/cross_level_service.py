@@ -296,6 +296,7 @@ def count_alternatives(metric_code: str) -> list[ComparisonAlternative]:
             label=pairing.label,
             unit=pairing.unit,
             href=f"/api/v1/comparison/places?ratio_id={pairing.ratio_id}",
+            pairing_status=pairing.status,
         )
         for pairing in pairings_for_numerator(metric_code)
         if pairing.is_served()

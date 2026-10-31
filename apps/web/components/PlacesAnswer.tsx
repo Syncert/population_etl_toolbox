@@ -151,7 +151,7 @@ export default function PlacesAnswer({
           answer={shown}
           heading={shown === answer ? null : instead!.alternative.label}
           unit={shown === answer ? (pairing ? pairing.unit : unit) : instead!.alternative.unit}
-          draft={shown === answer ? pairing?.status : "draft"}
+          draft={shown === answer ? pairing?.status : instead!.alternative.pairing_status}
           a={a}
           b={b}
           testId={testId}
@@ -162,7 +162,7 @@ export default function PlacesAnswer({
           answer={unpublished}
           heading={unpublished === answer ? null : instead!.alternative.label}
           unit={unpublished === answer ? (pairing ? pairing.unit : unit) : instead!.alternative.unit}
-          draft={unpublished === answer ? pairing?.status : "draft"}
+          draft={unpublished === answer ? pairing?.status : instead!.alternative.pairing_status}
           a={a}
           b={b}
           testId={testId}

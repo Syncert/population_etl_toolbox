@@ -31,7 +31,7 @@ const answer = (overrides = {}) => ({
 
 describe("the cross-level answer in a reader's words", () => {
   it("refuses a total across levels by size, and says what is shown instead", () => {
-    const refused = answer({ comparable: false, refusal: { reason: "counts_differ_in_size", detail: "CENSUS_ACS:acs5:B17001_002 is a count", alternatives: [{ ratio_id: "poverty_share:acs5", label: "Share", unit: "percent", href: "" }] } });
+    const refused = answer({ comparable: false, refusal: { reason: "counts_differ_in_size", detail: "CENSUS_ACS:acs5:B17001_002 is a count", alternatives: [{ ratio_id: "poverty_share:acs5", label: "Share", unit: "percent", href: "", pairing_status: "approved" }] } });
     const text = refusalSentence(refused, county, state);
     expect(text).toContain("Travis County, Texas is a county and Texas is a state, so they differ in size by their nature");
     expect(text).toContain("shown as a share or per resident instead");
