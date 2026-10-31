@@ -6,6 +6,7 @@ import time
 import uuid
 import csv
 import io
+import copy
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, date
@@ -1762,6 +1763,7 @@ def transform_census_to_silver(
     # A slice any earlier run finished against the same content and the same
     # reference is skipped (`transform_slice_state`), not only a retry's.
     context = transform_context(meta_df, geo_df)
+    shared_hook = hook
 
     # ── process each year ─────────────────────────────────────────────
     for y in years:
@@ -1790,6 +1792,10 @@ def transform_census_to_silver(
 
         def transform_slice(raw_slice: RawSlice, year: int = y) -> int:
             """Transform and upsert one slice; its own metrics, its own sessions."""
+            # A hook of its own: `PostgresHook.get_conn` stores the connection
+            # it opens on the hook and returns that attribute, so two threads
+            # sharing one hook can each be handed the other's connection.
+            hook = copy.copy(shared_hook)
             fingerprint = slice_fingerprint(hook, year, raw_slice, context)
             if finished.get(raw_slice.key) == fingerprint:
                 logger.info(
