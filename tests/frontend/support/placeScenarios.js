@@ -73,7 +73,7 @@ function unitFor(code) {
 
 // Only the acs5 identities are published, so each slot's first candidate wins.
 const codes = placeChapterMetricCodes().filter((code) => !code.includes(":acs1:"));
-const metrics = Object.fromEntries(codes.map((code) => [code, {
+export const metrics = Object.fromEntries(codes.map((code) => [code, {
   metric_code: code, metric_display_name: `${code.split(":").at(-1)} (UI fixture)`, source_code: code.split(":")[0],
   metric_label: DEFINED.get(code)?.[0] ?? null, metric_label_status: DEFINED.get(code)?.[1] ?? null,
   units: unitFor(code), valid_geo_grains: grainsFor(code), freshness_state: "fresh",

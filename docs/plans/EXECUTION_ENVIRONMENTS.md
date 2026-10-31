@@ -46,13 +46,14 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**3 plans.**
+**4 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`api-cross-level-compare`](in_progress/API_CROSS_LEVEL_COMPARE_PLAN.md) | medium | none | `api-per-capita-and-shares` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
+| [`web-cross-level-compare`](in_progress/WEB_CROSS_LEVEL_COMPARE_PLAN.md) | medium | `browser` | `api-cross-level-compare`, `web-per-capita-toggle` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine

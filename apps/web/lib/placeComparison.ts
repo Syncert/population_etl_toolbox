@@ -12,12 +12,12 @@ import type { ComparisonPreflight, ComparisonRule } from "./api/types";
 import type { ObservationRow } from "./explorerViewModel";
 import { publishedNumber } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
-import type { PlaceLevel } from "./placeChapters";
+import type { CompareLevel } from "./crossLevelComparison";
 
 export interface ComparedPlace {
   geoId: string;
   name: string;
-  level: PlaceLevel;
+  level: CompareLevel;
 }
 
 export interface ComparisonTick {
@@ -145,6 +145,19 @@ export function intervalsOverlap(a: ObservationRow, b: ObservationRow): boolean 
 /** The address of a pair, and of the same pair swapped. */
 export function pairPath(a: string, b: string): string {
   return `${a}/vs${b}`;
+}
+
+/** Geography identities a compare address may name (`/compare/places`). */
+export const COMPARE_GEO_ID = /^(?:us:1|cbsa:\d{5}|state:\d{2}(?:\|county:\d{3}|\|place:\d{5})?)$/;
+
+/**
+ * The address of a comparison between two places. Two places with pages
+ * share the place-page form (`/us/<a>/vs/us/<b>`); a metro has no page yet,
+ * so a pair with one is addressed by both identities instead.
+ */
+export function compareHref(a: { geoId: string; path: string | null }, b: { geoId: string; path: string | null }): string {
+  if (a.path && b.path) return pairPath(a.path, b.path);
+  return `/compare/places?a=${encodeURIComponent(a.geoId)}&b=${encodeURIComponent(b.geoId)}`;
 }
 
 /**
