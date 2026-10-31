@@ -54,7 +54,6 @@ un-accept the plan that filed it.
 | [`DEPLOY_THE_INTERNAL_STACK.md`](DEPLOY_THE_INTERNAL_STACK.md) | `make deploy-*` brings the real internal stack up and down, and the metadata/warehouse refusal fires for real | Linux or macOS with Docker | ~20 min |
 | [`WINDOWS_DEPLOY_SCRIPT.md`](WINDOWS_DEPLOY_SCRIPT.md) | `deploy_stack.ps1` still behaves after being rewritten from 355 lines to 123 | Windows, Docker Desktop, Python | ~15 min |
 | [`ORCHESTRATED_DAG_RUNS_ON_A_CLEAN_AIRFLOW.md`](ORCHESTRATED_DAG_RUNS_ON_A_CLEAN_AIRFLOW.md) | The three real-`DagRun` tests, which need an Airflow metadata database the Windows machine's install cannot create | Any host, Python 3.11, Docker | ~10 min |
-| [`PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md`](PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md) | Every plain-label metric code is one the internal warehouse publishes, and live comparison and distribution responses carry the labels | Internal stack up, Python 3.11 | ~2 min |
 
 ## Done
 
@@ -65,3 +64,4 @@ was run, per *How to use it* above.
 |---|---|---|
 | [`completed/RECORD_THE_IDENTITY_GATE_DECISION.md`](completed/RECORD_THE_IDENTITY_GATE_DECISION.md) | 2026-09-20 | The `self-service-identity` gate reads `approved`, decided by Nick |
 | [`completed/REGISTER_A_HUD_USER_API_TOKEN.md`](completed/REGISTER_A_HUD_USER_API_TOKEN.md) | 2026-10-07 | Nick registered a HUD User API token (Fair Market Rent and Income Limits datasets) and put `HUD_USER_API_TOKEN` in `stack.env`; the API answered 200 and the live contract check passed |
+| [`completed/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md`](completed/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md) | 2026-10-31 | 162 of 165 plain-label codes held on the internal stack (the three expected missing); the live comparison and bins return the labels, `draft` |
