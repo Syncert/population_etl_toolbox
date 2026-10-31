@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from apps.api.schemas.labels import (
+    MetricDefinitionSummary,
+    PlainLabelled,
+    definition_summary,
+)
 
 
 class SourceSystem(BaseModel):
@@ -17,7 +23,7 @@ class SourceSystem(BaseModel):
     reference_url: Optional[str] = None
 
 
-class MetricCatalog(BaseModel):
+class MetricCatalog(PlainLabelled):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     metric_code: str
@@ -37,6 +43,15 @@ class MetricCatalog(BaseModel):
     publication_time: Optional[datetime] = None
     harvested_at: Optional[datetime] = None
     freshness_state: Optional[str] = None
+    #: The plain-language definition from `docs/semantics/` (A-2), with its
+    #: review status; `null` for a metric no entry defines yet.
+    definition: Optional[MetricDefinitionSummary] = None
+
+    @model_validator(mode="after")
+    def _definition(self):  # type: ignore[no-untyped-def]
+        if self.definition is None:
+            self.definition = definition_summary(self.metric_code)
+        return self
 
 
 class MetricListResponse(BaseModel):

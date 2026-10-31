@@ -25,7 +25,7 @@ def _segment_name(row: dict) -> str:
 
 
 def test_page_paths_agree_with_the_web_address_rule() -> None:
-    """Covers: API-170 — the shared fixture answers the same paths in both suites."""
+    """Covers: API-171 — the shared fixture answers the same paths in both suites."""
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     rows = [*fixture["states"], *fixture["counties"], *fixture["places"]]
     paths = PagePaths(
@@ -45,7 +45,7 @@ def test_page_paths_agree_with_the_web_address_rule() -> None:
 
 
 def test_a_grain_without_a_page_has_no_path() -> None:
-    """Covers: API-170 — a metro, a ZCTA or an unknown id has no path, not a guess."""
+    """Covers: API-171 — a metro, a ZCTA or an unknown id has no path, not a guess."""
     paths = PagePaths(
         [
             {
@@ -69,7 +69,7 @@ def test_a_grain_without_a_page_has_no_path() -> None:
 
 
 def test_slug_matches_the_web_placeslug() -> None:
-    """Covers: API-170 — accents, ampersands and punctuation slug as the web does."""
+    """Covers: API-171 — accents, ampersands and punctuation slug as the web does."""
     assert place_slug("Española city") == "espanola-city"
     assert place_slug("Town & Country city") == "town-and-country-city"
     assert place_slug("  St. Mary's  County ") == "st-mary-s-county"

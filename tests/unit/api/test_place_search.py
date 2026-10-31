@@ -241,7 +241,7 @@ def _austin_session(direct=None):
 
 
 def test_austin_offers_the_city_then_its_county_and_metro() -> None:
-    """Covers: API-170 — "Austin" offers Austin city, Travis County and the Austin metro."""
+    """Covers: API-171 — "Austin" offers Austin city, Travis County and the Austin metro."""
     session = _austin_session()
     response = _get(session, "/api/v1/catalog/geographies/search?q=Austin")
 
@@ -290,7 +290,7 @@ def test_austin_offers_the_city_then_its_county_and_metro() -> None:
 
 
 def test_a_page_stops_at_the_limit_after_the_containing_rows() -> None:
-    """Covers: API-170 — the limit bounds the answer, containing rows included."""
+    """Covers: API-171 — the limit bounds the answer, containing rows included."""
     response = _get(
         _austin_session(), "/api/v1/catalog/geographies/search?q=austin&limit=3"
     )
@@ -303,7 +303,7 @@ def test_a_page_stops_at_the_limit_after_the_containing_rows() -> None:
 
 
 def test_grains_narrow_the_matches_and_the_containing_rows() -> None:
-    """Covers: API-170 — a city-only search offers no county or metro beside it."""
+    """Covers: API-171 — a city-only search offers no county or metro beside it."""
     session = _austin_session(direct=[AUSTIN_CITY, AUSTIN_MN])
     response = _get(
         session,
@@ -323,7 +323,7 @@ def test_grains_narrow_the_matches_and_the_containing_rows() -> None:
 
 
 def test_a_near_miss_is_fuzzy_and_offers_nothing_beside_it() -> None:
-    """Covers: API-170 — a misspelling still finds the place, labelled fuzzy."""
+    """Covers: API-171 — a misspelling still finds the place, labelled fuzzy."""
     session = _austin_session(direct=[{**AUSTIN_CITY, "match_tier": 3}])
     response = _get(session, "/api/v1/catalog/geographies/search?q=Austn")
     assert response.status_code == 200
@@ -333,7 +333,7 @@ def test_a_near_miss_is_fuzzy_and_offers_nothing_beside_it() -> None:
 
 
 def test_an_unranked_geography_keeps_a_null_population() -> None:
-    """Covers: API-170 — a ZCTA with no served population is not ranked as zero."""
+    """Covers: API-171 — a ZCTA with no served population is not ranked as zero."""
     zcta = _row("zcta:78701", "ZCTA", "ZCTA5 78701", "78701", 1)
     session = _Session({cq.GEO_SEARCH_QUERY: [zcta], cq.GEO_SEARCH_SEGMENTS_QUERY: []})
     response = _get(session, "/api/v1/catalog/geographies/search?q=787&state_fips=48")
@@ -345,7 +345,7 @@ def test_an_unranked_geography_keeps_a_null_population() -> None:
 
 
 def test_a_query_is_matched_in_the_projection_word_shape() -> None:
-    """Covers: API-170 — accents, ampersands and punctuation fold as the warehouse folds them."""
+    """Covers: API-171 — accents, ampersands and punctuation fold as the warehouse folds them."""
     assert normalise_query("Española") == "espanola"
     assert normalise_query("Town & Country") == "town and country"
     assert normalise_query("  Coeur d'Alene,  ID ") == "coeur d alene id"
@@ -368,7 +368,7 @@ def test_a_query_is_matched_in_the_projection_word_shape() -> None:
     ],
 )
 def test_a_search_outside_the_contract_is_refused(query, detail) -> None:
-    """Covers: API-170 — a one-letter query or an unknown grain is a 422 naming the rule."""
+    """Covers: API-171 — a one-letter query or an unknown grain is a 422 naming the rule."""
     session = _Session({})
     response = _get(session, f"/api/v1/catalog/geographies/search?{query}")
     assert response.status_code == 422
@@ -387,7 +387,7 @@ def test_a_search_outside_the_contract_is_refused(query, detail) -> None:
     ],
 )
 def test_malformed_search_parameters_are_refused(query) -> None:
-    """Covers: API-170 — a malformed state code, limit, missing query or unknown filter is a 422."""
+    """Covers: API-171 — a malformed state code, limit, missing query or unknown filter is a 422."""
     session = _Session({})
     response = _get(session, f"/api/v1/catalog/geographies/search?{query}")
     assert response.status_code == 422
@@ -464,7 +464,7 @@ def _locate_session(located=LOCATED, metro=(METRO,)):
 
 
 def test_a_point_in_a_city_lands_on_the_city() -> None:
-    """Covers: API-171 — "use my location" lands on the city, with its county, tract, ZCTA and metro."""
+    """Covers: API-172 — "use my location" lands on the city, with its county, tract, ZCTA and metro."""
     session = _locate_session()
     response = _get(
         session, "/api/v1/catalog/geographies/locate?lat=30.2650&lon=-97.7470"
@@ -496,7 +496,7 @@ def test_a_point_in_a_city_lands_on_the_city() -> None:
 
 
 def test_a_point_outside_every_city_lands_on_the_county() -> None:
-    """Covers: API-171 — unincorporated land lands on its county; a county in no metro has none."""
+    """Covers: API-172 — unincorporated land lands on its county; a county in no metro has none."""
     rural = [row for row in LOCATED if row["geo_level"] != "PLACE"]
     response = _get(
         _locate_session(located=rural, metro=()),
@@ -510,7 +510,7 @@ def test_a_point_outside_every_city_lands_on_the_county() -> None:
 
 
 def test_a_point_no_state_covers_is_not_found() -> None:
-    """Covers: API-171 — offshore or abroad is a 404, not an empty answer."""
+    """Covers: API-172 — offshore or abroad is a 404, not an empty answer."""
     response = _get(
         _locate_session(located=[]), "/api/v1/catalog/geographies/locate?lat=0&lon=0"
     )
@@ -531,7 +531,7 @@ def test_a_point_no_state_covers_is_not_found() -> None:
     ],
 )
 def test_coordinates_outside_the_globe_are_refused(query) -> None:
-    """Covers: API-171 — a missing, non-finite or out-of-range coordinate is a 422."""
+    """Covers: API-172 — a missing, non-finite or out-of-range coordinate is a 422."""
     session = _locate_session()
     response = _get(session, f"/api/v1/catalog/geographies/locate?{query}")
     assert response.status_code == 422
@@ -547,7 +547,7 @@ def test_coordinates_outside_the_globe_are_refused(query) -> None:
     "path", ["/api/v1/catalog/geographies/search", "/api/v1/catalog/geographies/locate"]
 )
 def test_both_routes_are_cached_and_spend_the_catalog_budget(path) -> None:
-    """Covers: API-170, API-171 — both reads are public cache targets in the catalog bucket."""
+    """Covers: API-171, API-172 — both reads are public cache targets in the catalog bucket."""
     assert PUBLIC_CACHE_TARGETS.covers(path)
     limiter = RateLimitMiddleware(
         app=None, catalog_per_minute=60, analysis_per_minute=10
@@ -556,7 +556,7 @@ def test_both_routes_are_cached_and_spend_the_catalog_budget(path) -> None:
 
 
 def test_a_successful_search_is_publicly_cacheable() -> None:
-    """Covers: API-170 — a 200 carries the public cache policy, a refusal never does."""
+    """Covers: API-171 — a 200 carries the public cache policy, a refusal never does."""
     ok = _get(_austin_session(), "/api/v1/catalog/geographies/search?q=austin")
     assert ok.headers["cache-control"].startswith("public, max-age=")
     refused = _get(_Session({}), "/api/v1/catalog/geographies/search?q=a")

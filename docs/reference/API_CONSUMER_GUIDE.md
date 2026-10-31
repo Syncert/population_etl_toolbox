@@ -217,6 +217,38 @@ answered under its own name here and under its state's name on
 `/observations`, which is one geography with two names to anyone joining the
 two responses.
 
+### Plain labels and definitions
+
+Every response that names a metric -- catalog entries, observation rows,
+distinctive ranks (ranked and not ranked), `/distribution/bins` and each
+measure of `/comparison/matrix` -- carries `metric_label` and
+`metric_label_status` beside the provider's own `metric_display_name`, which
+is never changed. The two-sided responses (`/comparison`,
+`/comparison/preflight`, `/comparison/correlation`) carry the same pair per
+side as `metric_label_a`/`metric_label_status_a` and
+`metric_label_b`/`metric_label_status_b`:
+
+- `metric_label_status: "approved"` (or `"draft"` until the owner has
+  reviewed it): the label comes from the metric's entry in
+  `docs/semantics/metric_definitions.json`, the plain-language registry of
+  every measure a place page shows. `/catalog/metrics` and
+  `/catalog/metrics/{metric_code}` also carry the entry itself as
+  `definition` -- `label`, a one-sentence `definition`, `unit`, `universe`,
+  `caveat`, `status`, `version` and `citations`.
+- `metric_label_status: "provider"`: no entry defines the metric yet, and
+  `metric_label` is the provider's own label. For the American Community
+  Survey the Bureau's label path is set as words (`Estimate!!Total:!!Male:`
+  becomes `Total: Male`); nothing is reworded or guessed.
+
+Show `metric_label`; keep `metric_display_name` for a citation that must
+reproduce the provider's wording. Additive in v1.
+
+A deployment that must show only reviewed wording sets
+`METRIC_LABELS_REVIEWED_ONLY=1`: a `draft` entry's label then gives way to the
+provider's (`metric_label_status: "provider"`), while the catalog still serves
+the draft `definition` with its status. Off by default, so the drafts can be
+reviewed on the running site.
+
 ### Finding a place by name or by location
 
 Two catalog reads answer "find your place". Both read projections the

@@ -1,7 +1,7 @@
 """Finding a place by name or location against the real projections.
 
 Covers DB-066 (the projection rebuild) and the database-tier halves of
-API-170 (search) and API-171 (locate). Every geography here is fictional --
+API-171 (search) and API-172 (locate). Every geography here is fictional --
 state 96, names no real place has, square boundaries in the open Pacific --
 so nothing another suite seeds can match a query or contain a point.
 """
@@ -386,7 +386,7 @@ def test_the_projection_rebuilds_from_the_published_geography(zephyria) -> None:
 
 
 def test_search_answers_the_city_then_its_county_and_metro(zephyria) -> None:
-    """Covers: API-170 — the real query ranks, expands and addresses the matches."""
+    """Covers: API-171 — the real query ranks, expands and addresses the matches."""
     client, _ = zephyria
     response = client.get(
         "/api/v1/catalog/geographies/search", params={"q": "Zephyrtown"}
@@ -422,7 +422,7 @@ def test_search_answers_the_city_then_its_county_and_metro(zephyria) -> None:
 
 
 def test_locate_lands_on_the_city_or_the_county(zephyria) -> None:
-    """Covers: API-171 — the real point-in-polygon read and the county's metro."""
+    """Covers: API-172 — the real point-in-polygon read and the county's metro."""
     client, _ = zephyria
     town = client.get(
         "/api/v1/catalog/geographies/locate", params={"lat": 10.3, "lon": -149.8}

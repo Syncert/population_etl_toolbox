@@ -97,7 +97,7 @@ lands on the city page").
    a point. Query strings are never logged.
 6. **Documented.** `API_CONSUMER_GUIDE.md` (discovery table, a new
    "Finding a place" section, ordering table), behavioural catalog rows
-   API-170 (search), API-171 (locate), DB-066 (projection) with the audited
+   API-171 (search), API-172 (locate), DB-066 (projection) with the audited
    counts and evidence register regenerated, and the OpenAPI snapshot.
 
 ## Acceptance criteria

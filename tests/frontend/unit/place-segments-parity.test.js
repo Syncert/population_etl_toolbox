@@ -37,7 +37,7 @@ describe("place page addresses shared with the API", () => {
     return placePath(stateSeg, citySegment(row, ownPlaces, ownCounties));
   }
 
-  it("Covers: API-170 — every fixture row answers the path the API answers", () => {
+  it("Covers: API-171 — every fixture row answers the path the API answers", () => {
     const rows = [...states, ...counties, ...places];
     expect(rows.map((row) => row.geo_id).sort()).toEqual(Object.keys(expected).sort());
     for (const row of rows) {
