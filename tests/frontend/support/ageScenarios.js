@@ -149,8 +149,8 @@ export const REFERENCES = {
   "state:55|county:025": [["state:55", "STATE"], ["us:1", "NATIONAL"]],
   "state:55|county:105": [["state:55", "STATE"], ["us:1", "NATIONAL"]],
   "state:27|county:053": [["state:27", "STATE"], ["us:1", "NATIONAL"]],
-  "state:55|place:48000": [["state:55|county:025", "COUNTY", "1"], ["state:55", "STATE"], ["us:1", "NATIONAL"]],
-  "state:55|place:99999": [["state:55|county:025", "COUNTY", "0.6"], ["state:55", "STATE"], ["us:1", "NATIONAL"]],
+  "state:55|place:48000": [["state:55|county:025", "COUNTY", 1], ["state:55", "STATE"], ["us:1", "NATIONAL"]],
+  "state:55|place:99999": [["state:55|county:025", "COUNTY", 0.6], ["state:55", "STATE"], ["us:1", "NATIONAL"]],
   [DANE_TRACTS[0].geo_id]: [["state:55|county:025", "COUNTY"], ["state:55", "STATE"], ["us:1", "NATIONAL"]],
 };
 // Minnesota and its county publish no 2023 release here.
@@ -192,8 +192,8 @@ export function ageCohortsAnswer(geoId, from, to) {
     geo_id: geoId, dataset: "acs5", scheme: SCHEME, from: period(from), to: period(to), years_apart: gap,
     caveat: "A change between two surveys mixes births abroad, deaths, moves and sampling error; it is not one group of people followed over time.",
   };
-  if (gap < 5) return { ...base, comparable: false, refusal: { reason: "overlapping_periods", detail: null }, items: [] };
-  if (gap !== 5) return { ...base, comparable: false, refusal: { reason: "period_gap_not_five_years", detail: null }, items: [] };
+  if (gap < 5) return { ...base, comparable: false, refusal: { reason: "overlapping_periods", detail: "2019-2023 and 2015-2019 share years." }, items: [] };
+  if (gap !== 5) return { ...base, comparable: false, refusal: { reason: "period_gap_not_five_years", detail: "The periods end more than five years apart." }, items: [] };
   const before = ageBlock(geoId, { release: from });
   const after = ageBlock(geoId, { release: to });
   const items = before.bands.slice(0, 16).map((band, index) => {

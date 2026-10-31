@@ -19,15 +19,17 @@ const TOP = 8;
 const BOTTOM = 8;
 
 export default function CohortChart({ cohorts, testId = "age-cohorts" }: { cohorts: AgeCohortsResponse; testId?: string }) {
-  if (!cohorts.comparable || cohorts.refusal) {
+  if (!cohorts.comparable || cohorts.refusal || !cohorts.from || !cohorts.to) {
     return (
       <p className="notice" data-testid={`${testId}-refusal`} data-reason={cohorts.refusal?.reason || ""}>
         {cohorts.refusal ? cohortRefusalText(cohorts.refusal) : "These two surveys cannot be compared for this place."}
       </p>
     );
   }
-  const from = periodText(cohorts.from);
-  const to = periodText(cohorts.to);
+  const fromPeriod = cohorts.from;
+  const toPeriod = cohorts.to;
+  const from = periodText(fromPeriod);
+  const to = periodText(toPeriod);
   const items = cohorts.items;
   const widest = Math.max(1, ...items.flatMap((item) => SEXES.flatMap((sex) => [num(item[sex].from_count), num(item[sex].to_count)])).filter((v): v is number => v !== null));
   const plot = WIDTH - LEFT - RIGHT;
@@ -64,9 +66,9 @@ export default function CohortChart({ cohorts, testId = "age-cohorts" }: { cohor
                       fill="transparent"
                       tabIndex={0}
                       role="img"
-                      aria-label={cohortSentence(item, sex, cohorts.from, cohorts.to)}
+                      aria-label={cohortSentence(item, sex, fromPeriod, toPeriod)}
                     >
-                      <title>{cohortSentence(item, sex, cohorts.from, cohorts.to)}</title>
+                      <title>{cohortSentence(item, sex, fromPeriod, toPeriod)}</title>
                     </rect>
                   </g>
                 );
@@ -90,7 +92,7 @@ export default function CohortChart({ cohorts, testId = "age-cohorts" }: { cohor
                 <th scope="row">{`${bandIdText(item.from_band)} → ${bandIdText(item.to_band)}`}</th>
                 {SEXES.map((sex) => (
                   <td key={sex} data-testid={`${testId}-sentence-${sex}-${item.from_band}`}>
-                    {cohortSentence(item, sex, cohorts.from, cohorts.to)}
+                    {cohortSentence(item, sex, fromPeriod, toPeriod)}
                   </td>
                 ))}
               </tr>

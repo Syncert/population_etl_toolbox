@@ -56,7 +56,7 @@ describe("the comparison toggle", () => {
     expect(county.overlapNote).toBe("60% of Crossing city, Wisconsin's area lies in Dane County, Wisconsin");
     expect(referenceChoices(ageStructureAnswer(MADISON))[0].overlapNote).toBeNull();
     // 99.99 % never reads as 100 %.
-    expect(overlapText(placeOf(crossing), { ...county.place, overlap_weight: "0.99999" })).toMatch(/^99\.9%/);
+    expect(overlapText(placeOf(crossing), { ...county.place, overlap_weight: 0.99999 })).toMatch(/^99\.9%/);
   });
 
   test("an API default that is not a listed reference falls back to the first", () => {
@@ -158,6 +158,9 @@ describe("cohorts", () => {
     expect(rose).toMatch(/^From men aged 20 to 24 in 2014–2018 to men aged 25 to 29 in 2019–2023, the count rose/);
     const fell = cohortSentence({ ...item, men: { ...item.men, change: "-500", intervals_overlap: false } }, "men", answer.from, answer.to);
     expect(fell).toContain("fell");
+    // A missing margin leaves the overlap unknown, which never earns "rose" or "fell".
+    const unknown = cohortSentence({ ...item, men: { ...item.men, change: "500", intervals_overlap: null } }, "men", answer.from, answer.to);
+    expect(unknown).toContain("was not distinguishable from it");
     for (const sentence of [overlapping, rose, fell]) {
       expect(sentence).not.toMatch(/sharply|dramatically|because|due to|driven by|better|worse/);
     }

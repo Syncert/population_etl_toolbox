@@ -54,6 +54,8 @@ export interface AgeValue {
   value: Served;
   moe: Served;
   moe_method?: string;
+  unit?: string;
+  unavailable_reason?: string | null;
 }
 
 export interface AgeGroupIndicator extends AgeCount {
@@ -82,7 +84,8 @@ export interface AgePlace {
   geo_name: string;
   role: AgeRole;
   reference_level: ReferenceLevel | null;
-  overlap_weight: Served;
+  /** A number on the wire; read through `num`. */
+  overlap_weight: Served | number;
   release: string | null;
   period_start: string | null;
   period_end: string | null;
@@ -121,7 +124,10 @@ export interface CohortSide {
   to_count: Served;
   change: Served;
   change_moe: Served;
-  intervals_overlap: boolean;
+  /** Null when a margin is missing, so the intervals cannot be compared. */
+  intervals_overlap: boolean | null;
+  from_count_moe?: Served;
+  to_count_moe?: Served;
 }
 
 export interface CohortItem {
@@ -146,9 +152,10 @@ export interface AgeCohortsResponse {
   geo_id: string;
   dataset: string;
   scheme: AgeScheme;
-  from: CohortPeriod;
-  to: CohortPeriod;
-  years_apart: number;
+  /** Null when the API refused before it could name the periods. */
+  from: CohortPeriod | null;
+  to: CohortPeriod | null;
+  years_apart: number | null;
   comparable: boolean;
   refusal: CohortRefusal | null;
   caveat: string;
@@ -201,8 +208,9 @@ export function getAgeCohorts(
 // ---------------------------------------------------------------- numbers
 
 /** A served decimal as a number; null stays null, never zero. */
-export function num(value: Served | undefined): number | null {
+export function num(value: Served | number | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -265,6 +273,8 @@ export function sexWord(sex: Sex, capital = false): string {
 const UNAVAILABLE_WORDS: Record<string, string> = {
   suppressed_input: "the Census Bureau withheld one of the published lines this group is made of",
   line_missing: "one of the published lines this group is made of is not loaded",
+  total_missing: "the place's total population is not published, so no share can be worked out",
+  denominator_zero: "nobody aged 18 to 64 is counted here, so the ratio cannot be worked out",
   not_published: "not published for this survey period",
   release_mismatch: "published for a different survey period, so not drawn beside this one",
 };
@@ -506,7 +516,9 @@ export function cohortSentence(item: CohortItem, sex: Sex, from: CohortPeriod, t
   }
   const change = num(side.change);
   const counts = `${countText(side.from_count)} then ${countText(side.to_count)}`;
-  if (side.intervals_overlap || change === null) {
+  // Only intervals the API says do not overlap get "rose" or "fell"
+  // (ADR-0011 rule 3); unknown is not distinguishable.
+  if (side.intervals_overlap !== false || change === null) {
     return `${fromText} numbered ${countText(side.from_count)}; ${toText}, ${countText(side.to_count)}, which was not distinguishable from it.`;
   }
   const verb = change > 0 ? "rose" : change < 0 ? "fell" : "was unchanged";
