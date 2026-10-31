@@ -88,7 +88,7 @@ export function footerLines(spec: FrameSpec): string[] {
     .map((row) => `${row.name} ${row.uncertainty}`)
     .join("; ");
   return [
-    `${spec.measureName} (${spec.metricCode})`,
+    spec.measureName,
     `Period: ${spec.period || "not published"} · Source: ${spec.source || "not published"}`,
     `Uncertainty: ${uncertainty || "none published"}`,
     `${spec.caveat ? `${spec.caveat} · ` : ""}${SITE_NAME}`,
