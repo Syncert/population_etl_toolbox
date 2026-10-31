@@ -294,6 +294,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             # latest-release projection, served by /api/v1/crime/county-rollup.
             "gold_fbi.county_rollup",
             "gold_fbi.latest_county_rollup",
+            # The county rate the FBI's way (ADR-0012), served by
+            # /api/v1/observations/derived for its agency_rate pairings.
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
         ),
         source_api_routes=("/api/v1/crime/county-rollup",),
         neutral_api_routes=("/api/v1/catalog/metrics", "/api/v1/catalog/sources"),

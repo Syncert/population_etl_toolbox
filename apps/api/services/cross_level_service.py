@@ -299,7 +299,7 @@ def count_alternatives(metric_code: str) -> list[ComparisonAlternative]:
             pairing_status=pairing.status,
         )
         for pairing in pairings_for_numerator(metric_code)
-        if pairing.is_served()
+        if pairing.is_served() and pairing.kind != "agency_rate"
     ]
 
 
@@ -558,6 +558,14 @@ def compare_places(
         refusal_text = pairing.refusal()
         if refusal_text is not None:
             raise NeutralQueryError(refusal_text)
+        if pairing.kind == "agency_rate":
+            # A county agency rate exists only for counties, where the FBI
+            # publishes none, and covers only its reporting agencies' people;
+            # no reviewed rule reads it against another place yet (ADR-0012).
+            raise NeutralQueryError(
+                f"pairing '{pairing.ratio_id}' is a county rate computed from "
+                "agency reports; it is not compared across places"
+            )
         code_a = code_b = pairing.ratio_id
         kind, kind_status = RATIO_KINDS[pairing.kind], pairing.status
     else:
@@ -831,6 +839,9 @@ def _pairing_reads(pairing: Optional[RatioPairing]) -> list[str]:
         return []
     if pairing.kind == "provider_rate":
         return [str(pairing.provider_rate)]
+    if pairing.kind == "agency_rate":
+        # Refused per item; nothing to prefetch.
+        return []
     return [pairing.numerator, str(pairing.denominator)]
 
 

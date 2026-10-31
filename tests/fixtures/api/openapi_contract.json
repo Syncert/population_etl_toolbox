@@ -3756,6 +3756,25 @@
         "total"
       ]
     },
+    "DerivedRatioCoverage": {
+      "properties": {
+        "contributing_agencies": "array<string>",
+        "coverage_floor": "string",
+        "coverage_share": "string | null",
+        "covered_population": "string | null",
+        "excluded_multi_county_agencies": "array<string>",
+        "linked_population": "string | null",
+        "non_reporting_agencies": "array<string>",
+        "unknown_population_agencies": "array<string>"
+      },
+      "required": [
+        "contributing_agencies",
+        "coverage_floor",
+        "excluded_multi_county_agencies",
+        "non_reporting_agencies",
+        "unknown_population_agencies"
+      ]
+    },
     "DerivedRatioInput": {
       "properties": {
         "margin_of_error": "string | null",
@@ -3795,6 +3814,7 @@
     },
     "DerivedRatioObservation": {
       "properties": {
+        "coverage": "DerivedRatioCoverage | null",
         "denominator": "DerivedRatioInput | null",
         "derived": "boolean",
         "geo_id": "string | null",
@@ -3832,6 +3852,7 @@
         "denominator": "string | null",
         "denominator_label": "string",
         "derived": "boolean",
+        "geo_levels": "array<string>",
         "kind": "string",
         "label": "string",
         "limitations": "array<string>",
@@ -3839,6 +3860,7 @@
         "numerator_is_subset": "boolean",
         "provider_rate": "string | null",
         "ratio_id": "string",
+        "reads_beside": "string | null",
         "refusal_reason": "string | null",
         "reviewer": "string",
         "scale": "integer",

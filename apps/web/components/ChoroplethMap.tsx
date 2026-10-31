@@ -47,6 +47,7 @@ export default function ChoroplethMap({
   layerFilter,
   sourceZoom,
   initialView,
+  boundaryNote,
 }: {
   rows: ObservationRow[];
   tileMetadata: TileMetadata | null;
@@ -66,6 +67,8 @@ export default function ChoroplethMap({
   sourceZoom?: { minzoom: number; maxzoom: number };
   /** Where the map opens, for a layer drawn one state at a time. */
   initialView?: { center: [number, number]; zoom: number } | null;
+  /** Which boundaries the map is drawn on: the legend's note and the map's tooltip. */
+  boundaryNote?: { text: string; marked: boolean } | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { mapRef, ready, loadFailed } = useMapLibre(containerRef, true);
@@ -157,6 +160,7 @@ export default function ChoroplethMap({
         data-colored-values={model.valueCount}
         data-geo-level={geoLevel}
         data-tile-template={tileMetadata?.tileTemplate || ""}
+        title={boundaryNote?.text}
         ref={containerRef}
         role="region"
         aria-label={ariaLabel || `${legendTitle}. The comparison table lists every value, including the geographies this map leaves uncoloured.`}
@@ -165,6 +169,7 @@ export default function ChoroplethMap({
         title={legendTitle}
         items={model.legendItems}
         ariaLabel={`${legendTitle} legend`}
+        note={boundaryNote}
       />
     </div>
   );

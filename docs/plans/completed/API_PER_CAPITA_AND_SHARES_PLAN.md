@@ -14,6 +14,8 @@ verify:
 
 ## Status
 
+Completed: accepted by Nick ("Close", 2026-10-31 15:22Z, project thread message cmsg_013hQWJsASCCUaZTzSKgpekrSSzbmqQ3h2XtCwdXdrMtA5).
+
 Needs review (v1.0 build-out, item A-3). Built 2026-10-31 on branch
 `feat/api-per-capita-and-shares` (#175), with the provider-rate fix (#179)
 and the state filter for PEP and SAIPE/SAHIE (below); every warehouse check

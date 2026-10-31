@@ -12,6 +12,12 @@ so, and a missing, suppressed or zero input is never read as zero.
 A ``provider_rate`` pairing is the provider's own rate, served as published
 and marked ``derived: false``; nothing is recomputed beside it (rule 5).
 
+An ``agency_rate`` pairing is a county crime rate the warehouse computes the
+FBI's way from agency reports (ADR-0012): the rows are read from
+``gold_fbi.latest_county_agency_rate`` (or every release, ``as_released``),
+which has already divided and judged coverage, and each is served with its
+coverage. The API divides nothing for it.
+
 Margins of error follow the Census Bureau's formulas for derived proportions
 and ratios (*Understanding and Using American Community Survey Data*, 2020,
 chapter 8): for a proportion ``p = X / Y`` where X is a subset of Y,
@@ -25,11 +31,13 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Mapping, Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from apps.api.registry import normalize_geo_level
 from apps.api.schemas.derived import (
     DerivedRatioCatalogResponse,
+    DerivedRatioCoverage,
     DerivedRatioInput,
     DerivedRatioListResponse,
     DerivedRatioObservation,
@@ -40,6 +48,7 @@ from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     list_neutral_observations,
     observations_for_geographies,
+    validated_period_start,
 )
 from data_ingestion_toolbox.semantics.derived_ratios import (
     RatioPairing,
@@ -69,6 +78,8 @@ def pairing_summary(pairing: RatioPairing) -> DerivedRatioPairing:
         numerator=pairing.numerator,
         denominator=pairing.denominator,
         provider_rate=pairing.provider_rate,
+        reads_beside=pairing.reads_beside,
+        geo_levels=list(pairing.geo_levels),
         dataset=pairing.dataset,
         denominator_label=pairing.denominator_label,
         universe=pairing.universe,
@@ -312,6 +323,29 @@ def list_derived_observations(
     if refusal is not None:
         raise NeutralQueryError(refusal)
 
+    if pairing.kind == "agency_rate":
+        items, total = agency_rate_rows(
+            db,
+            pairing,
+            scope=scope,
+            release=release,
+            filters=filters,
+            limit=limit,
+            offset=offset,
+            newest_per_geography=newest_per_geography,
+            newest_release_per_period=newest_release_per_period,
+            period_start=period_start,
+        )
+        return DerivedRatioListResponse(
+            ratio=pairing_summary(pairing),
+            scope=scope,
+            release=release,
+            total=total,
+            limit=limit,
+            offset=offset,
+            items=items,
+        )
+
     lead = (
         pairing.provider_rate if pairing.kind == "provider_rate" else pairing.numerator
     )
@@ -356,3 +390,190 @@ def list_derived_observations(
         offset=page.offset,
         items=items,
     )
+
+
+# ---------------------------------------------------------------------------
+# The county agency rate (ADR-0012): computed in gold, served with coverage
+# ---------------------------------------------------------------------------
+
+AGENCY_RATE_RELATIONS = {
+    "latest": "gold_fbi.latest_county_agency_rate",
+    "as_released": "gold_fbi.county_agency_rate",
+}
+
+#: Each filter the route accepts, as plain equality or a range on a column
+#: the view projects, so every read stays on the agency and county indexes.
+_AGENCY_RATE_FILTERS = {
+    "geo_id": "geo_id = :geo_id",
+    "state_fips": "state_fips = :state_fips",
+    "county_fips": "county_fips = :county_fips",
+    "year_from": "period_end >= MAKE_DATE(:year_from, 1, 1)",
+    "year_to": "period_start <= MAKE_DATE(:year_to, 12, 31)",
+}
+
+_AGENCY_RATE_COLUMNS = """
+    product_id, measure_id, release_key, geo_id, county_name,
+    period_start::TEXT AS period_start, period_end::TEXT AS period_end,
+    rate::TEXT AS rate, unavailable_reason, offenses::TEXT AS offenses,
+    covered_population::TEXT AS covered_population,
+    linked_population::TEXT AS linked_population,
+    coverage_share::TEXT AS coverage_share,
+    coverage_floor::TEXT AS coverage_floor, contributing_oris,
+    excluded_multi_county_oris, non_reporting_oris, unknown_population_oris
+"""
+
+
+def _identity(metric_code: str) -> tuple[str, str]:
+    """``FBI_UCR:<product_id>:<measure_id>`` -> (product_id, measure_id)."""
+    source, product_id, measure_id = metric_code.split(":", 2)
+    if source != "FBI_UCR" or not product_id or not measure_id:
+        raise NeutralQueryError(f"{metric_code} is not an FBI UCR metric code")
+    return product_id, measure_id
+
+
+def _plain(value: Optional[str]) -> Optional[str]:
+    """A numeric text without the trailing zeros NUMERIC division leaves."""
+    number = _number(value)
+    if number is None:
+        return None
+    if number == number.to_integral_value():
+        return str(number.quantize(Decimal(1)))
+    return str(number.normalize())
+
+
+def agency_rate_row(
+    pairing: RatioPairing, row: Mapping[str, Any]
+) -> DerivedRatioObservation:
+    """One county-month of the gold rate, with whom it covers."""
+    rate = _number(row.get("rate"))
+    share = _number(row.get("coverage_share"))
+    offenses = row.get("offenses")
+    return DerivedRatioObservation(
+        ratio_id=pairing.ratio_id,
+        derived=True,
+        pairing_status=pairing.status,
+        pairing_version=pairing.version,
+        geo_id=row.get("geo_id"),
+        geo_level="COUNTY",
+        geo_name=row.get("county_name"),
+        period_start=row.get("period_start"),
+        period_end=row.get("period_end"),
+        release=row.get("release_key"),
+        value=None if rate is None else _rounded(rate),
+        unit=pairing.unit,
+        scale=pairing.scale,
+        margin_of_error_method="none",
+        unavailable_reason=row.get("unavailable_reason"),
+        numerator=DerivedRatioInput(
+            metric_code=pairing.numerator,
+            release=row.get("release_key"),
+            period_start=row.get("period_start"),
+            period_end=row.get("period_end"),
+            value=_plain(offenses),
+            value_status="reported" if offenses is not None else None,
+        ),
+        coverage=DerivedRatioCoverage(
+            covered_population=_plain(row.get("covered_population")),
+            linked_population=_plain(row.get("linked_population")),
+            coverage_share=(
+                None
+                if share is None
+                else str(share.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+            ),
+            coverage_floor=_plain(row.get("coverage_floor")) or "0.5",
+            contributing_agencies=list(row.get("contributing_oris") or ()),
+            excluded_multi_county_agencies=list(
+                row.get("excluded_multi_county_oris") or ()
+            ),
+            non_reporting_agencies=list(row.get("non_reporting_oris") or ()),
+            unknown_population_agencies=list(row.get("unknown_population_oris") or ()),
+        ),
+    )
+
+
+def agency_rate_rows(
+    db: Session,
+    pairing: RatioPairing,
+    *,
+    scope: str,
+    release: Optional[str],
+    filters: Mapping[str, Any],
+    limit: int,
+    offset: int,
+    newest_per_geography: bool = False,
+    newest_release_per_period: bool = False,
+    period_start: Optional[str] = None,
+) -> tuple[list[DerivedRatioObservation], int]:
+    """A page of the gold county rate for one pairing, and the page's total.
+
+    The reductions are the neutral resource's: ``newest_per_geography``
+    keeps each county's newest month (its newest release first), whether it
+    has a rate or a refusal, and ``newest_release_per_period`` keeps each
+    county-month's newest release.
+    """
+    level = filters.get("geo_level")
+    if level is not None and normalize_geo_level(str(level)) not in pairing.geo_levels:
+        raise NeutralQueryError(
+            f"pairing '{pairing.ratio_id}' is computed for counties only; the "
+            "FBI publishes its own rate for states and the nation (ADR-0012)"
+        )
+    product_id, measure_id = _identity(pairing.numerator)
+    conditions = ["product_id = :product_id", "measure_id = :measure_id"]
+    params: dict[str, Any] = {
+        "product_id": product_id,
+        "measure_id": measure_id,
+        "limit": limit,
+        "offset": offset,
+    }
+    for name, condition in _AGENCY_RATE_FILTERS.items():
+        value = filters.get(name)
+        if value is not None:
+            conditions.append(condition)
+            params[name] = value
+    if release is not None:
+        conditions.append("release_key = :release")
+        params["release"] = release
+    period = validated_period_start(period_start)
+    if period is not None and len(period) == 4:
+        conditions.append(
+            "period_start >= MAKE_DATE(:period_year, 1, 1) "
+            "AND period_start <= MAKE_DATE(:period_year, 12, 31)"
+        )
+        params["period_year"] = int(period)
+    elif period is not None:
+        conditions.append("period_start = CAST(:period_start AS DATE)")
+        params["period_start"] = period
+
+    relation = AGENCY_RATE_RELATIONS.get(scope, AGENCY_RATE_RELATIONS["latest"])
+    where = " AND ".join(conditions)
+    if newest_per_geography:
+        reduced = f"""
+            SELECT DISTINCT ON (geo_id) {_AGENCY_RATE_COLUMNS}
+            FROM {relation} WHERE {where}
+            ORDER BY geo_id, period_start DESC, release_key DESC
+        """
+    elif newest_release_per_period:
+        reduced = f"""
+            SELECT DISTINCT ON (geo_id, period_start) {_AGENCY_RATE_COLUMNS}
+            FROM {relation} WHERE {where}
+            ORDER BY geo_id, period_start, release_key DESC
+        """
+    else:
+        reduced = f"SELECT {_AGENCY_RATE_COLUMNS} FROM {relation} WHERE {where}"
+    statement = text(
+        f"""
+        SELECT page.*, COUNT(*) OVER () AS group_total
+        FROM ({reduced}) AS page
+        ORDER BY page.period_start, page.geo_id, page.release_key
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    rows = [dict(row) for row in db.execute(statement, params).mappings().all()]
+    if rows:
+        total = int(rows[0]["group_total"])
+    elif offset == 0:
+        total = 0
+    else:
+        count = text(f"SELECT COUNT(*) FROM ({reduced}) AS page")
+        total = int(db.execute(count, params).scalar() or 0)
+    return [agency_rate_row(pairing, row) for row in rows], total

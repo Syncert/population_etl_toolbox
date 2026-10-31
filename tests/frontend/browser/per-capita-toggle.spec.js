@@ -33,10 +33,22 @@ test("reported violent crime: a county reads against its state on the FBI's own 
   await ready(page, "/us/wisconsin/dane-county");
   const safety = page.getByTestId("chapter-safety");
   await safety.scrollIntoViewIfNeeded();
-  // The FBI publishes no county figure, and nothing divides its counts by a
-  // Census population (ADR-0009 rule 2), so the county row says so.
-  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("Dane County");
-  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("Not published at county grain");
+  // Covers: WEB-150 — the FBI publishes no county figure and nothing divides
+  // its counts by a Census population (ADR-0009 rule 2); the county's rate is
+  // computed from its own agencies' reports (ADR-0012) and says, beside the
+  // figure, how many people they cover and what share that is.
+  const county = page.getByTestId("card-violent-crime-rate-county");
+  await expect(county).toContainText("Dane County");
+  const rate = page.getByTestId("card-violent-crime-rate-county-agency-rate");
+  await expect(rate).toHaveAttribute("data-available", "true");
+  await expect(rate).toHaveAttribute("data-derived", "true");
+  await expect(rate.locator("strong")).toHaveText("11.24 per 100,000 people covered by reporting agencies in this county");
+  await expect(rate).toContainText("computed from agency reports");
+  await expect(page.getByTestId("card-violent-crime-rate-county-agency-rate-coverage")).toHaveText(" · covers 115,648 people, 100 % of the population its agencies serve");
+  await expect(rate).toHaveAttribute("title", "2 reporting agencies; 1 agency left out because it also serves other counties");
+  // Approved by Nick with ADR-0012, so no draft mark.
+  await expect(rate.locator("[data-pairing-status='draft']")).toHaveCount(0);
+  await expect(county).not.toContainText("Not published at county grain");
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("Wisconsin");
   const denominator = page.getByTestId("card-violent-crime-rate-denominator");
   await expect(denominator).toHaveText(/Per 100,000 people, denominator: population covered by reporting agencies, as the publisher computed it\./);
@@ -44,6 +56,24 @@ test("reported violent crime: a county reads against its state on the FBI's own 
   // No count of offenses is on the page to divide, so no toggle is offered.
   await expect(page.getByTestId("chapter-safety-view")).toHaveCount(0);
   await safety.screenshot({ path: "test-results/per-capita/county-violent-crime.png" });
+});
+
+test("a county whose agencies cover too few people reads as refused, with its coverage", async ({ page }) => {
+  // Covers: WEB-150 — under the 50 % floor the month has no rate, never a
+  // zero, and still says whom the agencies that did report cover.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await ready(page, "/us/wisconsin/rock-county");
+  const rate = page.getByTestId("card-violent-crime-rate-county-agency-rate");
+  await rate.scrollIntoViewIfNeeded();
+  await expect(rate).toHaveAttribute("data-available", "false");
+  await expect(rate).toHaveAttribute("data-unavailable-reason", "coverage_below_floor");
+  await expect(rate.locator("strong")).toHaveText("Too few agencies reported to give a rate");
+  await expect(page.getByTestId("card-violent-crime-rate-county-agency-rate-coverage")).toHaveText(" · covers 9,000 people, 21 % of the population its agencies serve");
+  await expect(rate).not.toContainText(/\b0 per 100,000/);
+  await expect(rate).toHaveAttribute("title", "1 reporting agency; 2 agencies that did not report; 1 agency left out because it also serves other counties");
+  await page.getByTestId("chapter-safety").screenshot({ path: "test-results/per-capita/county-agency-rate-refused.png" });
+  const results = await new AxeBuilder({ page }).include("[data-testid='chapter-safety']").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+  expect(results.violations.map((item) => `${item.id}: ${item.help}`)).toEqual([]);
 });
 
 test("a share names its denominator for the county, its state and the nation", async ({ page }) => {

@@ -1,6 +1,6 @@
 """The admin warehouse reads run against the real bootstrapped warehouse.
 
-Covers: API-181 (the catalog introspection reads every warehouse relation,
+Covers: API-183 (the catalog introspection reads every warehouse relation,
         folds year partitions into their parent, and places each in a diagram;
         every source's coverage statement -- built from the serving
         registry's own expressions -- executes against its real relation).
@@ -56,7 +56,7 @@ def warehouse_session(
 def test_the_catalog_introspection_reads_the_warehouse(
     warehouse_session: Session,
 ) -> None:
-    """Covers: API-181 — partitions folded, every relation placed."""
+    """Covers: API-183 — partitions folded, every relation placed."""
     relations = read_catalog(warehouse_session)
     acs = relations["gold_census.rpt_acs_observations"]
     assert acs.kind == "partitioned table"
@@ -75,7 +75,7 @@ def test_the_catalog_introspection_reads_the_warehouse(
 
 
 def test_every_source_coverage_statement_executes(warehouse_session: Session) -> None:
-    """Covers: API-181 — on a clean warehouse each answers ok with no rows."""
+    """Covers: API-183 — on a clean warehouse each answers ok with no rows."""
     for source in WAREHOUSE_SOURCES:
         result = coverage.measure_source(warehouse_session, source.code)
         assert result["status"] in {"ok", "shared", "not_served"}, (source.code, result)

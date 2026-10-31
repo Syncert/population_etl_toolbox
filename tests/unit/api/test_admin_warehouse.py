@@ -1,6 +1,6 @@
 """API unit tests: the admin warehouse pages (``/admin/warehouse/*``).
 
-Covers: API-181 (the admin resource is off -- 404 before any credential is
+Covers: API-183 (the admin resource is off -- 404 before any credential is
         read -- until a deployment names an admin; a missing token is 401, an
         account not on the list is 403, an operator label or a signed-in email
         on the list is let in; every answer is ``private, no-store``; the
@@ -135,7 +135,7 @@ _PATHS = (
 def test_no_admin_named_answers_404_before_any_credential(
     monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
-    """Covers: API-181 — an unconfigured deployment does not advertise the resource."""
+    """Covers: API-183 — an unconfigured deployment does not advertise the resource."""
     client = _client(monkeypatch, admins=(), account=None)
     response = client.get(path)
     assert response.status_code == 404
@@ -144,7 +144,7 @@ def test_no_admin_named_answers_404_before_any_credential(
 def test_a_missing_token_is_401_once_an_admin_is_named(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: API-181 — the usual credential refusal, unchanged."""
+    """Covers: API-183 — the usual credential refusal, unchanged."""
     monkeypatch.setenv("APP_API_DATABASE_URL", "postgresql://app.invalid/app")
     client = _client(monkeypatch, account=None)
     response = client.get("/api/v1/admin/warehouse/schema")
@@ -152,7 +152,7 @@ def test_a_missing_token_is_401_once_an_admin_is_named(
 
 
 def test_an_account_not_on_the_list_is_403(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: API-181 — authenticated is not authorized."""
+    """Covers: API-183 — authenticated is not authorized."""
     client = _client(monkeypatch, account=_SIGNED_IN, email="someone@example.org")
     response = client.get("/api/v1/admin/warehouse/coverage/CENSUS_GEO")
     assert response.status_code == 403
@@ -162,7 +162,7 @@ def test_an_account_not_on_the_list_is_403(monkeypatch: pytest.MonkeyPatch) -> N
 def test_an_operator_label_or_a_signed_in_email_is_let_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: API-181 — matched without regard to case, label first."""
+    """Covers: API-183 — matched without regard to case, label first."""
     by_label = _client(monkeypatch).get("/api/v1/admin/warehouse/coverage/CENSUS_GEO")
     assert by_label.status_code == 200
     app.dependency_overrides.clear()
@@ -176,14 +176,14 @@ def test_an_operator_label_or_a_signed_in_email_is_let_in(
 
 
 def test_the_admin_paths_are_outside_every_cacheable_prefix() -> None:
-    """Covers: API-181 — an operator description is never publicly cached."""
+    """Covers: API-183 — an operator description is never publicly cached."""
     assert admin_router.router in PRIVATE_ROUTERS
     for path in _PATHS:
         assert not PUBLIC_CACHE_TARGETS.covers(path), path
 
 
 def test_an_unknown_source_is_404(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: API-181 — an unknown source is not measured."""
+    """Covers: API-183 — an unknown source is not measured."""
     client = _client(monkeypatch)
     assert client.get("/api/v1/admin/warehouse/coverage/NOPE").status_code == 404
 
@@ -192,7 +192,7 @@ def test_an_unknown_source_is_404(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_every_served_source_is_described() -> None:
-    """Covers: API-181 — a source cannot reach the API without an inventory entry."""
+    """Covers: API-183 — a source cannot reach the API without an inventory entry."""
     described = {s.catalog_source_code for s in WAREHOUSE_SOURCES}
     missing = sorted(set(OBSERVATION_DISPATCH) - described)
     assert not missing, f"add these to warehouse_inventory.WAREHOUSE_SOURCES: {missing}"
@@ -208,7 +208,7 @@ def test_every_served_source_is_described() -> None:
 
 
 def test_sources_joins_the_live_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: API-181 — metric counts and grains come from the catalog row."""
+    """Covers: API-183 — metric counts and grains come from the catalog row."""
     warehouse = _Session(
         [
             {
@@ -242,7 +242,7 @@ def test_sources_joins_the_live_catalog(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_coverage_reads_the_served_expressions_and_folds_grains() -> None:
-    """Covers: API-181 — the registry's own grain and period expressions."""
+    """Covers: API-183 — the registry's own grain and period expressions."""
     db = _Session(
         [],  # SET LOCAL statement_timeout
         [
@@ -278,14 +278,14 @@ def test_coverage_reads_the_served_expressions_and_folds_grains() -> None:
 
 @pytest.mark.parametrize("code", ["BLS", "FRED"])
 def test_newest_only_sources_are_measured_on_their_releases(code: str) -> None:
-    """Covers: API-181 — a newest-period table would report one year."""
+    """Covers: API-183 — a newest-period table would report one year."""
     db = _Session([], [])
     result = coverage.measure_source(db, code)
     assert result["relation"] == OBSERVATION_DISPATCH[code].released_relation
 
 
 def test_acs_is_read_from_its_year_partitions_not_scanned() -> None:
-    """Covers: API-181 — the 1.8B-row table is never scanned for this page."""
+    """Covers: API-183 — the 1.8B-row table is never scanned for this page."""
     db = _Session(
         [
             {
@@ -330,7 +330,7 @@ def test_acs_is_read_from_its_year_partitions_not_scanned() -> None:
 
 
 def test_a_timeout_is_reported_and_cached_briefly() -> None:
-    """Covers: API-181 — a slow source answers timed_out, not a 500."""
+    """Covers: API-183 — a slow source answers timed_out, not a 500."""
 
     class _Cancelled(Exception):
         pgcode = "57014"
@@ -353,7 +353,7 @@ def test_a_timeout_is_reported_and_cached_briefly() -> None:
 
 
 def test_decennial_and_geography_are_described_not_scanned() -> None:
-    """Covers: API-181 — shared and reference sources run no statement."""
+    """Covers: API-183 — shared and reference sources run no statement."""
     db = _Session()
     assert coverage.measure_source(db, "CENSUS_DECENNIAL")["status"] == "shared"
     assert coverage.measure_source(db, "CENSUS_GEO")["status"] == "not_served"
@@ -380,7 +380,7 @@ def _relation(name: str, kind: str = "table", **extra: Any) -> Relation:
 
 
 def test_the_atlas_places_every_relation_and_only_draws_placed_edges() -> None:
-    """Covers: API-181 — every relation lands in a diagram; no dangling edge."""
+    """Covers: API-183 — every relation lands in a diagram; no dangling edge."""
     relations = {
         r.name: r
         for r in [
@@ -421,7 +421,7 @@ def test_the_atlas_places_every_relation_and_only_draws_placed_edges() -> None:
 
 
 def test_schema_route_returns_the_atlas(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: API-181 — the route answers the atlas it was given."""
+    """Covers: API-183 — the route answers the atlas it was given."""
     atlas = build_atlas(
         {"silver_ref.dim_geo_entity": _relation("silver_ref.dim_geo_entity")}
     )

@@ -4,7 +4,8 @@ A derived row always says what was divided by what: both inputs with their
 own release, period, value and margin of error, the pairing's identity and
 version, the universe the result describes, and how its margin of error was
 computed. A provider's own rate is served as the provider's (``derived:
-false``), with the provider's row as its one input.
+false``), with the provider's row as its one input. A county crime rate
+computed from agency reports (ADR-0012) carries its coverage on every row.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 
 from apps.api.schemas.labels import PlainLabelled
 
-RatioKind = Literal["share", "per_capita", "provider_rate"]
+RatioKind = Literal["share", "per_capita", "provider_rate", "agency_rate"]
 PairingStatus = Literal["approved", "draft", "needs_review", "deprecated"]
 #: How a derived margin of error was reached (ADR-0009 rule 4).
 #:
@@ -29,8 +30,15 @@ MarginMethod = Literal[
     "proportion", "ratio", "ratio_fallback", "unavailable", "provider", "none"
 ]
 #: Why a row has no value (ADR-0009 rule 2). Never zero.
+#: The last three are a county agency rate's refusals (ADR-0012 rule 3).
 UnavailableReason = Literal[
-    "different_period", "denominator_missing", "denominator_zero", "suppressed_input"
+    "different_period",
+    "denominator_missing",
+    "denominator_zero",
+    "suppressed_input",
+    "no_reporting_agency",
+    "only_multi_county_agencies",
+    "coverage_below_floor",
 ]
 
 
@@ -46,6 +54,9 @@ class DerivedRatioPairing(BaseModel):
     numerator: str
     denominator: Optional[str] = None
     provider_rate: Optional[str] = None
+    #: ``agency_rate`` only: the provider rate it reads beside, and its levels.
+    reads_beside: Optional[str] = None
+    geo_levels: list[str] = []
     dataset: Optional[str] = None
     denominator_label: str
     universe: str
@@ -80,6 +91,26 @@ class DerivedRatioInput(PlainLabelled):
     margin_of_error_controlled: bool = False
 
 
+class DerivedRatioCoverage(BaseModel):
+    """Whom a county agency rate covers (ADR-0012 rule 3), all FBI figures.
+
+    ``covered_population`` is the reporting agencies' FBI population, the
+    rate's denominator; ``linked_population`` is every agency serving only
+    this county that has a published population, reporting or not; the
+    share is one over the other, and under ``coverage_floor`` the month is
+    refused. The agencies are ORIs, as the FBI identifies them.
+    """
+
+    covered_population: Optional[str] = None
+    linked_population: Optional[str] = None
+    coverage_share: Optional[str] = None
+    coverage_floor: str
+    contributing_agencies: list[str]
+    excluded_multi_county_agencies: list[str]
+    non_reporting_agencies: list[str]
+    unknown_population_agencies: list[str]
+
+
 class DerivedRatioObservation(BaseModel):
     ratio_id: str
     derived: bool
@@ -100,6 +131,7 @@ class DerivedRatioObservation(BaseModel):
     numerator: Optional[DerivedRatioInput] = None
     denominator: Optional[DerivedRatioInput] = None
     provider_rate: Optional[DerivedRatioInput] = None
+    coverage: Optional[DerivedRatioCoverage] = None
 
 
 class DerivedRatioListResponse(BaseModel):

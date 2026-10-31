@@ -1,6 +1,6 @@
 import React from "react";
 
-// Covers: WEB-150 — the admin warehouse page renders what the API reports
+// Covers: WEB-151 — the admin warehouse page renders what the API reports
 // about each source and the schema, and explains every refusal.
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
