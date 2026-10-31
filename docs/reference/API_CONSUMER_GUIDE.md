@@ -1871,6 +1871,46 @@ lets a compare page fill a chapter in one request. With `follow_alternatives`
 would refuse carries that `status` and `detail` and no `answer`; an unknown
 place is `404` for the whole batch.
 
+### Who lives here, by age and sex
+
+`GET /api/v1/age-structure?geo_id=…[&dataset=acs5|acs1][&release=latest|YYYY][&compare_geo_ids=…]`
+answers a population pyramid ([ADR-0013](../decisions/0013-age-and-sex-structure.md)):
+the ACS sex-by-age table (B01001) added into eighteen five-year age groups
+per sex, by the reviewed scheme in `docs/semantics/age_bands.json` (each
+group names the published lines it sums). Each group's `count` and `share`
+(percent of the place's total, both sexes) carry 90 percent margins (a sum's
+margin is the root of the summed squares; a share uses the Bureau's
+proportion formula), a `cv_percent` and `reliable` (CV of 30 % or less). The
+answer also carries the provider's own median ages (B01002, `derived:
+false`), the broad groups (under 18, 18 to 64, 65 and over, 85 and over),
+the child, old-age and total dependency ratios (per 100 people aged 18 to
+64, the Bureau's S0101 definition) and the sex ratio (men per 100 women).
+
+`places` lists the place first, then **every level it sits in**, next level
+up first: a city or tract's county, state and nation; a county's state and
+nation; a state's nation; a metro's nation and, when it lies in one, its
+state. `default_reference_geo_id` names the first. A city's county is the
+county it lies in, or the one holding the largest share of its area
+(`overlap_weight`). Every place is read at the place's own release; a level
+that has no row for it is `unavailable_reason: "not_published"` with no
+groups, never another release. A group whose line is suppressed or missing
+has `count: null` and says which, and the rest are still served. Up to three
+`compare_geo_ids` are added after the levels with `role: "compare"`.
+
+`GET /api/v1/age-structure/history?geo_id=…[&periods=non_overlapping|all][&include_bands=true]`
+returns the same block per release, newest first, read as released. By
+default it keeps only releases that share no survey year (for the 5-year:
+2019–2023, 2014–2018, 2009–2013).
+
+`GET /api/v1/age-structure/cohorts?geo_id=…&from_release=YYYY&to_release=YYYY`
+puts each group in the earlier release beside the next group up in the later
+one (people 25 to 29 then, 30 to 34 now), with the change and its margin and
+whether the two intervals overlap. It is refused (`comparable: false`,
+`refusal.reason`) when the periods overlap (`overlapping_periods`), do not end
+five years apart (`period_gap_not_five_years`), a tract was redrawn between
+them (`boundary_changed`), or a release is missing (`not_published`). The
+`caveat` says what such a change mixes; the API draws no conclusion from it.
+
 ## Signing in, and your account
 
 Self-service accounts — see [ADR-0005](../decisions/0005-self-service-accounts.md).

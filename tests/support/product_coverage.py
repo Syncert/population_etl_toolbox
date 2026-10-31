@@ -43,6 +43,10 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # sources (API-165): a derived reading owned by the platform, not a
     # provider data product.
     "/api/v1/place/distinctive",
+    # Age and sex structure (ADR-0013): sums and ratios of one ACS table's
+    # lines, computed at request time; a derived reading owned by the
+    # platform, not a provider data product or warehouse publisher.
+    "/api/v1/age-structure",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:
