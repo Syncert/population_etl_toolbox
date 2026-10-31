@@ -120,6 +120,17 @@ approves them, the route refuses each with its status unless the stack sets
 - Every pairing's numerator and denominator metric codes exist in
   `gold_glossary.dim_metric`.
 
+## OFFICE_LAB results (2026-10-31, dev at be571b3)
+
+- `poverty_share:acs5`, Texas counties: all 254 counties have a value and a
+  margin (`proportion`). Travis County is 10.93 ± 0.57 (142,566 / 1,304,589),
+  and data.census.gov S1701_C03_001, 2024 ACS 5-year, gives 10.9 ± 0.6. Pass.
+- `violent_crime_rate`, states: every row was unavailable (`suppressed_input`)
+  because usability was a literal list of status words (`valid`), and FBI UCR
+  says `reported`. Fixed on `fix/derived-ratio-provider-status`: an input is
+  usable when it carries a number, which is the neutral contract's own rule.
+  Re-check pending.
+
 ## Follow-up
 
 - Keep the ACS MOE annotation in gold so controlled margins are known per

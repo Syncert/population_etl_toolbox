@@ -139,7 +139,7 @@ def test_a_share_is_scaled_rounded_and_labelled(poverty) -> None:
         (("1000", "100", "valid"), ("0", "10", "valid"), True, "denominator_zero"),
         ((None, None, "sentinel"), ("5000", "200", "valid"), True, "suppressed_input"),
         (("1000", "100", "valid"), (None, None, "sentinel"), True, "suppressed_input"),
-        (("12", "4", "withheld"), ("5000", "200", "valid"), True, "suppressed_input"),
+        ((None, None, "withheld"), ("5000", "200", "valid"), True, "suppressed_input"),
         (("n/a", "4", "valid"), ("5000", "200", "valid"), True, "suppressed_input"),
     ],
 )
@@ -451,7 +451,8 @@ def test_a_provider_rate_is_served_as_the_providers(
                     period_start="2023-01-01",
                     release="2024",
                     value="295.2",
-                    value_status="valid",
+                    # FBI UCR's own word for a published number (not "valid").
+                    value_status="reported",
                 )
             ],
         )
@@ -516,3 +517,40 @@ def test_a_denominator_the_catalog_does_not_publish_is_explained(
     )
     assert response.status_code == 422
     assert POVERTY_UNIVERSE in response.json()["detail"]
+
+
+@pytest.mark.parametrize("status", ["reported", None, "valid", "estimated"])
+def test_a_published_number_is_usable_in_any_sources_vocabulary(status) -> None:
+    """Covers: API-174 — usability is the neutral contract's: a non-null number."""
+    pairing = pairing_for("violent_crime_rate")
+    row = derived_ratio_service.provider_row(
+        pairing,
+        NeutralObservation(
+            source_code="FBI_UCR",
+            metric_code=pairing.provider_rate,
+            geo_id="0400000US02",
+            geo_level="STATE",
+            period_start="2022-01-01",
+            value="59.43",
+            value_status=status,
+        ),
+    )
+    assert row.value == "59.43"
+    assert row.unavailable_reason is None
+
+
+def test_a_provider_row_without_a_number_is_unavailable() -> None:
+    """Covers: API-174 — an unreported rate is never zero."""
+    pairing = pairing_for("violent_crime_rate")
+    row = derived_ratio_service.provider_row(
+        pairing,
+        NeutralObservation(
+            source_code="FBI_UCR",
+            metric_code=pairing.provider_rate,
+            geo_id="0400000US02",
+            value=None,
+            value_status="not_reported",
+        ),
+    )
+    assert row.value is None
+    assert row.unavailable_reason == "suppressed_input"
