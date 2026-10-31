@@ -309,6 +309,23 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_dataset_vintage
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_vintage
     ON gold_census.rpt_acs_observations (metric_code, vintage_year, as_of_date);
 
+-- The listing later learned to name each release's newest period
+-- (newest_period_start/end, read as COALESCE(duration_*, observation_date)),
+-- and those columns are not in the index above, so every row went back to the
+-- heap: 16.8 s for one tract-backed metric on the internal stack in October
+-- 2026, past the 15 s statement timeout. This index holds every column the
+-- listing reads, so it is index-only again; the extra key columns repeat
+-- within a vintage, so deduplication keeps it about the size of the one above,
+-- which it makes redundant (drop that one in a quiet window once this exists).
+-- This table is partitioned: on a live warehouse create it ON ONLY the parent,
+-- build each partition's index CONCURRENTLY and ATTACH it, so the build never
+-- holds a write lock on a load (runbook in the change that added it).
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_release_period
+    ON gold_census.rpt_acs_observations (
+        metric_code, vintage_year, as_of_date,
+        observation_date, duration_start, duration_end
+    );
+
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_geo_date
     ON gold_census.rpt_acs_observations (metric_code, geo_id, observation_date);
 
@@ -366,6 +383,20 @@ CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_vintage
 
 CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_geo
     ON gold_census.mv_acs_latest (metric_code, geo_id);
+
+-- One metric at one grain, and one metric's served periods. The API filters
+-- a grain with `geo_level = :geo_level` (the column is already the
+-- vocabulary word), so an all-county map, a sibling ranking or a county
+-- derived read reaches only that grain's rows instead of every tract row of
+-- the metric. The period columns make /observations/periods an index-only
+-- scan: with tract rows for many years, B17001_002's periods read every heap
+-- row and hit the 15 s statement timeout in October 2026. On a live warehouse
+-- build it with CREATE INDEX CONCURRENTLY.
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_level_geo_period
+    ON gold_census.mv_acs_latest (
+        metric_code, geo_level, geo_id,
+        observation_date, duration_start, duration_end
+    );
 
 -- ============================================================
 -- ACS REFRESH PROCEDURES

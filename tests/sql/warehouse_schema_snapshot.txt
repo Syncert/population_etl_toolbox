@@ -3374,6 +3374,7 @@ r gold_census.mv_acs_latest
     column metric_code text
     column metric_display_name text
     index ix_mv_acs_latest_metric_geo CREATE INDEX ix_mv_acs_latest_metric_geo ON gold_census.mv_acs_latest USING btree (metric_code, geo_id)
+    index ix_mv_acs_latest_metric_level_geo_period CREATE INDEX ix_mv_acs_latest_metric_level_geo_period ON gold_census.mv_acs_latest USING btree (metric_code, geo_level, geo_id, observation_date, duration_start, duration_end)
     index ix_mv_acs_latest_source_metric CREATE INDEX ix_mv_acs_latest_source_metric ON gold_census.mv_acs_latest USING btree (source_code, metric_code)
     index ix_mv_acs_latest_vintage CREATE INDEX ix_mv_acs_latest_vintage ON gold_census.mv_acs_latest USING btree (dataset_code, vintage_year)
     index uq_mv_acs_latest CREATE UNIQUE INDEX uq_mv_acs_latest ON gold_census.mv_acs_latest USING btree (geo_id, dataset_code, vintage_year, variable_code, COALESCE(metric_code, ''::text))
@@ -3430,6 +3431,7 @@ END), vintage_year DESC)
     index ix_rpt_acs_observations_dataset_vintage CREATE INDEX ix_rpt_acs_observations_dataset_vintage ON ONLY gold_census.rpt_acs_observations USING btree (dataset_code, vintage_year)
     index ix_rpt_acs_observations_metric_date CREATE INDEX ix_rpt_acs_observations_metric_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, observation_date)
     index ix_rpt_acs_observations_metric_geo_date CREATE INDEX ix_rpt_acs_observations_metric_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, geo_id, observation_date)
+    index ix_rpt_acs_observations_metric_release_period CREATE INDEX ix_rpt_acs_observations_metric_release_period ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date, observation_date, duration_start, duration_end)
     index ix_rpt_acs_observations_metric_vintage CREATE INDEX ix_rpt_acs_observations_metric_vintage ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date)
     index ix_rpt_acs_observations_source_geo_date CREATE INDEX ix_rpt_acs_observations_source_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (source_code, geo_id, observation_date)
     index ix_rpt_acs_observations_updated_at CREATE INDEX ix_rpt_acs_observations_updated_at ON ONLY gold_census.rpt_acs_observations USING btree (updated_at DESC)
