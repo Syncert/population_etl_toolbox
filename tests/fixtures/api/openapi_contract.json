@@ -151,6 +151,165 @@
         "admin"
       ]
     },
+    "GET /api/v1/age-structure": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "compare_geo_ids",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeStructureResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
+    "GET /api/v1/age-structure/cohorts": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 4,
+            "minLength": 4
+          },
+          "in": "query",
+          "name": "from_release",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 4,
+            "minLength": 4
+          },
+          "in": "query",
+          "name": "to_release",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeCohortsResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
+    "GET /api/v1/age-structure/history": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "include_bands",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "default": "non_overlapping",
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "periods",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeStructureHistoryResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
     "GET /api/v1/analysis-configurations": {
       "parameters": [
         {
@@ -3197,6 +3356,193 @@
         "created_at"
       ]
     },
+    "AgeBandLines": {
+      "properties": {
+        "men": "array<string>",
+        "women": "array<string>"
+      },
+      "required": [
+        "men",
+        "women"
+      ]
+    },
+    "AgeBandResult": {
+      "properties": {
+        "age_end": "integer | null",
+        "age_start": "integer",
+        "band_id": "string",
+        "label": "string",
+        "lines": "AgeBandLines",
+        "men": "AgeBandSide",
+        "women": "AgeBandSide"
+      },
+      "required": [
+        "age_start",
+        "band_id",
+        "label",
+        "lines",
+        "men",
+        "women"
+      ]
+    },
+    "AgeBandSide": {
+      "properties": {
+        "count": "string | null",
+        "count_moe": "string | null",
+        "cv_percent": "string | null",
+        "reliable": "boolean",
+        "share": "string | null",
+        "share_moe": "string | null",
+        "unavailable_reason": "string | null"
+      },
+      "required": []
+    },
+    "AgeCohortsResponse": {
+      "properties": {
+        "caveat": "string",
+        "comparable": "boolean",
+        "dataset": "string",
+        "from": "CohortPeriod | null",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "items": "array<CohortItem>",
+        "refusal": "CohortRefusal | null",
+        "scheme": "AgeScheme",
+        "to": "CohortPeriod | null",
+        "years_apart": "integer | null"
+      },
+      "required": [
+        "caveat",
+        "comparable",
+        "dataset",
+        "geo_id",
+        "scheme"
+      ]
+    },
+    "AgeCount": {
+      "properties": {
+        "count": "string | null",
+        "count_moe": "string | null"
+      },
+      "required": []
+    },
+    "AgeIndicators": {
+      "properties": {
+        "age_18_64": "AgeShare",
+        "age_65_plus": "AgeShare",
+        "age_85_plus": "AgeShare",
+        "child_dependency_ratio": "AgeRatio",
+        "old_age_dependency_ratio": "AgeRatio",
+        "sex_ratio": "AgeRatio",
+        "total_dependency_ratio": "AgeRatio",
+        "under_18": "AgeShare"
+      },
+      "required": [
+        "age_18_64",
+        "age_65_plus",
+        "age_85_plus",
+        "child_dependency_ratio",
+        "old_age_dependency_ratio",
+        "sex_ratio",
+        "total_dependency_ratio",
+        "under_18"
+      ]
+    },
+    "AgeRatio": {
+      "properties": {
+        "moe": "string | null",
+        "moe_method": "string",
+        "unavailable_reason": "string | null",
+        "unit": "string",
+        "value": "string | null"
+      },
+      "required": [
+        "unit"
+      ]
+    },
+    "AgeScheme": {
+      "properties": {
+        "scheme_id": "string",
+        "status": "string",
+        "version": "integer"
+      },
+      "required": [
+        "scheme_id",
+        "status",
+        "version"
+      ]
+    },
+    "AgeShare": {
+      "properties": {
+        "count": "string | null",
+        "count_moe": "string | null",
+        "share": "string | null",
+        "share_moe": "string | null",
+        "unavailable_reason": "string | null"
+      },
+      "required": []
+    },
+    "AgeStructureHistoryResponse": {
+      "properties": {
+        "dataset": "string",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "items": "array<AgeStructurePlace>",
+        "periods": "string",
+        "scheme": "AgeScheme"
+      },
+      "required": [
+        "dataset",
+        "geo_id",
+        "items",
+        "periods",
+        "scheme"
+      ]
+    },
+    "AgeStructurePlace": {
+      "properties": {
+        "bands": "array<AgeBandResult>",
+        "derived": "boolean",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "indicators": "AgeIndicators | null",
+        "median_age": "MedianAge | null",
+        "men": "AgeCount",
+        "overlap_weight": "number | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "reference_level": "string | null",
+        "release": "string | null",
+        "role": "string",
+        "total": "AgeCount",
+        "unavailable_reason": "string | null",
+        "women": "AgeCount"
+      },
+      "required": [
+        "geo_id",
+        "role"
+      ]
+    },
+    "AgeStructureResponse": {
+      "properties": {
+        "dataset": "string",
+        "default_reference_geo_id": "string | null",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "places": "array<AgeStructurePlace>",
+        "scheme": "AgeScheme"
+      },
+      "required": [
+        "dataset",
+        "geo_id",
+        "places",
+        "scheme"
+      ]
+    },
     "AlignmentDocument": {
       "properties": {
         "geo_level": "string",
@@ -3475,6 +3821,52 @@
         "release_selection",
         "total"
       ]
+    },
+    "CohortItem": {
+      "properties": {
+        "from_band": "string",
+        "men": "CohortSide",
+        "to_band": "string",
+        "women": "CohortSide"
+      },
+      "required": [
+        "from_band",
+        "men",
+        "to_band",
+        "women"
+      ]
+    },
+    "CohortPeriod": {
+      "properties": {
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "release": "string"
+      },
+      "required": [
+        "release"
+      ]
+    },
+    "CohortRefusal": {
+      "properties": {
+        "detail": "string",
+        "reason": "string"
+      },
+      "required": [
+        "detail",
+        "reason"
+      ]
+    },
+    "CohortSide": {
+      "properties": {
+        "change": "string | null",
+        "change_moe": "string | null",
+        "from_count": "string | null",
+        "from_count_moe": "string | null",
+        "intervals_overlap": "boolean | null",
+        "to_count": "string | null",
+        "to_count_moe": "string | null"
+      },
+      "required": []
     },
     "ComparisonAlternative": {
       "properties": {
@@ -4324,6 +4716,26 @@
         "state_fips": "string | null",
         "state_name": "string | null",
         "values": "array<MatrixCell>"
+      },
+      "required": []
+    },
+    "MedianAge": {
+      "properties": {
+        "all": "MedianAgeValue",
+        "derived": "boolean",
+        "men": "MedianAgeValue",
+        "women": "MedianAgeValue"
+      },
+      "required": [
+        "all",
+        "men",
+        "women"
+      ]
+    },
+    "MedianAgeValue": {
+      "properties": {
+        "moe": "string | null",
+        "value": "string | null"
       },
       "required": []
     },
