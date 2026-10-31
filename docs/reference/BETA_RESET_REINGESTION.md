@@ -1101,3 +1101,115 @@ by `apply_deletion_log.py --apply` before the API serves traffic.
 
 The first dump and restore drill are recorded in the warehouse backups
 plan (`docs/plans/needs_review/WAREHOUSE_BACKUPS_PLAN.md`).
+
+## 9. Backfilling ACS and census history
+
+The scheduled `acs_ingest` run keeps the newest years current. History --
+every ACS place and tract year, the metro grain, and the 2000 and 1990
+censuses -- is loaded by operator backfill runs, one year and one grain per
+run (`acs-place-and-tract-history`, W-10).
+
+### Order
+
+1. `silver_ref` first: every decade's place and tract identities (1990, 2000,
+   2010s, 2020s), the CBSA delineation and the tract decade crosswalk. A
+   backfill run refuses (`require_shared_geography`) without them, and a
+   transform refuses a year whose geographies the reference lacks.
+2. Tracts, newest year first, then places newest first, then metro, then the
+   census years (`--grain area`, `place`, `tract` for 2000; the 1990 loader
+   below). Newest first, so a stop at any point leaves a contiguous recent
+   history.
+3. After the last load, the weekly data-quality run
+   (`warehouse_data_quality` with conf `{"cadence": "weekly"}`) must pass its
+   data rules before the history is called published.
+
+### Commands
+
+On the internal stack, from the checkout, with the stack up:
+
+```bash
+# One grain over a range of years, newest first, one acs_ingest run per year.
+python scripts/run_acs_backfill.py --grain tract --years 2024-2010     --log /h/backfill-logs/backfill-tract.jsonl
+python scripts/run_acs_backfill.py --grain place --years 2024-2005     --log /h/backfill-logs/backfill-place.jsonl
+python scripts/run_acs_backfill.py --grain area --years 2000
+
+# The 1990 census (STF1A and STF3A dBase files): capture, replay,
+# transform, gold dimensions, serve. Resumes by state.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_acs.load_1990
+```
+
+Run a long driver detached so it survives the terminal. On Windows,
+`nohup` or `setsid` from a tool shell does not survive; start Git Bash with
+`Start-Process -WindowStyle Hidden "C:\Program Files\Git\bin\bash.exe"
+-ArgumentList '-c "<script> >> /h/backfill-logs/driver.log 2>&1"'`.
+
+Each run is `acs_ingest` with conf `{"acs_backfill": {"year": Y,
+"geo_level": G}}`. The driver writes one JSON line per year (state, hours,
+database bytes before and after) and stops at the first run that does not
+succeed. It waits on a run of the same year and grain already queued or
+running rather than starting a second.
+
+### Expected duration and size (internal stack, measured)
+
+| Grain | Years | Hours per year | GiB per year |
+| --- | --- | --- | --- |
+| place, full curated list | 2023 (first, before the latest-row skip) | 17.8 | 145 |
+| place, full curated list | 2018-2021 | 4.5-5.5 | 87-111 |
+| place, full curated list | 2010-2017 | 2.6-3.0 | 46-58 |
+| place | 2009 | 2.0 | 26 |
+| place, 1-year only | 2005-2008 | 1.1 | 2 |
+| tract, 18 of 22 tables published | 2009 | 1.8 | 31 |
+| tract, 22 tables | 2024 (first wide year) | see the backfill plan | about 66 projected |
+| Census 2000 place / area | 2000 | 3.7 / 0.9 | 2 / 3 |
+
+These were measured on the single-session path. From #173 a year's
+transform slices run on `ACS_TRANSFORM_WORKERS` threads and a tract or place
+step is published a state per session (`ACS_SERVING_WORKERS`); the backfill
+plan records per-step times on that path.
+
+### Guards that stop a run, and what each means
+
+- **Disk.** A run refuses when its projected bytes would leave less than
+  `backfill_reserve_fraction` (20%) of the warehouse disk free.
+- **Shared geography.** `require_shared_geography` fails before any request
+  when `silver_ref` has not loaded.
+- **Zero rows served.** A chunk that serves no report rows while silver
+  holds publishable rows for its year fails instead of being checkpointed:
+  usually the year's gold table and variable rows were never built
+  (`refresh_acs_elements`).
+- **Manifest ledger.** After pulling DDL changes, record them with
+  `python -m scripts.apply_warehouse_manifest --only-flagged`. Never re-apply
+  the whole manifest on the populated warehouse: migration 027 re-validates
+  its constraints over every ACS fact under an exclusive lock.
+
+### Resume
+
+Re-run the same driver command. A slice is skipped only when it finished
+for the *current* variable set (tract slices fingerprint `tract_tables`,
+older place years `place_history_tables`); a transform slice is skipped when
+an earlier run finished it against the same content; a grain step is
+re-served only when silver changed it. A year that failed part way is
+re-run from its first unfinished slice.
+
+### Stop safely
+
+1. Stop the driver process. The `acs_ingest` run already started goes on
+   to finish or fail on its own.
+2. To stop that run too, mark it failed in Airflow and terminate its
+   warehouse statement (`pg_terminate_backend`); `airflow tasks clear`
+   alone leaves the statement running and can leave the task in
+   `restarting`.
+3. A run stopped this way leaves its `control.ingestion_run` row
+   `running`. Mark it `failed` with a reason so the quality finalizer
+   accounts for its requests (DQ-SHARED-002).
+
+### Pitfalls the history load taught
+
+- Widening a table list must change the slice fingerprint, or every year
+  already loaded is skipped as done (the tract list, 2026-10-31).
+- A view column computed from a fact column (`observation_date`) defeats
+  the fact's index; check `EXPLAIN` for any step that reads
+  `silver_census.fact_demographics`.
+- Two drivers for the same work started duplicate runs; the driver now
+  waits on the one in flight.
+

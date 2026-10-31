@@ -113,7 +113,7 @@ provider label). Before a public deployment, decide whether to set
 ## Residual verification
 
 Not required by a criterion; filed as
-[`docs/plans/human_testing/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md`](../human_testing/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md):
+[`docs/plans/human_testing/completed/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md`](../human_testing/completed/PLAIN_LABEL_CODES_EXIST_IN_THE_LOCAL_GLOSSARY.md):
 that the codes exist in the internal warehouse's glossary, and the live
 routes return the labels.
 

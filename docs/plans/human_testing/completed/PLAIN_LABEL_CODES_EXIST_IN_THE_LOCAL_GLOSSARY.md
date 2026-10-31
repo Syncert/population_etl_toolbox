@@ -16,8 +16,8 @@ reach. On 2026-10-26, 141 of 144 codes existed; the codes added on
 2026-10-31 (EIA gasoline, BLS regional gasoline and food-at-home CPI, BEA
 price parities) have not been checked.
 
-- Filed by: [`docs/plans/needs_review/API_PLAIN_LABELS_PLAN.md`](../needs_review/API_PLAIN_LABELS_PLAN.md)
-- Catalog row: **API-170** in [`docs/reference/TESTING_CONTRACT.md`](../../reference/TESTING_CONTRACT.md)
+- Filed by: [`docs/plans/needs_review/API_PLAIN_LABELS_PLAN.md`](../../needs_review/API_PLAIN_LABELS_PLAN.md)
+- Catalog row: **API-170** in [`docs/reference/TESTING_CONTRACT.md`](../../../reference/TESTING_CONTRACT.md)
 
 ## You need
 
@@ -68,3 +68,14 @@ price parities) have not been checked.
 
 Note the date, the counts from step 1 and the step 2 output in the plan's
 evidence, then move this file to `completed/`.
+
+## Result (2026-10-31, internal stack)
+
+- Step 1: 162 of 165 codes held; missing exactly the three expected
+  (`BLS_QCEW:employment:92:5`, `CENSUS_BPS:units:1_unit:annual`,
+  `CENSUS_BPS:units:5_plus_units:annual`). The EIA gasoline, BLS regional
+  gasoline and food-at-home CPI and BEA parity codes all exist.
+- Step 2 (API rebuilt from `dev` at d3f8155): the comparison returns
+  `metric_label_a` "Median household income" and `metric_label_b` "Median
+  gross rent", both `draft`; the bins return "Median household income",
+  `draft`.

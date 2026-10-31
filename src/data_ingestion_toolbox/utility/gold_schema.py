@@ -6,6 +6,7 @@ import hashlib
 import logging
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
@@ -29,6 +30,11 @@ class GrainStep:
     name: str
     geo_levels: tuple[str, ...]
     statement_timeout: str
+    #: Published one state per session, `step_workers` sessions at once, when
+    #: the source declares `state_list_sql`: the grain's rows are state-scoped
+    #: (a tract or a place lies in one state), so the sessions never touch the
+    #: same row.
+    by_state: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,15 @@ class ServingRefreshChunkConfig:
     #: silver rows (no gold dimension rows for its datasets) and recorded the
     #: year as served. Empty means "do not check".
     silver_rows_sql: str = ""
+    #: The states a `by_state` step is published for, one row each; no
+    #: parameters. Empty means "never split by state".
+    state_list_sql: str = ""
+    #: How many states of a `by_state` step publish at once.
+    step_workers: int = 1
+    #: How many served rows of a year (`%(start)s` to `%(end)s`) at the step's
+    #: `%(geo_levels)s` carry no state. Any such row is outside every state's
+    #: session, so the step is then published whole instead.
+    stateless_rows_sql: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -417,6 +432,74 @@ def _step_has_changes(
     return not (row is not None and row[0] is False)
 
 
+def _serve_step_by_state(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    step: GrainStep,
+    chunk: dict[str, Any],
+    log: logging.Logger,
+) -> bool:
+    """Publish one grain step state by state, several sessions at once.
+
+    Returns False, having done nothing, when the step is not split: the
+    source declares no state list, one worker, or the year holds served rows
+    of these grains with no state (which no state's session would clear).
+    Each state commits on its own; a failure raises after the others finish,
+    and the chunk is not checkpointed, so a retry re-publishes every state.
+    """
+    if not (step.by_state and config.state_list_sql and config.step_workers > 1):
+        return False
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        if config.stateless_rows_sql:
+            cur.execute(
+                config.stateless_rows_sql,
+                {
+                    "start": chunk["start"],
+                    "end": chunk["end"],
+                    "geo_levels": list(step.geo_levels),
+                },
+            )
+            if int(cur.fetchone()[0]):
+                log.warning(
+                    "[%s SERVING REFRESH] start=%s step=%s has served rows with no "
+                    "state; publishing it whole",
+                    config.log_label,
+                    chunk["start"],
+                    step.name,
+                )
+                return False
+        cur.execute(config.state_list_sql)
+        states = [str(row[0]) for row in cur.fetchall()]
+
+    def publish(state: str) -> None:
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET LOCAL lock_timeout = '30s'")
+            cur.execute(f"SET LOCAL statement_timeout = '{step.statement_timeout}'")
+            cur.execute(
+                f"CALL {config.report_procedure}(%s, %s, %s, %s)",
+                (chunk["start"], chunk["end"], list(step.geo_levels), state),
+            )
+            cur.execute(
+                f"CALL {config.latest_procedure}(%s, %s)",
+                (chunk["start"], chunk["end"]),
+            )
+            conn.commit()
+
+    log.info(
+        "[%s SERVING REFRESH] start=%s step=%s publishing %d states on %d sessions",
+        config.log_label,
+        chunk["start"],
+        step.name,
+        len(states),
+        config.step_workers,
+    )
+    with ThreadPoolExecutor(
+        max_workers=config.step_workers, thread_name_prefix="serve-state"
+    ) as pool:
+        list(pool.map(publish, states))
+    return True
+
+
 def refresh_serving_layer_in_year_chunks(
     *,
     hook: PostgresHook,
@@ -698,6 +781,17 @@ def refresh_serving_layer_in_year_chunks(
                 # Each grain step commits on its own, so the year's small
                 # grains are served (and released) before the large one starts.
                 step_started = time.monotonic()
+                if _serve_step_by_state(hook, config, step, chunk, log):
+                    log.info(
+                        "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=COMPLETE duration_seconds=%.2f",
+                        config.log_label,
+                        position,
+                        len(planned_chunks),
+                        chunk["start"],
+                        step.name,
+                        time.monotonic() - step_started,
+                    )
+                    continue
                 with hook.get_conn() as conn, conn.cursor() as cur:
                     cur.execute("SET LOCAL lock_timeout = '30s'")
                     cur.execute(
