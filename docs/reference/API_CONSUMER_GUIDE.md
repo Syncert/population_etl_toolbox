@@ -617,6 +617,21 @@ That geography's history is every release that published it, which is what
 `scope=as_released&newest_release_per_period=true` answers: each period as
 its newest release left it.
 
+### Many measures' newest values for a few places
+
+`GET /api/v1/observations/newest/batch?metric_codes=…&geo_ids=…` takes
+comma-separated `metric_codes` (at most 40) and `geo_ids` (at most 8) and
+answers every pair in `items`, metrics outer, in the order asked. Each item's
+`observations` is exactly what
+`/observations?metric_code=…&scope=latest&newest_per_geography=true&geo_id=…&limit=1`
+answers for that pair, so a page that reads a dozen measures for a place, its
+state and the nation makes one request instead of one per measure and place.
+The metrics one source relation holds are read in one statement, each its
+own single read. A metric that read would refuse carries its `status` and
+`detail` and no `observations`: `404` for an unknown code, `422` for a source
+that declines the reduction, `503` when its serving relation is absent. An
+empty or oversized batch is `422`; split it.
+
 ### Quarters and years
 
 `time_grain=quarterly` and `time_grain=annual` on `/observations` answer a

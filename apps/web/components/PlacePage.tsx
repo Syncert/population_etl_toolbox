@@ -23,7 +23,9 @@ import {
   fetchCollectionPages,
   getCapabilities,
   getMetric,
+  getMetricsByCode,
 } from "../lib/api/client";
+import { batchesNewestValues, getNewestValuesBatch, newestKey } from "../lib/newestValues";
 import type { CollectionResponse, GeographySummary, MetricSummary, Observation } from "../lib/api/types";
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
@@ -300,19 +302,27 @@ export default function PlacePage({
       });
     (async () => {
       const codes = placeChapterMetricCodes();
-      const found = new Map<string, MetricSummary>();
+      let found = new Map<string, MetricSummary>();
       let failures = 0;
-      await inPool(
-        codes.map((code) => async () => {
-          try {
-            const metric = await getMetric(code, { signal: controller.signal });
-            if (metric?.metric_code) found.set(metric.metric_code, metric);
-          } catch (error) {
-            if (!(error instanceof ApiError && error.status === 404)) failures += 1;
-          }
-        }),
-        REQUEST_CONCURRENCY * 2,
-      );
+      try {
+        // One catalog read names every candidate (it was one read each).
+        found = await getMetricsByCode(codes, { signal: controller.signal });
+      } catch {
+        if (controller.signal.aborted) return;
+        // The named read failed: ask each code on its own, as before.
+        found = new Map<string, MetricSummary>();
+        await inPool(
+          codes.map((code) => async () => {
+            try {
+              const metric = await getMetric(code, { signal: controller.signal });
+              if (metric?.metric_code) found.set(metric.metric_code, metric);
+            } catch (error) {
+              if (!(error instanceof ApiError && error.status === 404)) failures += 1;
+            }
+          }),
+          REQUEST_CONCURRENCY * 2,
+        );
+      }
       if (controller.signal.aborted) return;
       setMetricsByCode(found);
       setCatalogStatus(
@@ -404,6 +414,22 @@ export default function PlacePage({
     const tasks: (() => Promise<void>)[] = [];
     let failures = 0;
 
+    // One newest-value answer, from the single read or its batch item.
+    const settleNewest = (source: ExplorerSource, measure: ResolvedPlaceMeasure, geoId: string, items: Observation[]) => {
+      const key = answerKey(measure.metricCode, geoId);
+      const rows = normalizeObservationRows(source, items);
+      verifyUseCaseRows(rows, measure.metricCode, geoId);
+      if (describeStratification(rows, seriesDimensionNames(source, "latest")).stratified) {
+        nextAnswers.set(key, { row: null, error: "Several published strata describe this place; open the explorer to choose one." });
+        return;
+      }
+      nextAnswers.set(key, { row: rows.at(-1) ?? null });
+    };
+    const failNewest = (measure: ResolvedPlaceMeasure, geoId: string, error: unknown) => {
+      failures += 1;
+      nextAnswers.set(answerKey(measure.metricCode, geoId), { row: null, error: apiErrorMessage(error) });
+    };
+
     const askNewest = (measure: ResolvedPlaceMeasure, geoId: string) => async () => {
       const source = sourceFor(measure.metric);
       const key = answerKey(measure.metricCode, geoId);
@@ -414,18 +440,44 @@ export default function PlacePage({
       try {
         const { resource, params } = buildNewestValueRequest(source, { metricCode: measure.metricCode, geoId });
         const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params, signal });
-        const rows = normalizeObservationRows(source, Array.isArray(payload.items) ? payload.items : []);
-        verifyUseCaseRows(rows, measure.metricCode, geoId);
-        if (describeStratification(rows, seriesDimensionNames(source, "latest")).stratified) {
-          nextAnswers.set(key, { row: null, error: "Several published strata describe this place; open the explorer to choose one." });
-          return;
-        }
-        nextAnswers.set(key, { row: rows.at(-1) ?? null });
+        settleNewest(source, measure, geoId, Array.isArray(payload.items) ? payload.items : []);
       } catch (error) {
         if (signal.aborted) return;
-        failures += 1;
-        nextAnswers.set(key, { row: null, error: apiErrorMessage(error) });
+        failNewest(measure, geoId, error);
       }
+    };
+
+    // A chapter's newest values for the same places, as one request: each
+    // item is the single read's answer for its pair (API-180). A batch that
+    // fails, or misses a pair, falls back to the single reads it stands for.
+    const askNewestBatch = (pairs: { measure: ResolvedPlaceMeasure; geoId: string }[]) => async () => {
+      const codes = pairs.map((pair) => pair.measure.metricCode);
+      const geoIds = pairs.map((pair) => pair.geoId);
+      let found: Map<string, { status: number; detail: string | null; observations: CollectionResponse<Observation> | null }>;
+      try {
+        found = await getNewestValuesBatch(codes, geoIds, { signal });
+      } catch {
+        if (signal.aborted) return;
+        await inPool(pairs.map((pair) => askNewest(pair.measure, pair.geoId)), REQUEST_CONCURRENCY);
+        return;
+      }
+      const missed: (() => Promise<void>)[] = [];
+      for (const { measure, geoId } of pairs) {
+        const source = sourceFor(measure.metric)!;
+        const item = found.get(newestKey(measure.metricCode, geoId));
+        if (!item) {
+          missed.push(askNewest(measure, geoId));
+        } else if (item.status === 200 && item.observations) {
+          try {
+            settleNewest(source, measure, geoId, Array.isArray(item.observations.items) ? item.observations.items : []);
+          } catch (error) {
+            failNewest(measure, geoId, error);
+          }
+        } else {
+          failNewest(measure, geoId, new ApiError({ status: item.status, detail: item.detail, path: "/observations" }));
+        }
+      }
+      await inPool(missed, REQUEST_CONCURRENCY);
     };
 
     const askHistory = (measure: ResolvedPlaceMeasure, place: LevelPlace) => async () => {
@@ -449,29 +501,51 @@ export default function PlacePage({
       }
     };
 
+    const batchTasks: (() => Promise<void>)[] = [];
+    // Every value read, batched or not: what the status line counts.
+    let series = 0;
     for (const resolved of shown) {
       const chain = chapterLevels(resolved);
       const own = chain[0];
+      // The chapter's batchable reads, grouped by the places each measure
+      // publishes at, so every batch asks only the pairs the cards show.
+      const batches = new Map<string, { measure: ResolvedPlaceMeasure; geoId: string }[]>();
+      const ask = (measure: ResolvedPlaceMeasure, entries: LevelPlace[]) => {
+        if (!entries.length) return;
+        series += entries.length;
+        if (!batchesNewestValues(sourceFor(measure.metric))) {
+          for (const entry of entries) tasks.push(askNewest(measure, entry.geoId));
+          return;
+        }
+        const placesKey = entries.map((entry) => entry.geoId).join(",");
+        const group = batches.get(placesKey) || [];
+        for (const entry of entries) group.push({ measure, geoId: entry.geoId });
+        batches.set(placesKey, group);
+      };
       for (const measure of resolved.headline) {
         if (!measure.metric) continue;
-        for (const entry of chain) {
-          if (publishesAt(measure, entry.level)) tasks.push(askNewest(measure, entry.geoId));
-        }
+        ask(measure, chain.filter((entry) => publishesAt(measure, entry.level)));
         const trended = [resolved.chapter.trend, ...(resolved.chapter.moreTrends || [])].map((item) => item.measureId);
         if (trended.includes(measure.measure.id)) {
           for (const entry of chain) {
-            if (publishesAt(measure, entry.level)) tasks.push(askHistory(measure, entry));
+            if (publishesAt(measure, entry.level)) {
+              series += 1;
+              tasks.push(askHistory(measure, entry));
+            }
           }
         }
       }
       if (own) {
         for (const measure of resolved.depth) {
-          if (measure.metric && publishesAt(measure, own.level)) tasks.push(askNewest(measure, own.geoId));
+          if (measure.metric && publishesAt(measure, own.level)) ask(measure, [own]);
         }
       }
+      batchTasks.push(...[...batches.values()].map((pairs) => askNewestBatch(pairs)));
     }
+    // Batches first: they hold most of the page's values.
+    tasks.unshift(...batchTasks);
 
-    setObservationStatus({ state: "loading", message: `asking ${tasks.length} published series` });
+    setObservationStatus({ state: "loading", message: `asking ${series} published series` });
     (async () => {
       await inPool(tasks, REQUEST_CONCURRENCY);
       if (signal.aborted) return;
@@ -480,8 +554,8 @@ export default function PlacePage({
       setHistories(nextHistories);
       setObservationStatus(
         failures
-          ? { state: "warn", message: `${failures} of ${tasks.length} requests failed; each is stated where it belongs` }
-          : { state: "ok", message: `${tasks.length} published series read` },
+          ? { state: "warn", message: `${failures} of ${series} reads failed; each is stated where it belongs` }
+          : { state: "ok", message: `${series} published series read` },
       );
     })();
     return () => controller.abort();

@@ -256,7 +256,54 @@ function locateAnswer(lat, lon) {
   return null;
 }
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null } = {}) {
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null, onBatchItem = null } = {}) {
+  // One `/observations` read, as the single route answers it; the batch
+  // route answers each of its pairs from the same function (API-180).
+  const answerObservations = (params) => {
+    if (COST_METRICS[params.get("metric_code")]) {
+      const code = params.get("metric_code");
+      let items = costRows(code, params.get("geo_id"));
+      if (params.get("limit") === "1" || params.get("newest_per_geography") === "true") items = items.slice(-1);
+      return { status: 200, json: { metric_code: code, source_code: code.split(":")[0], scope: params.get("scope") || "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } };
+    }
+    {
+      const code = params.get("metric_code");
+      const metric = metrics[code];
+      const geo = params.get("geo_id");
+      const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geo);
+      if (!metric || !place) return { status: 404, json: { detail: "No reviewed fixture" } };
+      // NASS publishes no cell for Dane County in this fixture: the Land and
+      // Farms chapter must be omitted there and named in the footer.
+      const empty = !metric.valid_geo_grains.includes(place.geo_level) || (code.startsWith("USDA_NASS") && geo === "state:55|county:025");
+      const newest = params.get("limit") === "1" || params.get("newest_per_geography") === "true";
+      const lastYear = nationLagsMedianAge && geo === "us:1" && code.endsWith("B01002_001") ? 2023 : 2024;
+      // BEA withholds mining earnings for Dane County in this fixture, as it
+      // does for a sector that would disclose one employer; QCEW withholds a
+      // sector it cannot disclose, and Mining is withheld here too.
+      const withheld = (code === "BEA:CAINC5N:200" || code === "BLS_QCEW:employment:21:5") && geo === "state:55|county:025";
+      let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
+        const year = lastYear - 5 + index;
+        const monthly = code.endsWith(":monthly");
+        const base = rates.test(code) ? 40 + (scale[geo] || 1) : 1000 * (scale[geo] || 1);
+        return { metric_code: code, source_code: metric.source_code, geo_id: geo, geo_level: place.geo_level, geo_name: place.geo_name,
+          value: withheld ? null : String(Math.round(base * (1 + index * 0.02) * 100) / 100), value_status: withheld ? "withheld" : "valid", unit: metric.units,
+          period_start: monthly ? `2024-${String(index + 1).padStart(2, "0")}-01` : `${year}-01-01`,
+          period_end: monthly ? `2024-${String(index + 1).padStart(2, "0")}-28` : `${year}-12-31`,
+          release: "fixture-release-2025", as_of: "2025-09-01",
+          dimensions: code.startsWith("BEA:")
+            ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "" }
+            : code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
+          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
+            : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
+            : code.startsWith("CENSUS_SAIPE_SAHIE") ? { margin_of_error: "1.4", confidence_lower: "39.6", confidence_upper: "42.4" }
+            : null,
+          ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
+          coverage: null };
+      });
+      if (newest) items = items.slice(-1);
+      return { status: 200, json: { metric_code: code, source_code: metric.source_code, scope: "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } };
+    }
+  };
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
@@ -366,48 +413,22 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
         : [];
       return route.fulfill({ json: { metric_code: code, source_code: "CENSUS_ACS", scope: "latest", total: items.length, offset: 0, limit: 1000, items } });
     }
-    if (path === "/api/v1/observations" && COST_METRICS[params.get("metric_code")]) {
-      const code = params.get("metric_code");
-      let items = costRows(code, params.get("geo_id"));
-      if (params.get("limit") === "1" || params.get("newest_per_geography") === "true") items = items.slice(-1);
-      return route.fulfill({ json: { metric_code: code, source_code: code.split(":")[0], scope: params.get("scope") || "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } });
+    if (path === "/api/v1/observations/newest/batch") {
+      const codes = params.get("metric_codes").split(",");
+      const geoIds = params.get("geo_ids").split(",");
+      const items = codes.flatMap((code) => geoIds.map((geo) => {
+        const single = new URLSearchParams({ metric_code: code, scope: "latest", limit: "1", newest_per_geography: "true", geo_id: geo });
+        const answer = answerObservations(single);
+        return answer.status === 200
+          ? { metric_code: code, geo_id: geo, status: 200, detail: null, observations: answer.json }
+          : { metric_code: code, geo_id: geo, status: answer.status, detail: answer.json.detail, observations: null };
+      }));
+      if (onBatchItem) items.forEach(onBatchItem);
+      return route.fulfill({ json: { metric_codes: codes, geo_ids: geoIds, items } });
     }
-    if (path === "/api/v1/observations") {
-      const code = params.get("metric_code");
-      const metric = metrics[code];
-      const geo = params.get("geo_id");
-      const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geo);
-      if (!metric || !place) return route.fulfill({ status: 404, json: { detail: "No reviewed fixture" } });
-      // NASS publishes no cell for Dane County in this fixture: the Land and
-      // Farms chapter must be omitted there and named in the footer.
-      const empty = !metric.valid_geo_grains.includes(place.geo_level) || (code.startsWith("USDA_NASS") && geo === "state:55|county:025");
-      const newest = params.get("limit") === "1" || params.get("newest_per_geography") === "true";
-      const lastYear = nationLagsMedianAge && geo === "us:1" && code.endsWith("B01002_001") ? 2023 : 2024;
-      // BEA withholds mining earnings for Dane County in this fixture, as it
-      // does for a sector that would disclose one employer; QCEW withholds a
-      // sector it cannot disclose, and Mining is withheld here too.
-      const withheld = (code === "BEA:CAINC5N:200" || code === "BLS_QCEW:employment:21:5") && geo === "state:55|county:025";
-      let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
-        const year = lastYear - 5 + index;
-        const monthly = code.endsWith(":monthly");
-        const base = rates.test(code) ? 40 + (scale[geo] || 1) : 1000 * (scale[geo] || 1);
-        return { metric_code: code, source_code: metric.source_code, geo_id: geo, geo_level: place.geo_level, geo_name: place.geo_name,
-          value: withheld ? null : String(Math.round(base * (1 + index * 0.02) * 100) / 100), value_status: withheld ? "withheld" : "valid", unit: metric.units,
-          period_start: monthly ? `2024-${String(index + 1).padStart(2, "0")}-01` : `${year}-01-01`,
-          period_end: monthly ? `2024-${String(index + 1).padStart(2, "0")}-28` : `${year}-12-31`,
-          release: "fixture-release-2025", as_of: "2025-09-01",
-          dimensions: code.startsWith("BEA:")
-            ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "" }
-            : code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
-          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
-            : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
-            : code.startsWith("CENSUS_SAIPE_SAHIE") ? { margin_of_error: "1.4", confidence_lower: "39.6", confidence_upper: "42.4" }
-            : null,
-          ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
-          coverage: null };
-      });
-      if (newest) items = items.slice(-1);
-      return route.fulfill({ json: { metric_code: code, source_code: metric.source_code, scope: "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } });
+    if (path === "/api/v1/observations" && params.get("geo_level") !== "TRACT") {
+      const answer = answerObservations(params);
+      return route.fulfill({ status: answer.status, json: answer.json });
     }
     if (path === "/api/v1/migration-flows") {
       // IRS SOI flows exist for Dane County only; every other county is the

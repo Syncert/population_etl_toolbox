@@ -355,3 +355,27 @@ class MetricPeriodListResponse(BaseModel):
     limit: int
     offset: int
     items: list[MetricPeriod]
+
+
+class NewestValuesBatchItem(BaseModel):
+    """One metric for one geography, answered as the single read answers it.
+
+    ``observations`` is exactly what ``/observations?metric_code=&scope=latest
+    &newest_per_geography=true&geo_id=&limit=1`` returns for the pair; a
+    metric that read would refuse carries the single read's ``status`` and
+    ``detail`` instead, and no page.
+    """
+
+    metric_code: str
+    geo_id: str
+    status: int
+    detail: Optional[str] = None
+    observations: Optional[NeutralObservationListResponse] = None
+
+
+class NewestValuesBatchResponse(BaseModel):
+    """Every named metric's newest value for every named geography."""
+
+    metric_codes: list[str]
+    geo_ids: list[str]
+    items: list[NewestValuesBatchItem]

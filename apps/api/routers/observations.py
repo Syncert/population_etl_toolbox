@@ -8,11 +8,15 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
 from apps.api.services.neutral_observations_service import (
+    NEWEST_BATCH_MOST_CODES,
+    NEWEST_BATCH_MOST_GEOGRAPHIES,
     NeutralQueryError,
     list_metric_releases,
     list_metric_periods,
     list_neutral_observations,
+    newest_values_batch,
 )
+from apps.api.query_lists import code_list
 from apps.api.schemas.derived import DerivedRatioListResponse
 from apps.api.services.derived_ratio_service import (
     UnknownRatio,
@@ -27,6 +31,8 @@ from apps.api.schemas import (
     MetricReleaseListResponse,
     MetricPeriodListResponse,
     NeutralObservationListResponse,
+    NewestValuesBatchItem,
+    NewestValuesBatchResponse,
     ObservationListResponse,
 )
 
@@ -201,6 +207,68 @@ def get_neutral_observations(
     if response is None:
         raise HTTPException(status_code=404, detail=METRIC_NOT_FOUND_DETAIL)
     return response
+
+
+@router.get(
+    "/newest/batch",
+    response_model=NewestValuesBatchResponse,
+    name="get_newest_values_batch",
+    summary="Several metrics' newest values for a few places, in one request",
+)
+def get_newest_values_batch(
+    metric_codes: str = Query(
+        ...,
+        min_length=1,
+        max_length=12000,
+        description=(
+            f"Comma-separated metric codes, at most {NEWEST_BATCH_MOST_CODES}."
+        ),
+    ),
+    geo_ids: str = Query(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Comma-separated geography identities, at most "
+            f"{NEWEST_BATCH_MOST_GEOGRAPHIES}."
+        ),
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> NewestValuesBatchResponse:
+    """Each metric's newest published value for each geography.
+
+    Every item is what ``/observations?metric_code=&scope=latest
+    &newest_per_geography=true&geo_id=&limit=1`` answers for that pair, so a
+    page that reads a dozen measures for a place, its state and the nation
+    makes one request instead of one per measure and place. A metric the
+    single read refuses is refused per item with that read's status and
+    detail (``404`` unknown, ``422`` cannot be reduced, ``503`` relation
+    absent); the batch itself fails only when the database does.
+    """
+    codes = code_list(metric_codes, "metric_codes", NEWEST_BATCH_MOST_CODES) or []
+    places = code_list(geo_ids, "geo_ids", NEWEST_BATCH_MOST_GEOGRAPHIES) or []
+    if not codes or not places:
+        raise HTTPException(
+            status_code=422, detail="name at least one metric code and one geo_id"
+        )
+    try:
+        answers = newest_values_batch(db, codes, places)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    return NewestValuesBatchResponse(
+        metric_codes=codes,
+        geo_ids=places,
+        items=[
+            NewestValuesBatchItem(
+                metric_code=code,
+                geo_id=geo_id,
+                status=status,
+                detail=detail,
+                observations=response,
+            )
+            for code, geo_id, status, detail, response in answers
+        ],
+    )
 
 
 @router.get(
