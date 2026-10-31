@@ -84,6 +84,11 @@ class YearResult:
     observations: int = 0
     participation: int = 0
     unresolved_county_codes: int = 0
+    error: str | None = None
+
+
+class YearsFailed(RuntimeError):
+    """Some requested years could not be fetched or loaded; the rest were."""
 
 
 def parse_years(text: str) -> list[int]:
@@ -707,11 +712,24 @@ def load(
     control = CaptureControl(connection_factory, source_code=SOURCE_CODE)
     run_id = control.start_run(watermark={"return_a_years": list(years)})
     results: list[YearResult] = []
+    failed: list[YearResult] = []
+    release_key: str | None = None
+    published = False
     try:
-        captured = [
-            _capture_year(connection_factory, control, run_id, year, fetch)
-            for year in years
-        ]
+        captured = []
+        for year in years:
+            # A year whose signed URL or download fails is recorded (its
+            # request is marked failed in the capture ledger) and the run
+            # moves on to the next year; a rerun picks it up.
+            try:
+                captured.append(
+                    _capture_year(connection_factory, control, run_id, year, fetch)
+                )
+            except Exception as error:
+                logger.warning("Return A %s could not be fetched: %s", year, error)
+                failed.append(YearResult(year, "fetch_failed", error=repr(error)))
+        if not captured:
+            raise YearsFailed(f"no Return A year could be fetched: {failed}")
         modified = [file.last_modified for file, _, _ in captured if file.last_modified]
         release_date = max(modified) if modified else datetime.now(UTC).date()
         release_key = release_date.isoformat()
@@ -728,13 +746,13 @@ def load(
                     if _loaded(cursor, release_key, fetched.data_year, checksum):
                         results.append(YearResult(fetched.data_year, "already_loaded"))
                         continue
-                records = list(iter_records(unzip_text(fetched.payload)))
-                wrong = sorted({r.data_year for r in records} - {fetched.data_year})
-                if wrong:
-                    raise ValueError(
-                        f"reta-{fetched.data_year}.zip holds records for {wrong}"
-                    )
                 try:
+                    records = list(iter_records(unzip_text(fetched.payload)))
+                    wrong = sorted({r.data_year for r in records} - {fetched.data_year})
+                    if wrong:
+                        raise ValueError(
+                            f"reta-{fetched.data_year}.zip holds records for {wrong}"
+                        )
                     with database.cursor() as cursor:
                         result = _load_year(
                             cursor,
@@ -774,33 +792,61 @@ def load(
                             ),
                         )
                     database.commit()
+                except Exception as error:
+                    # One bad file never costs the other years: its rows roll
+                    # back whole and the run carries on.
+                    database.rollback()
+                    logger.warning(
+                        "Return A %s could not be loaded: %s", fetched.data_year, error
+                    )
+                    failed.append(
+                        YearResult(fetched.data_year, "load_failed", error=repr(error))
+                    )
+                    continue
                 except BaseException:
                     database.rollback()
                     raise
                 logger.info("Return A %s loaded: %s", fetched.data_year, result)
                 results.append(result)
-            if publish_release:
+            # The release publishes only once every requested year is in.
+            if publish_release and not failed:
                 with database.cursor() as cursor:
                     publish(cursor, release_key)
                 database.commit()
+                published = True
         finally:
             database.close()
-        control.finish_run(run_id, status="success")
+        if failed:
+            control.finish_run(
+                run_id,
+                status="failed",
+                error=YearsFailed(
+                    "years not loaded: "
+                    + ", ".join(f"{r.data_year} ({r.status})" for r in failed)
+                ),
+            )
+        else:
+            control.finish_run(run_id, status="success")
     except BaseException as error:
         control.finish_run(run_id, status="failed", error=error)
         raise
     finally:
         lock.close()
-    if publish_release:
+    if published:
         from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
 
         emit_latest_publisher_ready(connection_factory, publisher_schema="gold_fbi")
     return {
         "run_id": str(run_id),
         "release_key": release_key,
-        "published": publish_release,
-        "years": [vars(result) for result in results],
+        "published": published,
+        "years": [vars(result) for result in sorted(results + failed, key=_by_year)],
+        "failed_years": [result.data_year for result in failed],
     }
+
+
+def _by_year(result: YearResult) -> int:
+    return -result.data_year
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -827,6 +873,9 @@ def main(argv: list[str] | None = None) -> int:
         hook.get_conn, parse_years(args.years), publish_release=not args.no_publish
     )
     print(json.dumps(summary, indent=2, default=str))
+    if summary["failed_years"]:
+        # Exit non-zero so the operator reruns; loaded years are skipped then.
+        return 1
     if not args.no_publish and not args.skip_rollups:
         from data_ingestion_toolbox.semantics.rollups import refresh_calendar_rollups
 

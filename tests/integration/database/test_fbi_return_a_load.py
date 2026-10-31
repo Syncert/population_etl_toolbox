@@ -10,6 +10,7 @@ fixture as the zip the CDE serves.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import zipfile
 from collections.abc import Callable, Iterator
@@ -261,6 +262,57 @@ def test_a_rerun_and_a_resumed_run_change_nothing(
     reloaded = load(return_a_warehouse, [2023], fetch=_fetch)
     assert [item["status"] for item in reloaded["years"]] == ["loaded"]
     assert _rows(return_a_warehouse, count) == before
+
+
+def test_a_year_that_fails_is_recorded_and_the_run_moves_on(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-107 — a failed download or bad file costs only its own year."""
+
+    def flaky(year: int) -> FetchedFile:
+        if year == 2024:
+            raise RuntimeError("signed URL answered 503 six times")
+        if year == 2022:
+            # A file that holds another year's records is refused whole.
+            return dataclasses.replace(
+                _fetch(2023), data_year=2022, object_key=object_key(2022)
+            )
+        return _fetch(year)
+
+    summary = load(return_a_warehouse, [2024, 2023, 2022], fetch=flaky)
+    assert {item["data_year"]: item["status"] for item in summary["years"]} == {
+        2024: "fetch_failed",
+        2023: "loaded",
+        2022: "load_failed",
+    }
+    assert summary["failed_years"] == [2024, 2022]
+    # The release is never published with a requested year missing.
+    assert summary["published"] is False
+    assert _rows(
+        return_a_warehouse,
+        "SELECT DISTINCT status FROM silver_fbi.dim_ucr_dataset_release "
+        "WHERE release_key = %s",
+        RELEASE,
+    ) == [("replaying",)]
+    assert _rows(
+        return_a_warehouse,
+        "SELECT data_year FROM control.fbi_return_a_year ORDER BY data_year",
+    ) == [(2023,)]
+    assert _rows(
+        return_a_warehouse,
+        "SELECT status FROM control.ingestion_request WHERE run_id = %s "
+        "AND endpoint = 'master_files/reta/reta-2024.zip'",
+        summary["run_id"],
+    ) == [("failed",)]
+    assert _rows(
+        return_a_warehouse,
+        "SELECT status FROM control.ingestion_run WHERE run_id = %s",
+        summary["run_id"],
+    ) == [("failed",)]
+    # A rerun of what remains skips the loaded year and publishes.
+    rerun = load(return_a_warehouse, [2023], fetch=_fetch)
+    assert [item["status"] for item in rerun["years"]] == ["already_loaded"]
+    assert rerun["published"] is True
 
 
 def test_return_a_totals_are_checked_against_the_cde(
