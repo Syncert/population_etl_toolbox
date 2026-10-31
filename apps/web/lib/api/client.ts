@@ -13,6 +13,8 @@ import type {
   ComparisonResponse,
   ComparisonRow,
   DistributionResponse,
+  GeographyLocateResponse,
+  GeographySearchResponse,
   GeographySummary,
   HealthResponse,
   AnalysisDocument,
@@ -488,6 +490,29 @@ export function fetchAllGeographies(
   options: PageOptions = {},
 ): Promise<GeographySummary[]> {
   return fetchAllPages<GeographySummary>("/catalog/geographies", { ...options, params });
+}
+
+/**
+ * Places a typed name may mean, best match first (A-1). `q` needs two letters
+ * or digits; the API answers a 422 otherwise.
+ */
+export function searchGeographies(
+  params: { q: string; limit?: number; state_fips?: string },
+  options: RequestOptions = {},
+): Promise<GeographySearchResponse> {
+  return apiFetch<GeographySearchResponse>("/catalog/geographies/search", { ...options, params });
+}
+
+/**
+ * The geographies containing one point (A-1). A point no state covers is a
+ * 404. The response never echoes the coordinates.
+ */
+export function locateGeography(
+  lat: number,
+  lon: number,
+  options: RequestOptions = {},
+): Promise<GeographyLocateResponse> {
+  return apiFetch<GeographyLocateResponse>("/catalog/geographies/locate", { ...options, params: { lat, lon } });
 }
 
 // The capability resource answers with the standard `{total, items}`

@@ -86,6 +86,66 @@ export interface GeographySummary {
   [key: string]: unknown;
 }
 
+/** The matched city a `contains_match` search result was offered for. */
+export interface GeographySearchVia {
+  geo_id: string;
+  geo_name: string;
+}
+
+/**
+ * One geography `/catalog/geographies/search` offers for a typed name (A-1).
+ * `match` says why: `exact`, `prefix`, `word_prefix`, `fuzzy`, or
+ * `contains_match` (it contains the city named in `matched_via`).
+ * `page_path` is null for a grain with no page yet (metro, ZCTA), and
+ * `population` is null, never zero, where none is served.
+ */
+export interface GeographySearchItem {
+  geo_id: string;
+  geo_level: string;
+  geo_name: string;
+  short_name: string;
+  match: string;
+  matched_via?: GeographySearchVia | null;
+  state_fips?: string | null;
+  state_name?: string | null;
+  county_geo_id?: string | null;
+  county_name?: string | null;
+  population?: number | null;
+  population_year?: number | null;
+  population_metric_code?: string | null;
+  page_path?: string | null;
+}
+
+export interface GeographySearchResponse {
+  query: string;
+  limit: number;
+  items: GeographySearchItem[];
+}
+
+/** A geography whose current boundary covers the located point. */
+export interface LocatedGeography {
+  geo_id: string;
+  geo_level: string;
+  geo_name?: string | null;
+  boundary_vintage?: number | null;
+  page_path?: string | null;
+}
+
+/**
+ * What `/catalog/geographies/locate` answers for a point: `landing` is the
+ * city or town the point is in, else its county. The coordinates are not
+ * echoed.
+ */
+export interface GeographyLocateResponse {
+  landing: LocatedGeography;
+  state: LocatedGeography;
+  county?: LocatedGeography | null;
+  place?: LocatedGeography | null;
+  tract?: LocatedGeography | null;
+  zcta?: LocatedGeography | null;
+  metro?: LocatedGeography | null;
+}
+
 /** One versioned route that answers for a source, with its query parameters. */
 export interface ObservationRouteCapability {
   path: string;

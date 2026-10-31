@@ -50,10 +50,10 @@ grep was looking for.
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`api-cross-level-compare`](in_progress/API_CROSS_LEVEL_COMPARE_PLAN.md) | medium | none | `api-per-capita-and-shares` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 | [`web-cross-level-compare`](in_progress/WEB_CROSS_LEVEL_COMPARE_PLAN.md) | medium | `browser` | `api-cross-level-compare`, `web-per-capita-toggle` |
+| [`web-find-your-place`](in_progress/WEB_FIND_YOUR_PLACE_PLAN.md) | low | `browser` | `api-place-search`, `find-your-place-home` |
 
 
 ## 2. Buildable in a cloud session, finished on a machine

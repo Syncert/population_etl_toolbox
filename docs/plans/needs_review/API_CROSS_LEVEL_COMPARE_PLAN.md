@@ -14,7 +14,7 @@ verify:
 
 ## Status
 
-In progress (v1.0 build-out, item A-4), started 2026-10-31 on branch `feat/api-cross-level-compare` from
+Needs review (v1.0 build-out, item A-4), built 2026-10-31 on branch `feat/api-cross-level-compare` from
 `dev` after A-3 (#175). Governed by
 [ADR-0010](../../decisions/0010-cross-level-comparison.md), accepted by Nick
 on 2026-10-26, and [ADR-0009](../../decisions/0009-per-capita-and-share-views.md)
@@ -83,30 +83,41 @@ against county counts side by side as if they were comparable.
 ## Checkpoint
 
 - [x] kind in registry, schema and loader
-- [x] service and route (`GET /api/v1/comparison/places`)
+- [x] service and route (`GET /api/v1/comparison/places`), merged in #180
 - [x] tests (API-175, API-176), consumer guide, OpenAPI snapshot
-- [ ] warehouse check relayed to OFFICE_LAB (unverified until then)
+- [x] warehouse checks on OFFICE_LAB (API rebuilt from `dev` at 59e6a25)
+- [x] a side with no value refuses the comparison (follow-up PR)
+
+Ready for Nick's review: the draft `kind` of each definition.
 
 ## Evidence
 
 - 2026-10-31, cloud session: `python -m pytest tests/unit/api tests/unit/semantics
-  tests/unit/shared -q` -> 1342 passed; `ruff format --check .` and
-  `ruff check .` (ruff 0.15.16) clean.
-
-## Unverified until the warehouse answers
-
-The route reads only existing relations (`gold_glossary.dim_geography`,
-`gold_glossary.geo_relationship` through `GEOGRAPHY_RELATED_QUERY`, and each
-metric's latest relation through `observations_for_geographies`), so nothing
-new is needed in the warehouse. What a cloud session cannot see is real
-answers. On OFFICE_LAB, with the API image rebuilt from this branch:
-
-1. `curl "localhost:8000/api/v1/comparison/places?metric_code=CENSUS_ACS:acs5:B19013_001&geo_id_a=state:48%7Cplace:05000&geo_id_b=state:48%7Ccounty:453"`
-   (Austin and Travis County): expect `comparable: true`, both values for one
-   period, `containment.relationship: intersects` with a share, no difference.
-2. Same with `metric_code=CENSUS_ACS:acs5:B17001_002`, `geo_id_a=state:55|county:025`,
-   `geo_id_b=state:55` (Dane County, Wisconsin): expect `comparable: false`,
-   `counts_differ_in_size`, `containment.relationship: contains` from b's side
-   (`part_of`).
-3. `metric_code=BLS:LAU:UNEMP_RATE` for `cbsa:12420` (Austin metro) beside
-   `us:1`: expect `comparable: true`, `part_of`.
+  tests/unit/shared -q` -> 1342 passed at #180, 1380 after merging `dev`;
+  `ruff format --check .` and `ruff check .` (ruff 0.15.16) clean. #180 merged
+  with all 30 CI checks green.
+- 2026-10-31, OFFICE_LAB, API image rebuilt from `dev` at 59e6a25 (relayed by
+  the coordinator):
+  1. Austin city (`state:48|place:05000`) vs Travis County
+     (`state:48|county:453`), `CENSUS_ACS:acs5:B19013_001`: **pass**. 200,
+     `comparable: true`, `period_basis: newest_common`, 93,658 beside 99,611,
+     both 2020-2024; `containment: intersects`, `smaller_side: a`,
+     `share_of_smaller_inside_larger: 0.9187`, vintage 2025, evidence
+     `census_boundary_intersection`; `difference: null`.
+  2. Dane County (`state:55|county:025`) vs Wisconsin (`state:55`),
+     `CENSUS_ACS:acs5:B17001_002`: **pass**. 200, `comparable: false`,
+     `counts_differ_in_size`, `alternatives` lists `poverty_share:acs5` (drafts
+     served on the local stack); `containment: part_of`, share 1.0, evidence
+     `exact_census_code_hierarchy`.
+  3. Austin metro (`cbsa:12420`) vs the nation (`us:1`), `BLS:LAU:UNEMP_RATE`:
+     **partial**. 200, `comparable: true` with side a 3.7 (2026-09) and side b
+     empty, named `us:1`, `period_basis: each_newest`. BLS LAUS publishes no
+     national series (the national rate is CPS `LNS14000000`). Fixed in the
+     follow-up: a side with no value refuses the comparison with
+     `not_published` ("there is no published value for United States in this
+     series"), and the nation is named "United States" where the catalog's
+     name is its code. Mapping `us:1` to the CPS series is not done: it is a
+     different survey, so it would be a different measure.
+- A-3 follow-up #181 on OFFICE_LAB: SAIPE and `birth_rate` answered for 254 of
+  254 Texas counties with the state filter. The uncached `EXPLAIN` for #181 is
+  still outstanding there.
