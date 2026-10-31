@@ -18,9 +18,13 @@ verify:
   source of truth database currently being used can't be the analytics query
   destination and the website serving layer long term. That wouldn't scale
   would it? Planning and exploration only."
-- **Decision needed from Nick:** whether to accept the recommendation below
-  (keep one Postgres through v1, split serving out at public launch, add a
-  columnar sidecar only when an analytics question needs it).
+- **Decided by Nick (2026-10-31 21:03–21:10):** at public launch the site
+  is served from **managed Postgres on AWS**. That cloud copy holds **only what
+  the website serves**: newest values plus a compact history table. The
+  warehouse and its loads stay at the office. An RDS read replica of the
+  serving copy is added if traffic or failover needs it.
+- **Still open:** whether to accept the rest of the staged path (one Postgres
+  through v1, Parquet + DuckDB only when an analytics question needs it).
 - **Replaces:** the standing rule "stay on Postgres; columnar sidecar only if
   post-parallel measurements show scan-bound steps." That rule stays true but
   incomplete. It says nothing about where the website reads from once the site
@@ -127,8 +131,9 @@ is not the constraint.
 
 ### Not a limit: data size
 
-The warehouse is about 670 GB now, and the hosting-cost plan projects about
-2.7 TB at full ACS history. That is ordinary for Postgres on NVMe. Partition
+The warehouse measured 2,487 GB on 2026-10-31 (see "Measured on OFFICE_LAB"
+below), already close to the hosting-cost plan's 2.7 TB projection for full
+ACS history. That is ordinary for Postgres on NVMe. Partition
 pruning on `rpt_acs_observations` is verified. Of 1,080,837,935 rows, 0 sit
 outside their year's partition, so pinned reads touch one partition. Size
 makes backups, restores and cloud storage cost more. It does not make indexed
@@ -142,8 +147,8 @@ coming, and a data-quality-first culture.
 | Option | Fixes | Doesn't fix | Cost | Operational burden |
 |---|---|---|---|---|
 | **A. Keep one Postgres, enforce serving discipline** | slow pages (every case so far), concurrency (with pgbouncer) | loads slowing the site, availability, ad-hoc scans | $0 | Low. Rules and checks already exist. |
-| **B. Physical streaming replica for serving** | some load contention (separate cache and CPU) | copies all 670 GB+, including revision and raw tables the site never reads. Replays every load's WAL, so replica I/O still spikes. Long reads conflict with replay. A cloud replica means paying for 2.7 TB. | second machine or cloud box with ≥ warehouse storage | Medium. Replication slots, lag, WAL retention. |
-| **C. Separate serving database (a small Postgres holding only `gold_*` serving tables and `app_api`)** | load contention, availability, cloud hosting cost (serves a fraction of the size), the security boundary (public internet never touches the warehouse) | ad-hoc scans | managed Postgres for 100–400 GB: roughly $60–150/month on a VPS, $250–600/month managed (list-price estimates, not quotes) | Medium. A publish step to ship gold to it, and a second schema-apply target. The API already speaks Postgres, so no API rewrite. |
+| **B. Physical streaming replica for serving** | some load contention (separate cache and CPU) | copies all 2.5 TB, including revision and raw tables the site never reads. Replays every load's WAL, so replica I/O still spikes. Long reads conflict with replay. A cloud replica means paying for 2.5 TB or more. | second machine or cloud box with ≥ warehouse storage | Medium. Replication slots, lag, WAL retention. |
+| **C. Separate serving database (a small Postgres holding only `gold_*` serving tables and `app_api`)** | load contention, availability, cloud hosting cost (serves a fraction of the size), the security boundary (public internet never touches the warehouse) | ad-hoc scans | depends on how much history it carries: about 150 GB for latest values only, about 1.4 TB for all of gold (measured). See stage 2 for the costs | Medium. A publish step to ship gold to it, and a second schema-apply target. The API already speaks Postgres, so no API rewrite. |
 | **D. Columnar sidecar: Parquet + DuckDB** | ad-hoc scans (seconds instead of minutes), cheap analytics exports, a "download the data" feature | serving (not for many concurrent web reads) | $0, embedded library; disk for Parquet (about 10–20% of row size) | Low. One export job per release, files on disk, no server. |
 | **D2. `pg_duckdb` inside the warehouse** | ad-hoc scans over Parquet, from SQL | adds an extension to the source of truth, and the PostGIS image needs a custom build | $0 | Medium. Extension upgrades tied to Postgres upgrades, and a crash risk in the warehouse process. |
 | **D3. ClickHouse** | ad-hoc scans at very large scale and high concurrency | serving logic would be rewritten in a second SQL dialect | self-hosted $0 + ops time; ClickHouse Cloud from roughly $200–500/month | High. A second server, schema and loader to keep in step with every source. |
@@ -256,15 +261,48 @@ over unchanged.
 
 Where it runs:
 
-- **A cloud VPS or managed Postgres** (recommended for launch). Size it from
-  the serving-schema measurement below, likely 100–400 GB. The warehouse and
-  its loads stay at the office; only the serving copy is public.
+- **A cloud VPS or managed Postgres** (recommended for launch). The
+  warehouse and its loads stay at the office; only the serving copy is public.
 - **A second small machine at the office.** It is cheaper, but it shares the
   office's power and network, so it fixes contention, not availability.
 
-Cost: roughly $60–150/month self-managed VPS, or $250–600/month managed, for
-the sizes above. These are list-price estimates to be replaced by the
-hosting-cost plan's measured numbers. Burden: one publish step, one more
+**How much to copy decides the cost.** The OFFICE_LAB measurement shows that
+gold is not small. The newest-value relations are about 141 GB:
+`gold_census` without partitions is 132 GB (`mv_acs_latest` and its indexes),
+`gold_bls` is 8.9 GB, and `gold_glossary` and the other gold schemas are under
+1 GB. The as-released partitions, mainly `rpt_acs_observations`, add 1,247 GB.
+That is about 90% of gold, and it is there for history charts and "pick a
+release" reads. A serving copy has three shapes:
+
+| Serving copy | Size | Rough monthly cost (list prices, not quotes) |
+|---|---|---|
+| Newest values only; history pages read from the office warehouse or Parquet | ~150 GB | $40–100 VPS · $200–400 managed |
+| Newest values + a narrow history table: one row per metric, geography and release, no duplicate indexes, tract history only for the measures pages chart | ~300–600 GB (to be measured) | $80–200 VPS · $350–700 managed |
+| All of gold as it is now | ~1.4 TB and growing | $150–300 dedicated server with 2 TB NVMe · $700–1,200 managed |
+
+**Nick's preferred shape (2026-10-31):** managed Postgres on AWS, with a
+read replica for serving. That works and scales for reads. A replica on RDS is
+a full physical copy, though. Put the whole 2.5 TB warehouse there and every
+byte and every load's WAL is paid for twice:
+
+- storage: about 2.5 TB × 2 on gp3;
+- instances: two memory-optimised ones (8 vCPU / 64 GB class), plus backups;
+- the loads run in the cloud too.
+
+At list prices that is roughly $1,500–2,500 a month. The same managed
+experience costs far less if RDS holds only the serving copy. Keep the
+warehouse and its loads at the office, or on a cheap box, and publish the
+serving tables to RDS each release. Add an RDS read replica of that small
+database only when read traffic needs it, or for failover (Multi-AZ). That is
+roughly $350–900 a month at the middle row's size.
+
+The recommendation is the middle row. Shape the history the site serves for
+the site's own reads, rather than copying the warehouse's as-released
+partitions with all of their indexes. Before stage 2 starts, measure
+`rpt_acs_observations` by `geo_level`, with heap and index sizes split, to
+know what the narrow table would hold. These figures replace the earlier
+100–400 GB guess, and the hosting-cost plan's measured numbers replace the
+prices. Burden: one publish step, one more
 schema-apply target, and monitoring one more database. This is the main
 recurring cost of the whole path, and the reason it waits for its trigger.
 
@@ -308,6 +346,56 @@ SELECT relname, heap_blks_read, heap_blks_hit,
    2012–2022, from `rpt_acs_observations`. Record it so a later DuckDB
    comparison has a number to beat.
 
+## Measured on OFFICE_LAB (2026-10-31, about 21:00Z, during reloads)
+
+These were taken while the tract 2013 and metro 2019 loads were running.
+Idle numbers follow once the loads finish.
+
+**Sizes.** The whole database is 2,487 GB:
+
+| Schema or relation | Size |
+|---|---|
+| `rpt_acs_observations` and other gold partitions | 1,247 GB |
+| `gold_census`, excluding partitions (`mv_acs_latest` + indexes) | 132 GB |
+| `gold_bls` | 8.9 GB |
+| `gold_glossary` | 378 MB |
+| `gold_fbi` (before `county_agency_rate_month`) | 82 MB |
+| `gold_fred` | 44 MB |
+| other gold schemas | under 40 MB each |
+
+**Memory.** The cumulative buffer hit ratio since init is 94.64%, with
+`shared_buffers` at 20 GB and `effective_cache_size` at 90 GB. The working set
+is far beyond `shared_buffers`. Load scans pull the ratio down. A serving
+database should sit at 99% or higher, which favours keeping the serving copy
+small enough to fit mostly in memory. That is another reason for the middle
+row in stage 2.
+
+**Connections.** A point sample found 19 of 100 open and 3 active. Limit 4 is
+far off. A real peak needs a 10 s `pg_stat_activity` sampler over a day.
+
+**Dane County page during a reload.** 16 distinct API GETs were timed over 5
+rounds:
+
+- Overall: p50 12 ms, p95 26 ms, p99 164 ms. After round 1, most of these
+  answers came from Redis.
+- Cold reads that reached the database, from the earlier HAR:
+  - `/place/distinctive`: 1,576 ms
+  - tract observations: 1,082 ms
+  - catalog state geographies: 811 ms
+  - `/observations/periods`: 747 ms
+  - everything else: under 700 ms
+
+What this says so far:
+
+- **Limit 1, loads slowing the site:** cached pages are unaffected. Cold
+  reads during a load are 0.7–1.6 s, against the under-15 ms warm reads
+  measured at idle elsewhere. The 3× trigger can be judged once the idle cold
+  numbers arrive.
+- **The cache carries the site today.** Raising `API_CACHE_TTL_SECONDS` (stage
+  0, item 4) keeps more visitors on the 12 ms path, and costs nothing.
+- **Size moved the stage-2 estimate,** from "small" to "shape the history
+  first". See the cost table in stage 2.
+
 ## Acceptance (for this plan, when its stages are built)
 
 - Stage 0: a check fails any API route that reads a non-serving schema.
@@ -322,9 +410,8 @@ SELECT relname, heap_blks_read, heap_blks_hit,
 ## Open questions for Nick
 
 1. Accept the staged path (Postgres now, Parquet + DuckDB when analytics needs
-   it, a serving-only Postgres at public launch)?
-2. At launch, would you rather pay for managed Postgres (more money, less of
-   your time) or run a VPS yourself (less money, you own backups and
-   upgrades)?
-3. Should the remote warehouse on the wish list become this serving-only
-   database instead of a second full warehouse?
+   it, a serving-only Postgres at public launch)? *Open.*
+2. Managed Postgres or a self-run VPS at launch? **Answered 2026-10-31:
+   managed, on AWS.**
+3. Should the cloud copy be serving-only, with the warehouse staying at the
+   office? **Answered 2026-10-31: yes.**
