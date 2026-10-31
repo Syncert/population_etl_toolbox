@@ -65,10 +65,20 @@ with `dev` merged in after A-2 landed as #170).
 - `npm run lint`, `npm run typecheck`, `next build`: pass.
 - `npx playwright test`: 252 passed.
 - `pytest tests/unit/shared/test_catalog_evidence.py`: 2 passed.
-- Not verified here: the running site against the populated warehouse. On
-  OFFICE_LAB, after rebuilding `docker-web-1` and `docker-api-1` from `dev`,
-  open a county page, `/compare`, `/workbench` and `/catalog` and confirm no
-  `Estimate!!` or variable code shows.
+- Merged into `dev` as #177 (8357a3d).
+
+## Evidence (OFFICE_LAB, live stack, 2026-10-31)
+
+Web and API rebuilt from `dev` 8357a3d; headless Chromium against
+`localhost:3001`, each page's `innerText` scanned with `[data-provenance]`
+elements removed, for `Estimate!!` and ACS codes (`[BCS]#####_###`):
+
+| Page | Status | Text | `Estimate!!` / codes |
+|---|---|---|---|
+| `/us/texas/travis-county` | 200 | 90k chars | 0 / 0 |
+| `/compare` | 200 | 45k chars | 0 / 0 |
+| `/workbench` | 200 | 17k chars | 0 / 0 |
+| `/catalog` | 200 | 33k chars | 0 / 0 |
 
 ## Earlier evidence (OFFICE_LAB, Windows, 2026-10-26, before the dev merge)
 
