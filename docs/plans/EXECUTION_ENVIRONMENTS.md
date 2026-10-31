@@ -50,7 +50,7 @@ grep was looking for.
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`api-per-capita-and-shares`](in_progress/API_PER_CAPITA_AND_SHARES_PLAN.md) | medium | none | `api-plain-labels` |
+| [`api-cross-level-compare`](in_progress/API_CROSS_LEVEL_COMPARE_PLAN.md) | medium | none | `api-per-capita-and-shares` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
 

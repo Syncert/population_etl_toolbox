@@ -1193,6 +1193,7 @@
       "observation_filters": [
         "geo_id",
         "geo_level",
+        "state_fips",
         "year_from",
         "year_to"
       ],
@@ -1340,6 +1341,7 @@
       "observation_filters": [
         "geo_id",
         "geo_level",
+        "state_fips",
         "year_from",
         "year_to"
       ],

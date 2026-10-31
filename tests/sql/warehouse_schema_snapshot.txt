@@ -6910,6 +6910,26 @@ r gold_glossary.dim_source_system
     index dim_source_system_pkey CREATE UNIQUE INDEX dim_source_system_pkey ON gold_glossary.dim_source_system USING btree (source_system_sk)
     index dim_source_system_source_code_key CREATE UNIQUE INDEX dim_source_system_source_code_key ON gold_glossary.dim_source_system USING btree (source_code)
 
+v gold_glossary.geo_boundary
+    column geo_id text
+    column geo_level text
+    column geo_name text
+    column state_fips text
+    column county_fips text
+    column place_fips text
+    column boundary_vintage integer
+    column geo_geom geometry(MultiPolygon,4326)
+    body SELECT geo_id,
+    body     geo_level,
+    body     gold_glossary.geo_name(COALESCE(area_name, place_name), county_name, state_name, geo_id) AS geo_name,
+    body     state_fips,
+    body     county_fips,
+    body     place_fips,
+    body     boundary_vintage,
+    body     geo_geom
+    body    FROM gold_glossary.dim_geo_latest latest
+    body   WHERE geography_state = 'current'::text AND geo_geom IS NOT NULL;
+
 v gold_glossary.geo_relationship
     column geo_id text
     column related_geo_id text
@@ -6933,6 +6953,31 @@ v gold_glossary.geo_relationship
     body   WHERE (relationship.relationship_type = ANY (ARRAY['contains'::text, 'intersects'::text, 'adjacent'::text])) AND relationship.geography_vintage = (( SELECT max(newest.geography_vintage) AS max
     body            FROM silver_ref.bridge_geo_relationship_version newest
     body           WHERE newest.parent_geo_sk = relationship.parent_geo_sk AND newest.relationship_type = relationship.relationship_type));
+
+r gold_glossary.geo_search
+    column geo_id text NOT NULL
+    column geo_level text NOT NULL
+    column geo_name text NOT NULL
+    column short_name text NOT NULL
+    column name_words text NOT NULL
+    column short_words text NOT NULL
+    column state_fips text
+    column county_fips text
+    column place_fips text
+    column state_name text
+    column county_geo_id text
+    column county_name text
+    column population numeric
+    column population_year integer
+    column population_metric_code text
+    column boundary_vintage integer
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint ck_geo_search_grain CHECK ((geo_level = ANY (ARRAY['STATE'::text, 'COUNTY'::text, 'METRO'::text, 'PLACE'::text, 'ZCTA'::text])))
+    constraint geo_search_pkey PRIMARY KEY (geo_id)
+    index geo_search_pkey CREATE UNIQUE INDEX geo_search_pkey ON gold_glossary.geo_search USING btree (geo_id)
+    index ix_gold_glossary_geo_search_name_trgm CREATE INDEX ix_gold_glossary_geo_search_name_trgm ON gold_glossary.geo_search USING gin (name_words gin_trgm_ops)
+    index ix_gold_glossary_geo_search_short_trgm CREATE INDEX ix_gold_glossary_geo_search_short_trgm ON gold_glossary.geo_search USING gin (short_words gin_trgm_ops)
+    index ix_gold_glossary_geo_search_state CREATE INDEX ix_gold_glossary_geo_search_state ON gold_glossary.geo_search USING btree (state_fips, geo_level)
 
 r gold_glossary.publisher_harvest_state
     column source_code text NOT NULL
