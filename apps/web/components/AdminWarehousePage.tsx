@@ -26,6 +26,7 @@ import {
   clip,
   coverageByColumn,
   edgePath,
+  formatWatermark,
   missingYears,
   runLimited,
   shortType,
@@ -363,7 +364,7 @@ function SourceRow({
           );
         })}
         <td className="aw-num">{formatCount(source.catalog?.metrics)}</td>
-        <td className="aw-newest">{source.catalog?.newest_watermark || ""}</td>
+        <td className="aw-newest">{formatWatermark(source.catalog?.newest_watermark)}</td>
         <td className="aw-cadence">{source.cadence}</td>
       </tr>
       {open ? (

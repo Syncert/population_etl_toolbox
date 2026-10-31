@@ -155,6 +155,22 @@ export function yearSpan(first: number | null, last: number | null): string {
   return first === last ? String(first) : `${first}–${last}`;
 }
 
+/**
+ * A source watermark as a reader would write it. Most sources record a period
+ * ("2025-12", "2024"); a few record when the publisher last changed the data,
+ * as Unix seconds (CDC's "1780605223"). Those are shown as a UTC date.
+ */
+export function formatWatermark(value: string | null | undefined): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (/^\d{10,13}$/.test(trimmed)) {
+    const seconds = trimmed.length > 10 ? Number(trimmed) / 1000 : Number(trimmed);
+    const date = new Date(seconds * 1000);
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  }
+  return trimmed;
+}
+
 /** Years missing between the first and last held year. */
 export function missingYears(years: readonly number[]): number[] {
   if (years.length < 2) return [];

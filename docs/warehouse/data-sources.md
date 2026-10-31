@@ -2,14 +2,15 @@
 
 What the warehouse loads, at which geographic levels, for which years, how often, and where each source lands.
 Everything here is what the repository declares (each source's `registry.py`/`config.py`, its DAG schedule, and its
-operations guide under `docs/user-guides/`). The **status** column is what was believed loaded on the internal
-warehouse on 2026-10-31; replace it with the output of [`coverage.sql`](coverage.sql) whenever you need the truth.
+operations guide under `docs/user-guides/`). The **status** column and each source's loaded years are a read-only count of
+the internal warehouse with [`coverage.sql`](coverage.sql), taken 2026-10-31 17:05 UTC. **Loaded** means the declared years
+are there; **Partly loaded** means years or levels are still missing.
 
 Interactive version: [Warehouse Source Map](https://claude.ai/artifact/R8x3zkZjRAXFcPEYNr45s7). Table structures: [erd.md](erd.md).
 
 **Live version (admins):** the site's `/admin/warehouse` page shows this map and the schema atlas read from the
 warehouse each time it opens: grains and metric counts from `gold_glossary.dim_metric_catalog`, years per grain
-measured from each source's serving relation (cached six hours), and every table and view from `pg_catalog`. The
+measured from each source's serving relations (kept until a new release lands), and every table and view from `pg_catalog`. The
 descriptions it shows come from `apps/api/services/warehouse_inventory.py`; a unit test fails if a served source has
 no entry there, so add one with every new source. Turn the page on by listing operator labels or sign-in emails in
 `API_ADMIN_ACCOUNTS`. This file and `erd.md` are the snapshot of 2026-10-31.
@@ -19,29 +20,29 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | Source | Publisher | Nation | State | County | Metro | Place | Tract | Other | Years | Refresh | Status |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | --- | --- | --- |
 | [American Community Survey](#census_acs) | U.S. Census Bureau | ● | ● | ● | ● | ● | ● |  | 2005–2024 | Monthly check | Partly loaded |
-| [Census 2000 and 1990](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  | ● | ● |  | 1990–2000 | One-time history load | Awaiting live count |
-| [Population Estimates Program](#census_pep) | U.S. Census Bureau | ● | ● | ● |  | ● |  | ● | 1970–2025 | Monthly check | Believed loaded |
-| [SOI county-to-county migration](#irs_migration) | IRS Statistics of Income |  |  | ● |  |  |  |  | 2019–2023 | Monthly | Awaiting live count |
-| [BLS labor and prices (LAUS, CPS, CES, CPI, JOLTS, average prices)](#bls) | Bureau of Labor Statistics | ● | ● | ● | ● | ◌ |  | ◌ | 1990–2026 | Monthly | Believed loaded |
-| [Quarterly Census of Employment and Wages](#bls_qcew) | Bureau of Labor Statistics | ● | ● | ● |  |  |  |  | 2014–2025 | Monthly | Awaiting live count |
-| [County Business Patterns](#census_cbp) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 2016–2023 | Monthly | Awaiting live count |
-| [Regional economic accounts](#bea) | Bureau of Economic Analysis | ● | ● | ● | ◐ |  |  | ● | 1969–2024 | Weekly | Believed loaded |
-| [SAIPE and SAHIE](#census_saipe_sahie) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 1989–2024 | Monthly | Awaiting live count |
-| [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Awaiting live count |
-| [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Awaiting live count |
-| [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Awaiting live count |
-| [Fair Market Rents and income limits](#hud_fmr_il) | HUD |  |  | ● |  |  |  |  | 2026–2027 | Monthly | Awaiting live count |
-| [Weekly retail gasoline prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 2015–2026 | Weekly | Awaiting live count |
-| [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Believed loaded |
-| [Crime Data Explorer summarized offenses](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2023 | Weekly | Believed loaded |
-| [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Awaiting live count |
-| [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Awaiting live count |
-| [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Awaiting live count |
-| [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Awaiting live count |
-| [Common Core of Data, public schools](#nces_ccd) | NCES |  | ◐ | ◐ |  |  |  |  | 2023–2024 | Quarterly | Awaiting live count |
-| [National Broadband Map availability](#fcc_bdc) | FCC | ● | ● | ● |  | ● |  |  | 2024–2025 | Monthly | Awaiting live count |
-| [Rural-urban codes, county typology, food atlas](#usda_ers) | USDA Economic Research Service |  |  | ● |  |  |  |  | 2015–2025 | Monthly | Awaiting live count |
-| [Quick Stats crops](#usda_nass) | USDA NASS | ● | ● | ● |  |  |  |  | 1990–2024 | Business days | Awaiting live count |
+| [Census 2000 and 1990](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  | ● | ● |  | 1990–2000 | One-time history load | Partly loaded |
+| [Population Estimates Program](#census_pep) | U.S. Census Bureau | ● | ● | ● |  | ● |  | ● | 1970–2025 | Monthly check | Loaded |
+| [SOI county-to-county migration](#irs_migration) | IRS Statistics of Income |  |  | ● |  |  |  |  | 2019–2023 | Monthly | Loaded |
+| [BLS labor and prices (LAUS, CPS, CES, CPI, JOLTS, average prices)](#bls) | Bureau of Labor Statistics | ● | ● | ● | ● | ◌ |  | ◌ | 1990–2026 | Monthly | Loaded |
+| [Quarterly Census of Employment and Wages](#bls_qcew) | Bureau of Labor Statistics | ● | ● | ● |  |  |  |  | 2014–2025 | Monthly | Partly loaded |
+| [County Business Patterns](#census_cbp) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 2016–2023 | Monthly | Loaded |
+| [Regional economic accounts](#bea) | Bureau of Economic Analysis | ● | ● | ● | ◐ |  |  | ● | 1969–2024 | Weekly | Loaded |
+| [SAIPE and SAHIE](#census_saipe_sahie) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 1989–2024 | Monthly | Partly loaded |
+| [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
+| [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Partly loaded |
+| [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
+| [Fair Market Rents and income limits](#hud_fmr_il) | HUD |  |  | ● |  |  |  |  | 2026–2027 | Monthly | Loaded |
+| [Weekly retail gasoline prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 2015–2026 | Weekly | Loaded |
+| [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Loaded |
+| [Crime Data Explorer summarized offenses](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2023 | Weekly | Loaded |
+| [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
+| [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
+| [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
+| [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Loaded |
+| [Common Core of Data, public schools](#nces_ccd) | NCES |  | ◐ | ◐ |  |  |  |  | 2023–2024 | Quarterly | Loaded |
+| [National Broadband Map availability](#fcc_bdc) | FCC | ● | ● | ● |  | ● |  |  | 2024–2025 | Monthly | Loaded |
+| [Rural-urban codes, county typology, food atlas](#usda_ers) | USDA Economic Research Service |  |  | ● |  |  |  |  | 2015–2025 | Monthly | Loaded |
+| [Quick Stats crops](#usda_nass) | USDA NASS | ● | ● | ● |  |  |  |  | 1990–2024 | Business days | Loaded |
 | [Census geography (Gazetteer, boundaries, delineations)](#census_geo) | U.S. Census Bureau and OMB | ● | ● | ● | ● | ● | ● | ● | 1990–2025 | Monthly | Partly loaded |
 
 Other areas: Census regions and divisions and county subdivisions (PEP), CPI and average-price areas (BLS), BEA state metro/nonmetro portions, EIA PADDs and cities, reviewed law-enforcement agencies (FBI).
@@ -61,7 +62,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `raw_census.acs_datasets`, `raw_census.acs_tables`, `raw_census.acs_variables`, `control.acs_ingestion_slices`
 - **Silver:** `silver_census.observation_revision`, `silver_census.fact_demographics`
 - **Gold:** `gold_census.rpt_acs_observations (partitioned by year)`, `gold_census.mv_acs_latest`, `gold_census.fact_acs_observation`, `gold_census.acs_tract_comparable`, `gold_census.dim_acs_table`, `gold_census.dim_acs_variable`
-- **Status (2026-10-31):** Partly loaded. Nation, state and county: every year believed loaded. Places 2009-2023 history confirmed loaded (10-31 map check). Tracts: wide reload running newest to oldest, 2019-2024 done, 2018 queued (10-31). Metro: 2024 first run failed on a ledger check (fix queued), 2005-2023 backfill queued behind it.
+- **Status (live count 2026-10-31):** Partly loaded. 5-year: 2009–2024 at nation, state, county, place and tract. 1-year: 2005–2024 at nation, state, county and place (19 releases; the Bureau published no standard 2020 1-year). Metro: 2022–2024 so far; the metro backfill (2024 back to 2005) and the tract wide reload were running at the count.
 
 <a id="census_decennial"></a>
 ### Census 2000 and 1990 (`CENSUS_DECENNIAL`)
@@ -76,7 +77,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `raw_census.acs_variables`, `control.acs_ingestion_slices`
 - **Silver:** `silver_census.observation_revision`, `silver_census.fact_demographics`
 - **Gold:** `gold_census.rpt_acs_observations (2000, 1990 partitions)`
-- **Status (2026-10-31):** Awaiting live count. Code merged into dev (10-26 onward). Whether both years are loaded on the warehouse awaits the live count.
+- **Status (live count 2026-10-31):** Partly loaded. 2000 SF1 and SF3 loaded at nation, state, county, place and tract. 1990 is not in the ingestion ledger yet.
 
 <a id="census_pep"></a>
 ### Population Estimates Program (`CENSUS_PEP`)
@@ -91,7 +92,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `silver_pep.release_load`
 - **Silver:** `silver_pep.pep_dataset`, `silver_pep.pep_release`, `silver_pep.observation_revision`, `silver_pep.fact_population_estimate`, `silver_pep.dim_measure`
 - **Gold:** `gold_pep.rpt_pep_observations`, `gold_pep.population_estimate_revision`, `gold_pep.population_estimate_latest`, `gold_pep.population_change`, `gold_pep.mv_pep_latest (view)`
-- **Status (2026-10-31):** Believed loaded. Believed loaded across vintages (in place before 10-26). Other areas = Census regions, divisions, county subdivisions.
+- **Status (live count 2026-10-31):** Loaded. County 1970–2025 (56 years), state 46 years, nation 36 years, place 2020–2025; about 1.56 million rows. No other-area rows (regions, divisions, county subdivisions) were seen.
 
 <a id="irs_migration"></a>
 ### SOI county-to-county migration (`IRS_MIGRATION`)
@@ -106,7 +107,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.irs_migration_file`
 - **Silver:** `silver_irs_migration.flow_revision`, `silver_irs_migration.fact_flow`, `silver_irs_migration.flow_quarantine`
 - **Gold:** `gold_irs_migration.flow_revision`, `gold_irs_migration.flow_latest`, `gold_irs_migration.total_observation_revision`, `gold_irs_migration.total_observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. County 2019–2023, 468,528 rows.
 
 ## Work, income and business
 
@@ -123,7 +124,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `raw_bls.bls_datasets`, `raw_bls.bls_series`, `control.bls_ingestion_slices`
 - **Silver:** `silver_bls.observation_revision`, `silver_bls.fact_labor_statistics`
 - **Gold:** `gold_bls.rpt_bls_observations`, `gold_bls.mv_bls_latest`, `gold_bls.fact_bls_observation`, `gold_bls.provider_annual_average`, `gold_bls.calendar_window_observation`, `gold_bls.derived_calendar_rollup`, `gold_bls.dim_bls_series / measure / survey`
-- **Status (2026-10-31):** Believed loaded. Believed loaded (in place before 10-26). Places = LAUS cities only; Other = CPI/average-price regions and divisions.
+- **Status (live count 2026-10-31):** Loaded. 1990–2026 at county, metro, state and nation, plus BLS's own areas (regions from 1990, divisions from 2017). No place-level rows were seen.
 
 <a id="bls_qcew"></a>
 ### Quarterly Census of Employment and Wages (`BLS_QCEW`)
@@ -138,7 +139,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.bls_qcew_slice`
 - **Silver:** `silver_bls_qcew.observation_revision`, `silver_bls_qcew.fact_observation`, `silver_bls_qcew.dim_industry`, `silver_bls_qcew.dim_measure`
 - **Gold:** `gold_bls_qcew.observation_revision`, `gold_bls_qcew.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Partly loaded. Only 2025–2026 is loaded; the registry declares 2014–2025.
 
 <a id="census_cbp"></a>
 ### County Business Patterns (`CENSUS_CBP`)
@@ -153,7 +154,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.census_cbp_file`
 - **Silver:** `silver_census_cbp.observation_revision`, `silver_census_cbp.fact_observation`
 - **Gold:** `gold_census_cbp.observation_revision`, `gold_census_cbp.observation_latest`, `gold_census_cbp.sector_definition`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. 2016–2023.
 
 <a id="bea"></a>
 ### Regional economic accounts (`BEA`)
@@ -168,7 +169,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.bea_table_capture`
 - **Silver:** `silver_bea.observation_revision`, `silver_bea.fact_observation`, `silver_bea.dim_line`
 - **Gold:** `gold_bea.observation_revision`, `gold_bea.observation_latest`
-- **Status (2026-10-31):** Believed loaded. Loaded; metro income and GDP summed from counties (918 of 925 metros for 2023; Connecticut's 7 metros 2024 only). Metro price parities are BEA's own. Other = BEA metro/nonmetro state portions.
+- **Status (live count 2026-10-31):** Loaded. 1969–2024 at county, metro, state and nation; BEA's state metro/nonmetro portions 2008–2024; about 5.7 million rows. Metro income and GDP are summed from counties (918 of 925 metros for 2023; Connecticut's 7 metros 2024 only).
 
 <a id="census_saipe_sahie"></a>
 ### SAIPE and SAHIE (`CENSUS_SAIPE_SAHIE`)
@@ -183,7 +184,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.census_sae_slice`
 - **Silver:** `silver_census_sae.observation_revision`, `silver_census_sae.fact_estimate`, `silver_census_sae.dim_measure`
 - **Gold:** `gold_census_sae.estimate_revision`, `gold_census_sae.estimate_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Partly loaded. Only 2022–2024 is loaded; the registry declares 1989–2024.
 
 <a id="census_lodes"></a>
 ### LEHD Origin-Destination Employment Statistics (`CENSUS_LODES`)
@@ -198,7 +199,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.census_lodes_slice`, `control.census_lodes_file`
 - **Silver:** `silver_census_lodes.fact_area`, `silver_census_lodes.fact_flow`
 - **Gold:** `gold_census_lodes.observation_revision`, `gold_census_lodes.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count. The scheduled run captures only the newest year.
+- **Status (live count 2026-10-31):** Partly loaded. Only 2023 is loaded; the registry declares 2002–2023. The scheduled run captures only the newest year.
 
 ## Housing
 
@@ -215,7 +216,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.census_bps_slice`
 - **Silver:** `silver_census_bps.observation_revision`, `silver_census_bps.fact_observation`, `silver_census_bps.dim_measure`
 - **Gold:** `gold_census_bps.observation_revision`, `gold_census_bps.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Partly loaded. Only 2026 is loaded; the registry declares 2000–2026. No place-level rows.
 
 <a id="fhfa_hpi"></a>
 ### House Price Index (annual, all transactions) (`FHFA_HPI`)
@@ -230,7 +231,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.fhfa_hpi_file`
 - **Silver:** `silver_fhfa_hpi.observation_revision`, `silver_fhfa_hpi.fact_observation`
 - **Gold:** `gold_fhfa_hpi.observation_revision`, `gold_fhfa_hpi.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. County 1975–2025.
 
 <a id="hud_fmr_il"></a>
 ### Fair Market Rents and income limits (`HUD_FMR_IL`)
@@ -245,7 +246,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.hud_fmr_il_api_capture`, `control.hud_fmr_il_file`
 - **Silver:** `silver_hud_fmr_il.observation_revision`, `silver_hud_fmr_il.fact_observation`
 - **Gold:** `gold_hud_fmr_il.observation_revision`, `gold_hud_fmr_il.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. Fiscal years 2026–2027.
 
 ## Prices and the national economy
 
@@ -262,7 +263,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.eia_read`, `control.eia_page`
 - **Silver:** `silver_eia.price_revision`, `silver_eia.fact_retail_price`
 - **Gold:** `gold_eia.observation_revision`, `gold_eia.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count. States = the few EIA publishes; Other = PADDs and EIA cities.
+- **Status (live count 2026-10-31):** Loaded. 2015–2026.
 
 <a id="fred"></a>
 ### FRED national indicators (`FRED`)
@@ -277,7 +278,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `raw_fred.fred_datasets`, `raw_fred.fred_series`, `control.fred_ingestion_slices`
 - **Silver:** `silver_fred.observation_revision`, `silver_fred.fact_economic_indicators`
 - **Gold:** `gold_fred.rpt_fred_observations`, `gold_fred.mv_fred_latest`, `gold_fred.fact_fred_observation`, `gold_fred.dim_fred_series`
-- **Status (2026-10-31):** Believed loaded. Believed loaded (in place before 10-26).
+- **Status (live count 2026-10-31):** Loaded. 1970–2026, national.
 
 ## Crime and hazards
 
@@ -294,7 +295,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.fbi_ucr_release`
 - **Silver:** `silver_fbi.observation_revision`, `silver_fbi.fact_crime_observation`, `silver_fbi.dim_agency(_version)`, `silver_fbi.agency_geography_relationship`, `silver_fbi.fact_reporting_participation`
 - **Gold:** `gold_fbi.crime_observation`, `gold_fbi.latest_release_observation`, `gold_fbi.county_rollup`, `gold_fbi.latest_county_rollup`, `gold_fbi.reporting_coverage`, `gold_fbi.agency_observation_area_filter`
-- **Status (2026-10-31):** Believed loaded. Believed loaded. Other = reviewed law-enforcement agencies (registry: six Wisconsin agencies).
+- **Status (live count 2026-10-31):** Loaded. Agency, state and nation 1990–2023; county rollup 1990–2023 (33 years). The agencies are the six-agency Wisconsin sample in the registry, so few counties get a rate; a nationwide bulk load is planned.
 
 <a id="fema_nri"></a>
 ### National Risk Index and disaster declarations (`FEMA_NRI`)
@@ -309,7 +310,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.fema_nri_run`, `control.fema_nri_page`
 - **Silver:** `silver_fema_nri.nri_fact`, `silver_fema_nri.declaration_revision`
 - **Gold:** `gold_fema_nri.nri_observation`, `gold_fema_nri.declaration_count`, `gold_fema_nri.observation_revision`, `gold_fema_nri.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. County 1959–2026.
 
 ## Health
 
@@ -326,7 +327,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.cdc_dataset_release`
 - **Silver:** `silver_cdc.observation_revision`, `silver_cdc.fact_health_observation`, `silver_cdc.dim_measure`, `silver_cdc.dim_stratum`, `silver_cdc.dim_dataset_release`
 - **Gold:** `gold_cdc.health_observation`, `gold_cdc.latest_release_observation`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count. Years shown are indicative; CDI spans vary by indicator.
+- **Status (live count 2026-10-31):** Loaded. Nation and state 2015–2023, county 2022–2023. The catalog watermark is the publisher's last-update time (2026-06-04 UTC), stored as Unix seconds.
 
 ## Environment
 
@@ -343,7 +344,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.epa_aqs_file`
 - **Silver:** `silver_epa_aqs.monitor_fact`
 - **Gold:** `gold_epa_aqs.monitor_observation`, `gold_epa_aqs.observation_revision`, `gold_epa_aqs.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. 2020–2024.
 
 <a id="noaa_normals"></a>
 ### U.S. Climate Normals 1991-2020 (`NOAA_NORMALS`)
@@ -358,7 +359,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.noaa_normals_file`
 - **Silver:** `silver_noaa_normals.station`, `silver_noaa_normals.station_normal`
 - **Gold:** `gold_noaa_normals.station_observation`, `gold_noaa_normals.observation_revision`, `gold_noaa_normals.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. The 1991–2020 normals (period 2020).
 
 ## Schools and broadband
 
@@ -375,7 +376,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.nces_ccd_file`
 - **Silver:** `silver_nces_ccd.school_directory`, `silver_nces_ccd.school_location`, `silver_nces_ccd.school_count`
 - **Gold:** `gold_nces_ccd.school_placement`, `gold_nces_ccd.school_observation`, `gold_nces_ccd.observation_revision`, `gold_nces_ccd.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. 2023–2024 at county and state.
 
 <a id="fcc_bdc"></a>
 ### National Broadband Map availability (`FCC_BDC`)
@@ -390,7 +391,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.fcc_bdc_read`, `control.fcc_bdc_file`
 - **Silver:** `silver_fcc_bdc.availability_row`
 - **Gold:** `gold_fcc_bdc.availability_observation`, `gold_fcc_bdc.observation_revision`, `gold_fcc_bdc.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. 2024–2025, including places (384,108 place rows).
 
 ## Rural and farm
 
@@ -407,7 +408,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.usda_ers_file`
 - **Silver:** `silver_usda_ers.observation_revision`, `silver_usda_ers.fact_observation`
 - **Gold:** `gold_usda_ers.observation_revision`, `gold_usda_ers.observation_latest`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. Five vintages, 2015–2025.
 
 <a id="usda_nass"></a>
 ### Quick Stats crops (`USDA_NASS`)
@@ -422,7 +423,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.usda_nass_release`, `control.usda_nass_slice`
 - **Silver:** `silver_nass.observation_revision`, `silver_nass.fact_crop_observation`, `silver_nass.dim_commodity / statistic / domain`
 - **Gold:** `gold_nass.crop_series`, `gold_nass.crop_observation`, `gold_nass.latest_release_observation`
-- **Status (2026-10-31):** Awaiting live count. Awaiting live count.
+- **Status (live count 2026-10-31):** Loaded. 1990–2024.
 
 ## Reference geography
 
@@ -439,7 +440,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `raw_capture.response_capture`
 - **Silver:** `silver_ref.dim_geo_entity`, `silver_ref.dim_geo_entity_version`, `silver_ref.dim_geo_geometry_version`, `silver_ref.bridge_geo_relationship_version`, `silver_ref.tract_decade_crosswalk`, `silver_ref.geography_resolution`, `silver_ref.dim_time`
 - **Gold:** `gold_glossary.geo_boundary`, `gold_glossary.geo_relationship`, `gold_glossary.geo_search`, `gold.tile_boundary / tile_tract (Martin tiles)`
-- **Status (2026-10-31):** Partly loaded. Map tiles: metro boundaries 2023 (925 metros), place boundaries 2025 only (32,629). Historical place boundaries 2010-2024 are a recorded gap.
+- **Status (live count 2026-10-31):** Partly loaded. One boundary vintage each: state, county, tract and place 2025; metro 2023 (925); ZCTA 2020. Historical place boundaries 2010–2024 are a recorded gap.
 
 ## Keeping this current
 

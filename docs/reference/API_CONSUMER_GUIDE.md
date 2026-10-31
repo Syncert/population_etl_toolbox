@@ -2145,10 +2145,13 @@ analytical routes never needs them. Every response is `private, no-store`.
   tables it lands in), each joined to what `gold_glossary.dim_metric_catalog`
   holds for it now: metric counts, served grains, newest watermark.
 - `GET /api/v1/admin/warehouse/coverage/{source_code}` — the years held at
-  each grain and the rows behind them, measured from the source's serving
-  relation. Cached six hours per API process; `?refresh=true` measures now. A
-  measurement that exceeds 20 s answers `status: "timed_out"` instead of
-  failing. Census ACS is read from its year partitions, not scanned.
+  each grain and the rows behind them, measured from the source's as-released
+  relation (CDC, FBI UCR and USDA NASS: their newest-release relation),
+  grouped by raw grain and period values. Census PEP is measured on
+  POPESTIMATE, and Census ACS is read from its year partitions, not scanned.
+  Kept per API process until the source's catalog rows change, at most seven
+  days; `?refresh=true` measures now. A measurement that exceeds 20 s answers
+  `status: "timed_out"` instead of failing.
 - `GET /api/v1/admin/warehouse/schema` — every warehouse table and view with
   its columns, keys, foreign keys and view dependencies, read from the
   Postgres catalog (cached five minutes) and laid out as one diagram per
