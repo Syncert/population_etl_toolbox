@@ -11,6 +11,12 @@ An ACS entry is written once with a ``{dataset}`` placeholder in both codes
 and expands to one pairing per listed dataset, ``<ratio_id>:<dataset>``, so a
 5-year count is only ever divided by a 5-year total.
 
+An ``agency_rate`` entry (ADR-0012) is a county crime rate computed the
+FBI's way, in gold, from agency reports: it names the count it divides, the
+FBI rate it reads beside (``reads_beside``, published only for states and the
+nation) and the one geography level it describes. It recomputes no rate the
+provider publishes at that level, so ADR-0009 rule 5 is not at stake.
+
 Only an ``approved`` pairing is served. ``DERIVED_RATIOS_SERVE_DRAFTS=1``
 lets a local stack serve drafts too, each marked with its status, so the
 owner can review them on the running site before approving them.
@@ -24,7 +30,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-KINDS = frozenset({"share", "per_capita", "provider_rate"})
+KINDS = frozenset({"share", "per_capita", "provider_rate", "agency_rate"})
 STATUSES = frozenset({"draft", "approved", "deprecated", "needs_review"})
 SCALES = frozenset({1, 100, 1000, 100000})
 DATASET_PLACEHOLDER = "{dataset}"
@@ -67,6 +73,10 @@ class RatioPairing:
     version: int
     limitations: tuple[str, ...]
     citations: tuple[str, ...]
+    #: ``agency_rate`` only: the provider rate this reads beside, and the
+    #: levels it is computed for.
+    reads_beside: str | None = None
+    geo_levels: tuple[str, ...] = ()
 
     @property
     def derived(self) -> bool:
@@ -132,7 +142,23 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
         if entry["scale"] not in SCALES:
             raise RatioRegistryError(f"{rid} has scale {entry['scale']!r}")
         provider = kind == "provider_rate"
-        if provider != bool(entry.get("provider_rate")) or provider == bool(
+        agency = kind == "agency_rate"
+        if agency:
+            if (
+                entry.get("denominator")
+                or entry.get("provider_rate")
+                or not entry.get("reads_beside")
+                or entry.get("geo_levels") != ["COUNTY"]
+                or entry["scale"] != 100000
+                or not entry["numerator"].startswith("FBI_UCR:")
+            ):
+                raise RatioRegistryError(
+                    f"{rid}: an agency_rate divides an FBI count by its own "
+                    "agencies' populations, per 100,000, for counties only; it "
+                    "names the FBI rate it reads beside and no denominator "
+                    "(ADR-0012)"
+                )
+        elif provider != bool(entry.get("provider_rate")) or provider == bool(
             entry.get("denominator")
         ):
             raise RatioRegistryError(
@@ -153,7 +179,9 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
         for ratio_id, numerator, denominator, dataset in _expand(entry):
             if ratio_id in pairings:
                 raise RatioRegistryError(f"{ratio_id} has two entries")
-            other = denominator or entry.get("provider_rate")
+            other = (
+                denominator or entry.get("provider_rate") or entry.get("reads_beside")
+            )
             if _program(numerator) != _program(other):
                 raise RatioRegistryError(
                     f"{ratio_id} pairs {numerator} with {other}: numerator and "
@@ -181,10 +209,18 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 version=int(entry["version"]),
                 limitations=tuple(entry.get("limitations", ())),
                 citations=tuple(entry["citations"]),
+                reads_beside=entry.get("reads_beside"),
+                geo_levels=tuple(entry.get("geo_levels", ())),
             )
     rated = {p.numerator for p in pairings.values() if p.kind == "provider_rate"}
     for pairing in pairings.values():
-        if pairing.derived and pairing.numerator in rated:
+        # An agency rate is computed only where the provider publishes no
+        # rate (ADR-0012), so it recomputes nothing beside the provider's.
+        if (
+            pairing.derived
+            and pairing.kind != "agency_rate"
+            and pairing.numerator in rated
+        ):
             raise RatioRegistryError(
                 f"{pairing.ratio_id} recomputes a rate its provider publishes "
                 f"for {pairing.numerator} (ADR-0009 rule 5)"

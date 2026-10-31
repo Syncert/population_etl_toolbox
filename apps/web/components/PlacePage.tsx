@@ -77,9 +77,9 @@ import type { NearbyEntry, NearbyGroups, RelatedResponse } from "../lib/placeRel
 import { rankSentence, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
-import { getDerivedObservations, getDerivedRatios, pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
+import { agencyRateFor, getDerivedObservations, getDerivedRatios, pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
 import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
-import { DerivedValue, ProviderRateNote, ViewToggle } from "./DerivedView";
+import { AgencyRateValue, DerivedValue, ProviderRateNote, ViewToggle } from "./DerivedView";
 import type { GeoLevel } from "../lib/urlState";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
@@ -877,6 +877,7 @@ function Chapter({
     void inPool(tasks, REQUEST_CONCURRENCY);
     return () => controller.abort();
   }, [view, measured, levels, pairings]);
+  const countyRates = resolved.headline.some((measure) => measure.metric && agencyRateFor(pairings, measure.metricCode));
   const trendMeasure = resolved.headline.find((measure) => measure.measure.id === chapter.trend.measureId) || null;
   const primary = trendMeasure?.metric ? trendMeasure : resolved.headline.find((measure) => measure.metric) || null;
   const primaryRow = primary && own ? answers.get(answerKey(primary.metricCode, own.geoId))?.row ?? null : null;
@@ -927,7 +928,17 @@ function Chapter({
       {resolved.stateContext ? (
         <p className="notice" data-testid={`chapter-${chapter.id}-state-context`}>
           State context: the program publishes these offenses for states and the nation, not for counties.
-          The figures below are {state ? stateName(state) : "the state"}&apos;s, not {county ? countyName(county) : "this county"}&apos;s.
+          {countyRates && pageLevel === "COUNTY" ? (
+            <>
+              {" "}The figures for {state ? stateName(state) : "the state"} and the nation are the FBI&apos;s. The figure for{" "}
+              {county ? countyName(county) : "this county"} is computed here from the reports of the agencies that serve only it,
+              and says how many people those agencies cover.
+            </>
+          ) : (
+            <>
+              {" "}The figures below are {state ? stateName(state) : "the state"}&apos;s, not {county ? countyName(county) : "this county"}&apos;s.
+            </>
+          )}
         </p>
       ) : null}
       <ViewToggle
@@ -950,6 +961,7 @@ function Chapter({
             county={county}
             pairing={pairingFor(pairings, measure.metricCode, view)}
             providerRate={providerRateFor(pairings, measure.metricCode)}
+            agencyRate={agencyRateFor(pairings, measure.metricCode)}
             derived={derived}
           />
         ))}
@@ -1033,6 +1045,27 @@ function Chapter({
   );
 }
 
+/**
+ * The county's newest month of a crime rate computed from its agencies'
+ * reports (ADR-0012), read once for the card that shows it.
+ */
+function CountyAgencyRate({ pairing, geoId, testId }: { pairing: DerivedRatioPairing; geoId: string; testId: string }) {
+  const [answer, setAnswer] = useState<DerivedAnswer>({ row: null, pending: true });
+  useEffect(() => {
+    const controller = new AbortController();
+    setAnswer({ row: null, pending: true });
+    getDerivedObservations({ ratio_id: pairing.ratio_id, geo_id: geoId, newest_per_geography: true, limit: 1 }, { signal: controller.signal })
+      .then((payload) => {
+        if (!controller.signal.aborted) setAnswer({ row: (payload.items || []).find((item) => item.geo_id === geoId) || null });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setAnswer({ row: null, error: apiErrorMessage(error) });
+      });
+    return () => controller.abort();
+  }, [pairing.ratio_id, geoId]);
+  return <AgencyRateValue pairing={pairing} {...answer} testId={testId} />;
+}
+
 const VIEWABLE: readonly ViewChoice[] = ["per_capita", "share"];
 
 const PENDING_ANSWER: LevelAnswer = Object.freeze({ row: null, pending: true }) as LevelAnswer;
@@ -1057,6 +1090,7 @@ function HeadlineCard({
   county,
   pairing,
   providerRate,
+  agencyRate,
   derived,
 }: {
   measure: ResolvedPlaceMeasure;
@@ -1069,6 +1103,8 @@ function HeadlineCard({
   pairing: DerivedRatioPairing | null;
   /** The pairing that names this metric as the provider's own rate, if any. */
   providerRate: DerivedRatioPairing | null;
+  /** The county rate computed from agency reports beside this FBI rate, if served (ADR-0012). */
+  agencyRate: DerivedRatioPairing | null;
   derived: Map<string, DerivedAnswer>;
 }) {
   if (!measure.metric) {
@@ -1100,7 +1136,13 @@ function HeadlineCard({
           {stateContext && pageLevel === "COUNTY" ? (
             <tr data-testid={`card-${measure.measure.id}-county`}>
               <th scope="row">{county ? countyName(county) : "This county"}</th>
-              <td colSpan={2}>Not published at county grain</td>
+              <td colSpan={2}>
+                {agencyRate && county?.geo_id ? (
+                  <CountyAgencyRate pairing={agencyRate} geoId={String(county.geo_id)} testId={`card-${measure.measure.id}-county-agency-rate`} />
+                ) : (
+                  "Not published at county grain"
+                )}
+              </td>
             </tr>
           ) : null}
           {card.rows.map((entry) => (
