@@ -64,3 +64,16 @@ derived value, its unit and its margin of error is the API's.
 ## Catalog
 
 WEB-145 (frontend unit, frontend browser).
+
+## Evidence (cloud session, Linux, 2026-10-31)
+
+- `npm run test:unit`: 881 passed (6 new in `derived-views.test.js`).
+- `npm run lint`, `npm run typecheck`, `next build`: pass.
+- `npx playwright test`: 256 passed on this branch, 5 new in
+  `per-capita-toggle.spec.js`; 257 passed on a trial merge with D-2 (#177),
+  whose scan for variable codes runs after every browser test.
+- Screenshots (browser fixtures): `docs/incidents/screenshots-2026-10-31-per-capita/`.
+- Not verified here: the running site. A-3 serves pairings only with
+  `DERIVED_RATIOS_SERVE_DRAFTS=1`; until A-3's follow-up accepts FBI's
+  `reported` status, the live FBI pairing answers `suppressed_input`
+  (the place cards show the FBI rate itself, so they are unaffected).
