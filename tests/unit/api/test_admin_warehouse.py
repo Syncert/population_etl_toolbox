@@ -479,3 +479,10 @@ def test_schema_route_returns_the_atlas(monkeypatch: pytest.MonkeyPatch) -> None
     body = response.json()
     assert body["stats"]["tables"] == 1
     assert body["relations"][0]["name"] == "silver_ref.dim_geo_entity"
+
+
+def test_the_fbi_coverage_relation_is_one_the_schema_task_requires() -> None:
+    """Covers: API-183 — a warehouse without the gold view is repaired first."""
+    from data_ingestion_toolbox.fbi_ucr.schema import REQUIRED_RELATIONS
+
+    assert coverage._FROM_SQL["FBI_UCR"] in REQUIRED_RELATIONS
