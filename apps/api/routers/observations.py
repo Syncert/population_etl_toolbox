@@ -13,6 +13,11 @@ from apps.api.services.neutral_observations_service import (
     list_metric_periods,
     list_neutral_observations,
 )
+from apps.api.schemas.derived import DerivedRatioListResponse
+from apps.api.services.derived_ratio_service import (
+    UnknownRatio,
+    list_derived_observations,
+)
 from apps.api.services.observations_service import (
     list_latest_observations,
     list_timeseries_observations,
@@ -196,6 +201,94 @@ def get_neutral_observations(
     if response is None:
         raise HTTPException(status_code=404, detail=METRIC_NOT_FOUND_DETAIL)
     return response
+
+
+@router.get(
+    "/derived",
+    response_model=DerivedRatioListResponse,
+    name="get_derived_observations",
+    summary="Per-capita and share values from a reviewed pairing",
+    responses=NOT_FOUND,
+)
+def get_derived_observations(
+    ratio_id: str = Query(
+        ...,
+        min_length=1,
+        max_length=200,
+        description=(
+            "A pairing from /catalog/derived-ratios, such as "
+            "poverty_share:acs5. Only an approved pairing is served."
+        ),
+    ),
+    scope: Literal["latest", "as_released"] = Query("latest"),
+    release: Optional[str] = Query(None, max_length=100),
+    period_start: Optional[str] = Query(None, max_length=10),
+    geo_id: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length
+    ),
+    geo_level: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_level"].max_length
+    ),
+    state_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["state_fips"].max_length
+    ),
+    county_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["county_fips"].max_length
+    ),
+    year_from: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_from"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_from"].maximum,
+    ),
+    year_to: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_to"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_to"].maximum,
+    ),
+    newest_per_geography: bool = Query(False),
+    newest_release_per_period: bool = Query(False),
+    limit: int = Query(100, ge=1, le=5000),
+    offset: int = Query(0, ge=0, le=100000),
+    db: Session = Depends(get_db_session_dep),
+) -> DerivedRatioListResponse:
+    """A per-capita or share value for each numerator row (ADR-0009).
+
+    The numerator's rows are read exactly as ``/observations`` reads them
+    with the same parameters, and each is divided by the denominator row
+    with the same geography, period and release -- never another period,
+    never another program. A row that cannot be computed carries no value
+    and its ``unavailable_reason``. ACS rows carry a margin of error by the
+    Census Bureau's formulas, with the method named. A pairing whose provider
+    publishes the rate answers the provider's own rows, ``derived: false``.
+    """
+    if year_from is not None and year_to is not None and year_from > year_to:
+        raise HTTPException(status_code=422, detail=REVERSED_YEAR_DETAIL)
+    try:
+        return list_derived_observations(
+            db,
+            ratio_id=ratio_id,
+            scope=scope,
+            release=release,
+            period_start=period_start,
+            filters={
+                "geo_id": geo_id,
+                "geo_level": geo_level,
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "year_from": year_from,
+                "year_to": year_to,
+            },
+            limit=limit,
+            offset=offset,
+            newest_per_geography=newest_per_geography,
+            newest_release_per_period=newest_release_per_period,
+        )
+    except UnknownRatio as exc:
+        raise HTTPException(status_code=404, detail="ratio_id not found") from exc
+    except NeutralQueryError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
 
 
 @router.get(

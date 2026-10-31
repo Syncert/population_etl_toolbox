@@ -782,6 +782,59 @@ def _list_neutral_observations(
     )
 
 
+def observations_for_geographies(
+    db: Session,
+    metric_code: str,
+    scope: str,
+    release: Optional[str],
+    geo_ids: Sequence[str],
+) -> Optional[list[NeutralObservation]]:
+    """Every served row of one metric for a set of geographies, every period.
+
+    The partner read of a derived ratio (ADR-0009): the numerator's page is
+    read through ``list_neutral_observations`` with the reader's own filters,
+    and the denominator is read here for exactly the geographies on that
+    page, from the same scope and release pin. Every period is returned so
+    the caller can tell a denominator published for another period from one
+    not published at all. ``None`` for a metric the glossary does not hold.
+    """
+    if scope not in (SCOPE_LATEST, SCOPE_AS_RELEASED):
+        raise NeutralQueryError("scope must be latest or as_released")
+    metric = resolve_metric(db, metric_code)
+    if metric is None:
+        return None
+    if not geo_ids:
+        return []
+    dispatch = dispatch_for_metric(metric)
+    conditions, params = _metric_conditions(dispatch, metric_code, metric)
+    conditions.append(f"{dispatch.geo_id_expression} = ANY(:geo_ids)")
+    params["geo_ids"] = list(geo_ids)
+    if release:
+        conditions.append(f"{dispatch.release_expression} = :release")
+        params["release"] = release
+    relation = (
+        dispatch.latest_relation
+        if scope == SCOPE_LATEST
+        else dispatch.released_relation
+    )
+    order = dispatch.latest_order if scope == SCOPE_LATEST else dispatch.released_order
+    require_relation(db, relation)
+    query = text(
+        f"""
+        SELECT
+            {_select_sql(dispatch)}
+        FROM {relation}
+        WHERE {" AND ".join(conditions)}
+        ORDER BY {", ".join(order)}
+        """
+    )
+    display_name = metric.get("metric_display_name")
+    return [
+        _observation_from(row, dispatch, metric_code, display_name)
+        for row in db.execute(query, params).mappings().all()
+    ]
+
+
 def _no_calendar_figures(metric_code: str, time_grain: str) -> str:
     return (
         f"{metric_code} has no {time_grain} figures: its provider publishes "
