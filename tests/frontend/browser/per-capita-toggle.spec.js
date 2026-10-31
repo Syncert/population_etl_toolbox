@@ -46,7 +46,8 @@ test("reported violent crime: a county reads against its state on the FBI's own 
   await expect(rate).toContainText("computed from agency reports");
   await expect(page.getByTestId("card-violent-crime-rate-county-agency-rate-coverage")).toHaveText(" · covers 115,648 people, 100 % of the population its agencies serve");
   await expect(rate).toHaveAttribute("title", "2 reporting agencies; 1 agency left out because it also serves other counties");
-  await expect(rate.locator("[data-pairing-status='draft']")).toHaveText("(Draft view awaiting review)");
+  // Approved by Nick with ADR-0012, so no draft mark.
+  await expect(rate.locator("[data-pairing-status='draft']")).toHaveCount(0);
   await expect(county).not.toContainText("Not published at county grain");
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("Wisconsin");
   const denominator = page.getByTestId("card-violent-crime-rate-denominator");
