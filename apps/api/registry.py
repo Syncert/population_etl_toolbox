@@ -391,6 +391,13 @@ _UNION_PERIOD_START = "COALESCE(duration_start, observation_date)::TEXT"
 _UNION_PERIOD_END = "COALESCE(duration_end, observation_date)::TEXT"
 _GEO_ID_FILTER = ("geo_id", "geo_id = :geo_id")
 _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
+#: The same filter for a relation whose ``geo_level`` is already the
+#: vocabulary word: ACS serving writes it through ``gold_glossary.geo_grain``,
+#: which upper-cases and trims, and the bound value is normalised by
+#: ``normalize_geo_level`` before it is bound. Plain equality is the same
+#: answer, and unlike ``UPPER(geo_level)`` an index can serve it, which is what
+#: keeps an all-county read from scanning every tract row of the metric.
+_CANONICAL_GEO_LEVEL_FILTER = ("geo_level", "geo_level = :geo_level")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
@@ -607,7 +614,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             filter_conditions=(
                 _GEO_ID_FILTER,
-                _GEO_LEVEL_FILTER,
+                _CANONICAL_GEO_LEVEL_FILTER,
                 _STATE_FIPS_FILTER,
                 _COUNTY_FIPS_FILTER,
                 ("year_from", _DATE_YEAR_FROM),
