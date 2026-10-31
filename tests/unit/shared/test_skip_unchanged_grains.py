@@ -155,3 +155,32 @@ def test_a_tract_or_place_step_is_published_state_by_state() -> None:
     for grain in ("TRACT", "PLACE"):
         states = sorted(params[3] for params in calls if list(params[2]) == [grain])
         assert states == ["10", "55"]
+
+
+def test_each_state_session_opens_its_own_connection() -> None:
+    """Covers: DB-065 -- the hook stores its last connection; threads must not share one.
+
+    `PostgresHook.get_conn` assigns the new connection to `self.conn` and
+    returns that attribute, so two threads calling it on one hook can both be
+    handed the second connection ("the connection cannot be re-entered
+    recursively" on the internal stack, 2026-10-31).
+    """
+    import threading
+    import time as clock
+
+    owners: dict[int, set[int]] = {}
+    # Every connection kept alive, so no id is reused by a later object.
+    opened: list[object] = []
+
+    class RacyHook(_Hook):
+        def get_conn(self):
+            self.conn = super().get_conn()
+            clock.sleep(0.01)  # widen the window the real hook leaves open
+            conn = self.conn
+            opened.append(conn)
+            owners.setdefault(id(conn), set()).add(threading.get_ident())
+            return conn
+
+    hook = RacyHook(changed={"TRACT"})
+    refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
+    assert all(len(threads) == 1 for threads in owners.values())

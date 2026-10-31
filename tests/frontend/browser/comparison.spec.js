@@ -149,11 +149,21 @@ const metricsBySource = {
   ],
 };
 
+// The plain labels `/comparison` and its preflight serve beside each code
+// (A-2); a reader sees these, never the code (WEB-144).
+const PAIR_LABELS = {
+  metric_label_a: "Total population (survey estimate)",
+  metric_label_status_a: "draft",
+  metric_label_b: "Resident population estimate",
+  metric_label_status_b: "draft",
+};
+
 // The served ComparisonPreflightResponse for a comparable pair: one rule the
 // publication leaves unverifiable, which is a caveat rather than a block.
 const comparableVerdict = {
   metric_code_a: METRIC_A,
   metric_code_b: METRIC_B,
+  ...PAIR_LABELS,
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   comparable: true,
@@ -197,6 +207,7 @@ const blockedVerdict = {
 const comparisonPayload = {
   metric_code_a: METRIC_A,
   metric_code_b: METRIC_B,
+  ...PAIR_LABELS,
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   units_a: null,
@@ -383,12 +394,13 @@ test("a comparable pair is preflighted, then compared with inputs and derivation
   expect(request.geo_level).toBe("COUNTY");
   await expect(workspace).toHaveAttribute("data-row-count", "2");
 
-  // Each side keeps its own identity, published value, and period.
+  // Each side keeps its own identity, published value, and period, named by
+  // the plain label the API served for it (WEB-144).
   const table = page.getByTestId("comparison-table-panel");
-  await expect(table.getByRole("columnheader", { name: METRIC_A, exact: true })).toBeVisible();
-  await expect(table.getByRole("columnheader", { name: METRIC_B, exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: PAIR_LABELS.metric_label_a, exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: PAIR_LABELS.metric_label_b, exact: true })).toBeVisible();
   await expect(
-    table.getByRole("columnheader", { name: `${METRIC_A} period`, exact: true }),
+    table.getByRole("columnheader", { name: `${PAIR_LABELS.metric_label_a} period`, exact: true }),
   ).toBeVisible();
   await expect(table.getByRole("cell", { name: "561,504" })).toBeVisible();
   await expect(table.getByRole("cell", { name: "568,203" })).toBeVisible();

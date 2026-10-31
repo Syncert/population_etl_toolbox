@@ -46,7 +46,7 @@ import {
 } from "../lib/observationAccess";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
-import { displayMetricName } from "../lib/format";
+import { MetricName } from "./MetricName";
 import {
   DEFAULT_TEMPLATE_ID,
   PRODUCT_TEMPLATES,
@@ -605,7 +605,7 @@ function MeasureCard({
       <div data-testid={`measure-${measure.slot.id}`} data-available="false">
         <span>{measure.slot.label}</span>
         <strong>Not published</strong>
-        <small data-testid={`measure-reason-${measure.slot.id}`}>{measure.reason}</small>
+        <small data-testid={`measure-reason-${measure.slot.id}`} title={measure.lookedFor.join(", ")} data-looked-for={measure.lookedFor.join(" ")}>{measure.reason}</small>
       </div>
     );
   }
@@ -635,7 +635,7 @@ function MeasureCard({
       ) : null}
       <small>
         {/* The identity that answered, never only the slot's label. */}
-        {metric ? displayMetricName(metric) : measure.metricCode} · {measure.metricCode}
+        <MetricName metric={metric} code={measure.metricCode} />
       </small>
       <small>
         Source: {String(metric?.source_code ?? "not published")}

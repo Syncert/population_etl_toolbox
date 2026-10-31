@@ -17,7 +17,7 @@ verify:
 
 ## Status
 
-In progress (v1.0 build-out, item D-6). Branch `feat/web-per-capita-toggle`.
+Ready for review (v1.0 build-out, item D-6), 2026-10-31. Branch `feat/web-per-capita-toggle`.
 
 ## Goal
 
