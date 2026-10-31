@@ -4,8 +4,10 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+from apps.api.schemas.labels import PlainLabelled
 
-class DistinctiveMeasure(BaseModel):
+
+class DistinctiveMeasure(PlainLabelled):
     """One measure's within-parent percentile rank for one geography.
 
     Every field describes this one measure. Nothing here combines measures,
@@ -30,7 +32,7 @@ class DistinctiveMeasure(BaseModel):
     request: str
 
 
-class NotRankedMeasure(BaseModel):
+class NotRankedMeasure(PlainLabelled):
     metric_code: str
     reason: str
 

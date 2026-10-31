@@ -79,6 +79,8 @@ services:
       # whole internet.
       API_RATE_LIMIT_IDENTITY_PER_MINUTE: ${API_RATE_LIMIT_IDENTITY_PER_MINUTE:-30}
       API_ACCOUNT_CREATION_PER_HOUR: ${API_ACCOUNT_CREATION_PER_HOUR:-60}
+      # Show only reviewed plain metric labels (API-170); empty shows drafts.
+      METRIC_LABELS_REVIEWED_ONLY: ${METRIC_LABELS_REVIEWED_ONLY:-}
       # How recently an account must have signed in to delete itself.
       API_DELETION_FRESHNESS_SECONDS: ${API_DELETION_FRESHNESS_SECONDS:-600}
       # Per-account storage quotas (ADR-0005 s4).

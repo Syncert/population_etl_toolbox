@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.schemas.labels import PlainLabelled
+
 
 @dataclass(frozen=True)
 class FilterBound:
@@ -127,7 +129,7 @@ _READ_INSTEAD = (
 )
 
 
-class ObservationDashboard(BaseModel):
+class ObservationDashboard(PlainLabelled):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     source_code: Optional[str] = None
@@ -243,7 +245,7 @@ class ObservationDerivation(BaseModel):
     component_releases: list[str] = []
 
 
-class NeutralObservation(BaseModel):
+class NeutralObservation(PlainLabelled):
     """One observation from any completed source, semantics preserved.
 
     The core fields every source can fill honestly are typed; the source's
