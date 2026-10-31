@@ -18,8 +18,8 @@ verify:
 
 ## Status
 
-In progress, 2026-10-31 (built against contract-shaped fixtures; the live check
-waits for the API). The web side of
+In progress, 2026-10-31: built, merged and checked live for a city, a county
+and a state; blocked only on the tract page (D-4) for the tract check. The web side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
 contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](API_AGE_AND_SEX_STRUCTURE_PLAN.md)
@@ -155,5 +155,9 @@ exists.
 
 ## Checkpoint
 
-Next pickup: after the follow-up PR merges, the plan is ready for review;
-the tract check rides on the tract page (D-4).
+Blocked on D-4 (tract page), 2026-10-31. Everything else is built, merged
+(#223, #231) and checked live. The one open acceptance item is the live
+check of a Dane County tract, which needs a tract page to exist. When D-4
+lands: open a tract page, confirm the section renders with real values
+(including hatched and absent bands where the tract has them), record a
+screenshot here, and move this plan to `needs_review/`.
