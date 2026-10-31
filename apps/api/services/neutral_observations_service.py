@@ -440,6 +440,23 @@ def _observation_from(
     )
 
 
+def _release_condition(
+    dispatch: ObservationDispatch, release: str, params: dict[str, Any]
+) -> str:
+    """The condition pinning one release, binding its value into ``params``.
+
+    Where the release is an integer column served as text, a canonical
+    integer is matched on the column, so an index on it can serve the pin;
+    anything else is compared as text, which is the same answer.
+    """
+    column = dispatch.release_integer_column
+    if column and release.isdigit() and str(int(release)) == release:
+        params["release_number"] = int(release)
+        return f"{column} = :release_number"
+    params["release"] = release
+    return f"{dispatch.release_expression} = :release"
+
+
 def _newest_per_geography_source(
     dispatch: ObservationDispatch,
     relation: str,
@@ -727,8 +744,7 @@ def _list_neutral_observations(
     # records `""` for a release it does not pin -- was refused for sending no
     # release at all (API-124).
     if release:
-        conditions.append(f"{dispatch.release_expression} = :release")
-        params["release"] = release
+        conditions.append(_release_condition(dispatch, release, params))
 
     relation = (
         dispatch.latest_relation
@@ -833,8 +849,7 @@ def observations_for_geographies(
     conditions.append(f"{dispatch.geo_id_expression} = ANY(:geo_ids)")
     params["geo_ids"] = list(geo_ids)
     if release:
-        conditions.append(f"{dispatch.release_expression} = :release")
-        params["release"] = release
+        conditions.append(_release_condition(dispatch, release, params))
     relation = (
         dispatch.latest_relation
         if scope == SCOPE_LATEST

@@ -33,7 +33,7 @@ import { NEUTRAL_OBSERVATIONS_PATH, buildExplorerSources } from "../lib/explorer
 import type { ExplorerSource } from "../lib/explorerSources";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
 import { displayMetricName, formatNumber } from "../lib/format";
-import { buildMeasureMapView, earlierReleaseChoices, newestPeriodOfRelease, rankedPage, releaseOfChoice, RELEASE_CHOICE_PREFIX } from "../lib/oneMeasureMap";
+import { buildMeasureMapView, currentLatestPeriods, earlierReleaseChoices, newestPeriodOfRelease, rankedPage, releaseOfChoice, RELEASE_CHOICE_PREFIX } from "../lib/oneMeasureMap";
 import type { MapRelease, RankedCounty } from "../lib/oneMeasureMap";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
@@ -51,6 +51,7 @@ import { discoverTileMetadata } from "../lib/tiles";
 import {
   STATE_SCOPED_GRAINS,
   boundaryForGrain,
+  boundaryNote,
   boundarySentence,
   capitalised,
   grainLayerFilter,
@@ -168,17 +169,17 @@ export default function MeasureMapPage({
         }
         setGrains(offered);
         setGrain(initialMapGrain(offered, requestedGrain) || offered[0]!);
-        const [capabilities, sourceItems, stateItems, countyItems] = await Promise.all([
+        // The counties are read with the grain's own geographies, below: a
+        // city map needs only its state's, and a metro or tract map none.
+        const [capabilities, sourceItems, stateItems] = await Promise.all([
           getCapabilities({ signal }),
           getSources({ signal }),
           fetchAllPages<GeographySummary>("/catalog/geographies", { params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "STATE" }, pageSize: 1000, signal }),
-          fetchAllPages<GeographySummary>("/catalog/geographies", { params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "COUNTY" }, pageSize: 1000, signal }),
         ]);
         const explorerSource = buildExplorerSources(capabilities.items).find((item) => item.sourceCode === found.source_code) || null;
         setSource(explorerSource);
         setSourceRow(sourceItems.find((item) => item.source_code === found.source_code) || null);
         setStates(stateItems);
-        setCounties(countyItems);
         const periodRequest = buildPeriodListRequest(explorerSource, { metricCode, limit: 200 });
         // The latest publication keeps each county's newest value only, so a
         // period every county has a newer estimate for is listed by its
@@ -193,15 +194,22 @@ export default function MeasureMapPage({
             ? apiFetch<{ items?: MapRelease[] }>(releaseRequest.resource, { params: releaseRequest.params, signal }).catch(() => null)
             : null,
         ]);
-        const items = Array.isArray(periodPayload?.items) ? periodPayload.items : [];
-        const choices = earlierReleaseChoices(Array.isArray(releasePayload?.items) ? releasePayload.items : []);
+        const releases = Array.isArray(releasePayload?.items) ? releasePayload.items : [];
+        // A period only a few geographies still hold as their newest is read
+        // from the release that published it for every geography.
+        const { periods: items, readAsReleased } = currentLatestPeriods(
+          Array.isArray(periodPayload?.items) ? periodPayload.items : [],
+          releases,
+        );
+        const choices = earlierReleaseChoices(releases);
         setPeriods(items);
         setReleaseChoices(choices);
-        setPeriod((current) =>
-          current && (items.some((item) => item.period_start === current) || choices.some((choice) => choice.value === current))
+        setPeriod((asked) => {
+          const current = readAsReleased.get(asked) || asked;
+          return current && (items.some((item) => item.period_start === current) || choices.some((choice) => choice.value === current))
             ? current
-            : items[0]?.period_start || "",
-        );
+            : items[0]?.period_start || "";
+        });
         setLoad({ state: "ready", message: "" });
       } catch (error) {
         if (!signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) });
@@ -227,27 +235,38 @@ export default function MeasureMapPage({
 
   // The geographies of the grain shown: every one is counted and listed,
   // including those without a published value.
+  // A city's page address is told apart from its state's counties, so a city
+  // map reads that state's counties beside its cities, in parallel.
   useEffect(() => {
     if (load.state !== "ready") return;
-    if (grain === "COUNTY") {
-      setGeographies(counties);
-      return;
-    }
     if (awaitingState) {
       setGeographies([]);
       return;
     }
     const controller = new AbortController();
+    const signal = controller.signal;
+    const read = (geoLevel: string, stateParam?: string) =>
+      fetchAllPages<GeographySummary>("/catalog/geographies", {
+        params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: geoLevel, state_fips: stateParam },
+        pageSize: 1000,
+        signal,
+      });
     setGeographies(null);
-    fetchAllPages<GeographySummary>("/catalog/geographies", {
-      params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: grain, state_fips: scoped ? stateFips : undefined },
-      pageSize: 1000,
-      signal: controller.signal,
-    })
-      .then((items) => { if (!controller.signal.aborted) setGeographies(items); })
-      .catch((error) => { if (!controller.signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) }); });
+    const reads: Promise<[GeographySummary[], GeographySummary[] | null]> =
+      grain === "COUNTY"
+        ? read("COUNTY").then((items) => [items, items])
+        : grain === "PLACE"
+          ? Promise.all([read("PLACE", stateFips), read("COUNTY", stateFips)])
+          : read(grain, scoped ? stateFips : undefined).then((items) => [items, null]);
+    reads
+      .then(([items, countyItems]) => {
+        if (signal.aborted) return;
+        if (countyItems) setCounties(countyItems);
+        setGeographies(items);
+      })
+      .catch((error) => { if (!signal.aborted) setLoad({ state: "error", message: apiErrorMessage(error) }); });
     return () => controller.abort();
-  }, [load.state, grain, stateFips, scoped, awaitingState, counties]);
+  }, [load.state, grain, stateFips, scoped, awaitingState]);
 
   // The one period's county values.
   useEffect(() => {
@@ -512,6 +531,7 @@ export default function MeasureMapPage({
                 layerFilter={grain === "COUNTY" ? undefined : grainLayerFilter(grain, scoped ? stateFips : null)}
                 sourceZoom={boundary?.drawn ? { minzoom: boundary.layer.minzoom, maxzoom: boundary.layer.maxzoom } : undefined}
                 initialView={initialView}
+                boundaryNote={boundary?.drawn ? { text: boundaryNote(boundary, grain), marked: boundary.marked } : null}
                 legendTitle={`${name}, ${mapView.period}`}
                 missingLabel={`No published value (${formatNumber(mapView.withoutValue)} ${noun.many})`}
                 testId="measure-map-canvas"
@@ -524,7 +544,13 @@ export default function MeasureMapPage({
               </p>
             )}
             {boundary?.drawn ? (
-              <p className="subtle" data-testid="measure-map-vintage" data-vintage={boundary.vintage ?? "current"}>
+              <p
+                className="subtle"
+                data-testid="measure-map-vintage"
+                data-vintage={boundary.vintage ?? "current"}
+                data-marked={boundary.marked ? "true" : "false"}
+                title={boundaryNote(boundary, grain)}
+              >
                 {boundarySentence(boundary, grain, periodYear)}
               </p>
             ) : null}

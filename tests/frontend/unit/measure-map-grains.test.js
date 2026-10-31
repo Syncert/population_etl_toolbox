@@ -1,16 +1,16 @@
 // Covers: WEB-148 — web-place-maps: the one-measure map offers exactly the
 // grains the catalog publishes a measure at, draws each on the layer
-// /catalog/tile-layers lists for it, picks the newest boundary vintage not
-// later than the period, or else the earliest later one within three years
-// (saying so), names it, and narrows city and tract layers to one state.
+// /catalog/tile-layers lists for it, always on the most recent boundary
+// vintage held, marked with an asterisk and the year it was last updated when
+// that is not the period's year, and narrows city and tract layers to one state.
 
 import { describe, expect, it } from "vitest";
 
 import {
   MAP_GRAINS,
-  MAX_LATER_VINTAGE_GAP,
   STATE_SCOPED_GRAINS,
   boundaryForGrain,
+  boundaryNote,
   boundarySentence,
   grainLayerFilter,
   initialMapGrain,
@@ -19,7 +19,7 @@ import {
   rowInState,
   tileMetadataForBoundary,
 } from "../../../apps/web/lib/measureMapGrains.ts";
-import { buildMeasureMapView } from "../../../apps/web/lib/oneMeasureMap.ts";
+import { buildMeasureMapView, currentLatestPeriods } from "../../../apps/web/lib/oneMeasureMap.ts";
 
 const layer = (overrides) => ({
   layer_id: "places",
@@ -81,46 +81,52 @@ describe("which grains a measure is offered at", () => {
 });
 
 describe("which boundary a grain is drawn on", () => {
-  it("draws the newest held vintage not later than the period, and names it", () => {
+  it("draws the most recent held vintage, and names it", () => {
     const boundary = boundaryForGrain(CATALOG, "PLACE", 2024);
-    expect(boundary).toMatchObject({ drawn: true, vintage: 2024, tileTemplate: "/tiles/places/{z}/{x}/{y}?vintage=2024" });
+    expect(boundary).toMatchObject({ drawn: true, vintage: 2024, marked: false, tileTemplate: "/tiles/places/{z}/{x}/{y}?vintage=2024" });
     expect(boundarySentence(boundary, "PLACE", 2024)).toBe("Drawn on the 2024 city and town boundaries.");
-    const earlier = boundaryForGrain(CATALOG, "PLACE", 2022);
-    expect(earlier).toMatchObject({ drawn: true, vintage: 2020 });
-    expect(boundaryForGrain(CATALOG, "METRO", 2024)).toMatchObject({ drawn: true, vintage: 2023 });
-    expect(boundarySentence(boundaryForGrain(CATALOG, "METRO", 2024), "METRO", 2024)).toBe("Drawn on the 2023 metro area boundaries.");
+    expect(boundaryNote(boundary, "PLACE")).toBe("City and town boundaries last updated 2024, the most recent held.");
+    // An older period is drawn on the newest boundaries too, never an older set.
+    expect(boundaryForGrain(CATALOG, "PLACE", 2022)).toMatchObject({ drawn: true, vintage: 2024, marked: true });
+    expect(boundaryForGrain(CATALOG, "PLACE", 2020)).toMatchObject({ drawn: true, vintage: 2024, marked: true });
+    expect(boundaryForGrain(CATALOG, "METRO", 2023)).toMatchObject({ drawn: true, vintage: 2023, marked: false });
   });
 
-  it("draws the earliest later vintage within three years, and says so", () => {
+  it("marks a map whose boundaries are not from the period's year, and never withholds it", () => {
     // OFFICE_LAB holds only the 2025 place boundaries; ACS 2020–2024 ends in 2024.
     const only2025 = { ...CATALOG, layers: CATALOG.layers.map((item) => (item.layer_id === "places"
       ? { ...item, vintages: [{ boundary_vintage: 2025, feature_count: 32629, is_default: true, tile_template: "/tiles/places/{z}/{x}/{y}?vintage=2025" }] }
       : item)) };
     const boundary = boundaryForGrain(only2025, "PLACE", 2024);
-    expect(boundary).toMatchObject({ drawn: true, vintage: 2025, later: true, tileTemplate: "/tiles/places/{z}/{x}/{y}?vintage=2025" });
+    expect(boundary).toMatchObject({ drawn: true, vintage: 2025, marked: true, tileTemplate: "/tiles/places/{z}/{x}/{y}?vintage=2025" });
     expect(boundarySentence(boundary, "PLACE", 2024)).toBe(
-      "Drawn on the 2025 city and town boundaries; 2024 boundaries are not yet held, so a few cities and towns may differ from the shapes the values were measured on.",
+      "* Drawn on the 2025 city and town boundaries, the most recent held; the values are for 2024, so a few cities and towns may differ from the shapes they were measured on.",
     );
-    expect(boundaryForGrain(only2025, "PLACE", 2022)).toMatchObject({ drawn: true, vintage: 2025, later: true });
-    // A held vintage at or before the period is always preferred to a later one.
-    expect(boundaryForGrain(CATALOG, "PLACE", 2023)).toMatchObject({ drawn: true, vintage: 2020, later: false });
-    expect(MAX_LATER_VINTAGE_GAP).toBe(3);
+    expect(boundaryNote(boundary, "PLACE")).toBe("City and town boundaries last updated 2025, the most recent held.");
+    // However far the period is from the boundaries, the map is drawn and marked.
+    expect(boundaryForGrain(only2025, "PLACE", 2009)).toMatchObject({ drawn: true, vintage: 2025, marked: true });
+    const metros = boundaryForGrain(CATALOG, "METRO", 2024);
+    expect(metros).toMatchObject({ drawn: true, vintage: 2023, marked: true });
+    expect(boundarySentence(metros, "METRO", 2024)).toBe(
+      "* Drawn on the 2023 metro area boundaries, the most recent held; the values are for 2024, so a few metro areas may differ from the shapes they were measured on.",
+    );
   });
 
-  it("withholds the map when the nearest held vintage is more than three years later", () => {
-    const boundary = boundaryForGrain(CATALOG, "PLACE", 2012);
+  it("draws nothing only when a versioned layer holds no vintage at all", () => {
+    const none = { ...CATALOG, layers: CATALOG.layers.map((item) => (item.layer_id === "places" ? { ...item, vintages: [] } : item)) };
+    const boundary = boundaryForGrain(none, "PLACE", 2024);
     expect(boundary).toMatchObject({ drawn: false, reason: "no-vintage" });
-    expect(boundaryForGrain(CATALOG, "PLACE", 2016)).toMatchObject({ drawn: false, reason: "no-vintage" });
-    expect(boundaryForGrain(CATALOG, "PLACE", 2017)).toMatchObject({ drawn: true, vintage: 2020, later: true });
-    expect(boundarySentence(boundary, "PLACE", 2012)).toBe(
-      "No city and town boundaries from 2012 or up to 3 years after it are held (held: 2020, 2024), so the map is not drawn on shapes that far from the period. Every value is in the table below.",
+    expect(boundarySentence(boundary, "PLACE", 2024)).toBe(
+      "No city and town boundaries are held yet, so the map is not drawn. Every value is in the table below.",
     );
   });
 
   it("draws unversioned layers on their current boundaries", () => {
     const boundary = boundaryForGrain(CATALOG, "TRACT", 2015);
     expect(boundary).toMatchObject({ drawn: true, vintage: null, tileTemplate: "/tiles/tracts/{z}/{x}/{y}" });
+    expect(boundary.marked).toBe(false);
     expect(boundarySentence(boundary, "TRACT", 2015)).toBe("Drawn on the current tract boundaries.");
+    expect(boundaryNote(boundary, "TRACT")).toBe("Tract boundaries: current.");
   });
 
   it("says when no layer draws a grain", () => {
@@ -164,5 +170,37 @@ describe("a value for a geography not on the list", () => {
     expect(view.withoutValue).toBe(1);
     expect(view.offBoundary).toBe(1);
     expect(view.ranked.map((entry) => entry.county.geo_id)).toEqual(["state:48|place:05000", "state:48|place:35000"]);
+  });
+});
+
+describe("an older period only a few geographies still hold", () => {
+  const releases = [
+    { release: "2024", newest_period_start: "2020-01-01", newest_period_end: "2024-12-31" },
+    { release: "2022", newest_period_start: "2018-01-01", newest_period_end: "2022-12-31" },
+  ];
+
+  it("is read from the release that published it for every geography", () => {
+    const periods = [
+      { period_start: "2020-01-01", period_end: "2024-12-31", observation_count: 30000 },
+      { period_start: "2018-01-01", period_end: "2022-12-31", observation_count: 12 },
+      { period_start: "2015-01-01", period_end: "2019-12-31", observation_count: 4 },
+    ];
+    const { periods: kept, readAsReleased } = currentLatestPeriods(periods, releases);
+    expect(kept.map((item) => item.period_start)).toEqual(["2020-01-01", "2015-01-01"]);
+    expect(Object.fromEntries(readAsReleased)).toEqual({ "2018-01-01": "release:2022" });
+  });
+
+  it("stays a latest period when the latest publication holds it in full", () => {
+    // A population-estimates vintage re-estimates every year since the census.
+    const pep = [
+      { period_start: "2024-01-01", observation_count: 3200 },
+      { period_start: "2023-01-01", observation_count: 3200 },
+    ];
+    const vintages = [{ release: "v2024", newest_period_start: "2024-01-01" }, { release: "v2023", newest_period_start: "2023-01-01" }];
+    const { periods: kept, readAsReleased } = currentLatestPeriods(pep, vintages);
+    expect(kept).toHaveLength(2);
+    expect(readAsReleased.size).toBe(0);
+    // Without a release listing nothing is moved.
+    expect(currentLatestPeriods(pep, []).periods).toHaveLength(2);
   });
 });

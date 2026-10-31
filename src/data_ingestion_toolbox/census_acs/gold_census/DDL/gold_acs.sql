@@ -342,6 +342,17 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_updated_at
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_level_state
     ON gold_census.rpt_acs_observations (geo_level, state_fips, observation_date);
 
+-- One metric's earlier release at one grain in one state: a city or tract map
+-- of an older ACS period reads the as-released relation pinned to its release
+-- (web-place-maps), because mv_acs_latest keeps only each key's newest
+-- period. With only (metric_code, observation_date) that read visited every
+-- row of the metric at every grain in every year. The API matches the pin on
+-- `vintage_year` itself (API-181), so all four columns are index conditions.
+-- This table is partitioned: on a live warehouse build it per partition with
+-- CREATE INDEX CONCURRENTLY, then create it ON ONLY the parent and attach.
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_level_state_vintage
+    ON gold_census.rpt_acs_observations (metric_code, geo_level, state_fips, vintage_year);
+
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_latest_selection
     ON gold_census.rpt_acs_observations (
         geo_id,

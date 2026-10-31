@@ -65,15 +65,6 @@ export function newestPeriodYear(rows: readonly Record<string, unknown>[]): numb
   return newest;
 }
 
-/**
- * How many years later than the period a boundary vintage may be and still be
- * drawn. Boundaries change slowly -- a few annexations, a handful of new or
- * dissolved places a year -- so a value drawn on boundaries one to three
- * years newer than its period is nearly the right shape, and the page says
- * which. Beyond that the map is withheld and the table carries the values.
- */
-export const MAX_LATER_VINTAGE_GAP = 3;
-
 /** The boundary a grain is drawn on, or why it is not drawn. */
 export type MapBoundary =
   | {
@@ -81,20 +72,25 @@ export type MapBoundary =
       layer: TileLayer;
       vintage: number | null;
       tileTemplate: string;
-      /** True when no vintage at or before the period is held and a later one is drawn. */
-      later: boolean;
+      /**
+       * True when the boundaries are from a year other than the period's, so
+       * the page marks the map with an asterisk and says which year they are.
+       */
+      marked: boolean;
     }
   | { drawn: false; reason: "no-layer" | "no-vintage"; layer: TileLayer | null };
 
 /**
  * The boundary one grain's map is drawn on, for a period ending in `year`.
  *
- * A versioned layer draws the newest vintage it holds that is not later than
- * the period: the boundaries in force when the value was measured, or the
- * nearest earlier set the layer holds. When it holds none that old, it draws
- * the earliest later vintage within `MAX_LATER_VINTAGE_GAP` years, marked
- * `later` so the page says so; past that gap it draws nothing. An
- * unversioned layer draws the current boundaries it carries.
+ * A versioned layer always draws the most recent vintage it holds (Nick,
+ * 2026-10-31: "City maps should be the most recent map available", marked
+ * with when the map was last updated). Boundaries change slowly, and a map
+ * on the newest shapes is more useful than no map; when that vintage is not
+ * the period's year the boundary is `marked`, and the page puts an asterisk
+ * on the legend and names the year in the legend note and the map's tooltip.
+ * A versioned layer holding no vintage at all draws nothing. An unversioned
+ * layer draws the current boundaries it carries.
  */
 export function boundaryForGrain(
   catalog: TileLayerCatalogResponse | null | undefined,
@@ -106,39 +102,44 @@ export function boundaryForGrain(
   if (!layer.versioned) {
     const template = versionedTileTemplate(layer);
     return template
-      ? { drawn: true, layer, vintage: null, tileTemplate: template, later: false }
+      ? { drawn: true, layer, vintage: null, tileTemplate: template, marked: false }
       : { drawn: false, reason: "no-layer", layer };
   }
-  const years = layer.vintages.map((entry) => entry.boundary_vintage).sort((left, right) => left - right);
-  const atOrBefore = years.filter((vintage) => year === null || vintage <= year);
-  let vintage = atOrBefore[atOrBefore.length - 1];
-  let later = false;
-  if (vintage === undefined && year !== null) {
-    const nextLater = years.find((held) => held > year);
-    if (nextLater !== undefined && nextLater - year <= MAX_LATER_VINTAGE_GAP) {
-      vintage = nextLater;
-      later = true;
-    }
-  }
-  if (vintage === undefined) return { drawn: false, reason: "no-vintage", layer };
+  const years = layer.vintages.map((entry) => entry.boundary_vintage);
+  if (!years.length) return { drawn: false, reason: "no-vintage", layer };
+  const vintage = Math.max(...years);
   const template = versionedTileTemplate(layer, vintage);
-  return template ? { drawn: true, layer, vintage, tileTemplate: template, later } : { drawn: false, reason: "no-vintage", layer };
+  if (!template) return { drawn: false, reason: "no-vintage", layer };
+  return { drawn: true, layer, vintage, tileTemplate: template, marked: year !== null && vintage !== year };
+}
+
+function singularFor(grain: MapGrain): string {
+  return grain === "PLACE" ? "city and town" : nounFor(grain).one;
+}
+
+/**
+ * The short line naming when a drawn map's boundaries were last updated: the
+ * legend's note and the map's tooltip.
+ */
+export function boundaryNote(boundary: Extract<MapBoundary, { drawn: true }>, grain: MapGrain): string {
+  const singular = capitalised(singularFor(grain));
+  if (boundary.vintage === null) return `${singular} boundaries: current.`;
+  return `${singular} boundaries last updated ${boundary.vintage}, the most recent held.`;
 }
 
 /** The sentence that names the boundary a map is drawn on, or why there is none. */
 export function boundarySentence(boundary: MapBoundary, grain: MapGrain, year: number | null): string {
   const noun = nounFor(grain);
-  const singular = grain === "PLACE" ? "city and town" : noun.one;
+  const singular = singularFor(grain);
   if (boundary.drawn) {
     if (boundary.vintage === null) return `Drawn on the current ${singular} boundaries.`;
-    if (boundary.later && year !== null) {
-      return `Drawn on the ${boundary.vintage} ${singular} boundaries; ${year} boundaries are not yet held, so a few ${noun.many} may differ from the shapes the values were measured on.`;
+    if (boundary.marked && year !== null) {
+      return `* Drawn on the ${boundary.vintage} ${singular} boundaries, the most recent held; the values are for ${year}, so a few ${noun.many} may differ from the shapes they were measured on.`;
     }
     return `Drawn on the ${boundary.vintage} ${singular} boundaries.`;
   }
   if (boundary.reason === "no-vintage") {
-    const held = (boundary.layer?.vintages || []).map((entry) => entry.boundary_vintage).sort((a, b) => a - b);
-    return `No ${singular} boundaries ${year ? `from ${year} or up to ${MAX_LATER_VINTAGE_GAP} years after it ` : ""}are held${held.length ? ` (held: ${held.join(", ")})` : ""}, so the map is not drawn on shapes that far from the period. Every value is in the table below.`;
+    return `No ${singular} boundaries are held yet, so the map is not drawn. Every value is in the table below.`;
   }
   return `No map layer draws ${noun.many} here; every value is in the table below.`;
 }

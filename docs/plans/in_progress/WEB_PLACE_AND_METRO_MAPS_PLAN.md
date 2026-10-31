@@ -50,13 +50,13 @@ gap 6 of the October web-readiness review.
    is drawn from comes from `/catalog/tile-layers` (`tileLayerForGrain`).
    The county grain falls back to Martin discovery only when the API route
    cannot be read, so an older API keeps its county map.
-4. **The boundary vintage is named.** A versioned layer draws the newest
-   boundary vintage it holds that is not later than the period shown, and
-   the page says which ("Drawn on the 2024 city and town boundaries"). When
-   it holds none that old, it draws the earliest later vintage within three
-   years and says the period's own boundaries are not yet held; further than
-   that, no map is drawn and the page says so. Unversioned layers say they draw
-   current boundaries. Rows whose geography is not on the boundaries listed
+4. **The boundary vintage is named.** A versioned layer always draws the
+   most recent boundary vintage it holds, and the page says which ("Drawn on
+   the 2024 city and town boundaries"). When that vintage is not the period's
+   year the map is still drawn, never withheld, and is marked: an asterisk on
+   the legend title, a legend note and map tooltip saying when the boundaries
+   were last updated, and a starred sentence naming both years (Nick's
+   decision, below). Unversioned layers say they draw current boundaries. Rows whose geography is not on the boundaries listed
    are counted and stated, never dropped silently.
 5. **Bands and the uncoloured rule at every grain.** Equal-count (quantile)
    bands, the legend counts and the uncoloured-is-not-zero sentence
@@ -75,7 +75,8 @@ gap 6 of the October web-readiness review.
 - [x] `/map/<metric>` offers county, metro, city/town and tract where the
       catalog publishes the measure, and only those.
 - [x] Place and tract grains read one state; metros and counties are national.
-- [x] The vintage drawn is named; an unheld vintage draws no map and says so.
+- [x] The vintage drawn is named, and a map on another year's boundaries is
+      marked with an asterisk and when the boundaries were last updated.
 - [x] Quantile bands and the uncoloured rule hold at every grain.
 - [x] The web reads only the API; no warehouse rule is copied into client code.
 - [x] Unit, lint, typecheck, build, bundle budgets and browser tests pass.
@@ -86,7 +87,7 @@ gap 6 of the October web-readiness review.
 
 - `apps/web/lib/measureMapGrains.ts`: the grains offered (`mapGrainChoices`,
   `initialMapGrain`), which are state-scoped, the boundary each is drawn on
-  (`boundaryForGrain`, `boundarySentence`), the layer filter, and the
+  (`boundaryForGrain`, `boundarySentence`, `boundaryNote`), the layer filter, and the
   conversion of a `/catalog/tile-layers` layer to the choropleth's source.
 - `components/MeasureMapPage.tsx`: "Draw by" and "State" selectors; the
   geographies, observations and derived views are read at the chosen grain
@@ -94,7 +95,10 @@ gap 6 of the October web-readiness review.
   the vintage sentence and the shared uncoloured sentence sit under the map;
   cities link to their pages, metros and tracts are not links (no pages yet).
 - `components/ChoroplethMap.tsx`: optional layer filter, source zoom range
-  and opening view; `data-geo-level` and `data-tile-template` on the canvas.
+  and opening view; `data-geo-level` and `data-tile-template` on the canvas;
+  an optional boundary note shown as the canvas tooltip and, through
+  `ChoroplethLegend`, as a legend line with an asterisk on the title when
+  marked.
 - `lib/oneMeasureMap.ts`: `offBoundary` counts rows for geographies not on
   the list.
 - `app/map/[metric]/page.js`: reads `?grain=` and `?state=`.
@@ -103,25 +107,26 @@ gap 6 of the October web-readiness review.
 
 ### Decisions
 
-- **Which vintage.** Observations do not carry a boundary vintage, so the
-  page draws the newest held vintage not later than the period's end year
-  and names it. ACS 2020–2024 place values are on 2024 place boundaries and
-  ACS 2024 metro values on the 2023 delineation, which this choice gives.
-- **A later vintage, within three years (2026-10-31, coordinator's direction
-  after live check 1; flagged to Nick).** OFFICE_LAB holds only the 2025
-  place boundaries, and the newest ACS period ends in 2024, so the first rule
-  (never a later vintage) withheld every city map until historical place
-  boundaries load, which is a Wave W follow-up weeks away. Nick's goal is that
-  a resident sees their town on a map now. When no vintage at or before the
-  period is held, the page draws the earliest later vintage if it is at most
-  `MAX_LATER_VINTAGE_GAP` = 3 years later, and says so: "Drawn on the 2025
-  city and town boundaries; 2024 boundaries are not yet held, so a few cities
-  and towns may differ from the shapes the values were measured on." Place
-  boundaries change by a few annexations and a handful of new or dissolved
-  places a year, so three years keeps the shapes close; past that the map is
-  withheld and the values stay in the table. This relaxes A-6's
-  no-fallback rule for the web's choice only. The tile layer still never
-  substitutes a vintage: the page asks for the one it names.
+- **Most recent boundaries, marked (Nick, 2026-10-31 13:27Z, replacing the
+  earlier rules).** Nick: "City maps should be the most recent map available
+  with astericks or indication in tooltips of when the map was last
+  updated". A versioned layer always draws the newest vintage it holds, for
+  every period, and the map is never withheld for its vintage. When that
+  vintage is not the period's end year, the map is marked: the legend title
+  carries an asterisk, the legend note and the map's tooltip read "City and
+  town boundaries last updated 2025, the most recent held.", and the
+  sentence under the map reads "* Drawn on the 2025 city and town
+  boundaries, the most recent held; the values are for 2024, so a few cities
+  and towns may differ from the shapes they were measured on." Metros on
+  the 2023 delineation with 2024 values are marked the same way. Only a
+  versioned layer holding no vintage at all draws nothing. The API's caveat
+  field stays as it is; the tile layer still never substitutes a vintage,
+  and the page asks for the one it names.
+- **Superseded rules.** The first rule drew the newest vintage not later
+  than the period and withheld the map otherwise; the coordinator's interim
+  rule (#203) allowed a later vintage within three years
+  (`MAX_LATER_VINTAGE_GAP`). Both withheld old periods, because OFFICE_LAB
+  holds only the 2025 place boundaries; Nick's rule removes the withholding.
 - **Counties, tracts.** Their layers are unversioned and say "current
   boundaries". Tract values from an older decade join only where the tract
   still exists; the rest are counted as not on the list. The county page's
@@ -193,6 +198,28 @@ two pages, so four ranked reads. Two changes:
   expression no index serves, but it now removes only tens of rows, so it is
   left as it is.
 
+## Live check 2 (OFFICE_LAB, dev `937f3e8`, 2026-10-31, relayed)
+
+- 2 passed: Texas places drew on 2025 boundaries, tiles `?vintage=2025`, page
+  wall time 8.1 s, slowest read 837 ms.
+- 4 failed on data, not boundaries: 2018–2022 and 2015–2019 showed no Texas
+  city. `mv_acs_latest` keeps one row per key, its newest period, so an older
+  period is listed by `/observations/periods` only because a few dissolved
+  places still hold it as their newest; read from the latest publication it
+  answers almost nothing. Fix: `currentLatestPeriods` reads such a period
+  (under half the newest period's rows, and an earlier release's newest
+  period) from that release as published (`rpt_acs_observations`), and an
+  address naming it opens on the release. The pin is matched on
+  `vintage_year` itself (API-181) and served by the new
+  `ix_rpt_acs_observations_metric_level_state_vintage`, pre-built on
+  OFFICE_LAB before merge.
+- 6 passed: Wisconsin tracts 0.6 s.
+- Page time: with every read under a second, the 8.1 s was the waterfall
+  (metric, then capabilities with every county's geography in four pages,
+  then periods and releases, then the state's cities and the values) plus
+  the map library and tiles. A city map no longer reads the 3,200 counties;
+  it reads its state's counties beside its cities.
+
 ## Hand-off (OFFICE_LAB, needs the warehouse)
 
 Rebuild web and API from `dev` after merge, then at http://localhost:3001:
@@ -217,15 +244,20 @@ Rebuild web and API from `dev` after merge, then at http://localhost:3001:
 
 Rebuild web and API from `dev`, then:
 
-- 2 again: Texas places draw, and the page says "Drawn on the 2025 city and
-  town boundaries; 2024 boundaries are not yet held ...". Tile requests carry
+- 2 again: Texas places draw, the legend title ends in an asterisk, the
+  legend note and the map's tooltip say "City and town boundaries last
+  updated 2025, the most recent held.", and the page says "* Drawn on the
+  2025 city and town boundaries, the most recent held; the values are for
+  2024 ...". Tile requests carry
   `?vintage=2025`, and the Austin row (page 1 of "Every city or town", or in
   the highest values) links to `/us/texas/austin-city`.
 - 3 again, once the ACS metro backfill has served METRO rows: "Draw by" offers
   Metro areas, and the 2023 delineation is named. Before that, a metro-only
   measure (a BEA metro income code) shows the selector with Metro areas.
-- 4 again: an earlier release within three years of 2025 draws with the
-  later-vintage sentence. One more than three years earlier is withheld.
+- 4 again: choose 2018–2022 for Texas cities. The selector offers it as
+  "2018-01-01 – 2022-12-31 (2022 release, as published)", the cities have
+  values, the map draws on the 2025 boundaries with the asterisk and "the
+  values are for 2022", and the read is `scope=as_released&release=2022`.
 - 6 again: time the Texas place and Wisconsin tract pages end to end (the
   statements themselves are now 8 to 10 ms).
 
