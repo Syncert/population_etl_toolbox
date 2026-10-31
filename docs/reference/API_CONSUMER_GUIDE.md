@@ -1728,6 +1728,57 @@ statistics are measured over the whole join, never over the page you asked
 for. `year` works as it does on `/comparison/correlation` — each side's own
 declared year filter — and pins every side.
 
+### One measure in two places, at any level
+
+`GET /api/v1/comparison/places?metric_code=…&geo_id_a=…&geo_id_b=…` answers
+the reader's question "how does Austin compare with Travis County?": one
+measure, two named places, which may sit at different levels (a city and its
+county, a county and its state, a metro and the nation). It follows
+[ADR-0010](../decisions/0010-cross-level-comparison.md).
+
+- **Whether it compares is the measure's kind.** `measure_kind` comes from the
+  metric's definition (`docs/semantics/metric_definitions.json`): a `median`,
+  `mean`, `rate`, `share` or `index` describes its population whatever its
+  size and compares across levels. A `count` does not, because a county has
+  more of everything than a city inside it, so a count across levels answers
+  `200` with `comparable: false` and `refusal.reason: counts_differ_in_size`,
+  listing in `refusal.alternatives` the served per-capita and share views of
+  that count (ADR-0009). Ask again with `ratio_id=` in place of `metric_code`
+  to compare one of them. A metric with no declared kind is a count;
+  `measure_kind_status` says whether the kind was reviewed (`draft` until the
+  owner approves it, `undeclared` when no kind is declared).
+- **One program and one period, or said otherwise.** `metric_code_b` puts a
+  different code on side b, and is refused unless it is the same measure from
+  the same program: `programs_differ` (the ACS 1-year beside the 5-year
+  estimates), `universes_differ`, `units_differ`, or `different_measures`
+  (use `/comparison` for two measures). Each side shows the newest period
+  both places publish (`period_basis: newest_common`); with no common period
+  each shows its own newest (`each_newest`) and the note `periods_differ`.
+  `period_start` asks for one period on both sides (a year matches the
+  periods starting in it). A side with no value has `published: false` (or
+  keeps its withheld status) and the note `not_published`; it is never zero,
+  and the comparison is refused with `refusal.reason: not_published` naming
+  the place ("there is no published value for United States in this series":
+  BLS LAUS publishes no national rate). The nation is named "United States".
+- **Margins decide "different".** Each side carries its 90 percent margin and
+  interval where one is published; `intervals_overlap` says whether they
+  overlap, and an overlap adds the note `intervals_overlap` ("not
+  distinguishable at 90 percent confidence"). A source with no margin adds
+  `no_margin_published`.
+- **Containment is disclosed.** `containment.relationship` is `contains` (b
+  lies inside a), `part_of`, `intersects` (a city and a county or metro that
+  overlap, with `share_of_smaller_inside_larger` from the reference's area
+  overlap), `adjacent` or `none_recorded`. The nation contains every place.
+- **No verdicts.** `difference` (`a - b`, named in `derivations`) is computed
+  only for two independent places in the same period with two published
+  values; never between a place and its container, across periods, or for a
+  refused comparison. Nothing is ranked.
+
+A refusal is `200` with `comparable: false`; an unknown geography, metric or
+`ratio_id` is `404` naming the parameter; asking for both or neither of
+`metric_code` and `ratio_id`, the same place twice, or a pairing that is not
+served is `422`.
+
 ## Signing in, and your account
 
 Self-service accounts — see [ADR-0005](../decisions/0005-self-service-accounts.md).

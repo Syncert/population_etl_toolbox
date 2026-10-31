@@ -165,6 +165,50 @@ export const RELATED = {
   ],
 };
 
+// Per-capita and share pairings (web-per-capita-toggle) as the catalog lists
+// them with DERIVED_RATIOS_SERVE_DRAFTS=1: the registry's own entries, every
+// one a draft and served. ACS entries exist once per dataset.
+// Both runners start in apps/web or at the repository root.
+const RATIOS_PATH = ["../../docs/semantics/derived_ratios.json", "docs/semantics/derived_ratios.json"]
+  .map((path) => resolve(process.cwd(), path))
+  .find((path) => existsSync(path));
+const REGISTRY = JSON.parse(readFileSync(RATIOS_PATH, "utf8")).entries;
+export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || [null]).map((dataset) => ({
+  ratio_id: dataset ? `${entry.ratio_id}:${dataset}` : entry.ratio_id, kind: entry.kind, derived: entry.kind !== "provider_rate",
+  label: entry.label, unit: entry.unit, scale: entry.scale,
+  numerator: dataset ? entry.numerator.replace("{dataset}", dataset) : entry.numerator,
+  denominator: entry.denominator ? (dataset ? entry.denominator.replace("{dataset}", dataset) : entry.denominator) : null,
+  provider_rate: entry.provider_rate || null, dataset, denominator_label: entry.denominator_label, universe: entry.universe,
+  numerator_is_subset: Boolean(entry.numerator_is_subset), status: entry.status, version: entry.version, reviewer: entry.reviewer,
+  served: true, refusal_reason: null, limitations: entry.limitations || [], citations: entry.citations || [],
+})));
+
+// Synthetic derived values. Rock County's survey count has no same-period
+// denominator in this fixture, so its shares answer `different_period`.
+function derivedRows(ratio, geoId) {
+  const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geoId);
+  if (!place) return [];
+  const metric = metrics[ratio.provider_rate || ratio.numerator];
+  if (ratio.kind === "provider_rate" && metric && !metric.valid_geo_grains.includes(place.geo_level)) return [];
+  if (ratio.numerator.startsWith("FBI_UCR:") && !["STATE", "NATIONAL"].includes(place.geo_level)) return [];
+  const provider = ratio.kind === "provider_rate";
+  const fbi = ratio.numerator.startsWith("FBI_UCR:");
+  const missing = !provider && geoId === "state:55|county:105";
+  const value = fbi ? { "state:55": "297.4", "state:27": "281.0", "us:1": "363.8" }[geoId] || "300.0" : (10 + (scale[geoId] || 1) / 10).toFixed(2);
+  const input = (code, amount) => ({ metric_code: code, metric_label: `${code.split(":").at(-1)} (UI fixture)`, release: fbi ? "fixture-2025" : "2023",
+    period_start: fbi ? "2024-01-01" : "2019-01-01", period_end: fbi ? "2024-12-31" : "2023-12-31", value: amount, value_status: "valid", margin_of_error: provider ? null : "40", margin_of_error_controlled: false });
+  return [{
+    ratio_id: ratio.ratio_id, derived: !provider, pairing_status: ratio.status, pairing_version: ratio.version,
+    geo_id: geoId, geo_level: place.geo_level, geo_name: place.geo_name,
+    period_start: fbi ? "2024-01-01" : "2019-01-01", period_end: fbi ? "2024-12-31" : "2023-12-31", release: fbi ? "fixture-2025" : "2023",
+    value: missing ? null : value, unit: ratio.unit, scale: ratio.scale,
+    margin_of_error: provider || missing ? null : "0.80", margin_of_error_method: provider ? "provider" : missing ? "unavailable" : "proportion",
+    unavailable_reason: missing ? "different_period" : null,
+    numerator: provider ? null : input(ratio.numerator, "1200"), denominator: provider || missing ? null : input(ratio.denominator, "11000"),
+    provider_rate: provider ? input(ratio.provider_rate, value) : null,
+  }];
+}
+
 // The place search (A-1) as the API answers it: each group is one matched
 // name followed by the county and metro it brings along. Austin's rows
 // demonstrate the build-out's example (Texas has no page fixture); Madison's
@@ -282,6 +326,16 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     // must call it "not reported", never fresh.
     if (path === "/api/v1/catalog/freshness") return route.fulfill({ json: { total: sources.length - 1, items: sources.filter((code) => code !== "USDA_NASS").map((source_code) => ({ source_code, metric_count: 12, current_count: 11, stale_count: 1, retired_count: 0,
       latest_publication_time: "2026-09-01T00:00:00Z", latest_harvested_at: `2026-09-0${sources.indexOf(source_code) + 2}T00:00:00Z`, geo_grains: grainsFor(`${source_code}:x`).filter((grain) => grain !== "AGENCY") })) } });
+    if (path === "/api/v1/catalog/derived-ratios") {
+      const items = DERIVED_RATIOS.filter((ratio) => !params.get("numerator") || ratio.numerator === params.get("numerator"));
+      return route.fulfill({ json: { total: items.length, items } });
+    }
+    if (path === "/api/v1/observations/derived") {
+      const ratio = DERIVED_RATIOS.find((item) => item.ratio_id === params.get("ratio_id"));
+      if (!ratio) return route.fulfill({ status: 404, json: { detail: "ratio_id not found" } });
+      const items = derivedRows(ratio, params.get("geo_id"));
+      return route.fulfill({ json: { ratio, scope: "latest", release: null, total: items.length, limit: Number(params.get("limit") || 100), offset: 0, items } });
+    }
     if (path === "/api/v1/catalog/metrics") return route.fulfill({ json: { total: 0, limit: 6, offset: 0, items: [] } });
     if (path.startsWith("/api/v1/catalog/metrics/")) {
       const code = decodeURIComponent(path.split("/metrics/")[1]);

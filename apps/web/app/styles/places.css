@@ -368,3 +368,15 @@
   margin: 0.25rem 0 0;
   padding-left: 1.1rem;
 }
+
+/* Count, per-capita and share views (web-per-capita-toggle). */
+.derived-toggle {
+  margin-bottom: 12px;
+}
+.derived-toggle button {
+  text-transform: none;
+}
+.derived-levels {
+  list-style: none;
+  padding: 0;
+}

@@ -107,4 +107,5 @@ on it), Chromium from `/opt/pw-browsers`:
 | `npm --prefix apps/web run lint`, `typecheck` | clean |
 | `npm --prefix apps/web run build` | built |
 | `npx playwright test find-your-place` | 11 passed |
-| `npm --prefix apps/web run check:bundle` | `/layout` 507.1 kB of 507 kB on this branch alone (`dev` was 506.8 kB); passes once D-6 (#183) is merged in, which moves MapLibre's CSS out of the global sheet |
+| `npm --prefix apps/web run check:bundle` | passes after merging `dev` with D-6 (#183): `/layout` 427.2 kB of 507 kB (507.1 kB before, on this branch alone) |
+| After merging `dev` at 88ba427 (D-6, #187): `test:unit` / full `test:browser` / `pytest tests/unit -m unit` | 896 / 263 / 2,818 passed; catalog total 659 from the ranges table, unchanged by this branch |

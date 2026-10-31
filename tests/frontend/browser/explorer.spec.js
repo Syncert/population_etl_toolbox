@@ -812,6 +812,9 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await expect(dashboard).toHaveAttribute("data-metric-count", "3");
   await expect(dashboard).toHaveAttribute("data-observation-count", "1");
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
+  // MapLibre's stylesheet arrives with the map rather than with the layout
+  // every page loads; a drawn map has it (its canvas is absolutely placed).
+  await expect(page.locator(".maplibregl-canvas").first()).toHaveCSS("position", "absolute");
   await expect(page.getByLabel("Choropleth value legend")).toContainText("API distribution");
   await expect(page.getByTestId("tiles-status")).toContainText("healthy_tile=true");
   expect(tileRequests()).toBeGreaterThan(0);

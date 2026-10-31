@@ -63,8 +63,10 @@ export function useMapLibre(
     // handed it: an unmount in that window must not leave a map nobody holds.
     let cancelled = false;
 
-    void import("maplibre-gl")
-      .then((maplibregl) => {
+    // MapLibre's stylesheet (83 kB) is fetched with the library, not from the
+    // global sheet every page's layout loads.
+    void Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl.css")])
+      .then(([maplibregl]) => {
         const container = containerRef.current;
         if (cancelled || !container || mapRef.current) {
           return;

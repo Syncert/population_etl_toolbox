@@ -100,6 +100,17 @@
     },
     "caveat": {
       "type": "string"
+    },
+    "kind": {
+      "description": "What the value measures, which decides whether it compares across geographic levels (ADR-0010 rule 2): a count grows with the place, a median, mean, rate, share or index describes its population whatever its size. An entry with no kind is treated as a count.",
+      "enum": [
+        "count",
+        "median",
+        "mean",
+        "rate",
+        "share",
+        "index"
+      ]
     }
   }
 }

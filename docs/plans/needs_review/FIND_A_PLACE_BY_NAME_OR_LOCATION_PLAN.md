@@ -18,8 +18,8 @@ verify:
 
 ## Status
 
-In progress since 2026-10-31 on `feat/api-place-search` (branched from `dev`).
-Last updated 2026-10-31.
+Ready for review (2026-10-31). Implemented on `feat/api-place-search`, merged
+into `dev` as #172; the OFFICE_LAB steps passed on 2026-10-31 (Evidence).
 
 Claimed directly into `in_progress/`: the v1.0 build-out prompt
 (`/mnt/project-files/prompts/v1.0-build-out-prompt.md`, Wave A, item A-1)
@@ -122,7 +122,7 @@ lands on the city page").
       the OpenAPI snapshot.
 - [x] The projection refresh runs in the reconciliation DAG after the
       geography refresh (DAG tier).
-- [ ] The projection builds from the real warehouse on OFFICE_LAB and
+- [x] The projection builds from the real warehouse on OFFICE_LAB and
       "Austin" answers as stated against real data; locate at Austin City
       Hall (30.2650, -97.7470) lands on Austin city, Travis County, the
       Austin metro.
@@ -146,8 +146,8 @@ session and recorded here when they run:
 ## Checkpoint
 
 - Deliverables 1–6 are implemented on `feat/api-place-search`.
-- Next pickup: the three OFFICE_LAB steps above. When they pass, record them
-  here, tick the last criterion and move this plan to `needs_review/`.
+- The three OFFICE_LAB steps passed on 2026-10-31 (Evidence); the plan is in
+  `needs_review/`.
 
 ## Decisions
 
@@ -187,3 +187,15 @@ Cloud session, 2026-10-31, Python 3.11, branch `feat/api-place-search`:
 
 Not run here (no database or warehouse in a cloud session): the three
 OFFICE_LAB steps above.
+
+OFFICE_LAB, 2026-10-31, internal stack:
+
+| Step | Result |
+| --- | --- |
+| `pytest tests/integration/api/test_place_search_contract.py -m integration` (disposable test database) | 3 passed |
+| `python -m tests.support.schema_snapshot --write` | regenerated (+45 lines: `gold_glossary.geo_boundary`, the search relation and its indexes); committed to the branch |
+| `002_gold_glossary_schema.sql` on the warehouse, through `scripts/apply_warehouse_manifest.py --only-flagged` | applied and recorded (`glossary-schema`) |
+| `CALL gold_glossary.refresh_geo_search();` | 269 s (while a tract publish was running); ZCTA 33,791, PLACE 32,350, COUNTY 3,235, METRO 925, STATE 56 |
+| `GET /api/v1/catalog/geographies/search?q=Austin` (API rebuilt from `dev`) | 200: Austin city (`state:48\|place:05000`), Travis County, Austin-Round Rock-San Marcos metro (`cbsa:12420`) first, then Austin County TX, Austin city MN, Mower County MN |
+| `GET /api/v1/catalog/geographies/locate?lat=30.2650&lon=-97.7470` | 200 in 0.19 s: landing Austin city (`/us/texas/austin-city`); county Travis, tract 11.02, ZCTA 78701, metro Austin-Round Rock-San Marcos |
+

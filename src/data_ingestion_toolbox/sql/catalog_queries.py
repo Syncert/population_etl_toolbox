@@ -357,6 +357,13 @@ GEOGRAPHY_NAMES_QUERY: TextClause = text(
     f"SELECT geo_id, geo_name FROM {GEOGRAPHY_RELATION} WHERE geo_id = ANY(:geo_ids)"
 )
 
+#: Two or more geographies' identity, by id, for ``/comparison/places``: the
+#: level decides which comparison rules apply and the name labels each side.
+GEOGRAPHY_IDENTITY_QUERY: TextClause = text(
+    f"SELECT geo_id, geo_level, geo_name, state_fips FROM {GEOGRAPHY_RELATION} "
+    "WHERE geo_id = ANY(:geo_ids)"
+)
+
 #: Whether the catalog serves a geography at all, for the route's 404.
 GEOGRAPHY_EXISTS_QUERY: TextClause = text(
     f"SELECT geo_id, geo_level FROM {GEOGRAPHY_RELATION} WHERE geo_id = :geo_id"

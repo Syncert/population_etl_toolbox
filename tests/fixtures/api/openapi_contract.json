@@ -1079,6 +1079,76 @@
         "comparison"
       ]
     },
+    "GET /api/v1/comparison/places": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id_b",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "period_start",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "ratio_id",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:PlacesComparisonResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
     "GET /api/v1/comparison/preflight": {
       "parameters": [
         {
@@ -3082,6 +3152,20 @@
         "total"
       ]
     },
+    "ComparisonAlternative": {
+      "properties": {
+        "href": "string",
+        "label": "string",
+        "ratio_id": "string",
+        "unit": "string"
+      },
+      "required": [
+        "href",
+        "label",
+        "ratio_id",
+        "unit"
+      ]
+    },
     "ComparisonCorrelationResponse": {
       "properties": {
         "caveats": "array<string>",
@@ -4508,6 +4592,97 @@
       },
       "required": [
         "valid"
+      ]
+    },
+    "PlacesComparisonResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "comparable": "boolean",
+        "containment": "PlacesContainment",
+        "cross_level": "boolean",
+        "derivations": "array<string>",
+        "derived": "boolean",
+        "difference": "string | null",
+        "intervals_overlap": "boolean | null",
+        "measure_kind": "string",
+        "measure_kind_status": "string",
+        "metric_code": "string | null",
+        "metric_code_b": "string | null",
+        "notes": "array<PlacesNote>",
+        "period_basis": "string | null",
+        "ratio_id": "string | null",
+        "refusal": "PlacesRefusal | null",
+        "side_a": "PlacesSide",
+        "side_b": "PlacesSide"
+      },
+      "required": [
+        "caveats",
+        "comparable",
+        "containment",
+        "cross_level",
+        "derivations",
+        "derived",
+        "measure_kind",
+        "measure_kind_status",
+        "notes",
+        "side_a",
+        "side_b"
+      ]
+    },
+    "PlacesContainment": {
+      "properties": {
+        "evidence_source": "string | null",
+        "geography_vintage": "integer | null",
+        "relationship": "string",
+        "share_of_smaller_inside_larger": "number | null",
+        "smaller_side": "string | null"
+      },
+      "required": [
+        "relationship"
+      ]
+    },
+    "PlacesNote": {
+      "properties": {
+        "detail": "string",
+        "reason": "string"
+      },
+      "required": [
+        "detail",
+        "reason"
+      ]
+    },
+    "PlacesRefusal": {
+      "properties": {
+        "alternatives": "array<ComparisonAlternative>",
+        "detail": "string",
+        "reason": "string"
+      },
+      "required": [
+        "detail",
+        "reason"
+      ]
+    },
+    "PlacesSide": {
+      "properties": {
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "interval_high": "string | null",
+        "interval_low": "string | null",
+        "margin_of_error": "string | null",
+        "metric_code": "string",
+        "metric_label": "string | null",
+        "metric_label_status": "string | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "published": "boolean | null",
+        "release": "string | null",
+        "value": "string | null",
+        "value_status": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "metric_code"
       ]
     },
     "PopulationScenarioPoint": {
