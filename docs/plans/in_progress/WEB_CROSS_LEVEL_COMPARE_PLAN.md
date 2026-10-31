@@ -120,3 +120,25 @@ API started with `DERIVED_RATIOS_SERVE_DRAFTS=1`:
    national row), with the metro's own rate still shown and no zero.
 4. The Dane County page's "Part of" list links "compare" to each of the
    above forms.
+
+## Live check, OFFICE_LAB, 2026-10-31 (dev at fc6a2d5)
+
+1. Austin city beside Travis County: passed (income 93,658 ±1,670 and
+   99,611 ±1,578 for 2020-2024; "92% of Austin city's area lies inside
+   Travis County"; population refused, no share published).
+2. Dane County beside Wisconsin: passed.
+3. Austin metro beside the nation: heading and containment shown, but no
+   measure rows. The page asked only measures whose catalog grains list
+   both sides, and no chapter measure lists both METRO and NATIONAL. Fixed
+   on the follow-up: across levels a measure is asked when either side's
+   grain is listed, and the API's `not_published` says which side has
+   nothing; a page with no measure at all says so.
+4. Dane County's "Part of": a compare link beside the metro only. Fixed:
+   every county, city and state page offers "Compare this place with
+   <state> or the United States" from its own places.
+5. Both pages took 62 s and 121 s to resolve their places, paging
+   `/catalog/geographies` by state and grain. Fixed: a canonical segment
+   resolves through `/catalog/geographies/search` (A-1) by its own page
+   address in one read, with the lists kept as the fallback.
+
+Recheck 3, 4 and 5 after the follow-up merges.

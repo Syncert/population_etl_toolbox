@@ -127,6 +127,11 @@ async function resolveSide(
   if (!address.county) {
     return { place: { geoId: state.geo_id, name: stateName(state), level: "STATE" }, path: placePath(stateSeg), state, county: null };
   }
+  // The place search answers with each place's own page address (A-1), so a
+  // canonical segment resolves in one read; paging every county and city of
+  // a state took a minute on Texas. Any other form falls through to the lists.
+  const found = await searchSegment(address.county, stateSeg, state, signal);
+  if (found) return found;
   // A county keeps its address; otherwise the segment names a city or town
   // in the state, as on the place page (acs-place-grain).
   const counties = await listAt("COUNTY", signal, state.state_fips);
@@ -149,6 +154,46 @@ async function resolveSide(
     path: placePath(stateSeg, citySegment(city, places, counties)),
     state,
     county: null,
+  };
+}
+
+/** One row of `/catalog/geographies/search` (place-search, A-1). */
+interface SearchItem {
+  geo_id: string;
+  geo_level: string;
+  geo_name: string;
+  short_name?: string | null;
+  state_name?: string | null;
+  page_path?: string | null;
+}
+
+async function searchSegment(
+  segment: string,
+  stateSeg: string,
+  state: GeographySummary,
+  signal: AbortSignal,
+): Promise<ResolvedSide | null> {
+  const path = placePath(stateSeg, segment);
+  let items: SearchItem[] = [];
+  try {
+    const payload = await apiFetch<{ items: SearchItem[] }>("/catalog/geographies/search", {
+      params: { q: segment.replace(/-/g, " "), state_fips: String(state.state_fips || ""), grain: "COUNTY,PLACE", limit: 10 },
+      signal,
+    });
+    items = payload.items || [];
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return null;
+  }
+  const item = items.find((entry) => entry.page_path === path && (entry.geo_level === "COUNTY" || entry.geo_level === "PLACE"));
+  if (!item) return null;
+  const own = String(item.geo_name || item.short_name || item.geo_id).replace(new RegExp(`,\\s*${stateName(state)}$`), "");
+  const summary: GeographySummary = { geo_id: item.geo_id, geo_level: item.geo_level, state_fips: state.state_fips, state_name: stateName(state) };
+  return {
+    place: { geoId: item.geo_id, name: `${own}, ${stateName(state)}`, level: item.geo_level as CompareLevel },
+    path,
+    state,
+    county: item.geo_level === "COUNTY" ? summary : null,
   };
 }
 
@@ -259,7 +304,12 @@ export default function ComparePlacesPage({ a: addressA, b: addressB }: { a: Sid
       const code = measure.candidates.find((candidate) => metrics.has(candidate));
       const metric = code ? metrics.get(code)! : null;
       const grains = metric?.valid_geo_grains;
-      return metric && code && (!Array.isArray(grains) || levels.every((grain) => grains.includes(grain))) ? [{ measure, code, metric }] : [];
+      // Across levels a measure is asked when the catalog lists either side's
+      // grain: the API then says plainly which place publishes nothing
+      // (`not_published`), where a filter on both left a metro beside the
+      // nation with no rows at all and no word why.
+      const listed = (grain: CompareLevel) => !Array.isArray(grains) || grains.includes(grain);
+      return metric && code && (levels.length > 1 ? levels.some(listed) : levels.every(listed)) ? [{ measure, code, metric }] : [];
     };
     return PLACE_CHAPTERS.map((chapter) => ({
       chapter,
@@ -440,6 +490,12 @@ export default function ComparePlacesPage({ a: addressA, b: addressB }: { a: Sid
           ))
         : null}
 
+      {sides && status.state === "ok" && !measures.some((entry) => entry.measures.length || entry.viewable.length) ? (
+        <p className="analysis-panel" data-testid="compare-places-empty">
+          No measure on these pages is published for {sides.a.place.name} or {sides.b.place.name}, so there is nothing to set side by side here yet.
+        </p>
+      ) : null}
+
       <footer className="place-footer" data-testid="compare-places-footnote">
         <h2>What this comparison cannot say</h2>
         <ul>
@@ -448,7 +504,7 @@ export default function ComparePlacesPage({ a: addressA, b: addressB }: { a: Sid
           <li>Every row names its period, and a measure the two places did not publish for the same period is listed rather than shown.</li>
           {cross ? (
             <>
-              <li>A measure is shown only where its publisher reports it for both kinds of place.</li>
+              <li>A measure its publisher reports for only one of the two places says so, rather than showing a zero.</li>
               <li>When one place lies inside or overlaps the other, the two figures partly count the same people, so no difference is worked out.</li>
               <li>Whether each measure is a total, an average or a rate decides what may be set side by side; those classifications are awaiting review.</li>
             </>
@@ -695,14 +751,6 @@ interface PickerOption {
   note: string;
 }
 
-/** One row of `/catalog/geographies/search` (place-search, A-1). */
-interface SearchItem {
-  geo_id: string;
-  geo_level: string;
-  geo_name: string;
-  state_name?: string | null;
-  page_path?: string | null;
-}
 
 const PICKABLE = new Set(["NATIONAL", "STATE", "COUNTY", "PLACE", "METRO"]);
 const SEARCH_NOTES: Record<string, string> = { STATE: "state", COUNTY: "county", PLACE: "city or town", METRO: "metro area" };
