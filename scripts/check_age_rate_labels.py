@@ -90,6 +90,9 @@ def main() -> int:
                 releases = [(d, str(v)) for d, v in cursor.fetchall()]
             for dataset, vintage in releases:
                 release = f"{dataset}:{vintage}"
+                if not scheme.serves(dataset, int(vintage)):
+                    print(f"{scheme.rate_id} {release}: older layout, not served")
+                    continue
                 cursor.execute(
                     LABELS_SQL,
                     {

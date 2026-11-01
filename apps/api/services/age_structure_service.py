@@ -1025,6 +1025,7 @@ def place_rates(
     scheme: RateScheme,
     release: Optional[PlaceRelease],
     *,
+    dataset: str = "acs5",
     geo_id: str,
     geo_level: Optional[str],
     geo_name: Optional[str],
@@ -1045,6 +1046,14 @@ def place_rates(
         code in release.lines for code in scheme.total.denominator
     ):
         return AgeRatePlace(**base, unavailable_reason="not_published")
+    if not scheme.serves(dataset, release.vintage_year):
+        return AgeRatePlace(
+            **base,
+            release=str(release.vintage_year),
+            period_start=release.period_start,
+            period_end=release.period_end,
+            unavailable_reason="layout_not_mapped",
+        )
     # Each group as this release labels it (an age boundary the Bureau moved).
     scheme = scheme.at(release.vintage_year)
     groups = []
@@ -1104,6 +1113,7 @@ def age_structure_rates(
         return place_rates(
             scheme,
             None if read.vintage is None else read.releases.get((code, read.vintage)),
+            dataset=dataset,
             geo_id=code,
             geo_level=who.get("geo_level") or (ref.level if ref else None),
             geo_name=who.get("geo_name"),

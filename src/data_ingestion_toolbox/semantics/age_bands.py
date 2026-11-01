@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -321,6 +321,12 @@ class RateScheme:
     #: Words a numerator line's Bureau label must hold, and must not.
     numerator_has: str = ""
     numerator_lacks: tuple[str, ...] = ()
+    #: The first vintage, per dataset, whose line layout these groups map;
+    #: an older release published another layout and is not served.
+    served_from: dict[str, int] = field(default_factory=dict)
+
+    def serves(self, dataset: str, vintage: int) -> bool:
+        return vintage >= self.served_from.get(dataset, 0)
 
     def metric_code(self, dataset: str, variable: str) -> str:
         return f"{self.source_code}:{dataset}:{variable}"
@@ -426,6 +432,10 @@ def parse_rate_scheme(entry: dict) -> RateScheme:
         groups=groups,
         numerator_has=str(_require(entry, "label_check", where).get("numerator_has")),
         numerator_lacks=tuple(entry["label_check"].get("numerator_lacks") or ()),
+        served_from={
+            str(dataset): int(year)
+            for dataset, year in (entry.get("served_from") or {}).items()
+        },
     )
     _validate_rate(scheme)
     return scheme
@@ -437,6 +447,8 @@ def _validate_rate(scheme: RateScheme) -> None:
         raise AgeBandRegistryError(f"{where}: a rate is served in percent")
     if not scheme.groups:
         raise AgeBandRegistryError(f"{where}: no age groups")
+    if not set(scheme.served_from) <= set(scheme.datasets):
+        raise AgeBandRegistryError(f"{where}: served_from names an unknown dataset")
     prefix = f"{scheme.table_id}_"
     for code in scheme.variables():
         if not code.startswith(prefix):

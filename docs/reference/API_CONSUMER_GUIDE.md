@@ -2010,7 +2010,9 @@ proportion formula), the numerator's `cv_percent` and `reliable`
 (CV 30 % or less); `total` is the table's own all-ages rate. A group's
 `label`, `age_start` and `age_end` are as the release labels them: B27010's
 first two groups are under 18 and 18 to 34 before 2017, under 19 and 19 to
-34 after, on the same lines. `places` is the
+34 after, on the same lines. A release published in an older line layout
+the scheme does not map (veterans before 2010, moved in the 2005 1-year
+release) is `layout_not_mapped`, with no groups. `places` is the
 place and then each level it sits in, read at the place's release exactly as
 `/age-structure` reads them; a level without that release is
 `not_published`. A withheld line leaves its group null with

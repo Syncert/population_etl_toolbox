@@ -278,7 +278,13 @@ class AgeRatePlace(BaseModel):
     release: Optional[str] = None
     period_start: Optional[str] = None
     period_end: Optional[str] = None
-    unavailable_reason: Optional[Literal["not_published"]] = None
+    unavailable_reason: Optional[Literal["not_published", "layout_not_mapped"]] = Field(
+        None,
+        description=(
+            "`layout_not_mapped`: the release published the table in an "
+            "older line layout the rate scheme does not map."
+        ),
+    )
     derived: bool = True
     total: Optional[AgeRateSide] = Field(
         None, description="Every age together, as the table's own total lines give it."

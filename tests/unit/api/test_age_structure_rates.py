@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
-from apps.api.services.age_structure_service import Line, PlaceRelease
+from apps.api.services.age_structure_service import Line, PlaceRelease, place_rates
 from data_ingestion_toolbox.semantics.age_bands import (
     REGISTRY_PATH,
     AgeBandRegistryError,
@@ -473,3 +473,35 @@ def test_an_earlier_release_is_checked_as_it_labels_its_groups() -> None:
     scheme = RATES["uninsured_by_age"]
     assert rate_label_problems(scheme, labels, 2013) == []
     assert len(rate_label_problems(scheme, labels, 2023)) == 2
+
+
+def test_a_release_in_an_older_line_layout_is_not_served() -> None:
+    """Covers: API-192, API-193 -- B21001 before 2010 and B07001's 2005
+    1-year release number their lines another way."""
+    veterans = RATES["veterans_by_age"]
+    assert not veterans.serves("acs1", 2009) and veterans.serves("acs1", 2010)
+    assert not veterans.serves("acs5", 2009) and veterans.serves("acs5", 2010)
+    moved = RATES["moved_by_age"]
+    assert not moved.serves("acs1", 2005) and moved.serves("acs1", 2006)
+    assert moved.serves("acs5", 2009)
+    assert RATES["poverty_by_age"].serves("acs1", 2005)
+
+    old = PlaceRelease(
+        geo_id=DANE["geo_id"],
+        geo_level="COUNTY",
+        vintage_year=2008,
+        period_start="2008-01-01",
+        period_end="2008-12-31",
+        lines={"B21001_001": Line(Decimal(1000), Decimal(10))},
+    )
+    block = place_rates(
+        veterans,
+        old,
+        dataset="acs1",
+        geo_id=DANE["geo_id"],
+        geo_level="COUNTY",
+        geo_name="Dane County, Wisconsin",
+        role="place",
+    )
+    assert block.unavailable_reason == "layout_not_mapped"
+    assert block.release == "2008" and block.groups == [] and block.total is None
