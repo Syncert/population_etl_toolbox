@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from data_ingestion_toolbox.fbi_ucr.return_a.registry import RETURN_A_PRODUCTS
 from data_ingestion_toolbox.quality.sources import fbi_return_a_matches_cde
+
+pytestmark = pytest.mark.unit
 
 
 class _Cursor:
@@ -36,7 +40,7 @@ def _run(months: list[tuple[str, str, int, int]]) -> tuple[Any, _Cursor]:
 
 
 def test_a_revision_of_one_offense_or_two_percent_warns() -> None:
-    """Covers: DQ-FBI-011 — CDE revisions after the master file are named, not failed."""
+    """Covers: ETL-107, DQ-FBI-011 — CDE revisions after the master file are named, not failed."""
     outcome, cursor = _run(
         [
             ("WI0130000", "02-2015", 12, 13),  # one offense
@@ -57,7 +61,7 @@ def test_a_revision_of_one_offense_or_two_percent_warns() -> None:
 
 
 def test_a_larger_gap_fails_and_is_listed_first() -> None:
-    """Covers: DQ-FBI-011 — a wrong sum is never hidden behind revisions."""
+    """Covers: ETL-107, DQ-FBI-011 — a wrong sum is never hidden behind revisions."""
     outcome, _ = _run(
         [
             ("WI0130000", "02-2015", 12, 13),
@@ -72,6 +76,6 @@ def test_a_larger_gap_fails_and_is_listed_first() -> None:
 
 
 def test_equal_totals_pass() -> None:
-    """Covers: DQ-FBI-011 — agreeing months pass."""
+    """Covers: ETL-107, DQ-FBI-011 — agreeing months pass."""
     outcome, _ = _run([("WI0130000", "02-2015", 12, 12)])
     assert (outcome.result, outcome.observed_count) == ("pass", 0)
