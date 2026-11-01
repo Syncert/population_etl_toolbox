@@ -613,3 +613,57 @@
   flex-wrap: wrap;
   max-width: 100%;
 }
+
+/* What the record shows (D-9): one card per question, each with its chart. */
+.place-record {
+  scroll-margin-top: 56px;
+}
+
+.place-record-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+}
+
+.place-record-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.place-record-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+}
+
+.place-record-sentence {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.place-record-coverage {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 0.92rem;
+}
+
+.place-record-working ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 0.9rem;
+}
+
+.place-record-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 0;
+}
+
+.place-record-chart-title {
+  margin: 12px 0 4px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
