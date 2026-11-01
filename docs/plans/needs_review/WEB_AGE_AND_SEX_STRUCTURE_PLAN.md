@@ -18,13 +18,13 @@ verify:
 
 ## Status
 
-In progress, 2026-11-01: built, merged and checked live for a city, a county
-and a state; the age indicators on the map (acceptance 9, API part 2) are
-built and wait for their live check; the tract page (D-4, #242) is in dev, so
-the tract check can now be done. The web side of
+Needs review, 2026-11-01: built, merged and checked live for a city, a
+county and a state (#223, #231) and for the age indicators on the map at
+every grain (#246). The one item not yet seen live is the age section on a
+tract page (D-4, #242, in dev); see the checkpoint. The web side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
-contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](API_AGE_AND_SEX_STRUCTURE_PLAN.md)
+contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
 and can be built against stubbed answers in that shape while the API is
 built; the live check waits for the API to merge.
 
@@ -179,14 +179,28 @@ Built on API part 2 (#243, API-191), as WEB-157:
   place-map specs still pass; `check:bundle` every route within budget
   (`/map/age/[indicator]` 470 kB of a 505 kB budget, the same as `/map`;
   `/map/[metric]` 488 kB of 505). Catalog: WEB-157, recounted to 697.
-- Live check (OFFICE_LAB) waits for the first age summary build, which fills
-  `gold_census.age_structure_summary`.
+- Merged into dev as 03d52a24 (#246).
+- Live check (OFFICE_LAB, dev 346786ec, after the first age summary build):
+  - County median age: coloured in five bands, "No value (13 counties)",
+    "United States, 2020–2024: 38.9 years (± 0.1)", drawn on the current
+    county boundaries.
+  - Metro share 65 and over: 925 with a value, none without, 2023
+    boundaries marked with the asterisk.
+  - Wisconsin cities, median age: 808 places on the 2025 boundaries marked
+    with the asterisk, Madison 31.8 ± 0.4, read p50 about 50 ms.
+  - Wisconsin tracts, sex ratio: 1,542 tracts, 17 withheld as
+    `denominator_zero` (the 990000 water tracts), listed with the reason and
+    uncoloured, read p50 about 43 ms.
+  - Screenshots: project files `agemap-median-county.png`,
+    `agemap-65plus-metro.png`, `agemap-median-place-wi.png`,
+    `agemap-sexratio-tract-wi.png`.
 
 ## Checkpoint
 
-Blocked on D-4 (tract page), 2026-10-31; D-4 is in dev as of 2026-11-01. Everything else is built, merged
-(#223, #231) and checked live. The one open acceptance item is the live
-check of a Dane County tract, which needs a tract page to exist. When D-4
-lands: open a tract page, confirm the section renders with real values
-(including hatched and absent bands where the tract has them), record a
-screenshot here, and move this plan to `needs_review/`.
+Moved to `needs_review/` on 2026-11-01 at the coordinator's request, after
+the map's live check passed. Every acceptance item has been seen live except
+one: the People chapter's age section on a tract page. The section is the
+same component as on the city and county pages, and the tract page (D-4,
+#242) now reads the tract. The next OFFICE_LAB pass should open a Dane County
+tract page, confirm the section renders with real values (including hatched
+and absent bands where the tract has them) and add a screenshot here.
