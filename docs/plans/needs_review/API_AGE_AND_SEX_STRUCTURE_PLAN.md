@@ -256,5 +256,21 @@ Query: `geo_id`, `dataset` (default `acs5`), `from_release`, `to_release`.
 
 ## Checkpoint
 
-Next pickup: write `age_bands.json` and its loader test, then the pure band
-and margin functions with their tests, then the reads and routes.
+Delivered in full and in `dev`: part 1 (#222, #230: `/age-structure`,
+`/history`, `/cohorts`), part 2a (#243: `gold_census.age_structure_summary`
+and `/age-structure/map`, filled and verified on OFFICE_LAB, 35 releases,
+1,818,085 rows), part 2b (#258: rate schemes and `/age-structure/rates`, every
+line checked against the Bureau's labels on OFFICE_LAB, 153 scheme x release
+pairs with no disagreement). Ready for Nick's review of the draft band and
+rate schemes.
+
+## Post-v1 follow-ups
+
+Both are new ingestion, outside the v1 build-out:
+
+- **PEP county age and sex (decision 3):** load the Population Estimates
+  Program's annual county characteristics by age and sex so counties and up
+  draw an annual pyramid series beside the ACS releases, labelled as PEP.
+- **Census 2000 SF1 P012 (decision 4):** crosswalk the 46 sex-by-age lines
+  and the two sex totals in `decennial_crosswalk.json` and re-run the 2000
+  load for those lines, so a 2000 pyramid can sit beside the ACS ones.

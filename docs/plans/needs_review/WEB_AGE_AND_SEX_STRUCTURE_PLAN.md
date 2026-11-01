@@ -23,7 +23,7 @@ county, a state and a tract (#223, #231, with the tract page from #242) and
 for the age indicators on the map at every grain (#246). The web side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
-contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
+contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../needs_review/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
 and can be built against stubbed answers in that shape while the API is
 built; the live check waits for the API to merge.
 
