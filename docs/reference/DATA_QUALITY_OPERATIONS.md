@@ -27,6 +27,13 @@ tables it writes are the evidence relations above. The task fails when the
 assessment finishes `fail` or `error`, so a red DAG run means a blocking
 contract violation, not a flake.
 
+Each rule runs under a 30-minute `statement_timeout`
+(`quality.runner.DEFAULT_RULE_STATEMENT_TIMEOUT`), restored after the rule. A
+rule that times out or raises records no evidence, is named in the run's
+`failure_summary`, and the run carries on with the next rule and finishes
+`error`, so one runaway rule neither holds the warehouse nor hides the rules
+after it.
+
 Target one source, rule, or partition for repair verification by triggering
 the DAG with configuration:
 

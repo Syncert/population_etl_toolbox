@@ -3009,6 +3009,12 @@ def _conformance_offenders(
     with a commit per chunk, so a fact published since the last refresh is
     legitimately absent and the source's reconciliation rule measures that
     ledger.
+
+    ``published_sql`` carries a boolean ``moved`` per group: true when its
+    silver rows changed after the last serving refresh. Such a group is
+    exempt. It used to be dropped from the published side with a HAVING
+    instead, which left its served group with no counterpart and so reported
+    exactly the group the exemption was meant to excuse.
     """
     cursor.execute(
         f"""
@@ -3017,9 +3023,10 @@ def _conformance_offenders(
         SELECT served.metric_code, served.vintage
           FROM served
           LEFT JOIN published USING (metric_code, vintage)
-         WHERE published.metric_code IS NULL
-            OR published.rows <> served.rows
-            OR published.digest IS DISTINCT FROM served.digest
+         WHERE NOT COALESCE(published.moved, FALSE)
+           AND (published.metric_code IS NULL
+                OR published.rows <> served.rows
+                OR published.digest IS DISTINCT FROM served.digest)
          ORDER BY 1, 2
         """
     )
@@ -3540,7 +3547,10 @@ def bls_contract_conformance(
         SELECT COALESCE('BLS:' || m.metric_key, 'BLS:' || s.series_id) AS metric_code,
                s.year AS vintage,
                COUNT(*) AS rows,
-               {_GROUP_DIGEST.format(column="s.value")} AS digest
+               {_GROUP_DIGEST.format(column="s.value")} AS digest,
+               MAX(s.ingested_at) > COALESCE(
+                   MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
+               ) AS moved
           FROM silver_bls.fact_labor_statistics s
           LEFT JOIN gold_bls.dim_bls_measure m
                  ON m.program_code = UPPER(s.program)
@@ -3555,9 +3565,6 @@ def bls_contract_conformance(
            -- averages, so every such group reads as unbacked.
            AND s.period <> 'M13'
          GROUP BY 1, 2
-        HAVING MAX(s.ingested_at) <= COALESCE(
-                   MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
-               )
     """
     unbacked, unbacked_total = _conformance_offenders(
         cursor, served_sql=served_sql, published_sql=published_sql
