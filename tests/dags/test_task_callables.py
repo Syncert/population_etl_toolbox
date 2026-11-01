@@ -340,6 +340,67 @@ def test_an_operator_stop_fails_the_acs_transform_without_a_retry(
 
 
 @pytest.mark.parametrize(
+    ("dag_id", "task_id", "hook_global"),
+    [
+        ("acs_ingest", "refresh_gold_census_serving_layer", "_get_postgres_hook"),
+        ("bls_ingest", "refresh_gold_bls_serving_layer", "_get_postgres_hook"),
+        ("fred_ingest", "refresh_gold_fred_serving_layer", "_get_postgres_hook"),
+        ("serving_full_reserve", "reserve_source", "PostgresHook"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("error", "fails_outright"),
+    [
+        ("canceling statement due to user request", True),
+        ("terminating connection due to administrator command", True),
+        ("canceling statement due to statement timeout", False),
+    ],
+)
+def test_an_operator_stop_fails_a_serving_refresh_without_a_retry(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+    dag_id: str,
+    task_id: str,
+    hook_global: str,
+    error: str,
+    fails_outright: bool,
+) -> None:
+    """Covers: DAG-008 — a cancelled serving refresh is not restarted; a timeout may retry."""
+    import psycopg2.errors
+    from airflow.exceptions import AirflowFailException
+
+    kind = (
+        psycopg2.errors.AdminShutdown
+        if "administrator" in error
+        else psycopg2.errors.QueryCanceled
+    )
+
+    def stopped(**_kwargs: Any) -> dict[str, int]:
+        raise kind(error)
+
+    callable_ = _callable(dagbag, dag_id, task_id)
+    _patch_callable_global(
+        monkeypatch, callable_, hook_global, lambda *_a, **_k: RecordingDatabase()
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "refresh_serving_layer_in_year_chunks", stopped
+    )
+    kwargs: dict[str, Any] = {}
+    if dag_id == "serving_full_reserve":
+
+        class _Run:
+            conf = {"source_code": "BLS"}
+
+        kwargs["dag_run"] = _Run()
+    expected = AirflowFailException if fails_outright else kind
+    with pytest.raises(expected) as raised:
+        callable_(**kwargs)
+    if fails_outright:
+        assert "not retrying" in str(raised.value)
+        assert isinstance(raised.value.__cause__, kind)
+
+
+@pytest.mark.parametrize(
     (
         "dag_id",
         "module_name",

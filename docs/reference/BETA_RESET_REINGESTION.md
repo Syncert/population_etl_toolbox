@@ -1255,6 +1255,8 @@ re-run from its first unfinished slice.
    `running`. Mark it `failed` with a reason so the quality finalizer
    accounts for its requests (DQ-SHARED-002).
 
+Then resume as in section 10, "A stuck `acs_ingest` run".
+
 To pause between years without stopping anything (for a measurement, or a
 rebuild that restarts the scheduler), wait for the current run to reach
 `success`, then `airflow dags pause acs_ingest` and confirm it took:
@@ -1292,3 +1294,222 @@ scheduler only between years, paused as above.
   new rows. The nationwide FBI load turned a 30 ms county rate into a
   131 s one until the rate was precomputed per load.
 
+
+## 10. After the loads
+
+The order to follow once a big history load (section 9) has finished, before
+the history is called published and before the web is checked live. Every
+command runs on the internal stack from `H:\population_etl_toolbox` with the
+stack up; Airflow commands run in `docker-airflow-scheduler-1`. Never
+`git checkout` in that folder (the scheduler mounts it): read a branch from a
+worktree or a scratch clone.
+
+### 1. ANALYZE the big tables
+
+The chunk driver analyses `rpt_acs_observations` and `mv_acs_latest` after
+each chunk (DB-048); nothing analyses the silver tables a load grew. Run, in a
+quiet window, one statement at a time:
+
+```sql
+ANALYZE silver_census.observation_revision;
+ANALYZE silver_census.fact_demographics;
+ANALYZE gold_census.rpt_acs_observations;
+ANALYZE gold_census.mv_acs_latest;
+```
+
+Use `VACUUM (ANALYZE, PARALLEL 0)` instead on a table a full re-serve
+rewrote (section 7). A plan read against stale statistics is how the 2024
+publish and DQ-ACS-007 first went to nested loops.
+
+### 2. Deploy only what the ledger lacks
+
+After pulling `dev`:
+
+```bash
+python -m scripts.apply_warehouse_manifest --check          # what is flagged
+python -m scripts.apply_warehouse_manifest --only-flagged   # apply just that
+```
+
+Never re-apply the whole manifest on the populated warehouse (migration 027
+re-validates every ACS fact under an exclusive lock), and never apply
+`gold-census` while a run is publishing (`CALL gold_census...` in
+`pg_stat_activity`). Rebuild only the images whose code changed
+(`make deploy-up`); a Python or DAG change in the mounted checkout needs no
+scheduler rebuild.
+
+### 3. Pre-build a PR's index DDL before merging it
+
+A PR that adds an index states it in its body. Build it on the warehouse
+under the **same name** before the PR merges, so the repo's
+`CREATE INDEX IF NOT EXISTS` is a no-op when the manifest applies it and no
+deploy builds an index under lock.
+
+```sql
+-- An ordinary table (for example #251's place slice index):
+CREATE INDEX CONCURRENTLY IF NOT EXISTS census_observation_revision_place_slice_idx
+    ON silver_census.observation_revision (
+        dataset, year, state_fips_source, county_fips_source, place_fips_source)
+    WHERE geo_level = 'place';
+ANALYZE silver_census.observation_revision;
+
+-- A partitioned table: CONCURRENTLY is refused on the parent, so create the
+-- parent index ON ONLY (instant, invalid), build each partition's index
+-- concurrently, then attach each one. The parent turns valid when the last
+-- partition is attached.
+CREATE INDEX IF NOT EXISTS <name> ON ONLY gold_census.rpt_acs_observations (<columns>);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS <name>_2024
+    ON gold_census.rpt_acs_observations_2024 (<columns>);
+ALTER INDEX <name> ATTACH PARTITION <name>_2024;
+-- ...repeat for every partition, then:
+SELECT indisvalid FROM pg_index WHERE indexrelid = '<schema>.<name>'::regclass;
+```
+
+A `CONCURRENTLY` build that fails leaves an invalid index of that name: drop
+it (`DROP INDEX CONCURRENTLY`) and build again. Then run the PR's EXPLAIN
+helper (named in its body, for example
+`/mnt/project-files/quality/explain_acs_raw_slice.py`) and merge only on an
+index scan with no nested loop over a big relation.
+
+### 4. Fill the age summary
+
+`acs_ingest` builds `gold_census.age_structure_summary` after each serving
+refresh (`refresh_age_structure_summary`), a release at a time and only for
+releases whose year partition changed. After loads run outside the DAG, or
+after a band-scheme version change, build it by hand:
+
+```bash
+docker exec docker-airflow-scheduler-1 \
+    python -m data_ingestion_toolbox.census_acs.gold_census.age_summary
+```
+
+It prints `{"releases": N, "rows": M}`; the first full build on 2026-11-01
+was 35 releases, 1.82M rows, about 50 minutes. `AGE_SUMMARY_BACKFILL_WORKERS`
+(default 4) sets the sessions for a many-release build. Before a rate scheme
+in `docs/semantics/age_bands.json` is approved, run
+`python scripts/check_age_rate_labels.py --env-file infra/docker/stack.env`
+(with `ANALYTICS_DB_HOST=localhost`, `ANALYTICS_DB_PORT=5435`); it must print
+`0 problems` for each scheme.
+
+### 5. Sweep DQ-ACS-007 in full
+
+A scheduled run re-measures only the `rpt_acs_observations` partitions whose
+fingerprint changed. After a history load, sweep every partition once, in a
+quiet window, not beside a load:
+
+```bash
+docker exec docker-airflow-scheduler-1 airflow dags trigger warehouse_data_quality \
+    --conf '{"rule_id": "DQ-ACS-007", "scope": {"full_sweep": true}}'
+```
+
+Each partition is measured under its own savepoint (#259): a partition that
+hits the 30-minute rule timeout is named in `failure_summary`, the run ends
+`error`, and the next run carries the partitions already recorded and measures
+only the missed one. Read the result with the DQ-ACS-007 query in
+[`DATA_QUALITY_OPERATIONS.md`](DATA_QUALITY_OPERATIONS.md).
+
+### 6. The weekly DQ run is the publish gate
+
+```bash
+docker exec docker-airflow-scheduler-1 airflow dags trigger warehouse_data_quality \
+    --conf '{"cadence": "weekly"}'
+```
+
+The history is published only when this run's data rules pass. Each rule has
+a 30-minute `statement_timeout` and a failed rule does not stop the rules
+after it (#247). While a long rule is being swept on its own (step 5), the
+weekly run can leave it out (#259) and the run records it as
+`scope.excluded_rules`:
+
+```bash
+--conf '{"cadence": "weekly", "exclude_rules": ["DQ-ACS-007"]}'
+```
+
+An excluded rule still needs its own passing run before the gate is met.
+
+### 7. Confirm serving caught up
+
+Each `acs_backfill` run serves its own changed grain steps
+(`refresh_gold_census_serving_layer`), so a finished history needs no
+separate serving run. Two cases do:
+
+- **Silver rows not yet served.** A run stopped after its transform (see
+  "A stuck `acs_ingest` run" below) leaves new silver rows unserved; run the
+  targeted backfill for that year and grain. Its transform skips the finished
+  slices and the serving step publishes them.
+- **A metric-identity change.** Trigger `serving_full_reserve` (section 7).
+
+The `/admin/warehouse` coverage page shows what is served per source.
+
+### A stuck `acs_ingest` run: stop it, then resume
+
+`transform_to_silver` retries **once**, and every attempt resumes from the
+slice ledger (#251): slices finished under the run's key are not read, and
+slices stamped by earlier runs are read only if they changed. Each attempt
+logs `[CENSUS_ACS RESUME] transform_to_silver attempt N for run X` and per
+year how many slices are finished, stamped, or never finished. A slice whose
+raw read passes 45 minutes is read again in two halves, and the ledger keeps
+the halves.
+
+To stop a run that is stuck anyway:
+
+1. **Pause the DAG** so nothing new starts:
+   `airflow dags pause acs_ingest`, then confirm `is_paused True` with
+   `airflow dags details acs_ingest`.
+2. **Terminate the warehouse statement**
+   (`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE ...`). A
+   statement an operator cancels fails the task with "clear this task to
+   resume run X" and does not retry.
+3. **Mark the run failed in the Airflow UI** (Browse → DAG Runs, select the
+   run, Mark state as failed). The operator does this by hand; `airflow tasks
+   clear` alone leaves the statement running and the task in `restarting`.
+4. Mark the run's `control.ingestion_run` row `failed` with a reason, so
+   DQ-SHARED-002 accounts for its requests.
+5. **Resume with a targeted run**, one year and grain at a time, newest first:
+
+   ```bash
+   airflow dags unpause acs_ingest
+   airflow dags trigger acs_ingest --conf '{"acs_backfill": {"year": 2009, "geo_level": "tract"}}'
+   ```
+
+   It transforms only that year, skips every slice the ledger already holds
+   unchanged, and serves what changed. After #248 the first run logs
+   "legacy fingerprint, restamped; skipping" for old stamps; a run that
+   re-reads everything means the reference changed since they were stamped
+   (safe, once).
+
+Clearing the stopped task instead of a new run also resumes from the
+ledger, under the same run id.
+
+### Live checks on the web
+
+After the batch of merges, rebuild the api and web images once and check, at
+`http://localhost:3001` (API `localhost:8000`). Save captures to the project
+Library.
+
+| Page | Address | Pass when |
+| --- | --- | --- |
+| Metro | `/metro/austin-round-rock-san-marcos-tx`; `curl -sI localhost:3001/metro/45500` | Unemployment, income (BEA row marked derived), rent and home value beside Texas and the U.S.; the code address answers 307 to `/metro/texarkana-tx-ar`, which shows the two-state note; Austin city's "Part of" links the metro page |
+| City history | `/us/texas/austin-city`, `/us/wisconsin/madison-city` | Each chapter's trend reads beside Travis County, Texas and the U.S. with margins; one history batch per chapter, always naming the county; "Not published that year" where a vintage lacks a table |
+| Tract | `/us/texas/travis-county/tract-22-19` | 2020 boundary notice; years before 2020 marked Derived; the age-and-sex section shows; `/place/tract-history` under 500 ms cold |
+| Check the record | `/us/wisconsin/dane-county#record`, `/us/texas/austin-city#record`, `/us/wisconsin#record`, `/us#record` | Every card's sentence matches its chart (population and unemployment included); crime compares the same calendar month ten years apart, with agency coverage; Austin's crime and unemployment link to Travis County |
+| Age maps | `/map/age/median_age`, `/map/age/age_65_plus?grain=METRO`, `?grain=PLACE&state=55`, `?grain=TRACT&state=55` | Coloured in bands, "No value (N)" listed with the reason, newest boundaries with the vintage asterisk; a state-scoped map fills its frame |
+| Rates by age | `curl 'localhost:8000/api/v1/age-structure/rates?geo_id=state:55\|county:025&rate=poverty_by_age'`, and `geo_id=state:55\|place:48000` | Every group carries `all` (and `men`/`women` for by-sex tables) with a rate and margin; a level without the release says `not_published` |
+
+**Capturing a map.** A full-page screenshot of a MapLibre page can show a
+stale WebGL frame. Capture maps as an **element** screenshot of the map
+shell (canvas and legend), once the canvas says `data-map-ready="true"`, at a fixed viewport (1440 × 900), and name
+the file `-viewport` (for example `agemap-median-place-wi-viewport.png`):
+
+```js
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.goto("http://localhost:3001/map/age/median_age?grain=PLACE&state=55");
+const map = page.locator('.map-canvas[data-map-ready="true"]');
+await map.waitFor();
+await page.waitForLoadState("networkidle");
+await map.locator("xpath=..").screenshot({ path: "agemap-median-place-wi-viewport.png" }); // canvas + legend
+```
+
+Cards and tables can be full-page captures; scroll a card into view
+(`locator.scrollIntoViewIfNeeded()`) before capturing, since cards below
+the fold were missed on 2026-11-01. The screenshot tool writes to the
+Library root, not `screenshots/`.

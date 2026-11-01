@@ -40,7 +40,21 @@ the DAG with configuration:
 ```json
 {"cadence": "weekly", "source_code": "USDA_NASS"}
 {"rule_id": "DQ-CDC-003", "scope": {"asset_id": "cdi", "release_watermark": "1780605223"}}
+{"cadence": "weekly", "exclude_rules": ["DQ-ACS-007"]}
 ```
+
+`exclude_rules` leaves the named rules out of a cadence run, for example to
+take the weekly gate while a long rule's sweep runs separately. The run's
+`scope.excluded_rules` records what was left out, so an excluded rule is never
+mistaken for a pass; naming a rule the cadence does not run, or excluding every
+rule, is refused before anything is measured.
+
+A rule may also finish *partially*: an executor that measures several
+partitions and has one cancelled by the timeout raises
+`quality.runner.PartialRuleResult`. The partitions it finished keep their
+evidence, the timed-out one records none and is named in `failure_summary`,
+and the run finishes `error`. A later run carries the recorded partitions and
+measures only the one that was missed.
 
 ### Aborted runs are finalized first
 
@@ -275,6 +289,17 @@ covers it instead, under one of two states:
   partition nobody re-served. The first scheduled run after this change has
   no partitioned results to carry and measures everything once; run that
   sweep in a quiet window rather than beside a load.
+
+  The superseded probe (served rows no longer the latest release) is cut by
+  `metric_code` into ranges of about ten million served rows each
+  (`pg_class.reltuples` of the partition, cut on its own distinct codes),
+  with the same bounds on the latest and served sides so both
+  `(metric_code, geo_id)` indexes are read only within the range, plus one
+  statement for rows with a NULL code. The 2024 partition timed out whole in
+  the sweep of 2026-11-01; ranged, each statement is short and the 30-minute
+  limit applies to each rule as before. Every partition is measured inside
+  its own savepoint, so a partition that still times out is the only one left
+  unrecorded.
 
   ```sql
   -- What DQ-ACS-007 measured, and what it carried, on its newest run.

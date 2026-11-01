@@ -9,6 +9,10 @@ verification through ``dag_run.conf``:
     {"cadence": "weekly", "source_code": "USDA_NASS"}
     {"rule_id": "DQ-CDC-003", "scope": {"asset_id": "cdi",
                                         "release_watermark": "1780605223"}}
+    {"cadence": "weekly", "exclude_rules": ["DQ-ACS-007"]}
+
+``exclude_rules`` drops named rules from the run and is recorded in its
+``evaluated_scope`` as ``excluded_rules``.
 
 The assessment never mutates source observations: its executors are
 read-only measurements, and the only relations it writes are the
@@ -168,6 +172,7 @@ def _run_assessment(**context: Any) -> dict[str, Any]:
             rule_id=conf.get("rule_id"),
             scope=conf.get("scope"),
             code_commit_sha=conf.get("code_commit_sha"),
+            exclude_rules=tuple(conf.get("exclude_rules") or ()),
         )
         connection.commit()
         _log_assessment_report(connection, record, cadence)
