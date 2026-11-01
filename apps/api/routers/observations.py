@@ -8,12 +8,15 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
 from apps.api.services.neutral_observations_service import (
+    HISTORY_BATCH_MOST_CODES,
+    HISTORY_BATCH_MOST_GEOGRAPHIES,
     NEWEST_BATCH_MOST_CODES,
     NEWEST_BATCH_MOST_GEOGRAPHIES,
     NeutralQueryError,
     list_metric_releases,
     list_metric_periods,
     list_neutral_observations,
+    history_batch,
     newest_values_batch,
 )
 from apps.api.query_lists import code_list
@@ -31,6 +34,8 @@ from apps.api.schemas import (
     MetricReleaseListResponse,
     MetricPeriodListResponse,
     NeutralObservationListResponse,
+    HistoryBatchItem,
+    HistoryBatchResponse,
     NewestValuesBatchItem,
     NewestValuesBatchResponse,
     ObservationListResponse,
@@ -260,6 +265,68 @@ def get_newest_values_batch(
         geo_ids=places,
         items=[
             NewestValuesBatchItem(
+                metric_code=code,
+                geo_id=geo_id,
+                status=status,
+                detail=detail,
+                observations=response,
+            )
+            for code, geo_id, status, detail, response in answers
+        ],
+    )
+
+
+@router.get(
+    "/history/batch",
+    response_model=HistoryBatchResponse,
+    name="get_history_batch",
+    summary="Several metrics' settled histories for a few places, in one request",
+)
+def get_history_batch(
+    metric_codes: str = Query(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description=(
+            f"Comma-separated metric codes, at most {HISTORY_BATCH_MOST_CODES}."
+        ),
+    ),
+    geo_ids: str = Query(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Comma-separated geography identities, at most "
+            f"{HISTORY_BATCH_MOST_GEOGRAPHIES}."
+        ),
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> HistoryBatchResponse:
+    """Each metric's settled history for each geography.
+
+    Every item is what ``/observations?metric_code=&scope=as_released
+    &newest_release_per_period=true&geo_id=&limit=1000`` answers for that
+    pair: each period as its newest release left it, oldest first. A page
+    that draws a city's trends beside its county, state and nation makes one
+    request per chapter instead of one per line. A metric the single read
+    refuses is refused per item with that read's status and detail; the batch
+    itself fails only when the database does.
+    """
+    codes = code_list(metric_codes, "metric_codes", HISTORY_BATCH_MOST_CODES) or []
+    places = code_list(geo_ids, "geo_ids", HISTORY_BATCH_MOST_GEOGRAPHIES) or []
+    if not codes or not places:
+        raise HTTPException(
+            status_code=422, detail="name at least one metric code and one geo_id"
+        )
+    try:
+        answers = history_batch(db, codes, places)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    return HistoryBatchResponse(
+        metric_codes=codes,
+        geo_ids=places,
+        items=[
+            HistoryBatchItem(
                 metric_code=code,
                 geo_id=geo_id,
                 status=status,

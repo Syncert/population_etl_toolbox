@@ -632,6 +632,29 @@ own single read. A metric that read would refuse carries its `status` and
 that declines the reduction, `503` when its serving relation is absent. An
 empty or oversized batch is `422`; split it.
 
+### Many measures' histories for a few places
+
+`GET /api/v1/observations/history/batch?metric_codes=…&geo_ids=…` takes
+comma-separated `metric_codes` (at most 12) and `geo_ids` (at most 8) and
+answers every pair in `items`, metrics outer, in the order asked. Each item's
+`observations` is exactly what
+`/observations?metric_code=…&scope=as_released&newest_release_per_period=true&geo_id=…&limit=1000`
+answers for that pair: the geography's settled history, each period as its
+newest release left it, oldest first, with each row's margin of error where
+the source publishes one. A pair with more than 1,000 periods answers its
+oldest 1,000 and states the rest in `total`. A place page draws a city's
+median household income beside its county, state and the nation from one
+request rather than one per line. The metrics one released relation holds are
+read in one statement, each its own single read. A metric that read would
+refuse carries its `status` and `detail` and no `observations`: `404` for an
+unknown code, `422` for a source that declines the reduction, `503` when its
+released relation is absent. An empty or oversized batch is `422`; split it.
+
+A period a place has no row for is one its source did not publish for it.
+Census ACS publishes more tables for a place as the Bureau widens its
+curated set, so a city's line for one measure can start years after its
+county's; nothing fills those years in.
+
 ### Quarters and years
 
 `time_grain=quarterly` and `time_grain=annual` on `/observations` answer a

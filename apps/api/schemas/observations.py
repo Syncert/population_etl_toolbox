@@ -379,3 +379,28 @@ class NewestValuesBatchResponse(BaseModel):
     metric_codes: list[str]
     geo_ids: list[str]
     items: list[NewestValuesBatchItem]
+
+
+class HistoryBatchItem(BaseModel):
+    """One metric's settled history for one geography, as the single read
+    answers it.
+
+    ``observations`` is exactly what ``/observations?metric_code=
+    &scope=as_released&newest_release_per_period=true&geo_id=&limit=1000``
+    returns for the pair; a metric that read would refuse carries the single
+    read's ``status`` and ``detail`` instead, and no page.
+    """
+
+    metric_code: str
+    geo_id: str
+    status: int
+    detail: Optional[str] = None
+    observations: Optional[NeutralObservationListResponse] = None
+
+
+class HistoryBatchResponse(BaseModel):
+    """Every named metric's settled history for every named geography."""
+
+    metric_codes: list[str]
+    geo_ids: list[str]
+    items: list[HistoryBatchItem]

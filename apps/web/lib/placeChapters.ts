@@ -14,7 +14,7 @@
 
 import type { GeographySummary, MetricSummary } from "./api/types";
 import type { ObservationRow } from "./explorerViewModel";
-import { publishedNumber } from "./explorerViewModel";
+import { marginOfErrorText, publishedNumber } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
 /** The grains a place page exists for, broadest first. */
@@ -327,6 +327,10 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       })),
     ],
     trend: { measureId: "unemployment-rate", scale: "level" },
+    // The survey's median household income over every year it published, so
+    // a city reads its own income history beside its county, state and the
+    // nation (web-city-history); the rate above is not published for cities.
+    moreTrends: [{ measureId: "median-household-income", scale: "level" }],
     caveat: `The unemployment rate is BLS's count of residents; the jobs and the industry mix are QCEW's count of jobs located here, by employer, and the two are never added or subtracted. The survey counts are the ACS's, on a different universe. Personal income, earnings and GDP are BEA's accounts, in current or chained dollars as each card says; they are never combined with the survey's income. ${ACS_CAVEAT} ${SAE_CAVEAT}`,
   },
   {
@@ -380,7 +384,10 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       { id: "no-internet", label: "Households with no internet access", candidates: acs("B28002_013"), universe: "households" },
     ],
     trend: { measureId: "median-gross-rent", scale: "level" },
-    moreTrends: [{ measureId: "bps-single-family-month", scale: "level" }],
+    moreTrends: [
+      { measureId: "median-home-value", scale: "level" },
+      { measureId: "bps-single-family-month", scale: "level" },
+    ],
     caveat: `${ACS_CAVEAT} Permit figures count homes authorized, not started or completed; the Bureau's estimate imputes for jurisdictions that did not report, and what was reported directly is stated beside it.`,
   },
   {
@@ -859,6 +866,14 @@ export interface TrendPoint {
   time: number;
   value: number;
   published: number;
+  /**
+   * The published margin of error, in the value's unit, when the row carries
+   * one as a number; the Census Bureau's coded "not computed" values are not
+   * numbers and leave it null (`moeText` says what they mean).
+   */
+  moe: number | null;
+  /** The margin of error as the card states it, or "" when none was published. */
+  moeText: string;
 }
 
 export interface TrendLine {
@@ -866,6 +881,8 @@ export interface TrendLine {
   points: TrendPoint[];
   /** Periods this place published without a number, counted. */
   unpublished: number;
+  /** Those periods' labels, so the values table can say which they are. */
+  unpublishedPeriods: string[];
 }
 
 export interface TrendModel {
@@ -875,6 +892,55 @@ export interface TrendModel {
   basePeriod: string;
   /** Lines that could not be indexed, because they lack the base period. */
   unindexed: string[];
+}
+
+const WHOLE_YEAR_START = /^(\d{4})-01-01$/;
+const WHOLE_YEAR_END = /^(\d{4})-12-31$/;
+
+/**
+ * A trend period in the reader's words: a calendar year is its year, and a
+ * run of whole years -- an ACS five-year estimate -- is its first and last
+ * year ("2020–2024"). Anything else keeps the published start and end.
+ */
+export function trendPeriodLabel(row: ObservationRow): string {
+  const start = WHOLE_YEAR_START.exec(String(row.period_start || ""));
+  const end = WHOLE_YEAR_END.exec(String(row.period_end || ""));
+  if (start && end && start[1]! <= end[1]!) {
+    return start[1] === end[1] ? start[1]! : `${start[1]}–${end[1]}`;
+  }
+  return observationPeriodLabel(row);
+}
+
+function publishedMargin(row: ObservationRow): { moe: number | null; moeText: string } {
+  const raw = row.margin_of_error;
+  if (raw === undefined || raw === null || raw === "") return { moe: null, moeText: "" };
+  const number = Number(raw);
+  return {
+    moe: Number.isFinite(number) && number >= 0 ? number : null,
+    moeText: marginOfErrorText(row),
+  };
+}
+
+/**
+ * What a trend says about its own measure, beside the chart: the survey's
+ * margins of error and, for a five-year estimate, that neighbouring points
+ * share years (web-city-history). Nothing for a source that publishes no
+ * margin.
+ */
+export function trendNotes(metricCode: string | null | undefined, unit = ""): string[] {
+  if (!metricCode?.startsWith("CENSUS_ACS:")) return [];
+  const notes = [
+    "The bar through each point is its margin of error as the Census Bureau published it, at 90 percent confidence; two values whose bars overlap may not differ.",
+  ];
+  if (metricCode.startsWith("CENSUS_ACS:acs5:")) {
+    notes.push(
+      "Each point is a five-year estimate, labelled by its first and last year. Neighbouring points share four of their five years, so the Bureau advises comparing periods that do not overlap, such as 2010–2014 with 2015–2019.",
+    );
+  }
+  if (/dollar/i.test(unit)) {
+    notes.push("Each value is in the dollars of its own period's last year, as the Bureau adjusts it; the points are not converted to one year's dollars, so part of any rise is inflation.");
+  }
+  return notes;
 }
 
 function rowTime(row: ObservationRow): number {
@@ -899,17 +965,21 @@ export function buildTrend(
 ): TrendModel {
   const raw = levels.map((place) => {
     const rows = histories.get(place.geoId) || [];
-    const points = rows
-      .map((row) => ({ row, number: publishedNumber(row.value), time: rowTime(row) }))
+    const read = rows.map((row) => ({ row, number: publishedNumber(row.value), time: rowTime(row) }));
+    const points = read
       .filter((entry) => entry.number !== null && Number.isFinite(entry.time))
       .map((entry) => ({
-        period: observationPeriodLabel(entry.row),
+        period: trendPeriodLabel(entry.row),
         time: entry.time,
         value: entry.number as number,
         published: entry.number as number,
+        ...publishedMargin(entry.row),
       }))
       .sort((left, right) => left.time - right.time);
-    return { place, points, unpublished: rows.length - points.length };
+    const unpublishedPeriods = read
+      .filter((entry) => entry.number === null)
+      .map((entry) => trendPeriodLabel(entry.row));
+    return { place, points, unpublished: rows.length - points.length, unpublishedPeriods };
   }).filter((line) => line.points.length > 0 || line.unpublished > 0);
 
   if (scale === "level") {
