@@ -380,6 +380,38 @@ def test_a_tile_draws_the_vintage_it_is_asked_for_and_never_another(
     assert place["properties"]["place_name"] == "Growing town"
 
 
+def test_a_tile_asked_for_one_state_carries_only_that_states_places(
+    seeded: Callable[[], connection],
+) -> None:
+    """Covers: DB-067 — ?state=NN narrows a place tile to one state; a malformed state draws nothing."""
+    # Both seeded places are in Wyoming (56).
+    assert _ids(
+        _tile(seeded, "places", {"vintage": "2010", "state": "56"}), "places"
+    ) == {
+        GROWING: 2010,
+        GONE: 2010,
+    }
+    # The vintage still selects: the state narrows it, never widens it.
+    assert _ids(
+        _tile(seeded, "places", {"vintage": "2020", "state": "56"}), "places"
+    ) == {GROWING: 2020}
+    # Another state's tile over the same ground carries none of them.
+    assert (
+        _ids(_tile(seeded, "places", {"vintage": "2010", "state": "08"}), "places")
+        == {}
+    )
+    # A state that is not two digits draws nothing, as an unreadable vintage does.
+    for malformed in ("5", "wy", "560", "56;"):
+        assert _tile(seeded, "places", {"vintage": "2010", "state": malformed}) == {}
+    # An empty state is no state: every place in the tile, as before.
+    assert _ids(
+        _tile(seeded, "places", {"vintage": "2010", "state": ""}), "places"
+    ) == {
+        GROWING: 2010,
+        GONE: 2010,
+    }
+
+
 def test_the_refresh_rewrites_only_what_changed_and_drops_what_was_withdrawn(
     seeded: Callable[[], connection],
 ) -> None:

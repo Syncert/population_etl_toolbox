@@ -26,6 +26,12 @@ the important part:
 docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d
 ```
 
+The web app on port 3001 is the production Next build (`node server.js`), not
+`next dev`. `up -d` does not rebuild an image that already exists, so after
+pulling web changes rebuild it as
+[infra/docker/README.md](../../infra/docker/README.md#the-web-container-is-a-production-build)
+describes.
+
 ## Do not start it with a bare `docker compose up`
 
 **This is the failure mode, and it is silent.**

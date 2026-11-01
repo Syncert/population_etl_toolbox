@@ -262,6 +262,23 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      # The image is the standalone production server (`node server.js`, see
+      # Dockerfile.web), not `next dev`. A hung Node process shows here as
+      # `unhealthy` in `docker compose ps` instead of as 30 s page timeouts
+      # nobody can attribute. `/robots.txt` is rendered by this process alone
+      # and asks the API nothing, so a slow API does not mark the web unhealthy.
+      # `node` is the only client in the image: there is no curl or wget.
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://127.0.0.1:3100/robots.txt',
+          (r) => process.exit(r.statusCode === 200 ? 0 : 1))
+          .on('error', () => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   airflow-common: &airflow-common
     build:

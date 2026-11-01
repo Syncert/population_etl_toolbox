@@ -2,7 +2,8 @@
 // grains the catalog publishes a measure at, draws each on the layer
 // /catalog/tile-layers lists for it, always on the most recent boundary
 // vintage held, marked with an asterisk and the year it was last updated when
-// that is not the period's year, and narrows city and tract layers to one state.
+// that is not the period's year, and narrows city and tract layers to one state,
+// asking the city layer for that state's tiles only (?state=NN).
 
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +18,8 @@ import {
   mapGrainChoices,
   newestPeriodYear,
   rowInState,
+  STATE_TILE_GRAINS,
+  stateScopedTileTemplate,
   tileMetadataForBoundary,
 } from "../../../apps/web/lib/measureMapGrains.ts";
 import { buildMeasureMapView, currentLatestPeriods } from "../../../apps/web/lib/oneMeasureMap.ts";
@@ -146,6 +149,23 @@ describe("which boundary a grain is drawn on", () => {
       tileJsonUrl: "/tiles/metros",
       tileTemplate: "/tiles/metros/{z}/{x}/{y}?vintage=2023",
     });
+  });
+
+  it("asks the city layer for one state's tiles, and leaves every other layer's template alone", () => {
+    expect([...STATE_TILE_GRAINS]).toEqual(["PLACE"]);
+    const places = boundaryForGrain(CATALOG, "PLACE", 2024);
+    expect(tileMetadataForBoundary(places, "PLACE", "48").tileTemplate).toBe("/tiles/places/{z}/{x}/{y}?vintage=2024&state=48");
+    // The vintage the page names is still on every tile.
+    expect(tileMetadataForBoundary(places, "PLACE", "48").tileTemplate).toContain("vintage=2024");
+    // No state, or one that is not two digits, asks for every state as before.
+    expect(tileMetadataForBoundary(places, "PLACE", null).tileTemplate).toBe("/tiles/places/{z}/{x}/{y}?vintage=2024");
+    expect(tileMetadataForBoundary(places, "PLACE", "4").tileTemplate).toBe("/tiles/places/{z}/{x}/{y}?vintage=2024");
+    expect(tileMetadataForBoundary(places).tileTemplate).toBe("/tiles/places/{z}/{x}/{y}?vintage=2024");
+    // Tracts are a table source: no argument to pass, the layer filter narrows them.
+    const tracts = boundaryForGrain(CATALOG, "TRACT", 2024);
+    expect(tileMetadataForBoundary(tracts, "TRACT", "55").tileTemplate).toBe("/tiles/tracts/{z}/{x}/{y}");
+    expect(stateScopedTileTemplate("/tiles/places/{z}/{x}/{y}", "PLACE", "06")).toBe("/tiles/places/{z}/{x}/{y}?state=06");
+    expect(stateScopedTileTemplate("/tiles/metros/{z}/{x}/{y}?vintage=2023", "METRO", "48")).toBe("/tiles/metros/{z}/{x}/{y}?vintage=2023");
   });
 
   it("reads the period's year from the rows' period ends", () => {

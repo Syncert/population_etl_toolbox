@@ -152,7 +152,7 @@ export default function AgeMapPage({
   );
   const periodYear = useMemo(() => newestPeriodYear(rows), [rows]);
   const boundary = tileCatalog ? boundaryForGrain(tileCatalog, grain, periodYear) : null;
-  const drawnMetadata = boundary?.drawn ? tileMetadataForBoundary(boundary) : null;
+  const drawnMetadata = boundary?.drawn ? tileMetadataForBoundary(boundary, grain, scoped ? stateFips : null) : null;
   const chosenState = states.find((item) => item.state_fips === stateFips) || null;
   const where = scoped && chosenState ? ` in ${String(chosenState.state_name || chosenState.geo_name || "")}` : "";
   const name = answer?.label && answer.indicator === indicator.id ? answer.label : indicator.label;
