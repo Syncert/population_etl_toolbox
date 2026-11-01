@@ -2496,6 +2496,8 @@ def _grain_requests(
         },
         "/api/v1/distribution/bins": {"metric_code": pep_metric, "bin_count": 3},
         "/api/v1/catalog/geographies": {"limit": 5},
+        # The age summary's one-indicator map; NATIONAL is a stateless grain.
+        "/api/v1/age-structure/map": {"indicator": "old_age_dependency_ratio"},
         "/api/v1/pep/observations/latest": {"metric_code": pep_metric, "limit": 5},
         "/api/v1/fred/observations/latest": {"metric_code": fred_metric, "limit": 5},
         "/api/v1/census/observations/latest": {"metric_code": acs_metric, "limit": 5},

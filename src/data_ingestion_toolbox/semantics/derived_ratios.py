@@ -25,6 +25,7 @@ owner can review them on the running site before approving them.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -239,3 +240,23 @@ def pairing_for(ratio_id: str) -> RatioPairing | None:
 
 def pairings_for_numerator(metric_code: str) -> list[RatioPairing]:
     return [p for p in load_registry().values() if p.numerator == metric_code]
+
+
+def derived_margin(
+    estimate: Decimal,
+    numerator_moe: Decimal,
+    denominator: Decimal,
+    denominator_moe: Decimal,
+    subset: bool,
+) -> tuple[Decimal, str]:
+    """The Bureau's margin of error for ``estimate = X / Y`` (unscaled), and its method."""
+    numerator_term = numerator_moe * numerator_moe
+    denominator_term = estimate * estimate * denominator_moe * denominator_moe
+    if subset:
+        radicand = numerator_term - denominator_term
+        if radicand >= 0:
+            return radicand.sqrt() / denominator, "proportion"
+        return (numerator_term + denominator_term).sqrt() / denominator, (
+            "ratio_fallback"
+        )
+    return (numerator_term + denominator_term).sqrt() / denominator, "ratio"
