@@ -14,7 +14,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import AgePyramid, { AgePyramidTable } from "./AgePyramid";
 import AgeDifferenceBars from "./AgeDifferenceBars";
+import Link from "next/link";
 import AgeSummaryCards from "./AgeSummaryCards";
+import { ageMapPathForPlace } from "../lib/ageMap";
 import AgeStructureHistory from "./AgeStructureHistory";
 import CohortChart from "./CohortChart";
 import { ApiError, apiErrorMessage } from "../lib/api/client";
@@ -219,6 +221,13 @@ export default function AgeAndSexSection({ geoId, testId = "age-section" }: { ge
         </div>
         <AgeSummaryCards place={place} reference={drawnReference} scheme={payload.scheme} testId={`${testId}-cards`} />
       </div>
+      {place.geo_level === "NATIONAL" || place.geo_level === "STATE" ? null : (
+        <p className="subtle">
+          <Link className="text-link" href={ageMapPathForPlace("median_age", place.geo_id, place.geo_level)} data-testid={`${testId}-map-link`}>
+            See these figures on a map
+          </Link>
+        </p>
+      )}
 
       {drawnReference ? (
         <div className="age-subsection" data-testid={`${testId}-differs`}>
