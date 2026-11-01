@@ -12,8 +12,9 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. An assessment with a staged path. Nothing here has been
-  built, and no stage starts until its trigger is measured.
+- **Status:** Assessment complete and accepted (2026-10-31). The stages are
+  to do, and nothing here has been built. Each stage starts only when its
+  trigger fires; stage 2's trigger is public launch.
 - **Drafted:** 2026-10-31, at Nick's request: "My understanding is the postgres
   source of truth database currently being used can't be the analytics query
   destination and the website serving layer long term. That wouldn't scale
@@ -23,8 +24,12 @@ verify:
   the website serves**: newest values plus a compact history table. The
   warehouse and its loads stay at the office. An RDS read replica of the
   serving copy is added if traffic or failover needs it.
-- **Still open:** whether to accept the rest of the staged path (one Postgres
-  through v1, Parquet + DuckDB only when an analytics question needs it).
+- **Accepted with it:** the warehouse Postgres keeps serving the site
+  through v1, until public launch. Nick's 21:03 message plans the AWS move
+  "if the website goes public one day". At launch, the serving copy takes
+  shape A: about 265 GB, roughly $250–450 a month managed (sized 2026-11-01).
+  Parquet + DuckDB remains a conditional stage. It is built when an analytics
+  question needs it, or with shape A's place and tract history.
 - **Replaces:** the standing rule "stay on Postgres; columnar sidecar only if
   post-parallel measurements show scan-bound steps." That rule stays true but
   incomplete. It says nothing about where the website reads from once the site
@@ -472,7 +477,8 @@ read, would put the page's cold p95 under 200 ms.
 ## Open questions for Nick
 
 1. Accept the staged path (Postgres now, Parquet + DuckDB when analytics needs
-   it, a serving-only Postgres at public launch)? *Open.*
+   it, a serving-only Postgres at public launch)? **Accepted 2026-10-31
+   (one Postgres through v1; serving-only AWS copy at launch).**
 2. Managed Postgres or a self-run VPS at launch? **Answered 2026-10-31:
    managed, on AWS.**
 3. Should the cloud copy be serving-only, with the warehouse staying at the
