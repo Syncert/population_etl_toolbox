@@ -152,6 +152,17 @@ export function tractRouteTitle(stateSegment: string, countySegment: string, tra
   return number ? `Census Tract ${number}, ${place}` : place;
 }
 
+/**
+ * A metro page's title from its segment (web-metro-pages): the slug's words
+ * capitalised, "Metro area 12420" for a bare CBSA code. The "Metro Area" the
+ * published name ends with stays in the words, as it does in the heading.
+ */
+export function metroRouteTitle(segment?: string): string {
+  if (!segment || !PLACE_SEGMENT.test(segment)) return "Metro area";
+  if (/^[0-9]+$/.test(segment)) return `Metro area ${segment}`;
+  return segment.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
 /** A one-measure map's title: the catalog identity its address names. */
 export function measureMapTitle(metricCode: string): string {
   return titleOf("Map", [/^[A-Za-z0-9_.:-]{1,200}$/.test(metricCode) ? metricCode : undefined]);

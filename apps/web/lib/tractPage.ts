@@ -4,7 +4,7 @@
 // is Census Tract 18.05. Its page reads the ACS 5-year tables the warehouse
 // loads at tract grain (`AcsConfig.tract_tables`), beside the tract's county,
 // state and the nation, and its history on today's (2020) boundary from
-// `/place/tract-history` (API-187): published values from 2020 on, and before
+// `/place/tract-history` (API-190): published values from 2020 on, and before
 // 2020 either the published values of a tract that kept its boundary or the
 // DERIVED counts the API apportions from the 2010 tracts. This module names
 // the measures and words; it computes nothing a source did not publish.

@@ -19,7 +19,7 @@ const TRACTS = [
   { geo_id: "state:48|county:453|tract:001100", geo_level: "TRACT", state_fips: "48", county_fips: "453" },
 ];
 
-// Covers: WEB-153 — a tract has a page under its county's address, named by
+// Covers: WEB-155 — a tract has a page under its county's address, named by
 // its number, and every earlier number derived across the 2020 redraw says so.
 describe("a tract's address", () => {
   it("is its number, under its county", () => {

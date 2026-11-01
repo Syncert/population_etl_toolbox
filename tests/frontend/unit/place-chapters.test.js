@@ -20,6 +20,8 @@ import {
   resolveStateSegment,
   stateSegment,
   threeLevelCard,
+  trendNotes,
+  trendPeriodLabel,
 } from "../../../apps/web/lib/placeChapters";
 
 // Covers: WEB-125 — place-pages: the chapter contract every place page shares, the address
@@ -75,6 +77,7 @@ describe("the chapter contract", () => {
       headline: chapter.headline.map((measure) => measure.candidates[0]),
       depth: chapter.depth.map((measure) => measure.candidates[0]),
       trend: chapter.trend,
+      ...(chapter.id === "work-money" ? { moreTrends: chapter.moreTrends } : {}),
     }]));
     expect(pinned).toEqual({
       people: {
@@ -93,6 +96,7 @@ describe("the chapter contract", () => {
           ...INDUSTRY_MIX_SECTORS.map(([code]) => `BLS_QCEW:employment:${code}:5`),
         ],
         trend: { measureId: "unemployment-rate", scale: "level" },
+        moreTrends: [{ measureId: "median-household-income", scale: "level" }],
       },
       housing: {
         headline: ["CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B25077_001", "CENSUS_BPS:units:1_unit:annual", "CENSUS_BPS:units:5_plus_units:annual", "CENSUS_BPS:units:1_unit:monthly"],
@@ -262,7 +266,7 @@ describe("the trend", () => {
 
   it("indexes counts at the first period every line publishes, and states it", () => {
     const trend = buildTrend(levels, new Map([["c", rows(["100", "110", "121"])], ["n", rows(["1000", "1100"], 2020)]]), "index");
-    expect(trend.basePeriod).toBe("2020-01-01 – 2020-12-31");
+    expect(trend.basePeriod).toBe("2020");
     expect(trend.lines[0].points.map((point) => Number(point.value.toFixed(6)))).toEqual([90.909091, 100, 110]);
     expect(trend.lines[1].points.map((point) => Number(point.value.toFixed(6)))).toEqual([100, 110]);
   });
@@ -272,6 +276,7 @@ describe("the trend", () => {
     expect(trend.basePeriod).toBe("");
     expect(trend.lines[0].points.map((point) => point.value)).toEqual([4.1, 3.9]);
     expect(trend.lines[0].unpublished).toBe(1);
+    expect(trend.lines[0].unpublishedPeriods).toEqual(["2020"]);
   });
 
   it("falls back to the primary line alone when no period is shared", () => {
@@ -352,7 +357,7 @@ describe("within this county", () => {
     const { TRACT_MEASURES, uncolouredSentence } = await import("../../../apps/web/components/WithinCounty.tsx");
     const tables = TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0]);
     expect(tables.slice(0, 5)).toEqual(["B19013", "B01003", "B17001", "B25064", "B25077"]);
-    // Covers: WEB-153 — the richer view offers every tract-page measure, each
+    // Covers: WEB-155 — the richer view offers every tract-page measure, each
     // from a table `AcsConfig.tract_tables` loads, once.
     const tractTables = [
       "B01003", "B19013", "B17001", "B25064", "B25077", "B01001", "B01002", "B11001", "B02001", "B03002", "B15003",
@@ -428,10 +433,13 @@ describe("homes authorized", () => {
     expect(permits.every((measure) => measure.showReported)).toBe(true);
   });
 
-  it("draws the monthly permits as a second trend after the rent trend", () => {
+  it("draws the monthly permits as a trend after the rent and home value trends", () => {
     expect(housing.trend).toEqual({ measureId: "median-gross-rent", scale: "level" });
-    expect(housing.moreTrends).toEqual([{ measureId: "bps-single-family-month", scale: "level" }]);
-    expect(housing.headline.some((measure) => measure.id === housing.moreTrends[0].measureId)).toBe(true);
+    expect(housing.moreTrends).toEqual([
+      { measureId: "median-home-value", scale: "level" },
+      { measureId: "bps-single-family-month", scale: "level" },
+    ]);
+    for (const spec of housing.moreTrends) expect(housing.headline.some((measure) => measure.id === spec.measureId)).toBe(true);
   });
 });
 
@@ -443,5 +451,59 @@ describe("migration population note", () => {
     expect(MIGRATION_POPULATION_NOTE).toContain("Population Estimates Program");
     expect(MIGRATION_POPULATION_NOTE).toContain("different populations");
     expect(MIGRATION_POPULATION_NOTE).toContain("no net figure");
+  });
+});
+
+// Covers: WEB-154 — web-city-history: a city's income, rent and home value
+// histories carry each point's published margin of error, read five-year
+// periods by their first and last year, and say what a margin and an
+// overlapping period mean.
+describe("a city's history", () => {
+  const levels = [
+    { level: "PLACE", geoId: "p", name: "Austin city", role: "this place" },
+    { level: "COUNTY", geoId: "c", name: "Travis County", role: "parent" },
+  ];
+  const fiveYear = (end, value, moe) => ({ period_start: `${end - 4}-01-01`, period_end: `${end}-12-31`, value, margin_of_error: moe });
+
+  it("labels a five-year estimate by its first and last year, and a year by itself", () => {
+    expect(trendPeriodLabel(fiveYear(2024, "1"))).toBe("2020–2024");
+    expect(trendPeriodLabel({ period_start: "2023-01-01", period_end: "2023-12-31" })).toBe("2023");
+    expect(trendPeriodLabel({ period_start: "2024-03-01", period_end: "2024-03-31" })).toBe("2024-03-01 – 2024-03-31");
+  });
+
+  it("keeps the published margin of each point, and a coded margin as words only", () => {
+    const trend = buildTrend(levels, new Map([
+      ["p", [fiveYear(2009, "50132", "1021"), fiveYear(2024, "91461", "1450"), fiveYear(2015, "60000", "-333333333")]],
+      ["c", [fiveYear(2024, "97169", "990")]],
+    ]), "level");
+    const city = trend.lines[0];
+    expect(city.points.map((point) => point.period)).toEqual(["2005–2009", "2011–2015", "2020–2024"]);
+    expect(city.points.map((point) => point.moe)).toEqual([1021, null, 1450]);
+    expect(city.points[1].moeText).toBe("Not computed (open-ended median)");
+    expect(city.points[2].moeText).toBe("±1,450");
+    expect(trend.lines[1].points[0].moe).toBe(990);
+  });
+
+  it("a row without a margin carries none", () => {
+    const trend = buildTrend(levels, new Map([["p", [{ period_start: "2024-01-01", period_end: "2024-12-31", value: "3.1" }]]]), "level");
+    expect(trend.lines[0].points[0]).toMatchObject({ moe: null, moeText: "" });
+  });
+
+  it("explains margins and overlapping five-year periods, and dollars only for dollars", () => {
+    const income = trendNotes("CENSUS_ACS:acs5:B19013_001", "dollars");
+    expect(income.join(" ")).toMatch(/margin of error/);
+    expect(income.join(" ")).toMatch(/do not overlap/);
+    expect(income.join(" ")).toMatch(/inflation/);
+    expect(trendNotes("CENSUS_ACS:acs1:B19013_001", "dollars").join(" ")).not.toMatch(/five-year/);
+    expect(trendNotes("CENSUS_ACS:acs5:B01002_001", "years").join(" ")).not.toMatch(/dollars/);
+    expect(trendNotes("CENSUS_PEP:POPESTIMATE", "persons")).toEqual([]);
+  });
+
+  it("draws income on Work and Money and home value on Housing", () => {
+    const work = PLACE_CHAPTERS.find((chapter) => chapter.id === "work-money");
+    const housing = PLACE_CHAPTERS.find((chapter) => chapter.id === "housing");
+    expect(work.moreTrends.map((spec) => spec.measureId)).toContain("median-household-income");
+    expect(housing.trend.measureId).toBe("median-gross-rent");
+    expect(housing.moreTrends.map((spec) => spec.measureId)).toContain("median-home-value");
   });
 });

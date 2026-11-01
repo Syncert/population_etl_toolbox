@@ -45,7 +45,7 @@ the site. Example: a Travis County tract that split in 2020.
    one-tract read could reach no index), and to name each step's
    `later_vintage` so the crosswalk's `(later_vintage, later_geo_sk)` index
    serves it. Same columns and rows; ETL-103's integration test is unchanged.
-2. **API (API-187).** `GET /api/v1/place/tract-history?geo_id=&metric_codes=`:
+2. **API (API-190).** `GET /api/v1/place/tract-history?geo_id=&metric_codes=`:
    the boundary class (`unchanged`, `split`, `merged`, `redrawn`,
    `not_recorded`, slivers under 1 % ignored) with one sentence and the other
    2020 tracts the land became, and per ACS 5-year measure the published values
@@ -60,7 +60,7 @@ the site. Example: a Travis County tract that split in 2020.
    `PagePaths` builds the same path (shared fixture
    `tests/fixtures/shared/place_segments.json`), so `/catalog/geographies/locate`
    now answers the tract's `page_path`.
-4. **Web (WEB-153).** `components/TractPage.tsx` over `lib/tractPage.ts`:
+4. **Web (WEB-155).** `components/TractPage.tsx` over `lib/tractPage.ts`:
    the address resolves through the catalog (states, the state's counties, the
    county's tracts only); nothing is read for the tract before it resolves; then
    one newest-values batch (tract, county, state, nation) and one tract-history

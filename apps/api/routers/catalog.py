@@ -19,6 +19,13 @@ from apps.api.services.catalog_service import (
     list_sources,
 )
 from apps.api.services.tile_layers import list_tile_layers
+from apps.api.services.metro_pages import (
+    DEFAULT_LIMIT as METRO_DEFAULT_LIMIT,
+    MAX_LIMIT as METRO_MAX_LIMIT,
+    MetroRefusal,
+    list_metros,
+    resolve_metro,
+)
 from apps.api.services.place_search import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -35,6 +42,8 @@ from apps.api.schemas import (
     GeographySearchResponse,
     GeographyRelatedResponse,
     MetricCapability,
+    MetroListResponse,
+    MetroPageResponse,
     MetricListResponse,
     SourceSystem,
     TileLayerCatalogResponse,
@@ -160,6 +169,53 @@ def locate_geographies(
     if located is None:
         raise HTTPException(status_code=404, detail="no geography contains this point")
     return located
+
+
+@router.get("/geographies/metros", response_model=MetroListResponse)
+def get_metros(
+    state_fips: Optional[str] = Query(None, max_length=2),
+    limit: int = Query(METRO_DEFAULT_LIMIT, ge=1, le=METRO_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=100000),
+    db: Session = Depends(get_db_session_dep),
+) -> MetroListResponse:
+    """Metro and micro areas (CBSAs), by name, each with its page path.
+
+    With ``state_fips``, only those with a member county in that state, so a
+    metro spanning two states is listed in both.
+    """
+    try:
+        return list_metros(db, state_fips=state_fips, limit=limit, offset=offset)
+    except MetroRefusal as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/geographies/metros/{segment}",
+    response_model=MetroPageResponse,
+    responses=NOT_FOUND,
+)
+def get_metro_page(
+    segment: str = Path(
+        ..., min_length=1, max_length=200, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> MetroPageResponse:
+    """The metro a page address names, by its segment or its CBSA code.
+
+    Answers the metro, its member counties under the newest delineation the
+    reference holds, every state they lie in (the principal state first: the
+    state of its most populous member county), and the areas that state lies
+    in. A segment no metro answers to is ``404 {"detail": "metro not found"}``.
+    """
+    try:
+        page = resolve_metro(db, segment)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    if page is None:
+        raise HTTPException(status_code=404, detail="metro not found")
+    return page
 
 
 @router.get("/tile-layers", response_model=TileLayerCatalogResponse)

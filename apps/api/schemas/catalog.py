@@ -149,8 +149,7 @@ class GeographySearchItem(BaseModel):
     unranked geography is listed after the ranked ones, never as zero.
 
     ``page_path`` is the web address of the geography's page, made by the
-    web's own address rule, or NULL for a grain with no page yet (metro,
-    ZCTA).
+    web's own address rule, or NULL for a grain with no page yet (ZCTA).
     """
 
     geo_id: str
@@ -176,6 +175,91 @@ class GeographySearchResponse(BaseModel):
     query: str
     limit: int
     items: list[GeographySearchItem]
+
+
+class MetroSummary(BaseModel):
+    """One metro (a CBSA) as its page names it (web-metro-pages).
+
+    ``segment`` is its address segment and ``page_path`` its page,
+    ``/metro/<segment>``: the slug of the published name, or the five-digit
+    CBSA code when another metro's name slugs the same way.
+
+    ``principal_state_fips`` is the state a metro page reads beside the
+    nation: the state of its most populous member county, the same rule the
+    place search uses. A metro can span states; ``/metros/{segment}`` lists
+    every state it reaches into.
+    """
+
+    geo_id: str
+    geo_name: str
+    short_name: str
+    cbsa_code: str
+    segment: str
+    page_path: str
+    principal_state_fips: Optional[str] = None
+    principal_state_name: Optional[str] = None
+    population: Optional[float] = None
+    population_year: Optional[int] = None
+    population_metric_code: Optional[str] = None
+
+
+class MetroListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[MetroSummary]
+
+
+class MetroMemberCounty(BaseModel):
+    """A county the newest delineation the reference holds puts in the metro."""
+
+    geo_id: str
+    geo_name: str
+    state_fips: Optional[str] = None
+    state_name: Optional[str] = None
+    page_path: Optional[str] = None
+    population: Optional[float] = None
+    population_year: Optional[int] = None
+
+
+class MetroState(BaseModel):
+    """A state the metro reaches into, with how many member counties lie in it."""
+
+    geo_id: str
+    state_fips: str
+    state_name: Optional[str] = None
+    page_path: Optional[str] = None
+    member_counties: int
+    principal: bool
+
+
+class MetroArea(BaseModel):
+    """An area the principal state lies in: its Census division, region, nation."""
+
+    geo_id: str
+    geo_level: str
+    geo_name: Optional[str] = None
+
+
+class MetroPageResponse(BaseModel):
+    """What a metro page needs before it reads any figure (web-metro-pages).
+
+    ``requested_segment`` is the segment asked for; when it is the CBSA code
+    or another accepted form, ``metro.segment`` is the canonical one the page
+    settles on. ``member_counties`` are the newest delineation's
+    (``delineation_vintage``, ``evidence_source``), most populous first.
+    ``states`` lists every state a member county lies in, the principal one
+    first; ``principal_state_areas`` are the areas the principal state lies
+    in, for figures no source publishes for a metro (gas, food prices).
+    """
+
+    requested_segment: str
+    metro: MetroSummary
+    delineation_vintage: Optional[int] = None
+    evidence_source: Optional[str] = None
+    member_counties: list[MetroMemberCounty]
+    states: list[MetroState]
+    principal_state_areas: list[MetroArea]
 
 
 class LocatedGeography(BaseModel):

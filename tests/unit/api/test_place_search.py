@@ -483,7 +483,7 @@ def test_a_point_in_a_city_lands_on_the_city() -> None:
     assert payload["county"]["page_path"] == "/us/texas/travis-county"
     assert payload["state"]["page_path"] == "/us/texas"
     assert payload["tract"]["geo_id"] == "state:48|county:453|tract:001100"
-    # The tract page sits under its county (tract pages, API-187).
+    # The tract page sits under its county (tract pages, API-190).
     assert payload["tract"]["page_path"] == "/us/texas/travis-county/tract-11"
     assert payload["zcta"]["geo_id"] == "zcta:78701"
     assert payload["metro"]["geo_id"] == "cbsa:12420"

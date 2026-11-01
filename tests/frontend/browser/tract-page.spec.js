@@ -3,7 +3,7 @@ import { expect, test } from "../support/servedRequests.js";
 import { installPlaceFixtures } from "../support/placeScenarios.js";
 import { KEPT, SPLIT, installTractFixtures } from "../support/tractScenarios.js";
 
-// Covers: WEB-153 — a Census tract has its own page under its county
+// Covers: WEB-155 — a Census tract has its own page under its county
 // (tract pages, D-4). The example is a Travis County tract split in 2020:
 // the page says so, links the tract the rest of the land became, shows the
 // tract beside its county, state and the nation, and marks every earlier
