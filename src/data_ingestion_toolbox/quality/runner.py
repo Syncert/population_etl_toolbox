@@ -91,6 +91,21 @@ class RuleOutcome:
 RuleExecutor = Callable[[Any, Mapping[str, Any]], Iterable[RuleOutcome]]
 
 
+class PartialRuleResult(Exception):
+    """A rule that measured some of its scope and could not measure the rest.
+
+    Raised by an executor that keeps going past a part it could not measure
+    (a partition whose statement timed out) instead of discarding the parts
+    it did. The runner persists ``outcomes`` -- so the next run can carry
+    the measured parts forward rather than starting from zero -- and records
+    ``str(self)`` as the rule's error, so the run still ends ``error``.
+    """
+
+    def __init__(self, message: str, outcomes: Sequence[RuleOutcome]) -> None:
+        super().__init__(message)
+        self.outcomes = tuple(outcomes)
+
+
 @dataclass(frozen=True, slots=True)
 class QualityRunRecord:
     """Summary of one persisted quality run."""
@@ -232,8 +247,13 @@ def execute_rules(
     def _persist_rule(rule_id: str) -> list[RuleOutcome]:
         rule = rules_by_id[rule_id]
         started = time.monotonic()
+        partial: PartialRuleResult | None = None
         with connection.cursor() as cursor:
-            measured = list(executors[rule_id](cursor, dict(scope or {})))
+            try:
+                measured = list(executors[rule_id](cursor, dict(scope or {})))
+            except PartialRuleResult as raised:
+                partial = raised
+                measured = list(raised.outcomes)
         duration_ms = max(0, int((time.monotonic() - started) * 1000))
         for outcome in measured:
             entry = catalog.get(outcome.object_name)
@@ -286,6 +306,8 @@ def execute_rules(
                         "open" if outcome.result == "warn" else None,
                     ),
                 )
+        if partial is not None:
+            raise partial
         return measured
 
     outcomes: dict[str, list[RuleOutcome]] = {}
@@ -307,6 +329,18 @@ def execute_rules(
         recorded_failures = len(failures)
         try:
             outcomes[rule_id] = _persist_rule(rule_id)
+        except PartialRuleResult as partial:
+            # What it measured is persisted and kept; what it could not is
+            # the rule's error, so the run still ends `error`.
+            outcomes[rule_id] = list(partial.outcomes)
+            errors.append(f"{rule_id} partial: {partial}")
+            with connection.cursor() as cursor:
+                cursor.execute("RELEASE SAVEPOINT quality_rule")
+                cursor.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (caller_timeout,),
+                )
+            continue
         except Exception as error:  # noqa: BLE001 - the error becomes evidence
             with connection.cursor() as cursor:
                 cursor.execute("ROLLBACK TO SAVEPOINT quality_rule")

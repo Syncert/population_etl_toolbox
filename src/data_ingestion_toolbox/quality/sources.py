@@ -17,6 +17,8 @@ here), so a registry change automatically changes what these rules expect.
 
 from __future__ import annotations
 
+import itertools
+import math
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -29,7 +31,7 @@ from data_ingestion_toolbox.census_pep.silver_pep.replay import (
 from data_ingestion_toolbox.usda_nass.silver_nass.values import SYMBOL_STATUS
 
 from .reconciliation import EVIDENCE_LIMIT, _offenders
-from .runner import RuleExecutor, RuleOutcome
+from .runner import PartialRuleResult, RuleExecutor, RuleOutcome
 
 #: Slice-ledger states that mean the slice never finished its work.
 _UNFINISHED_SLICE_STATUSES = ("planned", "running")
@@ -3056,6 +3058,17 @@ ACS_SERVED_DATASETS: tuple[str, ...] = (
     "dec1990stf3",
 )
 
+#: Served rows one superseded-arm statement joins at most, by its estimate.
+#: The 2024 partition (104.5M rows, 68 GB) against ~105M latest rows ran past
+#: the runner's 30-minute statement timeout as one Merge Anti Join on
+#: OFFICE_LAB (2026-11-01 full sweep); metric_code ranges of about this size
+#: are each a narrow range of `ix_mv_acs_latest_metric_geo` and of the
+#: partition's `(metric_code, geo_id, observation_date)` index.
+_ACS_SUPERSEDED_CHUNK_ROWS = 10_000_000
+
+#: SQLSTATE of a statement cancelled by its timeout (or by an operator).
+_QUERY_CANCELED = "57014"
+
 _ACS_CONFORMANCE_OBJECTS = (
     "gold_census.fact_observation",
     "gold_census.v_metric_latest_by_geo",
@@ -3229,6 +3242,47 @@ def _acs_partition_years(
     return "TRUE", ()
 
 
+def _acs_metric_code_ranges(
+    cursor: Any, partition: _AcsServedPartition
+) -> list[tuple[str | None, str | None]]:
+    """``[low, high)`` metric_code ranges covering a partition, each ~10M rows.
+
+    Sized from the partition's planner estimate (`pg_class.reltuples`), cut
+    at the partition's own distinct codes -- read by a loose index scan, one
+    index descent per code -- into ranges of about equal numbers of codes. A
+    partition at or under one chunk, or never analysed, is one open range.
+    """
+    cursor.execute(
+        "SELECT GREATEST(reltuples, 0)::BIGINT FROM pg_class WHERE oid = %s",
+        (partition.oid,),
+    )
+    row = cursor.fetchone()
+    chunks = math.ceil(int(row[0] if row else 0) / _ACS_SUPERSEDED_CHUNK_ROWS)
+    if chunks <= 1:
+        return [(None, None)]
+    relation = partition.relation
+    cursor.execute(
+        f"""
+        WITH RECURSIVE codes(metric_code) AS (
+                SELECT MIN(metric_code) FROM {relation}
+                UNION ALL
+                SELECT (SELECT MIN(next.metric_code)
+                          FROM {relation} AS next
+                         WHERE next.metric_code > codes.metric_code)
+                  FROM codes
+                 WHERE codes.metric_code IS NOT NULL
+             )
+        SELECT metric_code FROM codes WHERE metric_code IS NOT NULL
+        """
+    )
+    codes = [str(code) for (code,) in cursor.fetchall()]
+    chunks = min(chunks, len(codes))
+    if chunks <= 1:
+        return [(None, None)]
+    cuts = [codes[len(codes) * index // chunks] for index in range(1, chunks)]
+    return list(itertools.pairwise([None, *cuts, None]))
+
+
 def _acs_measure_partition(
     cursor: Any,
     partition: _AcsServedPartition,
@@ -3313,31 +3367,69 @@ def _acs_measure_partition(
     # partition (a key whose newer release exists is served from that one),
     # so equal digests are not what conformance means and unequal ones are
     # normal; telling them apart needs exactly this join.
+    #
+    # A partition larger than `_ACS_SUPERSEDED_CHUNK_ROWS` is measured as
+    # metric_code ranges, one statement each, bounded on both sides of the
+    # join so each reads a narrow range of both indexes and stays well under
+    # the runner's per-statement timeout. Every bound is a plain comparison,
+    # so it is an index bound, and latest rows with no metric code (none are
+    # expected) are their own `IS NULL` statement rather than an OR on a
+    # range, which would move that range's bound into a Filter.
     if "gold_census.v_metric_latest_by_geo" in arms:
         cursor.execute("SELECT current_setting('enable_nestloop')")
         previous_nestloop = cursor.fetchone()[0]
         cursor.execute("SELECT set_config('enable_nestloop', 'off', true)")
         cursor.fetchone()
-        measured["gold_census.v_metric_latest_by_geo"] = _offenders(
-            cursor,
-            f"""
-            SELECT latest.metric_code, latest.vintage_year
-              FROM gold_census.mv_acs_latest AS latest
-             WHERE latest.dataset_code = ANY(%s)
-               AND {latest_years}
-               AND NOT EXISTS (
-                       SELECT 1
-                         FROM {relation} AS released
-                        WHERE released.geo_id = latest.geo_id
-                          AND released.metric_code = latest.metric_code
-                          AND released.observation_date = latest.observation_date
-                          AND released.estimate_value
-                              IS NOT DISTINCT FROM latest.estimate_value
-                   )
-            """,
-            order_by="1, 2",
-            params=(list(ACS_SERVED_DATASETS), *years_params),
-        )
+        ranges = _acs_metric_code_ranges(cursor, partition)
+        pieces: list[tuple[str, str, tuple[Any, ...]]] = []
+        for low, high in ranges:
+            latest_codes, released_codes, code_params = "", "", ()
+            if low is not None:
+                latest_codes += " AND latest.metric_code >= %s"
+                released_codes += " AND released.metric_code >= %s"
+                code_params += (low,)
+            if high is not None:
+                latest_codes += " AND latest.metric_code < %s"
+                released_codes += " AND released.metric_code < %s"
+                code_params += (high,)
+            pieces.append((latest_codes, released_codes, code_params))
+        if len(ranges) > 1:
+            pieces.append((" AND latest.metric_code IS NULL", "", ()))
+        evidence: list[str] = []
+        total = 0
+        for latest_codes, released_codes, code_params in pieces:
+            # The latest side's bounds come first in the statement, the
+            # partition's inside NOT EXISTS: parameters in that order.
+            latest_params = code_params
+            released_params = code_params if released_codes else ()
+            found, count = _offenders(
+                cursor,
+                f"""
+                SELECT latest.metric_code, latest.vintage_year
+                  FROM gold_census.mv_acs_latest AS latest
+                 WHERE latest.dataset_code = ANY(%s)
+                   AND {latest_years}{latest_codes}
+                   AND NOT EXISTS (
+                           SELECT 1
+                             FROM {relation} AS released
+                            WHERE released.geo_id = latest.geo_id
+                              AND released.metric_code = latest.metric_code
+                              AND released.observation_date = latest.observation_date
+                              AND released.estimate_value
+                                  IS NOT DISTINCT FROM latest.estimate_value{released_codes}
+                       )
+                """,
+                order_by="1, 2",
+                params=(
+                    list(ACS_SERVED_DATASETS),
+                    *years_params,
+                    *latest_params,
+                    *released_params,
+                ),
+            )
+            total += count
+            evidence.extend(found[: max(0, EVIDENCE_LIMIT - len(evidence))])
+        measured["gold_census.v_metric_latest_by_geo"] = (evidence, total)
         cursor.execute(
             "SELECT set_config('enable_nestloop', %s, true)", (previous_nestloop,)
         )
@@ -3453,6 +3545,7 @@ def acs_contract_conformance(
     )
 
     outcomes: list[RuleOutcome] = []
+    timed_out: list[str] = []
     for partition in partitions:
         served = _acs_relation_fingerprint(cursor, partition.relation, partition.oid)
         watermarks = {
@@ -3473,9 +3566,22 @@ def acs_contract_conformance(
             and previous[(name, partition.key)][1] == watermarks[name]
         }
         arms = frozenset(_ACS_CONFORMANCE_OBJECTS) - set(carried)
-        measured = (
-            _acs_measure_partition(cursor, partition, partitions, arms) if arms else {}
-        )
+        measured: dict[str, tuple[list[str], int]] = {}
+        if arms:
+            # Each partition under its own savepoint: one whose statement hits
+            # the runner's timeout is left unrecorded (so the next run measures
+            # it again) while every other partition's result is kept and
+            # carried. Rolling back to it also restores enable_nestloop.
+            cursor.execute("SAVEPOINT dq_acs_007_partition")
+            try:
+                measured = _acs_measure_partition(cursor, partition, partitions, arms)
+            except Exception as error:
+                if getattr(error, "pgcode", None) != _QUERY_CANCELED:
+                    raise
+                cursor.execute("ROLLBACK TO SAVEPOINT dq_acs_007_partition")
+                timed_out.append(partition.key)
+                continue
+            cursor.execute("RELEASE SAVEPOINT dq_acs_007_partition")
         for name in _ACS_CONFORMANCE_OBJECTS:
             detail: dict[str, Any] = {
                 "relation": partition.relation,
@@ -3511,6 +3617,12 @@ def acs_contract_conformance(
                     evidence=offenders[:EVIDENCE_LIMIT],
                 )
             )
+    if timed_out:
+        raise PartialRuleResult(
+            f"partition(s) {', '.join(timed_out)} hit the statement timeout and "
+            "were not measured; every other partition's result is recorded",
+            outcomes,
+        )
     return outcomes
 
 
