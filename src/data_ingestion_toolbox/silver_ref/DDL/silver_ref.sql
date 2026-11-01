@@ -226,6 +226,18 @@ CREATE INDEX IF NOT EXISTS ix_bridge_geo_relationship_version_related
     ON silver_ref.bridge_geo_relationship_version
     (related_geo_sk, relationship_type, parent_geo_sk, geography_vintage);
 
+-- The newest vintage of one parent's relationships of one type: the
+-- correlated MAX in `gold_glossary.geo_relationship`, run for every bridge
+-- row a relationship read passes. The unique key puts `related_geo_sk`
+-- between the parent and the vintage, so that MAX walked every relationship
+-- of the parent (a state's tens of thousands; 7.5M heap fetches for Texas's
+-- metro list on OFFICE_LAB, 2026-11-01). Here it is the top of the index.
+-- On a populated warehouse build it first with `CREATE INDEX CONCURRENTLY`
+-- under this name; this statement is then a no-op.
+CREATE INDEX IF NOT EXISTS ix_bridge_grv_parent_type_vintage
+    ON silver_ref.bridge_geo_relationship_version
+    (parent_geo_sk, relationship_type, geography_vintage DESC);
+
 -- Census tracts across a decade boundary (acs-place-and-tract-history,
 -- deliverable 7): one row per part of an earlier-decade tract that lies in a
 -- later-decade tract, from the Bureau's tract relationship files. A tract

@@ -105,9 +105,24 @@ web-readiness review.
 
 ## Index DDL
 
-None. The new reads use existing indexes: `geo_search`'s primary key, the
-bridge's `geo_id` lookups and `ix_bridge_geo_relationship_version_related`
-for `related_geo_id = ANY(...)`.
+#240: none. The follow-up adds one, pre-built on OFFICE_LAB under the same
+name before merge:
+
+```sql
+CREATE INDEX CONCURRENTLY ix_bridge_grv_parent_type_vintage
+    ON silver_ref.bridge_geo_relationship_version
+    (parent_geo_sk, relationship_type, geography_vintage DESC);
+```
+
+`gold_glossary.geo_relationship` keeps only each parent's newest vintage of
+each relationship type with a correlated `MAX`, which the unique key
+(`parent, related, type, vintage`) cannot answer from its top, so every
+bridge row a read passed walked all of its parent's relationships. Texas's
+metro list passed each county's `contains` parents, its state among them
+(7.5M heap fetches, 1.4 s). The index makes that `MAX` one probe, for every
+`/related` read as well. The read cannot skip the view: the API's role has
+no grant on `silver_ref`, so the CBSA filter cannot run before the view's
+subquery without new gold DDL.
 
 ## Evidence (cloud session, 2026-11-01)
 
@@ -159,7 +174,9 @@ After the API and web images are rebuilt from `dev`:
   holds the metro beside the division, region and nation; no change.
 - **Texas's list was 1.54 s cold.** `METRO_STATE_MEMBERS_QUERY` now reads the
   state's counties once into a materialized set and probes the bridge by
-  their keys, without joining the search projection a second time.
+  their keys, without joining the search projection a second time; that
+  alone measured 1.4 s, because the cost was the view's newest-vintage
+  subquery, which `ix_bridge_grv_parent_type_vintage` (above) answers.
 - The plan's own check address had a `-metro-area` suffix the live
   `page_path` does not have (the published names on the warehouse end in the
   state codes); corrected above.
