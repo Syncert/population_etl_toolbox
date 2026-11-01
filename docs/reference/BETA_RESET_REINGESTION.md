@@ -1053,6 +1053,18 @@ Three operator rules follow:
 3. Confirm the ingest pause actually held. On this run `acs_ingest` was
    unpaused through the UI before the re-serve started; it was harmless only
    because the schedule is monthly.
+4. After a geography reference load (boundaries, delineations, crosswalks),
+   vacuum the relationship bridge by hand:
+
+   ```sql
+   VACUUM (ANALYZE) silver_ref.bridge_geo_relationship_version;
+   ```
+
+   Autovacuum did not keep its visibility map current after the 2026 loads,
+   so the index-only reads behind `/related`, cross-level compare and the
+   metro lists fetched heap pages for every row. On OFFICE_LAB (2026-11-01)
+   this vacuum alone took Texas's metro list from 1,397 ms to 664 ms and
+   Dane County's `/related` from 450–650 ms to about 216 ms.
 
 ## 8. Backups of the internal stack
 
