@@ -1,5 +1,5 @@
 {
-  "description": "Age band schemes for sex-by-age tables (ADR-0013). Each output band names the provider lines it is the sum of, per sex; nothing is grouped by reading labels.",
+  "description": "Age band schemes for sex-by-age tables (ADR-0013). Each output band names the provider lines it is the sum of, per sex; nothing is grouped by reading labels. Each rate scheme names, per age group (and per sex where the table has one), the lines summed into its numerator and into its universe.",
   "schemes": [
     {
       "scheme_id": "acs_b01001_five_year",
@@ -379,6 +379,929 @@
         "https://data.census.gov/table/ACSDT5Y2023.B01001",
         "https://data.census.gov/table/ACSST5Y2023.S0101",
         "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
+    }
+  ],
+  "rate_schemes": [
+    {
+      "rate_id": "poverty_by_age",
+      "label": "Below the poverty level, by age and sex",
+      "table_id": "B17001",
+      "by_sex": true,
+      "universe": "People whose poverty status is determined",
+      "numerator_label": "Income in the past 12 months below poverty level",
+      "label_check": {
+        "numerator_has": "below poverty level",
+        "numerator_lacks": [
+          "at or above"
+        ]
+      },
+      "total": {
+        "numerator": [
+          "B17001_002"
+        ],
+        "denominator": [
+          "B17001_001"
+        ]
+      },
+      "groups": [
+        {
+          "group_id": "under_5",
+          "label": "Under 5",
+          "age_start": 0,
+          "age_end": 4,
+          "numerator": {
+            "men": [
+              "B17001_004"
+            ],
+            "women": [
+              "B17001_018"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_004",
+              "B17001_033"
+            ],
+            "women": [
+              "B17001_018",
+              "B17001_047"
+            ]
+          }
+        },
+        {
+          "group_id": "5_17",
+          "label": "5 to 17",
+          "age_start": 5,
+          "age_end": 17,
+          "numerator": {
+            "men": [
+              "B17001_005",
+              "B17001_006",
+              "B17001_007",
+              "B17001_008",
+              "B17001_009"
+            ],
+            "women": [
+              "B17001_019",
+              "B17001_020",
+              "B17001_021",
+              "B17001_022",
+              "B17001_023"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_005",
+              "B17001_006",
+              "B17001_007",
+              "B17001_008",
+              "B17001_009",
+              "B17001_034",
+              "B17001_035",
+              "B17001_036",
+              "B17001_037",
+              "B17001_038"
+            ],
+            "women": [
+              "B17001_019",
+              "B17001_020",
+              "B17001_021",
+              "B17001_022",
+              "B17001_023",
+              "B17001_048",
+              "B17001_049",
+              "B17001_050",
+              "B17001_051",
+              "B17001_052"
+            ]
+          }
+        },
+        {
+          "group_id": "18_24",
+          "label": "18 to 24",
+          "age_start": 18,
+          "age_end": 24,
+          "numerator": {
+            "men": [
+              "B17001_010"
+            ],
+            "women": [
+              "B17001_024"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_010",
+              "B17001_039"
+            ],
+            "women": [
+              "B17001_024",
+              "B17001_053"
+            ]
+          }
+        },
+        {
+          "group_id": "25_34",
+          "label": "25 to 34",
+          "age_start": 25,
+          "age_end": 34,
+          "numerator": {
+            "men": [
+              "B17001_011"
+            ],
+            "women": [
+              "B17001_025"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_011",
+              "B17001_040"
+            ],
+            "women": [
+              "B17001_025",
+              "B17001_054"
+            ]
+          }
+        },
+        {
+          "group_id": "35_44",
+          "label": "35 to 44",
+          "age_start": 35,
+          "age_end": 44,
+          "numerator": {
+            "men": [
+              "B17001_012"
+            ],
+            "women": [
+              "B17001_026"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_012",
+              "B17001_041"
+            ],
+            "women": [
+              "B17001_026",
+              "B17001_055"
+            ]
+          }
+        },
+        {
+          "group_id": "45_54",
+          "label": "45 to 54",
+          "age_start": 45,
+          "age_end": 54,
+          "numerator": {
+            "men": [
+              "B17001_013"
+            ],
+            "women": [
+              "B17001_027"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_013",
+              "B17001_042"
+            ],
+            "women": [
+              "B17001_027",
+              "B17001_056"
+            ]
+          }
+        },
+        {
+          "group_id": "55_64",
+          "label": "55 to 64",
+          "age_start": 55,
+          "age_end": 64,
+          "numerator": {
+            "men": [
+              "B17001_014"
+            ],
+            "women": [
+              "B17001_028"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_014",
+              "B17001_043"
+            ],
+            "women": [
+              "B17001_028",
+              "B17001_057"
+            ]
+          }
+        },
+        {
+          "group_id": "65_74",
+          "label": "65 to 74",
+          "age_start": 65,
+          "age_end": 74,
+          "numerator": {
+            "men": [
+              "B17001_015"
+            ],
+            "women": [
+              "B17001_029"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_015",
+              "B17001_044"
+            ],
+            "women": [
+              "B17001_029",
+              "B17001_058"
+            ]
+          }
+        },
+        {
+          "group_id": "75_plus",
+          "label": "75 and over",
+          "age_start": 75,
+          "age_end": null,
+          "numerator": {
+            "men": [
+              "B17001_016"
+            ],
+            "women": [
+              "B17001_030"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B17001_016",
+              "B17001_045"
+            ],
+            "women": [
+              "B17001_030",
+              "B17001_059"
+            ]
+          }
+        }
+      ],
+      "version": 1,
+      "status": "draft",
+      "source_code": "CENSUS_ACS",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "served_from": {},
+      "unit": "percent",
+      "owner": "data-eng",
+      "reviewer": "Nick",
+      "effective_date": "2026-11-01",
+      "last_reviewed_date": null,
+      "rationale": "B17001 publishes, for each sex and age group, the people below and at or above the poverty level; the age group's universe is the sum of the two, so the rate is a share of a sum that holds its numerator (ADR-0009 proportion formula). Ages under 18 are joined to the S1701 groups (under 5, 5 to 17).",
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B17001",
+        "https://data.census.gov/table/ACSST5Y2023.S1701"
+      ]
+    },
+    {
+      "rate_id": "uninsured_by_age",
+      "label": "Without health insurance, by age",
+      "table_id": "B27010",
+      "by_sex": false,
+      "universe": "Civilian noninstitutionalized population",
+      "numerator_label": "No health insurance coverage",
+      "label_check": {
+        "numerator_has": "No health insurance coverage",
+        "numerator_lacks": []
+      },
+      "total": {
+        "numerator": [
+          "B27010_017",
+          "B27010_033",
+          "B27010_050",
+          "B27010_066"
+        ],
+        "denominator": [
+          "B27010_001"
+        ]
+      },
+      "groups": [
+        {
+          "group_id": "under_19",
+          "label": "Under 19",
+          "age_start": 0,
+          "age_end": 18,
+          "numerator": {
+            "all": [
+              "B27010_017"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B27010_002"
+            ]
+          },
+          "earlier_editions": [
+            {
+              "before_vintage": 2017,
+              "label": "Under 18",
+              "age_start": 0,
+              "age_end": 17
+            }
+          ]
+        },
+        {
+          "group_id": "19_34",
+          "label": "19 to 34",
+          "age_start": 19,
+          "age_end": 34,
+          "numerator": {
+            "all": [
+              "B27010_033"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B27010_018"
+            ]
+          },
+          "earlier_editions": [
+            {
+              "before_vintage": 2017,
+              "label": "18 to 34",
+              "age_start": 18,
+              "age_end": 34
+            }
+          ]
+        },
+        {
+          "group_id": "35_64",
+          "label": "35 to 64",
+          "age_start": 35,
+          "age_end": 64,
+          "numerator": {
+            "all": [
+              "B27010_050"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B27010_034"
+            ]
+          }
+        },
+        {
+          "group_id": "65_plus",
+          "label": "65 and over",
+          "age_start": 65,
+          "age_end": null,
+          "numerator": {
+            "all": [
+              "B27010_066"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B27010_051"
+            ]
+          }
+        }
+      ],
+      "version": 1,
+      "status": "draft",
+      "source_code": "CENSUS_ACS",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "served_from": {},
+      "unit": "percent",
+      "owner": "data-eng",
+      "reviewer": "Nick",
+      "effective_date": "2026-11-01",
+      "last_reviewed_date": null,
+      "rationale": "B27010 publishes each age group's civilian noninstitutionalized total and, inside it, the people with no health insurance coverage; the rate is that line over its group's total. The Bureau moved the first boundary from 18 to 19 without renumbering the lines, so a release before the change serves the groups as that release labels them (under 18, 18 to 34); the label check confirms the year against every loaded release.",
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://data.census.gov/table/ACSST5Y2023.S2701"
+      ]
+    },
+    {
+      "rate_id": "disability_by_age",
+      "label": "With a disability, by age",
+      "table_id": "C18108",
+      "by_sex": false,
+      "universe": "Civilian noninstitutionalized population",
+      "numerator_label": "With one type of disability, or with two or more",
+      "label_check": {
+        "numerator_has": "disabilit",
+        "numerator_lacks": [
+          "No disability"
+        ]
+      },
+      "total": {
+        "numerator": [
+          "C18108_003",
+          "C18108_004",
+          "C18108_007",
+          "C18108_008",
+          "C18108_011",
+          "C18108_012"
+        ],
+        "denominator": [
+          "C18108_001"
+        ]
+      },
+      "groups": [
+        {
+          "group_id": "under_18",
+          "label": "Under 18",
+          "age_start": 0,
+          "age_end": 17,
+          "numerator": {
+            "all": [
+              "C18108_003",
+              "C18108_004"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "C18108_002"
+            ]
+          }
+        },
+        {
+          "group_id": "18_64",
+          "label": "18 to 64",
+          "age_start": 18,
+          "age_end": 64,
+          "numerator": {
+            "all": [
+              "C18108_007",
+              "C18108_008"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "C18108_006"
+            ]
+          }
+        },
+        {
+          "group_id": "65_plus",
+          "label": "65 and over",
+          "age_start": 65,
+          "age_end": null,
+          "numerator": {
+            "all": [
+              "C18108_011",
+              "C18108_012"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "C18108_010"
+            ]
+          }
+        }
+      ],
+      "version": 1,
+      "status": "draft",
+      "source_code": "CENSUS_ACS",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "served_from": {},
+      "unit": "percent",
+      "owner": "data-eng",
+      "reviewer": "Nick",
+      "effective_date": "2026-11-01",
+      "last_reviewed_date": null,
+      "rationale": "C18108 publishes each broad age group's total and, inside it, the people with one disability and with two or more; their sum is the people with any disability.",
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.C18108",
+        "https://data.census.gov/table/ACSST5Y2023.S1810"
+      ]
+    },
+    {
+      "rate_id": "moved_by_age",
+      "label": "Moved in the past year, by age",
+      "table_id": "B07001",
+      "by_sex": false,
+      "universe": "Population 1 year and over in the United States",
+      "numerator_label": "Moved within the county, from another county, from another state, or from abroad",
+      "label_check": {
+        "numerator_has": "Moved",
+        "numerator_lacks": [
+          "Same house"
+        ]
+      },
+      "total": {
+        "numerator": [
+          "B07001_033",
+          "B07001_049",
+          "B07001_065",
+          "B07001_081"
+        ],
+        "denominator": [
+          "B07001_001"
+        ]
+      },
+      "groups": [
+        {
+          "group_id": "1_4",
+          "label": "1 to 4",
+          "age_start": 1,
+          "age_end": 4,
+          "numerator": {
+            "all": [
+              "B07001_034",
+              "B07001_050",
+              "B07001_066",
+              "B07001_082"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_002"
+            ]
+          }
+        },
+        {
+          "group_id": "5_17",
+          "label": "5 to 17",
+          "age_start": 5,
+          "age_end": 17,
+          "numerator": {
+            "all": [
+              "B07001_035",
+              "B07001_051",
+              "B07001_067",
+              "B07001_083"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_003"
+            ]
+          }
+        },
+        {
+          "group_id": "18_24",
+          "label": "18 to 24",
+          "age_start": 18,
+          "age_end": 24,
+          "numerator": {
+            "all": [
+              "B07001_036",
+              "B07001_037",
+              "B07001_052",
+              "B07001_053",
+              "B07001_068",
+              "B07001_069",
+              "B07001_084",
+              "B07001_085"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_004",
+              "B07001_005"
+            ]
+          }
+        },
+        {
+          "group_id": "25_29",
+          "label": "25 to 29",
+          "age_start": 25,
+          "age_end": 29,
+          "numerator": {
+            "all": [
+              "B07001_038",
+              "B07001_054",
+              "B07001_070",
+              "B07001_086"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_006"
+            ]
+          }
+        },
+        {
+          "group_id": "30_34",
+          "label": "30 to 34",
+          "age_start": 30,
+          "age_end": 34,
+          "numerator": {
+            "all": [
+              "B07001_039",
+              "B07001_055",
+              "B07001_071",
+              "B07001_087"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_007"
+            ]
+          }
+        },
+        {
+          "group_id": "35_44",
+          "label": "35 to 44",
+          "age_start": 35,
+          "age_end": 44,
+          "numerator": {
+            "all": [
+              "B07001_040",
+              "B07001_041",
+              "B07001_056",
+              "B07001_057",
+              "B07001_072",
+              "B07001_073",
+              "B07001_088",
+              "B07001_089"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_008",
+              "B07001_009"
+            ]
+          }
+        },
+        {
+          "group_id": "45_54",
+          "label": "45 to 54",
+          "age_start": 45,
+          "age_end": 54,
+          "numerator": {
+            "all": [
+              "B07001_042",
+              "B07001_043",
+              "B07001_058",
+              "B07001_059",
+              "B07001_074",
+              "B07001_075",
+              "B07001_090",
+              "B07001_091"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_010",
+              "B07001_011"
+            ]
+          }
+        },
+        {
+          "group_id": "55_64",
+          "label": "55 to 64",
+          "age_start": 55,
+          "age_end": 64,
+          "numerator": {
+            "all": [
+              "B07001_044",
+              "B07001_045",
+              "B07001_060",
+              "B07001_061",
+              "B07001_076",
+              "B07001_077",
+              "B07001_092",
+              "B07001_093"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_012",
+              "B07001_013"
+            ]
+          }
+        },
+        {
+          "group_id": "65_74",
+          "label": "65 to 74",
+          "age_start": 65,
+          "age_end": 74,
+          "numerator": {
+            "all": [
+              "B07001_046",
+              "B07001_047",
+              "B07001_062",
+              "B07001_063",
+              "B07001_078",
+              "B07001_079",
+              "B07001_094",
+              "B07001_095"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_014",
+              "B07001_015"
+            ]
+          }
+        },
+        {
+          "group_id": "75_plus",
+          "label": "75 and over",
+          "age_start": 75,
+          "age_end": null,
+          "numerator": {
+            "all": [
+              "B07001_048",
+              "B07001_064",
+              "B07001_080",
+              "B07001_096"
+            ]
+          },
+          "denominator": {
+            "all": [
+              "B07001_016"
+            ]
+          }
+        }
+      ],
+      "version": 1,
+      "status": "draft",
+      "source_code": "CENSUS_ACS",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "served_from": {
+        "acs1": 2006,
+        "acs5": 2009
+      },
+      "unit": "percent",
+      "owner": "data-eng",
+      "reviewer": "Nick",
+      "effective_date": "2026-11-01",
+      "last_reviewed_date": null,
+      "rationale": "B07001 publishes each age group's population and, inside it, those living in the same house a year ago and those who moved within the county, from another county of the state, from another state or from abroad; the people who moved are the sum of the four moved lines, never the total less the same-house line. The 2005 1-year release orders its lines differently and is not served.",
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://data.census.gov/table/ACSST5Y2023.S0701"
+      ]
+    },
+    {
+      "rate_id": "veterans_by_age",
+      "label": "Veterans, by age and sex",
+      "table_id": "B21001",
+      "by_sex": true,
+      "universe": "Civilian population 18 years and over",
+      "numerator_label": "Veteran",
+      "label_check": {
+        "numerator_has": "Veteran",
+        "numerator_lacks": [
+          "Nonveteran"
+        ]
+      },
+      "total": {
+        "numerator": [
+          "B21001_002"
+        ],
+        "denominator": [
+          "B21001_001"
+        ]
+      },
+      "groups": [
+        {
+          "group_id": "18_34",
+          "label": "18 to 34",
+          "age_start": 18,
+          "age_end": 34,
+          "numerator": {
+            "men": [
+              "B21001_008"
+            ],
+            "women": [
+              "B21001_026"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B21001_007"
+            ],
+            "women": [
+              "B21001_025"
+            ]
+          }
+        },
+        {
+          "group_id": "35_54",
+          "label": "35 to 54",
+          "age_start": 35,
+          "age_end": 54,
+          "numerator": {
+            "men": [
+              "B21001_011"
+            ],
+            "women": [
+              "B21001_029"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B21001_010"
+            ],
+            "women": [
+              "B21001_028"
+            ]
+          }
+        },
+        {
+          "group_id": "55_64",
+          "label": "55 to 64",
+          "age_start": 55,
+          "age_end": 64,
+          "numerator": {
+            "men": [
+              "B21001_014"
+            ],
+            "women": [
+              "B21001_032"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B21001_013"
+            ],
+            "women": [
+              "B21001_031"
+            ]
+          }
+        },
+        {
+          "group_id": "65_74",
+          "label": "65 to 74",
+          "age_start": 65,
+          "age_end": 74,
+          "numerator": {
+            "men": [
+              "B21001_017"
+            ],
+            "women": [
+              "B21001_035"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B21001_016"
+            ],
+            "women": [
+              "B21001_034"
+            ]
+          }
+        },
+        {
+          "group_id": "75_plus",
+          "label": "75 and over",
+          "age_start": 75,
+          "age_end": null,
+          "numerator": {
+            "men": [
+              "B21001_020"
+            ],
+            "women": [
+              "B21001_038"
+            ]
+          },
+          "denominator": {
+            "men": [
+              "B21001_019"
+            ],
+            "women": [
+              "B21001_037"
+            ]
+          }
+        }
+      ],
+      "version": 1,
+      "status": "draft",
+      "source_code": "CENSUS_ACS",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "served_from": {
+        "acs1": 2010,
+        "acs5": 2010
+      },
+      "unit": "percent",
+      "owner": "data-eng",
+      "reviewer": "Nick",
+      "effective_date": "2026-11-01",
+      "last_reviewed_date": null,
+      "rationale": "B21001 publishes the civilian total, then veterans and nonveterans, then for each sex its total, its veterans and nonveterans, and for each age group its total (male 18 to 34 is _007) with the veterans and nonveterans inside it; the rate is the group's veteran line over the group's total. Releases before 2010 publish another age layout (no 18 to 34 group) and are not served.",
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B21001",
+        "https://data.census.gov/table/ACSST5Y2023.S2101"
       ]
     }
   ]

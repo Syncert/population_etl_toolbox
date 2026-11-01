@@ -37,6 +37,10 @@ OPERATIONAL_SCRIPTS = {
     # Dumps the warehouse to a drive outside its volume, prunes old dumps,
     # and restores the newest into a scratch database to prove it (ENV-025).
     "backup_warehouse.py",
+    # Checks every by-age rate scheme's lines against the labels the Bureau
+    # published for them in the warehouse (API-192). Read-only; run before a
+    # scheme is approved, since only a loaded warehouse holds the labels.
+    "check_age_rate_labels.py",
     "deploy_stack.ps1",
     # Measures the place and metro tile layers on a loaded stack: bytes per
     # sample tile against a budget, and coverage of published geographies

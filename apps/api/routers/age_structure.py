@@ -13,6 +13,7 @@ from apps.api.failures import NOT_FOUND
 from apps.api.schemas.age_structure import (
     AgeCohortsResponse,
     AgeMapResponse,
+    AgeRatesResponse,
     AgeStructureHistoryResponse,
     AgeStructureResponse,
 )
@@ -23,6 +24,7 @@ from apps.api.services.age_structure_service import (
     age_structure,
     age_structure_history,
     age_structure_map,
+    age_structure_rates,
 )
 
 router = APIRouter(prefix="/age-structure", tags=["age-structure"])
@@ -156,3 +158,37 @@ def get_age_structure_map(
             db, indicator, geo_level, state_fips, dataset, release
         )
     )
+
+
+@router.get(
+    "/rates",
+    response_model=AgeRatesResponse,
+    name="get_age_structure_rates",
+    summary="One by-age table's rate per age group, beside every level it sits in",
+    responses=NOT_FOUND,
+)
+def get_age_structure_rates(
+    geo_id: str = Query(..., min_length=1, max_length=60),
+    rate: str = Query(
+        ...,
+        max_length=40,
+        description=(
+            "`poverty_by_age` (B17001), `uninsured_by_age` (B27010), "
+            "`disability_by_age` (C18108), `moved_by_age` (B07001) or "
+            "`veterans_by_age` (B21001)."
+        ),
+    ),
+    dataset: str = _DATASET,
+    release: Optional[str] = Query(
+        None, max_length=10, description="`latest` (default) or a vintage year."
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> AgeRatesResponse:
+    """Each age group's rate as a percent of that age group's own universe
+    (people whose poverty status is determined, the civilian
+    noninstitutionalized population, and so on), with its Bureau margin, for
+    everyone and for each sex where the table publishes one -- for the place
+    and each level it sits in, read at the place's release. A level without
+    that release is ``not_published``; a withheld line leaves its group null
+    with the reason, never zero."""
+    return _answer(lambda: age_structure_rates(db, geo_id, rate, dataset, release))

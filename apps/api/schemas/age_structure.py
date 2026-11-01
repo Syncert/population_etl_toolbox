@@ -220,3 +220,85 @@ class AgeMapResponse(BaseModel):
     scheme: AgeScheme
     total: int = 0
     items: list[AgeMapItem] = Field(default_factory=list)
+
+
+class AgeRateSchemeOut(BaseModel):
+    """A by-age rate scheme: which table, which universe, what is counted."""
+
+    rate_id: str
+    version: int
+    status: str = Field(description="`draft` until the rate scheme is reviewed.")
+    label: str
+    table_id: str
+    universe: str = Field(description="Whom each age group's rate is a share of.")
+    numerator_label: str
+    unit: str
+    by_sex: bool = Field(description="True when the table publishes each sex.")
+
+
+class AgeRateSide(BaseModel):
+    numerator: Optional[str] = None
+    numerator_moe: Optional[str] = None
+    denominator: Optional[str] = Field(
+        None, description="The age group's universe (people the rate is a share of)."
+    )
+    denominator_moe: Optional[str] = None
+    rate: Optional[str] = Field(
+        None, description="Percent of the age group's universe."
+    )
+    rate_moe: Optional[str] = None
+    cv_percent: Optional[str] = Field(
+        None, description="The numerator's coefficient of variation, percent."
+    )
+    reliable: bool = Field(
+        False, description="True when the numerator's CV is 30 % or less."
+    )
+    unavailable_reason: Optional[
+        Literal["suppressed_input", "line_missing", "denominator_zero"]
+    ] = None
+
+
+class AgeRateGroup(BaseModel):
+    group_id: str
+    label: str
+    age_start: int
+    age_end: Optional[int] = None
+    all: AgeRateSide
+    men: Optional[AgeRateSide] = None
+    women: Optional[AgeRateSide] = None
+
+
+class AgeRatePlace(BaseModel):
+    geo_id: str
+    geo_level: Optional[str] = None
+    geo_name: Optional[str] = None
+    role: Literal["place", "reference"]
+    reference_level: Optional[Literal["COUNTY", "STATE", "NATIONAL"]] = None
+    overlap_weight: Optional[float] = None
+    release: Optional[str] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    unavailable_reason: Optional[Literal["not_published", "layout_not_mapped"]] = Field(
+        None,
+        description=(
+            "`layout_not_mapped`: the release published the table in an "
+            "older line layout the rate scheme does not map."
+        ),
+    )
+    derived: bool = True
+    total: Optional[AgeRateSide] = Field(
+        None, description="Every age together, as the table's own total lines give it."
+    )
+    groups: list[AgeRateGroup] = Field(default_factory=list)
+
+
+class AgeRatesResponse(BaseModel):
+    geo_id: str
+    geo_level: Optional[str] = None
+    geo_name: Optional[str] = None
+    dataset: str
+    rate: AgeRateSchemeOut
+    default_reference_geo_id: Optional[str] = None
+    places: list[AgeRatePlace] = Field(
+        description="The place first, then each level it sits in, next level up first."
+    )
