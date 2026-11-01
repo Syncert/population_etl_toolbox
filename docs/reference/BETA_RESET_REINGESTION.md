@@ -1180,6 +1180,28 @@ transform slices run on `ACS_TRANSFORM_WORKERS` threads and a tract or place
 step is published a state per session (`ACS_SERVING_WORKERS`); the backfill
 plan records per-step times on that path.
 
+Measured on the parallel path (8 transform workers, 8 serving sessions,
+`census_api` pool 6), 2026-10-31 to 11-01. Two drivers ran side by side and
+their runs alternated (`max_active_runs=1`), so each year's hours include
+the time it waited queued behind the other grain, and its GiB includes what
+the other grain's run added in the same window:
+
+| Grain | Years | Hours per year, driver clock | Hours per year, own run | GiB per year |
+| --- | --- | --- | --- | --- |
+| tract, 22 tables | 2024 (before the publish fixes) | 6.0 | about 6 | 52 |
+| tract, 22 tables | 2010-2023 | 1.0-2.2 | 0.5-1.1 | 33-75 |
+| metro | 2024 | 2.6 | about 1.3 | 55 |
+| metro | 2015-2023 | 1.0-1.6 | 0.4-0.6 | 32-62 |
+
+A 2020s tract year's own run splits roughly into ingest 25-30 min,
+transform 15 min, elements 4 min and publish 12 min; the 2010s years, with
+fewer tables published, take 30-40 min. The two drivers loaded tract
+2017-2010 and metro 2024-2015 in about 18 hours of wall time.
+
+FBI Return A master files load all 26,000 agencies a year in about 1.5 min
+a year (2025-2015 in 18 min), then about 160 s to rebuild
+`gold_fbi.county_agency_rate_month` for every published product.
+
 ### Guards that stop a run, and what each means
 
 - **Disk.** A run refuses when its projected bytes would leave less than
@@ -1193,7 +1215,12 @@ plan records per-step times on that path.
 - **Manifest ledger.** After pulling DDL changes, record them with
   `python -m scripts.apply_warehouse_manifest --only-flagged`. Never re-apply
   the whole manifest on the populated warehouse: migration 027 re-validates
-  its constraints over every ACS fact under an exclusive lock.
+  its constraints over every ACS fact under an exclusive lock. Run `--check`
+  first to see what is flagged. Do not apply `gold-census` while a run is
+  publishing (`CALL gold_census...` active in `pg_stat_activity`): its view
+  replacement takes locks the per-state publish sessions then time out on.
+  Other sources' gold DDL (for example `gold-fbi`) touches nothing the ACS
+  publish reads and can go in with `PGOPTIONS="-c lock_timeout=10s"`.
 
 ### Resume
 
@@ -1216,6 +1243,21 @@ re-run from its first unfinished slice.
    `running`. Mark it `failed` with a reason so the quality finalizer
    accounts for its requests (DQ-SHARED-002).
 
+To pause between years without stopping anything (for a measurement, or a
+rebuild that restarts the scheduler), wait for the current run to reach
+`success`, then `airflow dags pause acs_ingest` and confirm it took:
+`airflow dags details acs_ingest` must show `is_paused True` before the
+driver's next poll (every 2 minutes). The driver's next year is then created
+and waits queued; `airflow dags unpause acs_ingest` lets it start. On
+2026-11-01 a pause issued with its output discarded did not hold, and the
+next year started 90 seconds later.
+Do not pause the DAG while a run is in flight: a paused DAG schedules none
+of its tasks, so the running year stalls rather than finishing.
+
+The scheduler mounts the checkout, so pulling new Python or DAG code needs
+no image rebuild unless a dependency or Dockerfile changed. Rebuild the
+scheduler only between years, paused as above.
+
 ### Pitfalls the history load taught
 
 - Widening a table list must change the slice fingerprint, or every year
@@ -1225,4 +1267,16 @@ re-run from its first unfinished slice.
   `silver_census.fact_demographics`.
 - Two drivers for the same work started duplicate runs; the driver now
   waits on the one in flight.
+- Threads that shared one `PostgresHook` raced on its connection
+  ("connection cannot be re-entered recursively"); each worker takes
+  `copy.copy(hook)`. A process pool deadlocked with polars after `fork`.
+- The per-state publish joined `dim_geo` by nested loop until its
+  `vintage_year` bounds were made sargable and the state path set
+  `enable_nestloop` off; a publish went from 95 to 12 minutes with the
+  `(geo_level, state_fips)` index on the report table.
+- The ingest batches marked slices planned while another batch ingested
+  them (a check violation); planning now finishes before any ingest starts.
+- After a large load, re-check the serving reads that aggregate across the
+  new rows. The nationwide FBI load turned a 30 ms county rate into a
+  131 s one until the rate was precomputed per load.
 
