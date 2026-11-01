@@ -749,7 +749,8 @@ export function unemploymentAnswer(
   const chart: RecordChart | null = lines.length
     ? {
         id: "unemployment",
-        label: `Unemployment rate, ${place.name} and ${other.name}`,
+        // Name only the places drawn: a title must not promise a line.
+        label: `Unemployment rate, ${lines.map((entry) => entry.name).join(" and ")}`,
         unit: "percent",
         model: buildTrend(lines, new Map([[place.geoId, own], [other.geoId, theirs]]), "level"),
         notes: [],
@@ -757,6 +758,21 @@ export function unemploymentAnswer(
     : null;
   const charts = chart ? [chart] : [];
   const numbered = (rows: ObservationRow[]) => rows.filter((row) => publishedNumber(row.value) !== null);
+  if (numbered(own).length && !numbered(theirs).length) {
+    // LAUS publishes no national series (the nation's rate is the Current
+    // Population Survey's), so a state's rate has nothing on its own basis to
+    // stand beside.
+    return {
+      ...base,
+      status: "unanswered",
+      charts,
+      sentences: [
+        other.level === "NATIONAL"
+          ? `BLS's Local Area Unemployment Statistics, the source of ${place.name}'s rate, are not published for the nation, so ${place.name}'s rate is not compared with a national rate here.`
+          : `BLS's Local Area Unemployment Statistics for ${other.name} are not served here, so ${place.name}'s rate is not compared with it.`,
+      ],
+    };
+  }
   const otherByPeriod = new Map(numbered(theirs).map((row) => [recordPeriodLabel(row), row]));
   const shared = numbered(own)
     .filter((row) => otherByPeriod.has(recordPeriodLabel(row)))

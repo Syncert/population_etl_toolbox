@@ -18,11 +18,13 @@ verify:
 
 ## Status
 
-In progress, 2026-11-01: merged as #245 (c37b8cca), catalog row WEB-156, no
-API change and no DDL. The first live check on OFFICE_LAB (dev 346786ec)
-found one copy mismatch, fixed in a follow-up: see "Live check results". The
-plan closes once that fix is live-checked and the population and
-unemployment cards are read.
+Needs review, 2026-11-01: merged as #245 (c37b8cca), catalog row WEB-156, no
+API change and no DDL. The first live check (dev 346786ec) found the state
+and national crime spans comparing different months, fixed by #256
+(95d7f006). The second (dev 3748996) confirmed that fix and found two display
+faults, fixed in the PR that moved this plan here: see "Live check results".
+Left for review: after the web rebuild, read each population and
+unemployment card's sentences (whole-card captures) against its chart.
 
 ## Why
 
@@ -43,7 +45,7 @@ link to the rows it was made from.
 | Has violent crime gone up here in ten years? | ADR-0012 monthly rate from agency reports | FBI's own rate and coverage | FBI's own rate and coverage | Sent to its county's page | "Not published or computed for metro areas" |
 | Are rents rising faster than incomes? | ACS rent and income | same | same | same | same |
 | Is the population growing or shrinking, and why? | PEP estimate + components | same | same | PEP estimate; components on its county's page | PEP estimate where published |
-| How does unemployment here compare with the state? | LAUS, county vs state | LAUS, state vs nation ("with the nation") | "No larger area" | Sent to its county's page | LAUS, metro vs principal state |
+| How does unemployment here compare with the state? | LAUS, county vs state | LAUS has no national series, so the card says so beside the state's own chart | "No larger area" | Sent to its county's page | LAUS, metro vs principal state |
 
 ### The wording rules (ADR-0011), as built
 
@@ -72,7 +74,10 @@ link to the rows it was made from.
   international migration). Nothing else is attributed.
 - Unemployment: the newest period both places publish, on the same
   seasonal-adjustment basis, compared on the published values (LAUS
-  publishes no margin).
+  publishes no margin). LAUS publishes no national series (the nation's
+  rate is the Current Population Survey's, `LNS14000000`), so a state's card
+  says its rate is not compared with a national rate, and its chart is
+  titled with the state alone.
 
 ### Reads
 
@@ -88,6 +93,10 @@ county is resolved, never with a placeholder. **Index DDL: none.**
 
 - A separate gallery page. The four question cards on each place page are the
   gallery. A standalone `/record` index can follow if wanted.
+- A state against the nation's CPS rate. BLS itself sets state LAUS rates
+  beside the CPS national rate, but that is a second series and a second
+  read on the state page; a follow-up can add it with a caveat naming both
+  surveys.
 - City crime: the FBI publishes agencies, and ADR-0012's rate is for counties,
   so a city's crime question links to its county (as the Safety chapter
   already omits it for cities).
@@ -156,3 +165,38 @@ and `/us#record` crime compares June 2013 with June 2023 (or the newest
 month's same month), and screenshots of the population and unemployment
 cards for Dane, Austin, Wisconsin and the US.
 
+### 2026-11-01, OFFICE_LAB at dev 3748996 (after #256)
+
+- **Wisconsin and US, crime:** "rose from 25.6 per 100,000 residents in June
+  2013 to 26.8 in June 2023"; "fell from 36.7 in June 2013 to 33.1 in June
+  2023". Same calendar month ten years apart. Dane still December 2015 to
+  December 2025. Correct.
+- **Austin, unemployment:** "BLS publishes the unemployment rate for
+  counties, metro areas, states and the nation, not for cities and towns",
+  with the link to Travis County's answer. Correct.
+- **US, unemployment:** "The nation has no larger area to compare its
+  unemployment rate with." Correct.
+- **Dane, unemployment chart:** Dane's monthly line under Wisconsin's from
+  1990 to 2026, the 2020 spike in both. Matches its title.
+- **Population charts** (Dane 1971–2025, Austin 2020–2025, Wisconsin,
+  US): each line rises, as their estimates do.
+- **Fault: the value labels were cut off.** The US chart read "1,784,857"
+  and "6,826,000" for 341,784,857 and 206,826,000: the left margin fit about
+  seven characters. `PlaceTrend` (every chapter's trend, not only these
+  cards) now widens its margin to the longest value label.
+- **Fault: Wisconsin's unemployment chart promised a line it cannot draw.**
+  Titled "Wisconsin and United States" with one line: LAUS publishes no
+  national series. The title now names only the places drawn, and the card
+  says the state's rate is not compared with a national rate (unit test
+  "says LAUS has no national series instead of promising a line it cannot
+  draw").
+- **Cards with one sentence** stretched to their row's height; the grid now
+  aligns them to the top.
+- **Not yet read:** the population and unemployment sentences on Dane,
+  Austin, Wisconsin and the US (the captures were of the charts alone).
+
+Recheck after the web rebuild: capture each whole card
+(`[data-testid=record-population]`, `[data-testid=record-unemployment]`) on
+`/us/wisconsin/dane-county#record`, `/us/texas/austin-city#record`,
+`/us/wisconsin#record`, `/us#record`, and the US population chart's value
+labels in full.

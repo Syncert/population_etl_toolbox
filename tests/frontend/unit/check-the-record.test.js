@@ -285,6 +285,20 @@ describe("how does unemployment here compare", () => {
     expectPlainWording(answer);
   });
 
+  it("says LAUS has no national series instead of promising a line it cannot draw", () => {
+    // LAUS publishes states, not the nation (whose rate is the CPS's).
+    const answer = unemploymentAnswer(state, nation, UNEMP, histories([
+      [UNEMP.metricCode, state.geoId, [month(2025, 7, 3.1, sa("U")), month(2025, 8, 3.2, sa("U"))]],
+    ]), [], "q");
+    expect(answer.status).toBe("unanswered");
+    expect(answer.sentences).toEqual([
+      "BLS's Local Area Unemployment Statistics, the source of Wisconsin's rate, are not published for the nation, so Wisconsin's rate is not compared with a national rate here.",
+    ]);
+    expect(answer.charts[0].label).toBe("Unemployment rate, Wisconsin");
+    expect(answer.charts[0].model.lines.map((line) => line.place.name)).toEqual(["Wisconsin"]);
+    expectPlainWording(answer);
+  });
+
   it("does not compare rates on different seasonal-adjustment bases", () => {
     const answer = unemploymentAnswer(county, state, UNEMP, histories([
       [UNEMP.metricCode, county.geoId, [month(2025, 8, 2.8, sa("U"))]],

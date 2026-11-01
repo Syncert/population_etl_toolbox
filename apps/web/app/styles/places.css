@@ -623,6 +623,8 @@
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  /* A one-line answer keeps its own height beside a card with a chart. */
+  align-items: start;
 }
 
 .place-record-card {
