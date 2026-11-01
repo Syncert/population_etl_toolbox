@@ -274,10 +274,11 @@ def test_coverage_reads_the_served_expressions_and_folds_grains() -> None:
     assert "UPPER(raw_grain) AS grain" in scan
     assert "period_start AS raw_period" in scan
     assert "::TEXT AS raw_period" not in scan
-    # Read from a gold view over the fact of each newest published release,
-    # not through the joins coverage never needs, and never from a silver
-    # schema: the API's read-only role has no grant there.
-    assert "FROM gold_fbi.latest_release_fact" in scan
+    # Summed from the counts each publication stores, never grouped from the
+    # facts on read, and never from a silver schema: the API's read-only
+    # role has no grant there.
+    assert "FROM gold_fbi.release_fact_count" in scan
+    assert "SUM(row_count) AS row_count" in scan
     assert "gold_fbi.latest_release_observation" not in scan
     assert "silver_" not in scan
     assert [(g["grain"], g["column"]) for g in result["grains"]] == [
@@ -485,4 +486,5 @@ def test_the_fbi_coverage_relation_is_one_the_schema_task_requires() -> None:
     """Covers: API-183 — a warehouse without the gold view is repaired first."""
     from data_ingestion_toolbox.fbi_ucr.schema import REQUIRED_RELATIONS
 
-    assert coverage._FROM_SQL["FBI_UCR"] in REQUIRED_RELATIONS
+    relation, _ = coverage._FROM_SQL["FBI_UCR"]
+    assert relation in REQUIRED_RELATIONS

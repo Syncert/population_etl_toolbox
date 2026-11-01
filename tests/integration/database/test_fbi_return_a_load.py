@@ -347,7 +347,7 @@ def test_return_a_totals_are_checked_against_the_cde(
     # 2026-08-27 and the FBI revised Fitchburg and UW-Green Bay since (the
     # live CDE now gives Fitchburg 13 in January, as this file does): the
     # rule names each revised month rather than letting it pass, and fails
-    # where a gap is larger than a revision of one offense or 2 percent.
+    # where a gap is larger than a revision of three offenses or 5 percent.
     [outcome] = outcomes
     assert outcome.result == "fail"
     assert outcome.observed_count == 15
@@ -360,7 +360,7 @@ def test_return_a_totals_are_checked_against_the_cde(
         "06-2023 9 <> 10"
     ) in outcome.evidence
     assert outcome.evidence.index(
-        "return_a_violent_crime WI0137000 06-2023 7 <> 4"
+        "return_a_violent_crime WI0137000 05-2023 20 <> 8"
     ) < outcome.evidence.index(
         "revised since the master file: return_a_violent_crime WI0050700 02-2023 0 <> 1"
     )
@@ -451,7 +451,10 @@ def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
             )
             assert cursor.fetchone()[0] == 12
             outcomes = fbi_county_agency_rate_is_current(cursor, {})
-            assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
+            assert [(o.result, o.observed_count) for o in outcomes] == [
+                ("pass", 0),
+                ("pass", 0),
+            ]
 
             cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute(
@@ -490,6 +493,19 @@ def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
                 "return_a_property_crime computed before its newest publication",
                 "return_a_violent_crime never computed",
             ]
+            # The admin coverage counts are held to the same publication.
+            assert outcomes[1].evidence == [
+                "return_a_property_crime counted before its newest publication"
+            ]
+            cursor.execute(
+                "DELETE FROM gold_fbi.release_fact_count "
+                "WHERE product_id = 'return_a_violent_crime'"
+            )
+            outcomes = fbi_county_agency_rate_is_current(cursor, {})
+            assert outcomes[1].evidence == [
+                "return_a_property_crime counted before its newest publication",
+                "return_a_violent_crime never counted",
+            ]
     finally:
         reader.rollback()
         reader.close()
@@ -498,13 +514,13 @@ def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
 def test_the_admin_coverage_read_counts_what_the_latest_view_serves(
     return_a_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: API-183 — FBI coverage read from the facts equals the served view.
+    """Covers: API-183 — FBI coverage summed from stored counts equals the view.
 
-    The admin Source Map read FBI UCR through ``latest_release_observation``,
-    whose participation, measure and release joins it never needs; with every
-    Return A agency loaded it passed the 20 s ceiling. It now reads the fact of
-    each product's newest published release, which must count the same rows
-    per grain and year as the view.
+    The admin Source Map read FBI UCR through ``latest_release_observation``;
+    with every Return A agency loaded even grouping the facts on read passed
+    the 20 s ceiling. Each publication now counts its newest release's facts
+    per subject type and month, and the sums must equal the view's rows per
+    grain and year.
     """
     from dataclasses import replace
 

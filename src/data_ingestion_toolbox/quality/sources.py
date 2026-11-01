@@ -658,17 +658,19 @@ def fbi_county_agency_rate_agreement(
                 SELECT * FROM gold_fbi.county_agency_rate
                  WHERE product_id = %s AND release_key = ANY(%s)
                    AND period_start >= %s
-            ), recomputed AS (
-                SELECT rate.release_key, rate.measure_id, rate.geo_id,
-                       rate.period,
-                       SUM(fact.value) AS offenses,
+            )
+            SELECT rate.product_id || ' ' || rate.geo_id || ' ' || rate.period
+              FROM recent AS rate
+              -- Each county-month sums its own listed agencies (about ten
+              -- key probes on the fact and participation indexes), so the
+              -- cost follows the rows, never the planner's estimate of
+              -- them: joined to a grouped recomputation instead, a one-row
+              -- estimate of 35k county-months nested the two on a join
+              -- filter (600 s for one product).
+             CROSS JOIN LATERAL (
+                SELECT SUM(fact.value) AS offenses,
                        SUM(agency.population) AS covered_population
-                  FROM recent AS rate
-                 CROSS JOIN LATERAL UNNEST(rate.contributing_oris)
-                       AS listed(ori)
-                  -- Each listed agency's month by key, on the fact and
-                  -- participation indexes; the gold view's joins add
-                  -- nothing the comparison reads.
+                  FROM UNNEST(rate.contributing_oris) AS listed(ori)
                   JOIN silver_fbi.fact_crime_observation AS fact
                     ON fact.product_id = rate.product_id
                    AND fact.measure_id = rate.measure_id
@@ -684,16 +686,7 @@ def fbi_county_agency_rate_agreement(
                    AND agency.subject_type = fact.subject_type
                    AND agency.subject_code = fact.subject_code
                    AND agency.period = fact.period
-                 GROUP BY rate.release_key, rate.measure_id, rate.geo_id,
-                          rate.period
-            )
-            SELECT rate.product_id || ' ' || rate.geo_id || ' ' || rate.period
-              FROM recent AS rate
-              LEFT JOIN recomputed AS agencies
-                ON agencies.release_key = rate.release_key
-               AND agencies.measure_id = rate.measure_id
-               AND agencies.geo_id = rate.geo_id
-               AND agencies.period = rate.period
+             ) AS agencies
              WHERE (rate.unavailable_reason IS NULL) <> (rate.rate IS NOT NULL)
                 OR rate.contributing_oris && rate.excluded_multi_county_oris
                 OR (CARDINALITY(rate.contributing_oris) > 0
@@ -758,7 +751,7 @@ def _fbi_newest_release_keys(cursor: Any) -> dict[str, list[str]]:
 def fbi_county_agency_rate_is_current(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-FBI-014 — the served county rate was computed after its publication.
+    """DQ-FBI-014 — the served county rate and fact counts postdate publication.
 
     ``gold_fbi.county_agency_rate_month`` is recomputed per product in the
     transaction that publishes it, so its rows are never older than the
@@ -800,6 +793,37 @@ def fbi_county_agency_rate_is_current(
         """,
         order_by="1",
     )
+    # The admin coverage counts are refreshed with the rate, so a product
+    # with published facts has counts no older than its newest publication.
+    counted, counted_total = _offenders(
+        cursor,
+        """
+        WITH published AS (
+            SELECT product_id, MAX(published_at) AS published_at
+              FROM silver_fbi.dim_ucr_dataset_release
+             WHERE status = 'published'
+             GROUP BY product_id
+        ), counted AS (
+            SELECT product_id, MIN(refreshed_at) AS refreshed_at
+              FROM gold_fbi.release_fact_count
+             GROUP BY product_id
+        )
+        SELECT published.product_id || CASE
+                   WHEN counted.product_id IS NULL THEN ' never counted'
+                   ELSE ' counted before its newest publication'
+               END
+          FROM published
+          LEFT JOIN counted USING (product_id)
+         WHERE (counted.product_id IS NULL
+                AND EXISTS (
+                    SELECT 1
+                      FROM silver_fbi.fact_crime_observation AS fact
+                     WHERE fact.product_id = published.product_id
+                ))
+            OR counted.refreshed_at < published.published_at
+        """,
+        order_by="1",
+    )
     return [
         RuleOutcome(
             object_name,
@@ -807,17 +831,25 @@ def fbi_county_agency_rate_is_current(
             observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
-        )
+        ),
+        RuleOutcome(
+            "gold_fbi.release_fact_count",
+            "fail" if counted else "pass",
+            observed_count=counted_total,
+            expected_count=0,
+            evidence=counted[:EVIDENCE_LIMIT],
+        ),
     ]
 
 
 #: A CDE total that differs from the Return A file's by at most this many
 #: offenses, or this share of the CDE's value, is a revision the FBI made
-#: after cutting the master file (Dane Sheriff 12 vs 13, Green Bay 39 vs 40,
-#: Austin PD 4 to 10 low each month). The rule names those months as a
-#: warning; a larger gap means the sum, the layout or a card was read wrong.
-FBI_RETURN_A_REVISION_OFFENSES = 1
-FBI_RETURN_A_REVISION_SHARE = 0.02
+#: after cutting the master file (on the 2015-2025 load: 40 Wisconsin months
+#: one apart, Dane Sheriff 67 vs 70 and 74 vs 77, Madison 38 vs 40). The rule
+#: names those months as a warning; a larger gap means the sum, the layout or
+#: a card was read wrong.
+FBI_RETURN_A_REVISION_OFFENSES = 3
+FBI_RETURN_A_REVISION_SHARE = 0.05
 
 
 def fbi_return_a_matches_cde(

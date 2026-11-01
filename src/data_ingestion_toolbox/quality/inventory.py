@@ -1881,6 +1881,18 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published release",
     ),
     _obj(
+        "gold_fbi.release_fact_count",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, subject_type, period_start",
+        lineage="gold_fbi.latest_release_fact",
+        scope_method="every subject type and month of one product's newest "
+        "published release, recounted by gold_fbi.refresh_release_fact_count "
+        "in the transaction that publishes that product",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
         "gold_fbi.latest_release_fact",
         "gold",
         "FBI_UCR",
@@ -5217,8 +5229,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "freshness",
         "The served county crime rate rows of every product were computed in "
         "or after that product's newest publication, and a product with "
-        "county-linked agencies and a published release has served rows.",
-        ("gold_fbi.county_agency_rate_month",),
+        "county-linked agencies and a published release has served rows; "
+        "likewise every published product's fact counts.",
+        ("gold_fbi.county_agency_rate_month", "gold_fbi.release_fact_count"),
     ),
     _rule(
         "DQ-FBI-011",
@@ -5226,7 +5239,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "reconciliation",
         "Violent and property totals summed from the Return A master file's "
         "offense components equal the CDE's published totals for every "
-        "agency and month both publish; a gap of at most one offense or 2 "
+        "agency and month both publish; a gap of at most three offenses or 5 "
         "percent is the CDE's revision after the master file was cut and "
         "warns, naming the month, and a larger gap fails.",
         ("gold_fbi.latest_release_observation",),

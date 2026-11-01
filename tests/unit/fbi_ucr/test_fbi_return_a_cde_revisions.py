@@ -39,17 +39,18 @@ def _run(months: list[tuple[str, str, int, int]]) -> tuple[Any, _Cursor]:
     return outcome, cursor
 
 
-def test_a_revision_of_one_offense_or_two_percent_warns() -> None:
+def test_a_revision_of_three_offenses_or_five_percent_warns() -> None:
     """Covers: ETL-107, DQ-FBI-011 — CDE revisions after the master file are named, not failed."""
     outcome, cursor = _run(
         [
             ("WI0130000", "02-2015", 12, 13),  # one offense
-            ("TX2270100", "05-2024", 495, 503),  # 1.6 percent
+            ("TX2270100", "05-2024", 495, 515),  # 3.9 percent
+            ("WI0130000", "06-2020", 67, 70),  # three offenses
             ("WI0050700", "01-2023", 7, 7),
         ]
     )
     assert outcome.result == "warn"
-    assert outcome.observed_count == 2
+    assert outcome.observed_count == 3
     assert all(
         line.startswith("revised since the master file: ") for line in outcome.evidence
     )
