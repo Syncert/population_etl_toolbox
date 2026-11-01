@@ -17,8 +17,9 @@ import type { ObservationRow } from "./explorerViewModel";
 import { publishedNumber } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
-/** The grains a place page exists for, broadest first. */
-export const PLACE_LEVELS = ["NATIONAL", "STATE", "COUNTY", "PLACE"] as const;
+/** The grains a place page exists for, broadest first. A metro (a CBSA) is
+ * built from whole counties and can span states, so it sits beside them. */
+export const PLACE_LEVELS = ["NATIONAL", "STATE", "METRO", "COUNTY", "PLACE"] as const;
 export type PlaceLevel = (typeof PLACE_LEVELS)[number];
 
 /**
@@ -659,6 +660,36 @@ export function resolveCitySegment(
   return { place: found, canonical: canonical === segment ? null : canonical };
 }
 
+/**
+ * A metro's address (web-metro-pages): `/metro/<segment>`, the slug of its
+ * published name, or its five-digit CBSA code when another metro's name
+ * slugs the same way. The API's `place_paths.metro_segments` is the same
+ * rule, held together by `tests/fixtures/shared/place_segments.json`; the
+ * route accepts the CBSA code too and settles on the canonical segment, so a
+ * link built from a `cbsa:` id alone needs no list of metros.
+ */
+export function metroSegment(metro: GeographySummary, metros: readonly GeographySummary[]): string {
+  const code = metroCode(metro.geo_id);
+  const slug = placeSlug(String(metro.geo_name || ""));
+  const clash = metros.some((other) => other.geo_id !== metro.geo_id && placeSlug(String(other.geo_name || "")) === slug);
+  return slug && !clash ? slug : code;
+}
+
+/** The five-digit CBSA code of a `cbsa:` id, or "" for any other id. */
+export function metroCode(geoId: string | null | undefined): string {
+  const match = /^cbsa:(\d{5})$/.exec(String(geoId || ""));
+  return match ? match[1]! : "";
+}
+
+export function metroPath(segment: string): string {
+  return `/metro/${segment}`;
+}
+
+/** "Madison, WI Metro Area" reads as itself; nothing is trimmed from it. */
+export function metroName(metro: { geo_name?: string | null; geo_id: string }): string {
+  return String(metro.geo_name || metro.geo_id);
+}
+
 export function placePath(stateSeg?: string | null, countySeg?: string | null): string {
   if (!stateSeg) return "/us";
   return countySeg ? `/us/${stateSeg}/${countySeg}` : `/us/${stateSeg}`;
@@ -692,6 +723,7 @@ export interface OmittedChapter {
 const GRAIN_WORDS: Record<PlaceLevel, string> = {
   NATIONAL: "national",
   STATE: "state",
+  METRO: "metro area",
   COUNTY: "county",
   PLACE: "city or town",
 };

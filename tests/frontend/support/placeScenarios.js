@@ -43,7 +43,17 @@ export const PLACES = [
   { geo_id: "state:55|place:48000", geo_level: "PLACE", geo_name: "Madison city", state_fips: "55", place_fips: "48000", place_name: "Madison city", state_name: "Wisconsin" },
 ];
 
+// The measures this fixture publishes for metros (web-metro-pages): ACS
+// income, rent and median age, LAUS unemployment, and BEA's per capita
+// income, which the warehouse sums from member counties.
+const METRO_CODES = new Set(["CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B01002_001", "BLS:LAU:UNEMP_RATE", "BEA:CAINC1:3"]);
+
 function grainsFor(code) {
+  const own = baseGrainsFor(code);
+  return METRO_CODES.has(code) ? [...own, "METRO"] : own;
+}
+
+function baseGrainsFor(code) {
   if (code.startsWith("BLS:")) return ["COUNTY", "STATE"];
   if (code.startsWith("CDC:")) return ["COUNTY", "NATIONAL"];
   if (code.startsWith("FBI_UCR:")) return ["AGENCY", "STATE", "NATIONAL"];
@@ -127,7 +137,25 @@ function costRows(code, geo) {
   return [{ ...base, value, period_start: weekly ? "2026-09-28" : "2024-01-01", period_end: weekly ? "2026-10-04" : "2024-12-31" }];
 }
 
-const scale = { "us:1": 600, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5 };
+// The Madison metro's page (web-metro-pages), as one
+// `/catalog/geographies/metros/{segment}` read answers it: Dane County its
+// only member here, Wisconsin its principal state.
+export const METRO_PAGE = {
+  requested_segment: "madison-wi-metro-area",
+  metro: { geo_id: "cbsa:31540", geo_name: "Madison, WI Metro Area", short_name: "Madison", cbsa_code: "31540", segment: "madison-wi-metro-area", page_path: "/metro/madison-wi-metro-area",
+    principal_state_fips: "55", principal_state_name: "Wisconsin", population: 680796, population_year: 2023, population_metric_code: "CENSUS_ACS:acs5:B01003_001" },
+  delineation_vintage: 2023,
+  evidence_source: "census_cbsa_delineation",
+  member_counties: [{ geo_id: "state:55|county:025", geo_name: "Dane County", state_fips: "55", state_name: "Wisconsin", page_path: "/us/wisconsin/dane-county", population: 561504, population_year: 2023 }],
+  states: [{ geo_id: "state:55", state_fips: "55", state_name: "Wisconsin", page_path: "/us/wisconsin", member_counties: 1, principal: true }],
+  principal_state_areas: [
+    { geo_id: "division:3", geo_level: "CENSUS_DIVISION", geo_name: "East North Central" },
+    { geo_id: "region:2", geo_level: "CENSUS_REGION", geo_name: "Midwest Region" },
+    { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "United States" },
+  ],
+};
+
+const scale = { "us:1": 600, "cbsa:31540": 1.2, "state:55": 10, "state:27": 9.5, "state:55|county:025": 1, "state:55|county:105": 0.3, "state:27|county:053": 2.2, "state:55|place:99999": 0.05, "state:55|place:48000": 0.5 };
 const rates = /B01002|B19013|B19301|B19083|B25064|B25077|BLS:|CDC:|FBI_UCR:|PEP:R|SAEPOVRT|SAEMHI|PCTUI/;
 
 // Relationships as the reference would record them. "Crossing city" spans
@@ -252,11 +280,11 @@ const MADISON_CITY = searchRow("state:55|place:48000", "PLACE", "Madison city", 
 export const SEARCH_GROUPS = [
   [AUSTIN_CITY,
     searchRow("state:48|county:453", "COUNTY", "Travis County", "Travis", TX, "/us/texas/travis-county", 1290188, via(AUSTIN_CITY)),
-    searchRow("cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX Metro Area", "Austin-Round Rock-San Marcos", TX, null, 2421115, via(AUSTIN_CITY))],
+    searchRow("cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX Metro Area", "Austin-Round Rock-San Marcos", TX, "/metro/austin-round-rock-san-marcos-tx-metro-area", 2421115, via(AUSTIN_CITY))],
   [searchRow("state:48|county:015", "COUNTY", "Austin County", "Austin", TX, "/us/texas/austin-county", 30707)],
   [MADISON_CITY,
     searchRow("state:55|county:025", "COUNTY", "Dane County", "Dane", WI, "/us/wisconsin/dane-county", 561504, via(MADISON_CITY)),
-    searchRow("cbsa:31540", "METRO", "Madison, WI Metro Area", "Madison", WI, null, 680796, via(MADISON_CITY))],
+    searchRow("cbsa:31540", "METRO", "Madison, WI Metro Area", "Madison", WI, "/metro/madison-wi-metro-area", 680796, via(MADISON_CITY))],
   [searchRow("state:55|county:105", "COUNTY", "Rock County", "Rock", WI, "/us/wisconsin/rock-county", 163687)],
   [searchRow("state:55|place:99999", "PLACE", "Crossing city", "Crossing", WI, "/us/wisconsin/crossing-city", 12000)],
   [searchRow("state:55", "STATE", "Wisconsin", "Wisconsin", WI, "/us/wisconsin", 5882128)],
@@ -275,7 +303,7 @@ function locateAnswer(lat, lon) {
   const rock = { geo_id: "state:55|county:105", geo_level: "COUNTY", geo_name: "Rock County", boundary_vintage: 2024, page_path: "/us/wisconsin/rock-county" };
   if (Math.abs(lat - 43.07) < 0.1 && Math.abs(lon + 89.4) < 0.1) {
     const place = { geo_id: "state:55|place:48000", geo_level: "PLACE", geo_name: "Madison city", boundary_vintage: 2024, page_path: "/us/wisconsin/madison-city" };
-    return { landing: place, state, county: dane, place, tract: null, zcta: null, metro: { geo_id: "cbsa:31540", geo_level: "METRO", geo_name: "Madison, WI Metro Area", boundary_vintage: 2023, page_path: null } };
+    return { landing: place, state, county: dane, place, tract: null, zcta: null, metro: { geo_id: "cbsa:31540", geo_level: "METRO", geo_name: "Madison, WI Metro Area", boundary_vintage: 2023, page_path: "/metro/madison-wi-metro-area" } };
   }
   if (Math.abs(lat - 42.7) < 0.1 && Math.abs(lon + 89.15) < 0.1) return { landing: rock, state, county: rock, place: null, tract: null, zcta: null, metro: null };
   return null;
@@ -295,7 +323,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       const code = params.get("metric_code");
       const metric = metrics[code];
       const geo = params.get("geo_id");
-      const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geo);
+      const place = [NATION, ...STATES, ...COUNTIES, ...PLACES, AREAS.metro].find((item) => item.geo_id === geo);
       if (!metric || !place) return { status: 404, json: { detail: "No reviewed fixture" } };
       // NASS publishes no cell for Dane County in this fixture: the Land and
       // Farms chapter must be omitted there and named in the footer.
@@ -316,7 +344,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
           period_end: monthly ? `2024-${String(index + 1).padStart(2, "0")}-28` : `${year}-12-31`,
           release: "fixture-release-2025", as_of: "2025-09-01",
           dimensions: code.startsWith("BEA:")
-            ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "" }
+            ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "",
+              derivation: place.geo_level === "METRO" ? "ratio_of_member_county_sums" : null }
             : code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
           uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
             : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
@@ -346,6 +375,15 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       if (!place) return route.fulfill({ status: 404, json: { detail: "geo_id not found" } });
       const items = RELATED[geoId] || [];
       return route.fulfill({ json: { geo_id: geoId, geo_level: place.geo_level, total: items.length, items } });
+    }
+    if (path === "/api/v1/catalog/geographies/metros") {
+      const items = params.get("state_fips") === "55" ? [METRO_PAGE.metro] : [];
+      return route.fulfill({ json: { total: items.length, limit: Number(params.get("limit") || 100), offset: 0, items } });
+    }
+    if (path.startsWith("/api/v1/catalog/geographies/metros/")) {
+      const segment = decodeURIComponent(path.slice("/api/v1/catalog/geographies/metros/".length));
+      if (segment !== METRO_PAGE.metro.segment && segment !== METRO_PAGE.metro.cbsa_code) return route.fulfill({ status: 404, json: { detail: "metro not found" } });
+      return route.fulfill({ json: { ...METRO_PAGE, requested_segment: segment } });
     }
     if (path === "/api/v1/place/distinctive") {
       const geoId = params.get("geo_id");

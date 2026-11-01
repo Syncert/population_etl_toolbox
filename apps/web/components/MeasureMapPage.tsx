@@ -46,7 +46,7 @@ import {
   normalizeObservationRows,
   observationUncertaintyLabel,
 } from "../lib/observationAccess";
-import { PLACE_CHAPTERS, citySegment, countySegment, placePath, stateSegment } from "../lib/placeChapters";
+import { PLACE_CHAPTERS, citySegment, countySegment, metroCode, metroPath, placePath, stateSegment } from "../lib/placeChapters";
 import { discoverTileMetadata } from "../lib/tiles";
 import {
   STATE_SCOPED_GRAINS,
@@ -439,7 +439,9 @@ export default function MeasureMapPage({
   // Beside every derived value: the column names its denominator.
   const valueHeading = pairing ? `${pairing.unit[0]!.toUpperCase()}${pairing.unit.slice(1)} ${denominatorText(pairing)}` : "Value";
   const linkFor = (entry: RankedCounty) => {
-    // Counties and cities have pages; metros and tracts do not yet.
+    // Counties, cities and metros have pages; tracts do not yet. A metro is
+    // linked by its CBSA code, which its route settles on the named address.
+    if (grain === "METRO") return metroCode(entry.county.geo_id) ? metroPath(metroCode(entry.county.geo_id)) : null;
     if (grain !== "COUNTY" && grain !== "PLACE") return null;
     const home = states.find((item) => item.state_fips === entry.county.state_fips);
     if (!home) return null;

@@ -122,6 +122,8 @@ list.
 | `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/geographies/search` | Places a typed name may mean, for "find your place": states, counties, metros, cities and towns, and ZCTAs, best match first and ranked by population, with the containing state and county and the web page path — see [Finding a place](#finding-a-place-by-name-or-by-location) |
 | `GET /api/v1/catalog/geographies/locate` | The city or town, county, tract, ZCTA, state and metro a latitude and longitude lie in, with `landing` (the city, else the county) for "use my location"; `404 {"detail": "no geography contains this point"}` where no state does |
+| `GET /api/v1/catalog/geographies/metros` | Metro and micro areas (CBSAs) by name, each with its page path and principal state; `state_fips` lists the metros with a member county in that state, so a two-state metro is listed in both — see [Metro pages](#metro-pages) |
+| `GET /api/v1/catalog/geographies/metros/{segment}` | Everything a metro page needs before it reads a figure: the metro, its member counties under the newest delineation held, every state they lie in, and the areas its principal state lies in; `404 {"detail": "metro not found"}` — see [Metro pages](#metro-pages) |
 | `GET /api/v1/catalog/tile-layers` | Every vector tile layer a map can draw (`counties`, `tracts`, `places`, `metros`), its grains, zooms and join key, and for the versioned place and metro layers each boundary vintage held with its own tile template — see [Map tiles](#map-tiles-places-and-metros-by-boundary-vintage) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
@@ -299,8 +301,9 @@ crosses a county line has others; `/related` lists every one.
 
 `page_path` is the web page for the geography (`/us/texas/austin-city`,
 `/us/texas/travis-county`), made by the web's own address rule, including
-its FIPS fallback when two names in a state slug the same way. It is `null`
-for a grain with no page yet: metro, tract, ZCTA.
+its FIPS fallback when two names in a state slug the same way. A metro's is
+`/metro/<segment>` (see [Metro pages](#metro-pages)). It is `null` for a
+grain with no page yet: tract, ZCTA.
 
 **Locate.** `GET /api/v1/catalog/geographies/locate?lat=30.2650&lon=-97.7470`
 answers the current geographies whose boundary covers the point: `state`,
@@ -326,6 +329,41 @@ either side of it.
 
 Both are catalog reads: they spend the catalog rate-limit budget and are
 publicly cacheable like the rest of `/catalog/`.
+
+### Metro pages
+
+A metro or micro area (a CBSA) is built by OMB from whole counties and can
+span states, so its page is not under `/us/<state>`: it is
+`/metro/<segment>`, where the segment is the slug of its published name
+(`/metro/austin-round-rock-san-marcos-tx-metro-area`), or its five-digit
+CBSA code when another metro's name slugs the same way. Search, locate and
+the routes below answer that path.
+
+**One metro.** `GET /api/v1/catalog/geographies/metros/{segment}` accepts the
+canonical segment or the CBSA code (`/metros/12420`) and answers:
+
+| Field | Meaning |
+| --- | --- |
+| `requested_segment` | The segment asked for. When it is not `metro.segment` (a CBSA code), a page settles on `metro.page_path` |
+| `metro` | `geo_id`, `geo_name`, `short_name`, `cbsa_code`, `segment`, `page_path`, the principal state (`principal_state_fips`, `principal_state_name`) and the newest ACS population with its year and metric code |
+| `member_counties` | The counties the newest delineation the reference holds puts in the metro (`delineation_vintage`, `evidence_source`), most populous first, each with its page path |
+| `states` | Every state a member county lies in, with how many; the **principal state** first: the state of its most populous member county, the rule the search uses |
+| `principal_state_areas` | The Census division, region and nation the principal state lies in, for figures no source publishes for a metro (gas, food prices) |
+
+A segment outside the slug vocabulary is a `422`; one no metro answers to is
+`404 {"detail": "metro not found"}`.
+
+**A state's metros.** `GET /api/v1/catalog/geographies/metros?state_fips=48`
+lists by name the metros with a member county in the state (`limit` 1–1000,
+default 100, `offset`), so Texarkana, TX-AR is listed for Texas and for
+Arkansas. Without `state_fips` it lists every metro. A malformed state code
+is a `422`.
+
+Both are catalog reads of the search projection and the relationship view,
+publicly cacheable and on the catalog rate-limit budget. The figures are the
+observation routes' as for any place: ACS publishes metro estimates, BLS
+LAUS metro unemployment, BEA metro price parities; BEA's metro income is
+summed from the counties (see [Reading a BEA row](#reading-a-bea-row-current-chained-or-per-capita)).
 
 ### Map tiles: places and metros by boundary vintage
 
@@ -1115,6 +1153,13 @@ capita personal income and `BEA:CAGDP1:1` is real GDP.
 - BEA's regions and its combined areas, such as the Virginia independent
   cities merged with their surrounding county, are not served: they are not
   counties.
+- **A metro's income is summed from its counties, and says so.** BEA
+  publishes no metro rows for county income, so the warehouse adds up each
+  metro's counties as BEA does. Those rows carry
+  `dimensions.derivation`: `sum_of_member_counties` for a summed line,
+  `ratio_of_member_county_sums` for per capita income (summed income over
+  summed population). It is `null` on every figure BEA published. Chained
+  dollars are never summed, so a metro has no real GDP here.
 
 ### Price levels, regional and metro prices
 
@@ -2310,6 +2355,7 @@ status code on the one class of error the API can explain.
 | `/catalog/metrics` | `metric_code` — the catalog's own unique key, so no two rows can tie |
 | `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
 | `/catalog/geographies/{geo_id}/related` | `relationship`, then `geo_id` |
+| `/catalog/geographies/metros` | `geo_name`, then `geo_id` |
 | `/catalog/geographies/search` | Match tier (`exact`, `prefix`, `word_prefix`, `fuzzy` by closeness), then population (largest first, none last), then grain, then `geo_id`; each of the three best city matches followed by its county and metro. Not paged: `limit` caps it at 25 |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |

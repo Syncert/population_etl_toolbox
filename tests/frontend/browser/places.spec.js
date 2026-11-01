@@ -324,7 +324,9 @@ test("nearby and related: a place crossing two counties is noted on both pages",
   await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Rock County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/rock-county");
   // A neighbour in another state is addressed by its FIPS, which settles on its name.
   await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Hennepin County, Minnesota", exact: true })).toHaveAttribute("href", "/us/minnesota/27053");
-  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link").and(page.locator(':not([data-testid="place-nearby-compare"])'))).toHaveText(["Wisconsin", "United States"]);
+  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link").and(page.locator(':not([data-testid="place-nearby-compare"])'))).toHaveText(["Wisconsin", "Madison, WI", "United States"]);
+  // Its metro links to the metro's page by code (WEB-153).
+  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link", { name: "Madison, WI", exact: true })).toHaveAttribute("href", "/metro/31540");
   // Each related place links its comparison (WEB-146).
   await expect(nearby.getByTestId("place-nearby-part-of").getByTestId("place-nearby-compare")).toHaveCount(3);
   await expect(nearby).toContainText("vintage 2025");
@@ -362,6 +364,7 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
   // Its metro, reached through the counties it lies in, with the share inside.
   const metro = page.getByTestId("place-nearby-part-of").locator('li[data-geo-id="cbsa:31540"]');
   await expect(metro).toHaveText("Madison, WI · 60% of this place lies in its counties · compare");
+  await expect(metro.getByRole("link", { name: "Madison, WI", exact: true })).toHaveAttribute("href", "/metro/31540");
 
   await expect(page.getByTestId("chapter-safety")).toHaveCount(0);
   await expect(page.getByTestId("chapter-land-farms")).toHaveCount(0);
@@ -449,4 +452,61 @@ test("the nation's groceries and gas card is its own, with parity 100 by definit
   await expect(page.getByTestId("place-cost-gas")).toContainText("U.S. Energy Information Administration");
   await expect(page.getByTestId("place-cost-food")).toContainText("up 2.0% over the year");
   await expect(page.getByTestId("place-cost-parity")).toContainText("100 by definition");
+});
+
+// Covers: WEB-153 — web-metro-pages: a metro has its own page in the same
+// chapters, beside its principal state and the nation, resolved in one read.
+test("a metro page reads its own figures beside its state and the nation and lists its counties", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const asked = [];
+  page.on("request", (request) => { if (request.url().includes("/api/v1/")) asked.push(new URL(request.url()).pathname); });
+  await ready(page, "/metro/madison-wi-metro-area");
+  await expect(page.locator("main")).toHaveCount(1);
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-level", "METRO");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-geo-id", "cbsa:31540");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Madison, WI Metro Area");
+  await expect(page.locator(".section-kicker").first()).toHaveText("Metro area");
+  await expect(page.getByRole("navigation", { name: "Place hierarchy" }).getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin");
+
+  // Three levels: the metro, its principal state, the nation.
+  const income = page.getByTestId("card-median-household-income");
+  await expect(income.locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("margin of error");
+  await expect(page.getByTestId("card-unemployment-rate-metro")).toContainText("Percent");
+  // BEA's metro income is summed from the counties, and the card says so.
+  await expect(page.getByTestId("card-bea-per-capita-income-metro-derivation")).toContainText("Derived: its member counties' summed income");
+  await expect(page.getByTestId("card-bea-per-capita-income-state-derivation")).toHaveCount(0);
+  // A measure no source publishes for a metro is said, not borrowed.
+  await expect(page.getByTestId("card-population-estimate-metro")).toContainText("Not published at metro area grain");
+  await expect(page.getByTestId("chapter-health")).toHaveCount(0);
+  await expect(page.getByTestId("place-omissions")).toContainText("Health: no published metro area values for this place");
+
+  // Prices: BEA's price level is the metro's own; gas and food are larger areas'.
+  await expect(page.getByTestId("place-cost-no-local")).toContainText("The price level is BEA's figure for this metro");
+  await expect(page.getByTestId("place-cost-parity")).toHaveAttribute("data-area", "cbsa:31540");
+
+  const members = page.getByTestId("place-metro-members");
+  await expect(members.getByRole("link", { name: "Dane County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/dane-county");
+  await expect(members).toContainText("2023 CBSA delineation");
+  await expect(page.getByTestId("place-metro-states")).toHaveCount(0);
+  await expect(page.getByTestId("place-compare-with").getByRole("link", { name: "the United States" })).toHaveAttribute("href", "/compare/places?a=cbsa%3A31540&b=us%3A1");
+
+  // One metro read; no ranking among every metro and no relationship read.
+  expect(asked.filter((path) => path.startsWith("/api/v1/catalog/geographies/metros/"))).toHaveLength(1);
+  expect(asked.filter((path) => path === "/api/v1/place/distinctive" || path.endsWith("/related"))).toEqual([]);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a metro's CBSA code settles on its named address, and an unknown metro is not found", async ({ page }) => {
+  await ready(page, "/metro/31540");
+  await expect(page).toHaveURL(/\/metro\/madison-wi-metro-area$/);
+  await installPlaceFixtures(page);
+  await page.goto("/metro/nowhere-metro-area");
+  await expect(page.getByTestId("place-not-found")).toContainText("No metro or micro area is published under that name or code.");
+});
+
+test("a state page lists the metros reaching into it", async ({ page }) => {
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("place-state-metros").getByRole("link", { name: "Madison, WI Metro Area" })).toHaveAttribute("href", "/metro/madison-wi-metro-area");
 });
