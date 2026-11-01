@@ -49,6 +49,8 @@ export function kindOf(level: string): string {
 export function safePagePath(path: unknown): string | null {
   if (typeof path !== "string") return null;
   if (path === "/us") return path;
+  // A metro's page (web-metro-pages): one segment under /metro.
+  if (path.startsWith("/metro/")) return PLACE_SEGMENT.test(path.slice(7)) ? path : null;
   if (!path.startsWith("/us/")) return null;
   const segments = path.slice(4).split("/");
   return segments.length <= 2 && segments.every((segment) => PLACE_SEGMENT.test(segment)) ? path : null;

@@ -66,9 +66,10 @@ test("the home search reaches a county page by pointer, and the page passes AA a
   await page.getByRole("combobox").fill("madison");
   await expect(page.getByRole("option")).toHaveCount(3);
   await noViolations(page);
-  // A press on the metro, which has no page, goes nowhere.
-  await page.getByRole("option", { name: /Metro Area/ }).click({ force: true });
-  expect(new URL(page.url()).pathname).toBe("/");
+  // A press on the metro opens its page (WEB-153).
+  await page.getByRole("option", { name: /Metro Area/ }).click();
+  await expect(page).toHaveURL(/\/metro\/madison-wi-metro-area$/);
+  await page.goto("/");
   await page.getByRole("combobox").fill("rock");
   await page.getByRole("option", { name: /Rock County/ }).click();
   await expect(page).toHaveURL(/\/us\/wisconsin\/rock-county$/);
