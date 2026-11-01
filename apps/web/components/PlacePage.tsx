@@ -9,7 +9,7 @@
 // for omitting one are `lib/placeChapters.ts`; this component fetches and
 // renders. It computes nothing beyond the trend index that module defines.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
@@ -100,6 +100,7 @@ const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
+const CheckTheRecord = dynamic(() => import("./CheckTheRecord"));
 
 const CATALOG_PAGE_SIZE = 1000;
 /** How many observation requests one page keeps in flight at once. */
@@ -672,6 +673,26 @@ export default function PlacePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolution.state, shown, sources, levels]);
 
+  // "What the record shows" links each answer to its rows in the explorer,
+  // and a city's crime and unemployment questions to its county's page.
+  const recordExploreLink = useCallback(
+    (measure: ResolvedPlaceMeasure, entry: LevelPlace) =>
+      explorerHref({
+        metric: measure.metricCode,
+        source: measure.metric?.source_code || undefined,
+        geoId: entry.geoId,
+        geoLevel: entry.level as GeoLevel,
+        stateFips: (entry.level === "NATIONAL" || entry.level === "METRO" ? undefined : state?.state_fips) || undefined,
+      }),
+    [state],
+  );
+  const recordCountyPage = useMemo(
+    () => (level === "PLACE" && county && state && counties.length
+      ? { name: countyName(county), href: placePath(stateSegment(state, states), countySegment(county, counties)) }
+      : null),
+    [level, county, state, states, counties],
+  );
+
   if (resolution.state === "not-found" || resolution.state === "error") {
     const within = resolution.state === "not-found" ? resolution.within : null;
     const candidates = within
@@ -769,6 +790,7 @@ export default function PlacePage({
         <nav className="chapter-rail" aria-label="Chapters" data-testid="chapter-rail">
           <ol>
             {visible.map((resolved) => <li key={resolved.chapter.id}><a href={`#${resolved.chapter.id}`}>{resolved.chapter.title}</a></li>)}
+            {settled.current ? <li><a href="#record">What the record shows</a></li> : null}
           </ol>
         </nav>
       ) : null}
@@ -787,6 +809,19 @@ export default function PlacePage({
           pairings={pairings}
         />
       ))}
+
+      {resolution.state === "found" && settled.current && levels.length ? (
+        <CheckTheRecord
+          level={level}
+          levels={levels}
+          shown={shown}
+          histories={histories}
+          answers={answers}
+          pairings={pairings}
+          countyPage={recordCountyPage}
+          exploreLink={recordExploreLink}
+        />
+      ) : null}
 
       {place && related?.geo_id === place.geo_id ? (
         <GroceriesAndGas level={level} place={place} related={related} sources={sources} />

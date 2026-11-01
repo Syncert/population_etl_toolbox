@@ -214,10 +214,10 @@ export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || [nu
 
 // Synthetic derived values. Rock County's survey count has no same-period
 // denominator in this fixture, so its shares answer `different_period`.
-function derivedRows(ratio, geoId) {
+function derivedRows(ratio, geoId, history = false) {
   const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geoId);
   if (!place) return [];
-  if (ratio.kind === "agency_rate") return agencyRateRows(ratio, place);
+  if (ratio.kind === "agency_rate") return history ? agencyRateHistory(ratio, place) : agencyRateRows(ratio, place);
   const metric = metrics[ratio.provider_rate || ratio.numerator];
   if (ratio.kind === "provider_rate" && metric && !metric.valid_geo_grains.includes(place.geo_level)) return [];
   if (ratio.numerator.startsWith("FBI_UCR:") && !["STATE", "NATIONAL"].includes(place.geo_level)) return [];
@@ -260,6 +260,28 @@ function agencyRateRows(ratio, place) {
     numerator: { metric_code: ratio.numerator, release: "fixture-2025", period_start: "2024-12-01", period_end: "2024-12-31", value: refused ? "3" : "13", value_status: "reported" },
     denominator: null, provider_rate: null, coverage,
   }];
+}
+
+// A county's monthly rate history (check-the-record), as the as-released read
+// with `newest_release_per_period` answers it: Dane County from December 2014
+// to December 2024, with only one of its two agencies reporting in the first
+// month (80 percent coverage, so the change "may reflect reporting"); Rock
+// County refused every month under the floor.
+function agencyRateHistory(ratio, place) {
+  if (place.geo_level !== "COUNTY") return [];
+  const [newest] = agencyRateRows(ratio, place);
+  return Array.from({ length: 121 }, (_, index) => {
+    const date = new Date(Date.UTC(2014, 11 + index, 1));
+    const start = date.toISOString().slice(0, 10);
+    const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    const first = index === 0;
+    const value = newest.value === null ? null : first ? "9.00" : index === 120 ? newest.value : (9 + index * 0.018).toFixed(2);
+    const coverage = first && newest.value !== null
+      ? { ...newest.coverage, covered_population: "92500", coverage_share: "0.7998", contributing_agencies: ["WI0130000"] }
+      : newest.coverage;
+    return { ...newest, period_start: start, period_end: end, release: `fixture-${date.getUTCFullYear() + 1}`, value, coverage,
+      numerator: { ...newest.numerator, release: `fixture-${date.getUTCFullYear() + 1}`, period_start: start, period_end: end } };
+  });
 }
 
 // The place search (A-1) as the API answers it: each group is one matched
@@ -447,8 +469,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     if (path === "/api/v1/observations/derived") {
       const ratio = DERIVED_RATIOS.find((item) => item.ratio_id === params.get("ratio_id"));
       if (!ratio) return route.fulfill({ status: 404, json: { detail: "ratio_id not found" } });
-      const items = derivedRows(ratio, params.get("geo_id"));
-      return route.fulfill({ json: { ratio, scope: "latest", release: null, total: items.length, limit: Number(params.get("limit") || 100), offset: 0, items } });
+      const items = derivedRows(ratio, params.get("geo_id"), params.get("newest_release_per_period") === "true");
+      return route.fulfill({ json: { ratio, scope: params.get("scope") || "latest", release: null, total: items.length, limit: Number(params.get("limit") || 100), offset: 0, items } });
     }
     if (path === "/api/v1/catalog/metrics" && params.get("metric_codes")) {
       // The named rows, as the per-code route answers each (API-178).
