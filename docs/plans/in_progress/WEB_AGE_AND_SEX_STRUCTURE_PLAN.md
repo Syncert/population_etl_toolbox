@@ -68,7 +68,7 @@ illustrative numbers).
    (`compare_geo_ids`).
 9. The one-measure map stops offering single B01001 lines as maps (they stay
    readable in the explorer). Age indicators on the map come with API part 2:
-   `/map/age/<indicator>` (WEB-156) reads `/age-structure/map` (API-191).
+   `/map/age/<indicator>` (WEB-157) reads `/age-structure/map` (API-191).
 10. Plain labels for every band and indicator; raw codes only inside
     `data-provenance`.
 
@@ -158,7 +158,7 @@ exists.
 
 ## Age indicators on the map (2026-11-01)
 
-Built on API part 2 (#243, API-191), as WEB-156:
+Built on API part 2 (#243, API-191), as WEB-157:
 
 - `lib/ageMap.ts`: the eleven indicators the API serves, their fetcher, and
   the answer as the one-measure map's rows (a withheld value stays `null` with
@@ -178,7 +178,7 @@ Built on API part 2 (#243, API-191), as WEB-156:
   files, 980 tests; `age-map.spec.js` 4 passed and the age, measure-map and
   place-map specs still pass; `check:bundle` every route within budget
   (`/map/age/[indicator]` 470 kB of a 505 kB budget, the same as `/map`;
-  `/map/[metric]` 488 kB of 505). Catalog: WEB-156, recounted to 694.
+  `/map/[metric]` 488 kB of 505). Catalog: WEB-157, recounted to 696.
 - Live check (OFFICE_LAB) waits for the first age summary build, which fills
   `gold_census.age_structure_summary`.
 

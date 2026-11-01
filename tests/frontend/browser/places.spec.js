@@ -27,7 +27,7 @@ test("the nation's page reads every chapter it publishes and lists the states", 
   await ready(page, "/us");
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("United States");
-  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change"]);
+  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows"]);
   // BLS publishes no national unemployment rate in this catalog.
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published at national grain");
   await expect(page.getByTestId("place-children").getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin");

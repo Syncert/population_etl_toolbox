@@ -251,6 +251,36 @@ covers it instead, under one of two states:
   and value digests, runs in 815 seconds and 60, and caught a real defect on
   its first run against the warehouse.
 
+  After the history loads made the served relation ten times larger (1.19
+  billion rows, 1.18 TB), that second form read two to three terabytes a week
+  and its superseded probe alone ran past 41 minutes. **`DQ-ACS-007` now
+  measures one release partition of `gold_census.rpt_acs_observations` at a
+  time, and on a scheduled run only the partitions that changed.** Each
+  outcome's `partition_key` is the partition's vintage (`2024`, `default`)
+  and its `source_watermark` the partition's fingerprint: newest
+  `updated_at`, file node, and insert/update/delete counters. A partition
+  whose fingerprint matches its newest DQ-ACS-007 pass is carried, with
+  `partition_detail.measured = false` and `verified_by_quality_run_id`
+  naming the run that measured it. The monthly sweep and release
+  certification re-measure every partition; to force one on any day, trigger
+  `{"rule_id": "DQ-ACS-007", "scope": {"full_sweep": true}}`. The sweep is
+  what sees a silver row deleted, or a dimension row removed, beneath a
+  partition nobody re-served. The first scheduled run after this change has
+  no partitioned results to carry and measures everything once; run that
+  sweep in a quiet window rather than beside a load.
+
+  ```sql
+  -- What DQ-ACS-007 measured, and what it carried, on its newest run.
+  SELECT partition_key, object_name, result, observed_count,
+         partition_detail ->> 'measured' AS measured, duration_ms
+    FROM control.data_quality_result
+   WHERE rule_id = 'DQ-ACS-007'
+     AND quality_run_id = (SELECT quality_run_id FROM control.data_quality_result
+                            WHERE rule_id = 'DQ-ACS-007'
+                            ORDER BY evaluated_at DESC LIMIT 1)
+   ORDER BY partition_key DESC, object_name;
+  ```
+
   `DQ-SHARED-004` left this set when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the
   bootstrap manifest against what a warehouse recorded applying, and until the

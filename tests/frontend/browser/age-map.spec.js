@@ -3,7 +3,7 @@ import { expect, test } from "../support/servedRequests.js";
 import { polygonAround, routeSyntheticTiles } from "../support/syntheticTiles.js";
 import { SCHEME } from "../support/ageScenarios.js";
 
-// Covers: WEB-156 — the age indicators on the map (web-age-and-sex-structure,
+// Covers: WEB-157 — the age indicators on the map (web-age-and-sex-structure,
 // API-191): `/map/age/<indicator>` draws one indicator from
 // `/age-structure/map` for every county (or metro area), and for cities and
 // tracts one state at a time; the same equal-count bands and a legend that
