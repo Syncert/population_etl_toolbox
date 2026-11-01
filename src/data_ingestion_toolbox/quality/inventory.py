@@ -1881,6 +1881,17 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published release",
     ),
     _obj(
+        "gold_fbi.latest_release_fact",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, source record (latest refresh per product)",
+        lineage="silver_fbi.fact_crime_observation",
+        scope_method="the fact columns of latest_release_observation's rows, "
+        "without its participation, measure and release joins",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
         "gold_fbi.latest_release_observation",
         "gold",
         "FBI_UCR",
@@ -5010,13 +5021,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fbi.fact_reporting_participation",
             "gold_fbi.crime_observation",
             "gold_fbi.latest_release_observation",
+            "gold_fbi.latest_release_fact",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: both grains are UNIQUE constraints -- on "
             "the crime-observation fact and on the reporting-participation fact "
             "-- so a duplicate is refused at write time and never becomes an "
-            "evidence row. The two gold relations carry no constraint because "
+            "evidence row. The gold relations carry no constraint because "
             "they are views over those facts."
         ),
         enforced_grains=(

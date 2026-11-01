@@ -560,6 +560,35 @@ JOIN (
   ON latest.product_id = rate.product_id
  AND latest.refresh_date = rate.refresh_date;
 
+-- The fact columns of each product's newest published release, without the
+-- participation, measure and release joins of `latest_release_observation`.
+-- Same rows (every fact has its participation and measure rows by foreign
+-- key, and the same release and geography filters apply); read where only
+-- the fact's own columns are needed, such as the admin coverage scan, which
+-- passed its 20 s ceiling through the joined view once every Return A
+-- agency was loaded. In gold so the API's read-only role may read it.
+CREATE OR REPLACE VIEW gold_fbi.latest_release_fact AS
+SELECT fact.product_id, fact.release_key, fact.measure_id,
+       fact.subject_type, fact.subject_code, fact.period,
+       fact.period_start, fact.period_end, fact.value_status
+FROM silver_fbi.fact_crime_observation AS fact
+JOIN (
+    SELECT release.product_id, release.release_key
+    FROM silver_fbi.dim_ucr_dataset_release AS release
+    JOIN (
+        SELECT product_id, MAX(refresh_date) AS refresh_date
+        FROM silver_fbi.dim_ucr_dataset_release
+        WHERE status = 'published'
+        GROUP BY product_id
+    ) AS newest
+      ON newest.product_id = release.product_id
+     AND newest.refresh_date = release.refresh_date
+    WHERE release.status = 'published'
+) AS latest
+  ON latest.product_id = fact.product_id
+ AND latest.release_key = fact.release_key
+WHERE fact.geography_status NOT IN ('ambiguous', 'unsupported');
+
 CREATE OR REPLACE VIEW gold_fbi.latest_release_observation AS
 SELECT observation.*
 FROM gold_fbi.crime_observation AS observation
