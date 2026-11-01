@@ -810,8 +810,9 @@ def age_cohorts(
 
 SUMMARY_RELATION = "gold_census.age_structure_summary"
 #: Grains a map of one indicator is drawn at; cities and tracts one state at
-#: a time, so a read is never every tract in the country.
-MAP_GRAINS = ("STATE", "METRO", "COUNTY", "PLACE", "TRACT")
+#: a time, so a read is never every tract in the country. The nation is one
+#: row: the reference a legend draws against.
+MAP_GRAINS = ("NATIONAL", "STATE", "METRO", "COUNTY", "PLACE", "TRACT")
 STATE_SCOPED_GRAINS = frozenset({"PLACE", "TRACT"})
 _SHARE_GROUPS = ("under_18", "age_18_64", "age_65_plus", "age_85_plus")
 _RATIOS = (
@@ -942,4 +943,5 @@ def age_structure_map(
                 unavailable_reason=row.get("unavailable_reason"),
             )
         )
+    out.total = len(out.items)
     return out

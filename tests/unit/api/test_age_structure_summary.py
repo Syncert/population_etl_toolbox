@@ -229,6 +229,7 @@ def test_a_county_map_reads_the_grains_newest_release(map_client) -> None:
     assert body["derived"] is True
     assert body["unit"] == "per 100 people aged 18 to 64"
     assert body["label"] == "Old-age dependency ratio"
+    assert body["total"] == 2
     assert body["items"] == [
         {
             "geo_id": DANE["geo_id"],

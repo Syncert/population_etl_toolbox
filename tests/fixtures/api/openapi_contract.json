@@ -3532,6 +3532,7 @@
         "release": "string | null",
         "scheme": "AgeScheme",
         "state_fips": "string | null",
+        "total": "integer",
         "unit": "string"
       },
       "required": [

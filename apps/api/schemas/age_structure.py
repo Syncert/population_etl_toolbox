@@ -218,4 +218,5 @@ class AgeMapResponse(BaseModel):
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     scheme: AgeScheme
+    total: int = 0
     items: list[AgeMapItem] = Field(default_factory=list)
