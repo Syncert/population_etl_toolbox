@@ -430,7 +430,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         release="Yearly vintage",
         grains={"state": "d", "county": "d"},
         years=[(2002, 2023)],
-        years_note="LODES8, 2002-2023 registered; older years by raising recent_years",
+        years_note="LODES8, 2002-2023 registered; the DAG keeps the newest, census_lodes.history loads the rest",
         datasets=["rac (residence)", "wac (workplace)", "od_main", "od_aux"],
         measures=(
             "Resident workers, jobs, live-and-work, inbound and in-state outbound commuters. Summed from "
@@ -440,6 +440,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         control=["control.census_lodes_slice", "control.census_lodes_file"],
         silver=["silver_census_lodes.fact_area", "silver_census_lodes.fact_flow"],
         gold=[
+            "gold_census_lodes.observation_fact",
             "gold_census_lodes.observation_revision",
             "gold_census_lodes.observation_latest",
         ],

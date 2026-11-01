@@ -855,7 +855,7 @@ ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Census LEHD LODES -- workplace jobs summed from census blocks to one
--- county, served from views over a published state slice.
+-- county, served from the sums computed when the state slice publishes.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO control.census_lodes_slice (
@@ -882,6 +882,11 @@ SELECT '00000000-0000-4000-8000-00000000010d', 'wac', 'C000', 'state:55|county:0
        'resolved', 1, '345678', 345678, 'valid'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
+
+-- The served sums are computed at publish, as `publish_run` does.
+SELECT gold_census_lodes.refresh_observation_fact(
+    ARRAY['00000000-0000-4000-8000-00000000010d']::UUID[]
+);
 
 -- ---------------------------------------------------------------------------
 -- EPA AirData -- one complete monitor's PM2.5 annual mean, which the county

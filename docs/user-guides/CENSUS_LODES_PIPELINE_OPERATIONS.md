@@ -71,9 +71,56 @@ vintage, and `observation_latest` serves the newest. State-years run one at a
 time through the one-slot `census_lodes_files` pool; a large state's
 origin-destination file is tens of megabytes.
 
-The DAG takes no backfill parameter. An older year is captured by raising
-`recent_years` in `LodesConfig`, or by calling `capture_state_year`,
-`replay_run` and `publish_run` for that state and year.
+The DAG takes no backfill parameter; the years before the newest are loaded
+once with the history command below.
+
+## Loading the history
+
+Run inside the scheduler container on the internal stack, detached so it
+survives the terminal:
+
+```text
+docker exec docker-airflow-scheduler-1 \
+    python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002
+```
+
+It plans every state for every year asked (newest first) and:
+
+- skips, without a request, a state-year that already has a `silver_ready`
+  or `published` slice, so a stopped run resumes where it stopped and a
+  rerun fetches nothing (`--refresh` asks the Bureau again; the capture then
+  downloads only a new vintage);
+- replays, without downloading again, a state-year whose files were
+  captured but whose replay never finished;
+- captures and replays the rest through the same code the DAG runs,
+  `--workers` state-years at a time (default 6), each worker process with
+  its own connection;
+- records a failed or quarantined state-year and carries on with the rest;
+- publishes only when every requested state-year is in: the replayed slices
+  turn `published` and their county and state sums are computed into
+  `gold_census_lodes.observation_fact` in one transaction, then the glossary
+  harvest is signalled. A run with any failure publishes nothing and exits
+  1; rerun the same command and only the failures are retried.
+
+`--plan` prints, per year, which states would load and exits without
+fetching. `--states de,wi` limits the run. Only one history load runs at a
+time: a second exits 2 rather than wait. Pause `census_lodes_ingest` while
+it runs so the DAG does not capture the newest year beside it.
+
+The command prints a JSON summary per year (states by outcome, rows, worker
+seconds). To size a run before it starts, read what the newest year cost:
+
+```sql
+SELECT slice.year, COUNT(*) AS states,
+       pg_size_pretty(SUM(blob.payload_size)) AS captured,
+       MAX(slice.updated_at) - MIN(slice.created_at) AS wall_clock
+FROM control.census_lodes_slice AS slice
+JOIN control.census_lodes_file AS file USING (run_id)
+JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+JOIN raw_capture.payload_blob AS blob USING (payload_checksum)
+WHERE slice.status = 'published'
+GROUP BY slice.year ORDER BY slice.year DESC;
+```
 
 ## Deployment prerequisites
 
@@ -96,9 +143,10 @@ airflow pools set census_lodes_files 1 'Census LEHD LODES files (serialized)'
    `silver_census_lodes.quarantine`, and a header that is not the family's
    quarantines the file and stops publication. It writes the geography
    resolution ledger. The run commits only if every aggregate was written.
-3. Marks the slice `published`, which exposes it through
-   `gold_census_lodes.observation_revision` and `observation_latest`, and
-   signals the glossary harvest. Each measure is one metric, for example
+3. Marks the slice `published` and, in the same transaction, computes its
+   county and state sums into `gold_census_lodes.observation_fact`
+   (`refresh_observation_fact`), which `observation_revision` and
+   `observation_latest` read by key; then signals the glossary harvest. Each measure is one metric, for example
    `CENSUS_LODES:jobs`.
 
 ## Checks after a run
@@ -123,3 +171,11 @@ FROM gold_census_lodes.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
   reached no silver row, and runs in the daily sweep.
 - `DQ-LODES-004` warns when a county's origin-destination jobs by work
   county differ from its workplace total.
+- `DQ-LODES-005` fails a published state-year with readable residence or
+  workplace rows that serves no sums (a publish whose refresh never ran).
+  `SELECT gold_census_lodes.refresh_observation_fact(NULL)` computes every
+  published state-year still missing its sums.
+- `DQ-LODES-006` warns, naming each state, when a published year is missing
+  a registered state: a history load that stopped part way.
+- `DQ-LODES-007` warns when a state's jobs move by more than a quarter
+  between consecutive published years, a coverage break to explain.

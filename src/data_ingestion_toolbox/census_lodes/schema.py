@@ -30,11 +30,15 @@ REQUIRED_RELATIONS = (
     "silver_census_lodes.fact_area",
     "silver_census_lodes.fact_flow",
     "gold_census_lodes.measure_definition",
+    "gold_census_lodes.observation_fact",
     "gold_census_lodes.observation_revision",
     "gold_census_lodes.observation_latest",
     "gold_census_lodes.measure_export",
     "gold_census_lodes.metric_publisher",
 )
+
+
+REQUIRED_PROCEDURES = ("gold_census_lodes.refresh_observation_fact(uuid[])",)
 
 
 def _get_hook() -> PostgresHook:
@@ -49,6 +53,6 @@ def ensure_census_lodes_schema(hook: PostgresHook | None = None) -> None:
         ddl_files=list(DDL_FILES),
         component_name=SOURCE_SCHEMA_COMPONENTS["CENSUS_LODES"],
         required_relations=REQUIRED_RELATIONS,
-        required_procedures=(),
+        required_procedures=REQUIRED_PROCEDURES,
         hook=hook or _get_hook(),
     )

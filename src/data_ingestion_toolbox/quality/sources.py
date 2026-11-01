@@ -1395,6 +1395,139 @@ def lodes_od_workplace_agreement(
     ]
 
 
+def lodes_served_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-LODES-005 — every published state-year with rows serves its sums."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.census_lodes_slice WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("gold_census_lodes.observation_fact", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.state, slice.year
+          FROM control.census_lodes_slice AS slice
+         WHERE slice.status = 'published'
+           AND EXISTS (
+                SELECT 1 FROM control.census_lodes_file AS file
+                 WHERE file.run_id = slice.run_id AND file.status = 'captured'
+                   AND file.family IN ('rac', 'wac')
+                   AND file.row_count > file.quarantined_count
+           )
+           AND NOT EXISTS (
+                SELECT 1 FROM gold_census_lodes.observation_fact AS fact
+                 WHERE fact.run_id = slice.run_id
+           )
+        """,
+        order_by="3 DESC, 2, 1",
+    )
+    return [
+        RuleOutcome(
+            "gold_census_lodes.observation_fact",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def lodes_year_coverage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-LODES-006 — a published year has every registered state published."""
+    del scope
+    from data_ingestion_toolbox.census_lodes.registry import STATES
+
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.census_lodes_slice WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("control.census_lodes_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT years.year, registered.state
+          FROM (SELECT DISTINCT year FROM control.census_lodes_slice
+                 WHERE status = 'published') AS years
+         CROSS JOIN UNNEST(%s::TEXT[]) AS registered(state)
+         WHERE NOT EXISTS (
+                SELECT 1 FROM control.census_lodes_slice AS slice
+                 WHERE slice.year = years.year AND slice.state = registered.state
+                   AND slice.status = 'published'
+         )
+        """,
+        order_by="1 DESC, 2",
+        params=([state for state, _fips in STATES],),
+    )
+    return [
+        RuleOutcome(
+            "control.census_lodes_slice",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+#: A state's LODES jobs moving more than this share in one year is a break to
+#: look at (a file's coverage change), not an economy: 2020 moved about 6 %.
+LODES_STATE_JOBS_STEP = 0.25
+
+
+def lodes_state_jobs_continuity(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-LODES-007 — a state's jobs do not jump by a quarter between years."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM gold_census_lodes.observation_fact
+         WHERE metric_key = 'jobs' AND geo_type = 'state'
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("gold_census_lodes.observation_fact", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH newest AS (
+            SELECT fact.geo_id, fact.year, fact.value
+              FROM gold_census_lodes.observation_fact AS fact
+             WHERE fact.metric_key = 'jobs' AND fact.geo_type = 'state'
+               AND NOT EXISTS (
+                    SELECT 1 FROM gold_census_lodes.observation_fact AS newer
+                     WHERE newer.metric_key = 'jobs' AND newer.geo_id = fact.geo_id
+                       AND newer.year = fact.year
+                       AND (newer.release_key, newer.retrieved_at)
+                           > (fact.release_key, fact.retrieved_at)
+               )
+        )
+        SELECT current.geo_id, current.year, previous.value AS previous_value,
+               current.value
+          FROM newest AS current
+          JOIN newest AS previous
+            ON previous.geo_id = current.geo_id AND previous.year = current.year - 1
+         WHERE previous.value > 0
+           AND ABS(current.value - previous.value)::NUMERIC / previous.value > %s
+        """,
+        order_by="1, 2",
+        params=(LODES_STATE_JOBS_STEP,),
+    )
+    return [
+        RuleOutcome(
+            "gold_census_lodes.observation_fact",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def aqs_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-AQS-002 — no file left unreplayed; every readable one reached silver."""
     del scope
@@ -3163,6 +3296,9 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NOAA-004": normals_value_and_geography,
     "DQ-LODES-002": lodes_slice_reconciliation,
     "DQ-LODES-004": lodes_od_workplace_agreement,
+    "DQ-LODES-005": lodes_served_sums,
+    "DQ-LODES-006": lodes_year_coverage,
+    "DQ-LODES-007": lodes_state_jobs_continuity,
     "DQ-BEA-002": bea_table_reconciliation,
     "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-BEA-005": bea_price_parity_reference,
