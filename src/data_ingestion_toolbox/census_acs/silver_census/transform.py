@@ -21,6 +21,7 @@ from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.census_acs.config import CONFIG as RAW_CONFIG
 from data_ingestion_toolbox.census_acs.decennial import census_metadata_rows
+from data_ingestion_toolbox.utility.operator_stop import stopped_by_operator
 from data_ingestion_toolbox.silver_ref.geography_contract import (
     persist_exact_resolution_outcomes,
 )
@@ -600,27 +601,6 @@ _RAW_FETCH_TIMEOUT_SECONDS = 45 * 60
 
 class SliceReadTimeout(Exception):
     """A slice's raw read ran past `_RAW_FETCH_TIMEOUT_SECONDS`."""
-
-
-def stopped_by_operator(exc: BaseException) -> bool:
-    """Whether ``exc`` (or what caused it) is a statement an operator stopped.
-
-    `pg_cancel_backend` raises QueryCanceled "due to user request" and
-    `pg_terminate_backend` AdminShutdown. A statement timeout is also a
-    QueryCanceled, but it is this transform's own limit and is not a stop.
-    Neither kind of stop is a fault to retry: in November 2026 an operator
-    stopped a 3 h 15 m read and Airflow started it again at once.
-    """
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        if isinstance(current, psycopg2.errors.AdminShutdown):
-            return True
-        if isinstance(current, psycopg2.errors.QueryCanceled):
-            return "statement timeout" not in str(current)
-        current = current.__cause__ or current.__context__
-    return False
 
 
 #: Rows pulled per round trip from the server-side cursor. Each batch becomes

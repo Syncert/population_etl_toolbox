@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .plausibility import fred_change_plausibility
 from .reconciliation import (
@@ -131,6 +131,34 @@ def select_executors(
     *,
     source_code: str | None = None,
     rule_id: str | None = None,
+    exclude_rules: Sequence[str] = (),
+) -> dict[str, RuleExecutor]:
+    """Choose the executor set for one scheduled assessment, less ``exclude_rules``.
+
+    ``exclude_rules`` drops named rules from the chosen set -- an operator
+    holding the weekly gate past one rule that cannot finish yet. Each must
+    be a rule the set would have run, so a misspelt id is refused rather
+    than silently excluding nothing, and the run's recorded scope names
+    them (`run_scheduled_assessment`), so the evidence says what it skipped.
+    """
+    executors = _select_executors(cadence, source_code=source_code, rule_id=rule_id)
+    excluded = sorted(set(exclude_rules))
+    unknown = [rule for rule in excluded if rule not in executors]
+    if unknown:
+        raise AssessmentError(
+            f"Cannot exclude {', '.join(unknown)}: not in this run's rules."
+        )
+    remaining = {key: value for key, value in executors.items() if key not in excluded}
+    if not remaining:
+        raise AssessmentError("Excluding those rules leaves nothing to run.")
+    return remaining
+
+
+def _select_executors(
+    cadence: str,
+    *,
+    source_code: str | None = None,
+    rule_id: str | None = None,
 ) -> dict[str, RuleExecutor]:
     """Choose the executor set for one scheduled assessment.
 
@@ -214,11 +242,21 @@ def run_scheduled_assessment(
     rule_id: str | None = None,
     scope: Mapping[str, Any] | None = None,
     code_commit_sha: str | None = None,
+    exclude_rules: Sequence[str] = (),
 ) -> QualityRunRecord:
     """Run one scheduled assessment and persist its evidence."""
-    executors = select_executors(cadence, source_code=source_code, rule_id=rule_id)
+    executors = select_executors(
+        cadence,
+        source_code=source_code,
+        rule_id=rule_id,
+        exclude_rules=exclude_rules,
+    )
     merged_scope = dict(scope or {})
     merged_scope.setdefault("cadence", cadence)
+    if exclude_rules:
+        # In the run's evaluated_scope, so a run that skipped a rule never
+        # reads as the full sweep its cadence names.
+        merged_scope["excluded_rules"] = sorted(set(exclude_rules))
     if source_code:
         merged_scope.setdefault("source_code", source_code)
     return execute_rules(

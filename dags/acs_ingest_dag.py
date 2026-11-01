@@ -73,12 +73,12 @@ from data_ingestion_toolbox.census_acs.disk_guard import (
 )
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
-    stopped_by_operator,
     transform_census_to_silver,
 )
 from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.operator_stop import fail_without_retry_when_stopped
 from data_ingestion_toolbox.utility.serving_reserve import ACS_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
@@ -841,26 +841,19 @@ def acs_ingest():
         only. A statement an operator cancels or terminates fails the task
         without a retry; clearing it resumes the same way.
         """
-        from airflow.exceptions import AirflowFailException
-
         logger.info(
             "[CENSUS_ACS RESUME] transform_to_silver attempt %s for run %s",
             getattr(ti, "try_number", "?"),
             run_id,
         )
         scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
-        try:
+        with fail_without_retry_when_stopped(
+            "the ACS silver transform",
+            f"Clear this task to resume run {run_id} from its finished slices.",
+        ):
             if scope is None:
                 return transform_census_to_silver(resume_key=run_id)
             return transform_census_to_silver(resume_key=run_id, years=[scope.year])
-        except Exception as exc:
-            if not stopped_by_operator(exc):
-                raise
-            raise AirflowFailException(
-                "An operator stopped the ACS silver transform; not retrying. "
-                "Clear this task to resume run "
-                f"{run_id} from its finished slices."
-            ) from exc
 
     # -----------------------------
     # DAG wiring
@@ -930,11 +923,15 @@ def acs_ingest():
     @task(trigger_rule="none_failed")
     def refresh_gold_census_serving_layer() -> dict[str, int]:
         """Refresh changed ACS vintages as independently committed annual chunks."""
-        return refresh_serving_layer_in_year_chunks(
-            hook=_get_postgres_hook(),
-            config=ACS_CHUNK_CONFIG,
-            task_logger=logger,
-        )
+        with fail_without_retry_when_stopped(
+            "the ACS serving refresh",
+            "Clear this task to resume: finished years are committed and skipped.",
+        ):
+            return refresh_serving_layer_in_year_chunks(
+                hook=_get_postgres_hook(),
+                config=ACS_CHUNK_CONFIG,
+                task_logger=logger,
+            )
 
     @task(trigger_rule="none_failed")
     def refresh_age_structure_summary() -> dict[str, int]:
