@@ -212,6 +212,16 @@ remembered:
    `next start`) removes dev-compile latency and that class of hang. Any
    public or demo URL should use one.
 
+   *Checked 2026-11-01:* the image both deployment stacks build already was the production
+   build (`Dockerfile.web`: `next build`, standalone `node server.js`,
+   `NODE_ENV=production`). `build=development` is `next.config.mjs`'s label
+   for an image built without `WEB_BUILD_ID`, which `stack.env.example`
+   leaves blank. The deploy entrypoints now stamp the commit into it, the
+   `web` service has a healthcheck so a hung process shows as `unhealthy`,
+   and `infra/docker/README.md` documents the explicit rebuild `up -d` does
+   not do. The hang itself is still unexplained; the healthcheck is the
+   evidence the next one will leave.
+
 Cost: $0. Burden: a few checks, mostly written already.
 
 ### Stage 1 — when the trigger fires: Parquet + DuckDB for analytics (option D)
