@@ -1206,7 +1206,7 @@ class _PlanRecordingCursor:
 
     def execute(self, sql: str, params=()) -> None:
         statement = str(sql)
-        if "FROM gold_census.mv_acs_latest AS latest" in statement:
+        if "FROM gold_census.mv_acs_latest AS latest\n" in statement:
             self._cursor.execute(f"EXPLAIN {statement}", params)
             self.plans.append("\n".join(row[0] for row in self._cursor.fetchall()))
         self._cursor.execute(statement, params)
@@ -1215,28 +1215,56 @@ class _PlanRecordingCursor:
         return getattr(self._cursor, name)
 
 
-def test_the_superseded_arm_never_plans_one_probe_per_latest_row(
+_JOIN_SETTINGS = ("enable_nestloop", "enable_seqscan")
+
+
+@pytest.mark.parametrize("probe_rows", [0, 5_000_000], ids=["merge", "probe"])
+def test_the_superseded_arm_chooses_its_join_by_the_latest_slice_size(
     postgres_connection_factory: Callable[[], connection],
     postgres_connection: connection,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_rows: int,
 ) -> None:
-    """Covers: DQ-023 — the 2024 latest slice is ~105M rows; a nested loop is 41 minutes.
+    """Covers: DQ-023 — 105M latest rows refuse a nested loop; a few million use one.
 
-    The statement runs with nested loops refused, so the planner reads each
-    side once (hash or merge anti join), and the setting is the caller's
-    again afterwards -- the rule shares the run's transaction with every
-    other rule.
+    The 2024 latest slice (~105M rows) as a nested loop was 41 minutes, so a
+    partition whose vintages hold at least `_ACS_SUPERSEDED_PROBE_ROWS`
+    latest rows runs with nested loops refused and reads each side once. An
+    older vintage holds a few million latest rows, and merging those still
+    streamed its whole 32-55 GB partition index (2023: ~75 min), so it is a
+    correlated probe: one parameterised index scan per latest row. Every
+    setting is the caller's again afterwards -- the rule shares the run's
+    transaction with every other rule.
     """
+    from data_ingestion_toolbox.quality import sources
+
+    monkeypatch.setattr(sources, "_ACS_SUPERSEDED_PROBE_ROWS", probe_rows)
     with postgres_connection.cursor() as cursor:
         _seed_served_acs_fact(postgres_connection_factory, cursor)
-        cursor.execute("SET LOCAL enable_nestloop = on")
+        for name in _JOIN_SETTINGS:
+            cursor.execute(f"SET LOCAL {name} = on")
+        cursor.execute(f"ANALYZE gold_census.rpt_acs_observations_{_CONFORMANCE_YEAR}")
         recorder = _PlanRecordingCursor(cursor)
-        acs_contract_conformance(recorder, {})
+        list(acs_contract_conformance(recorder, {}))
         assert recorder.plans
+        probed = 0
         for plan in recorder.plans:
-            assert "Nested Loop" not in plan, plan
-            assert "Anti Join" in plan, plan
-        cursor.execute("SELECT current_setting('enable_nestloop')")
-        assert cursor.fetchone()[0] == "on"
+            if probe_rows:
+                # One correlated probe per latest row: a SubPlan whose index
+                # scan takes the row's keys as parameters.
+                assert "SubPlan" in plan and "Join" not in plan, plan
+                inner = [line for line in plan.splitlines() if " released " in line]
+                assert inner and all("Index" in line for line in inner), plan
+                assert "(metric_code = latest.metric_code)" in plan, plan
+                assert "Seq Scan" not in plan, plan
+                probed += 1
+            else:
+                assert "Anti Join" in plan, plan
+                assert "Nested Loop" not in plan, plan
+        assert probed == (len(recorder.plans) if probe_rows else 0)
+        for name in _JOIN_SETTINGS:
+            cursor.execute("SELECT current_setting(%s)", (name,))
+            assert cursor.fetchone()[0] == "on", name
     postgres_connection.rollback()
 
 
@@ -1249,7 +1277,7 @@ class _StatementRecordingCursor:
 
     def execute(self, sql: str, params=()) -> None:
         statement = str(sql)
-        if "FROM gold_census.mv_acs_latest AS latest" in statement:
+        if "FROM gold_census.mv_acs_latest AS latest\n" in statement:
             self.superseded.append((statement, tuple(params)))
         self._cursor.execute(statement, params)
 
@@ -1303,6 +1331,7 @@ def test_a_large_partition_is_measured_in_metric_code_ranges(
     from data_ingestion_toolbox.quality import sources
 
     monkeypatch.setattr(sources, "_ACS_SUPERSEDED_CHUNK_ROWS", 2)
+    monkeypatch.setattr(sources, "_ACS_SUPERSEDED_PROBE_ROWS", 0)
     with postgres_connection.cursor() as cursor:
         _metric, geo_id = _seed_served_acs_fact(postgres_connection_factory, cursor)
         extra = [f"CENSUS_ACS:acs5:B9ZZ{index:02d}_001E" for index in range(6)]

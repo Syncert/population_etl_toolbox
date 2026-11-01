@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Callable
+
 import pytest
 from psycopg2 import errors
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.quality.runner import (
     RuleOutcome,
+    commits_each_outcome,
     execute_rules,
     rule_set_version,
 )
@@ -264,6 +268,125 @@ def test_a_runaway_rule_is_cancelled_and_the_rules_after_it_still_run(
         )
         assert cursor.fetchone()[0].total_seconds() >= 0.2
     postgres_connection.rollback()
+
+
+def test_a_streaming_rule_commits_each_part_as_it_finishes(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DQ-024 — a sweep's finished partitions are visible while it runs.
+
+    The DQ-ACS-007 full sweep of 2026-11-01 measured 2024 in ~65 minutes and
+    nothing appeared in control.data_quality_result: the run was one
+    transaction, committed at its end. Under `commit_progress` a streaming
+    executor's outcomes are committed as they arrive: another session sees the
+    first part (and the run row) before the second is measured, and when the
+    rule then fails, the committed part and its failure stand while only the
+    work after it is rolled back.
+    """
+    marker = f"stream-{uuid.uuid4().hex[:12]}"
+    seen_mid_run: list[tuple[str, str]] = []
+
+    @commits_each_outcome
+    def streaming(cursor, scope):
+        yield RuleOutcome(
+            "control.ingestion_request",
+            "fail",
+            partition_key=f"{marker}-a",
+            observed_count=1,
+            expected_count=0,
+            evidence=["request:example"],
+        )
+        observer = postgres_connection_factory()
+        try:
+            with observer.cursor() as watching:
+                watching.execute(
+                    "SELECT r.partition_key, q.overall_status"
+                    "  FROM control.data_quality_result AS r"
+                    "  JOIN control.data_quality_run AS q USING (quality_run_id)"
+                    " WHERE r.partition_key LIKE %s",
+                    (f"{marker}%",),
+                )
+                seen_mid_run.extend(watching.fetchall())
+        finally:
+            observer.close()
+        cursor.execute("SELECT * FROM no_such_relation_for_streaming")
+        yield RuleOutcome("control.ingestion_request", "pass")
+
+    database = postgres_connection_factory()
+    try:
+        record = execute_rules(
+            database,
+            source_code="SHARED",
+            assessment_type="manual",
+            code_commit_sha=COMMIT_SHA,
+            executors={"DQ-SHARED-002": streaming},
+            commit_progress=True,
+        )
+        database.commit()
+        assert seen_mid_run == [(f"{marker}-a", "running")]
+        assert record.overall_status == "error"
+        assert "no_such_relation_for_streaming" in record.failure_summary
+        with database.cursor() as cursor:
+            cursor.execute(
+                "SELECT partition_key, result FROM control.data_quality_result"
+                " WHERE quality_run_id = %s",
+                (record.quality_run_id,),
+            )
+            assert cursor.fetchall() == [(f"{marker}-a", "fail")]
+    finally:
+        database.rollback()
+        # Evidence is append-only; this test's committed rows are removed
+        # the way the capture tests remove theirs.
+        with database.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE control.data_quality_result "
+                "DISABLE TRIGGER data_quality_result_append_only"
+            )
+            cursor.execute(
+                "DELETE FROM control.data_quality_result WHERE partition_key LIKE %s"
+                " RETURNING quality_run_id",
+                (f"{marker}%",),
+            )
+            runs = sorted({row[0] for row in cursor.fetchall()})
+            if runs:
+                cursor.execute(
+                    "DELETE FROM control.data_quality_run"
+                    " WHERE quality_run_id = ANY(%s::UUID[])",
+                    ([str(run) for run in runs],),
+                )
+            cursor.execute(
+                "ALTER TABLE control.data_quality_result "
+                "ENABLE TRIGGER data_quality_result_append_only"
+            )
+        database.commit()
+        database.close()
+
+
+def test_a_streaming_rule_is_one_transaction_without_commit_progress(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-024 — release certification stays atomic: nothing commits early."""
+
+    @commits_each_outcome
+    def streaming(cursor, scope):
+        yield RuleOutcome("control.ingestion_request", "pass", partition_key="a")
+        yield RuleOutcome("control.ingestion_request", "pass", partition_key="b")
+
+    record = execute_rules(
+        postgres_connection,
+        source_code="SHARED",
+        assessment_type="manual",
+        code_commit_sha=COMMIT_SHA,
+        executors={"DQ-SHARED-002": streaming},
+    )
+    assert record.overall_status == "pass"
+    postgres_connection.rollback()
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM control.data_quality_run WHERE quality_run_id = %s",
+            (record.quality_run_id,),
+        )
+        assert cursor.fetchone()[0] == 0
 
 
 def test_duplicate_evidence_within_one_run_is_rejected(

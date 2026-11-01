@@ -91,6 +91,19 @@ class RuleOutcome:
 RuleExecutor = Callable[[Any, Mapping[str, Any]], Iterable[RuleOutcome]]
 
 
+def commits_each_outcome(executor: RuleExecutor) -> RuleExecutor:
+    """Mark ``executor`` as one whose outcomes may be committed as they arrive.
+
+    Such an executor yields its outcomes one part at a time (a generator) and
+    holds no transaction-local state between yields. Under
+    ``execute_rules(..., commit_progress=True)`` each yielded outcome is
+    persisted and committed at once, so a long rule's finished parts are
+    visible -- and survive a crash of the run -- before the rule ends.
+    """
+    executor.commits_each_outcome = True  # type: ignore[attr-defined]
+    return executor
+
+
 class PartialRuleResult(Exception):
     """A rule that measured some of its scope and could not measure the rest.
 
@@ -203,6 +216,7 @@ def execute_rules(
     ingestion_run_id: str | None = None,
     publication_event_id: str | None = None,
     rule_statement_timeout: str = DEFAULT_RULE_STATEMENT_TIMEOUT,
+    commit_progress: bool = False,
 ) -> QualityRunRecord:
     """Execute the registered rule executors and persist their evidence.
 
@@ -216,6 +230,13 @@ def execute_rules(
     Each rule runs with ``statement_timeout`` set to
     ``rule_statement_timeout`` (a PostgreSQL interval such as ``30min``;
     ``0`` disables it), transaction-local and restored after the rule.
+
+    With ``commit_progress``, an executor marked by `commits_each_outcome`
+    has each outcome committed as it is yielded (the run row with it), and
+    the rule's savepoint and timeout are set again after each commit. A rule
+    that then fails keeps the outcomes already committed; only what came
+    after them is rolled back. Without it the run is the caller's one
+    transaction, as before.
     """
     rules_by_id = _validate_setup(rules, executors, code_commit_sha)
     catalog = objects_by_name()
@@ -244,16 +265,53 @@ def execute_rules(
             ),
         )
 
-    def _persist_rule(rule_id: str) -> list[RuleOutcome]:
-        rule = rules_by_id[rule_id]
-        started = time.monotonic()
-        partial: PartialRuleResult | None = None
+    def _commit_progress() -> None:
+        connection.commit()
         with connection.cursor() as cursor:
-            try:
-                measured = list(executors[rule_id](cursor, dict(scope or {})))
-            except PartialRuleResult as raised:
-                partial = raised
-                measured = list(raised.outcomes)
+            cursor.execute("SAVEPOINT quality_rule")
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (rule_statement_timeout,),
+            )
+        # Failures committed so far stay reported if the rule fails later.
+        committed_failures[0] = len(failures)
+
+    def _persist_rule(rule_id: str) -> list[RuleOutcome]:
+        executor = executors[rule_id]
+        streaming = commit_progress and bool(
+            getattr(executor, "commits_each_outcome", False)
+        )
+        measured: list[RuleOutcome] = []
+        partial: PartialRuleResult | None = None
+        started = time.monotonic()
+        with connection.cursor() as cursor:
+            produced = iter(executor(cursor, dict(scope or {})))
+            while True:
+                try:
+                    outcome = next(produced)
+                except StopIteration:
+                    break
+                except PartialRuleResult as raised:
+                    # What it yielded before stopping, then any it carried.
+                    partial = raised
+                    if streaming:
+                        _persist_outcomes(rule_id, raised.outcomes, started)
+                    measured.extend(raised.outcomes)
+                    break
+                measured.append(outcome)
+                if streaming:
+                    _persist_outcomes(rule_id, [outcome], started)
+                    _commit_progress()
+        if not streaming:
+            _persist_outcomes(rule_id, measured, started)
+        if partial is not None:
+            raise PartialRuleResult(str(partial), measured) from partial
+        return measured
+
+    def _persist_outcomes(
+        rule_id: str, measured: Sequence[RuleOutcome], started: float
+    ) -> None:
+        rule = rules_by_id[rule_id]
         duration_ms = max(0, int((time.monotonic() - started) * 1000))
         for outcome in measured:
             entry = catalog.get(outcome.object_name)
@@ -306,13 +364,11 @@ def execute_rules(
                         "open" if outcome.result == "warn" else None,
                     ),
                 )
-        if partial is not None:
-            raise partial
-        return measured
 
     outcomes: dict[str, list[RuleOutcome]] = {}
     failures: list[str] = []
     errors: list[str] = []
+    committed_failures = [0]
     with connection.cursor() as cursor:
         cursor.execute("SELECT current_setting('statement_timeout')")
         caller_timeout = cursor.fetchone()[0]
@@ -326,7 +382,7 @@ def execute_rules(
                 "SELECT set_config('statement_timeout', %s, true)",
                 (rule_statement_timeout,),
             )
-        recorded_failures = len(failures)
+        committed_failures[0] = len(failures)
         try:
             outcomes[rule_id] = _persist_rule(rule_id)
         except PartialRuleResult as partial:
@@ -344,8 +400,9 @@ def execute_rules(
         except Exception as error:  # noqa: BLE001 - the error becomes evidence
             with connection.cursor() as cursor:
                 cursor.execute("ROLLBACK TO SAVEPOINT quality_rule")
-            # Its evidence was rolled back, so its failures are not reported.
-            del failures[recorded_failures:]
+            # Its uncommitted evidence was rolled back, so those failures are
+            # not reported; any it committed under commit_progress stand.
+            del failures[committed_failures[0] :]
             errors.append(f"{rule_id} {type(error).__name__}: {error}")
             continue
         with connection.cursor() as cursor:

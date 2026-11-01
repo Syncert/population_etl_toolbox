@@ -20,6 +20,7 @@ from __future__ import annotations
 import itertools
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
 from types import MappingProxyType
@@ -31,7 +32,12 @@ from data_ingestion_toolbox.census_pep.silver_pep.replay import (
 from data_ingestion_toolbox.usda_nass.silver_nass.values import SYMBOL_STATUS
 
 from .reconciliation import EVIDENCE_LIMIT, _offenders
-from .runner import PartialRuleResult, RuleExecutor, RuleOutcome
+from .runner import (
+    PartialRuleResult,
+    RuleExecutor,
+    RuleOutcome,
+    commits_each_outcome,
+)
 
 #: Slice-ledger states that mean the slice never finished its work.
 _UNFINISHED_SLICE_STATUSES = ("planned", "running")
@@ -3069,6 +3075,15 @@ _ACS_SUPERSEDED_CHUNK_ROWS = 10_000_000
 #: SQLSTATE of a statement cancelled by its timeout (or by an operator).
 _QUERY_CANCELED = "57014"
 
+#: A partition whose vintages hold fewer latest rows than this is probed one
+#: latest row at a time (a nested loop into the partition's
+#: (metric_code, geo_id, observation_date) index) rather than merged range by
+#: range. The newest vintage holds ~105M of mv_acs_latest's 117M rows; every
+#: older vintage holds a few million at most, and merging those few rows still
+#: streamed the whole 32-55 GB partition index (2023: ~75 min in the
+#: 2026-11-01 sweep).
+_ACS_SUPERSEDED_PROBE_ROWS = 5_000_000
+
 _ACS_CONFORMANCE_OBJECTS = (
     "gold_census.fact_observation",
     "gold_census.v_metric_latest_by_geo",
@@ -3283,6 +3298,34 @@ def _acs_metric_code_ranges(
     return list(itertools.pairwise([None, *cuts, None]))
 
 
+def _acs_latest_rows_below(
+    cursor: Any,
+    latest_years: str,
+    years_params: tuple[Any, ...],
+    limit: int,
+) -> bool:
+    """Whether the latest relation holds fewer than ``limit`` rows for these vintages.
+
+    Counted no further than ``limit`` on ``ix_mv_acs_latest_vintage``
+    (dataset_code, vintage_year), so the newest vintage's ~105M rows cost one
+    bounded index scan, not a full count.
+    """
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) FROM (
+            SELECT 1
+              FROM gold_census.mv_acs_latest AS latest_slice
+             WHERE latest_slice.dataset_code = ANY(%s)
+               AND {latest_years}
+             LIMIT %s
+        ) AS bounded
+        """,
+        (list(ACS_SERVED_DATASETS), *years_params, limit),
+    )
+    row = cursor.fetchone()
+    return int(row[0] if row else 0) < limit
+
+
 def _acs_measure_partition(
     cursor: Any,
     partition: _AcsServedPartition,
@@ -3376,11 +3419,30 @@ def _acs_measure_partition(
     # expected) are their own `IS NULL` statement rather than an OR on a
     # range, which would move that range's bound into a Filter.
     if "gold_census.v_metric_latest_by_geo" in arms:
-        cursor.execute("SELECT current_setting('enable_nestloop')")
-        previous_nestloop = cursor.fetchone()[0]
-        cursor.execute("SELECT set_config('enable_nestloop', 'off', true)")
-        cursor.fetchone()
-        ranges = _acs_metric_code_ranges(cursor, partition)
+        probe = _acs_latest_rows_below(
+            cursor,
+            years_sql.format(column="latest_slice.vintage_year"),
+            years_params,
+            _ACS_SUPERSEDED_PROBE_ROWS,
+        )
+        # Few latest rows: probe each one into the partition's index, so the
+        # partition is read only where a latest row points (sequential scans
+        # refused, so neither side is read whole). Many: refuse the nested
+        # loop and merge range by range, as below.
+        join_settings = (
+            {"enable_seqscan": "off"} if probe else {"enable_nestloop": "off"}
+        )
+        # OFFSET 0 keeps NOT EXISTS a correlated SubPlan rather than an anti
+        # join, so each latest row's keys are parameters of the partition's
+        # index scan -- a probe, never one scan of the index per row.
+        probe_fence = "\n                           OFFSET 0" if probe else ""
+        previous_settings: dict[str, str] = {}
+        for name, value in join_settings.items():
+            cursor.execute("SELECT current_setting(%s)", (name,))
+            previous_settings[name] = cursor.fetchone()[0]
+            cursor.execute("SELECT set_config(%s, %s, true)", (name, value))
+            cursor.fetchone()
+        ranges = [(None, None)] if probe else _acs_metric_code_ranges(cursor, partition)
         pieces: list[tuple[str, str, tuple[Any, ...]]] = []
         for low, high in ranges:
             latest_codes, released_codes, code_params = "", "", ()
@@ -3416,7 +3478,7 @@ def _acs_measure_partition(
                               AND released.metric_code = latest.metric_code
                               AND released.observation_date = latest.observation_date
                               AND released.estimate_value
-                                  IS NOT DISTINCT FROM latest.estimate_value{released_codes}
+                                  IS NOT DISTINCT FROM latest.estimate_value{released_codes}{probe_fence}
                        )
                 """,
                 order_by="1, 2",
@@ -3430,10 +3492,9 @@ def _acs_measure_partition(
             total += count
             evidence.extend(found[: max(0, EVIDENCE_LIMIT - len(evidence))])
         measured["gold_census.v_metric_latest_by_geo"] = (evidence, total)
-        cursor.execute(
-            "SELECT set_config('enable_nestloop', %s, true)", (previous_nestloop,)
-        )
-        cursor.fetchone()
+        for name, value in previous_settings.items():
+            cursor.execute("SELECT set_config(%s, %s, true)", (name, value))
+            cursor.fetchone()
 
     # Unpublished: every served metric code is one the publisher exports. The
     # served codes are read by a loose index scan -- one descent of an index
@@ -3477,9 +3538,10 @@ def _acs_measure_partition(
     return measured
 
 
+@commits_each_outcome
 def acs_contract_conformance(
     cursor: Any, scope: Mapping[str, Any]
-) -> list[RuleOutcome]:
+) -> Iterator[RuleOutcome]:
     """DQ-ACS-007 -- the served views carry the published fact, unaltered.
 
     Grouped by `(metric_code, vintage)` rather than compared row by row. The
@@ -3520,6 +3582,13 @@ def acs_contract_conformance(
     one; and a latest row rewritten by a refresh of the latest relation alone.
     A silver revision made through ETL-037 needs no re-measurement -- it is
     exempt until the refresh, and the refresh writes the partition.
+
+    **Yielded one partition at a time.** Under the scheduled DAG
+    (`commit_progress`) the runner commits each outcome as it arrives, so a
+    full sweep -- hours over every vintage -- shows its finished partitions
+    in `control.data_quality_result` while it runs, and keeps them if the
+    run is stopped. A partition that times out is rolled back alone and named
+    in the `PartialRuleResult` raised at the end.
     """
     cadence = str(scope.get("cadence") or "")
     full_sweep = bool(scope.get("full_sweep")) or (
@@ -3532,9 +3601,9 @@ def acs_contract_conformance(
         cursor,
         "SELECT EXISTS (SELECT 1 FROM gold_census.rpt_acs_observations)",
     ):
-        return [
-            RuleOutcome(name, "not_applicable") for name in _ACS_CONFORMANCE_OBJECTS
-        ]
+        for name in _ACS_CONFORMANCE_OBJECTS:
+            yield RuleOutcome(name, "not_applicable")
+        return
 
     partitions = _acs_served_partitions(cursor)
     previous = {} if full_sweep else _acs_previous_conformance(cursor)
@@ -3544,7 +3613,6 @@ def acs_contract_conformance(
         cursor, "gold_census.dim_acs_variable", dimension_oid
     )
 
-    outcomes: list[RuleOutcome] = []
     timed_out: list[str] = []
     for partition in partitions:
         served = _acs_relation_fingerprint(cursor, partition.relation, partition.oid)
@@ -3591,7 +3659,7 @@ def acs_contract_conformance(
             if name in carried:
                 detail["measured"] = False
                 detail["verified_by_quality_run_id"] = carried[name]
-                outcomes.append(
+                yield (
                     RuleOutcome(
                         name,
                         "pass",
@@ -3605,7 +3673,7 @@ def acs_contract_conformance(
                 continue
             offenders, total = measured[name]
             detail["measured"] = True
-            outcomes.append(
+            yield (
                 RuleOutcome(
                     name,
                     "fail" if offenders else "pass",
@@ -3621,9 +3689,8 @@ def acs_contract_conformance(
         raise PartialRuleResult(
             f"partition(s) {', '.join(timed_out)} hit the statement timeout and "
             "were not measured; every other partition's result is recorded",
-            outcomes,
+            (),
         )
-    return outcomes
 
 
 def bls_contract_conformance(
