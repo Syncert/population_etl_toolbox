@@ -123,13 +123,13 @@ def test_spawned_workers_stop_a_stuck_state_year_and_survive_a_dead_one() -> Non
         workers=2,
         factory_builder=stand_in.no_database,
         work=stand_in.az_hangs_ar_dies,
-        slice_timeout=8,
+        slice_timeout=1.5,
         poll_seconds=0.2,
     )
     outcome = {(r.state, r.year): r for r in results}
     assert set(outcome) == set(pending)
     assert outcome[("az", 2022)].status == "timed_out"
-    assert outcome[("az", 2022)].seconds >= 8
+    assert outcome[("az", 2022)].seconds >= 1.5
     assert outcome[("ar", 2022)].status == "failed"
     assert "worker exited (code 3)" in outcome[("ar", 2022)].error
     assert {outcome[key].status for key in pending[2:]} == {"silver_ready"}
@@ -148,7 +148,7 @@ def test_a_stuck_state_year_holds_the_publish_and_is_named(monkeypatch) -> None:
         workers=2,
         worker_factory=stand_in.no_database,
         work=stand_in.az_hangs_ar_dies,
-        slice_timeout=8,
+        slice_timeout=1.5,
     )
     assert summary["published"] is False and published == []
     assert [s.split(" (")[0] for s in summary["stuck"]] == ["az 2022"]
