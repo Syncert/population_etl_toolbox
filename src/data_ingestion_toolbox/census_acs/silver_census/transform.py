@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import logging
+import re
 import time
 import uuid
 import csv
@@ -489,15 +491,69 @@ class RawSlice:
     dataset: str | None = None
     geo_level: str | None = None
     state_fips: str | None = None
+    #: A sub-geography code range ``[sub_low, sub_high)`` of the slice's split
+    #: column (`_SPLIT_COLUMNS`), an empty bound being open; when ``ranged`` is
+    #: false the slice is the whole (dataset, level, state). ``null_codes`` is
+    #: the split's own part for rows with no code, read as `IS NULL`: an OR of
+    #: it with the first range kept that range's bound out of the index
+    #: condition, so the first range walked the whole slice.
+    sub_low: str = ""
+    sub_high: str = ""
+    ranged: bool = False
+    null_codes: bool = False
 
     @property
-    def key(self) -> str:
+    def base_key(self) -> str:
         # A per-dataset slice must not share the whole year's key: the
         # resume checkpoint and the content ledger are keyed by it, and two
         # datasets under "*" would let a retry skip the second as done.
         if self.geo_level is None:
             return "*" if self.dataset is None else f"{self.dataset}/*"
         return f"{self.dataset}/{self.geo_level}/{self.state_fips or '-'}"
+
+    @property
+    def key(self) -> str:
+        # A range keeps the level as the key's second field: the serving step
+        # reads `split_part(slice_key, '/', 2)` to know which grain changed.
+        if self.null_codes:
+            return f"{self.base_key}/[null]"
+        if not self.ranged:
+            return self.base_key
+        return f"{self.base_key}/[{self.sub_low},{self.sub_high})"
+
+    @property
+    def holds_null_codes(self) -> bool:
+        """Whether rows with no split code fall in this slice."""
+        return self.null_codes or not self.ranged or not (self.sub_low or self.sub_high)
+
+    @property
+    def splittable(self) -> bool:
+        return self.geo_level in _SPLIT_COLUMNS
+
+    def with_range(self, low: str, high: str) -> RawSlice:
+        return RawSlice(
+            self.dataset, self.geo_level, self.state_fips, low, high, ranged=True
+        )
+
+    def with_ranges(self, ranges: list[tuple[str, str]]) -> list[RawSlice]:
+        """The slice as ``ranges``, plus the part for rows with no code.
+
+        One open range ``("", "")`` is the whole slice, NULL codes included.
+        Several bounded ranges hold only codes, so the null part is added and
+        every row of the slice still falls in exactly one part.
+        """
+        parts = [self.with_range(low, high) for low, high in ranges]
+        if len(parts) > 1:
+            parts.append(
+                RawSlice(
+                    self.dataset,
+                    self.geo_level,
+                    self.state_fips,
+                    ranged=True,
+                    null_codes=True,
+                )
+            )
+        return parts
 
 
 WHOLE_YEAR = RawSlice()
@@ -508,6 +564,64 @@ WHOLE_YEAR = RawSlice()
 #: unchanged by it. 2024 brought place and tract grains: 190M rows, eleven
 #: times any earlier year, and read whole it outgrew the 96 GB Docker VM.
 _YEAR_SLICE_ROW_THRESHOLD = 20_000_000
+
+#: A (dataset, level, state) slice with more revision rows than this is read
+#: as ranges of its sub-geography code, about this many rows each. The 2026-11
+#: monthly run spent over two hours in one read of acs5 place California
+#: (18.7M rows, 2.4 times the next slice) on one core while the others idled.
+_SLICE_SPLIT_ROW_THRESHOLD = 5_000_000
+
+#: The column a level's slice is split by, in code ranges. Every window
+#: partition and every E/M pair of a level shares this column's value, so a
+#: range holds whole cells and splitting changes no fact. Each is the trailing
+#: column of an index on (dataset, year, level, state, column), so a range is
+#: a narrow index range read, ~1/N of the slice: county and tract on
+#: `census_observation_revision_slice_idx`, place (whose rows carry no county)
+#: on `_PLACE_SPLIT_INDEX`. `us`, `state` and `metro` slices are small.
+_SPLIT_COLUMNS = {
+    "county": "county_fips_source",
+    "tract": "county_fips_source",
+    "place": "place_fips_source",
+}
+
+#: The partial index that lets a place slice be read by place-code range:
+#: (dataset, year, state, county, place) over place rows, county being NULL
+#: on every one of them.
+#: Built CONCURRENTLY on the warehouse before the code that uses it merges;
+#: where it is absent a place slice is read whole, as before.
+_PLACE_SPLIT_INDEX = "census_observation_revision_place_slice_idx"
+
+#: How long one slice's raw read may run before it is cancelled and the slice
+#: is read again as two ranges. Set as each statement's timeout and
+#: also checked across the cursor's fetches, since a fast-start plan spreads
+#: its work over many FETCHes that are each short.
+_RAW_FETCH_TIMEOUT_SECONDS = 45 * 60
+
+
+class SliceReadTimeout(Exception):
+    """A slice's raw read ran past `_RAW_FETCH_TIMEOUT_SECONDS`."""
+
+
+def stopped_by_operator(exc: BaseException) -> bool:
+    """Whether ``exc`` (or what caused it) is a statement an operator stopped.
+
+    `pg_cancel_backend` raises QueryCanceled "due to user request" and
+    `pg_terminate_backend` AdminShutdown. A statement timeout is also a
+    QueryCanceled, but it is this transform's own limit and is not a stop.
+    Neither kind of stop is a fault to retry: in November 2026 an operator
+    stopped a 3 h 15 m read and Airflow started it again at once.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, psycopg2.errors.AdminShutdown):
+            return True
+        if isinstance(current, psycopg2.errors.QueryCanceled):
+            return "statement timeout" not in str(current)
+        current = current.__cause__ or current.__context__
+    return False
+
 
 #: Rows pulled per round trip from the server-side cursor. Each batch becomes
 #: a typed polars frame straight away, so the Python tuples never accumulate.
@@ -551,6 +665,24 @@ def _slice_where(year: int | None, raw_slice: RawSlice) -> tuple[str, list[objec
         else:
             filters.append("observation.state_fips_source = %s")
             params.append(raw_slice.state_fips)
+        if raw_slice.ranged:
+            column = f"observation.{_SPLIT_COLUMNS[raw_slice.geo_level]}"
+            if raw_slice.geo_level == "place":
+                # Place rows carry no county, and saying so lets the place
+                # range bound `_PLACE_SPLIT_INDEX`, whose county column sits
+                # before the place code. A slice with a county-bearing place
+                # row is never ranged (`_split_counts`).
+                filters.append("observation.county_fips_source IS NULL")
+            if raw_slice.null_codes:
+                filters.append(f"{column} IS NULL")
+            if raw_slice.sub_low:
+                filters.append(f"{column} >= %s")
+                params.append(raw_slice.sub_low)
+            if raw_slice.sub_high:
+                # A plain bound, so it is an index bound; rows without a code
+                # are the split's null part (`RawSlice.with_ranges`).
+                filters.append(f"{column} < %s")
+                params.append(raw_slice.sub_high)
     return (f"WHERE {' AND '.join(filters)}" if filters else ""), params
 
 
@@ -621,16 +753,29 @@ def _fetch_raw_frame(
     frames: list[pl.DataFrame] = []
     conn = hook.get_conn()
     try:
-        with conn.cursor(name=f"acs_raw_{uuid.uuid4().hex}") as cur:
-            cur.itersize = _FETCH_BATCH_ROWS
-            cur.execute(sql, params)
-            while True:
-                batch = cur.fetchmany(_FETCH_BATCH_ROWS)
-                if not batch:
-                    break
-                frames.append(
-                    pl.DataFrame(batch, orient="row", schema=_RAW_FRAME_SCHEMA)
-                )
+        with conn.cursor() as setup:
+            setup.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (f"{max(1, int(_RAW_FETCH_TIMEOUT_SECONDS * 1000))}ms",),
+            )
+        started = time.monotonic()
+        try:
+            with conn.cursor(name=f"acs_raw_{uuid.uuid4().hex}") as cur:
+                cur.itersize = _FETCH_BATCH_ROWS
+                cur.execute(sql, params)
+                while True:
+                    batch = cur.fetchmany(_FETCH_BATCH_ROWS)
+                    if not batch:
+                        break
+                    frames.append(
+                        pl.DataFrame(batch, orient="row", schema=_RAW_FRAME_SCHEMA)
+                    )
+                    if time.monotonic() - started > _RAW_FETCH_TIMEOUT_SECONDS:
+                        raise SliceReadTimeout(raw_slice.key)
+        except psycopg2.errors.QueryCanceled as exc:
+            if stopped_by_operator(exc):
+                raise
+            raise SliceReadTimeout(raw_slice.key) from exc
         conn.commit()
     finally:
         conn.close()
@@ -678,22 +823,28 @@ def _plan_year_slices(
     year: int,
     row_count: int,
     datasets: list[str] | None = None,
+    finished: dict[str, str] | None = None,
 ) -> list[RawSlice]:
     """Split a year into slices the slice index can read.
 
     A year at or under the threshold is one slice per dataset; a larger one
-    is one per (dataset, level, state). Each names its dataset, so no read
-    scans the whole table. ``datasets`` of ``None`` is the old whole-year
-    shape, kept for callers that pass no dataset list.
+    is one per (dataset, level, state), and a (dataset, level, state) over
+    ``_SLICE_SPLIT_ROW_THRESHOLD`` rows is split further into sub-geography
+    code ranges (`_split_slice`). Each names its dataset, so no read scans
+    the whole table. ``datasets`` of ``None`` is the old whole-year shape,
+    kept for callers that pass no dataset list. ``finished`` is the year's
+    ledger, whose recorded ranges are reused so their fingerprints hold.
     """
     if row_count <= _YEAR_SLICE_ROW_THRESHOLD:
         if datasets is None:
             return [WHOLE_YEAR]
         return [RawSlice(dataset=dataset) for dataset in datasets]
+    # The same index scan the DISTINCT made, counting as it goes.
     sql = """
-        SELECT DISTINCT dataset, geo_level, state_fips_source
+        SELECT dataset, geo_level, state_fips_source, COUNT(*)
         FROM silver_census.observation_revision
         WHERE dataset = %s AND year = %s
+        GROUP BY dataset, geo_level, state_fips_source
         ORDER BY dataset, geo_level, state_fips_source NULLS FIRST;
     """
     rows: list[tuple] = []
@@ -701,7 +852,164 @@ def _plan_year_slices(
         for dataset in datasets if datasets is not None else KNOWN_DATASETS:
             cur.execute(sql, (dataset, int(year)))
             rows.extend(cur.fetchall())
-    return [RawSlice(dataset=r[0], geo_level=r[1], state_fips=r[2]) for r in rows]
+    ledger = finished or {}
+    slices: list[RawSlice] = []
+    for dataset, geo_level, state_fips, count in rows:
+        raw_slice = RawSlice(
+            dataset=dataset, geo_level=geo_level, state_fips=state_fips
+        )
+        recorded = _ledger_ranges(ledger, raw_slice.base_key)
+        if recorded and raw_slice.splittable:
+            slices.extend(raw_slice.with_ranges(recorded))
+            continue
+        if int(count) <= _SLICE_SPLIT_ROW_THRESHOLD or not raw_slice.splittable:
+            slices.append(raw_slice)
+            continue
+        counts, blocker = _split_counts(hook, year, raw_slice, int(count))
+        if blocker:
+            logger.warning(
+                "[CENSUS_ACS CHUNK] Year=%s slice=%s holds %s rows but %s; "
+                "reading it whole",
+                year,
+                raw_slice.key,
+                f"{int(count):,}",
+                blocker,
+            )
+            slices.append(raw_slice)
+            continue
+        parts = -(-int(count) // _SLICE_SPLIT_ROW_THRESHOLD)
+        ranges = _ranges_from_counts(counts, parts)
+        slices.extend(raw_slice.with_ranges(ranges))
+    return slices
+
+
+def _split_counts(
+    hook: PostgresHook, year: int, raw_slice: RawSlice, row_count: int
+) -> tuple[list[tuple[str | None, int]], str | None]:
+    """The slice's code counts to cut ranges from, or why it cannot be cut.
+
+    A place slice is cut only on `_PLACE_SPLIT_INDEX`, and only when every
+    one of its ``row_count`` rows is a county-less place row the counts saw:
+    a place range reads only those (`_slice_where`), so a row that names a
+    county would fall outside every range.
+    """
+    if raw_slice.geo_level == "place" and not _has_place_split_index(hook):
+        return [], f"{_PLACE_SPLIT_INDEX} is missing"
+    counts = _sub_geo_counts(hook, year, raw_slice)
+    if raw_slice.geo_level == "place" and sum(n for _code, n in counts) != row_count:
+        return [], "some of its rows carry a county"
+    return counts, None
+
+
+def _has_place_split_index(hook: PostgresHook) -> bool:
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT to_regclass(%s) IS NOT NULL",
+            (f"silver_census.{_PLACE_SPLIT_INDEX}",),
+        )
+        return bool(cur.fetchone()[0])
+
+
+def _sub_geo_counts(
+    hook: PostgresHook, year: int, raw_slice: RawSlice
+) -> list[tuple[str | None, int]]:
+    """Revision rows per split-column code in ``raw_slice``, codes ascending.
+
+    An index-ordered read of the slice's own index range: the split column is
+    that index's trailing column.
+    """
+    column = _SPLIT_COLUMNS[raw_slice.geo_level]
+    where, params = _slice_where(year, raw_slice)
+    if raw_slice.geo_level == "place" and not raw_slice.ranged:
+        # As a ranged place read says it (`_slice_where`): the index-only
+        # read of `_PLACE_SPLIT_INDEX`, not 18.7M heap rows.
+        where += " AND observation.county_fips_source IS NULL"
+    sql = f"""
+        SELECT observation.{column}, COUNT(*)
+        FROM silver_census.observation_revision AS observation
+        {where}
+        GROUP BY 1
+        ORDER BY 1 NULLS FIRST;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, tuple(params))
+        return [(row[0], int(row[1])) for row in cur.fetchall()]
+
+
+def _ranges_from_counts(
+    counts: list[tuple[str | None, int]], parts: int
+) -> list[tuple[str, str]]:
+    """Cut ascending code counts into at most ``parts`` contiguous ranges.
+
+    Each cut falls on a code, so a cell (one code) never spans two ranges,
+    and the ranges hold about equal rows. The first range is open below and
+    the last open above, so together they cover every code, including codes
+    the slice gains later. Fewer than two codes cannot be cut: one range.
+    """
+    codes = [(code, count) for code, count in counts if code is not None]
+    # Rows with no code are the split's own part (`RawSlice.with_ranges`).
+    total = sum(count for _code, count in codes)
+    if parts < 2 or len(codes) < 2 or total == 0:
+        return [("", "")]
+    cuts: list[str] = []
+    seen = 0
+    for index, (code, count) in enumerate(codes):
+        if index and seen >= total * (len(cuts) + 1) / parts:
+            cuts.append(code)
+            if len(cuts) == parts - 1:
+                break
+        seen += count
+    bounds = ["", *cuts, ""]
+    return list(itertools.pairwise(bounds))
+
+
+_RANGE_KEY = re.compile(r"^(?P<base>.+)/\[(?P<low>[^,\]]*),(?P<high>[^)]*)\)$")
+
+
+def _ledger_ranges(finished: dict[str, str], base_key: str) -> list[tuple[str, str]]:
+    """The finest ranges of ``base_key`` the ledger records, as a full cover.
+
+    Every bound any recorded range of the slice carries is a cut: a range a
+    timeout halved leaves both halves' bounds, so the next run reads it as
+    the halves rather than timing out on it again, and every other range
+    keeps the key its fingerprint is stored under.
+    """
+    cuts: set[str] = set()
+    found = False
+    for key in finished:
+        match = _RANGE_KEY.match(key)
+        if match is None or match["base"] != base_key:
+            continue
+        found = True
+        cuts.update(bound for bound in (match["low"], match["high"]) if bound)
+    if not found:
+        return []
+    bounds = ["", *sorted(cuts), ""]
+    return list(itertools.pairwise(bounds))
+
+
+def _halve(
+    hook: PostgresHook, year: int, raw_slice: RawSlice, row_count: int
+) -> list[RawSlice]:
+    """``raw_slice`` as two ranges of about equal rows, or ``[]`` if it cannot be.
+
+    A slice that held the rows without a code hands them to a null part.
+    """
+    if not raw_slice.splittable or raw_slice.null_codes:
+        return []
+    counts, blocker = _split_counts(hook, year, raw_slice, row_count)
+    if blocker:
+        return []
+    halves = _ranges_from_counts(counts, 2)
+    if len(halves) < 2:
+        return []
+    (_, middle), _ = halves
+    low = raw_slice.sub_low if raw_slice.ranged else ""
+    high = raw_slice.sub_high if raw_slice.ranged else ""
+    halved = [raw_slice.with_range(low, middle), raw_slice.with_range(middle, high)]
+    if raw_slice.holds_null_codes:
+        halved = raw_slice.with_ranges([(low, middle), (middle, high)])
+    return halved
 
 
 #: Bump when the transform's output for unchanged input changes, so every
@@ -937,6 +1245,37 @@ def _completed_slice_keys(
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (resume_key, int(year)))
         return {row[0] for row in cur.fetchall()}
+
+
+def _log_resume_point(hook: PostgresHook, resume_key: str | None) -> None:
+    """Say whether this attempt resumes an earlier one of the same run, and where."""
+    if resume_key is None:
+        return
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*), COUNT(DISTINCT year), MAX(completed_at)::TEXT
+            FROM silver_census.transform_checkpoint
+            WHERE resume_key = %s;
+            """,
+            (resume_key,),
+        )
+        slices, years, latest = cur.fetchone()
+    if not slices:
+        logger.info(
+            "[CENSUS_ACS RESUME] Run %s: no slice finished under this key yet; "
+            "starting from the ledger",
+            resume_key,
+        )
+        return
+    logger.info(
+        "[CENSUS_ACS RESUME] Run %s: resuming; %s slices across %s years already "
+        "finished under this key (last at %s) and are not read again",
+        resume_key,
+        slices,
+        years,
+        latest,
+    )
 
 
 def _record_slice_complete(
@@ -1491,6 +1830,9 @@ def _direct_insert_silver_rows(
                         )
                     break  # success — move to next sub-batch
                 except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+                    if stopped_by_operator(exc):
+                        # An operator's stop is not a dropped connection.
+                        raise
                     try:
                         conn.rollback()
                     except Exception:
@@ -1868,6 +2210,7 @@ def transform_census_to_silver(
 
     inserted_total = 0
     metrics_lock = threading.Lock()
+    _log_resume_point(hook, resume_key)
 
     # ── pre-load shared dimensions ────────────────────────────────────
     logger.info("[CENSUS_ACS] Pre-loading variable metadata...")
@@ -1899,11 +2242,11 @@ def transform_census_to_silver(
 
     # ── process each year ─────────────────────────────────────────────
     for y in years:
+        finished = _finished_fingerprints(hook, y)
         raw_slices = _plan_year_slices(
-            hook, y, metrics.raw_rows_by_year[y], datasets_by_year.get(y)
+            hook, y, metrics.raw_rows_by_year[y], datasets_by_year.get(y), finished
         )
         done = _completed_slice_keys(hook, resume_key, y)
-        finished = _finished_fingerprints(hook, y)
         if len(raw_slices) > 1:
             logger.info(
                 "[CENSUS_ACS CHUNK] Year=%s has %s raw rows; reading it in %s slices",
@@ -1912,6 +2255,21 @@ def transform_census_to_silver(
                 len(raw_slices),
             )
         pending = [raw_slice for raw_slice in raw_slices if raw_slice.key not in done]
+        stamped = sum(1 for raw_slice in pending if raw_slice.key in finished)
+        # One line per year saying what this attempt will and will not read,
+        # so a retry's log shows it resuming rather than starting over.
+        logger.info(
+            "[CENSUS_ACS RESUME] Year=%s: %s slices; %s finished in this run "
+            "(resume key %s, not read again); %s stamped by an earlier run "
+            "(read only if their revisions or reference rows changed); %s never "
+            "finished (read now)",
+            y,
+            len(raw_slices),
+            len(raw_slices) - len(pending),
+            resume_key,
+            stamped,
+            len(pending) - stamped,
+        )
         for raw_slice in raw_slices:
             if raw_slice.key in done:
                 logger.info(
@@ -1962,7 +2320,23 @@ def transform_census_to_silver(
                 else "revisions or its reference rows changed since it last finished",
             )
             slice_metrics = TransformMetrics(dataset_name="CENSUS_ACS")
-            raw = _fetch_raw_frame(hook, year, raw_slice)
+            try:
+                raw = _fetch_raw_frame(hook, year, raw_slice)
+            except SliceReadTimeout:
+                halves = _halve(hook, year, raw_slice, int(content[0]))
+                if not halves:
+                    raise
+                logger.warning(
+                    "[CENSUS_ACS CHUNK] Year=%s slice=%s raw read passed %s s; "
+                    "reading it again as %s",
+                    year,
+                    raw_slice.key,
+                    f"{_RAW_FETCH_TIMEOUT_SECONDS:.0f}",
+                    ", ".join(half.key for half in halves),
+                )
+                # The halves record their own keys, and the next run plans
+                # them from the ledger (`_ledger_ranges`), not this slice.
+                return sum(transform_slice(half, year) for half in halves)
             changed = 0
             if not raw.is_empty():
                 slice_metrics.log_chunk_start(year, raw.height)
