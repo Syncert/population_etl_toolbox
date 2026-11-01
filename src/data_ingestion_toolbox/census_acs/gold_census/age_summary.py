@@ -47,8 +47,16 @@ SOURCE_TABLE = "gold_census.rpt_acs_observations"
 #: The grains B01001 is served at; a read names them so the index's second
 #: column is an index condition, not a filter.
 SUMMARY_GEO_LEVELS = ("NATIONAL", "STATE", "METRO", "COUNTY", "PLACE", "TRACT")
-#: Sessions reading one release's states at once.
+#: Sessions reading one release's states at once. Run straight after the
+#: release's publish its lines are in cache (Texas 2023: 0.83 s warm on the
+#: internal stack); read cold each large state is 1-2 GB of random heap reads
+#: (Texas: 43.5 s), so a build of several releases -- a new scheme version,
+#: a first build -- reads fewer states at once.
 AGE_SUMMARY_WORKERS = int(os.environ.get("AGE_SUMMARY_WORKERS", "8"))
+AGE_SUMMARY_BACKFILL_WORKERS = int(os.environ.get("AGE_SUMMARY_BACKFILL_WORKERS", "4"))
+#: The states with the most tracts and places, started first so the longest
+#: reads are not the last ones still running (2020 Census tract counts).
+LARGEST_STATES_FIRST = ("48", "06", "12", "36", "17", "42", "39", "13", "37", "26")
 
 GROUP_IDS = ("under_18", "age_18_64", "age_65_plus", "age_85_plus")
 RATIO_IDS = (
@@ -290,6 +298,12 @@ def _fetch(hook: PostgresHook, sql: str, params: Mapping[str, Any]) -> list[dict
         return [dict(zip(names, values)) for values in cur.fetchall()]
 
 
+def largest_first(states: Sequence[str]) -> list[str]:
+    """The given states, the largest reads first and the rest in code order."""
+    rank = {state: index for index, state in enumerate(LARGEST_STATES_FIRST)}
+    return sorted(states, key=lambda s: (rank.get(s, len(rank)), s))
+
+
 def _release_lines(
     hook: PostgresHook,
     scheme: AgeScheme,
@@ -304,7 +318,8 @@ def _release_lines(
         "observation_date": date(release.vintage_year, 1, 1),
     }
     reads = [(STATELESS_LINES_SQL, base)] + [
-        (STATE_LINES_SQL, {**base, "state_fips": state}) for state in states
+        (STATE_LINES_SQL, {**base, "state_fips": state})
+        for state in largest_first(states)
     ]
     with ThreadPoolExecutor(
         max_workers=max(1, workers), thread_name_prefix="age-summary"
@@ -390,12 +405,22 @@ def build_release(
     return len(rows)
 
 
+def workers_for(releases: int, workers: int, backfill_workers: int) -> int:
+    """One release (the publish just wrote it, so its lines are warm) reads
+    ``workers`` states at once; several (read cold) at most ``backfill_workers``."""
+    return workers if releases <= 1 else min(workers, backfill_workers)
+
+
 def build_age_structure_summary(
-    hook: PostgresHook, *, workers: int = AGE_SUMMARY_WORKERS
+    hook: PostgresHook,
+    *,
+    workers: int = AGE_SUMMARY_WORKERS,
+    backfill_workers: int = AGE_SUMMARY_BACKFILL_WORKERS,
 ) -> dict[str, int]:
     """Rebuild every release whose served lines changed; returns counts."""
     scheme = default_scheme()
     releases = list_changed_releases(hook, scheme)
+    workers = workers_for(len(releases), workers, backfill_workers)
     written = 0
     for release in releases:
         written += build_release(hook, release, scheme=scheme, workers=workers)

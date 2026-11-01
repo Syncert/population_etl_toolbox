@@ -308,3 +308,23 @@ def test_a_grain_with_no_summary_answers_empty_not_zero(map_client) -> None:
     assert response.status_code == 200
     assert response.json()["release"] is None
     assert response.json()["items"] == []
+
+
+def test_one_release_reads_eight_states_at_once_and_a_backfill_four() -> None:
+    """Covers: ETL-109 -- a release built straight after its publish reads
+    warm; several releases read cold, so fewer states at once."""
+    assert age_summary.workers_for(1, 8, 4) == 8
+    assert age_summary.workers_for(0, 8, 4) == 8
+    assert age_summary.workers_for(36, 8, 4) == 4
+    assert age_summary.workers_for(36, 2, 4) == 2
+
+
+def test_the_largest_states_are_read_first() -> None:
+    """Covers: ETL-109"""
+    assert age_summary.largest_first(["01", "06", "55", "48", "12"]) == [
+        "48",
+        "06",
+        "12",
+        "01",
+        "55",
+    ]
