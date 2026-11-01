@@ -1914,7 +1914,7 @@ five years apart (`period_gap_not_five_years`), a tract was redrawn between
 them (`boundary_changed`), or a release is missing (`not_published`). The
 `caveat` says what such a change mixes; the API draws no conclusion from it.
 
-`GET /api/v1/age-structure/map?indicator=…&geo_level=STATE|METRO|COUNTY|PLACE|TRACT[&state_fips=NN][&release=YYYY][&dataset=acs5|acs1]`
+`GET /api/v1/age-structure/map?indicator=…&geo_level=NATIONAL|STATE|METRO|COUNTY|PLACE|TRACT[&state_fips=NN][&release=YYYY][&dataset=acs5|acs1]`
 maps one age indicator, never a single age line: `under_18`, `age_18_64`,
 `age_65_plus` and `age_85_plus` (percent of everyone),
 `child_dependency_ratio`, `old_age_dependency_ratio` and
