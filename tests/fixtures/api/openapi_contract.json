@@ -2385,6 +2385,39 @@
         "observations"
       ]
     },
+    "GET /api/v1/observations/history/batch": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 1000,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_ids",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:HistoryBatchResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
     "GET /api/v1/observations/latest": {
       "parameters": [
         {
@@ -4717,6 +4750,32 @@
       "required": [
         "service",
         "status"
+      ]
+    },
+    "HistoryBatchItem": {
+      "properties": {
+        "detail": "string | null",
+        "geo_id": "string",
+        "metric_code": "string",
+        "observations": "NeutralObservationListResponse | null",
+        "status": "integer"
+      },
+      "required": [
+        "geo_id",
+        "metric_code",
+        "status"
+      ]
+    },
+    "HistoryBatchResponse": {
+      "properties": {
+        "geo_ids": "array<string>",
+        "items": "array<HistoryBatchItem>",
+        "metric_codes": "array<string>"
+      },
+      "required": [
+        "geo_ids",
+        "items",
+        "metric_codes"
       ]
     },
     "LocatedGeography": {
