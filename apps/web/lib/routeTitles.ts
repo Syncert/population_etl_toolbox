@@ -167,3 +167,8 @@ export function metroRouteTitle(segment?: string): string {
 export function measureMapTitle(metricCode: string): string {
   return titleOf("Map", [/^[A-Za-z0-9_.:-]{1,200}$/.test(metricCode) ? metricCode : undefined]);
 }
+
+/** An age map's title: the indicator's label (web-age-and-sex-structure). */
+export function ageMapTitle(label: string): string {
+  return titleOf("Map", [label || undefined]);
+}

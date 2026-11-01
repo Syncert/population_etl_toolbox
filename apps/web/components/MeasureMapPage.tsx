@@ -69,6 +69,7 @@ import { denominatorText, derivedMapRow, getDerivedRatios, pairingFor, viewChoic
 import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
 import { DraftViewMark, ViewToggle } from "./DerivedView";
 import { isSingleAgeLine } from "../lib/ageLines";
+import { ageMapPath, searchAgeMapIndicators } from "../lib/ageMap";
 
 const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), { ssr: false });
 
@@ -694,6 +695,8 @@ function MeasureSwitcher({ current }: { current: string }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MetricSummary[]>([]);
+  // The age indicators are not catalog measures; they are found by their words.
+  const ageResults = useMemo(() => searchAgeMapIndicators(query), [query]);
   useEffect(() => {
     if (query.trim().length < 3) {
       setResults([]);
@@ -713,8 +716,15 @@ function MeasureSwitcher({ current }: { current: string }) {
         Switch to another measure
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} data-testid="measure-map-switch" />
       </label>
-      {results.length ? (
+      {results.length || ageResults.length ? (
         <ul className="place-index" data-testid="measure-map-switch-results">
+          {ageResults.map((item) => (
+            <li key={item.id}>
+              <button type="button" className="text-link" onClick={() => router.push(ageMapPath(item.id))} data-testid={`measure-map-switch-age-${item.id}`}>
+                {`${item.label} (age and sex)`}
+              </button>
+            </li>
+          ))}
           {results.map((item) => (
             <li key={item.metric_code}>
               <button type="button" className="text-link" onClick={() => router.push(`/map/${encodeURIComponent(item.metric_code)}`)}>

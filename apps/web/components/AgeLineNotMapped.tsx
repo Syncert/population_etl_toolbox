@@ -4,6 +4,7 @@
 
 import Link from "next/link";
 
+import { ageMapPath } from "../lib/ageMap";
 import { explorerHref } from "../lib/urlState";
 
 export default function AgeLineNotMapped({ metricCode }: { metricCode: string }) {
@@ -20,6 +21,7 @@ export default function AgeLineNotMapped({ metricCode }: { metricCode: string })
       </header>
       <ul className="place-index">
         <li><Link className="text-link" href="/us">Find a place and read its age pyramid</Link></li>
+        <li><Link className="text-link" href={ageMapPath("median_age")} data-testid="measure-map-age-line-indicators">Map median age, the share of children or older people, and the dependency ratios</Link></li>
         <li><Link className="text-link" href={explorerHref({ metric: metricCode, source: "CENSUS_ACS" })} data-testid="measure-map-age-line-explore">Read this age group in the explorer</Link></li>
       </ul>
     </main>
