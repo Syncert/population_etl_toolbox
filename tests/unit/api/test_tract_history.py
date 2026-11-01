@@ -34,20 +34,52 @@ INCOME = "CENSUS_ACS:acs5:B19013_001"
 POPULATION = "CENSUS_ACS:acs5:B01003_001"
 
 GEOGRAPHIES = {
-    NEW: {"geo_id": NEW, "geo_level": "TRACT", "geo_name": "Census Tract 18.31", "state_fips": "48"},
-    KEPT: {"geo_id": KEPT, "geo_level": "TRACT", "geo_name": "Census Tract 11", "state_fips": "48"},
-    COUNTY: {"geo_id": COUNTY, "geo_level": "COUNTY", "geo_name": "Travis County", "state_fips": "48"},
+    NEW: {
+        "geo_id": NEW,
+        "geo_level": "TRACT",
+        "geo_name": "Census Tract 18.31",
+        "state_fips": "48",
+    },
+    KEPT: {
+        "geo_id": KEPT,
+        "geo_level": "TRACT",
+        "geo_name": "Census Tract 11",
+        "state_fips": "48",
+    },
+    COUNTY: {
+        "geo_id": COUNTY,
+        "geo_level": "COUNTY",
+        "geo_name": "Travis County",
+        "state_fips": "48",
+    },
 }
 
 CHANGES = [
     # 18.05 -> 18.31 (46% of 18.05's land, all of 18.31's) and 18.32.
-    {"earlier_geo_id": OLD, "later_geo_id": NEW, "earlier_land_share": 0.46, "later_land_share": 1.0},
-    {"earlier_geo_id": OLD, "later_geo_id": SIBLING, "earlier_land_share": 0.54, "later_land_share": 1.0},
-    {"earlier_geo_id": KEPT, "later_geo_id": KEPT, "earlier_land_share": 1.0, "later_land_share": 1.0},
+    {
+        "earlier_geo_id": OLD,
+        "later_geo_id": NEW,
+        "earlier_land_share": 0.46,
+        "later_land_share": 1.0,
+    },
+    {
+        "earlier_geo_id": OLD,
+        "later_geo_id": SIBLING,
+        "earlier_land_share": 0.54,
+        "later_land_share": 1.0,
+    },
+    {
+        "earlier_geo_id": KEPT,
+        "later_geo_id": KEPT,
+        "earlier_land_share": 1.0,
+        "later_land_share": 1.0,
+    },
 ]
 
 
-def _published(geo_id: str, code: str, vintage: int, value: float, moe: float = 100.0) -> dict:
+def _published(
+    geo_id: str, code: str, vintage: int, value: float, moe: float = 100.0
+) -> dict:
     return {
         "geo_id": geo_id,
         "metric_code": code,
@@ -101,11 +133,17 @@ class _Session:
         if "to_regclass" in sql or "information_schema" in sql or "pg_class" in sql:
             return _Scalar(True)
         if query is service.GEOGRAPHY_IDENTITY_QUERY:
-            return _Result([GEOGRAPHIES[g] for g in params["geo_ids"] if g in GEOGRAPHIES])
+            return _Result(
+                [GEOGRAPHIES[g] for g in params["geo_ids"] if g in GEOGRAPHIES]
+            )
         if query is service.CHANGE_QUERY:
-            return _Result([r for r in CHANGES if r["later_geo_id"] == params["geo_id"]])
+            return _Result(
+                [r for r in CHANGES if r["later_geo_id"] == params["geo_id"]]
+            )
         if query is service.ALSO_BECAME_QUERY:
-            return _Result([r for r in CHANGES if r["earlier_geo_id"] in params["earlier_geo_ids"]])
+            return _Result(
+                [r for r in CHANGES if r["earlier_geo_id"] in params["earlier_geo_ids"]]
+            )
         if query is service.PUBLISHED_QUERY:
             return _Result(
                 [
@@ -122,10 +160,13 @@ class _Session:
                 [
                     r
                     for r in self.comparable
-                    if r["geo_id"] == params["geo_id"] and r["metric_code"] in params["metric_codes"]
+                    if r["geo_id"] == params["geo_id"]
+                    and r["metric_code"] in params["metric_codes"]
                 ]
             )
-        raise AssertionError(sql)  # pragma: no cover - a statement the test did not expect
+        raise AssertionError(
+            sql
+        )  # pragma: no cover - a statement the test did not expect
 
 
 class _Scalar:
@@ -154,7 +195,9 @@ def client_for():
     app.dependency_overrides.clear()
 
 
-def test_a_split_tract_serves_its_published_years_and_its_derived_counts(client_for) -> None:
+def test_a_split_tract_serves_its_published_years_and_its_derived_counts(
+    client_for,
+) -> None:
     """Covers: API-187"""
     session = _Session(
         published=[
@@ -185,7 +228,9 @@ def test_a_split_tract_serves_its_published_years_and_its_derived_counts(client_
 
     population, income = body["series"]
     assert population["metric_code"] == POPULATION
-    assert [(p["vintage_year"], p["status"], p["derived"]) for p in population["items"]] == [
+    assert [
+        (p["vintage_year"], p["status"], p["derived"]) for p in population["items"]
+    ] == [
         (2012, "incomplete", True),
         (2015, "apportioned", True),
         (2020, "published", False),
@@ -209,7 +254,8 @@ def test_every_read_is_scoped_to_the_one_tract(client_for) -> None:
     """Covers: API-187"""
     session = _Session(published=[], comparable=[])
     client_for(session).get(
-        "/api/v1/place/tract-history", params={"geo_id": NEW, "metric_codes": POPULATION}
+        "/api/v1/place/tract-history",
+        params={"geo_id": NEW, "metric_codes": POPULATION},
     )
     statements = {query: params for query, params in session.calls}
     assert statements[service.CHANGE_QUERY] == {"geo_id": NEW}
@@ -219,14 +265,20 @@ def test_every_read_is_scoped_to_the_one_tract(client_for) -> None:
     assert published["geo_id"] == NEW
     # A redrawn tract's published read starts at the 2020 partition.
     assert published["first_date"] == date(2020, 1, 1)
-    for query in (service.CHANGE_QUERY, service.COMPARABLE_QUERY, service.PUBLISHED_QUERY):
+    for query in (
+        service.CHANGE_QUERY,
+        service.COMPARABLE_QUERY,
+        service.PUBLISHED_QUERY,
+    ):
         sql = str(query)
         assert "UPPER(" not in sql and "silver_" not in sql
     assert "gold_census.tract_decade_change" in str(service.CHANGE_QUERY)
     assert "gold_census.acs_tract_comparable" in str(service.COMPARABLE_QUERY)
 
 
-def test_an_unchanged_tract_serves_its_earlier_published_values_as_they_are(client_for) -> None:
+def test_an_unchanged_tract_serves_its_earlier_published_values_as_they_are(
+    client_for,
+) -> None:
     """Covers: API-187"""
     session = _Session(
         published=[
@@ -242,7 +294,9 @@ def test_an_unchanged_tract_serves_its_earlier_published_values_as_they_are(clie
     assert body["boundary"]["status"] == "unchanged"
     assert "kept its boundary" in body["boundary"]["sentence"]
     items = body["series"][0]["items"]
-    assert [(p["vintage_year"], p["status"], p["derived"], p["value"]) for p in items] == [
+    assert [
+        (p["vintage_year"], p["status"], p["derived"], p["value"]) for p in items
+    ] == [
         (2012, "unchanged", False, 52000),
         (2024, "published", False, 70000),
     ]
@@ -256,12 +310,22 @@ def test_an_unchanged_tract_serves_its_earlier_published_values_as_they_are(clie
     [
         ({"geo_id": NEW, "metric_codes": "BLS_LAUS:unemployment_rate"}, 422),
         ({"geo_id": NEW, "metric_codes": "CENSUS_ACS:acs1:B19013_001"}, 422),
-        ({"geo_id": NEW, "metric_codes": ",".join(f"CENSUS_ACS:acs5:B01001_{n:03d}" for n in range(1, 26))}, 422),
+        (
+            {
+                "geo_id": NEW,
+                "metric_codes": ",".join(
+                    f"CENSUS_ACS:acs5:B01001_{n:03d}" for n in range(1, 26)
+                ),
+            },
+            422,
+        ),
         ({"geo_id": COUNTY, "metric_codes": INCOME}, 422),
         ({"geo_id": "state:48|county:453|tract:999999", "metric_codes": INCOME}, 404),
     ],
 )
-def test_a_request_this_route_does_not_answer_is_refused(client_for, params, status) -> None:
+def test_a_request_this_route_does_not_answer_is_refused(
+    client_for, params, status
+) -> None:
     """Covers: API-187"""
     session = _Session(published=[], comparable=[])
     response = client_for(session).get("/api/v1/place/tract-history", params=params)
@@ -275,8 +339,18 @@ def test_boundary_classes_name_merges_redraws_and_missing_records() -> None:
     merged = classify_boundary(
         NEW,
         [
-            {"earlier_geo_id": a, "later_geo_id": NEW, "earlier_land_share": 1.0, "later_land_share": 0.6},
-            {"earlier_geo_id": b, "later_geo_id": NEW, "earlier_land_share": 0.995, "later_land_share": 0.4},
+            {
+                "earlier_geo_id": a,
+                "later_geo_id": NEW,
+                "earlier_land_share": 1.0,
+                "later_land_share": 0.6,
+            },
+            {
+                "earlier_geo_id": b,
+                "later_geo_id": NEW,
+                "earlier_land_share": 0.995,
+                "later_land_share": 0.4,
+            },
         ],
         [],
     )
@@ -286,10 +360,25 @@ def test_boundary_classes_name_merges_redraws_and_missing_records() -> None:
     redrawn = classify_boundary(
         NEW,
         [
-            {"earlier_geo_id": a, "later_geo_id": NEW, "earlier_land_share": 0.5, "later_land_share": 0.7},
-            {"earlier_geo_id": b, "later_geo_id": NEW, "earlier_land_share": 0.2, "later_land_share": 0.295},
+            {
+                "earlier_geo_id": a,
+                "later_geo_id": NEW,
+                "earlier_land_share": 0.5,
+                "later_land_share": 0.7,
+            },
+            {
+                "earlier_geo_id": b,
+                "later_geo_id": NEW,
+                "earlier_land_share": 0.2,
+                "later_land_share": 0.295,
+            },
             # A sliver is a boundary nudge, not a change of area.
-            {"earlier_geo_id": OLD, "later_geo_id": NEW, "earlier_land_share": 0.001, "later_land_share": 0.005},
+            {
+                "earlier_geo_id": OLD,
+                "later_geo_id": NEW,
+                "earlier_land_share": 0.001,
+                "later_land_share": 0.005,
+            },
         ],
         [],
     )
@@ -299,8 +388,22 @@ def test_boundary_classes_name_merges_redraws_and_missing_records() -> None:
 
     kept_code = classify_boundary(
         KEPT,
-        [{"earlier_geo_id": KEPT, "later_geo_id": KEPT, "earlier_land_share": 0.7, "later_land_share": 1.0}],
-        [{"earlier_geo_id": KEPT, "later_geo_id": SIBLING, "earlier_land_share": 0.3, "later_land_share": 1.0}],
+        [
+            {
+                "earlier_geo_id": KEPT,
+                "later_geo_id": KEPT,
+                "earlier_land_share": 0.7,
+                "later_land_share": 1.0,
+            }
+        ],
+        [
+            {
+                "earlier_geo_id": KEPT,
+                "later_geo_id": SIBLING,
+                "earlier_land_share": 0.3,
+                "later_land_share": 1.0,
+            }
+        ],
     )
     assert kept_code.status == "split"
     assert "kept its code but was split" in kept_code.sentence

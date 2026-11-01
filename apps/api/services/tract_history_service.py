@@ -241,12 +241,11 @@ def classify_boundary(
                 share_of_this_tract=_number(row.get("later_land_share")),
             )
     also_became = sorted(
-        others.values(), key=lambda part: (-(part.share_of_that_tract or 0), part.geo_id)
+        others.values(),
+        key=lambda part: (-(part.share_of_that_tract or 0), part.geo_id),
     )
     nudged = (
-        " Boundary adjustments under 1% of its land are left aside."
-        if slivers
-        else ""
+        " Boundary adjustments under 1% of its land are left aside." if slivers else ""
     )
 
     if len(significant) == 1:
@@ -266,9 +265,7 @@ def classify_boundary(
             )
         if whole_of_this and not whole_of_that:
             became = also_became or []
-            tail = (
-                f" The rest became {_names(became)}." if became else ""
-            )
+            tail = f" The rest became {_names(became)}." if became else ""
             if only.geo_id == geo_id:
                 sentence = (
                     f"In 2020 {own} kept its code but was split: it is now "
@@ -348,7 +345,9 @@ def build_series(
     published one carries its margin of error.
     """
     unchanged = boundary.status == "unchanged"
-    by_code: dict[str, dict[int, TractHistoryPoint]] = {code: {} for code in metric_codes}
+    by_code: dict[str, dict[int, TractHistoryPoint]] = {
+        code: {} for code in metric_codes
+    }
     for row in published:
         code = str(row["metric_code"])
         if code not in by_code:
@@ -371,11 +370,15 @@ def build_series(
         if code not in by_code or vintage >= TARGET_VINTAGE or vintage in by_code[code]:
             continue
         raw_status = str(row.get("comparable_status") or "incomplete")
-        status = raw_status if raw_status in {"unchanged", "apportioned"} else "incomplete"
+        status = (
+            raw_status if raw_status in {"unchanged", "apportioned"} else "incomplete"
+        )
         by_code[code][vintage] = TractHistoryPoint(
             vintage_year=vintage,
             observation_date=row["observation_date"],
-            value=None if status == "incomplete" else _whole(row.get("comparable_value")),
+            value=None
+            if status == "incomplete"
+            else _whole(row.get("comparable_value")),
             margin_of_error=None,
             status=status,
             derived=status != "unchanged",
@@ -393,7 +396,9 @@ def build_series(
     return series
 
 
-def tract_history(db: Session, geo_id: str, metric_codes_raw: str) -> TractHistoryResponse:
+def tract_history(
+    db: Session, geo_id: str, metric_codes_raw: str
+) -> TractHistoryResponse:
     metric_codes = parse_metric_codes(metric_codes_raw)
     require_relation(db, GEOGRAPHY_RELATION)
     identity = (
@@ -414,7 +419,9 @@ def tract_history(db: Session, geo_id: str, metric_codes_raw: str) -> TractHisto
     )
     boundary = classify_boundary(geo_id, parts, also)
 
-    first_vintage = EARLIER_VINTAGE if boundary.status == "unchanged" else TARGET_VINTAGE
+    first_vintage = (
+        EARLIER_VINTAGE if boundary.status == "unchanged" else TARGET_VINTAGE
+    )
     require_relation(db, PUBLISHED_RELATION)
     published = (
         db.execute(
