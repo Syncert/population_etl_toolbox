@@ -20,6 +20,7 @@
   "/global-error": 404480,
   "/layout": 519168,
   "/map/[metric]/page": 517120,
+  "/metro/[metro]/page": 498688,
   "/not-found": 413696,
   "/page": 528384,
   "/profiles/page": 530432,

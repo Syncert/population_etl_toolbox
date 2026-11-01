@@ -31,16 +31,16 @@ test("typing Austin offers Austin city, Travis County and the Austin metro", asy
   await expect(page.getByRole("option")).toHaveText([
     /^Austin city, Texas · city or town · 967,862 people \(2019–2023 survey\)$/,
     /^Travis County, Texas · county · includes Austin city/,
-    /^Austin-Round Rock-San Marcos, TX Metro Area · metro area · includes Austin city · .* · no page yet$/,
+    /^Austin-Round Rock-San Marcos, TX Metro Area · metro area · includes Austin city · .*(?<!no page yet)$/,
     /^Austin County, Texas · county/,
   ]);
-  // A metro has no page yet (D-5): it is offered, and cannot be opened.
-  await expect(page.getByRole("option", { name: /Metro Area/ })).toHaveAttribute("aria-disabled", "true");
+  // A metro has its page (D-5, WEB-153): it is offered and can be opened.
+  await expect(page.getByRole("option", { name: /Metro Area/ })).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("place-finder")).toHaveAttribute("data-search", "api");
 });
 
-test("the home search reaches a city page by keyboard, skipping a place with no page", async ({ page }) => {
+test("the home search reaches a city page by keyboard", async ({ page }) => {
   await installPlaceFixtures(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
@@ -51,7 +51,8 @@ test("the home search reaches a city page by keyboard, skipping a place with no 
   await input.press("ArrowDown");
   await expect(page.getByRole("option", { name: /Dane County/ })).toHaveAttribute("aria-selected", "true");
   await input.press("ArrowDown");
-  await expect(page.getByRole("option", { name: /Dane County/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("option", { name: /Metro Area/ })).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowUp");
   await input.press("ArrowUp");
   await input.press("Enter");
   await expect(page).toHaveURL(/\/us\/wisconsin\/madison-city$/);

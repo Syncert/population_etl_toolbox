@@ -18,7 +18,7 @@ export interface FoundPlace {
   geoId: string;
   level: string;
   name: string;
-  /** The page to open, or null for a grain with no page yet (metro, ZIP code area). */
+  /** The page to open, or null for a grain with no page yet (ZIP code area, tract). */
   href: string | null;
   /** What kind of place this is, in a reader's words. */
   kind: string;

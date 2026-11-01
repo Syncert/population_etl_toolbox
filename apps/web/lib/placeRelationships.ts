@@ -6,7 +6,7 @@
 // identity; nothing is matched by name.
 
 import type { GeographySummary } from "./api/types";
-import { countySegment, placePath, stateName, stateSegment } from "./placeChapters";
+import { countySegment, metroCode, metroPath, placePath, stateName, stateSegment } from "./placeChapters";
 
 export interface RelatedGeography {
   relationship: "contains" | "part_of" | "intersects" | "adjacent" | string;
@@ -67,6 +67,9 @@ function hrefFor(
   ownStateCounties: readonly GeographySummary[],
 ): string | null {
   if (row.geo_level === "NATIONAL") return "/us";
+  // A metro by its CBSA code: the metro route settles it on its named
+  // address, so no list of metros is needed to link to one.
+  if (row.geo_level === "METRO") return metroCode(row.geo_id) ? metroPath(metroCode(row.geo_id)) : null;
   const state = states.find((item) => item.state_fips === row.state_fips);
   if (row.geo_level === "STATE") return state ? placePath(stateSegment(state, states)) : null;
   if (row.geo_level === "PLACE" && state) {
