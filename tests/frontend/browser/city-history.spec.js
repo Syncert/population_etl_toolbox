@@ -97,3 +97,24 @@ test("when the history batch cannot be read each line is read on its own", async
   expect(singles.some((url) => url.searchParams.get("metric_code") === "CENSUS_ACS:acs5:B19013_001")).toBe(true);
   await expect(page.getByTestId("chapter-housing-trend-median-home-value")).toContainText("Madison city (this page)");
 });
+
+test("a city page waits for its county before reading any trend, so every batch names it", async ({ page }) => {
+  // A slow relationships answer: the county arrives after everything else.
+  const calls = await madison(page, {
+    after: (target) => target.route("**/api/v1/catalog/geographies/*/related", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.fallback();
+    }),
+  });
+  const batches = calls.filter((url) => url.pathname === "/api/v1/observations/history/batch");
+  expect(batches.length).toBeGreaterThan(0);
+  for (const url of batches) {
+    expect(url.searchParams.get("geo_ids").split(",")).toEqual(["state:55|place:48000", "state:55|county:025", "state:55", "us:1"]);
+  }
+  // One batch per chapter: no trend is asked twice.
+  const asked = batches.flatMap((url) => url.searchParams.get("metric_codes").split(","));
+  expect(new Set(asked).size).toBe(asked.length);
+  // Nor is any newest value read for the chain without its county.
+  const newest = calls.filter((url) => url.pathname === "/api/v1/observations/newest/batch");
+  for (const url of newest) expect(url.searchParams.get("geo_ids")).not.toBe("state:55|place:48000,state:55,us:1");
+});
