@@ -320,8 +320,11 @@ round on six connections. So the tiles' share of the wait is bounded by the
 slowest of six tiles, and the narrowing cuts the bytes and the encode work of
 the border tiles, which also carried every Oklahoma, Louisiana, Arkansas,
 New Mexico and Kansas place under the canvas. If the HAR's 31 s is mostly not those six
-requests, the rest is the Next development server (first-visit compile, an
-unbundled client), which the production build on the v1 list removes.
+requests, look next at Martin's own generation time per tile (the script's
+per-tile times, and the EXPLAIN in `place-maps/explain-place-tile-state.sql`),
+the Next `/tiles` proxy (compare the script against Martin's port directly),
+and the page's own API calls. The OFFICE_LAB web container is already a
+production build, so a development server is not the cause.
 
 Not built, with the reason:
 
