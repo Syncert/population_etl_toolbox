@@ -11,6 +11,7 @@ import { containingAreas, readingsFor } from "../../../apps/web/lib/groceriesAnd
 import { compareHref } from "../../../apps/web/lib/placeComparison";
 import { metroCode, metroSegment, resolvePlaceChapters } from "../../../apps/web/lib/placeChapters";
 import { metroRouteTitle } from "../../../apps/web/lib/routeTitles";
+import { canonicalMetroPath, serverApiOrigin } from "../../../apps/web/lib/metroRedirect";
 
 const page = (states, extra = {}) => ({
   requested_segment: "texarkana-tx-ar-metro-area",
@@ -89,5 +90,42 @@ describe("metro pages", () => {
     expect(omitted.find((entry) => entry.chapter.id === "health")?.reason).toBe("no published metro area values for this place");
     // A metro never borrows its state's crime figures as county pages do.
     expect(shown.some((entry) => entry.stateContext)).toBe(false);
+  });
+});
+
+// Covers: WEB-153 — a metro addressed by its CBSA code redirects on the
+// server to its named page; a named segment asks nothing, and any failure
+// leaves the page to settle the address in the browser.
+describe("the code-to-name redirect", () => {
+  const answering = (body, ok = true) => {
+    const calls = [];
+    const fetcher = async (url) => { calls.push(url); return { ok, json: async () => body }; };
+    return { calls, fetcher };
+  };
+
+  it("sends a code to the metro's named page", async () => {
+    const { calls, fetcher } = answering({ metro: { segment: "texarkana-tx-ar" } });
+    expect(await canonicalMetroPath("45500", { fetcher, origin: "http://api:8000" })).toBe("/metro/texarkana-tx-ar");
+    expect(calls).toEqual(["http://api:8000/api/v1/catalog/geographies/metros/45500"]);
+  });
+
+  it("asks nothing for a named segment and keeps a code that is canonical", async () => {
+    const named = answering({});
+    expect(await canonicalMetroPath("texarkana-tx-ar", { fetcher: named.fetcher })).toBeNull();
+    expect(named.calls).toEqual([]);
+    const clash = answering({ metro: { segment: "99901" } });
+    expect(await canonicalMetroPath("99901", { fetcher: clash.fetcher, origin: "x" })).toBeNull();
+  });
+
+  it("falls back to the browser on any failure or unexpected answer", async () => {
+    expect(await canonicalMetroPath("45500", { fetcher: answering({}, false).fetcher, origin: "x" })).toBeNull();
+    expect(await canonicalMetroPath("45500", { fetcher: answering({ metro: { segment: "../evil" } }).fetcher, origin: "x" })).toBeNull();
+    const failing = async () => { throw new Error("refused"); };
+    expect(await canonicalMetroPath("45500", { fetcher: failing, origin: "x" })).toBeNull();
+  });
+
+  it("reads the API origin the rewrites use", () => {
+    expect(serverApiOrigin({ API_ORIGIN: "http://api:8000/" })).toBe("http://api:8000");
+    expect(serverApiOrigin({})).toBe("http://localhost:8000");
   });
 });

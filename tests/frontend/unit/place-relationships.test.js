@@ -117,6 +117,19 @@ describe("a city or town's metro", () => {
     expect(partOfShareText(city.partOf[1])).toBe("");
   });
 
+  // Covers: WEB-153 — where the API names the metro's page, the link is that
+  // named address, and a path off the site is never followed.
+  it("links the metro by the page the API names for it", () => {
+    const named = groupNearby({ geo_id: "state:48|place:05000", total: 1, items: [
+      row("intersects", "cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX", null, { overlap_weight: 1, page_path: "/metro/austin-round-rock-san-marcos-tx" }),
+    ] }, states, []);
+    expect(named.partOf[0].href).toBe("/metro/austin-round-rock-san-marcos-tx");
+    const offSite = groupNearby({ geo_id: "state:48|place:05000", total: 1, items: [
+      row("intersects", "cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX", null, { page_path: "https://example.com/x" }),
+    ] }, states, []);
+    expect(offSite.partOf[0].href).toBe("/metro/12420");
+  });
+
   it("says how much of the place lies in a metro it only partly reaches", () => {
     const partly = groupNearby({ geo_id: "state:55|place:99999", total: 1, items: [
       row("intersects", "cbsa:31540", "METRO", "Madison, WI", null, { overlap_weight: 0.6 }),

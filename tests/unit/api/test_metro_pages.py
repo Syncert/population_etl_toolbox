@@ -335,3 +335,61 @@ def test_bea_rows_carry_their_derivation() -> None:
     """Covers: API-188 — the BEA dispatch serves `derivation` as a dimension."""
     bea = OBSERVATION_DISPATCH["BEA"]
     assert ("derivation", "derivation") in bea.dimension_expressions
+
+
+def _related_row(relationship, geo_id, geo_level, geo_name):
+    return {
+        "relationship": relationship,
+        "geo_id": geo_id,
+        "geo_level": geo_level,
+        "geo_name": geo_name,
+        "state_fips": None,
+        "geography_vintage": 2023,
+        "evidence_source": "census_cbsa_delineation",
+        "overlap_area_m2": None,
+        "overlap_weight": 1.0,
+    }
+
+
+def test_a_citys_related_metro_carries_its_named_page() -> None:
+    """Covers: API-187 — /related names a metro's page, read only when needed."""
+    session = _Session(
+        {
+            cq.GEOGRAPHY_EXISTS_QUERY: [
+                {"geo_id": "state:48|place:05000", "geo_level": "PLACE"}
+            ],
+            cq.GEOGRAPHY_RELATED_QUERY: [
+                _related_row(
+                    "intersects",
+                    "cbsa:12420",
+                    "METRO",
+                    "Austin-Round Rock-San Marcos, TX Metro Area",
+                ),
+                _related_row("part_of", "us:1", "NATIONAL", "United States"),
+            ],
+            cq.METRO_PAGES_QUERY: METROS,
+        }
+    )
+    response = _get(session, "/api/v1/catalog/geographies/state:48|place:05000/related")
+    assert response.status_code == 200, response.text
+    items = {item["geo_id"]: item for item in response.json()["items"]}
+    assert (
+        items["cbsa:12420"]["page_path"]
+        == "/metro/austin-round-rock-san-marcos-tx-metro-area"
+    )
+    assert items["us:1"]["page_path"] is None
+    assert len(session.params_of(cq.METRO_PAGES_QUERY)) == 1
+
+    # An answer naming no metro reads no metro list.
+    plain = _Session(
+        {
+            cq.GEOGRAPHY_EXISTS_QUERY: [{"geo_id": "state:48", "geo_level": "STATE"}],
+            cq.GEOGRAPHY_RELATED_QUERY: [
+                _related_row("part_of", "us:1", "NATIONAL", "United States")
+            ],
+        }
+    )
+    assert (
+        _get(plain, "/api/v1/catalog/geographies/state:48/related").status_code == 200
+    )
+    assert plain.params_of(cq.METRO_PAGES_QUERY) == []

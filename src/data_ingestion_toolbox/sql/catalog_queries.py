@@ -595,22 +595,29 @@ METRO_PAGES_QUERY: TextClause = text(
 )
 
 #: The metros with a member county in each of ``:state_fips``' states, by the
-#: delineation's own ``contains`` rows. The counties are read by key first, so
-#: each relationship read is an index probe on ``related_geo_id``.
+#: delineation's own ``contains`` rows. The states' counties are read once
+#: into a small materialized set (about 250 for Texas) and the relationship
+#: read starts from their keys, so it is an index probe on
+#: ``related_geo_id``; the search projection is not joined a second time
+#: (1.54 s cold for Texas on OFFICE_LAB, 2026-11-01).
 METRO_STATE_MEMBERS_QUERY: TextClause = text(
     f"""
-    SELECT DISTINCT link.geo_id AS metro_geo_id, county.state_fips
-    FROM {RELATIONSHIP_RELATION} AS link
-    JOIN {GEO_SEARCH_RELATION} AS county
-         ON county.geo_id = link.related_geo_id
-    WHERE link.related_geo_id = ANY(ARRAY(
-            SELECT member.geo_id
-            FROM {GEO_SEARCH_RELATION} AS member
-            WHERE member.geo_level = 'COUNTY'
-              AND member.state_fips = ANY(:state_fips)
-          ))
-      AND link.relationship_type = 'contains'
-      AND link.geo_id LIKE 'cbsa:%'
+    WITH counties AS MATERIALIZED (
+        SELECT member.geo_id, member.state_fips
+        FROM {GEO_SEARCH_RELATION} AS member
+        WHERE member.geo_level = 'COUNTY'
+          AND member.state_fips = ANY(:state_fips)
+    ),
+    links AS MATERIALIZED (
+        SELECT link.geo_id, link.related_geo_id
+        FROM {RELATIONSHIP_RELATION} AS link
+        WHERE link.related_geo_id = ANY(ARRAY(SELECT geo_id FROM counties))
+          AND link.relationship_type = 'contains'
+          AND link.geo_id LIKE 'cbsa:%'
+    )
+    SELECT DISTINCT links.geo_id AS metro_geo_id, counties.state_fips
+    FROM links
+    JOIN counties ON counties.geo_id = links.related_geo_id
     """
 )
 
