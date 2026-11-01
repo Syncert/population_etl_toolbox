@@ -2,7 +2,7 @@ import AxeBuilder from "../../../apps/web/node_modules/@axe-core/playwright/dist
 import { expect, test } from "../support/servedRequests.js";
 import { installPlaceFixtures } from "../support/placeScenarios.js";
 
-// Covers: WEB-155 — check-the-record: every place page answers the four
+// Covers: WEB-156 — check-the-record: every place page answers the four
 // fixed questions under "What the record shows" with sentences built from
 // published numbers, a chart, who reported (for crime), the sources and
 // caveats, and a link to the rows; a county reads its crime rate history from

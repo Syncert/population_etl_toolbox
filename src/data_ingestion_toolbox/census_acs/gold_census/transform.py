@@ -33,6 +33,8 @@ _REQUIRED_RELATIONS = (
     "gold_census.rpt_acs_observations",
     "gold_census.mv_acs_latest",
     "gold_census.metric_publisher",
+    "gold_census.age_structure_summary",
+    "gold_census.age_structure_summary_build",
 )
 _REQUIRED_PROCEDURES = (
     "gold_census.refresh_rpt_acs_observations(date,date,text[],text)",

@@ -18,9 +18,9 @@ of them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Mapping, Optional, Sequence
 
 from sqlalchemy import text
@@ -34,6 +34,8 @@ from apps.api.schemas.age_structure import (
     AgeCohortsResponse,
     AgeCount,
     AgeIndicators,
+    AgeMapItem,
+    AgeMapResponse,
     AgeRatio,
     AgeScheme as AgeSchemeOut,
     AgeShare,
@@ -49,11 +51,34 @@ from apps.api.schemas.age_structure import (
 )
 from apps.api.services.contracts import require_relation, session_memo
 from apps.api.services.cross_level_service import place_name
-from apps.api.services.derived_ratio_service import derived_margin
 from data_ingestion_toolbox.semantics.age_bands import (
     SEXES,
     AgeScheme,
     default_scheme,
+)
+from data_ingestion_toolbox.semantics.age_structure import (
+    CONTROLLED_TOTAL_LEVELS,
+    RELIABLE_CV_PERCENT,
+    Z90,
+    Line,
+    PlaceRelease,
+    RatioValue,
+    ShareValue,
+    Summed,
+    coefficient_of_variation,
+    group_sum,
+    indicator_values,
+    iso_text,
+    proportion_margin,
+    releases_from_rows,
+    ratio_margin,
+    ratio_value,
+    root_sum_squares,
+    share_value,
+    sum_lines,
+    to_number,
+    total_of,
+    variable_of,
 )
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_IDENTITY_QUERY,
@@ -65,15 +90,8 @@ from data_ingestion_toolbox.sql.catalog_queries import (
 LATEST_RELATION = "gold_census.mv_acs_latest"
 AS_RELEASED_RELATION = "gold_census.rpt_acs_observations"
 NATION_GEO_ID = "us:1"
-#: The z-value of the Bureau's published 90 percent margins.
-Z90 = Decimal("1.645")
-#: A band whose coefficient of variation exceeds this is marked unreliable.
-RELIABLE_CV_PERCENT = Decimal(30)
 #: The most extra places one request draws beside the place and its levels.
 MOST_COMPARE_GEOGRAPHIES = 3
-#: Levels whose published totals carry a controlled margin (no MOE): the
-#: Bureau controls state and national totals to its population estimates.
-CONTROLLED_TOTAL_LEVELS = frozenset({"STATE", "NATIONAL"})
 #: Geography vintages tracts are redrawn at; a cohort across one is refused.
 TRACT_REDRAW_YEARS = (2010, 2020)
 
@@ -135,14 +153,24 @@ class AgeStructureRequestError(ValueError):
 # ---------------------------------------------------------------------------
 
 
-def _number(value: Any) -> Optional[Decimal]:
-    if value is None:
-        return None
-    try:
-        number = Decimal(str(value))
-    except InvalidOperation:
-        return None
-    return number if number.is_finite() else None
+_number = to_number
+
+#: Re-exported for callers and tests that reach them through this module.
+__all__ = [
+    "CONTROLLED_TOTAL_LEVELS",
+    "RELIABLE_CV_PERCENT",
+    "Z90",
+    "Line",
+    "PlaceRelease",
+    "Summed",
+    "coefficient_of_variation",
+    "proportion_margin",
+    "releases_from_rows",
+    "ratio_margin",
+    "root_sum_squares",
+    "sum_lines",
+    "variable_of",
+]
 
 
 def _text(value: Optional[Decimal], quantum: str) -> Optional[str]:
@@ -155,125 +183,23 @@ def _count_text(value: Optional[Decimal]) -> Optional[str]:
     return _text(value, "1")
 
 
-def root_sum_squares(margins: Sequence[Optional[Decimal]]) -> Optional[Decimal]:
-    """The Bureau's approximate margin of a sum: sqrt of the summed squares."""
-    if any(margin is None for margin in margins):
-        return None
-    return sum((margin * margin for margin in margins), Decimal(0)).sqrt()
+# ---------------------------------------------------------------------------
+# One place in one release: numbers from the shared arithmetic, as strings
+# ---------------------------------------------------------------------------
 
 
-def ratio_margin(
-    numerator: Decimal,
-    numerator_moe: Decimal,
-    denominator: Decimal,
-    denominator_moe: Decimal,
-) -> Decimal:
-    """The Bureau's margin of ``numerator / denominator`` (unscaled)."""
-    estimate = numerator / denominator
-    margin, _ = derived_margin(
-        estimate, numerator_moe, denominator, denominator_moe, subset=False
+def _share_out(value: ShareValue) -> AgeShare:
+    return AgeShare(
+        count=_count_text(value.count),
+        count_moe=_text(value.count_moe, "0.01"),
+        share=_text(value.share, "0.01"),
+        share_moe=_text(value.share_moe, "0.01"),
+        unavailable_reason=value.reason,  # type: ignore[arg-type]
     )
-    return margin
-
-
-def proportion_margin(
-    part: Decimal, part_moe: Decimal, whole: Decimal, whole_moe: Decimal
-) -> Decimal:
-    """The Bureau's margin of ``part / whole`` for a part inside the whole."""
-    margin, _ = derived_margin(part / whole, part_moe, whole, whole_moe, subset=True)
-    return margin
-
-
-def coefficient_of_variation(
-    count: Optional[Decimal], moe: Optional[Decimal]
-) -> Optional[Decimal]:
-    if count is None or moe is None or count <= 0:
-        return None
-    return moe / Z90 / count * 100
-
-
-# ---------------------------------------------------------------------------
-# One place in one release: lines in, pyramid out (pure)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Line:
-    """One published line: its estimate (``None`` when not usable) and MOE."""
-
-    estimate: Optional[Decimal]
-    moe: Optional[Decimal]
-    suppressed: bool = False
-
-
-@dataclass
-class PlaceRelease:
-    """Every scheme line served for one place in one release."""
-
-    geo_id: str
-    geo_level: str
-    vintage_year: int
-    period_start: Optional[str]
-    period_end: Optional[str]
-    lines: dict[str, Line] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class Summed:
-    count: Optional[Decimal]
-    moe: Optional[Decimal]
-    reason: Optional[str] = None
-
-
-def variable_of(metric_code: str) -> str:
-    """``CENSUS_ACS:acs5:B01001_003`` → ``B01001_003`` (no trailing ``E``)."""
-    variable = metric_code.rsplit(":", 1)[-1]
-    return variable[:-1] if variable.endswith("E") else variable
-
-
-def sum_lines(release: PlaceRelease, codes: Sequence[str]) -> Summed:
-    estimates: list[Decimal] = []
-    margins: list[Optional[Decimal]] = []
-    for code in codes:
-        line = release.lines.get(code)
-        if line is None:
-            return Summed(None, None, "line_missing")
-        if line.suppressed or line.estimate is None:
-            return Summed(None, None, "suppressed_input")
-        estimates.append(line.estimate)
-        margins.append(line.moe)
-    return Summed(sum(estimates, Decimal(0)), root_sum_squares(margins))
-
-
-def _total(scheme: AgeScheme, release: PlaceRelease, key: str) -> Summed:
-    summed = sum_lines(release, [scheme.totals[key]])
-    if (
-        summed.count is not None
-        and summed.moe is None
-        and normalize_geo_level(release.geo_level) in CONTROLLED_TOTAL_LEVELS
-    ):
-        # A controlled total is published without a margin; the Bureau
-        # instructs treating it as zero.
-        return Summed(summed.count, Decimal(0))
-    return summed
 
 
 def share_of(summed: Summed, total: Summed) -> AgeShare:
-    out = AgeShare(
-        count=_count_text(summed.count),
-        count_moe=_text(summed.moe, "0.01"),
-        unavailable_reason=summed.reason,  # type: ignore[arg-type]
-    )
-    if summed.count is None:
-        return out
-    if total.count is None or total.count == 0:
-        out.unavailable_reason = "total_missing"
-        return out
-    out.share = _text(summed.count / total.count * 100, "0.01")
-    if summed.moe is not None and total.moe is not None:
-        margin = proportion_margin(summed.count, summed.moe, total.count, total.moe)
-        out.share_moe = _text(margin * 100, "0.01")
-    return out
+    return _share_out(share_value(summed, total))
 
 
 def _band_side(summed: Summed, total: Summed) -> AgeBandSide:
@@ -286,56 +212,38 @@ def _band_side(summed: Summed, total: Summed) -> AgeBandSide:
     )
 
 
-def _ratio(numerator: Summed, denominator: Summed, scale: int, unit: str) -> AgeRatio:
-    reason = numerator.reason or denominator.reason
-    if reason is not None or numerator.count is None or denominator.count is None:
-        return AgeRatio(unit=unit, unavailable_reason=reason or "suppressed_input")  # type: ignore[arg-type]
-    if denominator.count == 0:
-        return AgeRatio(unit=unit, unavailable_reason="denominator_zero")
-    value = numerator.count / denominator.count * scale
-    if numerator.moe is None or denominator.moe is None:
-        return AgeRatio(value=_text(value, "0.1"), unit=unit, moe_method="unavailable")
-    margin = ratio_margin(
-        numerator.count, numerator.moe, denominator.count, denominator.moe
-    )
+def _ratio_out(value: RatioValue, unit: str) -> AgeRatio:
     return AgeRatio(
-        value=_text(value, "0.1"),
-        moe=_text(margin * scale, "0.1"),
-        moe_method="ratio",
+        value=_text(value.value, "0.1"),
+        moe=_text(value.moe, "0.1"),
+        moe_method=value.moe_method,  # type: ignore[arg-type]
         unit=unit,
+        unavailable_reason=value.reason,  # type: ignore[arg-type]
     )
+
+
+def _ratio(numerator: Summed, denominator: Summed, scale: int, unit: str) -> AgeRatio:
+    return _ratio_out(ratio_value(numerator, denominator, scale), unit)
+
+
+def _total(scheme: AgeScheme, release: PlaceRelease, key: str) -> Summed:
+    return total_of(scheme, release, key)
 
 
 def _group_sum(scheme: AgeScheme, release: PlaceRelease, group_id: str) -> Summed:
-    if group_id in SEXES:
-        return _total(scheme, release, group_id)
-    group = scheme.group(group_id)
-    return sum_lines(release, [*group.men, *group.women])
+    return group_sum(scheme, release, group_id)
 
 
 def indicators_for(scheme: AgeScheme, release: PlaceRelease) -> AgeIndicators:
-    total = _total(scheme, release, "all")
-    groups = {
-        group.group_id: _group_sum(scheme, release, group.group_id)
-        for group in scheme.groups
-    }
-    values: dict[str, Any] = {
-        group_id: share_of(summed, total) for group_id, summed in groups.items()
-    }
-    for indicator in scheme.indicators:
-        parts = [_group_sum(scheme, release, part) for part in indicator.numerator]
-        if any(part.count is None for part in parts):
-            numerator = next(part for part in parts if part.count is None)
+    values = indicator_values(scheme, release)
+    units = {indicator.indicator_id: indicator.unit for indicator in scheme.indicators}
+    out: dict[str, Any] = {}
+    for key, value in values.items():
+        if isinstance(value, ShareValue):
+            out[key] = _share_out(value)
         else:
-            numerator = Summed(
-                sum((part.count for part in parts), Decimal(0)),  # type: ignore[misc]
-                root_sum_squares([part.moe for part in parts]),
-            )
-        denominator = _group_sum(scheme, release, indicator.denominator)
-        values[indicator.indicator_id] = _ratio(
-            numerator, denominator, indicator.scale, indicator.unit
-        )
-    return AgeIndicators(**values)
+            out[key] = _ratio_out(value, units[key])
+    return AgeIndicators(**out)
 
 
 def _median(scheme: AgeScheme, release: PlaceRelease) -> MedianAge:
@@ -410,42 +318,6 @@ def place_structure(
 # ---------------------------------------------------------------------------
 # Rows → releases
 # ---------------------------------------------------------------------------
-
-
-def _iso(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    return value.isoformat() if hasattr(value, "isoformat") else str(value)
-
-
-def releases_from_rows(
-    rows: Sequence[Mapping[str, Any]],
-) -> dict[tuple[str, int], PlaceRelease]:
-    """Group served rows by (place, vintage); each line once."""
-    out: dict[tuple[str, int], PlaceRelease] = {}
-    for row in rows:
-        vintage = int(row["vintage_year"])
-        key = (str(row["geo_id"]), vintage)
-        release = out.get(key)
-        if release is None:
-            start = row.get("duration_start") or row.get("observation_date")
-            release = out[key] = PlaceRelease(
-                geo_id=key[0],
-                geo_level=str(row.get("geo_level") or ""),
-                vintage_year=vintage,
-                period_start=_iso(start),
-                period_end=_iso(row.get("duration_end")),
-            )
-        status = str(row.get("value_status") or "valid")
-        estimate = _number(row.get("estimate_value"))
-        release.lines[variable_of(str(row["metric_code"]))] = Line(
-            estimate=estimate if status == "valid" else None,
-            moe=None
-            if row.get("margin_of_error") is None
-            else abs(_number(row["margin_of_error"]) or Decimal(0)),
-            suppressed=status != "valid" or estimate is None,
-        )
-    return out
 
 
 def _newest(
@@ -930,3 +802,146 @@ def age_cohorts(
     return AgeCohortsResponse(
         **base, comparable=True, items=cohort_items(scheme, earlier, later)
     )
+
+
+# ---------------------------------------------------------------------------
+# One indicator for every place of a grain (the summary table)
+# ---------------------------------------------------------------------------
+
+SUMMARY_RELATION = "gold_census.age_structure_summary"
+#: Grains a map of one indicator is drawn at; cities and tracts one state at
+#: a time, so a read is never every tract in the country. The nation is one
+#: row: the reference a legend draws against.
+MAP_GRAINS = ("NATIONAL", "STATE", "METRO", "COUNTY", "PLACE", "TRACT")
+STATE_SCOPED_GRAINS = frozenset({"PLACE", "TRACT"})
+_SHARE_GROUPS = ("under_18", "age_18_64", "age_65_plus", "age_85_plus")
+_RATIOS = (
+    "child_dependency_ratio",
+    "old_age_dependency_ratio",
+    "total_dependency_ratio",
+    "sex_ratio",
+)
+_MEDIANS = {
+    "median_age": "median_age",
+    "median_age_men": "median_age_men",
+    "median_age_women": "median_age_women",
+}
+
+#: indicator -> (value column, margin column, reason column or None). Column
+#: names come from this table only, never from the request.
+MAP_COLUMNS: dict[str, tuple[str, str, Optional[str]]] = {
+    **{
+        group: (
+            f"{group}_share",
+            f"{group}_share_moe",
+            f"{group}_unavailable_reason",
+        )
+        for group in _SHARE_GROUPS
+    },
+    **{
+        ratio: (ratio, f"{ratio}_moe", f"{ratio}_unavailable_reason")
+        for ratio in _RATIOS
+    },
+    **{name: (column, f"{column}_moe", None) for name, column in _MEDIANS.items()},
+}
+
+NEWEST_SUMMARY_RELEASE_QUERY = text(
+    f"""
+    SELECT MAX(vintage_year) AS vintage_year
+    FROM {SUMMARY_RELATION}
+    WHERE dataset_code = :dataset AND geo_level = :geo_level
+      AND (CAST(:state_fips AS TEXT) IS NULL OR state_fips = :state_fips)
+    """
+)
+
+
+def _map_query(indicator: str):
+    value, moe, reason = MAP_COLUMNS[indicator]
+    reason_sql = reason or "NULL::TEXT"
+    return text(
+        f"""
+        SELECT geo_id, period_start, period_end,
+               {value} AS value, {moe} AS moe, {reason_sql} AS unavailable_reason
+        FROM {SUMMARY_RELATION}
+        WHERE dataset_code = :dataset AND vintage_year = :vintage_year
+          AND geo_level = :geo_level
+          AND (CAST(:state_fips AS TEXT) IS NULL OR state_fips = :state_fips)
+        ORDER BY geo_id
+        """
+    )
+
+
+def _indicator_label(scheme: AgeScheme, indicator: str) -> tuple[str, str]:
+    for group in scheme.groups:
+        if group.group_id == indicator:
+            return f"{group.label} (share of everyone)", "percent"
+    for item in scheme.indicators:
+        if item.indicator_id == indicator:
+            return item.label, item.unit
+    words = {"median_age": "Median age", "median_age_men": "Median age, men"}
+    return words.get(indicator, "Median age, women"), "years"
+
+
+def age_structure_map(
+    db: Session,
+    indicator: str,
+    geo_level: str,
+    state_fips: Optional[str],
+    dataset: str,
+    release: Optional[str],
+) -> AgeMapResponse:
+    scheme = default_scheme()
+    dataset = _check_dataset(scheme, dataset)
+    if indicator not in MAP_COLUMNS:
+        raise AgeStructureRequestError(
+            f"indicator must be one of {', '.join(MAP_COLUMNS)}"
+        )
+    level = normalize_geo_level(geo_level)
+    if level not in MAP_GRAINS:
+        raise AgeStructureRequestError(
+            f"geo_level must be one of {', '.join(MAP_GRAINS)}"
+        )
+    if state_fips is not None and not (len(state_fips) == 2 and state_fips.isdigit()):
+        raise AgeStructureRequestError("state_fips must be two digits")
+    if level in STATE_SCOPED_GRAINS and state_fips is None:
+        raise AgeStructureRequestError(
+            f"a {level.lower()} map is drawn one state at a time: send state_fips"
+        )
+    require_relation(db, SUMMARY_RELATION)
+    scope = {"dataset": dataset, "geo_level": level, "state_fips": state_fips}
+    vintage = parse_release(release)
+    if vintage is None:
+        newest = db.execute(NEWEST_SUMMARY_RELEASE_QUERY, scope).scalar()
+        vintage = None if newest is None else int(newest)
+    label, unit = _indicator_label(scheme, indicator)
+    out = AgeMapResponse(
+        indicator=indicator,
+        label=label,
+        unit=unit,
+        dataset=dataset,
+        geo_level=level,
+        state_fips=state_fips,
+        release=None if vintage is None else str(vintage),
+        scheme=_scheme_out(scheme),
+    )
+    if vintage is None:
+        return out
+    rows = (
+        db.execute(_map_query(indicator), {**scope, "vintage_year": vintage})
+        .mappings()
+        .all()
+    )
+    quantum = "0.01" if unit == "percent" else "0.1"
+    for row in rows:
+        out.period_start = out.period_start or iso_text(row.get("period_start"))
+        out.period_end = out.period_end or iso_text(row.get("period_end"))
+        out.items.append(
+            AgeMapItem(
+                geo_id=str(row["geo_id"]),
+                value=_text(_number(row.get("value")), quantum),
+                moe=_text(_number(row.get("moe")), quantum),
+                unavailable_reason=row.get("unavailable_reason"),
+            )
+        )
+    out.total = len(out.items)
+    return out

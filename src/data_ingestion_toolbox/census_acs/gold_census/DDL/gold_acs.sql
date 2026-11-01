@@ -1007,10 +1007,11 @@ $$;
 -- published has no value (`incomplete`), never a partial sum. The published
 -- series in `rpt_acs_observations` is untouched.
 CREATE OR REPLACE VIEW gold_census.acs_tract_comparable AS
-WITH tract AS (
-    SELECT geo_sk, geo_id FROM silver_ref.dim_geo_entity WHERE geo_type = 'tract'
-),
-to_2020 AS (
+-- The tract identities are joined in each branch rather than read from one
+-- shared CTE: a CTE named more than once is materialised over every tract in
+-- the country, and a read of one tract (`WHERE geo_id = ...`, the tract page)
+-- then could not reach the dimension's `geo_id` index or the crosswalk's.
+WITH to_2020 AS (
     SELECT 2010 AS source_decade,
            earlier.geo_id AS source_geo_id,
            later.geo_id AS geo_id,
@@ -1018,9 +1019,13 @@ to_2020 AS (
            (step.earlier_geo_sk = step.later_geo_sk
             AND step.earlier_land_share = 1 AND step.later_land_share = 1) AS unchanged
     FROM silver_ref.tract_decade_crosswalk AS step
-    JOIN tract AS earlier ON earlier.geo_sk = step.earlier_geo_sk
-    JOIN tract AS later ON later.geo_sk = step.later_geo_sk
-    WHERE step.earlier_vintage = 2010
+    JOIN silver_ref.dim_geo_entity AS earlier
+      ON earlier.geo_sk = step.earlier_geo_sk AND earlier.geo_type = 'tract'
+    JOIN silver_ref.dim_geo_entity AS later
+      ON later.geo_sk = step.later_geo_sk AND later.geo_type = 'tract'
+    -- `later_vintage` is implied by the decade (a CHECK holds it to +10);
+    -- naming it lets a read of one tract use the crosswalk's later index.
+    WHERE step.earlier_vintage = 2010 AND step.later_vintage = 2020
     UNION ALL
     SELECT 2000,
            earlier.geo_id,
@@ -1032,10 +1037,13 @@ to_2020 AS (
     FROM silver_ref.tract_decade_crosswalk AS first_step
     JOIN silver_ref.tract_decade_crosswalk AS second_step
       ON second_step.earlier_vintage = 2010
+     AND second_step.later_vintage = 2020
      AND second_step.earlier_geo_sk = first_step.later_geo_sk
-    JOIN tract AS earlier ON earlier.geo_sk = first_step.earlier_geo_sk
-    JOIN tract AS later ON later.geo_sk = second_step.later_geo_sk
-    WHERE first_step.earlier_vintage = 2000
+    JOIN silver_ref.dim_geo_entity AS earlier
+      ON earlier.geo_sk = first_step.earlier_geo_sk AND earlier.geo_type = 'tract'
+    JOIN silver_ref.dim_geo_entity AS later
+      ON later.geo_sk = second_step.later_geo_sk AND later.geo_type = 'tract'
+    WHERE first_step.earlier_vintage = 2000 AND first_step.later_vintage = 2010
 ),
 source AS (
     SELECT published.*,
@@ -1088,4 +1096,128 @@ GROUP BY weight.geo_id, source.observation_date, source.dataset_code,
 
 COMMENT ON VIEW gold_census.acs_tract_comparable IS
     'DERIVED: earlier-decade ACS and Census 2000 tract counts apportioned to 2020 Census tracts by the Bureau''s relationship files. Never a published value; medians, per-capita figures and margins of error are not apportioned.';
+
+
+-- ---------------------------------------------------------------------------
+-- Age and sex structure summary (ADR-0013, api-age-and-sex-structure part 2)
+-- ---------------------------------------------------------------------------
+-- One row per place and ACS release: the broad age groups as shares of the
+-- place's total, the Bureau-definition dependency ratios and the sex ratio,
+-- each with its margin and the reason it is absent, and the provider's own
+-- median ages. DERIVED: computed from the B01001/B01002 lines in
+-- rpt_acs_observations by `age_summary.build_age_structure_summary`, with the
+-- same arithmetic `/age-structure` serves (semantics/age_structure.py), so a
+-- mapped ratio is the number the place page prints. It exists so a map of one
+-- indicator reads one row per place instead of 52 lines per place.
+--
+-- Not partitioned: about two million rows (tracts x sixteen 5-year releases
+-- dominate). A release is rebuilt whole, in one transaction, after the ACS
+-- serving refresh has written its year.
+CREATE TABLE IF NOT EXISTS gold_census.age_structure_summary (
+    geo_id                                 TEXT    NOT NULL,
+    geo_level                              TEXT    NOT NULL,
+    state_fips                             TEXT,
+    dataset_code                           TEXT    NOT NULL
+        CONSTRAINT age_structure_summary_dataset_code_check
+        CHECK (dataset_code IN ('acs1', 'acs5')),
+    vintage_year                           INTEGER NOT NULL,
+    observation_date                       DATE    NOT NULL,
+    period_start                           DATE,
+    period_end                             DATE,
+    scheme_id                              TEXT    NOT NULL,
+    scheme_version                         INTEGER NOT NULL,
+    total_count                            NUMERIC,
+    total_moe                              NUMERIC,
+    men_count                              NUMERIC,
+    men_moe                                NUMERIC,
+    women_count                            NUMERIC,
+    women_moe                              NUMERIC,
+    under_18_count                         NUMERIC,
+    under_18_moe                           NUMERIC,
+    under_18_share                         NUMERIC,
+    under_18_share_moe                     NUMERIC,
+    under_18_unavailable_reason            TEXT,
+    age_18_64_count                        NUMERIC,
+    age_18_64_moe                          NUMERIC,
+    age_18_64_share                        NUMERIC,
+    age_18_64_share_moe                    NUMERIC,
+    age_18_64_unavailable_reason           TEXT,
+    age_65_plus_count                      NUMERIC,
+    age_65_plus_moe                        NUMERIC,
+    age_65_plus_share                      NUMERIC,
+    age_65_plus_share_moe                  NUMERIC,
+    age_65_plus_unavailable_reason         TEXT,
+    age_85_plus_count                      NUMERIC,
+    age_85_plus_moe                        NUMERIC,
+    age_85_plus_share                      NUMERIC,
+    age_85_plus_share_moe                  NUMERIC,
+    age_85_plus_unavailable_reason         TEXT,
+    child_dependency_ratio                 NUMERIC,
+    child_dependency_ratio_moe             NUMERIC,
+    child_dependency_ratio_unavailable_reason TEXT,
+    old_age_dependency_ratio               NUMERIC,
+    old_age_dependency_ratio_moe           NUMERIC,
+    old_age_dependency_ratio_unavailable_reason TEXT,
+    total_dependency_ratio                 NUMERIC,
+    total_dependency_ratio_moe             NUMERIC,
+    total_dependency_ratio_unavailable_reason TEXT,
+    sex_ratio                              NUMERIC,
+    sex_ratio_moe                          NUMERIC,
+    sex_ratio_unavailable_reason           TEXT,
+    median_age                             NUMERIC,
+    median_age_moe                         NUMERIC,
+    median_age_men                         NUMERIC,
+    median_age_men_moe                     NUMERIC,
+    median_age_women                       NUMERIC,
+    median_age_women_moe                   NUMERIC,
+    built_at                               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE gold_census.age_structure_summary IS
+    'DERIVED (ADR-0013): broad age groups, dependency ratios and sex ratio per place and ACS release, computed from B01001/B01002 with Census Bureau margins. Medians are the provider''s own.';
+
+-- One place's releases: led by geo_id.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_age_structure_summary_key
+    ON gold_census.age_structure_summary (geo_id, dataset_code, vintage_year, observation_date);
+
+-- One indicator map: a grain nationally (first three columns) or in one state
+-- (all four). The rebuild's delete of one release uses the first two.
+CREATE INDEX IF NOT EXISTS ix_age_structure_summary_release_level_state
+    ON gold_census.age_structure_summary (dataset_code, vintage_year, geo_level, state_fips);
+
+-- Which releases the summary was last built from, and from what: a release is
+-- rebuilt when its year partition of rpt_acs_observations has changed since.
+CREATE TABLE IF NOT EXISTS gold_census.age_structure_summary_build (
+    dataset_code      TEXT        NOT NULL,
+    vintage_year      INTEGER     NOT NULL,
+    scheme_id         TEXT        NOT NULL,
+    scheme_version    INTEGER     NOT NULL,
+    source_watermark  TIMESTAMPTZ NOT NULL,
+    row_count         INTEGER     NOT NULL,
+    built_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (dataset_code, vintage_year)
+);
+
+-- How each 2020 tract relates to the tracts of the decade before it, as the
+-- Bureau's relationship files record it: one row per (earlier tract, later
+-- tract) part with both sides' land shares. The tract page reads it for one
+-- tract to say whether its code named the same area before 2020 (served
+-- under `api_reader`, which reads gold only). A plain join, so a filter on
+-- `later_geo_id` or `earlier_geo_id` reaches the dimension's `geo_id` index
+-- and the crosswalk's keys.
+CREATE OR REPLACE VIEW gold_census.tract_decade_change AS
+SELECT step.earlier_vintage,
+       step.later_vintage,
+       earlier.geo_id AS earlier_geo_id,
+       later.geo_id AS later_geo_id,
+       step.earlier_land_share,
+       step.later_land_share,
+       step.earlier_population_share,
+       step.land_area_part_m2
+FROM silver_ref.tract_decade_crosswalk AS step
+JOIN silver_ref.dim_geo_entity AS earlier ON earlier.geo_sk = step.earlier_geo_sk
+JOIN silver_ref.dim_geo_entity AS later ON later.geo_sk = step.later_geo_sk;
+
+COMMENT ON VIEW gold_census.tract_decade_change IS
+    'Census tract relationship-file parts between consecutive decades, by tract geo_id, with each side''s land share. Reference, not an estimate.';
 

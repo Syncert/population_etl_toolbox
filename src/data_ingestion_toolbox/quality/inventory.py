@@ -955,6 +955,39 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty until the tract crosswalk is loaded",
     ),
     _obj(
+        "gold_census.age_structure_summary",
+        "serving",
+        "CENSUS_ACS",
+        grain="geo_id, dataset_code, vintage_year, observation_date (unique index)",
+        lineage="gold_census.rpt_acs_observations",
+        scope_method=(
+            "derived (ADR-0013): broad age groups, dependency ratios and sex "
+            "ratio per place and release from B01001/B01002, Bureau margins"
+        ),
+        cadence="per publication, a release at a time after the serving refresh",
+        empty_behavior="empty until the first age summary build",
+    ),
+    _obj(
+        "gold_census.age_structure_summary_build",
+        "control",
+        "CENSUS_ACS",
+        grain="dataset_code, vintage_year (primary key)",
+        lineage="gold_census.rpt_acs_observations",
+        scope_method="the partition watermark each release's summary was built from",
+        cadence="per age summary build",
+        empty_behavior="empty until the first age summary build",
+    ),
+    _obj(
+        "gold_census.tract_decade_change",
+        "serving",
+        "CENSUS_ACS",
+        grain="earlier_vintage, earlier_geo_id, later_geo_id",
+        lineage="silver_ref.tract_decade_crosswalk, silver_ref.dim_geo_entity",
+        scope_method="reference: relationship-file parts by tract geo_id",
+        cadence="a view, current with the tract crosswalk",
+        empty_behavior="empty until the tract crosswalk is loaded",
+    ),
+    _obj(
         "gold_census.fact_observation",
         "serving",
         "CENSUS_ACS",
@@ -4263,6 +4296,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
             "gold_census.acs_tract_comparable",
+            "gold_census.age_structure_summary",
+            "gold_census.tract_decade_change",
         ),
         automation="enforced",
         automation_note=(
@@ -4274,7 +4309,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "against the warehouse. `fact_acs_observation` carries no index "
             "because it is a view over the silver fact; `acs_tract_comparable` "
             "is a view grouped by its own grain, so it holds one row per 2020 "
-            "tract, release and variable by construction."
+            "tract, release and variable by construction; `tract_decade_change` "
+            "is a join of the crosswalk to the geography dimension on unique "
+            "keys, so it holds the crosswalk's primary key, one row per part; "
+            "the age structure summary's unique index holds one row per place "
+            "and release."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -4301,6 +4340,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
                     "variable_code",
                     "metric_code",
                 ),
+            ),
+            EnforcedGrain(
+                "gold_census.age_structure_summary",
+                ("geo_id", "dataset_code", "vintage_year", "observation_date"),
             ),
         ),
     ),
@@ -4409,7 +4452,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="automated",
         automation_note=(
-            "`quality.sources.acs_contract_conformance` reads the conformance direction, which is the one that cannot lag: every group of served rows must trace to published facts with the same count and the same values. Grouped by `(metric_code, vintage)` rather than compared row by row, because the row-level form is a join between two hundred-million-row relations -- the first attempt at this rule was exactly that, passed on the fixture warehouse, and timed out after fifty minutes against 99,783,997 real rows. Two grouped scans answer the same question in 815 seconds: a row the warehouse does not hold changes its group's count, an altered value changes its digest -- taken over a rendering that distinguishes NULL from every number, so a withheld value is compared as a withheld value -- and a wrongly derived metric code produces a served group with no published counterpart. What is given up is the identity of the offending row; evidence names the group. Completeness is deliberately not measured: the serving layer is rebuilt a year at a time with a commit per chunk, so a fact published since the last refresh is legitimately absent and DQ-ACS-002 measures that ledger. A group whose silver rows moved after the last refresh is exempt for the same reason."
+            "`quality.sources.acs_contract_conformance` reads the conformance direction, which is the one that cannot lag: every group of served rows must trace to published facts with the same count and the same values. Grouped by `(metric_code, vintage)` rather than compared row by row, because the row-level form is a join between two hundred-million-row relations -- the first attempt at this rule was exactly that, passed on the fixture warehouse, and timed out after fifty minutes against 99,783,997 real rows. Two grouped scans answer the same question in 815 seconds: a row the warehouse does not hold changes its group's count, an altered value changes its digest -- taken over a rendering that distinguishes NULL from every number, so a withheld value is compared as a withheld value -- and a wrongly derived metric code produces a served group with no published counterpart. What is given up is the identity of the offending row; evidence names the group. Completeness is deliberately not measured: the serving layer is rebuilt a year at a time with a commit per chunk, so a fact published since the last refresh is legitimately absent and DQ-ACS-002 measures that ledger. A group whose silver rows moved after the last refresh is exempt for the same reason. Measured one served release partition at a time since the history loads made the served relation 1.19 billion rows: each outcome names its partition and carries that partition's fingerprint (newest `updated_at`, file node, write counters) as its watermark, a scheduled run re-measures only partitions whose fingerprint moved since their last pass, and the monthly sweep and release certification re-measure all of them."
         ),
     ),
     _rule(

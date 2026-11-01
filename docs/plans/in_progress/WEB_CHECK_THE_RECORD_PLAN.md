@@ -20,7 +20,7 @@ verify:
 
 In progress, 2026-11-01: built and tested against fixtures (D-9 of the v1.0
 build-out, branch `claude/project-thread-l8lizs`). Waiting for the live check
-on the office warehouse after merge. Catalog row: WEB-155. No API change and
+on the office warehouse after merge. Catalog row: WEB-156. No API change and
 no DDL.
 
 ## Why

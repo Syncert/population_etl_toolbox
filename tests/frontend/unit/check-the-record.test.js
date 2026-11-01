@@ -22,7 +22,7 @@ import {
   unemploymentAnswer,
 } from "../../../apps/web/lib/checkTheRecord";
 
-// Covers: WEB-155 — check-the-record: the four questions are fixed templates
+// Covers: WEB-156 — check-the-record: the four questions are fixed templates
 // over published numbers (ADR-0011): only the allowed verbs, none of the
 // forbidden words, a survey change named a rise or fall only when its 90
 // percent intervals do not overlap, crime with who reported in each month and

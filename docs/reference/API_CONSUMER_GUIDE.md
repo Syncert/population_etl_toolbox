@@ -1982,6 +1982,49 @@ five years apart (`period_gap_not_five_years`), a tract was redrawn between
 them (`boundary_changed`), or a release is missing (`not_published`). The
 `caveat` says what such a change mixes; the API draws no conclusion from it.
 
+`GET /api/v1/age-structure/map?indicator=…&geo_level=NATIONAL|STATE|METRO|COUNTY|PLACE|TRACT[&state_fips=NN][&release=YYYY][&dataset=acs5|acs1]`
+maps one age indicator, never a single age line: `under_18`, `age_18_64`,
+`age_65_plus` and `age_85_plus` (percent of everyone),
+`child_dependency_ratio`, `old_age_dependency_ratio` and
+`total_dependency_ratio` (per 100 people aged 18 to 64), `sex_ratio` (men per
+100 women), or `median_age`, `median_age_men` and `median_age_women` (the
+Bureau's own). Values come from a derived summary table built with the same
+arithmetic as the place block above, so a mapped value is the one the place
+page prints; `derived` is true. Cities and tracts are drawn one state at a
+time, so `state_fips` is required for `PLACE` and `TRACT`. Without `release`
+the grain's newest summary release is used. Each item is `geo_id`, `value`,
+`moe`, and `unavailable_reason` when the value is withheld (null, never
+zero).
+
+### One tract across the 2020 redraw
+
+`GET /api/v1/place/tract-history?geo_id=<tract>&metric_codes=<code>,…`
+answers, for one Census tract (up to 24 ACS 5-year `CENSUS_ACS:acs5:` codes),
+whether its code named the same area before the 2020 redraw and each
+measure's history on its 2020 boundary, in one request. `boundary.status`
+is read from the Bureau's relationship files (`gold_census.tract_decade_change`):
+`unchanged` (one 2010 tract, the same code, at least 99 % of both tracts'
+land), `split` (all of this tract was part of one larger 2010 tract;
+`also_became` names the other 2020 tracts it became), `merged` (several whole
+2010 tracts), `redrawn` (parts of several) or `not_recorded`. Parts under 1 %
+of this tract's land are boundary adjustments, counted in `slivers_ignored`.
+`boundary.sentence` says the same in words.
+
+Each series item has a `status`: `published` (the ACS estimate on this
+2020 boundary, with its margin of error), `unchanged` (published before 2020
+on the same area), `apportioned` (**derived**: earlier tracts' published
+counts split by the relationship files -- share of land area from 2010, share
+of 2010 population from 2000 -- and summed, from
+`gold_census.acs_tract_comparable`, rounded to a whole count, with
+`weight_basis` and `source_geo_ids` and no margin of error; the earliest is
+the 2009 release, since Census 2000 tract counts are not carried) or `incomplete` (a contributing estimate was not
+published, so no value). `derived` is true for the last two. A median or rate
+is never apportioned: on a redrawn tract its series starts in 2020 and `note`
+says why. A geography that is not a tract, a non-ACS-5-year code or more than
+24 codes is `422`; an unknown `geo_id` is `404`. A tract's web page is
+`/us/<state>/<county>/tract-<number>` (`tract-18-05` for tract 18.05), and
+`/catalog/geographies/locate` answers it as the tract's `page_path`.
+
 ## Signing in, and your account
 
 Self-service accounts — see [ADR-0005](../decisions/0005-self-service-accounts.md).

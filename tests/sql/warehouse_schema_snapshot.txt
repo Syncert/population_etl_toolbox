@@ -3059,21 +3059,16 @@ v gold_census.acs_tract_comparable
     column source_geo_ids text[]
     column target_tract_vintage integer
     column derivation text
-    body WITH tract AS (
-    body          SELECT dim_geo_entity.geo_sk,
-    body             dim_geo_entity.geo_id
-    body            FROM silver_ref.dim_geo_entity
-    body           WHERE dim_geo_entity.geo_type = 'tract'::text
-    body         ), to_2020 AS (
+    body WITH to_2020 AS (
     body          SELECT 2010 AS source_decade,
     body             earlier.geo_id AS source_geo_id,
     body             later.geo_id,
     body             step.earlier_land_share AS weight,
     body             step.earlier_geo_sk = step.later_geo_sk AND step.earlier_land_share = 1::numeric AND step.later_land_share = 1::numeric AS unchanged
     body            FROM silver_ref.tract_decade_crosswalk step
-    body              JOIN tract earlier ON earlier.geo_sk = step.earlier_geo_sk
-    body              JOIN tract later ON later.geo_sk = step.later_geo_sk
-    body           WHERE step.earlier_vintage = 2010
+    body              JOIN silver_ref.dim_geo_entity earlier ON earlier.geo_sk = step.earlier_geo_sk AND earlier.geo_type = 'tract'::text
+    body              JOIN silver_ref.dim_geo_entity later ON later.geo_sk = step.later_geo_sk AND later.geo_type = 'tract'::text
+    body           WHERE step.earlier_vintage = 2010 AND step.later_vintage = 2020
     body         UNION ALL
     body          SELECT 2000,
     body             earlier.geo_id,
@@ -3081,10 +3076,10 @@ v gold_census.acs_tract_comparable
     body             first_step.earlier_population_share * second_step.earlier_land_share,
     body             first_step.earlier_geo_sk = second_step.later_geo_sk AND first_step.earlier_land_share = 1::numeric AND first_step.later_land_share = 1::numeric AND second_step.earlier_land_share = 1::numeric AND second_step.later_land_share = 1::numeric
     body            FROM silver_ref.tract_decade_crosswalk first_step
-    body              JOIN silver_ref.tract_decade_crosswalk second_step ON second_step.earlier_vintage = 2010 AND second_step.earlier_geo_sk = first_step.later_geo_sk
-    body              JOIN tract earlier ON earlier.geo_sk = first_step.earlier_geo_sk
-    body              JOIN tract later ON later.geo_sk = second_step.later_geo_sk
-    body           WHERE first_step.earlier_vintage = 2000
+    body              JOIN silver_ref.tract_decade_crosswalk second_step ON second_step.earlier_vintage = 2010 AND second_step.later_vintage = 2020 AND second_step.earlier_geo_sk = first_step.later_geo_sk
+    body              JOIN silver_ref.dim_geo_entity earlier ON earlier.geo_sk = first_step.earlier_geo_sk AND earlier.geo_type = 'tract'::text
+    body              JOIN silver_ref.dim_geo_entity later ON later.geo_sk = second_step.later_geo_sk AND later.geo_type = 'tract'::text
+    body           WHERE first_step.earlier_vintage = 2000 AND first_step.later_vintage = 2010
     body         ), source AS (
     body          SELECT published.source_code,
     body             published.observation_date,
@@ -3163,6 +3158,77 @@ v gold_census.acs_tract_comparable
     body      JOIN to_2020 weight ON weight.source_geo_id = source.geo_id AND weight.source_decade = source.source_decade
     body   WHERE weight.weight IS NULL OR weight.weight > 0::numeric
     body   GROUP BY weight.geo_id, source.observation_date, source.dataset_code, source.vintage_year, source.table_id, source.variable_code, source.metric_code, source.variable_label, source.units;
+
+r gold_census.age_structure_summary
+    column geo_id text NOT NULL
+    column geo_level text NOT NULL
+    column state_fips text
+    column dataset_code text NOT NULL
+    column vintage_year integer NOT NULL
+    column observation_date date NOT NULL
+    column period_start date
+    column period_end date
+    column scheme_id text NOT NULL
+    column scheme_version integer NOT NULL
+    column total_count numeric
+    column total_moe numeric
+    column men_count numeric
+    column men_moe numeric
+    column women_count numeric
+    column women_moe numeric
+    column under_18_count numeric
+    column under_18_moe numeric
+    column under_18_share numeric
+    column under_18_share_moe numeric
+    column under_18_unavailable_reason text
+    column age_18_64_count numeric
+    column age_18_64_moe numeric
+    column age_18_64_share numeric
+    column age_18_64_share_moe numeric
+    column age_18_64_unavailable_reason text
+    column age_65_plus_count numeric
+    column age_65_plus_moe numeric
+    column age_65_plus_share numeric
+    column age_65_plus_share_moe numeric
+    column age_65_plus_unavailable_reason text
+    column age_85_plus_count numeric
+    column age_85_plus_moe numeric
+    column age_85_plus_share numeric
+    column age_85_plus_share_moe numeric
+    column age_85_plus_unavailable_reason text
+    column child_dependency_ratio numeric
+    column child_dependency_ratio_moe numeric
+    column child_dependency_ratio_unavailable_reason text
+    column old_age_dependency_ratio numeric
+    column old_age_dependency_ratio_moe numeric
+    column old_age_dependency_ratio_unavailable_reason text
+    column total_dependency_ratio numeric
+    column total_dependency_ratio_moe numeric
+    column total_dependency_ratio_unavailable_reason text
+    column sex_ratio numeric
+    column sex_ratio_moe numeric
+    column sex_ratio_unavailable_reason text
+    column median_age numeric
+    column median_age_moe numeric
+    column median_age_men numeric
+    column median_age_men_moe numeric
+    column median_age_women numeric
+    column median_age_women_moe numeric
+    column built_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint age_structure_summary_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    index ix_age_structure_summary_release_level_state CREATE INDEX ix_age_structure_summary_release_level_state ON gold_census.age_structure_summary USING btree (dataset_code, vintage_year, geo_level, state_fips)
+    index uq_age_structure_summary_key CREATE UNIQUE INDEX uq_age_structure_summary_key ON gold_census.age_structure_summary USING btree (geo_id, dataset_code, vintage_year, observation_date)
+
+r gold_census.age_structure_summary_build
+    column dataset_code text NOT NULL
+    column vintage_year integer NOT NULL
+    column scheme_id text NOT NULL
+    column scheme_version integer NOT NULL
+    column source_watermark timestamp with time zone NOT NULL
+    column row_count integer NOT NULL
+    column built_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint age_structure_summary_build_pkey PRIMARY KEY (dataset_code, vintage_year)
+    index age_structure_summary_build_pkey CREATE UNIQUE INDEX age_structure_summary_build_pkey ON gold_census.age_structure_summary_build USING btree (dataset_code, vintage_year)
 
 r gold_census.dim_acs_table
     column acs_table_sk bigint NOT NULL DEFAULT nextval('gold_census.dim_acs_table_acs_table_sk_seq'::regclass)
@@ -3510,6 +3576,27 @@ END), vintage_year DESC)
     partition rpt_acs_observations_2034 FOR VALUES FROM ('2034-01-01') TO ('2035-01-01')
     partition rpt_acs_observations_2035 FOR VALUES FROM ('2035-01-01') TO ('2036-01-01')
     partition rpt_acs_observations_unranged DEFAULT
+
+v gold_census.tract_decade_change
+    column earlier_vintage integer
+    column later_vintage integer
+    column earlier_geo_id text
+    column later_geo_id text
+    column earlier_land_share numeric
+    column later_land_share numeric
+    column earlier_population_share numeric
+    column land_area_part_m2 numeric
+    body SELECT step.earlier_vintage,
+    body     step.later_vintage,
+    body     earlier.geo_id AS earlier_geo_id,
+    body     later.geo_id AS later_geo_id,
+    body     step.earlier_land_share,
+    body     step.later_land_share,
+    body     step.earlier_population_share,
+    body     step.land_area_part_m2
+    body    FROM silver_ref.tract_decade_crosswalk step
+    body      JOIN silver_ref.dim_geo_entity earlier ON earlier.geo_sk = step.earlier_geo_sk
+    body      JOIN silver_ref.dim_geo_entity later ON later.geo_sk = step.later_geo_sk;
 
 v gold_census.v_metric_latest_by_geo
     column source_code text

@@ -355,13 +355,17 @@ describe("cities and towns", () => {
 describe("within this county", () => {
   it("offers only the tract tables and states the uncoloured count", async () => {
     const { TRACT_MEASURES, uncolouredSentence } = await import("../../../apps/web/components/WithinCounty.tsx");
-    expect(TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0])).toEqual([
-      "B19013",
-      "B01003",
-      "B17001",
-      "B25064",
-      "B25077",
-    ]);
+    const tables = TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0]);
+    expect(tables.slice(0, 5)).toEqual(["B19013", "B01003", "B17001", "B25064", "B25077"]);
+    // Covers: WEB-155 — the richer view offers every tract-page measure, each
+    // from a table `AcsConfig.tract_tables` loads, once.
+    const tractTables = [
+      "B01003", "B19013", "B17001", "B25064", "B25077", "B01001", "B01002", "B11001", "B02001", "B03002", "B15003",
+      "B23025", "B08301", "B08303", "B25003", "B25070", "B25091", "B25002", "B27010", "B28002", "B19301", "B25001",
+    ];
+    expect(tables.length).toBeGreaterThan(5);
+    expect(tables.every((table) => tractTables.includes(table))).toBe(true);
+    expect(new Set(TRACT_MEASURES.map((entry) => entry.code)).size).toBe(TRACT_MEASURES.length);
     expect(uncolouredSentence(3, 2)).toBe("1 of 3 tracts have no published value and are left uncoloured, not shown as zero.");
     expect(uncolouredSentence(4, 4)).toBe("All 4 tracts have a published value.");
   });
