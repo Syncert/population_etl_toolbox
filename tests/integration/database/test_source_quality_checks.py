@@ -1197,6 +1197,49 @@ def test_a_served_metric_the_publisher_does_not_export_fails(
     postgres_connection.rollback()
 
 
+class _PlanRecordingCursor:
+    """Records the plan of the superseded statement under the rule's settings."""
+
+    def __init__(self, cursor) -> None:
+        self._cursor = cursor
+        self.plans: list[str] = []
+
+    def execute(self, sql: str, params=()) -> None:
+        statement = str(sql)
+        if "FROM gold_census.mv_acs_latest AS latest" in statement:
+            self._cursor.execute(f"EXPLAIN {statement}", params)
+            self.plans.append("\n".join(row[0] for row in self._cursor.fetchall()))
+        self._cursor.execute(statement, params)
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+def test_the_superseded_arm_never_plans_one_probe_per_latest_row(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — the 2024 latest slice is ~105M rows; a nested loop is 41 minutes.
+
+    The statement runs with nested loops refused, so the planner reads each
+    side once (hash or merge anti join), and the setting is the caller's
+    again afterwards -- the rule shares the run's transaction with every
+    other rule.
+    """
+    with postgres_connection.cursor() as cursor:
+        _seed_served_acs_fact(postgres_connection_factory, cursor)
+        cursor.execute("SET LOCAL enable_nestloop = on")
+        recorder = _PlanRecordingCursor(cursor)
+        acs_contract_conformance(recorder, {})
+        assert recorder.plans
+        for plan in recorder.plans:
+            assert "Nested Loop" not in plan, plan
+            assert "Anti Join" in plan, plan
+        cursor.execute("SELECT current_setting('enable_nestloop')")
+        assert cursor.fetchone()[0] == "on"
+    postgres_connection.rollback()
+
+
 # ---------------------------------------------------------------------------
 # DQ-FRED-003 / DQ-FRED-004 — a missing value is not a zero, and a date the
 # provider actually published

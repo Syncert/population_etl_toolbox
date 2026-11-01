@@ -3290,10 +3290,27 @@ def _acs_measure_partition(
         )
 
     # Superseded: each latest row of these vintages is carried, unaltered, by
-    # this partition. Probing the partition by name rather than the parent is
-    # what keeps it to one partition's index; the 41-minute form probed the
-    # parent once per latest row across every vintage.
+    # this partition. Probing the partition by name keeps the read to one
+    # partition, but that alone does not change the join's shape: about 105M
+    # of mv_acs_latest's 117M rows are vintage 2024, and OFFICE_LAB's EXPLAIN
+    # of 2024 (2026-11-01) still planned a Nested Loop Anti Join, one index
+    # probe into the partition per latest row, which is the 41-minute shape.
+    # Nested loops are therefore refused for this one statement, which leaves
+    # the planner a hash anti join or a merge anti join on
+    # (metric_code, geo_id), both of which read each side once. The setting
+    # is transaction-local and restored straight after; if the statement
+    # fails, the runner's savepoint rollback reverts it.
+    #
+    # A count-and-digest comparison of the latest slice against the partition
+    # was considered and not used: the latest slice is a *subset* of the
+    # partition (a key whose newer release exists is served from that one),
+    # so equal digests are not what conformance means and unequal ones are
+    # normal; telling them apart needs exactly this join.
     if "gold_census.v_metric_latest_by_geo" in arms:
+        cursor.execute("SELECT current_setting('enable_nestloop')")
+        previous_nestloop = cursor.fetchone()[0]
+        cursor.execute("SELECT set_config('enable_nestloop', 'off', true)")
+        cursor.fetchone()
         measured["gold_census.v_metric_latest_by_geo"] = _offenders(
             cursor,
             f"""
@@ -3314,6 +3331,10 @@ def _acs_measure_partition(
             order_by="1, 2",
             params=(list(ACS_SERVED_DATASETS), *years_params),
         )
+        cursor.execute(
+            "SELECT set_config('enable_nestloop', %s, true)", (previous_nestloop,)
+        )
+        cursor.fetchone()
 
     # Unpublished: every served metric code is one the publisher exports. The
     # served codes are read by a loose index scan -- one descent of an index
