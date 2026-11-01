@@ -21,9 +21,34 @@ verify:
 
 ## Status
 
-In progress, 2026-11-01: built and tested against fixtures (D-3 of the v1.0
-build-out, branch `claude/project-thread-uefxof`). Waiting for the live check
-on the office warehouse after merge. Catalog rows: API-189, WEB-154.
+Needs review, 2026-11-01: merged in #241; the county-wait fix is in #253 (D-3 of the v1.0 build-out). Catalog
+rows: API-189, WEB-154.
+
+Live check on OFFICE_LAB (dev 42add77), 2026-11-01:
+
+- Austin's chapters read their trends through `/observations/history/batch`.
+  There were no single `newest_release_per_period` reads. A batch of 3 codes
+  × 4 places took 94 ms cold and 3 ms warm.
+- All 16 acs5 vintages of Austin's B19013 (2005–2009 to 2020–2024) are
+  served. A first count of 10 was a miscount of the response's keys.
+- Fixed in a follow-up PR: the first batch for each chapter was sent before
+  `/related` named Travis County, with geo_ids of the city, Texas and the
+  U.S. A second batch with the county superseded it. A city page now reads
+  nothing until its relationships settle, so each chapter sends one batch,
+  and it always names the county. County, state, nation and metro pages do
+  not wait.
+- Madison shows no "Not published that year" marker. Its trended measures
+  start in 2009, the same as Dane County's, so there is no gap to mark. The
+  marker is covered by the browser test's city, whose home value starts two
+  periods after its county's.
+
+Live checks on dev 346786ec pass for city history (OFFICE_LAB,
+2026-11-01). Screenshots are in the project Library: `city-austin-work.png`,
+`city-austin-housing.png` and `city-madison-history.png`. Austin's cards
+read beside Travis County, Texas and the U.S. with margins of error, for
+example median household income of 93,658 ± 1,670 for 2020–2024.
+
+Delivered. It awaits Nick's review at the dev → main gate.
 
 ## Why
 

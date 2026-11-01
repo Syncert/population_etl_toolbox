@@ -21,6 +21,14 @@ verify:
 
 ## Status
 
+Completed 2026-11-01. #240 (`3a04cc60`) and the live-check follow-up #252
+(`346786ec`) are merged into `dev`, and every live check passed on OFFICE_LAB
+on `346786ec`; screenshots `/mnt/project-files/metro-austin.png` and
+`/mnt/project-files/metro-texarkana.png`. Live timings after
+`ix_bridge_grv_parent_type_vintage`: Austin's resolve 173 ms cold and 3 ms
+warm; Texas's metro list 78 ms cold and 5.7 ms warm; Dane County's
+`/related` 16 ms warm. Closed on the coordinator's word.
+
 Needs review since 2026-11-01. Built on `claude/project-thread-cgdcb1` from
 `dev` at `74e5e431`, API and web in one PR (the API half is small and the web
 half is its only consumer). The tract half of A-5 (the crosswalked
@@ -134,7 +142,7 @@ subquery without new gold DDL.
 - `places.spec.js` (30 tests, three new for metros): pass, including axe and
   390 px width on the metro page; full browser suite recorded in the PR.
 
-## Live check on OFFICE_LAB (first run 2026-11-01; items 4, 5 and 7 rerun after the follow-up)
+## Live check on OFFICE_LAB (passed 2026-11-01 on `346786ec`)
 
 After the API and web images are rebuilt from `dev`:
 
@@ -183,6 +191,5 @@ After the API and web images are rebuilt from `dev`:
 
 ## Remaining
 
-- The live check above.
 - BLS CPI metro areas on metro pages need a published BLS-to-CBSA mapping
   (recorded gap, not v1).

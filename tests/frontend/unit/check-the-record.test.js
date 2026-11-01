@@ -135,6 +135,13 @@ describe("choosing the two periods", () => {
     expect(chooseSpan(rows.slice(4), 5)).toBeNull();
   });
 
+  it("compares a monthly series with the same month of an earlier year", () => {
+    const rows = [month(2013, 1, 22.4), month(2013, 6, 25), month(2014, 1, 20), month(2023, 5, 26), month(2023, 6, 26.8)];
+    const span = chooseSpan(rows);
+    expect([recordPeriodLabel(span.from), recordPeriodLabel(span.to)]).toEqual(["June 2013", "June 2023"]);
+    expect(chooseSpan([month(2013, 1, 22.4), month(2023, 6, 26.8)])).toBeNull();
+  });
+
   it("skips a period published without a number", () => {
     const span = chooseSpan([year(2015, null), year(2016, 10), year(2025, 12)]);
     expect(span.from.period_start).toBe("2016-01-01");
