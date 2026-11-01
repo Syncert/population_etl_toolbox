@@ -391,8 +391,11 @@ Business Patterns file, three a year from 2016, through the one-slot
 
 Trigger `census_lodes_ingest` once after the shared geography loads: it
 captures the newest registered LODES year for every state, four files each,
-through the one-slot `census_lodes_files` pool; earlier years are captured
-as the [operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md)
+through the one-slot `census_lodes_files` pool. The years before it load
+once with `python -m data_ingestion_toolbox.census_lodes.history --years
+2023-2002` in the scheduler container, which resumes by state-year and
+publishes when every year is in, as the
+[operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md#loading-the-history)
 describes.
 
 Trigger `epa_aqs_ingest` once after the shared geography loads: it reads
@@ -1141,6 +1144,11 @@ docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.cens
 # file a year. Apply migration 040 first. Resumes by year; a rerun skips a
 # year already loaded from the same file. Then back to 1985 the same way.
 docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.fbi_ucr.return_a.load --years 2025-2015
+
+# LEHD LODES history: every state, 2002 onwards (the DAG keeps the newest
+# year). Resumes by state-year; publishes once every year is in; exit 1
+# means rerun the same command.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002
 ```
 
 Run a long driver detached so it survives the terminal. On Windows,

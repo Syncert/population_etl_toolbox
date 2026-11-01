@@ -193,12 +193,12 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Code:** `src/data_ingestion_toolbox/census_lodes` · DAG `census_lodes_ingest` · Monthly, 20th 14:00 UTC (newest year)
 - **Publisher releases:** Yearly vintage
 - **Credential:** none
-- **Years:** LODES8, 2002-2023 registered; older years by raising recent_years
+- **Years:** LODES8, 2002-2023 registered; the DAG keeps the newest, `census_lodes.history` loads the rest
 - **Datasets:** rac (residence); wac (workplace); od_main; od_aux
 - **Measures:** Resident workers, jobs, live-and-work, inbound and in-state outbound commuters. Summed from census blocks.
 - **Capture and control:** `control.census_lodes_slice`, `control.census_lodes_file`
 - **Silver:** `silver_census_lodes.fact_area`, `silver_census_lodes.fact_flow`
-- **Gold:** `gold_census_lodes.observation_revision`, `gold_census_lodes.observation_latest`
+- **Gold:** `gold_census_lodes.observation_fact`, `gold_census_lodes.observation_revision`, `gold_census_lodes.observation_latest`
 - **Status (live count 2026-10-31):** Partly loaded. Only 2023 is loaded; the registry declares 2002–2023. The scheduled run captures only the newest year.
 
 ## Housing

@@ -251,6 +251,8 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             row = cursor.fetchone()
             if row is None or row[0] == "captured":
                 raise LodesPublicationError(f"run {run_id} was never replayed")
+            if published:
+                refresh_observation_fact(cursor, [run_id])
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -266,4 +268,17 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     return published
 
 
-__all__ = ["STATE_FIPS", "publish_run", "replay_run"]
+def refresh_observation_fact(cursor: Any, run_ids: list[UUID] | None) -> int:
+    """Recompute the served county and state sums of these published runs.
+
+    ``None`` fills every published run that has no served rows yet. Runs in
+    the caller's transaction, so a publish and its sums commit together.
+    """
+    cursor.execute(
+        "SELECT gold_census_lodes.refresh_observation_fact(%s::UUID[])",
+        (None if run_ids is None else [str(run_id) for run_id in run_ids],),
+    )
+    return int(cursor.fetchone()[0])
+
+
+__all__ = ["STATE_FIPS", "publish_run", "refresh_observation_fact", "replay_run"]
