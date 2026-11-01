@@ -342,6 +342,39 @@ Measure on OFFICE_LAB after merge (stack rebuilt, contract views applied):
 wall time; then time `/map/CENSUS_ACS:acs5:B19013_001?grain=PLACE&state=48`
 to network idle and check the tile requests carry `?vintage=2025&state=48`.
 
+## Live check after #263 (OFFICE_LAB, 2026-11-01, relayed)
+
+Production web at 3748996, measured while the DQ-ACS-007 sweep was running.
+`measure_state_tile_wait.py`, cold, z6, six tiles:
+
+| Set | Bytes | Wall | Median tile |
+|---|---|---|---|
+| every state, through the proxy | 717,855 | 2,486 ms | 2,390 ms |
+| every state, Martin direct | | 2,459 ms | |
+| `state=48`, through the proxy | 324,472 | 2,163 ms | 2,090 ms |
+| `state=48`, Martin direct | | 2,158 ms | |
+
+The state filter cut the bytes by 55 % but the time by only about 320 ms, and
+the Next proxy adds nothing. The page
+`/map/CENSUS_ACS:acs5:B19013_001?grain=PLACE&state=48` reached network idle in
+2,169 ms (it was 31 s), with every tile carrying `?vintage=2025&state=48`.
+Warm tiles took 34–128 ms, so Martin's cache already serves a repeat visit.
+The slowest API reads were `/observations ... limit=5000` at 484 ms and
+`/observations/releases` at 389 ms. HAR: `tx-place-map.har` in the Library.
+
+**Recorded post-v1: cold place tile generation (~2 s per z6 tile).** What is
+left is Postgres building a tile: reading each place's full 500k geometry and
+running `ST_Simplify` on it on every cold request. The likely fix is a
+pre-simplified geometry per zoom band on `gold_glossary.tile_boundary_version`,
+written by `refresh_tile_boundaries()`, with `gold.tile_places` reading the
+band for its zoom. That is a column change on a gold table, a backfill of
+every vintage, and a refresh change, not a quick v1 PR, and a 2 s first paint
+of a whole state is acceptable for v1. A cheaper interim step is to warm
+Martin's cache with each state's z6 tiles after a deploy. Before building
+either, run `place-maps/explain-place-tile-cold.sql` in a quiet window, to
+split the time between reading, simplifying and encoding (the numbers above
+were taken under sweep load).
+
 ## Next pickup
 
 Review. Nothing is left to build here.
