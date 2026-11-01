@@ -36,6 +36,11 @@ from apps.api.schemas.age_structure import (
     AgeIndicators,
     AgeMapItem,
     AgeMapResponse,
+    AgeRateGroup,
+    AgeRatePlace,
+    AgeRateSchemeOut,
+    AgeRateSide,
+    AgeRatesResponse,
     AgeRatio,
     AgeScheme as AgeSchemeOut,
     AgeShare,
@@ -52,19 +57,24 @@ from apps.api.schemas.age_structure import (
 from apps.api.services.contracts import require_relation, session_memo
 from apps.api.services.cross_level_service import place_name
 from data_ingestion_toolbox.semantics.age_bands import (
+    RATE_SIDES,
     SEXES,
     AgeScheme,
+    RateScheme,
     default_scheme,
+    load_rate_registry,
 )
 from data_ingestion_toolbox.semantics.age_structure import (
     CONTROLLED_TOTAL_LEVELS,
     RELIABLE_CV_PERCENT,
     Z90,
+    AgeRateValue,
     Line,
     PlaceRelease,
     RatioValue,
     ShareValue,
     Summed,
+    age_rate,
     coefficient_of_variation,
     group_sum,
     indicator_values,
@@ -507,24 +517,25 @@ def parse_release(release: Optional[str]) -> Optional[int]:
     return year
 
 
-def age_structure(
+@dataclass
+class _LevelsRead:
+    identities: dict[str, Mapping[str, Any]]
+    references: list[Reference]
+    releases: dict[tuple[str, int], PlaceRelease]
+    vintage: Optional[int]
+
+
+def _read_levels(
     db: Session,
     geo_id: str,
-    dataset: str = "acs5",
-    release: Optional[str] = None,
-    compare_geo_ids: Sequence[str] = (),
-) -> AgeStructureResponse:
-    scheme = default_scheme()
-    dataset = _check_dataset(scheme, dataset)
-    pinned = parse_release(release)
-    compare = [
-        code for code in dict.fromkeys(compare_geo_ids) if code and code != geo_id
-    ]
-    if len(compare) > MOST_COMPARE_GEOGRAPHIES:
-        raise AgeStructureRequestError(
-            f"name at most {MOST_COMPARE_GEOGRAPHIES} compare_geo_ids"
-        )
-
+    codes: Sequence[str],
+    pinned: Optional[int],
+    compare: Sequence[str] = (),
+) -> _LevelsRead:
+    """The place, each level it sits in and any compare places, all read at
+    the place's own release: one identity read, at most one relationship
+    read, one serving read (plus one as-released read for a level whose
+    newest release is not the place's)."""
     identity = _identities(db, [geo_id])
     if geo_id not in identity:
         raise UnknownAgeGeography("geo_id")
@@ -544,7 +555,6 @@ def age_structure(
     for code in compare:
         if code not in identities:
             raise UnknownAgeGeography("compare_geo_ids")
-    codes = scheme.metric_codes(dataset)
 
     if pinned is None:
         require_relation(db, LATEST_RELATION)
@@ -565,6 +575,36 @@ def age_structure(
     else:
         vintage = pinned
         releases = _read_pinned(db, codes, everyone, [pinned])
+
+    return _LevelsRead(identities, references, releases, vintage)
+
+
+def age_structure(
+    db: Session,
+    geo_id: str,
+    dataset: str = "acs5",
+    release: Optional[str] = None,
+    compare_geo_ids: Sequence[str] = (),
+) -> AgeStructureResponse:
+    scheme = default_scheme()
+    dataset = _check_dataset(scheme, dataset)
+    pinned = parse_release(release)
+    compare = [
+        code for code in dict.fromkeys(compare_geo_ids) if code and code != geo_id
+    ]
+    if len(compare) > MOST_COMPARE_GEOGRAPHIES:
+        raise AgeStructureRequestError(
+            f"name at most {MOST_COMPARE_GEOGRAPHIES} compare_geo_ids"
+        )
+
+    read = _read_levels(db, geo_id, scheme.metric_codes(dataset), pinned, compare)
+    identities, references, releases, vintage = (
+        read.identities,
+        read.references,
+        read.releases,
+        read.vintage,
+    )
+    place = identities[geo_id]
 
     def block(
         code: str, role: str, ref: Optional[Reference] = None
@@ -945,3 +985,150 @@ def age_structure_map(
         )
     out.total = len(out.items)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Rates by age (a by-age table's reviewed rate scheme)
+# ---------------------------------------------------------------------------
+
+
+def _rate_side(value: AgeRateValue) -> AgeRateSide:
+    cv = coefficient_of_variation(value.numerator.count, value.numerator.moe)
+    return AgeRateSide(
+        numerator=_count_text(value.numerator.count),
+        numerator_moe=_text(value.numerator.moe, "0.01"),
+        denominator=_count_text(value.denominator.count),
+        denominator_moe=_text(value.denominator.moe, "0.01"),
+        rate=_text(value.rate, "0.01"),
+        rate_moe=_text(value.rate_moe, "0.01"),
+        cv_percent=_text(cv, "0.1"),
+        reliable=cv is not None and cv <= RELIABLE_CV_PERCENT,
+        unavailable_reason=value.reason,  # type: ignore[arg-type]
+    )
+
+
+def _rate_scheme_out(scheme: RateScheme) -> AgeRateSchemeOut:
+    return AgeRateSchemeOut(
+        rate_id=scheme.rate_id,
+        version=scheme.version,
+        status=scheme.status,
+        label=scheme.label,
+        table_id=scheme.table_id,
+        universe=scheme.universe,
+        numerator_label=scheme.numerator_label,
+        unit=scheme.unit,
+        by_sex=scheme.by_sex,
+    )
+
+
+def place_rates(
+    scheme: RateScheme,
+    release: Optional[PlaceRelease],
+    *,
+    dataset: str = "acs5",
+    geo_id: str,
+    geo_level: Optional[str],
+    geo_name: Optional[str],
+    role: str,
+    reference_level: Optional[str] = None,
+    overlap_weight: Optional[float] = None,
+) -> AgeRatePlace:
+    """One place's rate per age group (and per sex where the table has one)."""
+    base: dict[str, Any] = {
+        "geo_id": geo_id,
+        "geo_level": geo_level,
+        "geo_name": geo_name,
+        "role": role,
+        "reference_level": reference_level,
+        "overlap_weight": overlap_weight,
+    }
+    if release is None or not any(
+        code in release.lines for code in scheme.total.denominator
+    ):
+        return AgeRatePlace(**base, unavailable_reason="not_published")
+    if not scheme.serves(dataset, release.vintage_year):
+        return AgeRatePlace(
+            **base,
+            release=str(release.vintage_year),
+            period_start=release.period_start,
+            period_end=release.period_end,
+            unavailable_reason="layout_not_mapped",
+        )
+    # Each group as this release labels it (an age boundary the Bureau moved).
+    scheme = scheme.at(release.vintage_year)
+    groups = []
+    for group in scheme.groups:
+        sides = {
+            side: _rate_side(age_rate(release, lines.numerator, lines.denominator))
+            for side, lines in group.sides.items()
+            if side in RATE_SIDES
+        }
+        groups.append(
+            AgeRateGroup(
+                group_id=group.group_id,
+                label=group.label,
+                age_start=group.age_start,
+                age_end=group.age_end,
+                **sides,
+            )
+        )
+    return AgeRatePlace(
+        **base,
+        release=str(release.vintage_year),
+        period_start=release.period_start,
+        period_end=release.period_end,
+        total=_rate_side(
+            age_rate(release, scheme.total.numerator, scheme.total.denominator)
+        ),
+        groups=groups,
+    )
+
+
+def rate_scheme(rate_id: str) -> RateScheme:
+    schemes = load_rate_registry()
+    if rate_id not in schemes:
+        raise AgeStructureRequestError(f"rate must be one of {', '.join(schemes)}")
+    return schemes[rate_id]
+
+
+def age_structure_rates(
+    db: Session,
+    geo_id: str,
+    rate: str,
+    dataset: str = "acs5",
+    release: Optional[str] = None,
+) -> AgeRatesResponse:
+    scheme = rate_scheme(rate)
+    dataset = dataset.strip().lower()
+    if dataset not in scheme.datasets:
+        raise AgeStructureRequestError(
+            f"dataset must be one of: {', '.join(scheme.datasets)}"
+        )
+    pinned = parse_release(release)
+    read = _read_levels(db, geo_id, scheme.metric_codes(dataset), pinned)
+    place = read.identities[geo_id]
+
+    def block(code: str, role: str, ref: Optional[Reference] = None) -> AgeRatePlace:
+        who = read.identities.get(code, {})
+        return place_rates(
+            scheme,
+            None if read.vintage is None else read.releases.get((code, read.vintage)),
+            dataset=dataset,
+            geo_id=code,
+            geo_level=who.get("geo_level") or (ref.level if ref else None),
+            geo_name=who.get("geo_name"),
+            role=role,
+            reference_level=ref.level if ref else None,
+            overlap_weight=ref.overlap_weight if ref else None,
+        )
+
+    return AgeRatesResponse(
+        geo_id=geo_id,
+        geo_level=place.get("geo_level"),
+        geo_name=place.get("geo_name"),
+        dataset=dataset,
+        rate=_rate_scheme_out(scheme),
+        default_reference_geo_id=read.references[0].geo_id if read.references else None,
+        places=[block(geo_id, "place")]
+        + [block(ref.geo_id, "reference", ref) for ref in read.references],
+    )

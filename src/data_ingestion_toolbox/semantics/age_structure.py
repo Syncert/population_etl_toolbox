@@ -251,3 +251,39 @@ def indicator_values(
             numerator, denominator, indicator.scale
         )
     return values
+
+
+@dataclass(frozen=True)
+class AgeRateValue:
+    """One age group's rate: its numerator and universe with their margins,
+    the share (percent) and the share's margin, or the reason it is absent."""
+
+    numerator: Summed
+    denominator: Summed
+    rate: Optional[Decimal] = None
+    rate_moe: Optional[Decimal] = None
+    reason: Optional[str] = None
+
+
+def age_rate(
+    release: PlaceRelease, numerator: Sequence[str], denominator: Sequence[str]
+) -> AgeRateValue:
+    """``numerator`` lines as a percent of the ``denominator`` lines' sum.
+
+    The numerator is a part of its universe, so the margin is the Bureau's
+    proportion formula (falling back to the ratio formula when its radicand is
+    negative, as ``derived_margin`` does). A universe of zero people has no
+    rate (``denominator_zero``), never a rate of zero.
+    """
+    top = sum_lines(release, numerator)
+    bottom = sum_lines(release, denominator)
+    reason = top.reason or bottom.reason
+    if reason is not None or top.count is None or bottom.count is None:
+        return AgeRateValue(top, bottom, reason=reason or "suppressed_input")
+    if bottom.count == 0:
+        return AgeRateValue(top, bottom, reason="denominator_zero")
+    rate = top.count / bottom.count * 100
+    margin = None
+    if top.moe is not None and bottom.moe is not None:
+        margin = proportion_margin(top.count, top.moe, bottom.count, bottom.moe) * 100
+    return AgeRateValue(top, bottom, rate, margin)
