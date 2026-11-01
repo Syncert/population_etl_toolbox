@@ -427,21 +427,26 @@ What this says so far:
 - **Size moved the stage-2 estimate,** from "small" to "shape the history
   first". See the cost table in stage 2.
 
-## Measured on OFFICE_LAB (2026-11-01, about 01:50Z, idle vs reload)
+## Measured on OFFICE_LAB (2026-11-01, about 01:50Z, near-idle vs transform/publish)
 
-On 2026-11-01 the DAG was paused from 01:49 to 01:55Z, after metro 2015. The
+On 2026-11-01 a pause was attempted from 01:49 to 01:55Z, after metro 2015.
+It did not hold: `is_paused` stayed False, and metro 2014's ingest started at
+01:50:44Z. Only the first ~80 s of that run were truly idle. The rest
+overlapped the ingest phase, which is the lightest one: Census API waits and
+raw inserts, with 2–3 active backends against 1–2. A clean idle sample needs a
+confirmed pause. The
 Dane County page's 12 distinct API GETs were timed over 5 rounds. The cold
 runs used a second API container with `REDIS_URL` empty. The warm runs used
 production with Redis.
 
 | | Cold p50 | Cold p95 | Cold max | Warm p50 | Warm p95 |
 |---|---:|---:|---:|---:|---:|
-| During reload | 64 ms | 466 ms | 598 ms | 15 ms | 27 ms |
-| Idle | 69 ms | 487 ms | 575 ms | 16 ms | 133 ms* |
+| During transform/publish | 64 ms | 466 ms | 598 ms | 15 ms | 27 ms |
+| Idle or near-idle (ingest only) | 69 ms | 487 ms | 575 ms | 16 ms | 133 ms* |
 
 \* One noisy round; p50 unchanged.
 
-**Verdict on limit 1:** not reached. Load and idle p95 are about the same,
+**Verdict on limit 1:** not reached. Cold p95 is 466–487 ms both ways,
 with no 15 s timeouts. Stage 2 is therefore triggered only by public launch
 (Nick's decision), not by contention.
 
