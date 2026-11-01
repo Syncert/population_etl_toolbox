@@ -10,8 +10,9 @@ import pytest
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     KNOWN_DATASETS,
     RawSlice,
+    _ledger_ranges,
     _plan_year_slices,
-    _refine_with_ledger,
+    _ranges_from_counts,
     _slice_where,
     _year_counts_by_dataset,
 )
@@ -86,11 +87,20 @@ def test_each_dataset_slice_has_its_own_resume_key() -> None:
     assert RawSlice().key == "*"
 
 
-def test_an_oversized_state_slice_is_planned_as_power_of_two_buckets(
+def test_an_oversized_state_slice_is_planned_as_code_ranges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-100 -- acs5 place California (18.7M rows) is four reads, not one."""
+    """Covers: ETL-100 -- acs5 place California (18.7M rows) is four index-range reads."""
     from data_ingestion_toolbox.census_acs.silver_census import transform
+
+    monkeypatch.setattr(
+        transform,
+        "_sub_geo_counts",
+        lambda _hook, _year, _slice: [
+            (f"{n:05d}", 187_000) for n in range(0, 100000, 1000)
+        ],
+    )
+    monkeypatch.setattr(transform, "_has_place_split_index", lambda _hook: True)
 
     class _Counts(_Hook):
         def get_conn(self):
@@ -122,59 +132,94 @@ def test_an_oversized_state_slice_is_planned_as_power_of_two_buckets(
     )
     slices = _plan_year_slices(hook, 2024, 190_000_000, ["acs5"])
     assert [s.key for s in slices] == [
-        "acs5/place/06/p1of4",
-        "acs5/place/06/p2of4",
-        "acs5/place/06/p3of4",
-        "acs5/place/06/p4of4",
+        "acs5/place/06/[,25000)",
+        "acs5/place/06/[25000,50000)",
+        "acs5/place/06/[50000,75000)",
+        "acs5/place/06/[75000,)",
         # A state slice has no sub-geography to split by.
         "acs5/state/06",
         # At the threshold, not over it.
         "acs5/tract/06",
     ]
-    monkeypatch.setattr(transform, "_MAX_SLICE_PARTS", 2)
-    assert len(_plan_year_slices(hook, 2024, 190_000_000, ["acs5"])) == 4
+    # A place row that names a county would fall outside every place range
+    # (they read county-less rows), so such a slice is read whole.
+    monkeypatch.setattr(
+        transform,
+        "_sub_geo_counts",
+        lambda _hook, _year, _slice: [
+            (f"{n:05d}", 1000) for n in range(0, 100000, 1000)
+        ],
+    )
+    assert (
+        _plan_year_slices(hook, 2024, 190_000_000, ["acs5"])[0].key == "acs5/place/06"
+    )
+    # Without the place index a place slice stays one read, as before.
+    monkeypatch.setattr(transform, "_has_place_split_index", lambda _hook: False)
+    unsplit = _plan_year_slices(hook, 2024, 190_000_000, ["acs5"])
+    assert unsplit[0].key == "acs5/place/06"
+    # Ranges an earlier run recorded are reused, whatever the counts say now.
+    finished = {"acs5/place/06/[,40000)": "x", "acs5/place/06/[40000,)": "y"}
+    planned = _plan_year_slices(hook, 2024, 190_000_000, ["acs5"], finished)
+    assert [s.key for s in planned][:2] == [
+        "acs5/place/06/[,40000)",
+        "acs5/place/06/[40000,)",
+    ]
 
 
-def test_a_bucket_key_keeps_its_level_where_the_serving_step_reads_it() -> None:
+def test_ranges_cut_on_codes_into_about_equal_rows() -> None:
+    """Covers: ETL-100 -- a cell never spans two ranges, and every code is covered."""
+    even = [(f"{n:03d}", 10) for n in range(1, 9)]
+    assert _ranges_from_counts(even, 2) == [("", "005"), ("005", "")]
+    assert _ranges_from_counts(even, 4) == [
+        ("", "003"),
+        ("003", "005"),
+        ("005", "007"),
+        ("007", ""),
+    ]
+    # Los Angeles County holds most of California's tracts: it stays whole, in
+    # one range, and the ranges come out fewer rather than splitting it.
+    skewed = [(None, 0), ("001", 10), ("037", 70), ("059", 10), ("073", 10)]
+    assert _ranges_from_counts(skewed, 4) == [("", "059"), ("059", "073"), ("073", "")]
+    # One code, or one part, cannot be cut.
+    assert _ranges_from_counts([("037", 99)], 4) == [("", "")]
+    assert _ranges_from_counts(even, 1) == [("", "")]
+
+
+def test_a_range_key_keeps_its_level_and_reads_an_index_range() -> None:
     """Covers: ETL-100 -- `split_part(slice_key, '/', 2)` still names the grain."""
     place = RawSlice(dataset="acs5", geo_level="place", state_fips="06")
-    halves = place.split(2)
-    assert [half.key for half in halves] == [
-        "acs5/place/06/p1of2",
-        "acs5/place/06/p2of2",
-    ]
-    assert {key.split("/")[1] for key in (h.key for h in halves)} == {"place"}
-    # A half split again yields exactly that half's rows: buckets b and b+2.
-    assert [q.key for q in halves[1].split(4)] == [
-        "acs5/place/06/p2of4",
-        "acs5/place/06/p4of4",
-    ]
-    where, params = _slice_where(2024, halves[1])
-    assert "hashtext(COALESCE(observation.place_fips_source, ''))" in where
-    assert params[-2:] == [2, 1]
-    tract = RawSlice(dataset="acs5", geo_level="tract", state_fips="06").split(2)[0]
-    assert "observation.county_fips_source" in _slice_where(2024, tract)[0]
-    with pytest.raises(ValueError):
-        RawSlice(dataset="acs5", geo_level="state", state_fips="06").split(2)
+    first = place.with_range("", "44000")
+    middle = place.with_range("44000", "68000")
+    assert first.key == "acs5/place/06/[,44000)"
+    assert middle.key.split("/")[1] == "place"
+    where, params = _slice_where(2024, middle)
+    assert "observation.place_fips_source >= %s" in where
+    assert "observation.place_fips_source < %s" in where
+    assert params[-2:] == ["44000", "68000"]
+    # The first range also takes rows without a code, so none is lost.
+    assert "observation.place_fips_source IS NULL" in _slice_where(2024, first)[0]
+    tract = RawSlice(dataset="acs5", geo_level="tract", state_fips="06")
+    assert (
+        "observation.county_fips_source >= %s"
+        in _slice_where(2024, tract.with_range("037", ""))[0]
+    )
+    assert not RawSlice(dataset="acs5", geo_level="state", state_fips="06").splittable
 
 
 def test_planning_starts_a_slice_at_the_split_an_earlier_timeout_left() -> None:
-    """Covers: ETL-100 -- a slice that timed out once is not read whole again."""
-    planned = [
-        RawSlice(dataset="acs5", geo_level="place", state_fips="06").split(4)[1],
-        RawSlice(dataset="acs5", geo_level="place", state_fips="48"),
-        RawSlice(dataset="acs5", geo_level="state", state_fips="06"),
-    ]
+    """Covers: ETL-100 -- a range halved after a timeout is not read whole again."""
     finished = {
-        "acs5/place/06/p2of8": "x",
-        "acs5/place/06/p6of8": "x",
-        "acs5/place/06/p1of4": "x",
-        "acs5/state/06": "x",
+        "acs5/place/06/[,44000)": "x",
+        "acs5/place/06/[44000,)": "x",
+        # [44000,) timed out and finished as two halves.
+        "acs5/place/06/[44000,68000)": "x",
+        "acs5/place/06/[68000,)": "x",
+        "acs5/place/48/[,50000)": "x",
+        "acs5/place/06": "x",
     }
-    refined = _refine_with_ledger(planned, finished)
-    assert [s.key for s in refined] == [
-        "acs5/place/06/p2of8",
-        "acs5/place/06/p6of8",
-        "acs5/place/48",
-        "acs5/state/06",
+    assert _ledger_ranges(finished, "acs5/place/06") == [
+        ("", "44000"),
+        ("44000", "68000"),
+        ("68000", ""),
     ]
+    assert _ledger_ranges(finished, "acs5/tract/06") == []

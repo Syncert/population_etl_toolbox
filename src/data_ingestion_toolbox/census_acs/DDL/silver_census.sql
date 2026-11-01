@@ -37,6 +37,21 @@ CREATE INDEX IF NOT EXISTS census_observation_revision_slice_idx
         dataset, year, geo_level, state_fips_source, county_fips_source
     );
 
+-- Place rows carry no county, so the slice index above ends at the state for
+-- them, and the transform cannot read a large place slice (acs5 place
+-- California 2024, 18.7M rows) in narrower pieces. This partial index lets it
+-- read one place-code range at a time (`county_fips_source IS NULL` bounds
+-- the county column, so the range bounds the place code; the county column
+-- also keeps the order the revision ranking partitions by, which the planner
+-- otherwise takes from the slice index). On a populated warehouse it is built
+-- first with CREATE INDEX CONCURRENTLY under this name, so this statement is
+-- a no-op there; the transform reads a place slice whole when it is absent.
+CREATE INDEX IF NOT EXISTS census_observation_revision_place_slice_idx
+    ON silver_census.observation_revision (
+        dataset, year, state_fips_source, county_fips_source, place_fips_source
+    )
+    WHERE geo_level = 'place';
+
 CREATE TABLE IF NOT EXISTS silver_census.fact_demographics (
     demographic_sk BIGSERIAL PRIMARY KEY,
     time_sk INTEGER NOT NULL REFERENCES silver_ref.dim_time(time_sk),

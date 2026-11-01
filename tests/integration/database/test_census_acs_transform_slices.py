@@ -5,6 +5,7 @@ Covers: ETL-082, ETL-087
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
@@ -253,10 +254,15 @@ def test_a_sliced_year_writes_exactly_the_facts_the_whole_year_writes(
     assert _facts(factory) == whole_year
 
 
-def test_an_oversized_slice_read_as_buckets_writes_the_same_facts(
+def _range_bounds(key: str) -> tuple[str, str]:
+    low, high = key.rsplit("/[", 1)[1].rstrip(")").split(",")
+    return low, high
+
+
+def test_an_oversized_slice_read_as_code_ranges_writes_the_same_facts(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: ETL-082 — a state slice split into hash buckets changes no fact."""
+    """Covers: ETL-082 — a state slice read as place-code ranges changes no fact."""
     factory = two_slice_year
     expected_changed = (len(SEEDED_PLACES) + 1) * 2
     monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
@@ -264,22 +270,28 @@ def test_an_oversized_slice_read_as_buckets_writes_the_same_facts(
     by_state = _facts(factory)
 
     _delete_facts(factory)
-    # Every slice over one row is split, up to four buckets; the state
-    # level is never split, the place slice is.
-    monkeypatch.setattr(transform, "_SLICE_SPLIT_ROW_THRESHOLD", 1)
-    monkeypatch.setattr(transform, "_MAX_SLICE_PARTS", 4)
+    # The place slice is over the threshold and is cut at its place codes
+    # into about four ranges; the state level is never split.
+    place_rows = _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_census.observation_revision "
+        "WHERE year = %s AND geo_level = 'place'",
+        (YEAR,),
+    )[0][0]
+    monkeypatch.setattr(transform, "_SLICE_SPLIT_ROW_THRESHOLD", place_rows // 4)
     fetched = _record_fetches(monkeypatch)
     assert transform.transform_census_to_silver() == expected_changed
-    assert sorted(fetched) == [
-        "acs5/place/10/p1of4",
-        "acs5/place/10/p2of4",
-        "acs5/place/10/p3of4",
-        "acs5/place/10/p4of4",
-        "acs5/state/10",
-    ]
+    assert "acs5/state/10" in fetched
+    ranges = sorted(_range_bounds(key) for key in fetched if key != "acs5/state/10")
+    assert 3 <= len(ranges) <= 5
+    # Contiguous, and open at both ends: every place code is in one range.
+    assert ranges[0][0] == "" and ranges[-1][1] == ""
+    ranges.sort(key=lambda bounds: bounds[0])
+    assert all(a[1] == b[0] for a, b in itertools.pairwise(ranges))
     assert _facts(factory) == by_state
 
-    # The buckets are the same rows next run, so their fingerprints hold.
+    # The next run reuses the ranges the ledger records, so their
+    # fingerprints hold and nothing is read again.
     fetched.clear()
     assert transform.transform_census_to_silver() == 0
     assert fetched == []
@@ -302,11 +314,13 @@ def test_a_slice_read_that_runs_too_long_is_read_again_in_halves(
 
     monkeypatch.setattr(transform, "_fetch_raw_frame", place_read_times_out)
     assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
-    assert sorted(fetched) == [
-        "acs5/place/10",
-        "acs5/place/10/p1of2",
-        "acs5/place/10/p2of2",
-        "acs5/state/10",
+    assert fetched[0] == "acs5/place/10" or "acs5/place/10" in fetched
+    halves = sorted(key for key in fetched if key.startswith("acs5/place/10/"))
+    assert len(halves) == 2
+    middle = _range_bounds(halves[0])[1] or _range_bounds(halves[1])[1]
+    assert sorted(_range_bounds(key) for key in halves) == [
+        ("", middle),
+        (middle, ""),
     ]
     assert len(_facts(factory)) == (len(SEEDED_PLACES) + 1) * 2
     assert _rows(
@@ -314,7 +328,7 @@ def test_a_slice_read_that_runs_too_long_is_read_again_in_halves(
         "SELECT slice_key FROM silver_census.transform_slice_state "
         "WHERE year = %s ORDER BY slice_key",
         (YEAR,),
-    ) == [("acs5/place/10/p1of2",), ("acs5/place/10/p2of2",), ("acs5/state/10",)]
+    ) == [(key,) for key in sorted([*halves, "acs5/state/10"])]
 
     # The next run plans the halves from the ledger and skips them unchanged,
     # rather than timing out on the whole slice again.
