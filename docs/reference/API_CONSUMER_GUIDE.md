@@ -1914,6 +1914,20 @@ five years apart (`period_gap_not_five_years`), a tract was redrawn between
 them (`boundary_changed`), or a release is missing (`not_published`). The
 `caveat` says what such a change mixes; the API draws no conclusion from it.
 
+`GET /api/v1/age-structure/map?indicator=…&geo_level=STATE|METRO|COUNTY|PLACE|TRACT[&state_fips=NN][&release=YYYY][&dataset=acs5|acs1]`
+maps one age indicator, never a single age line: `under_18`, `age_18_64`,
+`age_65_plus` and `age_85_plus` (percent of everyone),
+`child_dependency_ratio`, `old_age_dependency_ratio` and
+`total_dependency_ratio` (per 100 people aged 18 to 64), `sex_ratio` (men per
+100 women), or `median_age`, `median_age_men` and `median_age_women` (the
+Bureau's own). Values come from a derived summary table built with the same
+arithmetic as the place block above, so a mapped value is the one the place
+page prints; `derived` is true. Cities and tracts are drawn one state at a
+time, so `state_fips` is required for `PLACE` and `TRACT`. Without `release`
+the grain's newest summary release is used. Each item is `geo_id`, `value`,
+`moe`, and `unavailable_reason` when the value is withheld (null, never
+zero).
+
 ## Signing in, and your account
 
 Self-service accounts — see [ADR-0005](../decisions/0005-self-service-accounts.md).

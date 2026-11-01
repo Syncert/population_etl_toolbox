@@ -194,3 +194,28 @@ class AgeCohortsResponse(BaseModel):
     items: list[CohortItem] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
+
+
+class AgeMapItem(BaseModel):
+    geo_id: str
+    value: Optional[str] = None
+    moe: Optional[str] = None
+    unavailable_reason: Optional[str] = None
+
+
+class AgeMapResponse(BaseModel):
+    """One age indicator for every place of a grain (in one state, for cities
+    and tracts), from the derived summary table."""
+
+    indicator: str
+    label: str
+    unit: str
+    derived: bool = True
+    dataset: str
+    geo_level: str
+    state_fips: Optional[str] = None
+    release: Optional[str] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    scheme: AgeScheme
+    items: list[AgeMapItem] = Field(default_factory=list)

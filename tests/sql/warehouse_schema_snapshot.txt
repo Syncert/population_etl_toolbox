@@ -3164,6 +3164,77 @@ v gold_census.acs_tract_comparable
     body   WHERE weight.weight IS NULL OR weight.weight > 0::numeric
     body   GROUP BY weight.geo_id, source.observation_date, source.dataset_code, source.vintage_year, source.table_id, source.variable_code, source.metric_code, source.variable_label, source.units;
 
+r gold_census.age_structure_summary
+    column geo_id text NOT NULL
+    column geo_level text NOT NULL
+    column state_fips text
+    column dataset_code text NOT NULL
+    column vintage_year integer NOT NULL
+    column observation_date date NOT NULL
+    column period_start date
+    column period_end date
+    column scheme_id text NOT NULL
+    column scheme_version integer NOT NULL
+    column total_count numeric
+    column total_moe numeric
+    column men_count numeric
+    column men_moe numeric
+    column women_count numeric
+    column women_moe numeric
+    column under_18_count numeric
+    column under_18_moe numeric
+    column under_18_share numeric
+    column under_18_share_moe numeric
+    column under_18_unavailable_reason text
+    column age_18_64_count numeric
+    column age_18_64_moe numeric
+    column age_18_64_share numeric
+    column age_18_64_share_moe numeric
+    column age_18_64_unavailable_reason text
+    column age_65_plus_count numeric
+    column age_65_plus_moe numeric
+    column age_65_plus_share numeric
+    column age_65_plus_share_moe numeric
+    column age_65_plus_unavailable_reason text
+    column age_85_plus_count numeric
+    column age_85_plus_moe numeric
+    column age_85_plus_share numeric
+    column age_85_plus_share_moe numeric
+    column age_85_plus_unavailable_reason text
+    column child_dependency_ratio numeric
+    column child_dependency_ratio_moe numeric
+    column child_dependency_ratio_unavailable_reason text
+    column old_age_dependency_ratio numeric
+    column old_age_dependency_ratio_moe numeric
+    column old_age_dependency_ratio_unavailable_reason text
+    column total_dependency_ratio numeric
+    column total_dependency_ratio_moe numeric
+    column total_dependency_ratio_unavailable_reason text
+    column sex_ratio numeric
+    column sex_ratio_moe numeric
+    column sex_ratio_unavailable_reason text
+    column median_age numeric
+    column median_age_moe numeric
+    column median_age_men numeric
+    column median_age_men_moe numeric
+    column median_age_women numeric
+    column median_age_women_moe numeric
+    column built_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint age_structure_summary_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    index ix_age_structure_summary_release_level_state CREATE INDEX ix_age_structure_summary_release_level_state ON gold_census.age_structure_summary USING btree (dataset_code, vintage_year, geo_level, state_fips)
+    index uq_age_structure_summary_key CREATE UNIQUE INDEX uq_age_structure_summary_key ON gold_census.age_structure_summary USING btree (geo_id, dataset_code, vintage_year, observation_date)
+
+r gold_census.age_structure_summary_build
+    column dataset_code text NOT NULL
+    column vintage_year integer NOT NULL
+    column scheme_id text NOT NULL
+    column scheme_version integer NOT NULL
+    column source_watermark timestamp with time zone NOT NULL
+    column row_count integer NOT NULL
+    column built_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint age_structure_summary_build_pkey PRIMARY KEY (dataset_code, vintage_year)
+    index age_structure_summary_build_pkey CREATE UNIQUE INDEX age_structure_summary_build_pkey ON gold_census.age_structure_summary_build USING btree (dataset_code, vintage_year)
+
 r gold_census.dim_acs_table
     column acs_table_sk bigint NOT NULL DEFAULT nextval('gold_census.dim_acs_table_acs_table_sk_seq'::regclass)
     column dataset_code text NOT NULL
