@@ -259,6 +259,9 @@ def test_configured_app_falls_back_to_database_when_redis_is_unavailable(
     monkeypatch.setenv("API_CACHE_TTL_SECONDS", "1")
     application = create_app(Settings())
     application.dependency_overrides[get_db_session_dep] = database_session
+    # Startup builds the contract fingerprint (PERF-001); build it before the
+    # clock starts so the budget measures only the Redis fallback.
+    application.state.contract_fingerprint()
     started = time.perf_counter()
     try:
         with TestClient(application) as client:
