@@ -4780,6 +4780,7 @@
         "geography_vintage": "integer",
         "overlap_area_m2": "number | null",
         "overlap_weight": "number | null",
+        "page_path": "string | null",
         "relationship": "string",
         "state_fips": "string | null"
       },

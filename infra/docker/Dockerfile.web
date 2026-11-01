@@ -40,6 +40,11 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3100
+# The metro route asks the API, from the server, where a CBSA code's named
+# page is, so it can redirect (web-metro-pages); the rewrites above are baked
+# at build, this is the same origin at run time.
+ARG API_ORIGIN=http://api:8000
+ENV API_ORIGIN=${API_ORIGIN}
 
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs

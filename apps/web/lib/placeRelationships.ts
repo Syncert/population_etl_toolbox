@@ -7,6 +7,7 @@
 
 import type { GeographySummary } from "./api/types";
 import { countySegment, metroCode, metroPath, placePath, stateName, stateSegment } from "./placeChapters";
+import { safePagePath } from "./placeSearch";
 
 export interface RelatedGeography {
   relationship: "contains" | "part_of" | "intersects" | "adjacent" | string;
@@ -18,6 +19,8 @@ export interface RelatedGeography {
   evidence_source: string;
   overlap_area_m2?: number | null;
   overlap_weight?: number | null;
+  /** A metro's page, `/metro/<segment>`; null for every other level. */
+  page_path?: string | null;
 }
 
 export interface RelatedResponse {
@@ -67,9 +70,13 @@ function hrefFor(
   ownStateCounties: readonly GeographySummary[],
 ): string | null {
   if (row.geo_level === "NATIONAL") return "/us";
-  // A metro by its CBSA code: the metro route settles it on its named
-  // address, so no list of metros is needed to link to one.
-  if (row.geo_level === "METRO") return metroCode(row.geo_id) ? metroPath(metroCode(row.geo_id)) : null;
+  // A metro by the page the API names for it; by its CBSA code where an
+  // older API names none (the metro route redirects a code to the name).
+  if (row.geo_level === "METRO") {
+    const named = safePagePath(row.page_path);
+    if (named && named.startsWith("/metro/")) return named;
+    return metroCode(row.geo_id) ? metroPath(metroCode(row.geo_id)) : null;
+  }
   const state = states.find((item) => item.state_fips === row.state_fips);
   if (row.geo_level === "STATE") return state ? placePath(stateSegment(state, states)) : null;
   if (row.geo_level === "PLACE" && state) {

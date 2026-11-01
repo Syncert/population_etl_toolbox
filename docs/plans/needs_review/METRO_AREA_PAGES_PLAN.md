@@ -25,7 +25,10 @@ Needs review since 2026-11-01. Built on `claude/project-thread-cgdcb1` from
 `dev` at `74e5e431`, API and web in one PR (the API half is small and the web
 half is its only consumer). The tract half of A-5 (the crosswalked
 comparable series) belongs to the tract page work (D-4) and is not here.
-The cloud checks pass; the live check on OFFICE_LAB is below and not yet run.
+Merged into `dev` as #240 (`3a04cc60`). The live check on OFFICE_LAB (API
+on `dev` `42add77`, 2026-11-01) passed for Austin's resolve (173 ms cold,
+3 ms warm), Texas's list (67 metros) and the Austin page's cards, and found
+three things the follow-up PR fixes (below, "Live-check fixes").
 Last updated 2026-11-01.
 
 ## Why
@@ -41,7 +44,7 @@ web-readiness review.
 
 - **Address: `/metro/<segment>`.** A metro is built from whole counties and
   can span states, so it does not sit under `/us/<state>`. The segment is the
-  slug of the published name (`/metro/austin-round-rock-san-marcos-tx-metro-area`)
+  slug of the published name (`/metro/austin-round-rock-san-marcos-tx`)
   or the five-digit CBSA code when another metro's name slugs the same way.
   The route also accepts the code and settles on the canonical segment, so a
   link built from a `cbsa:` id alone needs no list of metros. The web
@@ -102,9 +105,24 @@ web-readiness review.
 
 ## Index DDL
 
-None. The new reads use existing indexes: `geo_search`'s primary key, the
-bridge's `geo_id` lookups and `ix_bridge_geo_relationship_version_related`
-for `related_geo_id = ANY(...)`.
+#240: none. The follow-up adds one, pre-built on OFFICE_LAB under the same
+name before merge:
+
+```sql
+CREATE INDEX CONCURRENTLY ix_bridge_grv_parent_type_vintage
+    ON silver_ref.bridge_geo_relationship_version
+    (parent_geo_sk, relationship_type, geography_vintage DESC);
+```
+
+`gold_glossary.geo_relationship` keeps only each parent's newest vintage of
+each relationship type with a correlated `MAX`, which the unique key
+(`parent, related, type, vintage`) cannot answer from its top, so every
+bridge row a read passed walked all of its parent's relationships. Texas's
+metro list passed each county's `contains` parents, its state among them
+(7.5M heap fetches, 1.4 s). The index makes that `MAX` one probe, for every
+`/related` read as well. The read cannot skip the view: the API's role has
+no grant on `silver_ref`, so the CBSA filter cannot run before the view's
+subquery without new gold DDL.
 
 ## Evidence (cloud session, 2026-11-01)
 
@@ -116,7 +134,7 @@ for `related_geo_id = ANY(...)`.
 - `places.spec.js` (30 tests, three new for metros): pass, including axe and
   390 px width on the metro page; full browser suite recorded in the PR.
 
-## Live check on OFFICE_LAB (not yet run)
+## Live check on OFFICE_LAB (first run 2026-11-01; items 4, 5 and 7 rerun after the follow-up)
 
 After the API and web images are rebuilt from `dev`:
 
@@ -126,7 +144,7 @@ After the API and web images are rebuilt from `dev`:
    (target under 500 ms cold).
 2. `curl -s 'localhost:8000/api/v1/catalog/geographies/metros?state_fips=48' | jq .total`
    is Texas's CBSA count, Texarkana included.
-3. `http://localhost:3001/metro/austin-round-rock-san-marcos-tx-metro-area`:
+3. `http://localhost:3001/metro/austin-round-rock-san-marcos-tx`:
    unemployment, income (ACS and BEA, the BEA row marked derived), rent and
    home value beside Texas and the U.S.; the price level is the metro's.
    Screenshot to the project folder.
@@ -135,6 +153,33 @@ After the API and web images are rebuilt from `dev`:
 5. `/us/texas/austin-city` "Part of" links to the Austin metro page.
 6. EXPLAIN the `METRO_STATE_MEMBERS_QUERY` and `METRO_MEMBER_COUNTIES_QUERY`
    on the loaded warehouse; both should be index probes.
+7. `curl -sI localhost:3001/metro/45500` answers a 307 with
+   `location: /metro/texarkana-tx-ar`; `/metro/12420` likewise to the Austin
+   page; `/related` for Austin city (`state:48|place:05000`) carries
+   `page_path` on its metro row.
+
+## Live-check fixes (follow-up PR)
+
+- **`/metro/<code>` answered 200 without moving.** The page settled the
+  address in the browser only, so a plain HTTP read (and a reader before the
+  page's script ran) stayed on the code. The route now asks the API from the
+  web server for a five-digit code and answers a redirect to the named page
+  (`lib/metroRedirect.ts`); a named segment asks nothing. Where the server
+  cannot reach the API (1.5 s limit) the browser still settles it. The web
+  image's run stage now carries `API_ORIGIN` for this read.
+- **A city's metro linked by code.** `/related` now carries a metro row's
+  `page_path`, read from the metro list only when the answer names a metro,
+  and the city and county pages link it; the code link stays as the fallback.
+- **"Part of".** The label is the `Part of` heading over the list, which
+  holds the metro beside the division, region and nation; no change.
+- **Texas's list was 1.54 s cold.** `METRO_STATE_MEMBERS_QUERY` now reads the
+  state's counties once into a materialized set and probes the bridge by
+  their keys, without joining the search projection a second time; that
+  alone measured 1.4 s, because the cost was the view's newest-vintage
+  subquery, which `ix_bridge_grv_parent_type_vintage` (above) answers.
+- The plan's own check address had a `-metro-area` suffix the live
+  `page_path` does not have (the published names on the warehouse end in the
+  state codes); corrected above.
 
 ## Remaining
 
