@@ -571,6 +571,27 @@ class SliceReadTimeout(Exception):
     """A slice's raw read ran past `_RAW_FETCH_TIMEOUT_SECONDS`."""
 
 
+def stopped_by_operator(exc: BaseException) -> bool:
+    """Whether ``exc`` (or what caused it) is a statement an operator stopped.
+
+    `pg_cancel_backend` raises QueryCanceled "due to user request" and
+    `pg_terminate_backend` AdminShutdown. A statement timeout is also a
+    QueryCanceled, but it is this transform's own limit and is not a stop.
+    Neither kind of stop is a fault to retry: in November 2026 an operator
+    stopped a 3 h 15 m read and Airflow started it again at once.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, psycopg2.errors.AdminShutdown):
+            return True
+        if isinstance(current, psycopg2.errors.QueryCanceled):
+            return "statement timeout" not in str(current)
+        current = current.__cause__ or current.__context__
+    return False
+
+
 #: Rows pulled per round trip from the server-side cursor. Each batch becomes
 #: a typed polars frame straight away, so the Python tuples never accumulate.
 _FETCH_BATCH_ROWS = 500_000
@@ -722,6 +743,8 @@ def _fetch_raw_frame(
                     if time.monotonic() - started > _RAW_FETCH_TIMEOUT_SECONDS:
                         raise SliceReadTimeout(raw_slice.key)
         except psycopg2.errors.QueryCanceled as exc:
+            if stopped_by_operator(exc):
+                raise
             raise SliceReadTimeout(raw_slice.key) from exc
         conn.commit()
     finally:
@@ -1185,6 +1208,37 @@ def _completed_slice_keys(
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (resume_key, int(year)))
         return {row[0] for row in cur.fetchall()}
+
+
+def _log_resume_point(hook: PostgresHook, resume_key: str | None) -> None:
+    """Say whether this attempt resumes an earlier one of the same run, and where."""
+    if resume_key is None:
+        return
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*), COUNT(DISTINCT year), MAX(completed_at)::TEXT
+            FROM silver_census.transform_checkpoint
+            WHERE resume_key = %s;
+            """,
+            (resume_key,),
+        )
+        slices, years, latest = cur.fetchone()
+    if not slices:
+        logger.info(
+            "[CENSUS_ACS RESUME] Run %s: no slice finished under this key yet; "
+            "starting from the ledger",
+            resume_key,
+        )
+        return
+    logger.info(
+        "[CENSUS_ACS RESUME] Run %s: resuming; %s slices across %s years already "
+        "finished under this key (last at %s) and are not read again",
+        resume_key,
+        slices,
+        years,
+        latest,
+    )
 
 
 def _record_slice_complete(
@@ -1739,6 +1793,9 @@ def _direct_insert_silver_rows(
                         )
                     break  # success — move to next sub-batch
                 except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+                    if stopped_by_operator(exc):
+                        # An operator's stop is not a dropped connection.
+                        raise
                     try:
                         conn.rollback()
                     except Exception:
@@ -2116,6 +2173,7 @@ def transform_census_to_silver(
 
     inserted_total = 0
     metrics_lock = threading.Lock()
+    _log_resume_point(hook, resume_key)
 
     # ── pre-load shared dimensions ────────────────────────────────────
     logger.info("[CENSUS_ACS] Pre-loading variable metadata...")
@@ -2160,6 +2218,21 @@ def transform_census_to_silver(
                 len(raw_slices),
             )
         pending = [raw_slice for raw_slice in raw_slices if raw_slice.key not in done]
+        stamped = sum(1 for raw_slice in pending if raw_slice.key in finished)
+        # One line per year saying what this attempt will and will not read,
+        # so a retry's log shows it resuming rather than starting over.
+        logger.info(
+            "[CENSUS_ACS RESUME] Year=%s: %s slices; %s finished in this run "
+            "(resume key %s, not read again); %s stamped by an earlier run "
+            "(read only if their revisions or reference rows changed); %s never "
+            "finished (read now)",
+            y,
+            len(raw_slices),
+            len(raw_slices) - len(pending),
+            resume_key,
+            stamped,
+            len(pending) - stamped,
+        )
         for raw_slice in raw_slices:
             if raw_slice.key in done:
                 logger.info(

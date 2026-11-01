@@ -223,3 +223,37 @@ def test_planning_starts_a_slice_at_the_split_an_earlier_timeout_left() -> None:
         ("68000", ""),
     ]
     assert _ledger_ranges(finished, "acs5/tract/06") == []
+
+
+def test_only_an_operator_stop_counts_as_stopped() -> None:
+    """Covers: ETL-100 -- a cancel or terminate stops the run; its own timeout splits."""
+    import psycopg2.errors
+
+    from data_ingestion_toolbox.census_acs.silver_census.transform import (
+        SliceReadTimeout,
+        stopped_by_operator,
+    )
+
+    assert stopped_by_operator(
+        psycopg2.errors.QueryCanceled("canceling statement due to user request")
+    )
+    assert stopped_by_operator(
+        psycopg2.errors.AdminShutdown(
+            "terminating connection due to administrator command"
+        )
+    )
+    timeout = psycopg2.errors.QueryCanceled(
+        "canceling statement due to statement timeout"
+    )
+    assert not stopped_by_operator(timeout)
+    assert not stopped_by_operator(RuntimeError("Docker froze"))
+    # Found through the cause chain, as a thread pool or wrapper re-raises it.
+    try:
+        try:
+            raise psycopg2.errors.QueryCanceled(
+                "canceling statement due to user request"
+            )
+        except psycopg2.errors.QueryCanceled as exc:
+            raise SliceReadTimeout("acs5/place/06") from exc
+    except SliceReadTimeout as wrapped:
+        assert stopped_by_operator(wrapped)

@@ -73,6 +73,7 @@ from data_ingestion_toolbox.census_acs.disk_guard import (
 )
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
+    stopped_by_operator,
     transform_census_to_silver,
 )
 from data_ingestion_toolbox.utility.gold_schema import (
@@ -819,20 +820,47 @@ def acs_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule="none_failed")
+    # One retry, not the DAG's three: the transform runs for hours, and each
+    # attempt resumes from the slice ledger, so a second retry of the same
+    # fault only spends the hours again. In November 2026 an operator stopped
+    # a 3 h 15 m read of acs5 place California and Airflow restarted it at
+    # once; a stop now fails the task outright (see below).
+    @task(trigger_rule="none_failed", retries=1)
     def transform_to_silver(
-        run_id: str | None = None, dag_run: Optional[object] = None
+        run_id: str | None = None,
+        dag_run: Optional[object] = None,
+        ti: Optional[object] = None,
     ) -> int:
         """Transform ALL raw Census data to silver (full load).
 
         Airflow injects ``run_id``. It keys the transform's slice checkpoints,
-        so a retry or a cleared task resumes after the last finished slice.
-        A backfill run (`census_acs/backfill.py`) transforms its year only.
+        so a retry or a cleared task resumes after the last finished slice:
+        only slices with no checkpoint under the run, and no unchanged ledger
+        fingerprint, are read again (the log's `[CENSUS_ACS RESUME]` lines say
+        which). A backfill run (`census_acs/backfill.py`) transforms its year
+        only. A statement an operator cancels or terminates fails the task
+        without a retry; clearing it resumes the same way.
         """
+        from airflow.exceptions import AirflowFailException
+
+        logger.info(
+            "[CENSUS_ACS RESUME] transform_to_silver attempt %s for run %s",
+            getattr(ti, "try_number", "?"),
+            run_id,
+        )
         scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
-        if scope is None:
-            return transform_census_to_silver(resume_key=run_id)
-        return transform_census_to_silver(resume_key=run_id, years=[scope.year])
+        try:
+            if scope is None:
+                return transform_census_to_silver(resume_key=run_id)
+            return transform_census_to_silver(resume_key=run_id, years=[scope.year])
+        except Exception as exc:
+            if not stopped_by_operator(exc):
+                raise
+            raise AirflowFailException(
+                "An operator stopped the ACS silver transform; not retrying. "
+                "Clear this task to resume run "
+                f"{run_id} from its finished slices."
+            ) from exc
 
     # -----------------------------
     # DAG wiring

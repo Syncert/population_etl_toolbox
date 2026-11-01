@@ -310,6 +310,36 @@ def test_silver_task_callable_forwards_declared_source_scope(
 
 
 @pytest.mark.parametrize(
+    ("message", "fails_outright"),
+    [
+        ("canceling statement due to user request", True),
+        ("canceling statement due to statement timeout", False),
+    ],
+)
+def test_an_operator_stop_fails_the_acs_transform_without_a_retry(
+    dagbag, monkeypatch: pytest.MonkeyPatch, message: str, fails_outright: bool
+) -> None:
+    """Covers: DAG-008 — a cancelled transform is not restarted; a timeout may retry."""
+    import psycopg2.errors
+    from airflow.exceptions import AirflowFailException
+
+    def stopped(*_args: Any, **_kwargs: Any) -> int:
+        raise psycopg2.errors.QueryCanceled(message)
+
+    callable_ = _callable(dagbag, "acs_ingest", "transform_to_silver")
+    _patch_callable_global(
+        monkeypatch, callable_, "transform_census_to_silver", stopped
+    )
+    expected = AirflowFailException if fails_outright else psycopg2.errors.QueryCanceled
+    with pytest.raises(expected) as raised:
+        callable_(run_id="scheduled__2026-11-01")
+    if fails_outright:
+        assert "Clear this task to resume run scheduled__2026-11-01" in str(
+            raised.value
+        )
+
+
+@pytest.mark.parametrize(
     (
         "dag_id",
         "module_name",

@@ -350,6 +350,13 @@ def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
         )
 
 
+@pytest.mark.dag
+def test_acs_transform_retries_once_because_each_attempt_resumes(dagbag) -> None:
+    """Covers: DAG-008 — the hours-long ACS transform retries once, not three times."""
+    task = dagbag.dags["acs_ingest"].get_task("transform_to_silver")
+    assert task.retries == 1
+
+
 # --------------------------------------------------------------------------
 # DAG-009: Reference dimension dependencies
 # --------------------------------------------------------------------------
