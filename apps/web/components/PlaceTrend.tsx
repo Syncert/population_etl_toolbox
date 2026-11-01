@@ -15,6 +15,8 @@ import { formatNumber } from "../lib/format";
 const WIDTH = 640;
 const HEIGHT = 220;
 const PAD_LEFT = 52;
+/** About one 11px digit's width: the value labels set the left margin. */
+const TICK_CHAR_WIDTH = 6.6;
 const PAD_RIGHT = 16;
 const PAD_TOP = 14;
 const PAD_BOTTOM = 34;
@@ -73,8 +75,12 @@ export default function PlaceTrend({
   const timeSpan = Math.max(...times) - minTime || 1;
   const minValue = Math.min(...values);
   const valueSpan = Math.max(...values) - minValue || 1;
+  const maxValue = Math.max(...values);
+  // A label like "341,784,857" is wider than the default margin: widen the
+  // margin to fit it, so no value is cut off at the chart's edge.
+  const padLeft = Math.max(PAD_LEFT, Math.ceil(Math.max(format(maxValue).length, format(minValue).length) * TICK_CHAR_WIDTH) + 10);
   const x = (time: number) =>
-    PAD_LEFT + ((time - minTime) / timeSpan) * (WIDTH - PAD_LEFT - PAD_RIGHT);
+    padLeft + ((time - minTime) / timeSpan) * (WIDTH - padLeft - PAD_RIGHT);
   const y = (value: number) =>
     HEIGHT - PAD_BOTTOM - ((value - minValue) / valueSpan) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
   const scaleText =
@@ -96,10 +102,10 @@ export default function PlaceTrend({
         role="img"
         aria-label={`${label}: ${drawn.length} line${drawn.length === 1 ? "" : "s"}, ${drawn.map((line) => line.place.name).join(", ")}`}
       >
-        <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={HEIGHT - PAD_BOTTOM} y2={HEIGHT - PAD_BOTTOM} className="place-trend-axis" />
-        <text x={PAD_LEFT - 6} y={y(Math.max(...values)) + 4} textAnchor="end" className="place-trend-tick">{format(Math.max(...values))}</text>
-        <text x={PAD_LEFT - 6} y={y(minValue) + 4} textAnchor="end" className="place-trend-tick">{format(minValue)}</text>
-        <text x={PAD_LEFT} y={HEIGHT - 10} className="place-trend-tick">{tick(periods[0])}</text>
+        <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={HEIGHT - PAD_BOTTOM} y2={HEIGHT - PAD_BOTTOM} className="place-trend-axis" />
+        <text x={padLeft - 6} y={y(maxValue) + 4} textAnchor="end" className="place-trend-tick">{format(maxValue)}</text>
+        <text x={padLeft - 6} y={y(minValue) + 4} textAnchor="end" className="place-trend-tick">{format(minValue)}</text>
+        <text x={padLeft} y={HEIGHT - 10} className="place-trend-tick">{tick(periods[0])}</text>
         <text x={WIDTH - PAD_RIGHT} y={HEIGHT - 10} textAnchor="end" className="place-trend-tick">{tick(periods.at(-1))}</text>
         {hasBars
           ? drawn.map((line, index) => (
