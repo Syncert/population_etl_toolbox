@@ -4307,7 +4307,7 @@ v gold_census_lodes.observation_revision
     body      JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = fact.geo_id
     body   WHERE NOT (EXISTS ( SELECT 1
     body            FROM gold_census_lodes.coverage_gap gap
-    body           WHERE gap.run_id = fact.run_id));
+    body           WHERE gap.run_id = fact.run_id AND gold_census_lodes.coverage_gap_hides(gap.metric_key, fact.metric_key)));
 
 v gold_census_sae.estimate_latest
     column dataset_id text

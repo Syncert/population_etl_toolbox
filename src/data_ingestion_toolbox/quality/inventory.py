@@ -2906,7 +2906,8 @@ _LODES_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method=(
             "published state-years whose state total of jobs or resident "
             "workers is under a tenth of the state's upper-quartile year "
-            "(LEHD had not yet covered the state); not served"
+            "(LEHD had not yet covered that file); the measures the file "
+            "feeds are not served"
         ),
         cadence="rebuilt with every refresh_observation_fact",
         empty_behavior="empty when every published state-year was covered",
@@ -2918,7 +2919,7 @@ _LODES_OBJECTS: tuple[WarehouseObject, ...] = (
         grain="metric_key, geo_id, year, run_id (published vintages only)",
         lineage="gold_census_lodes.observation_fact",
         scope_method=(
-            "published state-years LEHD covered (coverage gaps left out); "
+            "published state-years; measures a coverage gap hides left out; "
             "every vintage kept"
         ),
         cadence="per publication",
@@ -6257,9 +6258,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "plausibility",
         "A state's served LODES jobs do not move by more than a quarter "
         "between consecutive published years; a larger step is a coverage "
-        "break in the files to explain, not an economy. State-years LEHD had "
-        "not yet covered (gold_census_lodes.coverage_gap) are not served and "
-        "not compared.",
+        "break in the files to explain, not an economy. State-years whose jobs "
+        "LEHD had not yet covered (a jobs row in gold_census_lodes.coverage_gap) "
+        "are not served and not compared.",
         ("gold_census_lodes.observation_fact", "gold_census_lodes.coverage_gap"),
     ),
     # -- EPA air quality (AirData annual monitor files) ------------------------

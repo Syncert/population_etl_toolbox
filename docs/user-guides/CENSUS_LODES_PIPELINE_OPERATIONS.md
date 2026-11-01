@@ -186,21 +186,37 @@ FROM gold_census_lodes.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
   a registered state: a history load that stopped part way.
 - `DQ-LODES-007` warns when a state's served jobs move by more than a
   quarter between consecutive published years, a coverage break to explain.
-  State-years in `gold_census_lodes.coverage_gap` are not compared.
+  State-years with a `jobs` gap in `gold_census_lodes.coverage_gap` are not
+  compared.
 
 ## Years LEHD did not cover
 
 LEHD did not cover every state from 2002. A state that joined late still has
 files for its early years, but they hold a handful of jobs rather than the
-state: Massachusetts 2002–2010 (13, 6, 9 jobs…, then 3,140,314 in 2011) and
-Arkansas 2002 (32 jobs, then 1,079,276 in 2003). Those state-years are not
-served. Their sums stay in `gold_census_lodes.observation_fact`, and
-`gold_census_lodes.coverage_gap` names them: a state-year whose state total of
-jobs located there (`jobs`) or of resident workers (`resident_workers`) is under
-a tenth (`gold_census_lodes.coverage_floor_share()`) of the same state's
-upper-quartile year. `observation_revision` and `observation_latest` leave out
-every row of such a run, its counties' included, so the API has no value for
-Massachusetts 2008 and a page reads it as "Not published that year".
+state: Massachusetts 2002–2010 (4 to 17 jobs, then 3,140,314 in 2011) and
+Arkansas 2002 (32 jobs, then 1,079,276 in 2003). Some residence files also
+cover only part of a state's workers: Alaska 2017–2023, Arizona and
+Mississippi 2002–2003, Michigan 2022–2023 and New Hampshire 2002, as well as
+Massachusetts 2002–2010 and Arkansas 2002.
+
+`gold_census_lodes.coverage_gap` names each such file, one row per run and
+state total: a state-year whose total of jobs located there (`jobs`, the
+workplace file) or of resident workers (`resident_workers`, the residence
+file) is under a tenth (`gold_census_lodes.coverage_floor_share()`) of the
+same state's upper-quartile year. The sums stay in
+`gold_census_lodes.observation_fact`. `observation_revision` and
+`observation_latest` leave out, for that run and its counties, only the
+measures the short file feeds (`gold_census_lodes.coverage_gap_hides`):
+
+| Gap in | Not served |
+|---|---|
+| `jobs` (workplace file) | `jobs`, `live_and_work`, `inbound`, `outbound_in_state` |
+| `resident_workers` (residence file) | `resident_workers`, `live_and_work`, `inbound`, `outbound_in_state` |
+
+The commuting measures pair a home with a workplace, so either gap hides
+them. Michigan 2022–2023 keeps its jobs and loses its residence and commuting
+counts; Massachusetts 2008 serves nothing, so a page reads its jobs as "Not
+published that year".
 
 The table is rebuilt from the state rows alone each time
 `refresh_observation_fact` runs, and when the schema is applied. To rebuild it
@@ -208,7 +224,7 @@ by hand and see what is hidden:
 
 ```sql
 SELECT gold_census_lodes.refresh_coverage_gap();
-SELECT state_geo_id, year, metric_key, state_value, ROUND(typical_value)
+SELECT state_geo_id, year, metric_key, state_value, ROUND(typical_value) AS typical
   FROM gold_census_lodes.coverage_gap ORDER BY state_geo_id, year, metric_key;
 ```
 

@@ -56,16 +56,26 @@ CREATE INDEX IF NOT EXISTS ix_lodes_observation_fact_run
 
 -- LEHD did not cover every state from 2002: a state that joined late
 -- (Massachusetts until 2011, Arkansas until 2003) publishes files for its
--- early years that hold a handful of jobs, not the state. Those state-years
--- are coverage gaps, not economies, and are not served: a page reads them as
--- "not published that year", never as 13 jobs in Massachusetts.
+-- early years that hold a handful of jobs, not the state, and some states'
+-- residence files cover only part of their workers in some years (Alaska
+-- 2017 onwards, Michigan 2022-2023). Those are coverage gaps, not economies,
+-- and are not served: a page reads them as "not published that year", never
+-- as 13 jobs in Massachusetts.
 --
 -- The rule is the data's own, not a list of states: a state-year whose state
--- total of jobs located there or of resident workers is under a tenth of the
--- same state's upper-quartile year is incomplete. An economy has never lost
--- nine tenths of its jobs in a year; a file covering a few employers has.
+-- total of jobs located there (the workplace file) or of resident workers
+-- (the residence file) is under a tenth of the same state's upper-quartile
+-- year is incomplete for that file. An economy has never lost nine tenths of
+-- its jobs in a year; a file covering a few employers has.
+--
+-- A gap hides only the measures that file feeds (see `coverage_gap_hides`):
+-- a workplace gap hides `jobs`, a residence gap hides `resident_workers`, and
+-- the commuting measures, which pair a home with a workplace, are hidden when
+-- either file is short. Michigan's jobs stay served while its residence
+-- counts for 2022-2023 do not.
+--
 -- The sums stay in `observation_fact` (DQ-LODES-005 still sees them); this
--- table names the runs the serving views leave out and why. It is rebuilt
+-- table names the runs and files the serving views leave out and why. It is rebuilt
 -- from the state rows alone (about 1,100 state-years per measure) each time
 -- sums are refreshed, so a later year that raises a state's typical total is
 -- applied to its earlier years too.
@@ -89,6 +99,20 @@ RETURNS NUMERIC
 LANGUAGE sql
 IMMUTABLE
 AS $$ SELECT 0.10::NUMERIC $$;
+
+-- Whether a coverage gap found in `gap_metric_key` (the state total that fell
+-- short: `jobs` or `resident_workers`) hides `metric_key`: the measure itself,
+-- and the commuting measures, which need both files.
+CREATE OR REPLACE FUNCTION gold_census_lodes.coverage_gap_hides(
+    gap_metric_key TEXT, metric_key TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT gap_metric_key = metric_key
+        OR metric_key IN ('live_and_work', 'inbound', 'outbound_in_state')
+$$;
 
 -- Rebuild the coverage gaps from the published state totals. Returns the
 -- gaps written.
@@ -220,8 +244,8 @@ END;
 $$;
 
 -- Every published state-year LEHD covered, one row per measure and
--- geography, read from the precomputed sums by key. A coverage gap's rows,
--- its counties' included, are left out.
+-- geography, read from the precomputed sums by key. The measures a coverage
+-- gap hides are left out for that run, its counties' rows included.
 CREATE OR REPLACE VIEW gold_census_lodes.observation_revision AS
 SELECT fact.metric_key,
        fact.metric_key AS measure,
@@ -249,6 +273,7 @@ JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = fact.geo_id
 WHERE NOT EXISTS (
     SELECT 1 FROM gold_census_lodes.coverage_gap AS gap
     WHERE gap.run_id = fact.run_id
+      AND gold_census_lodes.coverage_gap_hides(gap.metric_key, fact.metric_key)
 );
 
 -- The served sums of every state-year published before this table existed.

@@ -1584,8 +1584,9 @@ def lodes_state_jobs_continuity(
 ) -> list[RuleOutcome]:
     """DQ-LODES-007 — a state's served jobs do not jump by a quarter between years.
 
-    State-years in ``gold_census_lodes.coverage_gap`` (LEHD had not yet
-    covered the state) are not served and are not compared.
+    State-years whose jobs are a gap in ``gold_census_lodes.coverage_gap``
+    (LEHD had not yet covered the state's employers) are not served and are
+    not compared.
     """
     del scope
     total = _count(
@@ -1611,11 +1612,12 @@ def lodes_state_jobs_continuity(
                        AND (newer.release_key, newer.retrieved_at)
                            > (fact.release_key, fact.retrieved_at)
                )
-               -- A state-year LEHD did not cover is not served, so it is
-               -- not a step: the first covered year has no previous one.
+               -- A state-year whose workplace file LEHD did not cover is not
+               -- served, so it is not a step: the first covered year has no
+               -- previous one.
                AND NOT EXISTS (
                     SELECT 1 FROM gold_census_lodes.coverage_gap AS gap
-                     WHERE gap.run_id = fact.run_id
+                     WHERE gap.run_id = fact.run_id AND gap.metric_key = 'jobs'
                )
         )
         SELECT current.geo_id, current.year, previous.value AS previous_value,
