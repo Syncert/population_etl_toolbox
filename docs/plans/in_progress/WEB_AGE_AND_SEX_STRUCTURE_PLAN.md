@@ -178,7 +178,7 @@ Built on API part 2 (#243, API-191), as WEB-157:
   files, 980 tests; `age-map.spec.js` 4 passed and the age, measure-map and
   place-map specs still pass; `check:bundle` every route within budget
   (`/map/age/[indicator]` 470 kB of a 505 kB budget, the same as `/map`;
-  `/map/[metric]` 488 kB of 505). Catalog: WEB-157, recounted to 696.
+  `/map/[metric]` 488 kB of 505). Catalog: WEB-157, recounted to 697.
 - Live check (OFFICE_LAB) waits for the first age summary build, which fills
   `gold_census.age_structure_summary`.
 
