@@ -14,9 +14,12 @@ import { describe, expect, it } from "vitest";
 import {
   citySegment,
   countySegment,
+  metroPath,
+  metroSegment,
   placePath,
   stateSegment,
 } from "../../../apps/web/lib/placeChapters";
+import { tractSegment } from "../../../apps/web/lib/tractPage";
 
 const FIXTURE = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -25,20 +28,27 @@ const FIXTURE = join(
 
 describe("place page addresses shared with the API", () => {
   const fixture = JSON.parse(readFileSync(FIXTURE, "utf8"));
-  const { states, counties, places, expected_paths: expected } = fixture;
+  const { states, counties, places, metros, tracts, expected_paths: expected } = fixture;
 
   function webPath(row) {
+    if (row.geo_level === "METRO") return metroPath(metroSegment(row, metros));
     const state = states.find((candidate) => candidate.state_fips === row.state_fips);
     const stateSeg = stateSegment(state, states);
     if (row.geo_level === "STATE") return placePath(stateSeg);
     const ownCounties = counties.filter((county) => county.state_fips === row.state_fips);
     if (row.geo_level === "COUNTY") return placePath(stateSeg, countySegment(row, ownCounties));
+    if (row.geo_level === "TRACT") {
+      // A tract's page sits under its county's (tract pages).
+      const county = ownCounties.find((candidate) => candidate.county_fips === row.county_fips);
+      return `${placePath(stateSeg, countySegment(county, ownCounties))}/${tractSegment(row.geo_id)}`;
+    }
     const ownPlaces = places.filter((place) => place.state_fips === row.state_fips);
     return placePath(stateSeg, citySegment(row, ownPlaces, ownCounties));
   }
 
+  // Covers: WEB-153 — a metro's address is its name's slug under /metro/, or its CBSA code on a clash.
   it("Covers: API-171 — every fixture row answers the path the API answers", () => {
-    const rows = [...states, ...counties, ...places];
+    const rows = [...states, ...counties, ...places, ...metros, ...tracts];
     expect(rows.map((row) => row.geo_id).sort()).toEqual(Object.keys(expected).sort());
     for (const row of rows) {
       expect([row.geo_id, webPath(row)]).toEqual([row.geo_id, expected[row.geo_id]]);

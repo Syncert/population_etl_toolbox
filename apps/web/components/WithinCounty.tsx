@@ -20,6 +20,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ExpressionSpecification, FilterSpecification } from "maplibre-gl";
 
 import ChoroplethLegend from "./ChoroplethLegend";
@@ -33,17 +35,28 @@ import { ACTIVE_GEOGRAPHIES_ONLY, normalizeNeutralObservationRows, observationPe
 import { discoverTractTiles } from "../lib/tiles";
 import type { TractTiles } from "../lib/tiles";
 import { GEOGRAPHY_NOUNS, uncolouredSentence as sharedUncolouredSentence } from "../lib/uncoloured";
+import { TRACT_MEASURE_LIST, tractSegment } from "../lib/tractPage";
 
 const TRACT_SOURCE = "within-county-tracts";
 const TRACT_LAYER = "within-county-tracts-fill";
 
-/** The ACS 5-year measures the warehouse loads at tract grain (`AcsConfig.tract_tables`). */
-export const TRACT_MEASURES: readonly { code: string; label: string }[] = [
+/**
+ * The ACS 5-year measures the warehouse loads at tract grain
+ * (`AcsConfig.tract_tables`): the five the map has always offered, then the
+ * rest of the tract page's measures (W-4 widened the tract tables).
+ */
+const FIRST_TRACT_MEASURES: readonly { code: string; label: string }[] = [
   { code: "CENSUS_ACS:acs5:B19013_001", label: "Median household income" },
   { code: "CENSUS_ACS:acs5:B01003_001", label: "Total population" },
   { code: "CENSUS_ACS:acs5:B17001_002", label: "People with income below the poverty level" },
   { code: "CENSUS_ACS:acs5:B25064_001", label: "Median gross rent" },
   { code: "CENSUS_ACS:acs5:B25077_001", label: "Median home value" },
+];
+export const TRACT_MEASURES: readonly { code: string; label: string }[] = [
+  ...FIRST_TRACT_MEASURES,
+  ...TRACT_MEASURE_LIST.filter((measure) => !FIRST_TRACT_MEASURES.some((first) => first.code === measure.metricCode)).map(
+    (measure) => ({ code: measure.metricCode, label: measure.label }),
+  ),
 ];
 
 /** The sentence the legend states about tracts left uncoloured (the shared rule). */
@@ -207,6 +220,8 @@ function TractMap({
 }
 
 export default function WithinCounty({ county }: { county: GeographySummary }) {
+  // Each tract's own page sits under this county's address (tract pages).
+  const countyPath = usePathname() || "";
   const stateFips = String(county.state_fips || "");
   const countyFips = String(county.county_fips || "");
   const [measure, setMeasure] = useState(TRACT_MEASURES[0]!.code);
@@ -321,7 +336,7 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
       <p>
         One measure at a time across the county&apos;s Census tracts, from the American Community Survey 5-year
         estimates, one release at a time. Tract estimates carry wide margins of error; read them before comparing
-        two tracts.
+        two tracts. Each tract&apos;s name opens its own page, with its history across the 2020 redraw.
       </p>
       <div className="within-county-controls">
         <label className="within-county-measure">
@@ -385,7 +400,15 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
                   const published = hasValue(row);
                   return (
                     <tr key={tract.geo_id} data-testid={`within-county-row-${tract.geo_id}`}>
-                      <th scope="row">{String(tract.area_name || tract.geo_name || tract.geo_id)}</th>
+                      <th scope="row">
+                        {countyPath && tractSegment(String(tract.geo_id)) ? (
+                          <Link href={`${countyPath.replace(/\/$/, "")}/${tractSegment(String(tract.geo_id))}`} data-testid="within-county-tract-link">
+                            {String(tract.area_name || tract.geo_name || tract.geo_id)}
+                          </Link>
+                        ) : (
+                          String(tract.area_name || tract.geo_name || tract.geo_id)
+                        )}
+                      </th>
                       <td>
                         {published
                           ? formatObservationValue(row!.value)

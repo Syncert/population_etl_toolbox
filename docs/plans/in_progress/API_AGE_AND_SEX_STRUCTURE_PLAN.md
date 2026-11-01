@@ -36,7 +36,7 @@ partition changed; `/age-structure/map` serves one indicator per grain from
 it (cities and tracts one state at a time). The arithmetic moved to
 `data_ingestion_toolbox.semantics.age_structure`, which `/age-structure`
 and the builder share, so a mapped value equals the place page's (ETL-109,
-DB-068, API-187). The summary is not entered in the metric catalog: the map
+DB-068, API-191). The summary is not entered in the metric catalog: the map
 reads it through its own route, and a catalog entry would advertise derived
 values as provider metrics. Part 2b (separate PR): the by-age rate schemes.
 

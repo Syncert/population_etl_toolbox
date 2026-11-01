@@ -1007,10 +1007,11 @@ $$;
 -- published has no value (`incomplete`), never a partial sum. The published
 -- series in `rpt_acs_observations` is untouched.
 CREATE OR REPLACE VIEW gold_census.acs_tract_comparable AS
-WITH tract AS (
-    SELECT geo_sk, geo_id FROM silver_ref.dim_geo_entity WHERE geo_type = 'tract'
-),
-to_2020 AS (
+-- The tract identities are joined in each branch rather than read from one
+-- shared CTE: a CTE named more than once is materialised over every tract in
+-- the country, and a read of one tract (`WHERE geo_id = ...`, the tract page)
+-- then could not reach the dimension's `geo_id` index or the crosswalk's.
+WITH to_2020 AS (
     SELECT 2010 AS source_decade,
            earlier.geo_id AS source_geo_id,
            later.geo_id AS geo_id,
@@ -1018,9 +1019,13 @@ to_2020 AS (
            (step.earlier_geo_sk = step.later_geo_sk
             AND step.earlier_land_share = 1 AND step.later_land_share = 1) AS unchanged
     FROM silver_ref.tract_decade_crosswalk AS step
-    JOIN tract AS earlier ON earlier.geo_sk = step.earlier_geo_sk
-    JOIN tract AS later ON later.geo_sk = step.later_geo_sk
-    WHERE step.earlier_vintage = 2010
+    JOIN silver_ref.dim_geo_entity AS earlier
+      ON earlier.geo_sk = step.earlier_geo_sk AND earlier.geo_type = 'tract'
+    JOIN silver_ref.dim_geo_entity AS later
+      ON later.geo_sk = step.later_geo_sk AND later.geo_type = 'tract'
+    -- `later_vintage` is implied by the decade (a CHECK holds it to +10);
+    -- naming it lets a read of one tract use the crosswalk's later index.
+    WHERE step.earlier_vintage = 2010 AND step.later_vintage = 2020
     UNION ALL
     SELECT 2000,
            earlier.geo_id,
@@ -1032,10 +1037,13 @@ to_2020 AS (
     FROM silver_ref.tract_decade_crosswalk AS first_step
     JOIN silver_ref.tract_decade_crosswalk AS second_step
       ON second_step.earlier_vintage = 2010
+     AND second_step.later_vintage = 2020
      AND second_step.earlier_geo_sk = first_step.later_geo_sk
-    JOIN tract AS earlier ON earlier.geo_sk = first_step.earlier_geo_sk
-    JOIN tract AS later ON later.geo_sk = second_step.later_geo_sk
-    WHERE first_step.earlier_vintage = 2000
+    JOIN silver_ref.dim_geo_entity AS earlier
+      ON earlier.geo_sk = first_step.earlier_geo_sk AND earlier.geo_type = 'tract'
+    JOIN silver_ref.dim_geo_entity AS later
+      ON later.geo_sk = second_step.later_geo_sk AND later.geo_type = 'tract'
+    WHERE first_step.earlier_vintage = 2000 AND first_step.later_vintage = 2010
 ),
 source AS (
     SELECT published.*,
@@ -1189,3 +1197,27 @@ CREATE TABLE IF NOT EXISTS gold_census.age_structure_summary_build (
     built_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (dataset_code, vintage_year)
 );
+
+-- How each 2020 tract relates to the tracts of the decade before it, as the
+-- Bureau's relationship files record it: one row per (earlier tract, later
+-- tract) part with both sides' land shares. The tract page reads it for one
+-- tract to say whether its code named the same area before 2020 (served
+-- under `api_reader`, which reads gold only). A plain join, so a filter on
+-- `later_geo_id` or `earlier_geo_id` reaches the dimension's `geo_id` index
+-- and the crosswalk's keys.
+CREATE OR REPLACE VIEW gold_census.tract_decade_change AS
+SELECT step.earlier_vintage,
+       step.later_vintage,
+       earlier.geo_id AS earlier_geo_id,
+       later.geo_id AS later_geo_id,
+       step.earlier_land_share,
+       step.later_land_share,
+       step.earlier_population_share,
+       step.land_area_part_m2
+FROM silver_ref.tract_decade_crosswalk AS step
+JOIN silver_ref.dim_geo_entity AS earlier ON earlier.geo_sk = step.earlier_geo_sk
+JOIN silver_ref.dim_geo_entity AS later ON later.geo_sk = step.later_geo_sk;
+
+COMMENT ON VIEW gold_census.tract_decade_change IS
+    'Census tract relationship-file parts between consecutive decades, by tract geo_id, with each side''s land share. Reference, not an estimate.';
+

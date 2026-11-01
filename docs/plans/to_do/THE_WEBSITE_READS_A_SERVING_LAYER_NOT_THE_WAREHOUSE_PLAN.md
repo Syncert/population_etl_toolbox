@@ -206,6 +206,11 @@ remembered:
    while someone is demoing.
 7. **Add pgbouncer in transaction mode** when connections pass the
    stage-0 limit. It's one container. SQLAlchemy's pool then points at it.
+8. **Serve the web app from a production build.** On 2026-11-01 the web
+   container ran the Next dev server (`build=development`) and hung with 30 s
+   timeouts until it was restarted. A production build (`next build` +
+   `next start`) removes dev-compile latency and that class of hang. Any
+   public or demo URL should use one.
 
 Cost: $0. Burden: a few checks, mostly written already.
 
@@ -465,8 +470,48 @@ read, would put the page's cold p95 under 200 ms.
 - The cumulative buffer hit ratio is 94.93%, unchanged.
 - A connection sampler is running on OFFICE_LAB for 24 h, every 10 s, writing
   to `H:\backfill-logs\conn_samples.csv`. The first samples show 15–17
-  backends: 13 idle `api_reader` pool connections and 2–4 active. Peak and p99
-  are still to come.
+  backends: 13 idle `api_reader` pool connections and 2–4 active. The peak is
+  recorded below.
+
+## Measured on OFFICE_LAB (2026-11-01, about 05:40Z, clean idle)
+
+The metro backfill finished at 05:39Z. No DAG runs were active, and 2 client
+backends were active. This replaces the near-idle run above. The same 12 Dane
+page reads were timed. Cold reads used a temporary no-cache API copy hitting
+Postgres, and warm reads used production with Redis.
+
+| | Cold p50 | Cold p95 | Cold max | Warm p50 | Warm p95 |
+|---|---:|---:|---:|---:|---:|
+| Idle, run 1 | 77 ms | 472 ms | 652 ms | 15 ms | 153 ms* |
+| Idle, run 2 | 67 ms | 487 ms | 512 ms | 15 ms | 26 ms |
+| During load (earlier) | 64 ms | 466 ms | 598 ms | 15 ms | 27 ms |
+
+\* One noisy round.
+
+**Limit 1 is confirmed not reached:** idle and during-load are the same within
+noise. The cold p95 is set by two reads; everything else is under 200 ms:
+
+- `/catalog/geographies/{geo}/related` takes 460–650 ms on every call;
+- `/place/distinctive` takes about 470 ms.
+
+Fixing `/related` is the follow-up recorded above.
+
+**Connections (limit 4).** 1,589 samples were taken every 10 s, from 01:29 to
+06:01Z. They span the metro backfill, LODES (6 workers), FBI fills and page
+traffic.
+
+| Backends | p50 | p99 | max |
+|---|---:|---:|---:|
+| Total | 15 | 21 | 27 (02:25:56Z) |
+| Active | 2 | 9 | 11 |
+| `api_reader` pool | 8 | 13 | 13 |
+| Other | 4 | 12 | 15 |
+
+The maximum is 27 of `max_connections` 100, far under the 70% trigger.
+pgbouncer (stage 0, item 7) is not needed yet.
+
+**rpt sizes** were re-confirmed (1.19B rows, 1,184.7 GB). METRO has grown
+since, with the 2005–2014 backfill.
 
 ## Acceptance (for this plan, when its stages are built)
 

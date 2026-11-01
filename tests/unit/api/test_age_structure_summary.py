@@ -3,7 +3,7 @@
 Covers: ETL-109 (the summary builder writes, for every place a release
         serves, the same group shares, ratios and margins `/age-structure`
         answers, null with the reason where a line is withheld, and a place
-        with no total line is not given a row), API-187 (`/age-structure/map`
+        with no total line is not given a row), API-191 (`/age-structure/map`
         answers one indicator for every place of a grain at the grain's newest
         summary release, cities and tracts one state at a time, a withheld
         value listed with its reason, and refuses an unknown indicator or
@@ -198,7 +198,7 @@ def map_client(monkeypatch):
 
 
 def test_a_county_map_reads_the_grains_newest_release(map_client) -> None:
-    """Covers: API-187"""
+    """Covers: API-191"""
     session = _SummarySession(
         [
             _summary(
@@ -249,7 +249,7 @@ def test_a_county_map_reads_the_grains_newest_release(map_client) -> None:
 
 
 def test_a_city_map_is_drawn_one_state_at_a_time(map_client) -> None:
-    """Covers: API-187"""
+    """Covers: API-191"""
     session = _SummarySession(
         [
             _summary(
@@ -293,7 +293,7 @@ def test_a_city_map_is_drawn_one_state_at_a_time(map_client) -> None:
     ],
 )
 def test_requests_the_map_refuses(map_client, params) -> None:
-    """Covers: API-187"""
+    """Covers: API-191"""
     response = map_client(_SummarySession([])).get(
         "/api/v1/age-structure/map", params=params
     )
@@ -301,7 +301,7 @@ def test_requests_the_map_refuses(map_client, params) -> None:
 
 
 def test_a_grain_with_no_summary_answers_empty_not_zero(map_client) -> None:
-    """Covers: API-187"""
+    """Covers: API-191"""
     response = map_client(_SummarySession([])).get(
         "/api/v1/age-structure/map",
         params={"indicator": "median_age", "geo_level": "METRO"},
