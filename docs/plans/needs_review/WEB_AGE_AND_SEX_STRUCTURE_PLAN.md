@@ -191,7 +191,7 @@ Built on API part 2 (#243, API-191), as WEB-157:
     `denominator_zero` (the 990000 water tracts), listed with the reason and
     uncoloured, read p50 about 43 ms.
   - Screenshots: project files `agemap-median-county.png`,
-    `agemap-65plus-metro.png`, `agemap-median-place-wi.png`,
+    `agemap-65plus-metro.png`, `agemap-median-place-wi-viewport.png` (an element capture; the full-page capture `agemap-median-place-wi.png` shows a stale WebGL frame),
     `agemap-sexratio-tract-wi.png`.
 
 ## Checkpoint
