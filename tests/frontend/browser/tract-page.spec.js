@@ -92,6 +92,10 @@ test("a tract's code form settles on its number, and an unknown tract points to 
   await page.goto("/us/texas/travis-county/tract-001831");
   await expect(page).toHaveURL(/\/us\/texas\/travis-county\/tract-18-31$/);
   await expect(page.getByTestId("tract-page")).toHaveAttribute("data-geo-id", SPLIT.geo_id);
+  // Let the resolved tract's own reads finish before the mark, so a late
+  // tract-history answer for it is not counted against the next address.
+  await expect(page.getByTestId("tract-page")).toHaveAttribute("data-ready", "true");
+  await page.waitForLoadState("networkidle");
 
   const before = seen.length;
   await page.goto("/us/texas/travis-county/tract-18-05");
