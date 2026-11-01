@@ -955,6 +955,39 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty until the tract crosswalk is loaded",
     ),
     _obj(
+        "gold_census.age_structure_summary",
+        "serving",
+        "CENSUS_ACS",
+        grain="geo_id, dataset_code, vintage_year, observation_date (unique index)",
+        lineage="gold_census.rpt_acs_observations",
+        scope_method=(
+            "derived (ADR-0013): broad age groups, dependency ratios and sex "
+            "ratio per place and release from B01001/B01002, Bureau margins"
+        ),
+        cadence="per publication, a release at a time after the serving refresh",
+        empty_behavior="empty until the first age summary build",
+    ),
+    _obj(
+        "gold_census.age_structure_summary_build",
+        "control",
+        "CENSUS_ACS",
+        grain="dataset_code, vintage_year (primary key)",
+        lineage="gold_census.rpt_acs_observations",
+        scope_method="the partition watermark each release's summary was built from",
+        cadence="per age summary build",
+        empty_behavior="empty until the first age summary build",
+    ),
+    _obj(
+        "gold_census.tract_decade_change",
+        "serving",
+        "CENSUS_ACS",
+        grain="earlier_vintage, earlier_geo_id, later_geo_id",
+        lineage="silver_ref.tract_decade_crosswalk, silver_ref.dim_geo_entity",
+        scope_method="reference: relationship-file parts by tract geo_id",
+        cadence="a view, current with the tract crosswalk",
+        empty_behavior="empty until the tract crosswalk is loaded",
+    ),
+    _obj(
         "gold_census.fact_observation",
         "serving",
         "CENSUS_ACS",
@@ -4263,6 +4296,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
             "gold_census.acs_tract_comparable",
+            "gold_census.age_structure_summary",
+            "gold_census.tract_decade_change",
         ),
         automation="enforced",
         automation_note=(
@@ -4274,7 +4309,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "against the warehouse. `fact_acs_observation` carries no index "
             "because it is a view over the silver fact; `acs_tract_comparable` "
             "is a view grouped by its own grain, so it holds one row per 2020 "
-            "tract, release and variable by construction."
+            "tract, release and variable by construction; `tract_decade_change` "
+            "is a join of the crosswalk to the geography dimension on unique "
+            "keys, so it holds the crosswalk's primary key, one row per part; "
+            "the age structure summary's unique index holds one row per place "
+            "and release."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -4301,6 +4340,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
                     "variable_code",
                     "metric_code",
                 ),
+            ),
+            EnforcedGrain(
+                "gold_census.age_structure_summary",
+                ("geo_id", "dataset_code", "vintage_year", "observation_date"),
             ),
         ),
     ),

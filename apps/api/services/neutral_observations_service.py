@@ -1120,6 +1120,187 @@ def newest_values_batch(
     ]
 
 
+#: The most metrics and geographies one settled-history batch reads, and the
+#: most rows it returns for one pair. A place page's chapter asks two or three
+#: trends for the place, its county, its state and the nation; a pair with more
+#: periods than the bound answers its oldest ``HISTORY_BATCH_MOST_ROWS`` with
+#: ``total`` stating the rest, exactly as the single read's first page would.
+HISTORY_BATCH_MOST_CODES = 12
+HISTORY_BATCH_MOST_GEOGRAPHIES = 8
+HISTORY_BATCH_MOST_ROWS = 1000
+
+
+def _single_history(
+    db: Session, metric_code: str, geo_id: str
+) -> Optional[NeutralObservationListResponse]:
+    """The single route's answer for one metric's settled history at one
+    place, as it reads it: ``/observations?metric_code=&scope=as_released
+    &newest_release_per_period=true&geo_id=&limit=1000``, unnamed."""
+    return _list_neutral_observations(
+        db,
+        metric_code,
+        SCOPE_AS_RELEASED,
+        None,
+        {"geo_id": geo_id},
+        HISTORY_BATCH_MOST_ROWS,
+        0,
+        newest_release_per_period=True,
+    )
+
+
+def history_batch(
+    db: Session,
+    metric_codes: Sequence[str],
+    geo_ids: Sequence[str],
+) -> list[
+    tuple[str, str, int, Optional[str], Optional[NeutralObservationListResponse]]
+]:
+    """Each metric's settled history for each geography, one statement a source.
+
+    A place page draws each chapter's trends for the place and the places
+    above it -- a city beside its county, its state and the nation -- and
+    each line was its own ``scope=as_released&newest_release_per_period=true``
+    read: about sixteen requests for a city, six at a time. Each ``(metric,
+    geography)`` answer here is the single route's (``_single_history``): the
+    same released relation, the same identity predicates, the same
+    newest-release-per-period ranking, the same order, the first
+    ``HISTORY_BATCH_MOST_ROWS`` rows. The geography is bound as ``= ANY``,
+    because the ranking already partitions by it, and the metrics that share
+    a relation are read in one ``UNION ALL`` whose branches are each that
+    single read (for Census ACS, an index probe on ``(metric_code, geo_id)``
+    per year partition).
+
+    Returns ``(metric_code, geo_id, status, detail, response)`` in the order
+    asked, metrics outer: ``200`` with the single route's page, ``404`` for a
+    metric the glossary does not hold, ``422`` with the single route's
+    refusal, ``503`` when the metric's released relation is absent.
+    """
+    codes = list(dict.fromkeys(metric_codes))
+    places = list(dict.fromkeys(geo_ids))
+    metrics = resolve_metrics(db, codes)
+    answers: dict[tuple[str, str], tuple[int, Optional[str], Any]] = {}
+
+    def refuse(code: str, status: int, detail: str) -> None:
+        for geo_id in places:
+            answers[(code, geo_id)] = (status, detail, None)
+
+    groups: dict[
+        tuple[str, str], tuple[ObservationDispatch, list[tuple[str, list[str], dict]]]
+    ] = {}
+    alone: list[str] = []
+    for index, code in enumerate(codes):
+        metric = metrics.get(code)
+        if metric is None:
+            refuse(code, 404, "metric_code not found")
+            continue
+        try:
+            dispatch = dispatch_for_metric(metric)
+            refusal = reduction_refusal(dispatch, REDUCTION_NEWEST_RELEASE_PER_PERIOD)
+            if refusal is not None:
+                raise NeutralQueryError(refusal)
+            conditions, params = _metric_conditions(
+                dispatch, code, metric, param_prefix=f"m{index}_"
+            )
+        except NeutralQueryError as exc:
+            refuse(code, 422, exc.detail)
+            continue
+        except ServingContractUnavailable as exc:
+            refuse(code, 503, str(exc))
+            continue
+        declared = dict(dispatch.filter_conditions).get("geo_id")
+        if declared != f"{dispatch.geo_id_expression} = :geo_id":
+            alone.append(code)
+            continue
+        groups.setdefault((dispatch.released_relation, repr(dispatch)), (dispatch, []))[
+            1
+        ].append((code, conditions, params))
+
+    for (relation, _), (dispatch, entries) in groups.items():
+        try:
+            require_relation(db, relation)
+        except ServingContractUnavailable as exc:
+            for code, _, _ in entries:
+                refuse(code, 503, str(exc))
+            continue
+        branches: list[str] = []
+        bound: dict[str, Any] = {
+            "geo_ids": places,
+            "most_rows": HISTORY_BATCH_MOST_ROWS,
+        }
+        order = ", ".join(dispatch.released_order)
+        for index, (code, conditions, params) in enumerate(entries):
+            label = f"code_{index}"
+            where_sql = " AND ".join(
+                [*conditions, f"{dispatch.geo_id_expression} = ANY(:geo_ids)"]
+            )
+            branches.append(
+                f"""SELECT * FROM (
+        SELECT CAST(:{label} AS TEXT) AS grouped_metric_code,
+            {_select_sql(dispatch)},
+            ROW_NUMBER() OVER (
+                PARTITION BY {dispatch.geo_id_expression} ORDER BY {order}
+            ) AS pair_row,
+            COUNT(*) OVER (PARTITION BY {dispatch.geo_id_expression}) AS pair_total
+        FROM {_newest_release_per_period_source(dispatch, relation, where_sql)}
+            AS observations
+    ) AS pair_{index} WHERE pair_row <= :most_rows"""
+            )
+            bound[label] = code
+            bound.update(params)
+        found: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+        for row in db.execute(text("\nUNION ALL\n".join(branches)), bound).mappings():
+            found.setdefault(
+                (str(row["grouped_metric_code"]), str(row["geo_id"])), []
+            ).append(row)
+        for code, _, _ in entries:
+            name = metrics[code].get("metric_display_name")
+            for geo_id in places:
+                rows = sorted(
+                    found.get((code, geo_id), []),
+                    key=lambda row: int(row.get("pair_row") or 0),
+                )
+                total = int(rows[0].get("pair_total") or len(rows)) if rows else 0
+                answers[(code, geo_id)] = (
+                    200,
+                    None,
+                    NeutralObservationListResponse(
+                        metric_code=code,
+                        source_code=dispatch.source_code,
+                        scope=SCOPE_AS_RELEASED,
+                        time_grain=TIME_GRAIN_NATIVE,
+                        release=None,
+                        total=total,
+                        limit=HISTORY_BATCH_MOST_ROWS,
+                        offset=0,
+                        items=[
+                            _observation_from(row, dispatch, code, name) for row in rows
+                        ],
+                    ),
+                )
+
+    for code in alone:
+        for geo_id in places:
+            try:
+                answers[(code, geo_id)] = (200, None, _single_history(db, code, geo_id))
+            except NeutralQueryError as exc:
+                answers[(code, geo_id)] = (422, exc.detail, None)
+            except ServingContractUnavailable as exc:
+                answers[(code, geo_id)] = (503, str(exc), None)
+
+    _name_rows(
+        db,
+        [
+            item
+            for _, _, response in answers.values()
+            if response is not None
+            for item in response.items
+        ],
+    )
+    return [
+        (code, geo_id, *answers[(code, geo_id)]) for code in codes for geo_id in places
+    ]
+
+
 def _no_calendar_figures(metric_code: str, time_grain: str) -> str:
     return (
         f"{metric_code} has no {time_grain} figures: its provider publishes "

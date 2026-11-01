@@ -309,7 +309,7 @@ function locateAnswer(lat, lon) {
   return null;
 }
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null, onBatchItem = null } = {}) {
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null, onBatchItem = null, onHistoryBatch = null } = {}) {
   // One `/observations` read, as the single route answers it; the batch
   // route answers each of its pairs from the same function (API-180).
   const answerObservations = (params) => {
@@ -334,6 +334,10 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       // does for a sector that would disclose one employer; QCEW withholds a
       // sector it cannot disclose, and Mining is withheld here too.
       const withheld = (code === "BEA:CAINC5N:200" || code === "BLS_QCEW:employment:21:5") && geo === "state:55|county:025";
+      // Madison's home value is published from its third year only, as the
+      // Bureau's curated tables grew (web-city-history): the city's line
+      // starts there and the earlier years read "Not published that year".
+      const firstIndex = geo === "state:55|place:48000" && code.endsWith("B25077_001") ? 2 : 0;
       let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
         const year = lastYear - 5 + index;
         const monthly = code.endsWith(":monthly");
@@ -353,7 +357,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
             : null,
           ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
           coverage: null };
-      });
+      }).slice(firstIndex);
       if (newest) items = items.slice(-1);
       return { status: 200, json: { metric_code: code, source_code: metric.source_code, scope: "latest", total: items.length, offset: 0, limit: Number(params.get("limit") || 500), items } };
     }
@@ -487,6 +491,19 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
           : { metric_code: code, geo_id: geo, status: answer.status, detail: answer.json.detail, observations: null };
       }));
       if (onBatchItem) items.forEach(onBatchItem);
+      return route.fulfill({ json: { metric_codes: codes, geo_ids: geoIds, items } });
+    }
+    if (path === "/api/v1/observations/history/batch") {
+      const codes = params.get("metric_codes").split(",");
+      const geoIds = params.get("geo_ids").split(",");
+      const items = codes.flatMap((code) => geoIds.map((geo) => {
+        const single = new URLSearchParams({ metric_code: code, scope: "as_released", newest_release_per_period: "true", limit: "1000", geo_id: geo });
+        const answer = answerObservations(single);
+        return answer.status === 200
+          ? { metric_code: code, geo_id: geo, status: 200, detail: null, observations: answer.json }
+          : { metric_code: code, geo_id: geo, status: answer.status, detail: answer.json.detail, observations: null };
+      }));
+      onHistoryBatch?.(items);
       return route.fulfill({ json: { metric_codes: codes, geo_ids: geoIds, items } });
     }
     if (path === "/api/v1/observations" && params.get("geo_level") !== "TRACT") {

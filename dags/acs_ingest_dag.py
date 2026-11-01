@@ -909,6 +909,15 @@ def acs_ingest():
         )
 
     @task(trigger_rule="none_failed")
+    def refresh_age_structure_summary() -> dict[str, int]:
+        """Rebuild the age summary (ADR-0013) for releases whose lines changed."""
+        from data_ingestion_toolbox.census_acs.gold_census.age_summary import (
+            build_age_structure_summary,
+        )
+
+        return build_age_structure_summary(_get_postgres_hook())
+
+    @task(trigger_rule="none_failed")
     def emit_census_publisher_ready() -> None:
         """Append a durable outbox event without waiting for glossary harvest."""
         from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
@@ -921,6 +930,7 @@ def acs_ingest():
     gold_census_elements = refresh_gold_census_elements()
     gold_census_refresh = refresh_gold_census_serving_layer()
     publisher_ready = emit_census_publisher_ready()
+    age_summary = refresh_age_structure_summary()
 
     (
         silver_transform
@@ -930,6 +940,8 @@ def acs_ingest():
         >> gold_census_refresh
         >> publisher_ready
     )
+    # Reads only what the refresh served; nothing downstream waits on it.
+    gold_census_refresh >> age_summary
 
 
 # Instantiate DAG

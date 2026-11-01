@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 _COMBINING_MARKS = re.compile("[̀-ͯ]")
 _NOT_SLUG = re.compile(r"[^a-z0-9]+")
+_TRACT_ID = re.compile(r"^(state:\d{2}\|county:\d{3})\|tract:(\d{6})$")
 
 
 def place_slug(name: object) -> str:
@@ -106,7 +107,9 @@ class PagePaths:
 
     Built from every state and metro and from the counties and places of the
     states a caller needs paths in. A geography outside those rows, or of a
-    grain with no page (tract, ZCTA), has no path.
+    grain with no page (ZCTA), has no path. A tract's page sits under its
+    county's (``/us/<state>/<county>/tract-18-05``), so it has a path whenever
+    its county does; see ``tract_segment``.
     """
 
     def __init__(self, rows: Iterable[SegmentRow | Mapping[str, object]]) -> None:
@@ -163,4 +166,22 @@ class PagePaths:
     def path(self, geo_id: str | None) -> str | None:
         if geo_id is None:
             return None
-        return self._paths.get(geo_id)
+        found = self._paths.get(geo_id)
+        if found is not None:
+            return found
+        match = _TRACT_ID.match(geo_id)
+        if match is None:
+            return None
+        county = self._paths.get(match.group(1))
+        return f"{county}/{tract_segment(match.group(2))}" if county else None
+
+
+def tract_segment(code: str) -> str:
+    """A tract's address segment from its six-digit code: the web's rule.
+
+    The code is the tract number times 100, so ``001805`` is tract 18.05 and
+    reads ``tract-18-05``; ``001100`` is tract 11 and reads ``tract-11``.
+    """
+    whole = int(code[:4])
+    fraction = code[4:]
+    return f"tract-{whole}" if fraction == "00" else f"tract-{whole}-{fraction}"

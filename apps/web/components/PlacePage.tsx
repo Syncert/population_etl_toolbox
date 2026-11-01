@@ -26,6 +26,7 @@ import {
   getMetricsByCode,
 } from "../lib/api/client";
 import { batchesNewestValues, getNewestValuesBatch, newestKey } from "../lib/newestValues";
+import { batchesHistory, getHistoriesBatch, historyKey } from "../lib/historyBatch";
 import type { CollectionResponse, GeographySummary, MetricSummary, Observation } from "../lib/api/types";
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
@@ -64,6 +65,7 @@ import {
   stateName,
   stateSegment,
   threeLevelCard,
+  trendNotes,
 } from "../lib/placeChapters";
 import type {
   LevelAnswer,
@@ -545,6 +547,14 @@ export default function PlacePage({
       await inPool(missed, REQUEST_CONCURRENCY);
     };
 
+    const settleHistory = (source: ExplorerSource, measure: ResolvedPlaceMeasure, geoId: string, items: Observation[]) => {
+      const rows = normalizeObservationRows(source, items);
+      verifyUseCaseRows(rows, measure.metricCode, geoId);
+      if (!describeStratification(rows, seriesDimensionNames(source, "latest")).stratified) {
+        nextHistories.set(answerKey(measure.metricCode, geoId), rows);
+      }
+    };
+
     const askHistory = (measure: ResolvedPlaceMeasure, place: LevelPlace) => async () => {
       const source = sourceFor(measure.metric);
       const reading = buildUseCaseHistory(source, measure.metric, place.geoId, place.level);
@@ -556,14 +566,43 @@ export default function PlacePage({
           maxPages: 2,
           signal,
         });
-        const rows = normalizeObservationRows(source, result.items);
-        verifyUseCaseRows(rows, measure.metricCode, place.geoId);
-        if (!describeStratification(rows, seriesDimensionNames(source, "latest")).stratified) {
-          nextHistories.set(answerKey(measure.metricCode, place.geoId), rows);
-        }
+        settleHistory(source, measure, place.geoId, result.items);
       } catch {
         // The trend draws the lines that arrived; the cards state any error.
       }
+    };
+
+    // A chapter's trend lines for the same places, as one request: each item
+    // is the single settled-history read's answer for its pair (API-189). A
+    // batch that fails falls back to the single reads it stands for; an item
+    // the single read would refuse draws no line, as that read's error did.
+    const askHistoryBatch = (pairs: { measure: ResolvedPlaceMeasure; place: LevelPlace }[]) => async () => {
+      let found: Awaited<ReturnType<typeof getHistoriesBatch>>;
+      try {
+        found = await getHistoriesBatch(
+          pairs.map((pair) => pair.measure.metricCode),
+          pairs.map((pair) => pair.place.geoId),
+          { signal },
+        );
+      } catch {
+        if (signal.aborted) return;
+        await inPool(pairs.map((pair) => askHistory(pair.measure, pair.place)), REQUEST_CONCURRENCY);
+        return;
+      }
+      const missed: (() => Promise<void>)[] = [];
+      for (const { measure, place } of pairs) {
+        const item = found.get(historyKey(measure.metricCode, place.geoId));
+        if (!item) {
+          missed.push(askHistory(measure, place));
+        } else if (item.status === 200 && item.observations) {
+          try {
+            settleHistory(sourceFor(measure.metric)!, measure, place.geoId, Array.isArray(item.observations.items) ? item.observations.items : []);
+          } catch {
+            // As the single read: the trend draws the lines that verified.
+          }
+        }
+      }
+      await inPool(missed, REQUEST_CONCURRENCY);
     };
 
     const batchTasks: (() => Promise<void>)[] = [];
@@ -575,6 +614,7 @@ export default function PlacePage({
       // The chapter's batchable reads, grouped by the places each measure
       // publishes at, so every batch asks only the pairs the cards show.
       const batches = new Map<string, { measure: ResolvedPlaceMeasure; geoId: string }[]>();
+      const historyPairs: { measure: ResolvedPlaceMeasure; place: LevelPlace }[] = [];
       const ask = (measure: ResolvedPlaceMeasure, entries: LevelPlace[]) => {
         if (!entries.length) return;
         series += entries.length;
@@ -591,11 +631,14 @@ export default function PlacePage({
         if (!measure.metric) continue;
         ask(measure, chain.filter((entry) => publishesAt(measure, entry.level)));
         const trended = [resolved.chapter.trend, ...(resolved.chapter.moreTrends || [])].map((item) => item.measureId);
-        if (trended.includes(measure.measure.id)) {
+        // A trend is drawn only where the chapter's own place publishes it:
+        // a city page drew the unemployment rate's county line as "this page".
+        if (trended.includes(measure.measure.id) && own && publishesAt(measure, own.level)) {
           for (const entry of chain) {
             if (publishesAt(measure, entry.level)) {
               series += 1;
-              tasks.push(askHistory(measure, entry));
+              if (batchesHistory(sourceFor(measure.metric))) historyPairs.push({ measure, place: entry });
+              else tasks.push(askHistory(measure, entry));
             }
           }
         }
@@ -606,6 +649,7 @@ export default function PlacePage({
         }
       }
       batchTasks.push(...[...batches.values()].map((pairs) => askNewestBatch(pairs)));
+      if (historyPairs.length) batchTasks.push(askHistoryBatch(historyPairs));
     }
     // Batches first: they hold most of the page's values.
     tasks.unshift(...batchTasks);
@@ -963,7 +1007,9 @@ function Chapter({
   const trendMeasure = resolved.headline.find((measure) => measure.measure.id === chapter.trend.measureId) || null;
   const primary = trendMeasure?.metric ? trendMeasure : resolved.headline.find((measure) => measure.metric) || null;
   const primaryRow = primary && own ? answers.get(answerKey(primary.metricCode, own.geoId))?.row ?? null : null;
-  const trend = trendMeasure?.metric
+  const drawsAtOwn = (measure: ResolvedPlaceMeasure | null | undefined): measure is ResolvedPlaceMeasure =>
+    Boolean(measure?.metric) && Boolean(own) && publishesAt(measure!, own!.level);
+  const trend = drawsAtOwn(trendMeasure)
     ? buildTrend(
         levels.filter((entry) => publishesAt(trendMeasure, entry.level)),
         new Map(levels.map((entry) => [entry.geoId, histories.get(answerKey(trendMeasure.metricCode, entry.geoId)) || []])),
@@ -972,7 +1018,7 @@ function Chapter({
     : null;
   const moreTrends = (chapter.moreTrends || []).flatMap((spec) => {
     const measure = resolved.headline.find((entry) => entry.measure.id === spec.measureId);
-    if (!measure?.metric) return [];
+    if (!drawsAtOwn(measure)) return [];
     const model = buildTrend(
       levels.filter((entry) => publishesAt(measure, entry.level)),
       new Map(levels.map((entry) => [entry.geoId, histories.get(answerKey(measure.metricCode, entry.geoId)) || []])),
@@ -1053,6 +1099,7 @@ function Chapter({
           model={trend}
           label={`${trendMeasure.measure.label} trend`}
           unit={primaryRow ? publishedUnit(primaryRow) : unitText(trendMeasure.metric?.units)}
+          notes={trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend`}
         />
       ) : null}
@@ -1062,6 +1109,7 @@ function Chapter({
           model={model}
           label={`${measure.measure.label} trend`}
           unit={unitText(measure.metric?.units)}
+          notes={trendNotes(measure.metricCode, String(measure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
         />
       ))}

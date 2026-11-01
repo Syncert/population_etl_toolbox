@@ -52,6 +52,7 @@ from apps.api.services.neutral_observations_service import (
 )
 from data_ingestion_toolbox.semantics.derived_ratios import (
     RatioPairing,
+    derived_margin,
     load_registry,
     pairing_for,
 )
@@ -156,26 +157,6 @@ def _usable(observation: NeutralObservation) -> Optional[Decimal]:
     of "good" words refused every FBI rate, so the number decides.
     """
     return _number(observation.value)
-
-
-def derived_margin(
-    estimate: Decimal,
-    numerator_moe: Decimal,
-    denominator: Decimal,
-    denominator_moe: Decimal,
-    subset: bool,
-) -> tuple[Decimal, str]:
-    """The Bureau's margin of error for ``estimate = X / Y`` (unscaled), and its method."""
-    numerator_term = numerator_moe * numerator_moe
-    denominator_term = estimate * estimate * denominator_moe * denominator_moe
-    if subset:
-        radicand = numerator_term - denominator_term
-        if radicand >= 0:
-            return radicand.sqrt() / denominator, "proportion"
-        return (numerator_term + denominator_term).sqrt() / denominator, (
-            "ratio_fallback"
-        )
-    return (numerator_term + denominator_term).sqrt() / denominator, "ratio"
 
 
 def derive_row(

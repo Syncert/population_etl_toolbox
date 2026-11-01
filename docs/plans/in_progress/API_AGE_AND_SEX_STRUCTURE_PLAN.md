@@ -28,6 +28,18 @@ indicators as map metrics, and the by-age rate schemes. Kept apart because it
 carries DDL that OFFICE_LAB must pre-build, while this part reads only
 existing relations through existing indexes.
 
+Part 2a, 2026-11-01 (this branch): `gold_census.age_structure_summary` and
+its build ledger (`gold_acs.sql`), built by
+`census_acs.gold_census.age_summary` in the `acs_ingest` DAG after the
+serving refresh, a release at a time and only when the release's year
+partition changed; `/age-structure/map` serves one indicator per grain from
+it (cities and tracts one state at a time). The arithmetic moved to
+`data_ingestion_toolbox.semantics.age_structure`, which `/age-structure`
+and the builder share, so a mapped value equals the place page's (ETL-109,
+DB-068, API-191). The summary is not entered in the metric catalog: the map
+reads it through its own route, and a catalog entry would advertise derived
+values as provider metrics. Part 2b (separate PR): the by-age rate schemes.
+
 ## Deliverables
 
 1. `docs/semantics/age_bands.json` + JSON Schema + loader

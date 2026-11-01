@@ -12,6 +12,7 @@ from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
 from apps.api.schemas.age_structure import (
     AgeCohortsResponse,
+    AgeMapResponse,
     AgeStructureHistoryResponse,
     AgeStructureResponse,
 )
@@ -21,6 +22,7 @@ from apps.api.services.age_structure_service import (
     age_cohorts,
     age_structure,
     age_structure_history,
+    age_structure_map,
 )
 
 router = APIRouter(prefix="/age-structure", tags=["age-structure"])
@@ -117,3 +119,40 @@ def get_age_structure_cohorts(
     the later one. Refused (``comparable: false``) when the periods overlap,
     do not end five years apart, or a tract was redrawn between them."""
     return _answer(lambda: age_cohorts(db, geo_id, from_release, to_release, dataset))
+
+
+@router.get(
+    "/map",
+    response_model=AgeMapResponse,
+    name="get_age_structure_map",
+    summary="One age indicator for every place of a grain",
+)
+def get_age_structure_map(
+    indicator: str = Query(
+        ...,
+        max_length=40,
+        description=(
+            "`under_18`, `age_18_64`, `age_65_plus`, `age_85_plus` (shares of "
+            "everyone), `child_dependency_ratio`, `old_age_dependency_ratio`, "
+            "`total_dependency_ratio`, `sex_ratio`, or `median_age` "
+            "(`_men`, `_women`)."
+        ),
+    ),
+    geo_level: str = Query(..., max_length=20),
+    state_fips: Optional[str] = Query(None, max_length=2),
+    dataset: str = _DATASET,
+    release: Optional[str] = Query(
+        None, max_length=10, description="`latest` (default) or a vintage year."
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> AgeMapResponse:
+    """The indicator for every state, metro or county, or every city or tract
+    in one state, at one release (the newest the grain has by default), from
+    the derived summary table, computed with the same arithmetic as the place
+    page. A place whose value is withheld is listed with its reason, never as
+    zero."""
+    return _answer(
+        lambda: age_structure_map(
+            db, indicator, geo_level, state_fips, dataset, release
+        )
+    )

@@ -310,6 +310,65 @@
         "age-structure"
       ]
     },
+    "GET /api/v1/age-structure/map": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 40
+          },
+          "in": "query",
+          "name": "indicator",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeMapResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
     "GET /api/v1/analysis-configurations": {
       "parameters": [
         {
@@ -2385,6 +2444,39 @@
         "observations"
       ]
     },
+    "GET /api/v1/observations/history/batch": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 1000,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_ids",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:HistoryBatchResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
     "GET /api/v1/observations/latest": {
       "parameters": [
         {
@@ -2792,6 +2884,40 @@
       ],
       "responses": {
         "200": "application/json:DistinctiveResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "place"
+      ]
+    },
+    "GET /api/v1/place/tract-history": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 1200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:TractHistoryResponse",
         "404": "application/json:ErrorDetail",
         "422": "application/json:ErrorDetail | HTTPValidationError",
         "429": "application/json:ErrorDetail",
@@ -3516,6 +3642,42 @@
         "sex_ratio",
         "total_dependency_ratio",
         "under_18"
+      ]
+    },
+    "AgeMapItem": {
+      "properties": {
+        "geo_id": "string",
+        "moe": "string | null",
+        "unavailable_reason": "string | null",
+        "value": "string | null"
+      },
+      "required": [
+        "geo_id"
+      ]
+    },
+    "AgeMapResponse": {
+      "properties": {
+        "dataset": "string",
+        "derived": "boolean",
+        "geo_level": "string",
+        "indicator": "string",
+        "items": "array<AgeMapItem>",
+        "label": "string",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "release": "string | null",
+        "scheme": "AgeScheme",
+        "state_fips": "string | null",
+        "total": "integer",
+        "unit": "string"
+      },
+      "required": [
+        "dataset",
+        "geo_level",
+        "indicator",
+        "label",
+        "scheme",
+        "unit"
       ]
     },
     "AgeRatio": {
@@ -4717,6 +4879,32 @@
       "required": [
         "service",
         "status"
+      ]
+    },
+    "HistoryBatchItem": {
+      "properties": {
+        "detail": "string | null",
+        "geo_id": "string",
+        "metric_code": "string",
+        "observations": "NeutralObservationListResponse | null",
+        "status": "integer"
+      },
+      "required": [
+        "geo_id",
+        "metric_code",
+        "status"
+      ]
+    },
+    "HistoryBatchResponse": {
+      "properties": {
+        "geo_ids": "array<string>",
+        "items": "array<HistoryBatchItem>",
+        "metric_codes": "array<string>"
+      },
+      "required": [
+        "geo_ids",
+        "items",
+        "metric_codes"
       ]
     },
     "LocatedGeography": {
@@ -6050,6 +6238,81 @@
         "feature_count",
         "is_default",
         "tile_template"
+      ]
+    },
+    "TractBoundary": {
+      "properties": {
+        "also_became": "array<TractPart>",
+        "earlier": "array<TractPart>",
+        "sentence": "string",
+        "slivers_ignored": "integer",
+        "status": "string"
+      },
+      "required": [
+        "also_became",
+        "earlier",
+        "sentence",
+        "status"
+      ]
+    },
+    "TractHistoryPoint": {
+      "properties": {
+        "derived": "boolean",
+        "margin_of_error": "number | null",
+        "observation_date": "string(date)",
+        "source_geo_ids": "array<string>",
+        "status": "string",
+        "value": "number | null",
+        "vintage_year": "integer",
+        "weight_basis": "string | null"
+      },
+      "required": [
+        "derived",
+        "observation_date",
+        "status",
+        "vintage_year"
+      ]
+    },
+    "TractHistoryResponse": {
+      "properties": {
+        "boundary": "TractBoundary",
+        "derivation": "string",
+        "geo_id": "string",
+        "geo_name": "string | null",
+        "method": "string",
+        "series": "array<TractHistorySeries>",
+        "target_tract_vintage": "integer"
+      },
+      "required": [
+        "boundary",
+        "geo_id",
+        "method",
+        "series"
+      ]
+    },
+    "TractHistorySeries": {
+      "properties": {
+        "items": "array<TractHistoryPoint>",
+        "metric_code": "string",
+        "note": "string | null"
+      },
+      "required": [
+        "items",
+        "metric_code"
+      ]
+    },
+    "TractPart": {
+      "properties": {
+        "geo_id": "string",
+        "name": "string",
+        "share_of_that_tract": "number | null",
+        "share_of_this_tract": "number | null",
+        "vintage": "integer"
+      },
+      "required": [
+        "geo_id",
+        "name",
+        "vintage"
       ]
     },
     "ValidationError": {
