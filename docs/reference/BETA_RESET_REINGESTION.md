@@ -1237,8 +1237,12 @@ re-run from its first unfinished slice.
 
 To pause between years without stopping anything (for a measurement, or a
 rebuild that restarts the scheduler), wait for the current run to reach
-`success`, then `airflow dags pause acs_ingest`. The driver's next year is
-created and waits queued; `airflow dags unpause acs_ingest` lets it start.
+`success`, then `airflow dags pause acs_ingest` and confirm it took:
+`airflow dags details acs_ingest` must show `is_paused True` before the
+driver's next poll (every 2 minutes). The driver's next year is then created
+and waits queued; `airflow dags unpause acs_ingest` lets it start. On
+2026-11-01 a pause issued with its output discarded did not hold, and the
+next year started 90 seconds later.
 Do not pause the DAG while a run is in flight: a paused DAG schedules none
 of its tasks, so the running year stalls rather than finishing.
 
