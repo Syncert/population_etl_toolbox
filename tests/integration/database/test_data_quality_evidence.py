@@ -215,6 +215,48 @@ def test_an_executor_error_finalizes_the_run_as_errored(
         assert [row[0] for row in cursor.fetchall()] == ["DQ-SHARED-001"]
 
 
+def test_a_runaway_rule_is_cancelled_and_the_rules_after_it_still_run(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-024 — one rule cannot hold the warehouse, or hide the others.
+
+    The whole-relation DQ-ACS-007 ran 1 h 54 min in the weekly run of
+    2026-11-01 until an operator cancelled it. Each rule now runs under a
+    statement timeout: the slow rule records an error naming itself, its
+    evidence is withdrawn, the rule sorted after it still records its own,
+    and the caller's timeout is back afterwards.
+    """
+
+    def slow(cursor, scope):
+        cursor.execute("SELECT pg_sleep(5)")
+        return [RuleOutcome("raw_capture.response_capture", "pass")]
+
+    good = _fixture_executors()["DQ-SHARED-002"]
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SET LOCAL statement_timeout = '7min'")
+    record = execute_rules(
+        postgres_connection,
+        source_code="SHARED",
+        assessment_type="manual",
+        code_commit_sha=COMMIT_SHA,
+        executors={"DQ-SHARED-001": slow, "DQ-SHARED-002": good},
+        rule_statement_timeout="200ms",
+    )
+    assert record.overall_status == "error"
+    assert "DQ-SHARED-001" in record.failure_summary
+    assert "statement timeout" in record.failure_summary
+    assert "DQ-SHARED-002" not in record.failure_summary
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT rule_id FROM control.data_quality_result WHERE quality_run_id = %s",
+            (record.quality_run_id,),
+        )
+        assert [row[0] for row in cursor.fetchall()] == ["DQ-SHARED-002"]
+        cursor.execute("SELECT current_setting('statement_timeout')")
+        assert cursor.fetchone()[0] == "7min"
+    postgres_connection.rollback()
+
+
 def test_duplicate_evidence_within_one_run_is_rejected(
     postgres_connection: connection,
 ) -> None:
