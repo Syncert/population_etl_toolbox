@@ -1,5 +1,5 @@
 {
-  "description": "Page addresses the web's address rule (apps/web/lib/placeChapters.ts) and the API's port of it (apps/api/services/place_paths.py) must both produce. Asserted by tests/unit/api/test_place_paths.py and tests/frontend/unit/place-segments-parity.test.js (api-place-search). Metros (web-metro-pages) slug their published name under /metro/, falling back to the five-digit CBSA code when two slug alike. Rows carry the catalog's own name fields, as /catalog/geographies serves them.",
+  "description": "Page addresses the web's address rule (apps/web/lib/placeChapters.ts) and the API's port of it (apps/api/services/place_paths.py) must both produce. Asserted by tests/unit/api/test_place_paths.py and tests/frontend/unit/place-segments-parity.test.js (api-place-search). Metros (web-metro-pages) slug their published name under /metro/, falling back to the five-digit CBSA code when two slug alike. A tract's page sits under its county's. Rows carry the catalog's own name fields, as /catalog/geographies serves them.",
   "states": [
     {"geo_id": "state:48", "geo_level": "STATE", "state_fips": "48", "state_name": "Texas", "geo_name": "Texas"},
     {"geo_id": "state:24", "geo_level": "STATE", "state_fips": "24", "state_name": "Maryland", "geo_name": "Maryland"},
@@ -31,6 +31,11 @@
     {"geo_id": "cbsa:99901", "geo_level": "METRO", "geo_name": "Test Town, TL Micro Area"},
     {"geo_id": "cbsa:99902", "geo_level": "METRO", "geo_name": "Test-Town, TL Micro Area"}
   ],
+  "tracts": [
+    {"geo_id": "state:48|county:453|tract:001805", "geo_level": "TRACT", "state_fips": "48", "county_fips": "453", "geo_name": "Census Tract 18.05"},
+    {"geo_id": "state:48|county:453|tract:001100", "geo_level": "TRACT", "state_fips": "48", "county_fips": "453", "geo_name": "Census Tract 11"},
+    {"geo_id": "state:70|county:001|tract:980000", "geo_level": "TRACT", "state_fips": "70", "county_fips": "001", "geo_name": "Census Tract 9800"}
+  ],
   "expected_paths": {
     "state:48": "/us/texas",
     "state:24": "/us/maryland",
@@ -51,6 +56,9 @@
     "state:24|place:04000": "/us/maryland/2404000",
     "state:35|place:25170": "/us/new-mexico/espanola-city",
     "state:29|place:73852": "/us/missouri/town-and-country-city",
+    "state:48|county:453|tract:001805": "/us/texas/travis-county/tract-18-05",
+    "state:48|county:453|tract:001100": "/us/texas/travis-county/tract-11",
+    "state:70|county:001|tract:980000": "/us/70/70001/tract-9800",
     "cbsa:12420": "/metro/austin-round-rock-san-marcos-tx-metro-area",
     "cbsa:31540": "/metro/madison-wi-metro-area",
     "cbsa:99901": "/metro/99901",

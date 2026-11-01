@@ -136,6 +136,23 @@ export function placeRouteTitle(stateSegment?: string, countySegment?: string): 
 }
 
 /**
+ * A tract page's title from its address: "Census Tract 18.05, Travis County,
+ * Texas". The tract number is the segment's own (`tract-18-05`), so no
+ * catalog read is needed.
+ */
+export function tractRouteTitle(stateSegment: string, countySegment: string, tractSegment: string): string {
+  const match = /^tract-(\d{1,4})(?:-(\d{2}))?$/.exec(tractSegment);
+  const six = /^tract-(\d{6})$/.exec(tractSegment);
+  const number = match
+    ? `${Number(match[1])}${match[2] ? `.${match[2]}` : ""}`
+    : six
+      ? `${Number(six[1]!.slice(0, 4))}${six[1]!.slice(4) === "00" ? "" : `.${six[1]!.slice(4)}`}`
+      : "";
+  const place = placeRouteTitle(stateSegment, countySegment);
+  return number ? `Census Tract ${number}, ${place}` : place;
+}
+
+/**
  * A metro page's title from its segment (web-metro-pages): the slug's words
  * capitalised, "Metro area 12420" for a bare CBSA code. The "Metro Area" the
  * published name ends with stays in the words, as it does in the heading.

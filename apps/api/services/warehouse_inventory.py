@@ -123,6 +123,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
             "gold_census.mv_acs_latest",
             "gold_census.fact_acs_observation",
             "gold_census.acs_tract_comparable",
+            "gold_census.tract_decade_change",
             "gold_census.dim_acs_table",
             "gold_census.dim_acs_variable",
         ],
