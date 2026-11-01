@@ -21,7 +21,7 @@ verify:
 
 ## Status
 
-In progress, 2026-11-01: merged in #241 (D-3 of the v1.0 build-out). Catalog
+Needs review, 2026-11-01: merged in #241; the county-wait fix is in #253 (D-3 of the v1.0 build-out). Catalog
 rows: API-189, WEB-154.
 
 Live check on OFFICE_LAB (dev 42add77), 2026-11-01:
@@ -42,8 +42,13 @@ Live check on OFFICE_LAB (dev 42add77), 2026-11-01:
   marker is covered by the browser test's city, whose home value starts two
   periods after its county's.
 
-Remaining: page screenshots from OFFICE_LAB, then move this plan to
-`needs_review/`.
+Live checks on dev 346786ec pass for city history (OFFICE_LAB,
+2026-11-01). Screenshots are in the project Library: `city-austin-work.png`,
+`city-austin-housing.png` and `city-madison-history.png`. Austin's cards
+read beside Travis County, Texas and the U.S. with margins of error, for
+example median household income of 93,658 ± 1,670 for 2020–2024.
+
+Delivered. It awaits Nick's review at the dev → main gate.
 
 ## Why
 
