@@ -4116,6 +4116,20 @@ v gold_census_cbp.sector_definition
     body     naics_label
     body    FROM ( VALUES ('total'::text,'Total for all sectors'::text), ('11'::text,'Forestry, fishing, hunting, and agriculture support'::text), ('21'::text,'Mining, quarrying, and oil and gas extraction'::text), ('22'::text,'Utilities'::text), ('23'::text,'Construction'::text), ('31'::text,'Manufacturing'::text), ('42'::text,'Wholesale trade'::text), ('44'::text,'Retail trade'::text), ('48'::text,'Transportation and warehousing'::text), ('51'::text,'Information'::text), ('52'::text,'Finance and insurance'::text), ('53'::text,'Real estate and rental and leasing'::text), ('54'::text,'Professional, scientific, and technical services'::text), ('55'::text,'Management of companies and enterprises'::text), ('56'::text,'Administrative and support and waste management and remediation services'::text), ('61'::text,'Educational services'::text), ('62'::text,'Health care and social assistance'::text), ('71'::text,'Arts, entertainment, and recreation'::text), ('72'::text,'Accommodation and food services'::text), ('81'::text,'Other services (except public administration)'::text), ('99'::text,'Industries not classified'::text)) sector(naics_key, naics_label);
 
+r gold_census_lodes.coverage_gap
+    column run_id uuid NOT NULL
+    column metric_key text NOT NULL
+    column state_geo_id text NOT NULL
+    column year integer NOT NULL
+    column state_value bigint NOT NULL
+    column typical_value numeric NOT NULL
+    column reason text NOT NULL DEFAULT 'incomplete_coverage'::text
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint coverage_gap_reason_check CHECK ((reason = 'incomplete_coverage'::text))
+    constraint coverage_gap_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.census_lodes_slice(run_id)
+    constraint lodes_coverage_gap_pkey PRIMARY KEY (run_id, metric_key)
+    index lodes_coverage_gap_pkey CREATE UNIQUE INDEX lodes_coverage_gap_pkey ON gold_census_lodes.coverage_gap USING btree (run_id, metric_key)
+
 v gold_census_lodes.measure_definition
     column measure text
     column measure_label text
@@ -4290,7 +4304,10 @@ v gold_census_lodes.observation_revision
     body     fact.run_id
     body    FROM gold_census_lodes.observation_fact fact
     body      JOIN gold_census_lodes.measure_definition definition ON definition.measure = fact.metric_key
-    body      JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = fact.geo_id;
+    body      JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = fact.geo_id
+    body   WHERE NOT (EXISTS ( SELECT 1
+    body            FROM gold_census_lodes.coverage_gap gap
+    body           WHERE gap.run_id = fact.run_id));
 
 v gold_census_sae.estimate_latest
     column dataset_id text

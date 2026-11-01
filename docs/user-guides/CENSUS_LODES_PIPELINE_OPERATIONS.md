@@ -184,5 +184,31 @@ FROM gold_census_lodes.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
   published state-year still missing its sums.
 - `DQ-LODES-006` warns, naming each state, when a published year is missing
   a registered state: a history load that stopped part way.
-- `DQ-LODES-007` warns when a state's jobs move by more than a quarter
-  between consecutive published years, a coverage break to explain.
+- `DQ-LODES-007` warns when a state's served jobs move by more than a
+  quarter between consecutive published years, a coverage break to explain.
+  State-years in `gold_census_lodes.coverage_gap` are not compared.
+
+## Years LEHD did not cover
+
+LEHD did not cover every state from 2002. A state that joined late still has
+files for its early years, but they hold a handful of jobs rather than the
+state: Massachusetts 2002–2010 (13, 6, 9 jobs…, then 3,140,314 in 2011) and
+Arkansas 2002 (32 jobs, then 1,079,276 in 2003). Those state-years are not
+served. Their sums stay in `gold_census_lodes.observation_fact`, and
+`gold_census_lodes.coverage_gap` names them: a state-year whose state total of
+jobs located there (`jobs`) or of resident workers (`resident_workers`) is under
+a tenth (`gold_census_lodes.coverage_floor_share()`) of the same state's
+upper-quartile year. `observation_revision` and `observation_latest` leave out
+every row of such a run, its counties' included, so the API has no value for
+Massachusetts 2008 and a page reads it as "Not published that year".
+
+The table is rebuilt from the state rows alone each time
+`refresh_observation_fact` runs, and when the schema is applied. To rebuild it
+by hand and see what is hidden:
+
+```sql
+SELECT gold_census_lodes.refresh_coverage_gap();
+SELECT state_geo_id, year, metric_key, state_value, ROUND(typical_value)
+  FROM gold_census_lodes.coverage_gap ORDER BY state_geo_id, year, metric_key;
+```
+

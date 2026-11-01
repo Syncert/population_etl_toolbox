@@ -31,6 +31,7 @@ REQUIRED_RELATIONS = (
     "silver_census_lodes.fact_flow",
     "gold_census_lodes.measure_definition",
     "gold_census_lodes.observation_fact",
+    "gold_census_lodes.coverage_gap",
     "gold_census_lodes.observation_revision",
     "gold_census_lodes.observation_latest",
     "gold_census_lodes.measure_export",
@@ -38,7 +39,10 @@ REQUIRED_RELATIONS = (
 )
 
 
-REQUIRED_PROCEDURES = ("gold_census_lodes.refresh_observation_fact(uuid[])",)
+REQUIRED_PROCEDURES = (
+    "gold_census_lodes.refresh_observation_fact(uuid[])",
+    "gold_census_lodes.refresh_coverage_gap()",
+)
 
 
 def _get_hook() -> PostgresHook:

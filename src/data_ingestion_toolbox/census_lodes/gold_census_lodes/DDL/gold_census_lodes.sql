@@ -54,6 +54,79 @@ CREATE INDEX IF NOT EXISTS ix_lodes_observation_fact_geo_year
 CREATE INDEX IF NOT EXISTS ix_lodes_observation_fact_run
     ON gold_census_lodes.observation_fact (run_id);
 
+-- LEHD did not cover every state from 2002: a state that joined late
+-- (Massachusetts until 2011, Arkansas until 2003) publishes files for its
+-- early years that hold a handful of jobs, not the state. Those state-years
+-- are coverage gaps, not economies, and are not served: a page reads them as
+-- "not published that year", never as 13 jobs in Massachusetts.
+--
+-- The rule is the data's own, not a list of states: a state-year whose state
+-- total of jobs located there or of resident workers is under a tenth of the
+-- same state's upper-quartile year is incomplete. An economy has never lost
+-- nine tenths of its jobs in a year; a file covering a few employers has.
+-- The sums stay in `observation_fact` (DQ-LODES-005 still sees them); this
+-- table names the runs the serving views leave out and why. It is rebuilt
+-- from the state rows alone (about 1,100 state-years per measure) each time
+-- sums are refreshed, so a later year that raises a state's typical total is
+-- applied to its earlier years too.
+CREATE TABLE IF NOT EXISTS gold_census_lodes.coverage_gap (
+    run_id UUID NOT NULL REFERENCES control.census_lodes_slice(run_id),
+    metric_key TEXT NOT NULL,
+    state_geo_id TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    state_value BIGINT NOT NULL,
+    typical_value NUMERIC NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'incomplete_coverage'
+        CHECK (reason = 'incomplete_coverage'),
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT lodes_coverage_gap_pkey PRIMARY KEY (run_id, metric_key)
+);
+
+-- A state-year is incomplete when its state total is under this share of the
+-- state's upper-quartile year.
+CREATE OR REPLACE FUNCTION gold_census_lodes.coverage_floor_share()
+RETURNS NUMERIC
+LANGUAGE sql
+IMMUTABLE
+AS $$ SELECT 0.10::NUMERIC $$;
+
+-- Rebuild the coverage gaps from the published state totals. Returns the
+-- gaps written.
+CREATE OR REPLACE FUNCTION gold_census_lodes.refresh_coverage_gap()
+RETURNS BIGINT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_written BIGINT;
+BEGIN
+    DELETE FROM gold_census_lodes.coverage_gap;
+
+    WITH state_total AS (
+        SELECT fact.run_id, fact.metric_key, fact.geo_id, fact.year, fact.value
+        FROM gold_census_lodes.observation_fact AS fact
+        WHERE fact.metric_key IN ('jobs', 'resident_workers')
+          AND fact.geo_type = 'state'
+    ),
+    typical AS (
+        SELECT geo_id, metric_key,
+               PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value)::NUMERIC AS typical_value
+        FROM state_total
+        GROUP BY geo_id, metric_key
+    )
+    INSERT INTO gold_census_lodes.coverage_gap (
+        run_id, metric_key, state_geo_id, year, state_value, typical_value
+    )
+    SELECT state_total.run_id, state_total.metric_key, state_total.geo_id,
+           state_total.year, state_total.value, typical.typical_value
+    FROM state_total
+    JOIN typical USING (geo_id, metric_key)
+    WHERE state_total.value
+          < typical.typical_value * gold_census_lodes.coverage_floor_share();
+    GET DIAGNOSTICS v_written = ROW_COUNT;
+    RETURN v_written;
+END;
+$$;
+
 -- Recompute the served sums of the given published runs, or, given NULL, of
 -- every published run that has none yet. Each run's sums read only its own
 -- silver rows (both fact tables are keyed by run first), so a refresh costs
@@ -141,12 +214,14 @@ BEGIN
     JOIN published USING (run_id)
     JOIN control.census_lodes_slice AS slice USING (run_id);
     GET DIAGNOSTICS v_written = ROW_COUNT;
+    PERFORM gold_census_lodes.refresh_coverage_gap();
     RETURN v_written;
 END;
 $$;
 
--- Every published state-year, one row per measure and geography, read from
--- the precomputed sums by key.
+-- Every published state-year LEHD covered, one row per measure and
+-- geography, read from the precomputed sums by key. A coverage gap's rows,
+-- its counties' included, are left out.
 CREATE OR REPLACE VIEW gold_census_lodes.observation_revision AS
 SELECT fact.metric_key,
        fact.metric_key AS measure,
@@ -170,11 +245,18 @@ SELECT fact.metric_key,
        fact.run_id
 FROM gold_census_lodes.observation_fact AS fact
 JOIN gold_census_lodes.measure_definition AS definition ON definition.measure = fact.metric_key
-JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = fact.geo_id;
+JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = fact.geo_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM gold_census_lodes.coverage_gap AS gap
+    WHERE gap.run_id = fact.run_id
+);
 
 -- The served sums of every state-year published before this table existed.
 -- A no-op once each published run has its rows.
 SELECT gold_census_lodes.refresh_observation_fact(NULL);
+-- The coverage gaps of sums computed before the gaps were (the refresh above
+-- writes nothing, and so rebuilds nothing, once every run has its rows).
+SELECT gold_census_lodes.refresh_coverage_gap();
 
 -- The newest published vintage of each observation.
 CREATE OR REPLACE VIEW gold_census_lodes.observation_latest AS

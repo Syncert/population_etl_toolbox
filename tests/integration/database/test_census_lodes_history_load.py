@@ -228,6 +228,80 @@ def test_history_quality_rules_pass_then_catch_a_gap(lodes_warehouse) -> None:
     assert lost.result == "fail" and lost.observed_count == 1
 
 
+def test_a_state_year_lehd_did_not_cover_is_not_served(lodes_warehouse) -> None:
+    """Covers: ETL-108 — a state-year holding a handful of jobs is a coverage gap, not served."""
+    factory = lodes_warehouse
+    _load(factory)
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_census_lodes.coverage_gap") == [
+        (0,)
+    ]
+    computed = _rows(
+        factory,
+        "SELECT COUNT(*) FROM gold_census_lodes.observation_fact WHERE year = 2008",
+    )
+
+    # Delaware's 2008 files cover a dozen jobs, as Massachusetts' did before
+    # LEHD covered it: the refresh names the state-year and serves none of it.
+    _execute(
+        factory,
+        """
+        UPDATE gold_census_lodes.observation_fact SET value = 13
+        WHERE year = 2008 AND geo_type = 'state' AND metric_key = 'jobs'
+        """,
+    )
+    _execute(factory, "SELECT gold_census_lodes.refresh_coverage_gap()")
+    gaps = _rows(
+        factory,
+        "SELECT state_geo_id, year, metric_key, state_value FROM gold_census_lodes.coverage_gap",
+    )
+    assert [(year, metric, value) for _geo, year, metric, value in gaps] == [
+        (2008, "jobs", 13)
+    ]
+    for relation in ("observation_revision", "observation_latest"):
+        assert _rows(
+            factory,
+            f"SELECT DISTINCT year FROM gold_census_lodes.{relation} WHERE geo_id = %s",
+            (lodes.KENT,),
+        ) == [(2023,)]
+    # The sums stay computed, so DQ-LODES-005 still sees the state-year.
+    assert (
+        _rows(
+            factory,
+            "SELECT COUNT(*) FROM gold_census_lodes.observation_fact WHERE year = 2008",
+        )
+        == computed
+    )
+    assert _outcome(factory, lodes_served_sums).result == "pass"
+
+    # A jump out of an uncovered year is not a step to explain.
+    _execute(
+        factory,
+        "UPDATE gold_census_lodes.observation_fact SET year = 2022 WHERE year = 2008",
+    )
+    assert _outcome(factory, lodes_state_jobs_continuity).result == "pass"
+
+    # A refresh after the files are complete serves the year again.
+    _execute(
+        factory,
+        """
+        UPDATE gold_census_lodes.observation_fact AS fact SET value = newer.value
+          FROM gold_census_lodes.observation_fact AS newer
+         WHERE fact.year = 2022 AND fact.geo_type = 'state' AND fact.metric_key = 'jobs'
+           AND newer.year = 2023 AND newer.geo_id = fact.geo_id
+           AND newer.metric_key = 'jobs'
+        """,
+    )
+    _execute(factory, "SELECT gold_census_lodes.refresh_coverage_gap()")
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_census_lodes.coverage_gap") == [
+        (0,)
+    ]
+    assert _rows(
+        factory,
+        "SELECT DISTINCT year FROM gold_census_lodes.observation_latest WHERE geo_id = %s ORDER BY 1",
+        (lodes.KENT,),
+    ) == [(2022,), (2023,)]
+
+
 def test_a_capture_stopped_part_way_is_withdrawn_and_captured_again(
     lodes_warehouse,
 ) -> None:
