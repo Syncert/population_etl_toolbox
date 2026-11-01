@@ -1240,6 +1240,166 @@ def test_the_superseded_arm_never_plans_one_probe_per_latest_row(
     postgres_connection.rollback()
 
 
+class _StatementRecordingCursor:
+    """Records each superseded-arm statement and its parameters, then runs it."""
+
+    def __init__(self, cursor) -> None:
+        self._cursor = cursor
+        self.superseded: list[tuple[str, tuple]] = []
+
+    def execute(self, sql: str, params=()) -> None:
+        statement = str(sql)
+        if "FROM gold_census.mv_acs_latest AS latest" in statement:
+            self.superseded.append((statement, tuple(params)))
+        self._cursor.execute(statement, params)
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+def _serve_extra_metrics(
+    cursor, geo_id: str, metrics: list[str], *, latest_value
+) -> None:
+    """Served and latest rows for more metric codes in the scratch partition."""
+    year = _CONFORMANCE_YEAR
+    for metric in metrics:
+        variable = metric.rsplit(":", 1)[1]
+        for relation in ("rpt_acs_observations", "mv_acs_latest"):
+            value = latest_value(metric) if relation == "mv_acs_latest" else 5
+            cursor.execute(
+                f"""
+                INSERT INTO gold_census.{relation} (
+                    observation_date, as_of_date, updated_at, geo_id, geo_level,
+                    value, dataset_code, vintage_year, table_id, variable_code,
+                    estimate_value, metric_code
+                ) VALUES (MAKE_DATE(%s, 1, 1), MAKE_DATE(%s, 1, 1), NOW(), %s,
+                          'COUNTY', %s, 'acs5', %s, %s, %s, %s, %s)
+                """,
+                (
+                    year,
+                    year,
+                    geo_id,
+                    value,
+                    year,
+                    variable[:9],
+                    variable,
+                    value,
+                    metric,
+                ),
+            )
+
+
+def test_a_large_partition_is_measured_in_metric_code_ranges(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: DQ-023 — 2024 (104.5M rows) ran past 30 minutes as one anti join.
+
+    A partition over the chunk size is joined one metric_code range at a time,
+    each bound on both sides, plus a statement for latest rows with no code,
+    and the ranges together still find a superseded row in any of them.
+    """
+    from data_ingestion_toolbox.quality import sources
+
+    monkeypatch.setattr(sources, "_ACS_SUPERSEDED_CHUNK_ROWS", 2)
+    with postgres_connection.cursor() as cursor:
+        _metric, geo_id = _seed_served_acs_fact(postgres_connection_factory, cursor)
+        extra = [f"CENSUS_ACS:acs5:B9ZZ{index:02d}_001E" for index in range(6)]
+        stale = extra[3]
+        _serve_extra_metrics(
+            cursor, geo_id, extra, latest_value=lambda m: 6 if m == stale else 5
+        )
+        cursor.execute(f"ANALYZE gold_census.rpt_acs_observations_{_CONFORMANCE_YEAR}")
+        recorder = _StatementRecordingCursor(cursor)
+        outcomes = {
+            (o.object_name, o.partition_key): o
+            for o in acs_contract_conformance(recorder, {"cadence": "monthly"})
+        }
+        superseded = outcomes[
+            ("gold_census.v_metric_latest_by_geo", str(_CONFORMANCE_YEAR))
+        ]
+        assert superseded.result == "fail"
+        assert superseded.observed_count == 1
+        assert superseded.evidence == [f"{stale}|{_CONFORMANCE_YEAR}"]
+        scratch = [
+            (sql, params)
+            for sql, params in recorder.superseded
+            if f"rpt_acs_observations_{_CONFORMANCE_YEAR}" in sql
+        ]
+        # Seven rows over chunks of two: four ranges and the no-code statement.
+        assert len(scratch) == 5
+        assert sum("latest.metric_code IS NULL" in sql for sql, _ in scratch) == 1
+        bounded = [sql for sql, _ in scratch if "IS NULL" not in sql]
+        assert all(" OR " not in sql for sql in bounded)
+        assert all("released.metric_code" in sql for sql in bounded)
+    postgres_connection.rollback()
+
+
+def test_a_partition_that_times_out_is_left_unrecorded_and_the_rest_are_kept(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: DQ-023, DQ-024 — one partition's timeout no longer discards every other.
+
+    The 2026-11-01 full sweep measured partitions for 42 minutes, then 2024's
+    superseded arm hit the 30-minute cap and the whole rule's results were
+    rolled back, so every rerun started from zero.
+    """
+    from data_ingestion_toolbox.quality import sources
+
+    real = sources._acs_measure_partition
+
+    def scratch_times_out(cursor, partition, partitions, arms):
+        if partition.key == str(_CONFORMANCE_YEAR):
+            cursor.execute("SELECT set_config('statement_timeout', '1ms', true)")
+            cursor.execute("SELECT pg_sleep(0.2)")
+        return real(cursor, partition, partitions, arms)
+
+    with postgres_connection.cursor() as cursor:
+        _seed_served_acs_fact(postgres_connection_factory, cursor)
+    monkeypatch.setattr(sources, "_acs_measure_partition", scratch_times_out)
+    record = execute_rules(
+        postgres_connection,
+        source_code="CENSUS_ACS",
+        assessment_type="scheduled",
+        code_commit_sha=_SHA,
+        executors={"DQ-ACS-007": acs_contract_conformance},
+        scope={"cadence": "monthly"},
+    )
+    assert record.overall_status == "error"
+    assert f"partition(s) {_CONFORMANCE_YEAR} hit the statement timeout" in (
+        record.failure_summary
+    )
+    with postgres_connection.cursor() as cursor:
+        assert _conformance_results(cursor, record.quality_run_id) == {}
+        cursor.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT partition_key)"
+            "  FROM control.data_quality_result WHERE quality_run_id = %s",
+            (record.quality_run_id,),
+        )
+        recorded, partitions = cursor.fetchone()
+        assert recorded == partitions * 3 and partitions > 1
+        # The rule's timeout went with its savepoint: the run carries on.
+        cursor.execute("SELECT 1")
+
+    # The next run carries every recorded partition and measures the one left.
+    monkeypatch.setattr(sources, "_acs_measure_partition", real)
+    retry = _run_conformance(postgres_connection)
+    with postgres_connection.cursor() as cursor:
+        scratch = _conformance_results(cursor, retry)
+        assert all(row[2]["measured"] for row in scratch.values())
+        cursor.execute(
+            "SELECT bool_and(NOT (partition_detail ->> 'measured')::BOOLEAN)"
+            "  FROM control.data_quality_result"
+            " WHERE quality_run_id = %s AND partition_key <> %s",
+            (retry, str(_CONFORMANCE_YEAR)),
+        )
+        assert cursor.fetchone()[0] is True
+    postgres_connection.rollback()
+
+
 # ---------------------------------------------------------------------------
 # DQ-FRED-003 / DQ-FRED-004 — a missing value is not a zero, and a date the
 # provider actually published
