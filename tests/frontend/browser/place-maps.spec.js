@@ -270,8 +270,8 @@ test("the same measure drawn on metro areas, nationally, on the 2023 delineation
   const all = page.getByTestId("measure-map-all");
   await expect(all.locator('tr[data-geo-id="cbsa:41860"] td').first()).toHaveText("Not published");
   await expect(all.locator('tr[data-geo-id="cbsa:41860"] td').first()).not.toHaveText(/^0/);
-  // Metro areas have no page yet, so their names are not links.
-  await expect(page.getByTestId("measure-map-highest").getByRole("link")).toHaveCount(0);
+  // Each metro links to its page by CBSA code (WEB-153).
+  await expect(page.getByTestId("measure-map-highest").getByRole("link").first()).toHaveAttribute("href", /^\/metro\/\d{5}$/);
 
   const canvas = page.getByTestId("measure-map-canvas");
   await expect(canvas).toHaveAttribute("data-tile-template", "/tiles/metros/{z}/{x}/{y}?vintage=2023");

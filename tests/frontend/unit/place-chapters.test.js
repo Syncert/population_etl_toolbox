@@ -450,7 +450,7 @@ describe("migration population note", () => {
   });
 });
 
-// Covers: WEB-153 — web-city-history: a city's income, rent and home value
+// Covers: WEB-154 — web-city-history: a city's income, rent and home value
 // histories carry each point's published margin of error, read five-year
 // periods by their first and last year, and say what a margin and an
 // overlapping period mean.

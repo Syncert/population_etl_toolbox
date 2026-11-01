@@ -6,7 +6,7 @@
 // queued six at a time. The API answers the same reads as one batch: each
 // item is exactly what the single settled-history read
 // (`buildSettledHistoryRequest`: `scope=as_released&newest_release_per_period=true`)
-// returns for its pair, oldest period first (API-187).
+// returns for its pair, oldest period first (API-189).
 
 import { apiFetch } from "./api/client";
 import type { RequestOptions } from "./api/client";

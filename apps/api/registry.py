@@ -984,6 +984,11 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("dollar_basis", "dollar_basis"),
                 ("observation_basis", "observation_basis"),
                 ("value_source", "value_source"),
+                # NULL on every figure BEA published; on a metro area summed
+                # from its member counties, how it was derived
+                # (`sum_of_member_counties`, `ratio_of_member_county_sums`),
+                # so a reader never takes it for BEA's own (web-metro-pages).
+                ("derivation", "derivation"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",

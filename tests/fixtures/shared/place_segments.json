@@ -1,5 +1,5 @@
 {
-  "description": "Page addresses the web's address rule (apps/web/lib/placeChapters.ts) and the API's port of it (apps/api/services/place_paths.py) must both produce. Asserted by tests/unit/api/test_place_paths.py and tests/frontend/unit/place-segments-parity.test.js (api-place-search). Rows carry the catalog's own name fields, as /catalog/geographies serves them.",
+  "description": "Page addresses the web's address rule (apps/web/lib/placeChapters.ts) and the API's port of it (apps/api/services/place_paths.py) must both produce. Asserted by tests/unit/api/test_place_paths.py and tests/frontend/unit/place-segments-parity.test.js (api-place-search). Metros (web-metro-pages) slug their published name under /metro/, falling back to the five-digit CBSA code when two slug alike. Rows carry the catalog's own name fields, as /catalog/geographies serves them.",
   "states": [
     {"geo_id": "state:48", "geo_level": "STATE", "state_fips": "48", "state_name": "Texas", "geo_name": "Texas"},
     {"geo_id": "state:24", "geo_level": "STATE", "state_fips": "24", "state_name": "Maryland", "geo_name": "Maryland"},
@@ -25,6 +25,12 @@
     {"geo_id": "state:35|place:25170", "geo_level": "PLACE", "state_fips": "35", "place_fips": "25170", "place_name": "Española city", "geo_name": "Española city"},
     {"geo_id": "state:29|place:73852", "geo_level": "PLACE", "state_fips": "29", "place_fips": "73852", "place_name": "Town & Country city", "geo_name": "Town & Country city"}
   ],
+  "metros": [
+    {"geo_id": "cbsa:12420", "geo_level": "METRO", "geo_name": "Austin-Round Rock-San Marcos, TX Metro Area"},
+    {"geo_id": "cbsa:31540", "geo_level": "METRO", "geo_name": "Madison, WI Metro Area"},
+    {"geo_id": "cbsa:99901", "geo_level": "METRO", "geo_name": "Test Town, TL Micro Area"},
+    {"geo_id": "cbsa:99902", "geo_level": "METRO", "geo_name": "Test-Town, TL Micro Area"}
+  ],
   "expected_paths": {
     "state:48": "/us/texas",
     "state:24": "/us/maryland",
@@ -44,6 +50,10 @@
     "state:48|place:40876": "/us/texas/4840876",
     "state:24|place:04000": "/us/maryland/2404000",
     "state:35|place:25170": "/us/new-mexico/espanola-city",
-    "state:29|place:73852": "/us/missouri/town-and-country-city"
+    "state:29|place:73852": "/us/missouri/town-and-country-city",
+    "cbsa:12420": "/metro/austin-round-rock-san-marcos-tx-metro-area",
+    "cbsa:31540": "/metro/madison-wi-metro-area",
+    "cbsa:99901": "/metro/99901",
+    "cbsa:99902": "/metro/99902"
   }
 }

@@ -1,4 +1,4 @@
-// Covers: WEB-153 — the settled-history batch splits at the API's bounds and
+// Covers: WEB-154 — the settled-history batch splits at the API's bounds and
 // keys each item by its metric and place; only sources whose history read is
 // the settled as-released read filtered by geo_id are batched.
 import { describe, expect, test } from "vitest";

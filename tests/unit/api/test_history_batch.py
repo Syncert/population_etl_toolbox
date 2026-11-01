@@ -1,6 +1,6 @@
 """API unit tests: many measures' settled histories for a few places, one request.
 
-Covers: API-187 (`/observations/history/batch` answers each metric and place
+Covers: API-189 (`/observations/history/batch` answers each metric and place
         as the single settled-history read does -- `scope=as_released&
         newest_release_per_period=true&geo_id=` -- in the order asked, oldest
         period first; the metrics a released relation holds are one `UNION
@@ -123,7 +123,7 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict]:
 
 
 def test_a_relations_metrics_are_one_statement_of_single_reads(catalog) -> None:
-    """Covers: API-187 — one UNION ALL per released relation, each branch the
+    """Covers: API-189 — one UNION ALL per released relation, each branch the
     newest-release-per-period reduction, rows oldest first per pair."""
     acs = OBSERVATION_DISPATCH["CENSUS_ACS"].released_relation
     db = _Session(
@@ -178,7 +178,7 @@ def test_a_relations_metrics_are_one_statement_of_single_reads(catalog) -> None:
 
 
 def test_a_bounded_pair_states_its_full_total(catalog) -> None:
-    """Covers: API-187 — a pair past the bound says how many periods it has."""
+    """Covers: API-189 — a pair past the bound says how many periods it has."""
     acs = OBSERVATION_DISPATCH["CENSUS_ACS"].released_relation
     db = _Session({acs: [_row(INCOME, CITY, 2024, "91461", 1, 1500)]})
     [(_, _, status, _, page)] = neutral.history_batch(db, [INCOME], [CITY])
@@ -187,7 +187,7 @@ def test_a_bounded_pair_states_its_full_total(catalog) -> None:
 
 
 def test_a_metric_the_single_read_refuses_is_refused_per_item(catalog) -> None:
-    """Covers: API-187 — the reduction's own refusal is each item's."""
+    """Covers: API-189 — the reduction's own refusal is each item's."""
     dispatch = OBSERVATION_DISPATCH["FBI_UCR"]
     refusal = neutral.reduction_refusal(dispatch, "newest_release_per_period")
     answers = neutral.history_batch(_Session({}), [CRIME], [CITY])
@@ -200,7 +200,7 @@ def test_a_metric_the_single_read_refuses_is_refused_per_item(catalog) -> None:
 def test_an_absent_relation_is_503_for_its_metrics_only(
     catalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: API-187 — one missing relation does not fail the batch."""
+    """Covers: API-189 — one missing relation does not fail the batch."""
     bea = OBSERVATION_DISPATCH["BEA"].released_relation
 
     def require(db, relation):
@@ -244,7 +244,7 @@ def client():
     ],
 )
 def test_an_empty_or_oversized_batch_is_explained(client, params: dict) -> None:
-    """Covers: API-187 — the caller splits a batch the route will not read."""
+    """Covers: API-189 — the caller splits a batch the route will not read."""
     assert (
         client.get("/api/v1/observations/history/batch", params=params).status_code
         == 422
@@ -254,7 +254,7 @@ def test_an_empty_or_oversized_batch_is_explained(client, params: dict) -> None:
 def test_the_route_answers_in_the_order_asked(
     client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: API-187 — items are the service's answers, deduplicated input."""
+    """Covers: API-189 — items are the service's answers, deduplicated input."""
     seen: dict[str, Any] = {}
 
     def batch(db, codes, places):

@@ -251,7 +251,7 @@ def test_the_history_batch_executes_for_its_source(
     monkeypatch: pytest.MonkeyPatch,
     source_code: str,
 ) -> None:
-    """Covers: API-187 — two metrics of one source over two places is one
+    """Covers: API-189 — two metrics of one source over two places is one
     settled-history statement the warehouse accepts, or the reduction's own
     refusal."""
     dispatch = OBSERVATION_DISPATCH[source_code]

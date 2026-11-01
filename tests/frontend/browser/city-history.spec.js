@@ -2,7 +2,7 @@ import AxeBuilder from "../../../apps/web/node_modules/@axe-core/playwright/dist
 import { expect, test } from "../support/servedRequests.js";
 import { installPlaceFixtures } from "../support/placeScenarios.js";
 
-// Covers: WEB-153 — web-city-history: a city page draws its median household
+// Covers: WEB-154 — web-city-history: a city page draws its median household
 // income, rent and home value over every period published, beside its
 // county, its state and the nation, with each point's margin of error; a
 // period the city was not published for says "Not published that year"; a

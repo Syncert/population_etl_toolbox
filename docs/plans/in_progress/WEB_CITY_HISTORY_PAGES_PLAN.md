@@ -23,7 +23,7 @@ verify:
 
 In progress, 2026-11-01: built and tested against fixtures (D-3 of the v1.0
 build-out, branch `claude/project-thread-uefxof`). Waiting for the live check
-on the office warehouse after merge. Catalog rows: API-187, WEB-153.
+on the office warehouse after merge. Catalog rows: API-189, WEB-154.
 
 ## Why
 
@@ -85,7 +85,7 @@ All seven appear in the same order on every page. A chapter with no city
 source is named in the footer with its reason, never shown empty. Rates for
 city agencies (Safety) and city components of change are not in v1.
 
-## API: one request per chapter for its trend lines (API-187)
+## API: one request per chapter for its trend lines (API-189)
 
 `GET /api/v1/observations/history/batch?metric_codes=…&geo_ids=…` takes at
 most 12 codes and 8 places. Each item is exactly what the single settled read

@@ -110,7 +110,9 @@ describe("a city or town's metro", () => {
       "South Region",
       "United States",
     ]);
-    expect(city.partOf[0].href).toBeNull();
+    // Covers: WEB-153 — the metro links to its page by CBSA code, which the
+    // metro route settles on its named address.
+    expect(city.partOf[0].href).toBe("/metro/12420");
     expect(partOfShareText(city.partOf[0])).toBe("");
     expect(partOfShareText(city.partOf[1])).toBe("");
   });
