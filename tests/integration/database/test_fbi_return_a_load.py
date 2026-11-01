@@ -346,12 +346,24 @@ def test_return_a_totals_are_checked_against_the_cde(
     # The Sheriff's months agree exactly. The CDE fixture was captured on
     # 2026-08-27 and the FBI revised Fitchburg and UW-Green Bay since (the
     # live CDE now gives Fitchburg 13 in January, as this file does): the
-    # rule names each revised month rather than letting it pass.
+    # rule names each revised month rather than letting it pass, and fails
+    # where a gap is larger than a revision of one offense or 2 percent.
     [outcome] = outcomes
     assert outcome.result == "fail"
     assert outcome.observed_count == 15
     assert not [line for line in outcome.evidence if "WI0130000" in line]
     assert "return_a_violent_crime WI0137000 01-2023 13 <> 7" in outcome.evidence
+    # A one-offense gap is the FBI's revision after the master file was cut:
+    # named as such, after the real mismatches, never hidden by them.
+    assert (
+        "revised since the master file: return_a_violent_crime WI0137000 "
+        "06-2023 9 <> 10"
+    ) in outcome.evidence
+    assert outcome.evidence.index(
+        "return_a_violent_crime WI0137000 06-2023 7 <> 4"
+    ) < outcome.evidence.index(
+        "revised since the master file: return_a_violent_crime WI0050700 02-2023 0 <> 1"
+    )
 
 
 def test_the_derived_route_serves_the_county_rate_from_the_warehouse(

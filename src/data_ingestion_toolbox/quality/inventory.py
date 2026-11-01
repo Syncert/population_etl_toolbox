@@ -5226,7 +5226,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "reconciliation",
         "Violent and property totals summed from the Return A master file's "
         "offense components equal the CDE's published totals for every "
-        "agency and month both publish.",
+        "agency and month both publish; a gap of at most one offense or 2 "
+        "percent is the CDE's revision after the master file was cut and "
+        "warns, naming the month, and a larger gap fails.",
         ("gold_fbi.latest_release_observation",),
     ),
     # -- USDA NASS ---------------------------------------------------------

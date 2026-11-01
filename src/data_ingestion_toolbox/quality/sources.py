@@ -631,83 +631,128 @@ def fbi_county_agency_rate_agreement(
     object_name = "gold_fbi.latest_county_agency_rate"
     # The newest month with a rate, from the served rows (a few hundred
     # thousand) rather than every agency fact in the country.
-    bound = f"""
-        (SELECT MAX(period_start)
-                - INTERVAL '{FBI_COUNTY_RATE_CHECK_MONTHS - 1} months'
-           FROM gold_fbi.county_agency_rate_month
-          WHERE rate IS NOT NULL)
-    """
-    total = _count(
-        cursor,
-        f"SELECT COUNT(*) FROM {object_name} WHERE period_start >= {bound}",
-    )
-    if total == 0:
-        return [RuleOutcome(object_name, "not_applicable")]
-    offenders, offenders_total = _offenders(
-        cursor,
+    cursor.execute(
         f"""
-        WITH recent AS (
-            SELECT * FROM {object_name} WHERE period_start >= {bound}
-        ), recomputed AS (
-            SELECT rate.product_id, rate.release_key, rate.measure_id,
-                   rate.geo_id, rate.period,
-                   SUM(fact.value) AS offenses,
-                   SUM(agency.population) AS covered_population
-              FROM recent AS rate
-             CROSS JOIN LATERAL UNNEST(rate.contributing_oris) AS listed(ori)
-              -- Each listed agency's month by key, on the fact and
-              -- participation indexes; the gold view's joins add nothing
-              -- the comparison reads.
-              JOIN silver_fbi.fact_crime_observation AS fact
-                ON fact.product_id = rate.product_id
-               AND fact.measure_id = rate.measure_id
-               AND fact.subject_type = 'agency'
-               AND fact.subject_code = listed.ori
-               AND fact.period = rate.period
-               AND fact.release_key = rate.release_key
-               AND fact.value_status = 'reported'
-               AND fact.geography_status NOT IN ('ambiguous', 'unsupported')
-              JOIN silver_fbi.fact_reporting_participation AS agency
-                ON agency.product_id = fact.product_id
-               AND agency.release_key = fact.release_key
-               AND agency.subject_type = fact.subject_type
-               AND agency.subject_code = fact.subject_code
-               AND agency.period = fact.period
-             GROUP BY rate.product_id, rate.release_key, rate.measure_id,
-                      rate.geo_id, rate.period
-        )
-        SELECT rate.product_id || ' ' || rate.geo_id || ' ' || rate.period
-          FROM recent AS rate
-          LEFT JOIN recomputed AS agencies
-            ON agencies.product_id = rate.product_id
-           AND agencies.release_key = rate.release_key
-           AND agencies.measure_id = rate.measure_id
-           AND agencies.geo_id = rate.geo_id
-           AND agencies.period = rate.period
-         WHERE (rate.unavailable_reason IS NULL) <> (rate.rate IS NOT NULL)
-            OR rate.contributing_oris && rate.excluded_multi_county_oris
-            OR (CARDINALITY(rate.contributing_oris) > 0
-                AND (agencies.offenses IS DISTINCT FROM rate.offenses
-                     OR agencies.covered_population
-                        IS DISTINCT FROM rate.covered_population))
-            OR (rate.rate IS NOT NULL
-                AND (rate.covered_population
-                         < rate.coverage_floor * rate.linked_population
-                     OR ROUND(rate.rate, 6) <> ROUND(
-                         rate.offenses * 100000 / rate.covered_population, 6
-                     )))
-        """,
-        order_by="1",
+        SELECT (MAX(period_start)
+                - INTERVAL '{FBI_COUNTY_RATE_CHECK_MONTHS - 1} months')::DATE
+          FROM gold_fbi.county_agency_rate_month
+         WHERE rate IS NOT NULL
+        """
     )
+    bound = cursor.fetchone()[0]
+    newest = _fbi_newest_release_keys(cursor)
+    if bound is None or not newest:
+        return [RuleOutcome(object_name, "not_applicable")]
+    # One product at a time, its newest release named by plain equality: a
+    # join to the release table's MAX(refresh_date) was estimated at one
+    # row, so the planner nested the recent months against their recomputed
+    # sums with the keys in a join filter (over 900 s on the 2015-2025 load).
+    total = 0
+    evidence: list[str] = []
+    for product_id, release_keys in sorted(newest.items()):
+        params = (product_id, release_keys, bound)
+        offenders, offenders_total = _offenders(
+            cursor,
+            """
+            WITH recent AS MATERIALIZED (
+                SELECT * FROM gold_fbi.county_agency_rate
+                 WHERE product_id = %s AND release_key = ANY(%s)
+                   AND period_start >= %s
+            ), recomputed AS (
+                SELECT rate.release_key, rate.measure_id, rate.geo_id,
+                       rate.period,
+                       SUM(fact.value) AS offenses,
+                       SUM(agency.population) AS covered_population
+                  FROM recent AS rate
+                 CROSS JOIN LATERAL UNNEST(rate.contributing_oris)
+                       AS listed(ori)
+                  -- Each listed agency's month by key, on the fact and
+                  -- participation indexes; the gold view's joins add
+                  -- nothing the comparison reads.
+                  JOIN silver_fbi.fact_crime_observation AS fact
+                    ON fact.product_id = rate.product_id
+                   AND fact.measure_id = rate.measure_id
+                   AND fact.subject_type = 'agency'
+                   AND fact.subject_code = listed.ori
+                   AND fact.period = rate.period
+                   AND fact.release_key = rate.release_key
+                   AND fact.value_status = 'reported'
+                   AND fact.geography_status NOT IN ('ambiguous', 'unsupported')
+                  JOIN silver_fbi.fact_reporting_participation AS agency
+                    ON agency.product_id = fact.product_id
+                   AND agency.release_key = fact.release_key
+                   AND agency.subject_type = fact.subject_type
+                   AND agency.subject_code = fact.subject_code
+                   AND agency.period = fact.period
+                 GROUP BY rate.release_key, rate.measure_id, rate.geo_id,
+                          rate.period
+            )
+            SELECT rate.product_id || ' ' || rate.geo_id || ' ' || rate.period
+              FROM recent AS rate
+              LEFT JOIN recomputed AS agencies
+                ON agencies.release_key = rate.release_key
+               AND agencies.measure_id = rate.measure_id
+               AND agencies.geo_id = rate.geo_id
+               AND agencies.period = rate.period
+             WHERE (rate.unavailable_reason IS NULL) <> (rate.rate IS NOT NULL)
+                OR rate.contributing_oris && rate.excluded_multi_county_oris
+                OR (CARDINALITY(rate.contributing_oris) > 0
+                    AND (agencies.offenses IS DISTINCT FROM rate.offenses
+                         OR agencies.covered_population
+                            IS DISTINCT FROM rate.covered_population))
+                OR (rate.rate IS NOT NULL
+                    AND (rate.covered_population
+                             < rate.coverage_floor * rate.linked_population
+                         OR ROUND(rate.rate, 6) <> ROUND(
+                             rate.offenses * 100000 / rate.covered_population, 6
+                         )))
+            """,
+            order_by="1",
+            params=params,
+        )
+        total += offenders_total
+        evidence.extend(offenders)
     return [
         RuleOutcome(
             object_name,
-            "fail" if offenders else "pass",
-            observed_count=offenders_total,
+            "fail" if total else "pass",
+            observed_count=total,
             expected_count=0,
-            evidence=offenders[:EVIDENCE_LIMIT],
+            evidence=sorted(evidence)[:EVIDENCE_LIMIT],
         )
     ]
+
+
+def _fbi_newest_release_keys(cursor: Any) -> dict[str, list[str]]:
+    """Each FBI product's newest published release keys, resolved up front.
+
+    The same releases the ``latest_*`` views serve (every published release
+    on the product's newest refresh date). Rules then name them by plain
+    equality, which the planner estimates from the fact's statistics;
+    joining the release table's ``MAX(refresh_date)`` instead is estimated
+    at one row whatever the real size, and the plans built on that estimate
+    scale with its square.
+    """
+    cursor.execute(
+        """
+        SELECT release.product_id, release.release_key
+          FROM silver_fbi.dim_ucr_dataset_release AS release
+          JOIN (
+              SELECT product_id, MAX(refresh_date) AS refresh_date
+                FROM silver_fbi.dim_ucr_dataset_release
+               WHERE status = 'published'
+               GROUP BY product_id
+          ) AS newest
+            ON newest.product_id = release.product_id
+           AND newest.refresh_date = release.refresh_date
+         WHERE release.status = 'published'
+         ORDER BY 1, 2
+        """
+    )
+    newest: dict[str, list[str]] = {}
+    for product_id, release_key in cursor.fetchall():
+        newest.setdefault(str(product_id), []).append(str(release_key))
+    return newest
 
 
 def fbi_county_agency_rate_is_current(
@@ -766,6 +811,15 @@ def fbi_county_agency_rate_is_current(
     ]
 
 
+#: A CDE total that differs from the Return A file's by at most this many
+#: offenses, or this share of the CDE's value, is a revision the FBI made
+#: after cutting the master file (Dane Sheriff 12 vs 13, Green Bay 39 vs 40,
+#: Austin PD 4 to 10 low each month). The rule names those months as a
+#: warning; a larger gap means the sum, the layout or a card was read wrong.
+FBI_RETURN_A_REVISION_OFFENSES = 1
+FBI_RETURN_A_REVISION_SHARE = 0.02
+
+
 def fbi_return_a_matches_cde(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -774,79 +828,84 @@ def fbi_return_a_matches_cde(
     The Return A file publishes offense components, so its violent and
     property totals are summed from them by the CDE's own definition. Where
     the CDE also publishes an agency's total for the same month (the reviewed
-    agencies of the summarized products), the two must be equal: a mismatch
-    means the sum, the layout or a card was read wrong. Both sides are each
-    product's newest published release.
+    agencies of the summarized products), the two should be equal. Both
+    sides are each product's newest published release.
+
+    The CDE keeps revising agency months after the master file is cut, so a
+    small gap (within ``FBI_RETURN_A_REVISION_OFFENSES`` offenses or
+    ``FBI_RETURN_A_REVISION_SHARE`` of the CDE's value) is reported as a
+    warning, each month named; a larger one fails.
     """
     from data_ingestion_toolbox.fbi_ucr.return_a.registry import RETURN_A_PRODUCTS
 
     del scope
     object_name = "gold_fbi.latest_release_observation"
-    pairs = [(item.product_id, item.mirrors_product_id) for item in RETURN_A_PRODUCTS]
-    values = ", ".join("(%s, %s)" for _ in pairs)
-    params = tuple(value for pair in pairs for value in pair)
-    # Driven from the CDE side, which publishes agency months only for its
-    # reviewed agencies (a few thousand rows): each is matched to its Return
-    # A month by key on fbi_fact_measure_subject_period_idx. Joining the two
-    # gold views the other way round read every Return A agency month in the
-    # country (739 s on the 2015-2025 load).
-    compared = f"""
-        FROM (VALUES {values}) AS mirror (return_a, cde)
-        JOIN latest AS cde_release ON cde_release.product_id = mirror.cde
-        JOIN latest AS ra_release ON ra_release.product_id = mirror.return_a
-        JOIN silver_fbi.fact_crime_observation AS cde
-          ON cde.product_id = cde_release.product_id
-         AND cde.release_key = cde_release.release_key
-        JOIN silver_fbi.fact_crime_observation AS ra
-          ON ra.product_id = ra_release.product_id
-         AND ra.measure_id = cde.measure_id
-         AND ra.subject_type = 'agency'
-         AND ra.subject_code = cde.subject_code
-         AND ra.period = cde.period
-         AND ra.release_key = ra_release.release_key
-       WHERE cde.subject_type = 'agency'
-         AND cde.value_status = 'reported'
-         AND ra.value_status = 'reported'
-         AND cde.geography_status NOT IN ('ambiguous', 'unsupported')
-         AND ra.geography_status NOT IN ('ambiguous', 'unsupported')
-    """
-    latest = """
-        WITH latest AS (
-            SELECT release.product_id, release.release_key
-              FROM silver_fbi.dim_ucr_dataset_release AS release
-              JOIN (
-                  SELECT product_id, MAX(refresh_date) AS refresh_date
-                    FROM silver_fbi.dim_ucr_dataset_release
-                   WHERE status = 'published'
-                   GROUP BY product_id
-              ) AS newest
-                ON newest.product_id = release.product_id
-               AND newest.refresh_date = release.refresh_date
-             WHERE release.status = 'published'
+    newest = _fbi_newest_release_keys(cursor)
+    compared = 0
+    revised: list[str] = []
+    mismatched: list[str] = []
+    for item in RETURN_A_PRODUCTS:
+        return_a_keys = newest.get(item.product_id)
+        cde_keys = newest.get(item.mirrors_product_id)
+        if not return_a_keys or not cde_keys:
+            continue
+        # Driven from the CDE side, which publishes agency months only for
+        # its reviewed agencies (a few thousand rows), each matched to its
+        # Return A month by key on fbi_fact_measure_subject_period_idx. Both
+        # releases are named by plain equality: a join to the release
+        # table's MAX(refresh_date) was estimated at one row and the planner
+        # read every fact of both products and merge-joined them on disk.
+        cursor.execute(
+            """
+            WITH cde AS MATERIALIZED (
+                SELECT measure_id, subject_code, period, value
+                  FROM silver_fbi.fact_crime_observation
+                 WHERE product_id = %s AND release_key = ANY(%s)
+                   AND subject_type = 'agency'
+                   AND value_status = 'reported'
+                   AND geography_status NOT IN ('ambiguous', 'unsupported')
+            )
+            SELECT ra.subject_code, ra.period, ra.value, cde.value
+              FROM cde
+              JOIN silver_fbi.fact_crime_observation AS ra
+                ON ra.product_id = %s
+               AND ra.measure_id = cde.measure_id
+               AND ra.subject_type = 'agency'
+               AND ra.subject_code = cde.subject_code
+               AND ra.period = cde.period
+               AND ra.release_key = ANY(%s)
+             WHERE ra.value_status = 'reported'
+               AND ra.geography_status NOT IN ('ambiguous', 'unsupported')
+            """,
+            (item.mirrors_product_id, cde_keys, item.product_id, return_a_keys),
         )
-    """
-    cursor.execute(f"{latest} SELECT COUNT(*) {compared}", params)
-    if int(cursor.fetchone()[0]) == 0:
+        for subject_code, period, ra_value, cde_value in cursor.fetchall():
+            compared += 1
+            if ra_value == cde_value:
+                continue
+            line = (
+                f"{item.product_id} {subject_code} {period} {ra_value} <> {cde_value}"
+            )
+            gap = abs(float(ra_value) - float(cde_value))
+            allowed = max(
+                FBI_RETURN_A_REVISION_OFFENSES,
+                FBI_RETURN_A_REVISION_SHARE * abs(float(cde_value)),
+            )
+            (revised if gap <= allowed else mismatched).append(line)
+    if compared == 0:
         return [RuleOutcome(object_name, "not_applicable")]
-    offenders, offenders_total = _offenders(
-        cursor,
-        f"""
-        {latest}
-        SELECT ra.product_id || ' ' || ra.subject_code || ' ' || ra.period
-               || ' ' || ra.value || ' <> ' || cde.value
-        {compared}
-           AND ra.value <> cde.value
-        """,
-        order_by="1",
-        params=params,
-    )
+    # Real mismatches first, so the bounded evidence never hides one behind
+    # a list of revisions.
+    evidence = sorted(mismatched) + [
+        f"revised since the master file: {line}" for line in sorted(revised)
+    ]
     return [
         RuleOutcome(
             object_name,
-            "fail" if offenders else "pass",
-            observed_count=offenders_total,
+            "fail" if mismatched else "warn" if revised else "pass",
+            observed_count=len(mismatched) + len(revised),
             expected_count=0,
-            evidence=offenders[:EVIDENCE_LIMIT],
+            evidence=evidence[:EVIDENCE_LIMIT],
         )
     ]
 
