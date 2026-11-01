@@ -2832,11 +2832,21 @@ _LODES_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="never empty: the measures are registered",
     ),
     _obj(
+        "gold_census_lodes.observation_fact",
+        "gold",
+        "CENSUS_LODES",
+        grain="metric_key, geo_id, year, release_key, run_id",
+        lineage="silver_census_lodes.fact_area, silver_census_lodes.fact_flow",
+        scope_method="county and state sums of each published state-year",
+        cadence="per publication (refresh_observation_fact)",
+        empty_behavior="empty only before the first published state-year",
+    ),
+    _obj(
         "gold_census_lodes.observation_revision",
         "gold",
         "CENSUS_LODES",
         grain="metric_key, geo_id, year, run_id (published vintages only)",
-        lineage="silver_census_lodes.fact_area, silver_census_lodes.fact_flow",
+        lineage="gold_census_lodes.observation_fact",
         scope_method="published state-years; every vintage kept",
         cadence="per publication",
         empty_behavior="empty only before the first published state-year",
@@ -6127,6 +6137,35 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "in each county (main and aux) equal the workplace file's total for "
         "that county.",
         ("silver_census_lodes.fact_flow", "silver_census_lodes.fact_area"),
+    ),
+    _rule(
+        "DQ-LODES-005",
+        "QUARANTINE",
+        "reconciliation",
+        "Every published state-year whose residence or workplace file had "
+        "readable rows serves its county and state sums: a publish that "
+        "computed no served row fails rather than leaving the year blank.",
+        (
+            "control.census_lodes_slice",
+            "gold_census_lodes.observation_fact",
+        ),
+    ),
+    _rule(
+        "DQ-LODES-006",
+        "WARN",
+        "completeness",
+        "A year the site serves has every registered state published: a "
+        "history load that stopped part way shows as the states it is missing.",
+        ("control.census_lodes_slice",),
+    ),
+    _rule(
+        "DQ-LODES-007",
+        "WARN",
+        "plausibility",
+        "A state's LODES jobs do not move by more than a quarter between "
+        "consecutive published years; a larger step is a coverage break in "
+        "the files to explain, not an economy.",
+        ("gold_census_lodes.observation_fact",),
     ),
     # -- EPA air quality (AirData annual monitor files) ------------------------
     _rule(
