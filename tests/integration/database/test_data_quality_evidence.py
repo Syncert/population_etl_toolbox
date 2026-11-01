@@ -224,7 +224,8 @@ def test_a_runaway_rule_is_cancelled_and_the_rules_after_it_still_run(
     2026-11-01 until an operator cancelled it. Each rule now runs under a
     statement timeout: the slow rule records an error naming itself, its
     evidence is withdrawn, the rule sorted after it still records its own,
-    and the caller's timeout is back afterwards.
+    the caller's timeout is back afterwards, and the run row's finished_at
+    is when the run finished rather than when its transaction began.
     """
 
     def slow(cursor, scope):
@@ -254,6 +255,14 @@ def test_a_runaway_rule_is_cancelled_and_the_rules_after_it_still_run(
         assert [row[0] for row in cursor.fetchall()] == ["DQ-SHARED-002"]
         cursor.execute("SELECT current_setting('statement_timeout')")
         assert cursor.fetchone()[0] == "7min"
+        # The run row closes when the run does, not when its transaction
+        # began: the slow rule ran 200 ms first.
+        cursor.execute(
+            "SELECT finished_at - started_at FROM control.data_quality_run"
+            " WHERE quality_run_id = %s",
+            (record.quality_run_id,),
+        )
+        assert cursor.fetchone()[0].total_seconds() >= 0.2
     postgres_connection.rollback()
 
 

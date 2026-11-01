@@ -177,7 +177,14 @@ def _run_assessment(**context: Any) -> dict[str, Any]:
     finally:
         connection.close()
     if record.overall_status in {"fail", "error"}:
-        raise RuntimeError(
+        from airflow.exceptions import AirflowFailException
+
+        # A finished assessment is a verdict, already committed with its
+        # evidence: retrying it re-runs every rule, passed ones included, and
+        # reaches the same verdict hours later. AirflowFailException fails
+        # the task without the retry, which stays for what it is for -- an
+        # exception before the run finished (the warehouse unreachable).
+        raise AirflowFailException(
             f"Quality assessment {record.quality_run_id} finished "
             f"{record.overall_status}: {record.failure_summary} "
             "(per-rule evidence is logged above this traceback)"

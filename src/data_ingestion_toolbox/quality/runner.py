@@ -329,7 +329,12 @@ def execute_rules(
             """
             UPDATE control.data_quality_run
                SET overall_status = %s,
-                   finished_at = NOW(),
+                   -- clock_timestamp(), not NOW(): a run is one transaction,
+                   -- and NOW() is when it began, so every run row recorded
+                   -- finished_at = started_at however long it ran (the
+                   -- weekly run of 2026-11-01 read 06:05:25 for both after
+                   -- hours of work).
+                   finished_at = clock_timestamp(),
                    failure_summary = %s
              WHERE quality_run_id = %s
             """,
