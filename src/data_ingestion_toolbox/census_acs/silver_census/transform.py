@@ -489,15 +489,51 @@ class RawSlice:
     dataset: str | None = None
     geo_level: str | None = None
     state_fips: str | None = None
+    #: One of ``parts`` hash buckets of the slice's sub-geography column
+    #: (`_SPLIT_COLUMNS`); ``parts`` of 1 is the whole (dataset, level, state).
+    part: int = 0
+    parts: int = 1
 
     @property
-    def key(self) -> str:
+    def base_key(self) -> str:
         # A per-dataset slice must not share the whole year's key: the
         # resume checkpoint and the content ledger are keyed by it, and two
         # datasets under "*" would let a retry skip the second as done.
         if self.geo_level is None:
             return "*" if self.dataset is None else f"{self.dataset}/*"
         return f"{self.dataset}/{self.geo_level}/{self.state_fips or '-'}"
+
+    @property
+    def key(self) -> str:
+        # A part keeps the level as the key's second field: the serving step
+        # reads `split_part(slice_key, '/', 2)` to know which grain changed.
+        if self.parts == 1:
+            return self.base_key
+        return f"{self.base_key}/p{self.part + 1}of{self.parts}"
+
+    @property
+    def splittable(self) -> bool:
+        return self.geo_level in _SPLIT_COLUMNS
+
+    def split(self, parts: int) -> list[RawSlice]:
+        """The slice as ``parts`` buckets; ``parts`` must be a multiple of its own."""
+        if parts == self.parts:
+            return [self]
+        if not self.splittable or parts % self.parts:
+            raise ValueError(f"cannot split {self.key} into {parts} parts")
+        # Bucket b of `parts` lies inside bucket b % self.parts of the
+        # current split, so the children of one part are exactly that part.
+        factor = parts // self.parts
+        return [
+            RawSlice(
+                self.dataset,
+                self.geo_level,
+                self.state_fips,
+                part=self.part + self.parts * index,
+                parts=parts,
+            )
+            for index in range(factor)
+        ]
 
 
 WHOLE_YEAR = RawSlice()
@@ -508,6 +544,37 @@ WHOLE_YEAR = RawSlice()
 #: unchanged by it. 2024 brought place and tract grains: 190M rows, eleven
 #: times any earlier year, and read whole it outgrew the 96 GB Docker VM.
 _YEAR_SLICE_ROW_THRESHOLD = 20_000_000
+
+#: A (dataset, level, state) slice with more revision rows than this is read
+#: as hash buckets of its sub-geography, a power of two of them. The 2026-11
+#: monthly run spent over two hours in one read of acs5 place California
+#: (18.7M rows, 2.4 times the next slice) on one core while the others idled.
+_SLICE_SPLIT_ROW_THRESHOLD = 5_000_000
+
+#: The column a level's slice is bucketed by. Every window partition and
+#: every E/M pair of a level shares this column's value, so a bucket holds
+#: whole cells and splitting changes no fact. `us` and `state` slices are a
+#: few thousand rows and are never split.
+_SPLIT_COLUMNS = {
+    "county": "county_fips_source",
+    "tract": "county_fips_source",
+    "place": "place_fips_source",
+    "metro": "cbsa_source",
+}
+
+#: The most buckets a slice is split into, by planning or by a timed-out read.
+_MAX_SLICE_PARTS = 64
+
+#: How long one slice's raw read may run before it is cancelled and the slice
+#: is read again as twice as many buckets. Set as each statement's timeout and
+#: also checked across the cursor's fetches, since a fast-start plan spreads
+#: its work over many FETCHes that are each short.
+_RAW_FETCH_TIMEOUT_SECONDS = 45 * 60
+
+
+class SliceReadTimeout(Exception):
+    """A slice's raw read ran past `_RAW_FETCH_TIMEOUT_SECONDS`."""
+
 
 #: Rows pulled per round trip from the server-side cursor. Each batch becomes
 #: a typed polars frame straight away, so the Python tuples never accumulate.
@@ -551,6 +618,15 @@ def _slice_where(year: int | None, raw_slice: RawSlice) -> tuple[str, list[objec
         else:
             filters.append("observation.state_fips_source = %s")
             params.append(raw_slice.state_fips)
+        if raw_slice.parts > 1:
+            # A stable hash of the sub-geography, so a bucket's rows are the
+            # same from run to run and its ledger fingerprint stays valid.
+            column = _SPLIT_COLUMNS[raw_slice.geo_level]
+            filters.append(
+                f"(hashtext(COALESCE(observation.{column}, '')) & 2147483647)"
+                " %% %s = %s"
+            )
+            params.extend((raw_slice.parts, raw_slice.part))
     return (f"WHERE {' AND '.join(filters)}" if filters else ""), params
 
 
@@ -621,16 +697,32 @@ def _fetch_raw_frame(
     frames: list[pl.DataFrame] = []
     conn = hook.get_conn()
     try:
-        with conn.cursor(name=f"acs_raw_{uuid.uuid4().hex}") as cur:
-            cur.itersize = _FETCH_BATCH_ROWS
-            cur.execute(sql, params)
-            while True:
-                batch = cur.fetchmany(_FETCH_BATCH_ROWS)
-                if not batch:
-                    break
-                frames.append(
-                    pl.DataFrame(batch, orient="row", schema=_RAW_FRAME_SCHEMA)
-                )
+        with conn.cursor() as setup:
+            # A named cursor is planned for its first 10% of rows by default
+            # (`cursor_tuple_fraction`), which chose a nested loop into
+            # response_capture and an incremental sort for a read that is
+            # always drained to its last row. Plan it for the whole result.
+            setup.execute("SET LOCAL cursor_tuple_fraction = 1.0")
+            setup.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (f"{max(1, int(_RAW_FETCH_TIMEOUT_SECONDS * 1000))}ms",),
+            )
+        started = time.monotonic()
+        try:
+            with conn.cursor(name=f"acs_raw_{uuid.uuid4().hex}") as cur:
+                cur.itersize = _FETCH_BATCH_ROWS
+                cur.execute(sql, params)
+                while True:
+                    batch = cur.fetchmany(_FETCH_BATCH_ROWS)
+                    if not batch:
+                        break
+                    frames.append(
+                        pl.DataFrame(batch, orient="row", schema=_RAW_FRAME_SCHEMA)
+                    )
+                    if time.monotonic() - started > _RAW_FETCH_TIMEOUT_SECONDS:
+                        raise SliceReadTimeout(raw_slice.key)
+        except psycopg2.errors.QueryCanceled as exc:
+            raise SliceReadTimeout(raw_slice.key) from exc
         conn.commit()
     finally:
         conn.close()
@@ -682,18 +774,22 @@ def _plan_year_slices(
     """Split a year into slices the slice index can read.
 
     A year at or under the threshold is one slice per dataset; a larger one
-    is one per (dataset, level, state). Each names its dataset, so no read
-    scans the whole table. ``datasets`` of ``None`` is the old whole-year
-    shape, kept for callers that pass no dataset list.
+    is one per (dataset, level, state), and a (dataset, level, state) over
+    ``_SLICE_SPLIT_ROW_THRESHOLD`` rows is split further into hash buckets
+    (`RawSlice.split`). Each names its dataset, so no read scans the whole
+    table. ``datasets`` of ``None`` is the old whole-year shape, kept for
+    callers that pass no dataset list.
     """
     if row_count <= _YEAR_SLICE_ROW_THRESHOLD:
         if datasets is None:
             return [WHOLE_YEAR]
         return [RawSlice(dataset=dataset) for dataset in datasets]
+    # The same index scan the DISTINCT made, counting as it goes.
     sql = """
-        SELECT DISTINCT dataset, geo_level, state_fips_source
+        SELECT dataset, geo_level, state_fips_source, COUNT(*)
         FROM silver_census.observation_revision
         WHERE dataset = %s AND year = %s
+        GROUP BY dataset, geo_level, state_fips_source
         ORDER BY dataset, geo_level, state_fips_source NULLS FIRST;
     """
     rows: list[tuple] = []
@@ -701,7 +797,59 @@ def _plan_year_slices(
         for dataset in datasets if datasets is not None else KNOWN_DATASETS:
             cur.execute(sql, (dataset, int(year)))
             rows.extend(cur.fetchall())
-    return [RawSlice(dataset=r[0], geo_level=r[1], state_fips=r[2]) for r in rows]
+    slices: list[RawSlice] = []
+    for dataset, geo_level, state_fips, count in rows:
+        raw_slice = RawSlice(
+            dataset=dataset, geo_level=geo_level, state_fips=state_fips
+        )
+        slices.extend(raw_slice.split(_planned_parts(raw_slice, int(count))))
+    return slices
+
+
+def _planned_parts(raw_slice: RawSlice, row_count: int) -> int:
+    """The fewest power-of-two buckets that bring each under the split threshold.
+
+    A power of two, so a slice that grows past the next boundary is split
+    along the lines it was already split on, and a timed-out bucket's halves
+    (`RawSlice.split`) are buckets of the same scheme.
+    """
+    if not raw_slice.splittable:
+        return 1
+    parts = 1
+    while row_count > _SLICE_SPLIT_ROW_THRESHOLD * parts and parts < _MAX_SLICE_PARTS:
+        parts *= 2
+    return parts
+
+
+def _refine_with_ledger(
+    raw_slices: list[RawSlice], finished: dict[str, str]
+) -> list[RawSlice]:
+    """Read a slice as finely as an earlier run had to.
+
+    A slice whose read timed out was finished as twice its planned buckets,
+    and the ledger holds those keys. Planning it coarser again would time out
+    again before splitting, so it starts at the split the ledger records.
+    """
+    finest: dict[str, int] = {}
+    for key in finished:
+        base, sep, suffix = key.rpartition("/p")
+        if not sep or "of" not in suffix:
+            continue
+        _part, _, parts = suffix.partition("of")
+        if parts.isdigit():
+            finest[base] = max(finest.get(base, 1), int(parts))
+    refined: list[RawSlice] = []
+    for raw_slice in raw_slices:
+        parts = finest.get(raw_slice.base_key, 1)
+        if (
+            parts > raw_slice.parts
+            and parts % raw_slice.parts == 0
+            and raw_slice.splittable
+        ):
+            refined.extend(raw_slice.split(parts))
+        else:
+            refined.append(raw_slice)
+    return refined
 
 
 #: Bump when the transform's output for unchanged input changes, so every
@@ -1899,11 +2047,14 @@ def transform_census_to_silver(
 
     # ── process each year ─────────────────────────────────────────────
     for y in years:
-        raw_slices = _plan_year_slices(
-            hook, y, metrics.raw_rows_by_year[y], datasets_by_year.get(y)
+        finished = _finished_fingerprints(hook, y)
+        raw_slices = _refine_with_ledger(
+            _plan_year_slices(
+                hook, y, metrics.raw_rows_by_year[y], datasets_by_year.get(y)
+            ),
+            finished,
         )
         done = _completed_slice_keys(hook, resume_key, y)
-        finished = _finished_fingerprints(hook, y)
         if len(raw_slices) > 1:
             logger.info(
                 "[CENSUS_ACS CHUNK] Year=%s has %s raw rows; reading it in %s slices",
@@ -1962,7 +2113,23 @@ def transform_census_to_silver(
                 else "revisions or its reference rows changed since it last finished",
             )
             slice_metrics = TransformMetrics(dataset_name="CENSUS_ACS")
-            raw = _fetch_raw_frame(hook, year, raw_slice)
+            try:
+                raw = _fetch_raw_frame(hook, year, raw_slice)
+            except SliceReadTimeout:
+                if not raw_slice.splittable or raw_slice.parts * 2 > _MAX_SLICE_PARTS:
+                    raise
+                halves = raw_slice.split(raw_slice.parts * 2)
+                logger.warning(
+                    "[CENSUS_ACS CHUNK] Year=%s slice=%s raw read passed %s; "
+                    "reading it again as %s",
+                    year,
+                    raw_slice.key,
+                    f"{_RAW_FETCH_TIMEOUT_SECONDS:.0f} s",
+                    ", ".join(half.key for half in halves),
+                )
+                # The halves record their own keys; the next run plans them
+                # from the ledger (`_refine_with_ledger`), not this slice.
+                return sum(transform_slice(half, year) for half in halves)
             changed = 0
             if not raw.is_empty():
                 slice_metrics.log_chunk_start(year, raw.height)

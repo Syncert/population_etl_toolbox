@@ -253,6 +253,87 @@ def test_a_sliced_year_writes_exactly_the_facts_the_whole_year_writes(
     assert _facts(factory) == whole_year
 
 
+def test_an_oversized_slice_read_as_buckets_writes_the_same_facts(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-082 — a state slice split into hash buckets changes no fact."""
+    factory = two_slice_year
+    expected_changed = (len(SEEDED_PLACES) + 1) * 2
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == expected_changed
+    by_state = _facts(factory)
+
+    _delete_facts(factory)
+    # Every slice over one row is split, up to four buckets; the state
+    # level is never split, the place slice is.
+    monkeypatch.setattr(transform, "_SLICE_SPLIT_ROW_THRESHOLD", 1)
+    monkeypatch.setattr(transform, "_MAX_SLICE_PARTS", 4)
+    fetched = _record_fetches(monkeypatch)
+    assert transform.transform_census_to_silver() == expected_changed
+    assert sorted(fetched) == [
+        "acs5/place/10/p1of4",
+        "acs5/place/10/p2of4",
+        "acs5/place/10/p3of4",
+        "acs5/place/10/p4of4",
+        "acs5/state/10",
+    ]
+    assert _facts(factory) == by_state
+
+    # The buckets are the same rows next run, so their fingerprints hold.
+    fetched.clear()
+    assert transform.transform_census_to_silver() == 0
+    assert fetched == []
+
+
+def test_a_slice_read_that_runs_too_long_is_read_again_in_halves(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-082 — a timed-out read splits, logs, finishes, and stays split."""
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    real = transform._fetch_raw_frame
+    fetched: list[str] = []
+
+    def place_read_times_out(hook, year, raw_slice=transform.WHOLE_YEAR):
+        fetched.append(raw_slice.key)
+        if raw_slice.key == "acs5/place/10":
+            raise transform.SliceReadTimeout(raw_slice.key)
+        return real(hook, year, raw_slice)
+
+    monkeypatch.setattr(transform, "_fetch_raw_frame", place_read_times_out)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+    assert sorted(fetched) == [
+        "acs5/place/10",
+        "acs5/place/10/p1of2",
+        "acs5/place/10/p2of2",
+        "acs5/state/10",
+    ]
+    assert len(_facts(factory)) == (len(SEEDED_PLACES) + 1) * 2
+    assert _rows(
+        factory,
+        "SELECT slice_key FROM silver_census.transform_slice_state "
+        "WHERE year = %s ORDER BY slice_key",
+        (YEAR,),
+    ) == [("acs5/place/10/p1of2",), ("acs5/place/10/p2of2",), ("acs5/state/10",)]
+
+    # The next run plans the halves from the ledger and skips them unchanged,
+    # rather than timing out on the whole slice again.
+    fetched.clear()
+    assert transform.transform_census_to_silver() == 0
+    assert fetched == []
+
+
+def test_a_raw_read_past_its_deadline_raises_rather_than_holding_the_run(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-082 — the deadline spans the cursor's fetches, not one statement."""
+    monkeypatch.setattr(transform, "_RAW_FETCH_TIMEOUT_SECONDS", 1e-9)
+    hook = PostgresHookStub(two_slice_year)
+    place = transform.RawSlice(dataset="acs5", geo_level="place", state_fips="10")
+    with pytest.raises(transform.SliceReadTimeout, match="acs5/place/10"):
+        transform._fetch_raw_frame(hook, YEAR, place)
+
+
 def test_a_retry_under_the_same_key_resumes_after_the_last_finished_slice(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
