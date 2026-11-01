@@ -19,6 +19,9 @@ import {
   cohortSentence,
   defaultReferenceKey,
   earlierReleases,
+  nameAgeHistory,
+  nameAgeStructure,
+  readableName,
   num,
   overlapText,
   placeOf,
@@ -29,11 +32,27 @@ import {
 } from "../../../apps/web/lib/ageStructure";
 import { isSingleAgeLine } from "../../../apps/web/lib/ageLines";
 import { DANE_TRACTS } from "../support/placeScenarios.js";
-import { ageBlock, ageCohortsAnswer, ageHistoryAnswer, ageStructureAnswer } from "../support/ageScenarios.js";
+import { ageBlock, ageCohortsAnswer, ageHistoryAnswer, ageStructureAnswer as rawAnswer } from "../support/ageScenarios.js";
 
 const MADISON = "state:55|place:48000";
 const DANE = "state:55|county:025";
 const TRACT = DANE_TRACTS[0].geo_id;
+// As the client holds an answer: named for a reader where it arrives.
+const ageStructureAnswer = (...args) => nameAgeStructure(rawAnswer(...args));
+
+describe("names", () => {
+  test("the nation is never shown by its id, nor a place by its id", () => {
+    // The catalog names the nation "us:1" (OFFICE_LAB, 2026-10-31).
+    expect(rawAnswer(MADISON).places.at(-1).geo_name).toBe("us:1");
+    expect(referenceChoices(ageStructureAnswer(MADISON)).map((choice) => choice.name)).toEqual([
+      "Dane County, Wisconsin", "Wisconsin", "United States", "",
+    ]);
+    expect(nameAgeStructure(rawAnswer("us:1")).geo_name).toBe("United States");
+    expect(nameAgeHistory(ageHistoryAnswer("us:1")).items.every((item) => item.geo_name === "United States")).toBe(true);
+    expect(readableName({ geo_id: "state:55|place:1", geo_name: "state:55|place:1" })).toBe("this place");
+    expect(readableName({ geo_id: "state:55", geo_name: "Wisconsin" })).toBe("Wisconsin");
+  });
+});
 
 describe("the comparison toggle", () => {
   test("a city offers county, state, nation and none, county selected", () => {

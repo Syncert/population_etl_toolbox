@@ -33,7 +33,8 @@ const WOMEN_PER_MAN = [0.955, 0.955, 0.955, 0.97, 0.98, 0.98, 0.99, 1.0, 1.0, 1.
 const MEDIANS = { madison: [31.6, 31.0, 32.3], dane: [35.4, 34.6, 36.3], wi: [40.1, 39.2, 41.1], us: [38.7, 37.5, 39.9], mn: [38.5, 37.6, 39.4], rock: [40.4, 39.3, 41.5] };
 
 const NAMES = {
-  "us:1": ["United States", "NATIONAL"],
+  // The catalog names the nation by its id, as OFFICE_LAB's API does.
+  "us:1": ["us:1", "NATIONAL"],
   "state:55": ["Wisconsin", "STATE"],
   "state:27": ["Minnesota", "STATE"],
   "state:55|county:025": ["Dane County, Wisconsin", "COUNTY"],

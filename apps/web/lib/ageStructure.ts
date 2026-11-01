@@ -166,6 +166,36 @@ export type AgeDataset = "acs5" | "acs1";
 export type Sex = "men" | "women";
 export const SEXES: readonly Sex[] = ["men", "women"];
 
+// ---------------------------------------------------------------- names
+
+/** What the nation is called on every page; the catalog names it by its id. */
+export const NATION_NAME = "United States";
+
+/**
+ * A place's name as a reader sees it. The catalog names the nation "us:1"
+ * (its geo_id), and a place it holds no name for comes back with the id or
+ * nothing; neither is ever shown (OFFICE_LAB, 2026-10-31: the toggle read
+ * "Nation: Us:1").
+ */
+export function readableName(place: { geo_id: string; geo_level?: string | null; geo_name?: string | null }): string {
+  if (place.geo_id === "us:1" || place.geo_level === "NATIONAL") return NATION_NAME;
+  const name = (place.geo_name || "").trim();
+  return name && name !== place.geo_id ? name : "this place";
+}
+
+function named<T extends { geo_id: string; geo_level?: string | null; geo_name?: string | null }>(place: T): T {
+  return { ...place, geo_name: readableName(place) };
+}
+
+/** Every place in an answer, named for a reader, once, where the answer arrives. */
+export function nameAgeStructure(answer: AgeStructureResponse): AgeStructureResponse {
+  return { ...named(answer), places: answer.places.map(named) };
+}
+
+export function nameAgeHistory(answer: AgeHistoryResponse): AgeHistoryResponse {
+  return { ...named(answer), items: answer.items.map(named) };
+}
+
 // ---------------------------------------------------------------- fetchers
 
 export function getAgeStructure(
@@ -180,7 +210,7 @@ export function getAgeStructure(
       release: params.release,
       compare_geo_ids: params.compare_geo_ids?.length ? params.compare_geo_ids.join(",") : undefined,
     },
-  });
+  }).then(nameAgeStructure);
 }
 
 export function getAgeStructureHistory(
@@ -195,7 +225,7 @@ export function getAgeStructureHistory(
       periods: params.periods,
       include_bands: params.include_bands === undefined ? undefined : String(params.include_bands),
     },
-  });
+  }).then(nameAgeHistory);
 }
 
 export function getAgeCohorts(
