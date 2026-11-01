@@ -272,13 +272,38 @@ gold is not small. The newest-value relations are about 141 GB:
 `gold_bls` is 8.9 GB, and `gold_glossary` and the other gold schemas are under
 1 GB. The as-released partitions, mainly `rpt_acs_observations`, add 1,247 GB.
 That is about 90% of gold, and it is there for history charts and "pick a
-release" reads. A serving copy has three shapes:
+release" reads.
 
-| Serving copy | Size | Rough monthly cost (list prices, not quotes) |
+`rpt_acs_observations` measured by level (2026-11-01; heap and index
+apportioned by row share):
+
+| Level | Rows | Heap | Index | Total | Share |
+|---|---:|---:|---:|---:|---:|
+| PLACE | 676,914,864 | 362.1 GB | 312.3 GB | 674.4 GB | 56.9% |
+| TRACT | 391,367,680 | 207.7 GB | 180.5 GB | 388.2 GB | 32.9% |
+| COUNTY | 97,001,522 | 52.3 GB | 44.8 GB | 97.1 GB | 8.1% |
+| METRO | 22,035,842 | 11.9 GB | 10.2 GB | 22.1 GB | 1.9% |
+| STATE | 2,856,913 | 1.6 GB | 1.3 GB | 2.9 GB | 0.2% |
+| NATIONAL | 54,922 | — | — | ~0.1 GB | — |
+| **Total** | **1,190,231,743** | **635.6 GB** | **549.1 GB** | **1,184.7 GB** | |
+
+METRO grows as the backfill reaches 2005. Indexes are 46% of the relation, so
+a serving history table with one index, led by `(metric_code, geo_id)`,
+plus a release key, should be roughly 35–45% smaller than the same rows in
+`rpt`. That is an estimate; build one partition and measure before relying on
+it.
+
+Every place and tract page already gets its **newest** values from
+`mv_acs_latest`, inside the ~141 GB above. Only *history* (past releases)
+drives the size. So the serving copy can be shaped as follows:
+
+| Serving copy | Size (as `rpt` today → compact estimate) | Rough monthly cost, managed (RDS list prices, not quotes) |
 |---|---|---|
-| Newest values only; history pages read from the office warehouse or Parquet | ~150 GB | $40–100 VPS · $200–400 managed |
-| Newest values + a narrow history table: one row per metric, geography and release, no duplicate indexes, tract history only for the measures pages chart | ~300–600 GB (to be measured) | $80–200 VPS · $350–700 managed |
-| All of gold as it is now | ~1.4 TB and growing | $150–300 dedicated server with 2 TB NVMe · $700–1,200 managed |
+| **A.** Newest values at every level + full history for nation, state, county and metro. Place and tract history read from Parquet on the API host (DuckDB) | ~141 + 122 ≈ 265 GB → ~210 GB, plus Parquet | $250–450 |
+| **B.** A + full tract history in Postgres | ~650 GB → ~430 GB | $400–700 |
+| **C.** All levels' full history in Postgres | ~1.33 TB → ~850 GB | $600–1,100 |
+
+A self-run VPS or dedicated server costs about a third of these figures.
 
 **Nick's preferred shape (2026-10-31):** managed Postgres on AWS, with a
 read replica for serving. That works and scales for reads. A replica on RDS is
@@ -294,15 +319,18 @@ experience costs far less if RDS holds only the serving copy. Keep the
 warehouse and its loads at the office, or on a cheap box, and publish the
 serving tables to RDS each release. Add an RDS read replica of that small
 database only when read traffic needs it, or for failover (Multi-AZ). That is
-roughly $350–900 a month at the middle row's size.
+roughly $250–700 a month for shapes A or B.
 
-The recommendation is the middle row. Shape the history the site serves for
-the site's own reads, rather than copying the warehouse's as-released
-partitions with all of their indexes. Before stage 2 starts, measure
-`rpt_acs_observations` by `geo_level`, with heap and index sizes split, to
-know what the narrow table would hold. These figures replace the earlier
-100–400 GB guess, and the hosting-cost plan's measured numbers replace the
-prices. Burden: one publish step, one more
+**Recommendation: start with shape A, and move to B or C only if needed.**
+Place history is 57% of the bytes. It is read one place at a time, which
+suits Parquet sorted by `(metric_code, geo_id)`. DuckDB reads only the row
+groups for that place, and columnar compression usually makes this a fraction
+of the Postgres size. Measure one release's PLACE Parquet size, and a
+single-place history read from it, before committing.
+
+If place-history reads from Parquet prove slow or awkward, shape C in the
+compact table is the fallback. It is still well under copying `rpt` as it
+is. The hosting-cost plan's measured numbers replace the prices above. Burden: one publish step, one more
 schema-apply target, and monitoring one more database. This is the main
 recurring cost of the whole path, and the reason it waits for its trigger.
 
@@ -387,14 +415,48 @@ rounds:
 
 What this says so far:
 
-- **Limit 1, loads slowing the site:** cached pages are unaffected. Cold
-  reads during a load are 0.7–1.6 s, against the under-15 ms warm reads
-  measured at idle elsewhere. The 3× trigger can be judged once the idle cold
-  numbers arrive.
+- **Limit 1, loads slowing the site: not reached.** See the idle comparison
+  below. Load p95 and idle p95 are about equal, and there are no timeouts.
 - **The cache carries the site today.** Raising `API_CACHE_TTL_SECONDS` (stage
   0, item 4) keeps more visitors on the 12 ms path, and costs nothing.
 - **Size moved the stage-2 estimate,** from "small" to "shape the history
   first". See the cost table in stage 2.
+
+## Measured on OFFICE_LAB (2026-11-01, about 01:50Z, idle vs reload)
+
+On 2026-11-01 the DAG was paused from 01:49 to 01:55Z, after metro 2015. The
+Dane County page's 12 distinct API GETs were timed over 5 rounds. The cold
+runs used a second API container with `REDIS_URL` empty. The warm runs used
+production with Redis.
+
+| | Cold p50 | Cold p95 | Cold max | Warm p50 | Warm p95 |
+|---|---:|---:|---:|---:|---:|
+| During reload | 64 ms | 466 ms | 598 ms | 15 ms | 27 ms |
+| Idle | 69 ms | 487 ms | 575 ms | 16 ms | 133 ms* |
+
+\* One noisy round; p50 unchanged.
+
+**Verdict on limit 1:** not reached. Load and idle p95 are about the same,
+with no 15 s timeouts. Stage 2 is therefore triggered only by public launch
+(Nick's decision), not by contention.
+
+**Follow-up candidate (not a serving-layer trigger).** Two reads set the cold
+p95:
+
+- `/catalog/geographies/state:55|county:025/related` takes 450–600 ms on
+  every call;
+- the TRACT observations read takes about 450 ms.
+
+Making `/related` cheaper, by precomputing it or giving it an index-backed
+read, would put the page's cold p95 under 200 ms.
+
+**Other figures:**
+
+- The cumulative buffer hit ratio is 94.93%, unchanged.
+- A connection sampler is running on OFFICE_LAB for 24 h, every 10 s, writing
+  to `H:\backfill-logs\conn_samples.csv`. The first samples show 15–17
+  backends: 13 idle `api_reader` pool connections and 2–4 active. Peak and p99
+  are still to come.
 
 ## Acceptance (for this plan, when its stages are built)
 
