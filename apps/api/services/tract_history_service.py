@@ -70,8 +70,10 @@ METHOD = (
     "published values are shown as they are. Where it was redrawn, a count is "
     "DERIVED: each earlier tract's published count is split by the Bureau's "
     "relationship files (share of land area from 2010; share of 2010 population "
-    "from 2000) and the parts landing on this tract are summed. A median, rate "
-    "or margin of error cannot be split that way, so none is derived."
+    "from 2000) and the parts landing on this tract are summed, then rounded to "
+    "a whole count. A median, rate or margin of error cannot be split that way, "
+    "so none is derived. The series starts with the 2009 release (2005-2009); "
+    "Census 2000 tract counts are not carried onto 2020 tracts."
 )
 
 REDRAWN_NOTE = (
@@ -147,6 +149,17 @@ def _number(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _whole(value: Any) -> Optional[float]:
+    """An apportioned count, to the whole unit it counts.
+
+    The view sums estimates times land shares at full ``numeric`` precision
+    (3332.3555077...); a count of people or homes is shown whole, as the
+    Bureau publishes its own, and the decimals were never information.
+    """
+    number = _number(value)
+    return None if number is None else float(round(number))
 
 
 def _percent(share: Optional[float]) -> str:
@@ -362,7 +375,7 @@ def build_series(
         by_code[code][vintage] = TractHistoryPoint(
             vintage_year=vintage,
             observation_date=row["observation_date"],
-            value=None if status == "incomplete" else _number(row.get("comparable_value")),
+            value=None if status == "incomplete" else _whole(row.get("comparable_value")),
             margin_of_error=None,
             status=status,
             derived=status != "unchanged",

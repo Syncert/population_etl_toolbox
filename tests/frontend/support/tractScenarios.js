@@ -57,7 +57,7 @@ function historyFor(geoId, codes) {
       },
       series: codes.map((code) => MEDIANS.test(code)
         ? { metric_code: code, note: "Before 2020 this measure was published on different tract boundaries and it is not a count that can be apportioned, so its history here starts in 2020.", items: [point(2020, 71000, "published"), point(2024, 82000, "published")] }
-        : { metric_code: code, note: null, items: [point(2012, null, "incomplete"), point(2015, 1210.4, "apportioned"), point(2019, 1388.2, "apportioned"), point(2020, 1420, "published"), point(2024, 1500, "published")] }),
+        : { metric_code: code, note: null, items: [point(2012, null, "incomplete"), point(2015, 1210, "apportioned"), point(2019, 1388, "apportioned"), point(2020, 1420, "published"), point(2024, 1500, "published")] }),
     };
   }
   if (geoId === KEPT.geo_id || geoId === SIBLING.geo_id) {

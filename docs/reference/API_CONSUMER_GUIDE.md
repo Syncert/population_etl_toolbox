@@ -1933,8 +1933,9 @@ Each series item has a `status`: `published` (the ACS estimate on this
 on the same area), `apportioned` (**derived**: earlier tracts' published
 counts split by the relationship files -- share of land area from 2010, share
 of 2010 population from 2000 -- and summed, from
-`gold_census.acs_tract_comparable`, with `weight_basis` and `source_geo_ids`
-and no margin of error) or `incomplete` (a contributing estimate was not
+`gold_census.acs_tract_comparable`, rounded to a whole count, with
+`weight_basis` and `source_geo_ids` and no margin of error; the earliest is
+the 2009 release, since Census 2000 tract counts are not carried) or `incomplete` (a contributing estimate was not
 published, so no value). `derived` is true for the last two. A median or rate
 is never apportioned: on a redrawn tract its series starts in 2020 and `note`
 says why. A geography that is not a tract, a non-ACS-5-year code or more than

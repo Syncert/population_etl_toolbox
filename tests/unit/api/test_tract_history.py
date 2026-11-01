@@ -165,7 +165,7 @@ def test_a_split_tract_serves_its_published_years_and_its_derived_counts(client_
             _published(NEW, INCOME, 2015, 1, 1),
         ],
         comparable=[
-            _comparable(NEW, POPULATION, 2015, 3800.4, "apportioned"),
+            _comparable(NEW, POPULATION, 2015, 3800.3555077067612, "apportioned"),
             _comparable(NEW, POPULATION, 2012, None, "incomplete"),
         ],
     )
@@ -192,7 +192,8 @@ def test_a_split_tract_serves_its_published_years_and_its_derived_counts(client_
         (2024, "published", False),
     ]
     assert population["items"][0]["value"] is None
-    assert population["items"][1]["value"] == pytest.approx(3800.4)
+    # An apportioned count is shown whole, not at the view's full precision.
+    assert population["items"][1]["value"] == 3800
     assert population["items"][1]["margin_of_error"] is None
     assert population["items"][1]["weight_basis"] == "share of land area"
     assert population["items"][1]["source_geo_ids"] == [OLD]
@@ -201,6 +202,7 @@ def test_a_split_tract_serves_its_published_years_and_its_derived_counts(client_
     assert [p["vintage_year"] for p in income["items"]] == [2024]
     assert "starts in 2020" in income["note"]
     assert "DERIVED" in body["method"]
+    assert "starts with the 2009 release" in body["method"]
 
 
 def test_every_read_is_scoped_to_the_one_tract(client_for) -> None:

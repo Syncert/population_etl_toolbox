@@ -103,6 +103,19 @@ step an index scan.
    that kept its boundary; time `/place/tract-history` cold; screenshots to
    `/mnt/project-files/screenshots/tract-page/`.
 
+## Live EXPLAIN (OFFICE_LAB, 2026-11-01)
+
+PASS on the loaded warehouse with `/mnt/project-files/tract-page/explain_tract_views.sql`
+(views created in a scratch schema). Travis tract 22.19 (formed from parts of
+five 2010 tracts): comparable series for 3 measures 71.3 ms cold (planning
+42 ms), boundary read 0.12 ms, the parents' other 2020 tracts 0.56 ms, the
+published read 4.7 ms. Dane tract 1, 6 measures: 121.7 ms cold. Index scans
+and nested loops only; Seq Scans only on empty partitions. Two follow-ups,
+done in this PR: apportioned counts are rounded to a whole count (the view
+returns full `numeric` precision), and the method says the series starts with
+the 2009 release (Census 2000 tract counts are SF1/SF3 P-tables, which the
+view's B-table list does not carry; a recorded gap, not v1 work).
+
 ## Evidence
 
 - `pytest tests/unit`: 2,965 passed.
