@@ -565,10 +565,100 @@ GEO_SEARCH_SEGMENTS_QUERY: TextClause = text(
            search.county_fips, search.place_fips,
            search.geo_name AS segment_name
     FROM {GEO_SEARCH_RELATION} AS search
-    WHERE search.geo_level = 'STATE'
+    WHERE search.geo_level IN ('STATE', 'METRO')
        OR (search.geo_level IN ('COUNTY', 'PLACE')
            AND search.state_fips = ANY(:state_fips))
     ORDER BY search.geo_id
+    """
+)
+
+# ---------------------------------------------------------------------------
+# Metro pages (web-metro-pages)
+# ---------------------------------------------------------------------------
+
+#: Every current metro, as its page names it: the published name, the short
+#: name, the principal state (``geo_search``'s rule: the state of its most
+#: populous member county) and the newest ACS population. About 925 rows; a
+#: metro's segment is decided against all of them, as a county's is against
+#: its state's counties.
+METRO_PAGES_QUERY: TextClause = text(
+    f"""
+    SELECT search.geo_id, search.geo_level, search.geo_name,
+           search.short_name, search.state_fips, search.state_name,
+           search.population, search.population_year,
+           search.population_metric_code,
+           search.geo_name AS segment_name
+    FROM {GEO_SEARCH_RELATION} AS search
+    WHERE search.geo_level = 'METRO'
+    ORDER BY search.geo_id
+    """
+)
+
+#: The metros with a member county in each of ``:state_fips``' states, by the
+#: delineation's own ``contains`` rows. The counties are read by key first, so
+#: each relationship read is an index probe on ``related_geo_id``.
+METRO_STATE_MEMBERS_QUERY: TextClause = text(
+    f"""
+    SELECT DISTINCT link.geo_id AS metro_geo_id, county.state_fips
+    FROM {RELATIONSHIP_RELATION} AS link
+    JOIN {GEO_SEARCH_RELATION} AS county
+         ON county.geo_id = link.related_geo_id
+    WHERE link.related_geo_id = ANY(ARRAY(
+            SELECT member.geo_id
+            FROM {GEO_SEARCH_RELATION} AS member
+            WHERE member.geo_level = 'COUNTY'
+              AND member.state_fips = ANY(:state_fips)
+          ))
+      AND link.relationship_type = 'contains'
+      AND link.geo_id LIKE 'cbsa:%'
+    """
+)
+
+#: One metro's member counties under the newest delineation the reference
+#: holds for it, most populous first. A county the delineation names that the
+#: search projection does not hold (not current) is left out, not guessed.
+METRO_MEMBER_COUNTIES_QUERY: TextClause = text(
+    f"""
+    WITH links AS MATERIALIZED (
+        SELECT link.related_geo_id, link.geography_vintage,
+               link.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS link
+        WHERE link.geo_id = :metro_geo_id
+          AND link.relationship_type = 'contains'
+    ),
+    newest AS MATERIALIZED (
+        SELECT related_geo_id, geography_vintage, evidence_source
+        FROM links
+        WHERE geography_vintage = (SELECT MAX(geography_vintage) FROM links)
+    )
+    SELECT county.geo_id, county.geo_name, county.state_fips,
+           county.state_name, county.population, county.population_year,
+           newest.geography_vintage, newest.evidence_source
+    FROM newest
+    JOIN {GEO_SEARCH_RELATION} AS county
+         ON county.geo_id = newest.related_geo_id
+        AND county.geo_level = 'COUNTY'
+    WHERE county.geo_id = ANY(ARRAY(SELECT related_geo_id FROM newest))
+    ORDER BY county.population DESC NULLS LAST, county.geo_id
+    """
+)
+
+#: The areas a state lies in (its Census division, region and the nation),
+#: by the reference's ``contains`` rows, named by key. A metro page reads its
+#: principal state's, so its grocery and gas lines have a region to fall
+#: back to; nothing is matched by name.
+STATE_CONTAINING_AREAS_QUERY: TextClause = text(
+    f"""
+    WITH links AS MATERIALIZED (
+        SELECT DISTINCT link.geo_id
+        FROM {RELATIONSHIP_RELATION} AS link
+        WHERE link.related_geo_id = :state_geo_id
+          AND link.relationship_type = 'contains'
+    )
+    SELECT geography.geo_id, geography.geo_level, geography.geo_name
+    FROM {GEOGRAPHY_RELATION} AS geography
+    WHERE geography.geo_id = ANY(ARRAY(SELECT geo_id FROM links))
+    ORDER BY geography.geo_id
     """
 )
 

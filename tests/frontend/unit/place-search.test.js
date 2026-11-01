@@ -57,7 +57,9 @@ describe("page addresses from the API", () => {
     expect(safePagePath("/us")).toBe("/us");
     expect(safePagePath("/us/texas")).toBe("/us/texas");
     expect(safePagePath("/us/texas/austin-city")).toBe("/us/texas/austin-city");
-    for (const bad of ["https://example.org/us/texas", "//evil.example/us", "/us/texas/../../admin", "/us/Texas", "/us/a/b/c", "/explore", "", null, 7]) {
+    // Covers: WEB-153 — a metro's page is one segment under /metro.
+    expect(safePagePath("/metro/madison-wi-metro-area")).toBe("/metro/madison-wi-metro-area");
+    for (const bad of ["/metro/a/b", "/metro/../admin", "/metro/", "https://example.org/us/texas", "//evil.example/us", "/us/texas/../../admin", "/us/Texas", "/us/a/b/c", "/explore", "", null, 7]) {
       expect(safePagePath(bad)).toBeNull();
     }
   });

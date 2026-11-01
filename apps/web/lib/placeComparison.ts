@@ -152,11 +152,13 @@ export const COMPARE_GEO_ID = /^(?:us:1|cbsa:\d{5}|state:\d{2}(?:\|county:\d{3}|
 
 /**
  * The address of a comparison between two places. Two places with pages
- * share the place-page form (`/us/<a>/vs/us/<b>`); a metro has no page yet,
- * so a pair with one is addressed by both identities instead.
+ * under `/us` share the place-page form (`/us/<a>/vs/us/<b>`); a metro's page
+ * is `/metro/<segment>`, outside that form, so a pair with one is addressed
+ * by both identities instead.
  */
 export function compareHref(a: { geoId: string; path: string | null }, b: { geoId: string; path: string | null }): string {
-  if (a.path && b.path) return pairPath(a.path, b.path);
+  const underUs = (path: string | null) => path === "/us" || Boolean(path?.startsWith("/us/"));
+  if (underUs(a.path) && underUs(b.path)) return pairPath(a.path!, b.path!);
   return `/compare/places?a=${encodeURIComponent(a.geoId)}&b=${encodeURIComponent(b.geoId)}`;
 }
 

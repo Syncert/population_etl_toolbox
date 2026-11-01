@@ -665,6 +665,75 @@
         "catalog"
       ]
     },
+    "GET /api/v1/catalog/geographies/metros": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetroListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/geographies/metros/{segment}": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "in": "path",
+          "name": "segment",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetroPageResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/geographies/search": {
       "parameters": [
         {
@@ -4892,6 +4961,103 @@
         "offset",
         "source_code",
         "total"
+      ]
+    },
+    "MetroArea": {
+      "properties": {
+        "geo_id": "string",
+        "geo_level": "string",
+        "geo_name": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "geo_level"
+      ]
+    },
+    "MetroListResponse": {
+      "properties": {
+        "items": "array<MetroSummary>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "MetroMemberCounty": {
+      "properties": {
+        "geo_id": "string",
+        "geo_name": "string",
+        "page_path": "string | null",
+        "population": "number | null",
+        "population_year": "integer | null",
+        "state_fips": "string | null",
+        "state_name": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "geo_name"
+      ]
+    },
+    "MetroPageResponse": {
+      "properties": {
+        "delineation_vintage": "integer | null",
+        "evidence_source": "string | null",
+        "member_counties": "array<MetroMemberCounty>",
+        "metro": "MetroSummary",
+        "principal_state_areas": "array<MetroArea>",
+        "requested_segment": "string",
+        "states": "array<MetroState>"
+      },
+      "required": [
+        "member_counties",
+        "metro",
+        "principal_state_areas",
+        "requested_segment",
+        "states"
+      ]
+    },
+    "MetroState": {
+      "properties": {
+        "geo_id": "string",
+        "member_counties": "integer",
+        "page_path": "string | null",
+        "principal": "boolean",
+        "state_fips": "string",
+        "state_name": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "member_counties",
+        "principal",
+        "state_fips"
+      ]
+    },
+    "MetroSummary": {
+      "properties": {
+        "cbsa_code": "string",
+        "geo_id": "string",
+        "geo_name": "string",
+        "page_path": "string",
+        "population": "number | null",
+        "population_metric_code": "string | null",
+        "population_year": "integer | null",
+        "principal_state_fips": "string | null",
+        "principal_state_name": "string | null",
+        "segment": "string",
+        "short_name": "string"
+      },
+      "required": [
+        "cbsa_code",
+        "geo_id",
+        "geo_name",
+        "page_path",
+        "segment",
+        "short_name"
       ]
     },
     "MigrationFlowsResponse": {

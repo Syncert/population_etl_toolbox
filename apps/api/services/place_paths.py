@@ -13,6 +13,10 @@ it falls back to the FIPS code, which is never ambiguous: a state's two
 digits, a county's five, a city's seven. A city also falls back when its slug
 is a county's segment in the same state, because the two share
 ``/us/<state>/<segment>`` and the county keeps the plain slug.
+
+A metro (a CBSA) is not inside one state, so its page is ``/metro/<segment>``:
+its published name's slug, unless another metro's slugs the same way, in
+which case its five-digit CBSA code (web-metro-pages).
 """
 
 from __future__ import annotations
@@ -65,12 +69,44 @@ class SegmentRow:
         return self.segment_name or self.geo_id
 
 
-class PagePaths:
-    """Page paths for states, counties and cities, from their siblings.
+_CBSA_ID = re.compile(r"^cbsa:(\d{5})$")
 
-    Built from every state and from the counties and places of the states a
-    caller needs paths in. A geography outside those rows, or of a grain with
-    no page (metro, tract, ZCTA), has no path.
+
+def cbsa_code(geo_id: str) -> str | None:
+    """The five-digit CBSA code of a ``cbsa:`` id, or ``None``."""
+    match = _CBSA_ID.match(geo_id)
+    return match.group(1) if match else None
+
+
+def metro_segments(rows: Iterable[SegmentRow]) -> dict[str, str]:
+    """Each metro's address segment, by ``geo_id``, from every metro.
+
+    The slug of its published name, unless another metro's name slugs the
+    same way; then its CBSA code, which is never ambiguous.
+    """
+    metros = [
+        row
+        for row in rows
+        if row.geo_level == "METRO" and cbsa_code(row.geo_id) is not None
+    ]
+    # The published name only: a metro with none is addressed by its code,
+    # never by a slug of its id.
+    slugs = Counter(place_slug(row.segment_name) for row in metros)
+    out: dict[str, str] = {}
+    for metro in metros:
+        slug = place_slug(metro.segment_name)
+        out[metro.geo_id] = (
+            slug if slug and slugs[slug] == 1 else str(cbsa_code(metro.geo_id))
+        )
+    return out
+
+
+class PagePaths:
+    """Page paths for states, counties, cities and metros, from their siblings.
+
+    Built from every state and metro and from the counties and places of the
+    states a caller needs paths in. A geography outside those rows, or of a
+    grain with no page (tract, ZCTA), has no path.
     """
 
     def __init__(self, rows: Iterable[SegmentRow | Mapping[str, object]]) -> None:
@@ -78,7 +114,10 @@ class PagePaths:
             row if isinstance(row, SegmentRow) else SegmentRow.from_mapping(row)
             for row in rows
         ]
-        self._paths: dict[str, str] = {}
+        self._paths: dict[str, str] = {
+            geo_id: f"/metro/{segment}"
+            for geo_id, segment in metro_segments(parsed).items()
+        }
         states = [row for row in parsed if row.geo_level == "STATE"]
         state_slugs = Counter(place_slug(row.name) for row in states)
         state_segments: dict[str, str] = {}

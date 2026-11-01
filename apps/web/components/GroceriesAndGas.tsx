@@ -15,6 +15,7 @@ import type { PlaceLevel } from "../lib/placeChapters";
 import type { RelatedResponse } from "../lib/placeRelationships";
 import {
   NO_LOCAL_PRICES,
+  NO_METRO_PRICES,
   SOURCE_NAMES,
   areaLabel,
   changeOverYear,
@@ -137,7 +138,7 @@ export default function GroceriesAndGas({
   return (
     <section className="analysis-panel place-cost" aria-labelledby="place-cost-heading" data-testid="place-groceries-gas">
       <h2 id="place-cost-heading">Groceries and gas</h2>
-      {level !== "NATIONAL" ? <p className="subtle" data-testid="place-cost-no-local">{NO_LOCAL_PRICES}</p> : null}
+      {level !== "NATIONAL" ? <p className="subtle" data-testid="place-cost-no-local">{level === "METRO" ? NO_METRO_PRICES : NO_LOCAL_PRICES}</p> : null}
       <dl className="place-cost-lines">
         {ORDER.map((measure) => {
           const result = answers[measure];
