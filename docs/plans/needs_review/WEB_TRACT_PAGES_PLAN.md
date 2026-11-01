@@ -21,10 +21,10 @@ verify:
 
 ## Status
 
-In progress, 2026-11-01: built (one PR, D-4 with the tract part of A-5 and
-the API/page exposure that remained of W-5). Waiting on CI, merge, and the
-live check on the internal stack (below), which needs the view rewrite applied
-and an EXPLAIN on the loaded warehouse.
+Needs review, 2026-11-01: delivered in #242 (merged into `dev` as 0ece65f) and
+#250 (spec settle fix, 42add77). Live check on the internal stack passed on
+`dev` 346786e (below). Awaiting Nick's review through the `dev` -> `main`
+release PR.
 
 ## Why
 
@@ -115,6 +115,14 @@ done in this PR: apportioned counts are rounded to a whole count (the view
 returns full `numeric` precision), and the method says the series starts with
 the 2009 release (Census 2000 tract counts are SF1/SF3 P-tables, which the
 view's B-table list does not carry; a recorded gap, not v1 work).
+
+## Live check (OFFICE_LAB, 2026-11-01, dev 346786e)
+
+PASS. Travis County tract 22.19 (`/us/texas/travis-county/tract-22-19`) shows
+the 2020 boundary notice, every year before 2020 marked Derived, and the
+age-and-sex section (closing the tract check of web-age-and-sex-structure).
+`/place/tract-history` 155 ms cold, 3 ms warm. Screenshot:
+`/mnt/project-files/tract-travis-22-19.png`.
 
 ## Evidence
 
