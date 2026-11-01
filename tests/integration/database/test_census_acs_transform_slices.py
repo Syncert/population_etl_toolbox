@@ -565,3 +565,74 @@ def test_a_wider_table_list_for_the_year_replays_its_slices(
         assert sorted(fetched) == ["acs5/place/10", "acs5/state/10"]
     finally:
         _delete_variables(factory, "B99902")
+
+
+def test_a_legacy_fingerprint_still_matching_is_restamped_not_reread(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-087 — the first run after the per-slice reference re-reads no unchanged slice.
+
+    Ledger rows written before it carry the whole-reference fingerprint. One
+    that still matches is skipped and rewritten in the new shape with its
+    serving columns untouched; one that does not is read again.
+    """
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+
+    hook = PostgresHookStub(factory)
+    legacy = transform.legacy_transform_context(
+        transform._load_variable_metadata(hook), transform._load_geo_dim(hook)
+    )
+    place, state = (
+        transform.RawSlice(dataset="acs5", geo_level=level, state_fips="10")
+        for level in ("place", "state")
+    )
+    current = transform._finished_fingerprints(hook, YEAR)
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            # The place slice as the old code stamped it; the state slice as
+            # the old code stamped it before its content changed.
+            cursor.execute(
+                "UPDATE silver_census.transform_slice_state SET content_fingerprint = %s "
+                "WHERE year = %s AND slice_key = %s",
+                (
+                    transform.slice_fingerprint(hook, YEAR, place, legacy),
+                    YEAR,
+                    place.key,
+                ),
+            )
+            cursor.execute(
+                "UPDATE silver_census.transform_slice_state SET content_fingerprint = %s "
+                "WHERE year = %s AND slice_key = %s",
+                (
+                    transform.fingerprint_of(legacy, YEAR, state, (0, None)),
+                    YEAR,
+                    state.key,
+                ),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    serving_columns = _rows(
+        factory,
+        "SELECT slice_key, rows_changed, completed_at, last_changed_at "
+        "FROM silver_census.transform_slice_state WHERE year = %s AND slice_key = %s",
+        (YEAR, place.key),
+    )
+
+    fetched = _record_fetches(monkeypatch)
+    assert transform.transform_census_to_silver() == 0
+    assert fetched == [state.key]
+    assert transform._finished_fingerprints(hook, YEAR) == current
+    assert (
+        _rows(
+            factory,
+            "SELECT slice_key, rows_changed, completed_at, last_changed_at "
+            "FROM silver_census.transform_slice_state "
+            "WHERE year = %s AND slice_key = %s",
+            (YEAR, place.key),
+        )
+        == serving_columns
+    )

@@ -791,9 +791,23 @@ class TransformReference:
         return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def slice_fingerprint(
-    hook: PostgresHook, year: int, raw_slice: RawSlice, context: str
-) -> str:
+def legacy_transform_context(meta_df: pl.DataFrame, geo_df: pl.DataFrame) -> str:
+    """The whole-reference digest fingerprints carried before `TransformReference`.
+
+    Kept only to recognise a slice stamped under it: a stored fingerprint that
+    still equals the legacy value was finished against today's revisions and
+    today's whole reference, so it is unchanged and is restamped in the new
+    shape instead of re-read (see `transform_census_to_silver`).
+    """
+    digest = hashlib.sha256(TRANSFORM_VERSION.encode())
+    for frame in (meta_df, geo_df):
+        digest.update(str(frame.height).encode())
+        if frame.height:
+            digest.update(str(int(frame.hash_rows(seed=0).sum())).encode())
+    return digest.hexdigest()
+
+
+def slice_content(hook: PostgresHook, year: int, raw_slice: RawSlice) -> tuple:
     """The slice's raw content, as its revision count and newest revision.
 
     Revisions are append-only: a changed provider response adds rows, which
@@ -808,8 +822,43 @@ def slice_fingerprint(
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, tuple(params))
         count, newest = cur.fetchone()
+    return count, newest
+
+
+def fingerprint_of(context: str, year: int, raw_slice: RawSlice, content: tuple) -> str:
+    """The ledger value for a slice's content read against ``context``."""
+    count, newest = content
     payload = f"{context}|{year}|{raw_slice.key}|{count}|{newest}"
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def slice_fingerprint(
+    hook: PostgresHook, year: int, raw_slice: RawSlice, context: str
+) -> str:
+    """The slice's fingerprint: its content (`slice_content`) under ``context``."""
+    return fingerprint_of(
+        context, year, raw_slice, slice_content(hook, year, raw_slice)
+    )
+
+
+def _restamp_slice_fingerprint(
+    hook: PostgresHook, year: int, slice_key: str, fingerprint: str
+) -> None:
+    """Rewrite a legacy-shape fingerprint in the new shape, and nothing else.
+
+    The slice was not transformed, so its `rows_changed`, `completed_at` and
+    `last_changed_at` -- what the serving step reads -- keep their values.
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE silver_census.transform_slice_state
+            SET content_fingerprint = %s
+            WHERE year = %s AND slice_key = %s;
+            """,
+            (fingerprint, int(year), slice_key),
+        )
+        conn.commit()
 
 
 def _finished_fingerprints(hook: PostgresHook, year: int) -> dict[str, str]:
@@ -1842,6 +1891,10 @@ def transform_census_to_silver(
     # A slice any earlier run finished against the same content and the same
     # reference rows is skipped (`transform_slice_state`), not only a retry's.
     reference = TransformReference(meta_df, geo_df)
+    # Ledger rows stamped before the per-slice reference: matched once against
+    # the old whole-reference value and restamped, so the first run after the
+    # change re-reads only the slices that really changed.
+    legacy_context = legacy_transform_context(meta_df, geo_df)
     shared_hook = hook
 
     # ── process each year ─────────────────────────────────────────────
@@ -1875,10 +1928,22 @@ def transform_census_to_silver(
             # it opens on the hook and returns that attribute, so two threads
             # sharing one hook can each be handed the other's connection.
             hook = copy.copy(shared_hook)
-            fingerprint = slice_fingerprint(
-                hook, year, raw_slice, reference.for_slice(year, raw_slice)
+            content = slice_content(hook, year, raw_slice)
+            fingerprint = fingerprint_of(
+                reference.for_slice(year, raw_slice), year, raw_slice, content
             )
             earlier = finished.get(raw_slice.key)
+            if earlier is not None and earlier != fingerprint:
+                if earlier == fingerprint_of(legacy_context, year, raw_slice, content):
+                    _restamp_slice_fingerprint(hook, year, raw_slice.key, fingerprint)
+                    logger.info(
+                        "[CENSUS_ACS CHUNK] Year=%s slice=%s unchanged since an "
+                        "earlier run finished it (legacy fingerprint, restamped); "
+                        "skipping",
+                        year,
+                        raw_slice.key,
+                    )
+                    return 0
             # One line per slice: whether it is skipped, and why it is not.
             if earlier == fingerprint:
                 logger.info(
