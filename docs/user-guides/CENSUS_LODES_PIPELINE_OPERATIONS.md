@@ -93,8 +93,15 @@ It plans every state for every year asked (newest first) and:
 - replays, without downloading again, a state-year whose files were
   captured but whose replay never finished;
 - captures and replays the rest through the same code the DAG runs,
-  `--workers` state-years at a time (default 6), each worker process with
-  its own connection;
+  `--workers` state-years at a time (default 6), each in a spawned (never
+  forked) worker process with its own connection; the log names each
+  state-year when it starts and when it ends;
+- stops a worker whose state-year is still running after
+  `--slice-timeout` seconds (default 1800), records that state-year
+  `timed_out` and lists it under `stuck` in the summary;
+- withdraws a capture that was stopped part way (fewer file rows than
+  registered files) and captures that state-year again, never replaying it
+  with files missing;
 - records a failed or quarantined state-year and carries on with the rest;
 - publishes only when every requested state-year is in: the replayed slices
   turn `published` and their county and state sums are computed into

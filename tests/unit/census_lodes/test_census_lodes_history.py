@@ -10,12 +10,14 @@ import pytest
 from data_ingestion_toolbox.census_lodes.history import (
     SliceResult,
     _by_year,
+    _run_in_workers,
     load_history,
     main,
     parse_states,
     parse_years,
 )
 from data_ingestion_toolbox.census_lodes.registry import STATES, YEARS
+from tests.support import lodes_history_workers as stand_in
 
 pytestmark = pytest.mark.unit
 
@@ -58,34 +60,41 @@ def test_the_summary_counts_each_year_by_outcome() -> None:
     ]
 
 
+class _Cursor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, *args):
+        self.last = args
+
+    def fetchone(self):
+        return (True,)
+
+    def fetchall(self):
+        return []
+
+
+class _Connection:
+    autocommit = False
+
+    def cursor(self):
+        return _Cursor()
+
+    def commit(self):
+        return None
+
+    def rollback(self):
+        return None
+
+    def close(self):
+        return None
+
+
 def test_parallel_workers_need_their_own_connection_source() -> None:
     """Covers: ETL-108 — no connection is shared across worker processes."""
-
-    class _Cursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def execute(self, *args):
-            self.last = args
-
-        def fetchone(self):
-            return (True,)
-
-        def fetchall(self):
-            return []
-
-    class _Connection:
-        autocommit = False
-
-        def cursor(self):
-            return _Cursor()
-
-        def close(self):
-            return None
-
     with pytest.raises(ValueError, match="worker_factory"):
         load_history(_Connection, [2023], states=["de"], workers=2)
 
@@ -103,3 +112,46 @@ def test_the_default_run_asks_for_every_registered_year(monkeypatch) -> None:
     with pytest.raises(SystemExit):
         main([])
     assert seen["years"] == f"{max(YEARS)}-{min(YEARS)}"
+
+
+def test_spawned_workers_stop_a_stuck_state_year_and_survive_a_dead_one() -> None:
+    """Covers: ETL-108 — a hung worker is stopped at the timeout, a dead one reported, the rest load."""
+    pending = [("az", 2022), ("ar", 2022), ("de", 2022), ("wi", 2022), ("de", 2021)]
+    results = _run_in_workers(
+        pending,
+        {},
+        workers=2,
+        factory_builder=stand_in.no_database,
+        work=stand_in.az_hangs_ar_dies,
+        slice_timeout=8,
+        poll_seconds=0.2,
+    )
+    outcome = {(r.state, r.year): r for r in results}
+    assert set(outcome) == set(pending)
+    assert outcome[("az", 2022)].status == "timed_out"
+    assert outcome[("az", 2022)].seconds >= 8
+    assert outcome[("ar", 2022)].status == "failed"
+    assert "worker exited (code 3)" in outcome[("ar", 2022)].error
+    assert {outcome[key].status for key in pending[2:]} == {"silver_ready"}
+
+
+def test_a_stuck_state_year_holds_the_publish_and_is_named(monkeypatch) -> None:
+    """Covers: ETL-108 — the summary lists stuck workers and nothing publishes."""
+    published: list[object] = []
+    monkeypatch.setitem(
+        load_history.__globals__, "_publish", lambda *args: published.append(args)
+    )
+    summary = load_history(
+        _Connection,
+        [2022],
+        states=["az", "de"],
+        workers=2,
+        worker_factory=stand_in.no_database,
+        work=stand_in.az_hangs_ar_dies,
+        slice_timeout=8,
+    )
+    assert summary["published"] is False and published == []
+    assert [s.split(" (")[0] for s in summary["stuck"]] == ["az 2022"]
+    assert [(f["state"], f["status"]) for f in summary["failed"]] == [
+        ("az", "timed_out")
+    ]

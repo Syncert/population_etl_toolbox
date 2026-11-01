@@ -226,3 +226,42 @@ def test_history_quality_rules_pass_then_catch_a_gap(lodes_warehouse) -> None:
     )
     lost = _outcome(factory, lodes_served_sums)
     assert lost.result == "fail" and lost.observed_count == 1
+
+
+def test_a_capture_stopped_part_way_is_withdrawn_and_captured_again(
+    lodes_warehouse,
+) -> None:
+    """Covers: ETL-108 — a killed capture is never replayed with files missing."""
+    factory = lodes_warehouse
+    stopped, _status = capture_state_year(
+        factory, "de", 2023, config=CONFIG, client=lodes.FixtureClient()
+    )
+    # The worker was killed after two of the four files.
+    _execute(
+        factory,
+        "DELETE FROM control.census_lodes_file WHERE run_id = %s AND family LIKE 'od_%%'",
+        (str(stopped),),
+    )
+    client = lodes.FixtureClient()
+    summary = _load(factory, client, years=[2023])
+    assert summary["published"] is True and summary["stuck"] == []
+    assert "de_od_main_JT00_2023.csv.gz" in client.calls
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM control.census_lodes_slice WHERE run_id = %s",
+        (str(stopped),),
+    ) == [(0,)]
+    assert _rows(
+        factory,
+        "SELECT status FROM control.ingestion_run WHERE run_id = %s",
+        (str(stopped),),
+    ) == [("failed",)]
+    measures = {
+        row[0]
+        for row in _rows(
+            factory,
+            "SELECT metric_key FROM gold_census_lodes.observation_latest WHERE geo_id = %s",
+            (lodes.KENT,),
+        )
+    }
+    assert "live_and_work" in measures
