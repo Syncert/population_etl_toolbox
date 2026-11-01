@@ -383,7 +383,7 @@ the place page (nation, state, county, city, metro, tract), unless noted.
 ## Checkpoint
 
 Split on 2026-10-31 into
-[`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
+[`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../needs_review/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
 (part 1: the semantics record and the three routes, with the contract fixed)
 and [`WEB_AGE_AND_SEX_STRUCTURE_PLAN.md`](../needs_review/WEB_AGE_AND_SEX_STRUCTURE_PLAN.md).
 Still held here for later items: API part 2 (the summary relation with its
