@@ -395,6 +395,9 @@ def _run_in_workers(
                         worker.task = None
                         continue
                     except (EOFError, OSError):
+                        # The pipe closes a moment before the process is reaped;
+                        # join first so the exit code is known, not None.
+                        worker.process.join(5)
                         record(
                             SliceResult(
                                 state,
