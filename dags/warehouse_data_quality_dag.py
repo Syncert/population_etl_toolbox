@@ -173,6 +173,9 @@ def _run_assessment(**context: Any) -> dict[str, Any]:
             scope=conf.get("scope"),
             code_commit_sha=conf.get("code_commit_sha"),
             exclude_rules=tuple(conf.get("exclude_rules") or ()),
+            # A long rule's finished partitions are committed as they come,
+            # so they are visible during the run and kept if it stops.
+            commit_progress=True,
         )
         connection.commit()
         _log_assessment_report(connection, record, cadence)
