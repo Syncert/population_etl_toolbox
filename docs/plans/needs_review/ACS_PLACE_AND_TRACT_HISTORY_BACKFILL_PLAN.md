@@ -337,9 +337,26 @@ census_ac"`) 26 passed; schema snapshot regenerated; `ruff check .` and
   (#169 fixes it); the reload of 2024-2010 on the 22-table list runs from
   `/h/backfill-logs/tract_wide_reload.sh` (`backfill-tract-wide.jsonl`).
 
+## Progress (2026-11-01, W-10: the runbook)
+
+- Deliverable 8: `docs/reference/BETA_RESET_REINGESTION.md` section 9 holds
+  the backfill order, commands, measured hours and GiB per year, the guards,
+  resume and safe stop; section 10 ("After the loads") holds what follows a
+  load: ANALYZE, ledger-only deploys, pre-building a PR's index DDL
+  concurrently, the age summary fill, the DQ-ACS-007 full sweep, the weekly
+  DQ run as publish gate (with `exclude_rules`), serving catch-up, stopping
+  and resuming a stuck `acs_ingest` run (retries capped at 1, ledger resume,
+  #251), and the web live-check list with map captures. The incident
+  write-up links to it.
+- Wave W loads finished on the internal stack on 2026-11-01: tracts
+  2009-2024 on the 22 tables, places 2005-2024 (acs5 from 2009, acs1 from 2005),
+  metro 2015-2024, Census 2000 and 1990.
+
 ## Checkpoint
 
-Next pickup: W-3, the full-scope city backfill (declare
-`place_full_table_year_scope` and `place_year_scope` as "2009-2024", run
-one `acs_backfill` year at a time, newest to oldest, record durations and
-sizes here).
+Moved to `needs_review/` on 2026-11-01 with every deliverable in place. One
+acceptance item is an operator check, not code: the weekly data-quality run
+after the DQ-ACS-007 full sweep must be green, and the 2009 tract rows the
+stopped October run transformed (808,962 silver rows) must be served by a
+targeted `{"acs_backfill": {"year": 2009, "geo_level": "tract"}}` run.
+Review confirms both before this plan moves to `completed/`.
