@@ -144,8 +144,39 @@ export function boundarySentence(boundary: MapBoundary, grain: MapGrain, year: n
   return `No map layer draws ${noun.many} here; every value is in the table below.`;
 }
 
-/** A layer from `/catalog/tile-layers` in the shape the choropleth draws. */
-export function tileMetadataForBoundary(boundary: Extract<MapBoundary, { drawn: true }>): TileMetadata {
+/**
+ * Grains whose tile layer can be asked for one state's shapes (`?state=NN`).
+ *
+ * Cities only: `gold.tile_places` takes the argument. A state map opens at the
+ * layer's minzoom, where one tile spans several states, so without it a Texas
+ * map was sent every Oklahoma, Louisiana, Arkansas and New Mexico city in its
+ * border tiles only for the layer filter to hide them. Tracts are a table
+ * source, which cannot take an argument, and keep the client filter alone.
+ */
+export const STATE_TILE_GRAINS: ReadonlySet<MapGrain> = new Set<MapGrain>(["PLACE"]);
+
+/**
+ * A tile template narrowed to one state, where the grain's layer takes it.
+ *
+ * The narrowing is a saving, not a rule: the layer filter still selects the
+ * state's shapes, so a tile server that ignores the argument draws the same
+ * map. A place never crosses a state line, so a narrowed tile draws exactly
+ * the shapes the filter would have kept.
+ */
+export function stateScopedTileTemplate(template: string, grain: MapGrain, stateFips?: string | null): string {
+  if (!stateFips || !/^\d{2}$/.test(stateFips) || !STATE_TILE_GRAINS.has(grain)) return template;
+  return `${template}${template.includes("?") ? "&" : "?"}state=${stateFips}`;
+}
+
+/**
+ * A layer from `/catalog/tile-layers` in the shape the choropleth draws, its
+ * tiles narrowed to `stateFips` where the grain's layer can be.
+ */
+export function tileMetadataForBoundary(
+  boundary: Extract<MapBoundary, { drawn: true }>,
+  grain?: MapGrain,
+  stateFips?: string | null,
+): TileMetadata {
   const { layer } = boundary;
   return {
     layerId: layer.layer_id,
@@ -154,7 +185,7 @@ export function tileMetadataForBoundary(boundary: Extract<MapBoundary, { drawn: 
     joinKey: layer.join_key || "geo_id",
     fields: [],
     tileJsonUrl: `/tiles/${layer.layer_id}`,
-    tileTemplate: boundary.tileTemplate,
+    tileTemplate: grain ? stateScopedTileTemplate(boundary.tileTemplate, grain, stateFips) : boundary.tileTemplate,
   };
 }
 

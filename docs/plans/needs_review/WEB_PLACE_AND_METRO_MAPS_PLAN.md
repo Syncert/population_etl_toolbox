@@ -303,6 +303,42 @@ Rebuild web and API from `dev`, then:
 - **Austin place page** (103 requests, 11.2 s) belongs to the place page's
   own plan, not this one.
 
+## Tile wait: state-scoped place tiles (2026-11-01)
+
+Built: candidate (1). `gold.tile_places` takes `?state=NN` and draws only
+that state's places (a value that is not two digits draws nothing, like an
+unreadable vintage); the one-measure map and the age map add `&state=NN` to
+every city tile (`stateScopedTileTemplate`). The vintage stays on every tile
+URL, the layer filter still narrows to the state, and the legend note and
+tooltip are unchanged. No index and no large-table read: the GiST index on
+`tile_boundary_version.tile_geom` finds the tile's rows and the state is a
+row filter before any geometry is simplified.
+
+What the code says about the 31 s: Texas opens at z6 on the state's internal
+point in a 1100 x 360 canvas, which is six 512 px tiles (13-15 x 25-26), one
+round on six connections. So the tiles' share of the wait is bounded by the
+slowest of six tiles, and the narrowing cuts the bytes and the encode work of
+the border tiles, which also carried every Oklahoma, Louisiana, Arkansas,
+New Mexico and Kansas place under the canvas. If the HAR's 31 s is mostly not those six
+requests, the rest is the Next development server (first-visit compile, an
+unbundled client), which the production build on the v1 list removes.
+
+Not built, with the reason:
+
+- (2) `Cache-Control` from `next.config.mjs` `headers()`: tried, and Next 15
+  does not add configured headers to a response proxied by an external
+  rewrite (checked against `next start` with a stub tile server: neither the
+  new header nor the existing `X-Content-Type-Options` reached `/tiles`). It
+  would need a route handler or the production proxy in front of Martin.
+- (3) HTTP/2 needs TLS on the proxy; the local stack is plain HTTP.
+- (4) A closer opening zoom hides most of the state the reader asked for.
+
+Measure on OFFICE_LAB after merge (stack rebuilt, contract views applied):
+`python scripts/measure_state_tile_wait.py --tiles-url http://localhost:3001/tiles`
+(Texas, 2025 boundaries, cold) reports both sets' bytes, slowest tile and
+wall time; then time `/map/CENSUS_ACS:acs5:B19013_001?grain=PLACE&state=48`
+to network idle and check the tile requests carry `?vintage=2025&state=48`.
+
 ## Next pickup
 
 Review. Nothing is left to build here.

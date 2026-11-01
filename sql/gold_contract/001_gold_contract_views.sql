@@ -381,6 +381,18 @@ $$;
 
 -- Census places. Drawn from zoom 6, as tracts are: 32,000 polygons at a
 -- national zoom are a tile no browser should be sent.
+--
+-- `?state=NN` narrows a tile to one state's places. The web draws cities one
+-- state at a time, and a state map opens at this layer's minzoom, where each
+-- tile covers about 5.6 degrees of longitude: a Texas map's border tiles
+-- carried every place in Oklahoma, Louisiana, Arkansas and New Mexico, each
+-- simplified, encoded, sent and decoded only for the client's state filter to
+-- hide it. A place never crosses a state line, so the narrowed tile draws
+-- exactly what the filtered one did. Without the argument the tile carries
+-- every state, as before; a value that is not two digits draws nothing, as an
+-- unreadable vintage does. No index serves it: the GiST index finds the rows
+-- in the tile, and the state test is a row filter evaluated before any
+-- geometry is simplified.
 CREATE OR REPLACE FUNCTION gold.tile_places(
     z INTEGER,
     x INTEGER,
@@ -396,9 +408,13 @@ DECLARE
     wanted INTEGER := gold.tile_requested_vintage(
         gold_glossary.geo_grain('place'), query_params
     );
+    wanted_state TEXT := NULLIF(TRIM(COALESCE(query_params ->> 'state', '')), '');
     envelope GEOMETRY := ST_TileEnvelope(z, x, y);
     tile BYTEA;
 BEGIN
+    IF wanted_state IS NOT NULL AND wanted_state !~ '^[0-9]{2}$' THEN
+        RETURN NULL;
+    END IF;
     SELECT ST_AsMVT(feature, 'places', 4096, 'geom')
     INTO tile
     FROM (
@@ -417,6 +433,7 @@ BEGIN
         FROM gold_glossary.tile_boundary_version AS boundary
         WHERE boundary.geo_level = gold_glossary.geo_grain('place')
           AND boundary.boundary_vintage = wanted
+          AND (wanted_state IS NULL OR boundary.state_fips = wanted_state)
           AND boundary.tile_geom && envelope
     ) AS feature
     WHERE feature.geom IS NOT NULL;
@@ -426,7 +443,8 @@ $$;
 
 COMMENT ON FUNCTION gold.tile_places(INTEGER, INTEGER, INTEGER, JSON) IS
     '{"description":"Census places (cities and towns) by boundary vintage. '
-    '?vintage=YYYY selects a vintage; without it, the newest. Features carry '
+    '?vintage=YYYY selects a vintage; without it, the newest. ?state=NN '
+    'narrows the tile to one state''s places. Features carry '
     'no values: a place with no published value is uncoloured, not zero.",'
     '"vector_layers":[{"id":"places","fields":{"geo_id":"String",'
     '"geo_level":"String","state_fips":"String","place_fips":"String",'

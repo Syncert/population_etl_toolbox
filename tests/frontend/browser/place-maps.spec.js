@@ -10,7 +10,8 @@ import { polygonAround, routeSyntheticTiles } from "../support/syntheticTiles.js
 // geography without a value uncoloured and says so, never prints a zero for
 // a gap, and always draws the most recent boundaries held, marking the map
 // with an asterisk and when its boundaries were last updated whenever they
-// are not from the period's year. Synthetic UI fixture values and fixture shapes (a polygon around
+// are not from the period's year. A city map asks for its state's cities
+// only (?state=NN on each tile). Synthetic UI fixture values and fixture shapes (a polygon around
 // each city's point), not published statistics or boundaries.
 
 const INCOME = "CENSUS_ACS:acs5:B19013_001";
@@ -211,11 +212,13 @@ test("a measure drawn on Texas cities and towns, on the boundary vintage it name
 
   const canvas = page.getByTestId("measure-map-canvas");
   await expect(canvas).toHaveAttribute("data-geo-level", "PLACE");
-  await expect(canvas).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2024");
+  await expect(canvas).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2024&state=48");
   await expect(canvas).toHaveAttribute("data-colored-values", "12");
   await expect(canvas).toHaveAttribute("data-map-ready", "true");
   await expect.poll(() => tileRequests.length).toBeGreaterThan(0);
-  expect(tileRequests.every((request) => request.endsWith("?vintage=2024"))).toBe(true);
+  // Every tile names the vintage the page states, and asks for Texas's
+  // cities only: a border tile is not sent its neighbours' cities to hide.
+  expect(tileRequests.every((request) => request.endsWith("?vintage=2024&state=48"))).toBe(true);
   if (SCREENSHOTS) {
     await page.waitForTimeout(1500);
     await page.locator("#map-heading").scrollIntoViewIfNeeded();
@@ -227,7 +230,7 @@ test("a measure drawn on Texas cities and towns, on the boundary vintage it name
   await page.getByTestId("measure-map-period").selectOption("2008-01-01");
   await expect(shell).toHaveAttribute("data-period", "2008-01-01 – 2012-12-31");
   await expect(page.getByTestId("measure-map-no-map")).toHaveCount(0);
-  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2024");
+  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2024&state=48");
   await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("title", "City and town boundaries last updated 2024, the most recent held.");
   await expect(page.getByTestId("measure-map-vintage")).toHaveText(
     "* Drawn on the 2024 city and town boundaries, the most recent held; the values are for 2012, so a few cities and towns may differ from the shapes they were measured on.",
@@ -317,7 +320,7 @@ test("cities are drawn on the most recent boundaries held, marked with when they
   await expect(page.getByTestId("map-legend-boundary")).toHaveText("* City and town boundaries last updated 2025, the most recent held.");
   await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("title", "City and town boundaries last updated 2025, the most recent held.");
   await expect(page.getByTestId("measure-map-vintage")).toHaveAttribute("data-vintage", "2025");
-  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2025");
+  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2025&state=48");
   await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-colored-values", "12");
   if (SCREENSHOTS) {
     await page.waitForTimeout(1500);
@@ -327,7 +330,7 @@ test("cities are drawn on the most recent boundaries held, marked with when they
   // Thirteen years from the only held vintage still draws, on 2025, marked.
   await page.getByTestId("measure-map-period").selectOption("2008-01-01");
   await expect(page.getByTestId("measure-map-no-map")).toHaveCount(0);
-  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2025");
+  await expect(page.getByTestId("measure-map-canvas")).toHaveAttribute("data-tile-template", "/tiles/places/{z}/{x}/{y}?vintage=2025&state=48");
   await expect(page.getByTestId("measure-map-vintage")).toContainText("* Drawn on the 2025 city and town boundaries, the most recent held; the values are for 2012");
   await expect(page.getByTestId("measure-map-all").locator("tbody tr")).toHaveCount(14);
 });
