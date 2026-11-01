@@ -18,8 +18,10 @@ verify:
 
 ## Status
 
-In progress, 2026-10-31: built, merged and checked live for a city, a county
-and a state; blocked only on the tract page (D-4) for the tract check. The web side of
+In progress, 2026-11-01: built, merged and checked live for a city, a county
+and a state; the age indicators on the map (acceptance 9, API part 2) are
+built and wait for their live check; the tract page (D-4, #242) is in dev, so
+the tract check can now be done. The web side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
 contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](API_AGE_AND_SEX_STRUCTURE_PLAN.md)
@@ -65,7 +67,8 @@ illustrative numbers).
    pages; the compare page draws both places' pyramids on one axis
    (`compare_geo_ids`).
 9. The one-measure map stops offering single B01001 lines as maps (they stay
-   readable in the explorer). Age indicators on the map come with API part 2.
+   readable in the explorer). Age indicators on the map come with API part 2:
+   `/map/age/<indicator>` (WEB-156) reads `/age-structure/map` (API-191).
 10. Plain labels for every band and indicator; raw codes only inside
     `data-provenance`.
 
@@ -153,9 +156,35 @@ A Dane County tract was not checked live because tracts have no page yet
 (D-4); the section is the same component and will be checked when that page
 exists.
 
+## Age indicators on the map (2026-11-01)
+
+Built on API part 2 (#243, API-191), as WEB-156:
+
+- `lib/ageMap.ts`: the eleven indicators the API serves, their fetcher, and
+  the answer as the one-measure map's rows (a withheld value stays `null` with
+  the API's reason in words). `components/AgeMapPage.tsx` at
+  `/map/age/<indicator>`: the same equal-count bands, boundary layer and
+  vintage rule as `/map/<metric>` (newest boundaries held, named in the legend
+  note and the map's tooltip, asterisked when not the values' year), counties
+  and metro areas nationally, cities and tracts one state at a time, the
+  nation's value (`geo_level=NATIONAL`) named beside the legend, and the
+  highest, lowest and every-geography tables with 90 % margins. No draft
+  mark: ADR-0013 is accepted and the indicators are treated as approved
+  (coordinator, 2026-11-01).
+- The one-measure map's search offers the indicators by their words; a
+  single age line's page links the age map; a place page's age section links
+  its own grain's map.
+- Validation (local, fixtures): typecheck and lint clean; `test:unit` 77
+  files, 980 tests; `age-map.spec.js` 4 passed and the age, measure-map and
+  place-map specs still pass; `check:bundle` every route within budget
+  (`/map/age/[indicator]` 470 kB of a 505 kB budget, the same as `/map`;
+  `/map/[metric]` 488 kB of 505). Catalog: WEB-156, recounted to 694.
+- Live check (OFFICE_LAB) waits for the first age summary build, which fills
+  `gold_census.age_structure_summary`.
+
 ## Checkpoint
 
-Blocked on D-4 (tract page), 2026-10-31. Everything else is built, merged
+Blocked on D-4 (tract page), 2026-10-31; D-4 is in dev as of 2026-11-01. Everything else is built, merged
 (#223, #231) and checked live. The one open acceptance item is the live
 check of a Dane County tract, which needs a tract page to exist. When D-4
 lands: open a tract page, confirm the section renders with real values

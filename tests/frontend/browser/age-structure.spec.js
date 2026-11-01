@@ -74,6 +74,8 @@ test("a county offers its state, the nation and none, the state selected", async
   const toggle = page.getByTestId("age-section-reference");
   await expect(toggle.getByRole("button")).toHaveText(["State: Wisconsin", "Nation: United States", "None"]);
   await expect(toggle.getByRole("button", { name: "State: Wisconsin" })).toHaveAttribute("aria-pressed", "true");
+  // The section links its figures to the age map of every county.
+  await expect(page.getByTestId("age-section-map-link")).toHaveAttribute("href", "/map/age/median_age");
 });
 
 test("the nation has nothing to compare against and no toggle", async ({ page }) => {
