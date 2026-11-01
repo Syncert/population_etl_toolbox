@@ -456,7 +456,10 @@ def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
                 ("pass", 0),
             ]
 
+            # On a table this small the planner may pick either scan through
+            # the index; both read one county, so take the plain index scan.
             cursor.execute("SET LOCAL enable_seqscan = off")
+            cursor.execute("SET LOCAL enable_bitmapscan = off")
             cursor.execute(
                 "EXPLAIN (COSTS OFF) SELECT * FROM gold_fbi.latest_county_agency_rate "
                 "WHERE product_id = 'return_a_violent_crime' "
@@ -471,6 +474,7 @@ def test_a_county_read_is_an_index_lookup_on_rows_computed_at_publication(
             assert "agency_geography_relationship" not in plan
             assert "fact_crime_observation" not in plan
             cursor.execute("RESET enable_seqscan")
+            cursor.execute("RESET enable_bitmapscan")
 
             # A publication that skipped the refresh is caught...
             cursor.execute(
