@@ -393,16 +393,175 @@ def test_a_later_run_skips_unchanged_slices_and_replays_a_changed_one(
             cleanup.close()
 
 
-def test_a_wider_geography_reference_replays_the_slices_it_could_change(
+def _slice_reference(meta: pl.DataFrame, geo: pl.DataFrame, raw_slice) -> str:
+    return transform.TransformReference(meta, geo).for_slice(YEAR, raw_slice)
+
+
+_META = pl.DataFrame(
+    {
+        "dataset": ["acs5", "acs5"],
+        "year": [YEAR, YEAR],
+        "variable_name": ["B01003_001E", "B19013_001E"],
+        "variable_label": ["Total", "Median household income"],
+        "variable_concept": [None, None],
+        "universe": [None, None],
+    }
+)
+_GEO = pl.DataFrame(
+    {
+        "geo_sk": [1, 2, 3],
+        "geo_level": ["state", "place", "metro"],
+        "geo_id": ["state:10", "state:10|place:01400", "cbsa:20100"],
+    }
+)
+
+
+def test_a_slice_reference_is_only_the_rows_the_slice_reads() -> None:
+    """Covers: ETL-087 — a slice's fingerprint folds in its own reference rows only."""
+    place_10 = transform.RawSlice(dataset="acs5", geo_level="place", state_fips="10")
+    before = _slice_reference(_META, _GEO, place_10)
+    assert before == _slice_reference(_META.reverse(), _GEO.reverse(), place_10)
+
+    unrelated_geo = pl.concat(
+        [
+            _GEO,
+            pl.DataFrame(
+                {
+                    "geo_sk": [4, 5, 6],
+                    "geo_level": ["metro", "tract", "place"],
+                    "geo_id": [
+                        "cbsa:99999",
+                        "state:10|county:001|tract:000100",
+                        "state:11|place:50000",
+                    ],
+                }
+            ),
+        ]
+    )
+    unrelated_meta = pl.concat(
+        [
+            _META,
+            pl.DataFrame(
+                {
+                    "dataset": ["acs5", "acs1"],
+                    "year": [YEAR - 1, YEAR],
+                    "variable_name": ["B25001_001E", "B25001_001E"],
+                    "variable_label": ["Housing units", "Housing units"],
+                    "variable_concept": [None, None],
+                    "universe": [None, None],
+                }
+            ),
+        ]
+    )
+    # Another level, another state, another year and another dataset.
+    assert _slice_reference(unrelated_meta, unrelated_geo, place_10) == before
+
+    # A place newly carried in its own state could map a row ledgered unmapped.
+    own_state = pl.concat(
+        [
+            _GEO,
+            pl.DataFrame(
+                {
+                    "geo_sk": [7],
+                    "geo_level": ["place"],
+                    "geo_id": ["state:10|place:01530"],
+                }
+            ),
+        ]
+    )
+    assert _slice_reference(_META, own_state, place_10) != before
+    # A metro slice reads every metro.
+    metro = transform.RawSlice(dataset="acs5", geo_level="metro", state_fips=None)
+    assert _slice_reference(_META, unrelated_geo, metro) != _slice_reference(
+        _META, _GEO, metro
+    )
+
+
+def _seed_variable(factory, dataset: str, year: int, table_id: str) -> None:
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO raw_census.acs_variables "
+                "(dataset, year, variable_name, table_id, label, concept, predicate_type) "
+                "VALUES (%s, %s, %s, %s, 'Estimate!!Total', 'Fixture', 'int') "
+                "ON CONFLICT DO NOTHING",
+                (dataset, year, f"{table_id}_001E", table_id),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+
+def _delete_variables(factory, table_id: str) -> None:
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM raw_census.acs_variables WHERE table_id = %s",
+                (table_id,),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+
+def test_an_unrelated_reference_change_leaves_a_finished_slice_skipped(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: ETL-087 â€” a reference change is part of the fingerprint."""
-    meta = pl.DataFrame({"variable_name": ["B01003_001E"]})
-    geo = pl.DataFrame({"geo_id": ["state:10"]})
-    wider = pl.DataFrame({"geo_id": ["state:10", "state:10|tract:000100"]})
-    assert transform.transform_context(meta, geo) == transform.transform_context(
-        meta, geo.clone()
-    )
-    assert transform.transform_context(meta, geo) != transform.transform_context(
-        meta, wider
-    )
+    """Covers: ETL-087 — new geographies and variables elsewhere replay nothing.
+
+    The October 2026 monthly run re-transformed every slice of 1990-2021
+    because the fingerprint hashed the whole reference: new metros and a
+    widened 2009 tract table list invalidated years they do not touch.
+    """
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+    fetched = _record_fetches(monkeypatch)
+
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="11",
+                vintage=YEAR,
+                name="Elsewhere",
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    _seed_variable(factory, "acs5", YEAR - 1, "B99901")
+    _seed_variable(factory, "acs1", YEAR, "B99901")
+    try:
+        assert transform.transform_census_to_silver() == 0
+        assert fetched == []
+    finally:
+        _delete_variables(factory, "B99901")
+        cleanup = factory()
+        try:
+            with cleanup.cursor() as cursor:
+                delete_geography(cursor, "state:11")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_a_wider_table_list_for_the_year_replays_its_slices(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-087 — new variables for a slice's dataset and year replay it."""
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+    fetched = _record_fetches(monkeypatch)
+
+    _seed_variable(factory, "acs5", YEAR, "B99902")
+    try:
+        # Replayed, and an identical replay changes no fact.
+        assert transform.transform_census_to_silver() == 0
+        assert sorted(fetched) == ["acs5/place/10", "acs5/state/10"]
+    finally:
+        _delete_variables(factory, "B99902")

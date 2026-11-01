@@ -709,19 +709,86 @@ def _plan_year_slices(
 TRANSFORM_VERSION = "acs-silver-v2"
 
 
-def transform_context(meta_df: pl.DataFrame, geo_df: pl.DataFrame) -> str:
-    """What besides a slice's revisions decides its silver rows.
+def _frame_digests(frame: pl.DataFrame, keys: list[str]) -> dict[tuple, str]:
+    """Each ``keys`` group of ``frame`` as its row count and an order-free row hash."""
+    if frame.is_empty():
+        return {}
+    grouped = (
+        frame.with_columns(frame.hash_rows(seed=0).alias("_row_hash"))
+        .group_by(keys)
+        .agg(
+            pl.len().alias("_rows"),
+            # Wrapping arithmetic: a sum of unsigned hashes that does not
+            # depend on the order the reference query returned the rows in.
+            pl.col("_row_hash").sum().alias("_hash_sum"),
+        )
+    )
+    return {tuple(row[:-2]): f"{row[-2]}:{row[-1]}" for row in grouped.iter_rows()}
 
-    The variable metadata and the geography reference: a tract the reference
-    newly carries (an older decade's, say) turns rows that were ledgered
-    `unmapped` into facts, so a slice finished before it must run again.
+
+class TransformReference:
+    """The reference rows that decide a slice's silver rows, digested per slice.
+
+    A slice's facts depend on the variable metadata of its dataset and year
+    (labels, concepts, universes) and on the geographies of its level and
+    state (``geo_sk``). Those, and ``TRANSFORM_VERSION``, are what its
+    fingerprint folds in -- not the whole of both frames. A tract the
+    reference newly carries still turns that state's tract rows ledgered
+    `unmapped` into facts on the next run, and a widened table list for a
+    year (new variables for that dataset and year) still replays that year's
+    slices; but new metro identities, or another decade's variables, no
+    longer replay every slice of every year. Hashing the whole frames did,
+    and the October 2026 monthly run re-transformed 1990-2021, 4,193 slices
+    and three hours, to change two of them.
     """
-    digest = hashlib.sha256(TRANSFORM_VERSION.encode())
-    for frame in (meta_df, geo_df):
-        digest.update(str(frame.height).encode())
-        if frame.height:
-            digest.update(str(int(frame.hash_rows(seed=0).sum())).encode())
-    return digest.hexdigest()
+
+    def __init__(self, meta_df: pl.DataFrame, geo_df: pl.DataFrame) -> None:
+        meta = meta_df.with_columns(pl.col("year").cast(pl.Int64))
+        self._meta = _frame_digests(meta, ["dataset", "year"])
+        geo = geo_df.with_columns(
+            pl.col("geo_id").str.extract(r"^state:([0-9]+)", 1).alias("_state")
+        )
+        self._geo = _frame_digests(geo, ["geo_level", "_state"])
+
+    def _meta_part(self, year: int, dataset: str | None) -> str:
+        keys = sorted(
+            key
+            for key in self._meta
+            if key[1] == int(year) and (dataset is None or key[0] == dataset)
+        )
+        return ";".join(f"{key[0]}={self._meta[key]}" for key in keys)
+
+    def _geo_part(self, raw_slice: RawSlice) -> str:
+        if raw_slice.geo_level is None:
+            # A slice of every level reads every geography: the whole frame.
+            keys = sorted(self._geo, key=lambda key: (key[0] or "", key[1] or ""))
+        else:
+            # The level's geographies in the slice's state. `us` and `metro`
+            # geographies name no state, so a slice of either reads all of its
+            # level's, whatever state its rows carry.
+            keys = sorted(
+                (
+                    key
+                    for key in self._geo
+                    if key[0] == raw_slice.geo_level
+                    and (key[1] is None or key[1] == raw_slice.state_fips)
+                ),
+                key=lambda key: key[1] or "",
+            )
+        return ";".join(
+            f"{key[0]}/{key[1] or '-'}={self._geo.get(key, 'none')}" for key in keys
+        )
+
+    def for_slice(self, year: int, raw_slice: RawSlice) -> str:
+        """The digest of what besides its revisions decides ``raw_slice``."""
+        payload = "|".join(
+            (
+                TRANSFORM_VERSION,
+                self._meta_part(year, raw_slice.dataset),
+                self._geo_part(raw_slice),
+            )
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def slice_fingerprint(
@@ -1773,8 +1840,8 @@ def transform_census_to_silver(
     logger.info("[CENSUS_ACS] Loaded %s time dimension rows", f"{time_df.height:,}")
 
     # A slice any earlier run finished against the same content and the same
-    # reference is skipped (`transform_slice_state`), not only a retry's.
-    context = transform_context(meta_df, geo_df)
+    # reference rows is skipped (`transform_slice_state`), not only a retry's.
+    reference = TransformReference(meta_df, geo_df)
     shared_hook = hook
 
     # ── process each year ─────────────────────────────────────────────
@@ -1808,8 +1875,12 @@ def transform_census_to_silver(
             # it opens on the hook and returns that attribute, so two threads
             # sharing one hook can each be handed the other's connection.
             hook = copy.copy(shared_hook)
-            fingerprint = slice_fingerprint(hook, year, raw_slice, context)
-            if finished.get(raw_slice.key) == fingerprint:
+            fingerprint = slice_fingerprint(
+                hook, year, raw_slice, reference.for_slice(year, raw_slice)
+            )
+            earlier = finished.get(raw_slice.key)
+            # One line per slice: whether it is skipped, and why it is not.
+            if earlier == fingerprint:
                 logger.info(
                     "[CENSUS_ACS CHUNK] Year=%s slice=%s unchanged since an "
                     "earlier run finished it; skipping",
@@ -1817,6 +1888,14 @@ def transform_census_to_silver(
                     raw_slice.key,
                 )
                 return 0
+            logger.info(
+                "[CENSUS_ACS CHUNK] Year=%s slice=%s %s; transforming",
+                year,
+                raw_slice.key,
+                "never finished before"
+                if earlier is None
+                else "revisions or its reference rows changed since it last finished",
+            )
             slice_metrics = TransformMetrics(dataset_name="CENSUS_ACS")
             raw = _fetch_raw_frame(hook, year, raw_slice)
             changed = 0
