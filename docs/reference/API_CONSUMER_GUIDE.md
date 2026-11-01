@@ -119,7 +119,7 @@ list.
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`; `metric_codes` for up to 200 named rows in one read) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `county_fips`, `q`, `active_only`) — see below |
-| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
+| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence, and a `METRO` row carries its page's `page_path` (`/metro/<segment>`; `null` for every other level). Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
 | `GET /api/v1/catalog/geographies/search` | Places a typed name may mean, for "find your place": states, counties, metros, cities and towns, and ZCTAs, best match first and ranked by population, with the containing state and county and the web page path — see [Finding a place](#finding-a-place-by-name-or-by-location) |
 | `GET /api/v1/catalog/geographies/locate` | The city or town, county, tract, ZCTA, state and metro a latitude and longitude lie in, with `landing` (the city, else the county) for "use my location"; `404 {"detail": "no geography contains this point"}` where no state does |
 | `GET /api/v1/catalog/geographies/metros` | Metro and micro areas (CBSAs) by name, each with its page path and principal state; `state_fips` lists the metros with a member county in that state, so a two-state metro is listed in both — see [Metro pages](#metro-pages) |
@@ -335,9 +335,10 @@ publicly cacheable like the rest of `/catalog/`.
 A metro or micro area (a CBSA) is built by OMB from whole counties and can
 span states, so its page is not under `/us/<state>`: it is
 `/metro/<segment>`, where the segment is the slug of its published name
-(`/metro/austin-round-rock-san-marcos-tx-metro-area`), or its five-digit
-CBSA code when another metro's name slugs the same way. Search, locate and
-the routes below answer that path.
+(`/metro/austin-round-rock-san-marcos-tx`), or its five-digit
+CBSA code when another metro's name slugs the same way. Search, locate,
+`/related` and the routes below answer that path; the web redirects a
+`/metro/<code>` request to the named page.
 
 **One metro.** `GET /api/v1/catalog/geographies/metros/{segment}` accepts the
 canonical segment or the CBSA code (`/metros/12420`) and answers:

@@ -98,6 +98,9 @@ class GeographyRelationship(BaseModel):
     place whose boundaries overlap) or ``adjacent`` (two counties sharing a
     boundary). ``overlap_weight`` is the overlap's share of the place's area
     and ``overlap_area_m2`` the overlap itself, both only for ``intersects``.
+    ``page_path`` is a metro's page (``/metro/<segment>``), so a city or
+    county links its metro by name; NULL for every other level, whose pages
+    a client builds from its siblings.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -111,6 +114,7 @@ class GeographyRelationship(BaseModel):
     evidence_source: str
     overlap_area_m2: Optional[float] = None
     overlap_weight: Optional[float] = None
+    page_path: Optional[str] = None
 
 
 class GeographyRelatedResponse(BaseModel):

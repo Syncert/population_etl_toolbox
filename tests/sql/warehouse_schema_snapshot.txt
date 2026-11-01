@@ -12051,6 +12051,7 @@ r silver_ref.bridge_geo_relationship_version
     index bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key CREATE UNIQUE INDEX bridge_geo_relationship_versi_parent_geo_sk_related_geo_sk__key ON silver_ref.bridge_geo_relationship_version USING btree (parent_geo_sk, related_geo_sk, relationship_type, geography_vintage)
     index bridge_geo_relationship_version_pkey CREATE UNIQUE INDEX bridge_geo_relationship_version_pkey ON silver_ref.bridge_geo_relationship_version USING btree (relationship_sk)
     index ix_bridge_geo_relationship_version_related CREATE INDEX ix_bridge_geo_relationship_version_related ON silver_ref.bridge_geo_relationship_version USING btree (related_geo_sk, relationship_type, parent_geo_sk, geography_vintage)
+    index ix_bridge_grv_parent_type_vintage CREATE INDEX ix_bridge_grv_parent_type_vintage ON silver_ref.bridge_geo_relationship_version USING btree (parent_geo_sk, relationship_type, geography_vintage DESC)
 
 v silver_ref.dim_geo
     column geo_sk bigint
