@@ -284,12 +284,23 @@ def _worker_main(
 ) -> None:
     logging.basicConfig(level=logging.INFO)
     connection_factory = factory_builder()
+    # Say so once the imports and the factory are done, so the parent starts
+    # a state-year's clock at the work rather than at the interpreter start.
+    conn.send(_READY)
     while True:
         task = conn.recv()
         if task is None:
             return
         state, year, captured_run_id = task
         conn.send(work(connection_factory, state, year, captured_run_id))
+
+
+#: What a spawned worker sends once it can take work.
+_READY = "ready"
+
+#: How long a spawned worker may take to import and build its connection
+#: factory before the load gives up on it.
+WORKER_START_TIMEOUT_SECONDS = 300.0
 
 
 @dataclass
@@ -328,6 +339,20 @@ def _run_in_workers(
         )
         process.start()
         child.close()
+        # A slice's timeout measures its work. Before this wait it also
+        # measured the spawn: a fresh interpreter importing this package,
+        # seconds under coverage, which every slice timeout had to allow for.
+        try:
+            ready = parent.poll(WORKER_START_TIMEOUT_SECONDS) and parent.recv()
+        except (EOFError, OSError):
+            ready = None
+        if ready != _READY:
+            process.kill()
+            process.join(5)
+            parent.close()
+            raise RuntimeError(
+                f"LODES worker did not start (exit code {process.exitcode})"
+            )
         return _Worker(process, parent)
 
     def stop(worker: _Worker) -> None:
@@ -370,6 +395,9 @@ def _run_in_workers(
                         worker.task = None
                         continue
                     except (EOFError, OSError):
+                        # The pipe closes a moment before the process is reaped;
+                        # join first so the exit code is known, not None.
+                        worker.process.join(5)
                         record(
                             SliceResult(
                                 state,
@@ -514,6 +542,9 @@ def load_history(
                 factory_builder=worker_factory,
                 work=work,
                 slice_timeout=slice_timeout,
+                # A stuck slice is noticed within a quarter of its timeout,
+                # not only at the next five-second poll.
+                poll_seconds=min(5.0, slice_timeout / 4),
             )
         else:
             for state, year in pending:

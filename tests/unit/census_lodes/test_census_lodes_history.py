@@ -123,16 +123,30 @@ def test_spawned_workers_stop_a_stuck_state_year_and_survive_a_dead_one() -> Non
         workers=2,
         factory_builder=stand_in.no_database,
         work=stand_in.az_hangs_ar_dies,
-        slice_timeout=8,
+        slice_timeout=1.5,
         poll_seconds=0.2,
     )
     outcome = {(r.state, r.year): r for r in results}
     assert set(outcome) == set(pending)
     assert outcome[("az", 2022)].status == "timed_out"
-    assert outcome[("az", 2022)].seconds >= 8
+    assert outcome[("az", 2022)].seconds >= 1.5
     assert outcome[("ar", 2022)].status == "failed"
     assert "worker exited (code 3)" in outcome[("ar", 2022)].error
     assert {outcome[key].status for key in pending[2:]} == {"silver_ready"}
+
+
+def test_a_worker_that_cannot_start_stops_the_load_with_its_exit_code() -> None:
+    """Covers: ETL-108 — a worker that dies before it is ready fails fast, not at a slice timeout."""
+    with pytest.raises(RuntimeError, match=r"did not start \(exit code 4\)"):
+        _run_in_workers(
+            [("de", 2022)],
+            {},
+            workers=1,
+            factory_builder=stand_in.cannot_start,
+            work=stand_in.loads,
+            slice_timeout=60,
+            poll_seconds=0.2,
+        )
 
 
 def test_a_stuck_state_year_holds_the_publish_and_is_named(monkeypatch) -> None:
@@ -148,7 +162,7 @@ def test_a_stuck_state_year_holds_the_publish_and_is_named(monkeypatch) -> None:
         workers=2,
         worker_factory=stand_in.no_database,
         work=stand_in.az_hangs_ar_dies,
-        slice_timeout=8,
+        slice_timeout=1.5,
     )
     assert summary["published"] is False and published == []
     assert [s.split(" (")[0] for s in summary["stuck"]] == ["az 2022"]

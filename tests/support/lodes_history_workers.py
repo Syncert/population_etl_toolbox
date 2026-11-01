@@ -35,3 +35,7 @@ def az_hangs_ar_dies(
     if state == "ar":
         os._exit(3)
     return loads(factory, state, year, run)
+
+
+def cannot_start() -> Callable[[], Any]:
+    os._exit(4)
