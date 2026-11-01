@@ -18,10 +18,11 @@ verify:
 
 ## Status
 
-In progress, 2026-11-01: built and tested against fixtures (D-9 of the v1.0
-build-out, branch `claude/project-thread-l8lizs`). Waiting for the live check
-on the office warehouse after merge. Catalog row: WEB-156. No API change and
-no DDL.
+In progress, 2026-11-01: merged as #245 (c37b8cca), catalog row WEB-156, no
+API change and no DDL. The first live check on OFFICE_LAB (dev 346786ec)
+found one copy mismatch, fixed in a follow-up: see "Live check results". The
+plan closes once that fix is live-checked and the population and
+unemployment cards are read.
 
 ## Why
 
@@ -121,3 +122,37 @@ county is resolved, never with a placeholder. **Index DDL: none.**
    nation; the nation says there is no larger area.
 5. Read every sentence on those pages against its chart. None should hold a
    word from `FORBIDDEN_WORDS` in `apps/web/lib/checkTheRecord.ts`.
+
+## Live check results
+
+### 2026-11-01, OFFICE_LAB at dev 346786ec
+
+Screenshots: `/mnt/project-files/record-dane.png`, `record-austin.png`,
+`record-wisconsin.png`, `record-us.png` (the crime and rent cards).
+
+- **Dane County, crime:** "fell from 20.3 per 100,000 … in December 2015 to
+  13 … in December 2025, a change of -7.3 per 100,000 (-35.9 percent)".
+  Same month, ten years, both months' agency counts and coverage (98 % and
+  93 %: under the 10-point flag, so no "may reflect reporting" line). The
+  chart's monthly line ends lower than it starts. Correct.
+- **Rents and incomes:** Dane (+53.3 % rent higher than +44.4 % income),
+  Austin (+70.8 % against +69.6 %, not distinguishable), Wisconsin (+40.8 %
+  lower than +46.9 %), US (+53.6 % higher than +51.0 %). Each sentence's
+  values, periods and percents match the arithmetic and the rising chart.
+  Correct.
+- **Austin, crime:** sends the reader to Travis County's answer. Correct.
+- **Wisconsin and US, crime: mismatch.** The FBI's published state and
+  national rate is monthly, and the span chose the newest month (June 2023)
+  against the earliest month within ten years (January 2013). January
+  against June reads the season as a change: the US chart shows a strong
+  seasonal pattern. **Fixed:** a monthly series now compares the same
+  calendar month (`chooseSpan`, unit test "compares a monthly series with
+  the same month of an earlier year"), as the county rate already did.
+- **Not yet read:** the population and unemployment cards (below the
+  screenshots' fold).
+
+Recheck after the follow-up merges and a web rebuild: `/us/wisconsin#record`
+and `/us#record` crime compares June 2013 with June 2023 (or the newest
+month's same month), and screenshots of the population and unemployment
+cards for Dane, Austin, Wisconsin and the US.
+

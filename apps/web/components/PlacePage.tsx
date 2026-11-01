@@ -197,6 +197,12 @@ export default function PlacePage({
   const [search, setSearch] = useState("");
   const [nearby, setNearby] = useState<NearbyGroups | null>(null);
   const [related, setRelated] = useState<RelatedResponse | null>(null);
+  // Which place's relationships have settled (answered or failed). A city's
+  // county comes from them, so a city page reads nothing until they settle:
+  // reading first sent every chapter's batches for the city, its state and
+  // the nation, and its county's lines were never drawn (live check on
+  // Austin, 2026-11-01).
+  const [relatedSettledFor, setRelatedSettledFor] = useState("");
   const [nearbyNote, setNearbyNote] = useState("");
   const [distinctive, setDistinctive] = useState<DistinctiveResponse | null>(null);
   const [distinctiveNote, setDistinctiveNote] = useState("");
@@ -383,6 +389,10 @@ export default function PlacePage({
   }, []);
 
   const place = level === "PLACE" ? city : level === "COUNTY" ? county : level === "METRO" ? metro : level === "STATE" ? state : nation;
+  // Whether the chain of levels the chapters read is final: a city's county
+  // arrives with its relationships. Every other page's chain is final once
+  // the address resolves, so its reads never wait (or restart) on them.
+  const chainSettled = level !== "PLACE" || relatedSettledFor === place?.geo_id;
   const title = placeTitle(place, level, state);
 
   // What this place contains, borders and is part of, as the reference
@@ -412,9 +422,14 @@ export default function PlacePage({
           const largest = groups.counties[0];
           setCounty(largest ? counties.find((row) => row.geo_id === largest.geoId) || null : null);
         }
+        setRelatedSettledFor(place.geo_id);
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setNearbyNote(`Nearby and related: ${apiErrorMessage(error)}`);
+        if (controller.signal.aborted) return;
+        setNearbyNote(`Nearby and related: ${apiErrorMessage(error)}`);
+        // Without its relationships a city is read beside its state and the
+        // nation; the note above says why its county is absent.
+        setRelatedSettledFor(place.geo_id);
       });
     return () => controller.abort();
   }, [resolution.state, place, level, states, counties, metroPage]);
@@ -475,6 +490,7 @@ export default function PlacePage({
   // measures for the chapter's own place, and one history per trend line.
   useEffect(() => {
     if (resolution.state !== "found" || !shown.length || !sources.length || !levels.length) return;
+    if (!chainSettled) return;
     const controller = new AbortController();
     const signal = controller.signal;
     const nextAnswers = new Map<string, LevelAnswer>();
@@ -671,7 +687,7 @@ export default function PlacePage({
     return () => controller.abort();
     // `chapterLevels` and `sourceFor` read only the dependencies listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolution.state, shown, sources, levels]);
+  }, [resolution.state, shown, sources, levels, chainSettled]);
 
   // "What the record shows" links each answer to its rows in the explorer,
   // and a city's crime and unemployment questions to its county's page.

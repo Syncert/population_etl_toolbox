@@ -255,7 +255,8 @@ export interface Span<Row> {
 
 /**
  * The newest period with a number, and the earliest period with a number no
- * more than ten years before it and at least `minimumGap` years before it.
+ * more than ten years before it and at least `minimumGap` years before it;
+ * for a monthly series, the same calendar month.
  * An ACS five-year series asks a gap of five, so the two periods share no
  * year (the Bureau's advice). Null when the record is too short.
  */
@@ -266,8 +267,20 @@ export function chooseSpan<Row extends ObservationRow>(rows: readonly Row[], min
   const to = numbered.at(-1);
   if (!to) return null;
   const toYear = rowYear(to);
-  const from = numbered.find((row) => rowYear(row) >= toYear - RECORD_SPAN_YEARS && rowYear(row) <= toYear - minimumGap);
+  // A monthly series compares a month with the same month of an earlier
+  // year: January against June would read the season as a change.
+  const monthly = isMonthly(to);
+  const from = numbered.find(
+    (row) => rowYear(row) >= toYear - RECORD_SPAN_YEARS && rowYear(row) <= toYear - minimumGap
+      && (!monthly || (isMonthly(row) && rowMonth(row) === rowMonth(to))),
+  );
   return from ? { from, to } : null;
+}
+
+/** Whether a row describes one calendar month. */
+function isMonthly(row: Dated): boolean {
+  const end = String((row as { period_end?: unknown }).period_end || "");
+  return /^\d{4}-\d{2}/.test(startOf(row)) && end.slice(0, 7) === startOf(row).slice(0, 7);
 }
 
 // --- Crime ----------------------------------------------------------------------
