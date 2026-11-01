@@ -1149,6 +1149,21 @@ def test_county_agency_rate_divides_the_same_agencies_and_refuses_thin_coverage(
             _refresh_county_rates(cursor)
             outcomes = fbi_county_agency_rate_agreement(cursor, {})
             assert [(o.result, o.observed_count) for o in outcomes] == [("pass", 0)]
+            # A served numerator that is not its agencies' sum is named.
+            cursor.execute(
+                """
+                UPDATE gold_fbi.county_agency_rate_month
+                SET offenses = offenses + 1
+                WHERE product_id = 'summarized_violent_crime'
+                  AND geo_id = 'state:55|county:025' AND period = '01-2023'
+                """
+            )
+            [tampered] = fbi_county_agency_rate_agreement(cursor, {})
+            assert tampered.result == "fail"
+            assert (
+                "summarized_violent_crime state:55|county:025 01-2023"
+                in tampered.evidence
+            )
 
             # The directory links Madison's police to Dane County alone, but
             # its reports were never loaded: its population is unknown, so the

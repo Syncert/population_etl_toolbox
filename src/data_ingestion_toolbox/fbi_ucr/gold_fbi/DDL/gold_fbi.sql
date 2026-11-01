@@ -486,6 +486,43 @@ LANGUAGE sql STABLE AS $rate$
 $rate$;
 
 -- Replace one product's served rate rows; returns how many it now has.
+-- How many facts each product's newest published release holds per subject
+-- type and month: what the admin Source Map's coverage reads. Counted from
+-- `latest_release_fact` once per publication, not per read: with every
+-- Return A agency loaded (11 years x 26k agencies) grouping the facts on
+-- read took 45 s against a 20 s ceiling. A few thousand rows in all.
+CREATE TABLE IF NOT EXISTS gold_fbi.release_fact_count (
+    product_id TEXT NOT NULL,
+    release_key TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    row_count BIGINT NOT NULL,
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (product_id, release_key, subject_type, period_start)
+);
+
+CREATE OR REPLACE FUNCTION gold_fbi.refresh_release_fact_count(p_product_id TEXT)
+RETURNS BIGINT
+LANGUAGE plpgsql AS $count$
+DECLARE
+    refreshed BIGINT;
+BEGIN
+    DELETE FROM gold_fbi.release_fact_count AS counted
+     WHERE counted.product_id = p_product_id;
+    INSERT INTO gold_fbi.release_fact_count (
+        product_id, release_key, subject_type, period_start, row_count
+    )
+    SELECT fact.product_id, fact.release_key, fact.subject_type,
+           fact.period_start, COUNT(*)
+      FROM gold_fbi.latest_release_fact AS fact
+     WHERE fact.product_id = p_product_id
+       AND fact.period_start IS NOT NULL
+     GROUP BY 1, 2, 3, 4;
+    GET DIAGNOSTICS refreshed = ROW_COUNT;
+    RETURN refreshed;
+END
+$count$;
+
 CREATE OR REPLACE FUNCTION gold_fbi.refresh_county_agency_rate(p_product_id TEXT)
 RETURNS BIGINT
 LANGUAGE plpgsql AS $refresh$
@@ -503,6 +540,9 @@ BEGIN
     )
     SELECT * FROM gold_fbi.county_agency_rate_rows(p_product_id);
     GET DIAGNOSTICS refreshed = ROW_COUNT;
+    -- The product's other precomputed read, in the same transaction, so the
+    -- publish paths and the one-time fill after a deploy refresh both.
+    PERFORM gold_fbi.refresh_release_fact_count(p_product_id);
     RETURN refreshed;
 END
 $refresh$;

@@ -5719,6 +5719,16 @@ v gold_fbi.metric_publisher
     body           ORDER BY candidate.refresh_date DESC
     body          LIMIT 1) release ON true;
 
+r gold_fbi.release_fact_count
+    column product_id text NOT NULL
+    column release_key text NOT NULL
+    column subject_type text NOT NULL
+    column period_start date NOT NULL
+    column row_count bigint NOT NULL
+    column refreshed_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint release_fact_count_pkey PRIMARY KEY (product_id, release_key, subject_type, period_start)
+    index release_fact_count_pkey CREATE UNIQUE INDEX release_fact_count_pkey ON gold_fbi.release_fact_count USING btree (product_id, release_key, subject_type, period_start)
+
 v gold_fbi.reporting_coverage
     column participation_sk bigint
     column product_id text

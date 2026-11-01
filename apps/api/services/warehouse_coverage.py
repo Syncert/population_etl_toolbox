@@ -86,6 +86,9 @@ class _Plan:
     #: A reviewed equivalent of ``relation`` read in its place: same rows,
     #: fewer joins. ``relation`` is still what the page names.
     from_sql: str | None = None
+    #: How ``from_sql`` counts the rows of a group: ``COUNT(*)`` over rows,
+    #: or a sum over a reviewed table of counts computed at publication.
+    count_sql: str = "COUNT(*)"
 
 
 #: Census PEP's as-released view ranks every fact row by capture
@@ -103,16 +106,16 @@ _PROBES: dict[str, tuple[str, str]] = {
 
 
 #: FBI UCR's latest relation joins every observation to its participation,
-#: measure and release rows to project columns coverage never reads; with
-#: every Return A agency loaded (about 13M rows) it passed the 20 s ceiling.
-#: The grain (``subject_type``) and period are on the fact itself, every fact
-#: has its participation and measure rows (foreign keys), so reading the fact
-#: of each product's newest published release, with the same geography
-#: filter, counts exactly the rows ``latest_release_observation`` serves.
-#: ``gold_fbi.latest_release_fact`` is that read as a gold view, because the
-#: API's read-only role has no grant on silver schemas.
-_FROM_SQL: dict[str, str] = {
-    "FBI_UCR": "gold_fbi.latest_release_fact",
+#: measure and release rows to project columns coverage never reads, and with
+#: every Return A agency loaded (11 years x 26k agencies) even grouping the
+#: facts alone took 45 s against the 20 s ceiling. Each publication counts its
+#: newest release's facts per subject type and month into
+#: ``gold_fbi.release_fact_count`` (the same rows ``latest_release_observation``
+#: serves: every fact has its participation and measure rows by foreign key),
+#: so the read sums a few thousand counts. It is in gold, because the API's
+#: read-only role has no grant on silver schemas.
+_FROM_SQL: dict[str, tuple[str, str]] = {
+    "FBI_UCR": ("gold_fbi.release_fact_count", "SUM(row_count)"),
 }
 
 
@@ -132,8 +135,16 @@ def _plan(catalog_source_code: str) -> _Plan | None:
         period_expression=dispatch.period_start_expression,
         probe=probe,
         note=note,
-        from_sql=_FROM_SQL.get(catalog_source_code),
+        **_reviewed_read(catalog_source_code),
     )
+
+
+def _reviewed_read(catalog_source_code: str) -> dict[str, str]:
+    reviewed = _FROM_SQL.get(catalog_source_code)
+    if reviewed is None:
+        return {}
+    from_sql, count_sql = reviewed
+    return {"from_sql": from_sql, "count_sql": count_sql}
 
 
 def _column(level: str | None) -> str:
@@ -171,7 +182,7 @@ def _scan_sql(plan: _Plan) -> str:
             FROM (
                 SELECT {group_by} AS raw_grain,
                        {period} AS raw_period,
-                       COUNT(*) AS row_count
+                       {plan.count_sql if plan.from_sql else "COUNT(*)"} AS row_count
                 FROM {plan.from_sql or plan.relation}
                 WHERE {period} IS NOT NULL{probe}
                 GROUP BY 1, 2
