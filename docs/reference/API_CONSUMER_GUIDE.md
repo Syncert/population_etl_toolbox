@@ -1997,6 +1997,25 @@ the grain's newest summary release is used. Each item is `geo_id`, `value`,
 `moe`, and `unavailable_reason` when the value is withheld (null, never
 zero).
 
+`GET /api/v1/age-structure/rates?geo_id=…&rate=poverty_by_age|uninsured_by_age|disability_by_age|moved_by_age|veterans_by_age[&release=YYYY][&dataset=acs5|acs1]`
+answers one by-age table as a rate per age group: people below the poverty
+level (B17001), without health insurance (B27010), with a disability
+(C18108), who moved in the past year (B07001) or who are veterans (B21001).
+Each rate is a percent of that age group's own universe, named in
+`rate.universe` (for poverty, the people of that age whose poverty status is
+determined), never of the whole population. Each group carries `all`, and
+`men` and `women` when `rate.by_sex` is true (null otherwise), each with
+`numerator`, `denominator`, their margins, `rate`, `rate_moe` (the Bureau's
+proportion formula), the numerator's `cv_percent` and `reliable`
+(CV 30 % or less); `total` is the table's own all-ages rate. `places` is the
+place and then each level it sits in, read at the place's release exactly as
+`/age-structure` reads them; a level without that release is
+`not_published`. A withheld line leaves its group null with
+`suppressed_input` (or `line_missing`), and a universe of nobody is
+`denominator_zero`, never a rate of zero. The schemes are `draft` until
+reviewed (`rate.status`); `scripts/check_age_rate_labels.py` checks each
+scheme's lines against the Bureau's labels in the warehouse.
+
 ### One tract across the 2020 redraw
 
 `GET /api/v1/place/tract-history?geo_id=<tract>&metric_codes=<code>,…`

@@ -10,10 +10,11 @@ twice or leaves one of the table's age lines out.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 REGISTRY_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "semantics" / "age_bands.json"
@@ -248,9 +249,284 @@ def load_registry(path: Path = REGISTRY_PATH) -> dict[str, AgeScheme]:
     return parse_registry(json.loads(path.read_text(encoding="utf-8")))
 
 
+# ---------------------------------------------------------------------------
+# By-age rate schemes (ADR-0013 consequences; views plan item 6)
+# ---------------------------------------------------------------------------
+
+#: The sides a rate is served for: everyone, and each sex where the table
+#: publishes one.
+RATE_SIDES = ("all", "men", "women")
+
+
+@dataclass(frozen=True)
+class RateLines:
+    """The lines summed into one side's numerator and into its universe."""
+
+    numerator: tuple[str, ...]
+    denominator: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RateGroup:
+    group_id: str
+    label: str
+    age_start: int
+    age_end: Optional[int]
+    sides: dict[str, RateLines]
+
+
+@dataclass(frozen=True)
+class RateScheme:
+    """One by-age table read as a rate per age group: a share of the group's
+    universe, never a share of the whole population."""
+
+    rate_id: str
+    version: int
+    status: str
+    label: str
+    table_id: str
+    source_code: str
+    datasets: tuple[str, ...]
+    by_sex: bool
+    universe: str
+    numerator_label: str
+    unit: str
+    total: RateLines
+    groups: tuple[RateGroup, ...]
+    #: Words a numerator line's Bureau label must hold, and must not.
+    numerator_has: str = ""
+    numerator_lacks: tuple[str, ...] = ()
+
+    def metric_code(self, dataset: str, variable: str) -> str:
+        return f"{self.source_code}:{dataset}:{variable}"
+
+    def variables(self) -> tuple[str, ...]:
+        seen: dict[str, None] = {}
+        for lines in (self.total, *(s for g in self.groups for s in g.sides.values())):
+            for code in (*lines.numerator, *lines.denominator):
+                seen[code] = None
+        return tuple(seen)
+
+    def metric_codes(self, dataset: str) -> tuple[str, ...]:
+        return tuple(self.metric_code(dataset, code) for code in self.variables())
+
+
+def _rate_lines(value: Any, where: str) -> RateLines:
+    if not isinstance(value, dict):
+        raise AgeBandRegistryError(f"{where}: expected numerator and denominator")
+    return RateLines(
+        numerator=_strings(value.get("numerator"), f"{where} numerator"),
+        denominator=_strings(value.get("denominator"), f"{where} denominator"),
+    )
+
+
+def _group_sides(group: dict, by_sex: bool, where: str) -> dict[str, RateLines]:
+    numerator = _require(group, "numerator", where)
+    denominator = _require(group, "denominator", where)
+    keys = ("men", "women") if by_sex else ("all",)
+    for part, name in ((numerator, "numerator"), (denominator, "denominator")):
+        if not isinstance(part, dict) or set(part) != set(keys):
+            raise AgeBandRegistryError(
+                f"{where}: {name} must name exactly {', '.join(keys)}"
+            )
+    sides = {
+        key: RateLines(
+            numerator=_strings(numerator[key], f"{where} {key} numerator"),
+            denominator=_strings(denominator[key], f"{where} {key} denominator"),
+        )
+        for key in keys
+    }
+    if by_sex:
+        # Everyone in the group is the two sexes' lines together.
+        sides = {
+            "all": RateLines(
+                numerator=sides["men"].numerator + sides["women"].numerator,
+                denominator=sides["men"].denominator + sides["women"].denominator,
+            ),
+            **sides,
+        }
+    return sides
+
+
+def parse_rate_scheme(entry: dict) -> RateScheme:
+    rate_id = _require(entry, "rate_id", "rate scheme")
+    where = f"rate scheme {rate_id}"
+    status = _require(entry, "status", where)
+    if status not in STATUSES:
+        raise AgeBandRegistryError(f"{where}: unknown status {status!r}")
+    by_sex = bool(_require(entry, "by_sex", where))
+    groups = tuple(
+        RateGroup(
+            group_id=_require(group, "group_id", where),
+            label=_require(group, "label", where),
+            age_start=int(_require(group, "age_start", where)),
+            age_end=None if group.get("age_end") is None else int(group["age_end"]),
+            sides=_group_sides(group, by_sex, f"{where} group {group.get('group_id')}"),
+        )
+        for group in _require(entry, "groups", where)
+    )
+    scheme = RateScheme(
+        rate_id=rate_id,
+        version=int(_require(entry, "version", where)),
+        status=status,
+        label=_require(entry, "label", where),
+        table_id=_require(entry, "table_id", where),
+        source_code=_require(entry, "source_code", where),
+        datasets=tuple(_require(entry, "datasets", where)),
+        by_sex=by_sex,
+        universe=_require(entry, "universe", where),
+        numerator_label=_require(entry, "numerator_label", where),
+        unit=_require(entry, "unit", where),
+        total=_rate_lines(_require(entry, "total", where), f"{where} total"),
+        groups=groups,
+        numerator_has=str(_require(entry, "label_check", where).get("numerator_has")),
+        numerator_lacks=tuple(entry["label_check"].get("numerator_lacks") or ()),
+    )
+    _validate_rate(scheme)
+    return scheme
+
+
+def _validate_rate(scheme: RateScheme) -> None:
+    where = f"rate scheme {scheme.rate_id}"
+    if scheme.unit != "percent":
+        raise AgeBandRegistryError(f"{where}: a rate is served in percent")
+    if not scheme.groups:
+        raise AgeBandRegistryError(f"{where}: no age groups")
+    prefix = f"{scheme.table_id}_"
+    for code in scheme.variables():
+        if not code.startswith(prefix):
+            raise AgeBandRegistryError(
+                f"{where}: {code} is not a {scheme.table_id} line"
+            )
+    previous_end: Optional[int] = None
+    for index, group in enumerate(scheme.groups):
+        if previous_end is not None and group.age_start != previous_end + 1:
+            raise AgeBandRegistryError(
+                f"{where}: group {group.group_id} does not follow the one before"
+            )
+        if group.age_end is None and index != len(scheme.groups) - 1:
+            raise AgeBandRegistryError(f"{where}: only the last group may be open")
+        if group.age_end is not None and group.age_end < group.age_start:
+            raise AgeBandRegistryError(f"{where}: group {group.group_id} ends early")
+        previous_end = group.age_end
+    for side in ("men", "women") if scheme.by_sex else ("all",):
+        numerators = [c for g in scheme.groups for c in g.sides[side].numerator]
+        denominators = [c for g in scheme.groups for c in g.sides[side].denominator]
+        if len(numerators) != len(set(numerators)):
+            raise AgeBandRegistryError(
+                f"{where}: a {side} numerator line is used twice"
+            )
+        if len(denominators) != len(set(denominators)):
+            raise AgeBandRegistryError(
+                f"{where}: a {side} denominator line is used twice"
+            )
+        for group in scheme.groups:
+            lines = group.sides[side]
+            if set(lines.numerator) == set(lines.denominator):
+                raise AgeBandRegistryError(
+                    f"{where}: group {group.group_id} divides a count by itself"
+                )
+    if scheme.by_sex:
+        men = {c for g in scheme.groups for c in g.sides["men"].numerator}
+        women = {c for g in scheme.groups for c in g.sides["women"].numerator}
+        if men & women:
+            raise AgeBandRegistryError(f"{where}: a line is both men's and women's")
+
+
+def parse_rate_registry(document: dict) -> dict[str, RateScheme]:
+    schemes: dict[str, RateScheme] = {}
+    for entry in document.get("rate_schemes", []):
+        scheme = parse_rate_scheme(entry)
+        if scheme.rate_id in schemes:
+            raise AgeBandRegistryError(f"duplicate rate scheme {scheme.rate_id}")
+        schemes[scheme.rate_id] = scheme
+    return schemes
+
+
+@lru_cache(maxsize=1)
+def load_rate_registry(path: Path = REGISTRY_PATH) -> dict[str, RateScheme]:
+    return parse_rate_registry(json.loads(path.read_text(encoding="utf-8")))
+
+
 #: The scheme the pyramid routes read.
 DEFAULT_SCHEME_ID = "acs_b01001_five_year"
 
 
 def default_scheme() -> AgeScheme:
     return load_registry()[DEFAULT_SCHEME_ID]
+
+
+_AGE_NUMBER = re.compile(r"\d+")
+
+
+def label_age_range(label: str) -> Optional[tuple[int, Optional[int]]]:
+    """The ages a Bureau label's age segment covers (``Under 5 years`` →
+    (0, 4), ``18 and 19 years`` → (18, 19), ``75 years and over`` → (75,
+    None)), or ``None`` when no segment names an age."""
+    for segment in reversed(label.replace(":", "").split("!!")):
+        if "year" not in segment:
+            continue
+        numbers = [int(n) for n in _AGE_NUMBER.findall(segment)]
+        if not numbers:
+            continue
+        if segment.strip().lower().startswith("under"):
+            return (0, numbers[0] - 1)
+        if "and over" in segment or "or older" in segment:
+            return (numbers[0], None)
+        return (numbers[0], numbers[-1])
+    return None
+
+
+def rate_label_problems(
+    scheme: RateScheme, labels: Mapping[str, Optional[str]]
+) -> list[str]:
+    """Every way the Bureau's own labels disagree with a rate scheme.
+
+    ``labels`` maps a variable (``B17001_004``) to its published label. A
+    numerator line must name what the scheme counts and not what it leaves
+    out; each line of a by-sex group names its sex; and each age group's
+    lines name ages inside the group's range. Run against the warehouse's
+    ``dim_acs_variable`` before a scheme is approved.
+    """
+    problems: list[str] = []
+
+    def check(code: str, group: RateGroup, side: str, role: str) -> None:
+        label = labels.get(code)
+        if not label:
+            problems.append(f"{scheme.rate_id} {code}: no published label")
+            return
+        if role == "numerator":
+            if scheme.numerator_has.lower() not in label.lower():
+                problems.append(f"{code} ({label}) lacks {scheme.numerator_has!r}")
+            for word in scheme.numerator_lacks:
+                if word.lower() in label.lower():
+                    problems.append(f"{code} ({label}) holds {word!r}")
+        segments = {part.strip().rstrip(":") for part in label.split("!!")}
+        if side == "men" and "Male" not in segments:
+            problems.append(f"{code} ({label}) is not a men's line")
+        if side == "women" and "Female" not in segments:
+            problems.append(f"{code} ({label}) is not a women's line")
+        ages = label_age_range(label)
+        if ages is None:
+            problems.append(f"{code} ({label}) names no age")
+            return
+        start, end = ages
+        inside = start >= group.age_start and (
+            group.age_end is None or (end is not None and end <= group.age_end)
+        )
+        if not inside:
+            problems.append(
+                f"{code} ({label}) is outside {group.group_id} "
+                f"({group.age_start} to {group.age_end})"
+            )
+
+    for group in scheme.groups:
+        sides = ("men", "women") if scheme.by_sex else ("all",)
+        for side in sides:
+            lines = group.sides[side]
+            for code in lines.numerator:
+                check(code, group, side, "numerator")
+            for code in lines.denominator:
+                if code not in lines.numerator:
+                    check(code, group, side, "denominator")
+    return problems

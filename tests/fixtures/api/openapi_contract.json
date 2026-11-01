@@ -369,6 +369,58 @@
         "age-structure"
       ]
     },
+    "GET /api/v1/age-structure/rates": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": "acs5",
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 40
+          },
+          "in": "query",
+          "name": "rate",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 10
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:AgeRatesResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "age-structure"
+      ]
+    },
     "GET /api/v1/analysis-configurations": {
       "parameters": [
         {
@@ -3678,6 +3730,99 @@
         "label",
         "scheme",
         "unit"
+      ]
+    },
+    "AgeRateGroup": {
+      "properties": {
+        "age_end": "integer | null",
+        "age_start": "integer",
+        "all": "AgeRateSide",
+        "group_id": "string",
+        "label": "string",
+        "men": "AgeRateSide | null",
+        "women": "AgeRateSide | null"
+      },
+      "required": [
+        "age_start",
+        "all",
+        "group_id",
+        "label"
+      ]
+    },
+    "AgeRatePlace": {
+      "properties": {
+        "derived": "boolean",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "groups": "array<AgeRateGroup>",
+        "overlap_weight": "number | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "reference_level": "string | null",
+        "release": "string | null",
+        "role": "string",
+        "total": "AgeRateSide | null",
+        "unavailable_reason": "string | null"
+      },
+      "required": [
+        "geo_id",
+        "role"
+      ]
+    },
+    "AgeRateSchemeOut": {
+      "properties": {
+        "by_sex": "boolean",
+        "label": "string",
+        "numerator_label": "string",
+        "rate_id": "string",
+        "status": "string",
+        "table_id": "string",
+        "unit": "string",
+        "universe": "string",
+        "version": "integer"
+      },
+      "required": [
+        "by_sex",
+        "label",
+        "numerator_label",
+        "rate_id",
+        "status",
+        "table_id",
+        "unit",
+        "universe",
+        "version"
+      ]
+    },
+    "AgeRateSide": {
+      "properties": {
+        "cv_percent": "string | null",
+        "denominator": "string | null",
+        "denominator_moe": "string | null",
+        "numerator": "string | null",
+        "numerator_moe": "string | null",
+        "rate": "string | null",
+        "rate_moe": "string | null",
+        "reliable": "boolean",
+        "unavailable_reason": "string | null"
+      },
+      "required": []
+    },
+    "AgeRatesResponse": {
+      "properties": {
+        "dataset": "string",
+        "default_reference_geo_id": "string | null",
+        "geo_id": "string",
+        "geo_level": "string | null",
+        "geo_name": "string | null",
+        "places": "array<AgeRatePlace>",
+        "rate": "AgeRateSchemeOut"
+      },
+      "required": [
+        "dataset",
+        "geo_id",
+        "places",
+        "rate"
       ]
     },
     "AgeRatio": {

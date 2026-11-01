@@ -38,7 +38,19 @@ it (cities and tracts one state at a time). The arithmetic moved to
 and the builder share, so a mapped value equals the place page's (ETL-109,
 DB-068, API-191). The summary is not entered in the metric catalog: the map
 reads it through its own route, and a catalog entry would advertise derived
-values as provider metrics. Part 2b (separate PR): the by-age rate schemes.
+values as provider metrics.
+
+Part 2b, 2026-11-01 (this branch): `rate_schemes` in `age_bands.json` for
+B17001 (poverty), B27010 (no health insurance), C18108 (disability), B07001
+(moved in the past year) and B21001 (veterans), each `draft`, each naming
+per age group (and per sex where the table has one) the lines of its
+numerator and of its own universe; `GET /age-structure/rates` serves them for
+a place and its levels through the same read as `/age-structure`, with the
+proportion-formula margin (API-192, API-193). No warehouse change.
+`scripts/check_age_rate_labels.py` checks every line against the Bureau's
+labels in `dim_acs_variable` on a loaded warehouse before a scheme is
+approved. Next: PEP county age-sex (decision 3) and the 2000 SF1 P012
+crosswalk (decision 4).
 
 ## Deliverables
 
