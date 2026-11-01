@@ -135,6 +135,23 @@ export function placeRouteTitle(stateSegment?: string, countySegment?: string): 
   return parts.length ? parts.map(words).join(", ") : STATIC_ROUTE_TITLES["/us"]!;
 }
 
+/**
+ * A tract page's title from its address: "Census Tract 18.05, Travis County,
+ * Texas". The tract number is the segment's own (`tract-18-05`), so no
+ * catalog read is needed.
+ */
+export function tractRouteTitle(stateSegment: string, countySegment: string, tractSegment: string): string {
+  const match = /^tract-(\d{1,4})(?:-(\d{2}))?$/.exec(tractSegment);
+  const six = /^tract-(\d{6})$/.exec(tractSegment);
+  const number = match
+    ? `${Number(match[1])}${match[2] ? `.${match[2]}` : ""}`
+    : six
+      ? `${Number(six[1]!.slice(0, 4))}${six[1]!.slice(4) === "00" ? "" : `.${six[1]!.slice(4)}`}`
+      : "";
+  const place = placeRouteTitle(stateSegment, countySegment);
+  return number ? `Census Tract ${number}, ${place}` : place;
+}
+
 /** A one-measure map's title: the catalog identity its address names. */
 export function measureMapTitle(metricCode: string): string {
   return titleOf("Map", [/^[A-Za-z0-9_.:-]{1,200}$/.test(metricCode) ? metricCode : undefined]);

@@ -256,14 +256,23 @@ def classify_boundary(
             tail = (
                 f" The rest became {_names(became)}." if became else ""
             )
-            return TractBoundary(
-                status="split",
-                sentence=(
+            if only.geo_id == geo_id:
+                sentence = (
+                    f"In 2020 {own} kept its code but was split: it is now "
+                    f"{_percent(only.share_of_that_tract)} of its earlier land.{tail} "
+                    f"Earlier figures for the code describe the larger area, so the "
+                    f"ones shown here are derived from them.{nudged}"
+                )
+            else:
+                sentence = (
                     f"In 2020 {only.name} was split, and {own} is "
                     f"{_percent(only.share_of_that_tract)} of its land.{tail} Earlier "
                     f"figures for {own} are therefore derived from {only.name}'s."
                     f"{nudged}"
-                ),
+                )
+            return TractBoundary(
+                status="split",
+                sentence=sentence,
                 earlier=significant,
                 also_became=also_became,
                 slivers_ignored=slivers,

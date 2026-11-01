@@ -295,6 +295,15 @@ def test_boundary_classes_name_merges_redraws_and_missing_records() -> None:
     assert redrawn.slivers_ignored == 1
     assert [part.geo_id for part in redrawn.earlier] == [a, b]
 
+    kept_code = classify_boundary(
+        KEPT,
+        [{"earlier_geo_id": KEPT, "later_geo_id": KEPT, "earlier_land_share": 0.7, "later_land_share": 1.0}],
+        [{"earlier_geo_id": KEPT, "later_geo_id": SIBLING, "earlier_land_share": 0.3, "later_land_share": 1.0}],
+    )
+    assert kept_code.status == "split"
+    assert "kept its code but was split" in kept_code.sentence
+    assert "Census Tract 18.32" in kept_code.sentence
+
     missing = classify_boundary(NEW, [], [])
     assert missing.status == "not_recorded"
 
