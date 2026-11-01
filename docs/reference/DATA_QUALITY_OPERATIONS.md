@@ -301,6 +301,22 @@ covers it instead, under one of two states:
   its own savepoint, so a partition that still times out is the only one left
   unrecorded.
 
+  Only the newest vintage needs that: it holds ~105M of mv_acs_latest's 117M
+  rows, and each older vintage a few million at most, yet merging those few
+  still streamed the whole 32–55 GB partition index (2023 took ~75 min in the
+  sweep of 2026-11-01). A partition whose vintages hold fewer than
+  `_ACS_SUPERSEDED_PROBE_ROWS` (5M) latest rows is therefore a correlated
+  probe: one index scan of the partition per latest row, reading the
+  partition only where a latest row points.
+
+  The scheduled DAG commits each DQ-ACS-007 partition's result as it
+  finishes (`commit_progress`), so a sweep in progress already shows its
+  finished partitions with the query above, and a stopped sweep keeps them:
+  the next run carries those and measures the rest. The run row reads
+  `running` until the run ends; a run stopped part-way stays `running` with
+  the results it committed, and `data_quality_source_status` shows the next
+  run once it starts. Release certification is still one transaction.
+
   ```sql
   -- What DQ-ACS-007 measured, and what it carried, on its newest run.
   SELECT partition_key, object_name, result, observed_count,

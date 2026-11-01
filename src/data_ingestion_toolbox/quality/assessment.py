@@ -243,6 +243,7 @@ def run_scheduled_assessment(
     scope: Mapping[str, Any] | None = None,
     code_commit_sha: str | None = None,
     exclude_rules: Sequence[str] = (),
+    commit_progress: bool = False,
 ) -> QualityRunRecord:
     """Run one scheduled assessment and persist its evidence."""
     executors = select_executors(
@@ -266,6 +267,7 @@ def run_scheduled_assessment(
         code_commit_sha=resolve_commit_sha(code_commit_sha),
         executors=executors,
         scope=merged_scope,
+        commit_progress=commit_progress,
     )
 
 
