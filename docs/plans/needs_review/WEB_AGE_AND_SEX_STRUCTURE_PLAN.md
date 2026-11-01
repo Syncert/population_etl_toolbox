@@ -19,9 +19,8 @@ verify:
 ## Status
 
 Needs review, 2026-11-01: built, merged and checked live for a city, a
-county and a state (#223, #231) and for the age indicators on the map at
-every grain (#246). The one item not yet seen live is the age section on a
-tract page (D-4, #242, in dev); see the checkpoint. The web side of
+county, a state and a tract (#223, #231, with the tract page from #242) and
+for the age indicators on the map at every grain (#246). The web side of
 [`AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md`](../to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md)
 under [ADR-0013](../../decisions/0013-age-and-sex-structure.md). It reads the
 contract in [`API_AGE_AND_SEX_STRUCTURE_PLAN.md`](../in_progress/API_AGE_AND_SEX_STRUCTURE_PLAN.md)
@@ -197,10 +196,8 @@ Built on API part 2 (#243, API-191), as WEB-157:
 
 ## Checkpoint
 
-Moved to `needs_review/` on 2026-11-01 at the coordinator's request, after
-the map's live check passed. Every acceptance item has been seen live except
-one: the People chapter's age section on a tract page. The section is the
-same component as on the city and county pages, and the tract page (D-4,
-#242) now reads the tract. The next OFFICE_LAB pass should open a Dane County
-tract page, confirm the section renders with real values (including hatched
-and absent bands where the tract has them) and add a screenshot here.
+Moved to `needs_review/` on 2026-11-01. Every acceptance item has now been
+seen live. The tract check is Travis County Census Tract 22.19: the section
+reads "Age and sex, 2020–2024", compares against Travis County, Texas and
+the nation, and hatches the bands whose estimates are unreliable (project
+files `tract-travis-22-19.png`).
