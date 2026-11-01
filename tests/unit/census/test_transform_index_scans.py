@@ -136,6 +136,8 @@ def test_an_oversized_state_slice_is_planned_as_code_ranges(
         "acs5/place/06/[25000,50000)",
         "acs5/place/06/[50000,75000)",
         "acs5/place/06/[75000,)",
+        # Rows with no place code are a part of their own, read `IS NULL`.
+        "acs5/place/06/[null]",
         # A state slice has no sub-geography to split by.
         "acs5/state/06",
         # At the threshold, not over it.
@@ -160,9 +162,10 @@ def test_an_oversized_state_slice_is_planned_as_code_ranges(
     # Ranges an earlier run recorded are reused, whatever the counts say now.
     finished = {"acs5/place/06/[,40000)": "x", "acs5/place/06/[40000,)": "y"}
     planned = _plan_year_slices(hook, 2024, 190_000_000, ["acs5"], finished)
-    assert [s.key for s in planned][:2] == [
+    assert [s.key for s in planned][:3] == [
         "acs5/place/06/[,40000)",
         "acs5/place/06/[40000,)",
+        "acs5/place/06/[null]",
     ]
 
 
@@ -196,8 +199,26 @@ def test_a_range_key_keeps_its_level_and_reads_an_index_range() -> None:
     assert "observation.place_fips_source >= %s" in where
     assert "observation.place_fips_source < %s" in where
     assert params[-2:] == ["44000", "68000"]
-    # The first range also takes rows without a code, so none is lost.
-    assert "observation.place_fips_source IS NULL" in _slice_where(2024, first)[0]
+    # Every bound is a plain comparison, so it is an index bound: OFFICE_LAB
+    # found `< cut OR IS NULL` in a Filter, the first range walking the slice.
+    first_where = _slice_where(2024, first)[0]
+    assert "OR" not in first_where
+    assert "observation.place_fips_source < %s" in first_where
+    # Rows without a code are the split's own part.
+    (null_part,) = [
+        part
+        for part in place.with_ranges([("", "44000"), ("44000", "")])
+        if part.null_codes
+    ]
+    assert null_part.key == "acs5/place/06/[null]"
+    assert null_part.key.split("/")[1] == "place"
+    null_where, null_params = _slice_where(2024, null_part)
+    assert "observation.place_fips_source IS NULL" in null_where
+    assert "observation.county_fips_source IS NULL" in null_where
+    assert "OR" not in null_where
+    assert len(null_params) == 4
+    # One open range is the whole slice and needs no null part.
+    assert [p.key for p in place.with_ranges([("", "")])] == ["acs5/place/06/[,)"]
     tract = RawSlice(dataset="acs5", geo_level="tract", state_fips="06")
     assert (
         "observation.county_fips_source >= %s"

@@ -282,7 +282,13 @@ def test_an_oversized_slice_read_as_code_ranges_writes_the_same_facts(
     fetched = _record_fetches(monkeypatch)
     assert transform.transform_census_to_silver() == expected_changed
     assert "acs5/state/10" in fetched
-    ranges = sorted(_range_bounds(key) for key in fetched if key != "acs5/state/10")
+    # Rows with no place code are read as their own part (none here).
+    assert "acs5/place/10/[null]" in fetched
+    ranges = sorted(
+        _range_bounds(key)
+        for key in fetched
+        if key not in {"acs5/state/10", "acs5/place/10/[null]"}
+    )
     assert 3 <= len(ranges) <= 5
     # Contiguous, and open at both ends: every place code is in one range.
     assert ranges[0][0] == "" and ranges[-1][1] == ""
@@ -315,7 +321,12 @@ def test_a_slice_read_that_runs_too_long_is_read_again_in_halves(
     monkeypatch.setattr(transform, "_fetch_raw_frame", place_read_times_out)
     assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
     assert fetched[0] == "acs5/place/10" or "acs5/place/10" in fetched
-    halves = sorted(key for key in fetched if key.startswith("acs5/place/10/"))
+    assert "acs5/place/10/[null]" in fetched
+    halves = sorted(
+        key
+        for key in fetched
+        if key.startswith("acs5/place/10/") and key != "acs5/place/10/[null]"
+    )
     assert len(halves) == 2
     middle = _range_bounds(halves[0])[1] or _range_bounds(halves[1])[1]
     assert sorted(_range_bounds(key) for key in halves) == [
@@ -328,7 +339,7 @@ def test_a_slice_read_that_runs_too_long_is_read_again_in_halves(
         "SELECT slice_key FROM silver_census.transform_slice_state "
         "WHERE year = %s ORDER BY slice_key",
         (YEAR,),
-    ) == [(key,) for key in sorted([*halves, "acs5/state/10"])]
+    ) == [(key,) for key in sorted([*halves, "acs5/place/10/[null]", "acs5/state/10"])]
 
     # The next run plans the halves from the ledger and skips them unchanged,
     # rather than timing out on the whole slice again.

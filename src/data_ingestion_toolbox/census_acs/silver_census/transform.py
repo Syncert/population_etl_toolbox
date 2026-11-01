@@ -493,10 +493,14 @@ class RawSlice:
     state_fips: str | None = None
     #: A sub-geography code range ``[sub_low, sub_high)`` of the slice's split
     #: column (`_SPLIT_COLUMNS`), an empty bound being open; when ``ranged`` is
-    #: false the slice is the whole (dataset, level, state).
+    #: false the slice is the whole (dataset, level, state). ``null_codes`` is
+    #: the split's own part for rows with no code, read as `IS NULL`: an OR of
+    #: it with the first range kept that range's bound out of the index
+    #: condition, so the first range walked the whole slice.
     sub_low: str = ""
     sub_high: str = ""
     ranged: bool = False
+    null_codes: bool = False
 
     @property
     def base_key(self) -> str:
@@ -511,9 +515,16 @@ class RawSlice:
     def key(self) -> str:
         # A range keeps the level as the key's second field: the serving step
         # reads `split_part(slice_key, '/', 2)` to know which grain changed.
+        if self.null_codes:
+            return f"{self.base_key}/[null]"
         if not self.ranged:
             return self.base_key
         return f"{self.base_key}/[{self.sub_low},{self.sub_high})"
+
+    @property
+    def holds_null_codes(self) -> bool:
+        """Whether rows with no split code fall in this slice."""
+        return self.null_codes or not self.ranged or not (self.sub_low or self.sub_high)
 
     @property
     def splittable(self) -> bool:
@@ -523,6 +534,26 @@ class RawSlice:
         return RawSlice(
             self.dataset, self.geo_level, self.state_fips, low, high, ranged=True
         )
+
+    def with_ranges(self, ranges: list[tuple[str, str]]) -> list[RawSlice]:
+        """The slice as ``ranges``, plus the part for rows with no code.
+
+        One open range ``("", "")`` is the whole slice, NULL codes included.
+        Several bounded ranges hold only codes, so the null part is added and
+        every row of the slice still falls in exactly one part.
+        """
+        parts = [self.with_range(low, high) for low, high in ranges]
+        if len(parts) > 1:
+            parts.append(
+                RawSlice(
+                    self.dataset,
+                    self.geo_level,
+                    self.state_fips,
+                    ranged=True,
+                    null_codes=True,
+                )
+            )
+        return parts
 
 
 WHOLE_YEAR = RawSlice()
@@ -642,16 +673,15 @@ def _slice_where(year: int | None, raw_slice: RawSlice) -> tuple[str, list[objec
                 # before the place code. A slice with a county-bearing place
                 # row is never ranged (`_split_counts`).
                 filters.append("observation.county_fips_source IS NULL")
+            if raw_slice.null_codes:
+                filters.append(f"{column} IS NULL")
             if raw_slice.sub_low:
                 filters.append(f"{column} >= %s")
                 params.append(raw_slice.sub_low)
             if raw_slice.sub_high:
-                # The first range also holds any row without a code, so no
-                # row of the slice falls outside every range.
-                below = f"{column} < %s"
-                filters.append(
-                    f"({below} OR {column} IS NULL)" if not raw_slice.sub_low else below
-                )
+                # A plain bound, so it is an index bound; rows without a code
+                # are the split's null part (`RawSlice.with_ranges`).
+                filters.append(f"{column} < %s")
                 params.append(raw_slice.sub_high)
     return (f"WHERE {' AND '.join(filters)}" if filters else ""), params
 
@@ -830,7 +860,7 @@ def _plan_year_slices(
         )
         recorded = _ledger_ranges(ledger, raw_slice.base_key)
         if recorded and raw_slice.splittable:
-            slices.extend(raw_slice.with_range(low, high) for low, high in recorded)
+            slices.extend(raw_slice.with_ranges(recorded))
             continue
         if int(count) <= _SLICE_SPLIT_ROW_THRESHOLD or not raw_slice.splittable:
             slices.append(raw_slice)
@@ -849,7 +879,7 @@ def _plan_year_slices(
             continue
         parts = -(-int(count) // _SLICE_SPLIT_ROW_THRESHOLD)
         ranges = _ranges_from_counts(counts, parts)
-        slices.extend(raw_slice.with_range(low, high) for low, high in ranges)
+        slices.extend(raw_slice.with_ranges(ranges))
     return slices
 
 
@@ -917,11 +947,12 @@ def _ranges_from_counts(
     the slice gains later. Fewer than two codes cannot be cut: one range.
     """
     codes = [(code, count) for code, count in counts if code is not None]
-    total = sum(count for _code, count in counts)
+    # Rows with no code are the split's own part (`RawSlice.with_ranges`).
+    total = sum(count for _code, count in codes)
     if parts < 2 or len(codes) < 2 or total == 0:
         return [("", "")]
     cuts: list[str] = []
-    seen = sum(count for code, count in counts if code is None)
+    seen = 0
     for index, (code, count) in enumerate(codes):
         if index and seen >= total * (len(cuts) + 1) / parts:
             cuts.append(code)
@@ -960,8 +991,11 @@ def _ledger_ranges(finished: dict[str, str], base_key: str) -> list[tuple[str, s
 def _halve(
     hook: PostgresHook, year: int, raw_slice: RawSlice, row_count: int
 ) -> list[RawSlice]:
-    """``raw_slice`` as two ranges of about equal rows, or ``[]`` if it cannot be."""
-    if not raw_slice.splittable:
+    """``raw_slice`` as two ranges of about equal rows, or ``[]`` if it cannot be.
+
+    A slice that held the rows without a code hands them to a null part.
+    """
+    if not raw_slice.splittable or raw_slice.null_codes:
         return []
     counts, blocker = _split_counts(hook, year, raw_slice, row_count)
     if blocker:
@@ -972,7 +1006,10 @@ def _halve(
     (_, middle), _ = halves
     low = raw_slice.sub_low if raw_slice.ranged else ""
     high = raw_slice.sub_high if raw_slice.ranged else ""
-    return [raw_slice.with_range(low, middle), raw_slice.with_range(middle, high)]
+    halved = [raw_slice.with_range(low, middle), raw_slice.with_range(middle, high)]
+    if raw_slice.holds_null_codes:
+        halved = raw_slice.with_ranges([(low, middle), (middle, high)])
+    return halved
 
 
 #: Bump when the transform's output for unchanged input changes, so every
