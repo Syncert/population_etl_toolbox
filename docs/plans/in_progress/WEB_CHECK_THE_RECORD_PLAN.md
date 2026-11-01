@@ -111,7 +111,8 @@ county is resolved, never with a placeholder. **Index DDL: none.**
    `state:55|county:025`. Time it (expect well under a second; it is an index
    probe per county). Run `EXPLAIN (ANALYZE, BUFFERS)` on
    `SELECT DISTINCT ON (geo_id, period_start) * FROM gold_fbi.county_agency_rate WHERE product_id = 'return_a_violent_crime' AND measure_id = 'V:offense:absolute_total' AND geo_id = 'state:55|county:025' ORDER BY geo_id, period_start, release_key DESC`
-   if it is not.
+   if it is not. Measured on the current api before merge (2026-11-01,
+   during a DQ run): 200 in 0.38 s cold, 13 ms warm.
 3. `/us/texas/austin-city#record`. Rents and incomes compare 2010–2014 (or
    the earliest period within ten years that shares no year) with 2020–2024.
    Crime and unemployment link to Travis County's page.

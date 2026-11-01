@@ -110,5 +110,5 @@ test("a state answers crime from the FBI's own rate and unemployment beside the 
   await open(page, "/us/wisconsin");
   await expect(page.getByTestId("record-crime-answer")).toContainText("The FBI's violent crime rate in Wisconsin rose from");
   await expect(page.getByTestId("record-crime-coverage")).toContainText("the FBI published no coverage for this rate");
-  await expect(page.getByTestId("record-unemployment").getByRole("heading")).toHaveText("How does unemployment here compare with the nation?");
+  await expect(page.getByTestId("record-unemployment").getByRole("heading", { level: 3 })).toHaveText("How does unemployment here compare with the nation?");
 });
