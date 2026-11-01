@@ -10,7 +10,9 @@ falls outside its group. Read-only. On OFFICE_LAB:
     $env:ANALYTICS_DB_HOST="localhost"; $env:ANALYTICS_DB_PORT="5435"
     python scripts/check_age_rate_labels.py --env-file infra/docker/stack.env
 
-Exit status 0 when every scheme agrees with the labels of every checked
+Every release the warehouse holds labels for is checked (``--releases``
+narrows it, e.g. ``acs5:2013,acs5:2023``), each group as that release labels
+it. Exit status 0 when every scheme agrees with the labels of every checked
 release, 1 otherwise.
 """
 
@@ -27,6 +29,14 @@ from data_ingestion_toolbox.semantics.age_bands import (  # noqa: E402
     load_rate_registry,
     rate_label_problems,
 )
+
+RELEASES_SQL = """
+SELECT DISTINCT dataset_code, vintage_year
+FROM gold_census.dim_acs_variable
+WHERE dataset_code = ANY(%(datasets)s)
+  AND regexp_replace(variable_code, 'E$', '') = ANY(%(codes)s)
+ORDER BY dataset_code, vintage_year
+"""
 
 LABELS_SQL = """
 SELECT DISTINCT ON (variable)
@@ -51,7 +61,7 @@ def _env(path: str | None) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--env-file")
-    parser.add_argument("--releases", default="acs5:2023,acs5:2013,acs1:2023")
+    parser.add_argument("--releases", default="")
     args = parser.parse_args()
     _env(args.env_file)
 
@@ -67,8 +77,19 @@ def main() -> int:
     failed = False
     with connection, connection.cursor() as cursor:
         for scheme in load_rate_registry().values():
-            for release in args.releases.split(","):
-                dataset, vintage = release.split(":")
+            if args.releases:
+                releases = [r.split(":") for r in args.releases.split(",")]
+            else:
+                cursor.execute(
+                    RELEASES_SQL,
+                    {
+                        "datasets": list(scheme.datasets),
+                        "codes": list(scheme.variables()),
+                    },
+                )
+                releases = [(d, str(v)) for d, v in cursor.fetchall()]
+            for dataset, vintage in releases:
+                release = f"{dataset}:{vintage}"
                 cursor.execute(
                     LABELS_SQL,
                     {
@@ -81,7 +102,7 @@ def main() -> int:
                 if not labels:
                     print(f"{scheme.rate_id} {release}: table not loaded, skipped")
                     continue
-                problems = rate_label_problems(scheme, labels)
+                problems = rate_label_problems(scheme, labels, int(vintage))
                 print(
                     f"{scheme.rate_id} {release}: {len(labels)} labels, "
                     f"{len(problems)} problems"

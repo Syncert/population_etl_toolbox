@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -267,12 +267,37 @@ class RateLines:
 
 
 @dataclass(frozen=True)
+class RateEdition:
+    """How a group's lines were labelled in releases before ``before_vintage``
+    (the Bureau moved an age boundary without renumbering the lines)."""
+
+    before_vintage: int
+    label: str
+    age_start: int
+    age_end: Optional[int]
+
+
+@dataclass(frozen=True)
 class RateGroup:
     group_id: str
     label: str
     age_start: int
     age_end: Optional[int]
     sides: dict[str, RateLines]
+    editions: tuple[RateEdition, ...] = ()
+
+    def at(self, vintage: int) -> "RateGroup":
+        """The group as a release of ``vintage`` labels it."""
+        for edition in sorted(self.editions, key=lambda e: e.before_vintage):
+            if vintage < edition.before_vintage:
+                return replace(
+                    self,
+                    label=edition.label,
+                    age_start=edition.age_start,
+                    age_end=edition.age_end,
+                    editions=(),
+                )
+        return replace(self, editions=())
 
 
 @dataclass(frozen=True)
@@ -299,6 +324,15 @@ class RateScheme:
 
     def metric_code(self, dataset: str, variable: str) -> str:
         return f"{self.source_code}:{dataset}:{variable}"
+
+    def boundary_vintages(self) -> tuple[int, ...]:
+        """One vintage inside each span of releases labelled alike."""
+        befores = sorted({e.before_vintage for g in self.groups for e in g.editions})
+        return (*(year - 1 for year in befores), 9999)
+
+    def at(self, vintage: int) -> "RateScheme":
+        """The scheme's groups as a release of ``vintage`` labels them."""
+        return replace(self, groups=tuple(group.at(vintage) for group in self.groups))
 
     def variables(self) -> tuple[str, ...]:
         seen: dict[str, None] = {}
@@ -362,6 +396,17 @@ def parse_rate_scheme(entry: dict) -> RateScheme:
             age_start=int(_require(group, "age_start", where)),
             age_end=None if group.get("age_end") is None else int(group["age_end"]),
             sides=_group_sides(group, by_sex, f"{where} group {group.get('group_id')}"),
+            editions=tuple(
+                RateEdition(
+                    before_vintage=int(_require(edition, "before_vintage", where)),
+                    label=_require(edition, "label", where),
+                    age_start=int(_require(edition, "age_start", where)),
+                    age_end=None
+                    if edition.get("age_end") is None
+                    else int(edition["age_end"]),
+                )
+                for edition in group.get("earlier_editions") or ()
+            ),
         )
         for group in _require(entry, "groups", where)
     )
@@ -398,17 +443,20 @@ def _validate_rate(scheme: RateScheme) -> None:
             raise AgeBandRegistryError(
                 f"{where}: {code} is not a {scheme.table_id} line"
             )
-    previous_end: Optional[int] = None
-    for index, group in enumerate(scheme.groups):
-        if previous_end is not None and group.age_start != previous_end + 1:
-            raise AgeBandRegistryError(
-                f"{where}: group {group.group_id} does not follow the one before"
-            )
-        if group.age_end is None and index != len(scheme.groups) - 1:
-            raise AgeBandRegistryError(f"{where}: only the last group may be open")
-        if group.age_end is not None and group.age_end < group.age_start:
-            raise AgeBandRegistryError(f"{where}: group {group.group_id} ends early")
-        previous_end = group.age_end
+    for vintage in scheme.boundary_vintages():
+        previous_end: Optional[int] = None
+        for index, group in enumerate(scheme.at(vintage).groups):
+            if previous_end is not None and group.age_start != previous_end + 1:
+                raise AgeBandRegistryError(
+                    f"{where}: group {group.group_id} does not follow the one before"
+                )
+            if group.age_end is None and index != len(scheme.groups) - 1:
+                raise AgeBandRegistryError(f"{where}: only the last group may be open")
+            if group.age_end is not None and group.age_end < group.age_start:
+                raise AgeBandRegistryError(
+                    f"{where}: group {group.group_id} ends early"
+                )
+            previous_end = group.age_end
     for side in ("men", "women") if scheme.by_sex else ("all",):
         numerators = [c for g in scheme.groups for c in g.sides[side].numerator]
         denominators = [c for g in scheme.groups for c in g.sides[side].denominator]
@@ -478,7 +526,7 @@ def label_age_range(label: str) -> Optional[tuple[int, Optional[int]]]:
 
 
 def rate_label_problems(
-    scheme: RateScheme, labels: Mapping[str, Optional[str]]
+    scheme: RateScheme, labels: Mapping[str, Optional[str]], vintage: int = 9999
 ) -> list[str]:
     """Every way the Bureau's own labels disagree with a rate scheme.
 
@@ -486,9 +534,11 @@ def rate_label_problems(
     numerator line must name what the scheme counts and not what it leaves
     out; each line of a by-sex group names its sex; and each age group's
     lines name ages inside the group's range. Run against the warehouse's
-    ``dim_acs_variable`` before a scheme is approved.
+    ``dim_acs_variable`` before a scheme is approved, for every loaded
+    ``vintage``: a group is checked as that release labels it.
     """
     problems: list[str] = []
+    scheme = scheme.at(vintage)
 
     def check(code: str, group: RateGroup, side: str, role: str) -> None:
         label = labels.get(code)

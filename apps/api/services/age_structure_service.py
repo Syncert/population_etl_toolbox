@@ -1045,6 +1045,8 @@ def place_rates(
         code in release.lines for code in scheme.total.denominator
     ):
         return AgeRatePlace(**base, unavailable_reason="not_published")
+    # Each group as this release labels it (an age boundary the Bureau moved).
+    scheme = scheme.at(release.vintage_year)
     groups = []
     for group in scheme.groups:
         sides = {

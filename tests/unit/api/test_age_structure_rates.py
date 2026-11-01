@@ -117,11 +117,28 @@ def test_each_tables_numerator_is_the_line_its_label_names() -> None:
     )
     veterans = RATES["veterans_by_age"]
     assert [g.sides["men"].numerator for g in veterans.groups] == [
-        (f"B21001_{n:03d}",) for n in (6, 9, 12, 15, 18)
+        (f"B21001_{n:03d}",) for n in (8, 11, 14, 17, 20)
     ]
     assert [g.sides["women"].denominator for g in veterans.groups] == [
-        (f"B21001_{n:03d}",) for n in (21, 24, 27, 30, 33)
+        (f"B21001_{n:03d}",) for n in (25, 28, 31, 34, 37)
     ]
+
+
+def test_a_group_whose_boundary_the_bureau_moved_is_served_as_its_release_says():
+    """Covers: API-192 -- B27010 labelled 18 to 34 before it labelled 19 to 34,
+    on the same lines."""
+    uninsured = RATES["uninsured_by_age"]
+    earlier = uninsured.at(2013).groups
+    later = uninsured.at(2023).groups
+    assert [(g.label, g.age_start, g.age_end) for g in earlier[:2]] == [
+        ("Under 18", 0, 17),
+        ("18 to 34", 18, 34),
+    ]
+    assert [(g.label, g.age_start, g.age_end) for g in later[:2]] == [
+        ("Under 19", 0, 18),
+        ("19 to 34", 19, 34),
+    ]
+    assert earlier[1].sides == later[1].sides, "the same lines in both"
 
 
 def _broken(rate_id: str, change) -> dict:
@@ -409,3 +426,50 @@ def test_a_line_read_into_the_wrong_group_or_sex_is_named() -> None:
     assert any("B17001_018" in p and "not a women's line" in p for p in problems)
     assert any("B17001_005" in p and "holds 'at or above'" in p for p in problems)
     assert len(problems) == 5, problems  # _005 both lacks and holds
+
+
+def _veteran_labels() -> dict[str, str]:
+    """B21001 as the Bureau labels it: totals, each sex's veterans and
+    nonveterans, then each age group's total, veterans and nonveterans."""
+    ages = ["18 to 34", "35 to 54", "55 to 64", "65 to 74", "75 years and over"]
+    labels = {
+        "B21001_001": "Estimate!!Total:",
+        "B21001_002": "Estimate!!Total:!!Veteran",
+        "B21001_003": "Estimate!!Total:!!Nonveteran",
+    }
+    for sex, first in (("Male", 4), ("Female", 22)):
+        labels[f"B21001_{first:03d}"] = f"Estimate!!Total:!!{sex}:"
+        labels[f"B21001_{first + 1:03d}"] = f"Estimate!!Total:!!{sex}:!!Veteran"
+        labels[f"B21001_{first + 2:03d}"] = f"Estimate!!Total:!!{sex}:!!Nonveteran"
+        for offset, age in enumerate(ages):
+            years = age if "years" in age else f"{age} years"
+            head = first + 3 + 3 * offset
+            base = f"Estimate!!Total:!!{sex}:!!{years}:"
+            labels[f"B21001_{head:03d}"] = base
+            labels[f"B21001_{head + 1:03d}"] = f"{base}!!Veteran"
+            labels[f"B21001_{head + 2:03d}"] = f"{base}!!Nonveteran"
+    return labels
+
+
+def test_the_bureaus_labels_confirm_the_veterans_scheme() -> None:
+    """Covers: API-192 -- the layout OFFICE_LAB's warehouse labels showed."""
+    labels = _veteran_labels()
+    assert len(labels) == 39
+    assert rate_label_problems(RATES["veterans_by_age"], labels) == []
+
+
+def test_an_earlier_release_is_checked_as_it_labels_its_groups() -> None:
+    """Covers: API-192"""
+    labels = {
+        "B27010_002": "Estimate!!Total:!!Under 18 years:",
+        "B27010_017": "Estimate!!Total:!!Under 18 years:!!No health insurance coverage",
+        "B27010_018": "Estimate!!Total:!!18 to 34 years:",
+        "B27010_033": "Estimate!!Total:!!18 to 34 years:!!No health insurance coverage",
+        "B27010_034": "Estimate!!Total:!!35 to 64 years:",
+        "B27010_050": "Estimate!!Total:!!35 to 64 years:!!No health insurance coverage",
+        "B27010_051": "Estimate!!Total:!!65 years and over:",
+        "B27010_066": "Estimate!!Total:!!65 years and over:!!No health insurance coverage",
+    }
+    scheme = RATES["uninsured_by_age"]
+    assert rate_label_problems(scheme, labels, 2013) == []
+    assert len(rate_label_problems(scheme, labels, 2023)) == 2

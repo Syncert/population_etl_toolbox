@@ -701,7 +701,15 @@
             "all": [
               "B27010_002"
             ]
-          }
+          },
+          "earlier_editions": [
+            {
+              "before_vintage": 2017,
+              "label": "Under 18",
+              "age_start": 0,
+              "age_end": 17
+            }
+          ]
         },
         {
           "group_id": "19_34",
@@ -717,7 +725,15 @@
             "all": [
               "B27010_018"
             ]
-          }
+          },
+          "earlier_editions": [
+            {
+              "before_vintage": 2017,
+              "label": "18 to 34",
+              "age_start": 18,
+              "age_end": 34
+            }
+          ]
         },
         {
           "group_id": "35_64",
@@ -764,7 +780,7 @@
       "reviewer": "Nick",
       "effective_date": "2026-11-01",
       "last_reviewed_date": null,
-      "rationale": "B27010 publishes each age group's civilian noninstitutionalized total and, inside it, the people with no health insurance coverage; the rate is that line over its group's total.",
+      "rationale": "B27010 publishes each age group's civilian noninstitutionalized total and, inside it, the people with no health insurance coverage; the rate is that line over its group's total. The Bureau moved the first boundary from 18 to 19 without renumbering the lines, so a release before the change serves the groups as that release labels them (under 18, 18 to 34); the label check confirms the year against every loaded release.",
       "citations": [
         "https://data.census.gov/table/ACSDT5Y2023.B27010",
         "https://data.census.gov/table/ACSST5Y2023.S2701"
@@ -1155,18 +1171,18 @@
           "age_end": 34,
           "numerator": {
             "men": [
-              "B21001_006"
+              "B21001_008"
             ],
             "women": [
-              "B21001_022"
+              "B21001_026"
             ]
           },
           "denominator": {
             "men": [
-              "B21001_005"
+              "B21001_007"
             ],
             "women": [
-              "B21001_021"
+              "B21001_025"
             ]
           }
         },
@@ -1177,18 +1193,18 @@
           "age_end": 54,
           "numerator": {
             "men": [
-              "B21001_009"
+              "B21001_011"
             ],
             "women": [
-              "B21001_025"
+              "B21001_029"
             ]
           },
           "denominator": {
             "men": [
-              "B21001_008"
+              "B21001_010"
             ],
             "women": [
-              "B21001_024"
+              "B21001_028"
             ]
           }
         },
@@ -1199,18 +1215,18 @@
           "age_end": 64,
           "numerator": {
             "men": [
-              "B21001_012"
+              "B21001_014"
             ],
             "women": [
-              "B21001_028"
+              "B21001_032"
             ]
           },
           "denominator": {
             "men": [
-              "B21001_011"
+              "B21001_013"
             ],
             "women": [
-              "B21001_027"
+              "B21001_031"
             ]
           }
         },
@@ -1221,18 +1237,18 @@
           "age_end": 74,
           "numerator": {
             "men": [
-              "B21001_015"
+              "B21001_017"
             ],
             "women": [
-              "B21001_031"
+              "B21001_035"
             ]
           },
           "denominator": {
             "men": [
-              "B21001_014"
+              "B21001_016"
             ],
             "women": [
-              "B21001_030"
+              "B21001_034"
             ]
           }
         },
@@ -1243,18 +1259,18 @@
           "age_end": null,
           "numerator": {
             "men": [
-              "B21001_018"
+              "B21001_020"
             ],
             "women": [
-              "B21001_034"
+              "B21001_038"
             ]
           },
           "denominator": {
             "men": [
-              "B21001_017"
+              "B21001_019"
             ],
             "women": [
-              "B21001_033"
+              "B21001_037"
             ]
           }
         }
@@ -1271,7 +1287,7 @@
       "reviewer": "Nick",
       "effective_date": "2026-11-01",
       "last_reviewed_date": null,
-      "rationale": "B21001 publishes, for each sex and age group, its civilian total and the veterans inside it; the rate is that line over its group's total.",
+      "rationale": "B21001 publishes the civilian total, then veterans and nonveterans, then for each sex its total, its veterans and nonveterans, and for each age group its total (male 18 to 34 is _007) with the veterans and nonveterans inside it; the rate is the group's veteran line over the group's total.",
       "citations": [
         "https://data.census.gov/table/ACSDT5Y2023.B21001",
         "https://data.census.gov/table/ACSST5Y2023.S2101"

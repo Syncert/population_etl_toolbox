@@ -2007,7 +2007,10 @@ determined), never of the whole population. Each group carries `all`, and
 `men` and `women` when `rate.by_sex` is true (null otherwise), each with
 `numerator`, `denominator`, their margins, `rate`, `rate_moe` (the Bureau's
 proportion formula), the numerator's `cv_percent` and `reliable`
-(CV 30 % or less); `total` is the table's own all-ages rate. `places` is the
+(CV 30 % or less); `total` is the table's own all-ages rate. A group's
+`label`, `age_start` and `age_end` are as the release labels them: B27010's
+first two groups are under 18 and 18 to 34 before 2017, under 19 and 19 to
+34 after, on the same lines. `places` is the
 place and then each level it sits in, read at the place's release exactly as
 `/age-structure` reads them; a level without that release is
 `not_published`. A withheld line leaves its group null with
