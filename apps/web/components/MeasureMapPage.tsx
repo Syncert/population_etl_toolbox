@@ -375,7 +375,7 @@ export default function MeasureMapPage({
   // The boundary this grain is drawn on: from the API's layer list, or the
   // discovered county boundary when that list could not be read.
   const boundary = tileCatalog ? boundaryForGrain(tileCatalog, grain, periodYear) : null;
-  const drawnMetadata = boundary?.drawn ? tileMetadataForBoundary(boundary) : tileCatalog === null && grain === "COUNTY" ? tileMetadata : null;
+  const drawnMetadata = boundary?.drawn ? tileMetadataForBoundary(boundary, grain, scoped ? stateFips : null) : tileCatalog === null && grain === "COUNTY" ? tileMetadata : null;
   const chosenState = states.find((item) => item.state_fips === stateFips) || null;
   const initialView = useMemo(() => {
     if (!scoped || !chosenState) return null;

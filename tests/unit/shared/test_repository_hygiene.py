@@ -46,6 +46,9 @@ OPERATIONAL_SCRIPTS = {
     # sample tile against a budget, and coverage of published geographies
     # (MARTIN-013). Read-only; a check only a loaded warehouse can answer.
     "measure_tile_layers.py",
+    # Times the place tiles a state's city map opens on, with and without
+    # `?state=`, six at a time as a browser asks (MARTIN-013). Read-only.
+    "measure_state_tile_wait.py",
     # Schedules backup_warehouse.py weekly on OFFICE_LAB (ENV-025).
     "register_backup_task.ps1",
     # Runs an ACS backfill one year per `acs_ingest` run, newest first, and
