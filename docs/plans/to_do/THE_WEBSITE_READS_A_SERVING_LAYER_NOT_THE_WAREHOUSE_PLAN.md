@@ -421,7 +421,7 @@ rounds:
 What this says so far:
 
 - **Limit 1, loads slowing the site: not reached.** See the idle comparison
-  below. Load p95 and idle p95 are about equal, and there are no timeouts.
+  below. Cold p95 during transform/publish and near-idle are about equal, and there are no timeouts.
 - **The cache carries the site today.** Raising `API_CACHE_TTL_SECONDS` (stage
   0, item 4) keeps more visitors on the 12 ms path, and costs nothing.
 - **Size moved the stage-2 estimate,** from "small" to "shape the history
