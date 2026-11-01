@@ -14,7 +14,7 @@ AUDITED_COUNTS = {
     "ENV": 25,
     "ARC": 7,
     "PLAN": 8,
-    "DQ": 22,
+    "DQ": 23,
     "DAG": 21,
     "ETL": 108,
     "DB": 67,

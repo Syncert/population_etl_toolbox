@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -21,14 +22,17 @@ from data_ingestion_toolbox.quality.reconciliation import (
     EVIDENCE_LIMIT,
     SHARED_RECONCILIATION_EXECUTORS,
 )
+from data_ingestion_toolbox.quality.runner import execute_rules
 from data_ingestion_toolbox.quality.sources import (
+    ACS_SERVED_DATASETS,
     SOURCE_EXECUTORS,
+    acs_contract_conformance,
     acs_published_row_resolution,
     acs_slice_reconciliation,
-    current_geography_projection,
     bls_chunk_reconciliation,
     cdc_publisher_export_conformance,
     cdc_watermark_monotonicity,
+    current_geography_projection,
     fred_missing_marker_and_series_ownership,
     fred_observation_dates_within_the_published_range,
     fred_slice_reconciliation,
@@ -894,6 +898,302 @@ def test_an_empty_acs_silver_fact_is_not_applicable(
             "not_applicable",
             "not_applicable",
         ]
+    postgres_connection.rollback()
+
+
+# ---------------------------------------------------------------------------
+# DQ-ACS-007 — measured a release partition at a time, and only what changed
+# ---------------------------------------------------------------------------
+
+#: A declared partition no ACS vintage occupies (1-year estimates begin in
+#: 2005), and not the one `test_acs_serving_partitions.py` owns.
+_CONFORMANCE_YEAR = 2002
+
+_SHA = "0" * 40
+
+
+def _seed_served_acs_fact(
+    postgres_connection_factory: Callable[[], connection],
+    cursor,
+    *,
+    value: int = 7,
+    served_value: int | None = None,
+    publish_variable: bool = True,
+) -> tuple[str, str]:
+    """One published silver fact, served and latest, in the scratch year.
+
+    The served and latest relations are emptied first, inside the test's
+    transaction, so every other partition is empty and the scratch year's
+    outcomes are the only ones that can fail.
+    """
+    cursor.execute("DELETE FROM gold_census.mv_acs_latest")
+    cursor.execute("DELETE FROM gold_census.rpt_acs_observations")
+    cursor.execute(
+        """
+        INSERT INTO control.serving_refresh_state (source_code, last_silver_ingested_at)
+        VALUES ('CENSUS_ACS', NOW())
+        ON CONFLICT (source_code) DO UPDATE
+           SET last_silver_ingested_at = EXCLUDED.last_silver_ingested_at
+        """
+    )
+    year = _CONFORMANCE_YEAR
+    token = uuid4().hex[:6].upper()
+    table_id = f"B9{token}"
+    variable = f"{table_id}_001E"
+    metric = f"CENSUS_ACS:acs5:{variable}"
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"ACSPROBE{uuid4().hex[:8].upper()}"
+    )
+    geo_sk, geo_id = _agency_entity(cursor, f"acs-conf-{token.lower()}")
+    _entity_version(cursor, geo_sk, capture_id)
+    time_sk = _time_row(cursor, f"{year}-01-01")
+    if publish_variable:
+        cursor.execute(
+            """
+            INSERT INTO gold_census.dim_acs_table (
+                dataset_code, vintage_year, table_id, survey_span_years
+            ) VALUES ('acs5', %s, %s, 5)
+            RETURNING acs_table_sk
+            """,
+            (year, table_id),
+        )
+        cursor.execute(
+            """
+            INSERT INTO gold_census.dim_acs_variable (
+                acs_table_sk, dataset_code, vintage_year, variable_code,
+                variable_label, value_role
+            ) VALUES (%s, 'acs5', %s, %s, 'probe variable', 'ESTIMATE')
+            """,
+            (cursor.fetchone()[0], year, variable),
+        )
+    cursor.execute(
+        """
+        INSERT INTO silver_census.fact_demographics (
+            geo_sk, geo_id, time_sk, dataset, estimate_year,
+            duration_start, duration_end, table_id, load_batch_id,
+            variable_code, estimate_value, capture_id, ingested_at
+        ) VALUES (%s, %s, %s, 'acs5', %s, MAKE_DATE(%s - 4, 1, 1),
+                  MAKE_DATE(%s, 12, 31), %s, gen_random_uuid(), %s, %s, %s,
+                  NOW())
+        """,
+        (
+            geo_sk,
+            geo_id,
+            time_sk,
+            year,
+            year,
+            year,
+            table_id,
+            variable,
+            value,
+            capture_id,
+        ),
+    )
+    served = value if served_value is None else served_value
+    for relation in ("rpt_acs_observations", "mv_acs_latest"):
+        cursor.execute(
+            f"""
+            INSERT INTO gold_census.{relation} (
+                observation_date, as_of_date, updated_at, geo_id, geo_level,
+                value, dataset_code, vintage_year, table_id, variable_code,
+                estimate_value, metric_code
+            ) VALUES (MAKE_DATE(%s, 1, 1), MAKE_DATE(%s, 1, 1), NOW(), %s,
+                      'COUNTY', %s, 'acs5', %s, %s, %s, %s, %s)
+            """,
+            (year, year, geo_id, served, year, table_id, variable, served, metric),
+        )
+    return metric, geo_id
+
+
+def _conformance_results(cursor, quality_run_id: str) -> dict[str, tuple]:
+    """The scratch partition's outcomes of one run, by object."""
+    cursor.execute(
+        """
+        SELECT object_name, result, observed_count, partition_detail, evidence
+          FROM control.data_quality_result
+         WHERE quality_run_id = %s AND partition_key = %s
+        """,
+        (quality_run_id, str(_CONFORMANCE_YEAR)),
+    )
+    return {row[0]: row[1:] for row in cursor.fetchall()}
+
+
+def _run_conformance(postgres_connection, scope=None) -> str:
+    return execute_rules(
+        postgres_connection,
+        source_code="CENSUS_ACS",
+        assessment_type="scheduled",
+        code_commit_sha=_SHA,
+        executors={"DQ-ACS-007": acs_contract_conformance},
+        scope=scope or {"cadence": "weekly"},
+    ).quality_run_id
+
+
+def test_the_served_dataset_vocabulary_is_the_served_relations_own(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — the superseded arm's dataset filter drops nothing.
+
+    The latest relation is read one vintage at a time through
+    `(dataset_code, vintage_year)`, so the datasets it names must be every one
+    the served relation admits; a dataset added to the CHECK and not here
+    would leave its latest rows unmeasured.
+    """
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT pg_get_constraintdef(oid)
+              FROM pg_constraint
+             WHERE conname = 'rpt_acs_observations_dataset_code_census_check'
+               AND conrelid = 'gold_census.rpt_acs_observations'::REGCLASS
+            """
+        )
+        definition = cursor.fetchone()[0]
+    admitted = set(re.findall(r"'([a-z0-9]+)'", definition))
+    assert admitted == set(ACS_SERVED_DATASETS)
+
+
+def test_an_unchanged_partition_is_carried_and_a_rewritten_one_is_measured(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — DQ-ACS-007 re-measures only what was written.
+
+    The second run finds the partition as the first left it and carries its
+    pass, naming the run that measured it. Then the served value is rewritten
+    *without* `updated_at` moving -- the serving layer carries silver's
+    `ingested_at`, so a bad re-serve of unchanged content looks exactly like
+    this -- and the third run must measure it and fail.
+    """
+    with postgres_connection.cursor() as cursor:
+        _seed_served_acs_fact(postgres_connection_factory, cursor)
+    first = _run_conformance(postgres_connection)
+    second = _run_conformance(postgres_connection)
+    with postgres_connection.cursor() as cursor:
+        measured = _conformance_results(cursor, first)
+        carried = _conformance_results(cursor, second)
+        assert {name: row[0] for name, row in measured.items()} == {
+            "gold_census.fact_observation": "pass",
+            "gold_census.v_metric_latest_by_geo": "pass",
+            "gold_census.metric_publisher": "pass",
+        }
+        assert all(row[2]["measured"] for row in measured.values())
+        for row in carried.values():
+            assert row[0] == "pass"
+            assert row[2]["measured"] is False
+            assert row[2]["verified_by_quality_run_id"] == first
+
+        cursor.execute(
+            "UPDATE gold_census.rpt_acs_observations"
+            "   SET estimate_value = 8, value = 8"
+            " WHERE vintage_year = %s",
+            (_CONFORMANCE_YEAR,),
+        )
+    third = _run_conformance(postgres_connection)
+    with postgres_connection.cursor() as cursor:
+        rewritten = _conformance_results(cursor, third)
+        assert all(row[2]["measured"] for row in rewritten.values())
+        assert rewritten["gold_census.fact_observation"][0] == "fail"
+        assert rewritten["gold_census.v_metric_latest_by_geo"][0] == "fail"
+        assert rewritten["gold_census.metric_publisher"][0] == "pass"
+    postgres_connection.rollback()
+
+
+def test_the_monthly_sweep_measures_every_partition_again(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — what an incremental run cannot see, a sweep does."""
+    with postgres_connection.cursor() as cursor:
+        _seed_served_acs_fact(postgres_connection_factory, cursor)
+    _run_conformance(postgres_connection)
+    sweep = _run_conformance(postgres_connection, {"cadence": "monthly"})
+    with postgres_connection.cursor() as cursor:
+        results = _conformance_results(cursor, sweep)
+        assert len(results) == 3
+        for row in results.values():
+            assert row[0] == "pass"
+            assert row[2]["measured"] is True
+            assert row[2]["full_sweep"] is True
+    postgres_connection.rollback()
+
+
+def test_a_served_value_its_published_fact_does_not_hold_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — the digest arm, and the partition it names."""
+    with postgres_connection.cursor() as cursor:
+        metric, _ = _seed_served_acs_fact(
+            postgres_connection_factory, cursor, value=7, served_value=9
+        )
+        outcomes = {
+            (o.object_name, o.partition_key): o
+            for o in acs_contract_conformance(cursor, {})
+        }
+        unbacked = outcomes[("gold_census.fact_observation", str(_CONFORMANCE_YEAR))]
+        assert unbacked.result == "fail"
+        assert unbacked.evidence == [f"{metric}|{_CONFORMANCE_YEAR}"]
+        # The latest row agrees with the served row, so nothing is superseded.
+        assert (
+            outcomes[
+                ("gold_census.v_metric_latest_by_geo", str(_CONFORMANCE_YEAR))
+            ].result
+            == "pass"
+        )
+        others = [
+            o for (name, key), o in outcomes.items() if key != str(_CONFORMANCE_YEAR)
+        ]
+        assert others and all(o.result == "pass" for o in others)
+    postgres_connection.rollback()
+
+
+def test_a_group_whose_silver_moved_after_the_refresh_is_exempt(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — a revision the next refresh will replace is not a defect.
+
+    The rule always said so; the published side dropped the moved group with a
+    HAVING, which left the served group with no counterpart and so reported
+    exactly the group it meant to exempt.
+    """
+    with postgres_connection.cursor() as cursor:
+        _seed_served_acs_fact(
+            postgres_connection_factory, cursor, value=7, served_value=9
+        )
+        cursor.execute(
+            "UPDATE control.serving_refresh_state"
+            "   SET last_silver_ingested_at = NOW() - INTERVAL '1 day'"
+            " WHERE source_code = 'CENSUS_ACS'"
+        )
+        outcomes = {
+            (o.object_name, o.partition_key): o
+            for o in acs_contract_conformance(cursor, {})
+        }
+        assert (
+            outcomes[("gold_census.fact_observation", str(_CONFORMANCE_YEAR))].result
+            == "pass"
+        )
+    postgres_connection.rollback()
+
+
+def test_a_served_metric_the_publisher_does_not_export_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-023 — the loose index scan finds every served code."""
+    with postgres_connection.cursor() as cursor:
+        metric, _ = _seed_served_acs_fact(
+            postgres_connection_factory, cursor, publish_variable=False
+        )
+        outcomes = {
+            (o.object_name, o.partition_key): o
+            for o in acs_contract_conformance(cursor, {})
+        }
+        unpublished = outcomes[("gold_census.metric_publisher", str(_CONFORMANCE_YEAR))]
+        assert unpublished.result == "fail"
+        assert unpublished.evidence == [metric]
     postgres_connection.rollback()
 
 

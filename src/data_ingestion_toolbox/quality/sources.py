@@ -17,6 +17,9 @@ here), so a registry change automatically changes what these rules expect.
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+from datetime import date
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -3024,6 +3027,336 @@ def _conformance_offenders(
     return [f"{code}|{vintage}" for code, vintage in rows], len(rows)
 
 
+#: Bumped whenever DQ-ACS-007 measures differently, so a pass recorded by the
+#: older measurement is never carried forward as if this one had made it.
+ACS_CONFORMANCE_VERSION = "2"
+
+#: Cadences on which DQ-ACS-007 re-measures every release partition. Every
+#: other run measures only the partitions that changed since their last pass.
+ACS_CONFORMANCE_FULL_SWEEP_CADENCES = frozenset({"monthly", "release"})
+
+#: The served relation's `dataset_code` vocabulary -- the CHECK constraint on
+#: `gold_census.rpt_acs_observations`, asserted equal to it by the integration
+#: suite. Named so the superseded arm's read of `mv_acs_latest` can use
+#: `ix_mv_acs_latest_vintage (dataset_code, vintage_year)` for one vintage
+#: instead of scanning all 117M latest rows once per partition.
+ACS_SERVED_DATASETS: tuple[str, ...] = (
+    "acs1",
+    "acs5",
+    "dec2000sf1",
+    "dec2000sf3",
+    "dec1990stf1",
+    "dec1990stf3",
+)
+
+_ACS_CONFORMANCE_OBJECTS = (
+    "gold_census.fact_observation",
+    "gold_census.v_metric_latest_by_geo",
+    "gold_census.metric_publisher",
+)
+
+_RANGE_BOUND = re.compile(
+    r"FROM \('(\d{4})-(\d{2})-(\d{2})'\) TO \('(\d{4})-(\d{2})-(\d{2})'\)"
+)
+
+
+@dataclass(frozen=True)
+class _AcsServedPartition:
+    """One physical partition of the served relation, and the vintages it holds.
+
+    ``years`` is ``None`` for the default partition until it is read (its
+    vintages are whatever fell outside the declared range) and for an
+    unpartitioned relation, which is measured whole.
+    """
+
+    key: str
+    relation: str
+    oid: int
+    first_year: int | None = None
+    end_year: int | None = None  # exclusive
+    is_default: bool = False
+
+
+def _acs_served_partitions(cursor: Any) -> list[_AcsServedPartition]:
+    """Every partition of the served relation, newest first.
+
+    Read from the catalogue rather than assumed, so a partition added for a
+    new year is measured on the first run that finds it. An unpartitioned
+    relation (a warehouse the DDL warned about) is one partition, `all`.
+    """
+    cursor.execute(
+        """
+        SELECT child.oid::BIGINT,
+               child.oid::REGCLASS::TEXT,
+               pg_get_expr(child.relpartbound, child.oid)
+          FROM pg_inherits AS link
+          JOIN pg_class AS child ON child.oid = link.inhrelid
+         WHERE link.inhparent = 'gold_census.rpt_acs_observations'::REGCLASS
+         ORDER BY child.relname DESC
+        """
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        cursor.execute(
+            "SELECT 'gold_census.rpt_acs_observations'::REGCLASS::OID::BIGINT"
+        )
+        oid = int(cursor.fetchone()[0])
+        return [
+            _AcsServedPartition(
+                key="all", relation="gold_census.rpt_acs_observations", oid=oid
+            )
+        ]
+
+    partitions: list[_AcsServedPartition] = []
+    for oid, relation, bound in rows:
+        match = _RANGE_BOUND.search(bound or "")
+        if match:
+            start = date(int(match[1]), int(match[2]), int(match[3]))
+            end = date(int(match[4]), int(match[5]), int(match[6]))
+            # One vintage per year partition: every ACS row's observation_date
+            # is MAKE_DATE(vintage_year, 1, 1), verified across all 1.19B
+            # served rows on 2026-10-31.
+            last = end.year if (end.month, end.day) != (1, 1) else end.year - 1
+            partitions.append(
+                _AcsServedPartition(
+                    key=str(start.year)
+                    if last == start.year
+                    else f"{start.year}-{last}",
+                    relation=str(relation),
+                    oid=int(oid),
+                    first_year=start.year,
+                    end_year=last + 1,
+                )
+            )
+        else:
+            partitions.append(
+                _AcsServedPartition(
+                    key="default",
+                    relation=str(relation),
+                    oid=int(oid),
+                    is_default=True,
+                )
+            )
+    return partitions
+
+
+def _acs_relation_fingerprint(cursor: Any, relation: str, oid: int) -> str:
+    """What changes whenever a relation is written, read without scanning it.
+
+    `MAX(updated_at)` alone is not enough: the serving layer carries silver's
+    `ingested_at` as `updated_at`, so a re-serve that rewrote a partition with
+    the same content -- the case this rule exists to check -- leaves it where
+    it was. The relation's write counters (rows inserted, updated and deleted,
+    including the reading transaction's own) move on every write, and its
+    file node moves on a TRUNCATE. A statistics reset can only make a
+    fingerprint differ, which re-measures; it cannot make two differ less.
+    """
+    cursor.execute(
+        f"""
+        SELECT (SELECT MAX(updated_at) FROM {relation})::TEXT,
+               pg_relation_filenode(%s::OID),
+               COALESCE(pg_stat_get_tuples_inserted(%s::OID), 0)
+             + COALESCE(pg_stat_get_tuples_updated(%s::OID), 0)
+             + COALESCE(pg_stat_get_tuples_deleted(%s::OID), 0)
+             + COALESCE(pg_stat_get_xact_tuples_inserted(%s::OID), 0)
+             + COALESCE(pg_stat_get_xact_tuples_updated(%s::OID), 0)
+             + COALESCE(pg_stat_get_xact_tuples_deleted(%s::OID), 0)
+        """,
+        (oid,) * 7,
+    )
+    newest, filenode, writes = cursor.fetchone()
+    return f"updated_at={newest}|filenode={filenode}|writes={writes}"
+
+
+def _acs_previous_conformance(
+    cursor: Any,
+) -> dict[tuple[str, str], tuple[str, str, str]]:
+    """The newest DQ-ACS-007 result per object and partition.
+
+    Maps ``(object_name, partition_key)`` to ``(result, source_watermark,
+    verified_by)``, where ``verified_by`` is the run that actually measured
+    it -- itself, or the run a carried result names. Read through
+    ``ix_data_quality_result_rule_evaluated`` (rule_id, evaluated_at DESC).
+    """
+    cursor.execute(
+        """
+        SELECT DISTINCT ON (object_name, partition_key)
+               object_name, partition_key, result,
+               COALESCE(source_watermark, ''),
+               COALESCE(partition_detail ->> 'verified_by_quality_run_id',
+                        quality_run_id::TEXT)
+          FROM control.data_quality_result
+         WHERE rule_id = 'DQ-ACS-007'
+           AND partition_key <> ''
+         ORDER BY object_name, partition_key, evaluated_at DESC, result_id DESC
+        """
+    )
+    return {
+        (str(name), str(key)): (str(result), str(watermark), str(verified_by))
+        for name, key, result, watermark, verified_by in cursor.fetchall()
+    }
+
+
+def _acs_partition_years(
+    partition: _AcsServedPartition,
+    partitions: list[_AcsServedPartition],
+) -> tuple[str, tuple[Any, ...]]:
+    """A predicate on ``vintage_year`` selecting the vintages a partition holds.
+
+    Returned with its parameters, for the silver fact (``s.estimate_year``)
+    and the latest relation (``latest.vintage_year``) to apply to their own
+    column. The default partition holds everything outside the declared
+    ranges, so its predicate is the complement of their span.
+    """
+    if partition.first_year is not None:
+        return "{column} >= %s AND {column} < %s", (
+            partition.first_year,
+            partition.end_year,
+        )
+    if partition.is_default:
+        ranged = [p for p in partitions if p.first_year is not None]
+        if ranged:
+            low = min(p.first_year for p in ranged)
+            high = max(p.end_year for p in ranged)
+            return "({column} < %s OR {column} >= %s)", (low, high)
+    return "TRUE", ()
+
+
+def _acs_measure_partition(
+    cursor: Any,
+    partition: _AcsServedPartition,
+    partitions: list[_AcsServedPartition],
+    arms: frozenset[str],
+) -> dict[str, tuple[list[str], int]]:
+    """The arms of DQ-ACS-007 named in ``arms``, over one served partition.
+
+    Each statement reads that partition by name -- so nothing depends on the
+    planner pruning a parameterised probe -- and the silver and latest sides
+    only the vintages it holds.
+    """
+    relation = partition.relation
+    years_sql, years_params = _acs_partition_years(partition, partitions)
+    silver_years = years_sql.format(column="s.estimate_year")
+    latest_years = years_sql.format(column="latest.vintage_year")
+    measured: dict[str, tuple[list[str], int]] = {}
+
+    # Unbacked: every served (metric, vintage) group traces to published facts
+    # with the same count and digest. A group whose silver rows moved after
+    # the last refresh is exempt -- carried as `moved` rather than dropped by
+    # a HAVING, which used to leave the served group with no published
+    # counterpart and so reported the exempt group as unbacked.
+    if "gold_census.fact_observation" in arms:
+        measured["gold_census.fact_observation"] = _offenders(
+            cursor,
+            f"""
+            WITH served AS (
+                    SELECT metric_code,
+                           vintage_year AS vintage,
+                           COUNT(*) AS rows,
+                           {_GROUP_DIGEST.format(column="estimate_value")} AS digest
+                      FROM {relation}
+                     GROUP BY 1, 2
+                 ),
+                 published AS (
+                    SELECT 'CENSUS_ACS:' || s.dataset || ':' || s.variable_code AS metric_code,
+                           s.estimate_year AS vintage,
+                           COUNT(*) AS rows,
+                           {_GROUP_DIGEST.format(column="s.estimate_value")} AS digest,
+                           MAX(s.ingested_at) > COALESCE(
+                               MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
+                           ) AS moved
+                      FROM silver_census.fact_demographics s
+                      JOIN gold_census.dim_acs_variable av
+                        ON av.dataset_code = s.dataset
+                       AND av.vintage_year = s.estimate_year
+                       AND av.variable_code = s.variable_code
+                      LEFT JOIN control.serving_refresh_state r
+                        ON r.source_code = 'CENSUS_ACS'
+                     WHERE s.variable_code IS NOT NULL
+                       AND s.variable_code <> ''
+                       AND {silver_years}
+                     GROUP BY 1, 2
+                 )
+            SELECT served.metric_code, served.vintage
+              FROM served
+              LEFT JOIN published USING (metric_code, vintage)
+             WHERE NOT COALESCE(published.moved, FALSE)
+               AND (published.metric_code IS NULL
+                    OR published.rows <> served.rows
+                    OR published.digest IS DISTINCT FROM served.digest)
+            """,
+            order_by="1, 2",
+            params=years_params,
+        )
+
+    # Superseded: each latest row of these vintages is carried, unaltered, by
+    # this partition. Probing the partition by name rather than the parent is
+    # what keeps it to one partition's index; the 41-minute form probed the
+    # parent once per latest row across every vintage.
+    if "gold_census.v_metric_latest_by_geo" in arms:
+        measured["gold_census.v_metric_latest_by_geo"] = _offenders(
+            cursor,
+            f"""
+            SELECT latest.metric_code, latest.vintage_year
+              FROM gold_census.mv_acs_latest AS latest
+             WHERE latest.dataset_code = ANY(%s)
+               AND {latest_years}
+               AND NOT EXISTS (
+                       SELECT 1
+                         FROM {relation} AS released
+                        WHERE released.geo_id = latest.geo_id
+                          AND released.metric_code = latest.metric_code
+                          AND released.observation_date = latest.observation_date
+                          AND released.estimate_value
+                              IS NOT DISTINCT FROM latest.estimate_value
+                   )
+            """,
+            order_by="1, 2",
+            params=(list(ACS_SERVED_DATASETS), *years_params),
+        )
+
+    # Unpublished: every served metric code is one the publisher exports. The
+    # served codes are read by a loose index scan -- one descent of an index
+    # led by metric_code per distinct code -- instead of DISTINCT over every
+    # row. The publisher's keys are read from what `gold_census.metric_publisher`
+    # selects FROM (one row per dim_acs_variable dataset and variable, through
+    # a NOT NULL foreign key to dim_acs_table); the view's LEFT JOIN to an
+    # aggregate over all of mv_acs_latest only adds grains and filters nothing,
+    # and evaluating it cost a full read of the latest relation per run.
+    if "gold_census.metric_publisher" in arms:
+        measured["gold_census.metric_publisher"] = _offenders(
+            cursor,
+            f"""
+            WITH RECURSIVE codes(metric_code) AS (
+                    SELECT MIN(metric_code) FROM {relation}
+                    UNION ALL
+                    SELECT (SELECT MIN(next.metric_code)
+                              FROM {relation} AS next
+                             WHERE next.metric_code > codes.metric_code)
+                      FROM codes
+                     WHERE codes.metric_code IS NOT NULL
+                 ),
+                 served AS (
+                    SELECT metric_code FROM codes WHERE metric_code IS NOT NULL
+                    UNION ALL
+                    SELECT NULL::TEXT
+                     WHERE EXISTS (SELECT 1 FROM {relation} WHERE metric_code IS NULL)
+                 )
+            SELECT served.metric_code
+              FROM served
+             WHERE NOT EXISTS (
+                       SELECT 1
+                         FROM gold_census.dim_acs_variable AS exported
+                         JOIN gold_census.dim_acs_table USING (acs_table_sk)
+                        WHERE 'CENSUS_ACS:' || exported.dataset_code || ':'
+                              || exported.variable_code = served.metric_code
+                   )
+            """,
+            order_by="1",
+        )
+    return measured
+
+
 def acs_contract_conformance(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -3049,105 +3382,108 @@ def acs_contract_conformance(
     row's content changed, so a revision inside that window is a served value
     the next refresh will replace rather than one the serving layer invented.
     A source with no `control.serving_refresh_state` row is read strictly.
+
+    **Measured one release partition at a time, and only where something
+    changed.** After the history loads the served relation held 1.19 billion
+    rows (1.18 TB) and the whole-relation form read two to three terabytes
+    for one weekly rule: its superseded probe alone ran past 41 minutes. Each
+    partition now carries a fingerprint (`_acs_relation_fingerprint`) as its
+    `source_watermark`; a scheduled run re-measures a partition whose
+    fingerprint differs from its newest result, or whose newest result was
+    not a pass, and carries the pass forward otherwise, naming the run that
+    measured it. The monthly sweep and a release certification re-measure
+    every partition, as does a scope carrying ``full_sweep: true``.
+
+    What the incremental run cannot see, and the full sweep exists for: a
+    silver row deleted, or changed without its `ingested_at` advancing,
+    beneath an unchanged served partition; a dimension row removed beneath
+    one; and a latest row rewritten by a refresh of the latest relation alone.
+    A silver revision made through ETL-037 needs no re-measurement -- it is
+    exempt until the refresh, and the refresh writes the partition.
     """
-    del scope
-    total = _count(cursor, "SELECT COUNT(*) FROM gold_census.rpt_acs_observations")
-    if total == 0:
+    cadence = str(scope.get("cadence") or "")
+    full_sweep = bool(scope.get("full_sweep")) or (
+        cadence in ACS_CONFORMANCE_FULL_SWEEP_CADENCES
+    )
+
+    # EXISTS, not COUNT(*): counting 1.19B rows to learn that there is one was
+    # itself a scan of the largest relation in the warehouse.
+    if not _count(
+        cursor,
+        "SELECT EXISTS (SELECT 1 FROM gold_census.rpt_acs_observations)",
+    ):
         return [
-            RuleOutcome("gold_census.fact_observation", "not_applicable"),
-            RuleOutcome("gold_census.v_metric_latest_by_geo", "not_applicable"),
-            RuleOutcome("gold_census.metric_publisher", "not_applicable"),
+            RuleOutcome(name, "not_applicable") for name in _ACS_CONFORMANCE_OBJECTS
         ]
 
-    served_sql = f"""
-        SELECT metric_code,
-               vintage_year AS vintage,
-               COUNT(*) AS rows,
-               {_GROUP_DIGEST.format(column="estimate_value")} AS digest
-          FROM gold_census.rpt_acs_observations
-         GROUP BY 1, 2
-    """
-    published_sql = f"""
-        SELECT 'CENSUS_ACS:' || s.dataset || ':' || s.variable_code AS metric_code,
-               s.estimate_year AS vintage,
-               COUNT(*) AS rows,
-               {_GROUP_DIGEST.format(column="s.estimate_value")} AS digest
-          FROM silver_census.fact_demographics s
-          JOIN gold_census.dim_acs_variable av
-            ON av.dataset_code = s.dataset
-           AND av.vintage_year = s.estimate_year
-           AND av.variable_code = s.variable_code
-          LEFT JOIN control.serving_refresh_state r ON r.source_code = 'CENSUS_ACS'
-         WHERE s.variable_code IS NOT NULL
-           AND s.variable_code <> ''
-         GROUP BY 1, 2
-        HAVING MAX(s.ingested_at) <= COALESCE(
-                   MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
-               )
-    """
-    unbacked, unbacked_total = _conformance_offenders(
-        cursor, served_sql=served_sql, published_sql=published_sql
+    partitions = _acs_served_partitions(cursor)
+    previous = {} if full_sweep else _acs_previous_conformance(cursor)
+    cursor.execute("SELECT 'gold_census.dim_acs_variable'::REGCLASS::OID::BIGINT")
+    dimension_oid = int(cursor.fetchone()[0])
+    dimension = _acs_relation_fingerprint(
+        cursor, "gold_census.dim_acs_variable", dimension_oid
     )
 
-    superseded, superseded_total = _offenders(
-        cursor,
-        """
-        SELECT latest.metric_code, latest.vintage_year
-          FROM gold_census.mv_acs_latest AS latest
-         WHERE NOT EXISTS (
-                   SELECT 1
-                     FROM gold_census.rpt_acs_observations AS released
-                    WHERE released.geo_id = latest.geo_id
-                      AND released.metric_code = latest.metric_code
-                      AND released.observation_date = latest.observation_date
-                      AND released.estimate_value
-                          IS NOT DISTINCT FROM latest.estimate_value
-               )
-        """,
-        order_by="1, 2",
-    )
-
-    unpublished, unpublished_total = _offenders(
-        cursor,
-        """
-        SELECT served.metric_code
-          FROM (
-                SELECT DISTINCT metric_code
-                  FROM gold_census.rpt_acs_observations
-               ) AS served
-         WHERE NOT EXISTS (
-                   SELECT 1
-                     FROM gold_census.metric_publisher AS exported
-                    WHERE 'CENSUS_ACS:' || exported.source_object_key
-                          = served.metric_code
-               )
-        """,
-        order_by="1",
-    )
-
-    return [
-        RuleOutcome(
-            "gold_census.fact_observation",
-            "fail" if unbacked else "pass",
-            observed_count=unbacked_total,
-            expected_count=0,
-            evidence=unbacked[:EVIDENCE_LIMIT],
-        ),
-        RuleOutcome(
-            "gold_census.v_metric_latest_by_geo",
-            "fail" if superseded else "pass",
-            observed_count=superseded_total,
-            expected_count=0,
-            evidence=superseded[:EVIDENCE_LIMIT],
-        ),
-        RuleOutcome(
-            "gold_census.metric_publisher",
-            "fail" if unpublished else "pass",
-            observed_count=unpublished_total,
-            expected_count=0,
-            evidence=unpublished[:EVIDENCE_LIMIT],
-        ),
-    ]
+    outcomes: list[RuleOutcome] = []
+    for partition in partitions:
+        served = _acs_relation_fingerprint(cursor, partition.relation, partition.oid)
+        watermarks = {
+            "gold_census.fact_observation": f"v{ACS_CONFORMANCE_VERSION}|{served}",
+            "gold_census.v_metric_latest_by_geo": f"v{ACS_CONFORMANCE_VERSION}|{served}",
+            # The publisher arm also reads the variable dimension, so a
+            # metadata reload re-measures it -- a loose index scan per
+            # partition, cheap -- without re-measuring the other two.
+            "gold_census.metric_publisher": (
+                f"v{ACS_CONFORMANCE_VERSION}|{served}|dimension:{dimension}"
+            ),
+        }
+        carried = {
+            name: previous[(name, partition.key)][2]
+            for name in _ACS_CONFORMANCE_OBJECTS
+            if (name, partition.key) in previous
+            and previous[(name, partition.key)][0] == "pass"
+            and previous[(name, partition.key)][1] == watermarks[name]
+        }
+        arms = frozenset(_ACS_CONFORMANCE_OBJECTS) - set(carried)
+        measured = (
+            _acs_measure_partition(cursor, partition, partitions, arms) if arms else {}
+        )
+        for name in _ACS_CONFORMANCE_OBJECTS:
+            detail: dict[str, Any] = {
+                "relation": partition.relation,
+                "cadence": cadence,
+                "full_sweep": full_sweep,
+            }
+            if name in carried:
+                detail["measured"] = False
+                detail["verified_by_quality_run_id"] = carried[name]
+                outcomes.append(
+                    RuleOutcome(
+                        name,
+                        "pass",
+                        partition_key=partition.key,
+                        partition_detail=detail,
+                        observed_count=0,
+                        expected_count=0,
+                        source_watermark=watermarks[name],
+                    )
+                )
+                continue
+            offenders, total = measured[name]
+            detail["measured"] = True
+            outcomes.append(
+                RuleOutcome(
+                    name,
+                    "fail" if offenders else "pass",
+                    partition_key=partition.key,
+                    partition_detail=detail,
+                    observed_count=total,
+                    expected_count=0,
+                    source_watermark=watermarks[name],
+                    evidence=offenders[:EVIDENCE_LIMIT],
+                )
+            )
+    return outcomes
 
 
 def bls_contract_conformance(
