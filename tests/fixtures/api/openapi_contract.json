@@ -2732,6 +2732,40 @@
         "place"
       ]
     },
+    "GET /api/v1/place/tract-history": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 1200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:TractHistoryResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "place"
+      ]
+    },
     "GET /api/v1/population/scenario": {
       "parameters": [
         {
@@ -5884,6 +5918,81 @@
         "feature_count",
         "is_default",
         "tile_template"
+      ]
+    },
+    "TractBoundary": {
+      "properties": {
+        "also_became": "array<TractPart>",
+        "earlier": "array<TractPart>",
+        "sentence": "string",
+        "slivers_ignored": "integer",
+        "status": "string"
+      },
+      "required": [
+        "also_became",
+        "earlier",
+        "sentence",
+        "status"
+      ]
+    },
+    "TractHistoryPoint": {
+      "properties": {
+        "derived": "boolean",
+        "margin_of_error": "number | null",
+        "observation_date": "string(date)",
+        "source_geo_ids": "array<string>",
+        "status": "string",
+        "value": "number | null",
+        "vintage_year": "integer",
+        "weight_basis": "string | null"
+      },
+      "required": [
+        "derived",
+        "observation_date",
+        "status",
+        "vintage_year"
+      ]
+    },
+    "TractHistoryResponse": {
+      "properties": {
+        "boundary": "TractBoundary",
+        "derivation": "string",
+        "geo_id": "string",
+        "geo_name": "string | null",
+        "method": "string",
+        "series": "array<TractHistorySeries>",
+        "target_tract_vintage": "integer"
+      },
+      "required": [
+        "boundary",
+        "geo_id",
+        "method",
+        "series"
+      ]
+    },
+    "TractHistorySeries": {
+      "properties": {
+        "items": "array<TractHistoryPoint>",
+        "metric_code": "string",
+        "note": "string | null"
+      },
+      "required": [
+        "items",
+        "metric_code"
+      ]
+    },
+    "TractPart": {
+      "properties": {
+        "geo_id": "string",
+        "name": "string",
+        "share_of_that_tract": "number | null",
+        "share_of_this_tract": "number | null",
+        "vintage": "integer"
+      },
+      "required": [
+        "geo_id",
+        "name",
+        "vintage"
       ]
     },
     "ValidationError": {

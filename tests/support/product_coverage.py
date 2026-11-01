@@ -47,6 +47,10 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # lines, computed at request time; a derived reading owned by the
     # platform, not a provider data product or warehouse publisher.
     "/api/v1/age-structure",
+    # One tract's history on its 2020 boundary (API-187): the published ACS
+    # values beside the derived comparable series, read from gold views the
+    # ACS pipeline publishes; a reading owned by the platform.
+    "/api/v1/place/tract-history",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:

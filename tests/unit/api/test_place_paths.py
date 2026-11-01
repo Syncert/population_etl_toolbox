@@ -39,6 +39,9 @@ def test_page_paths_agree_with_the_web_address_rule() -> None:
         )
         for row in rows
     )
+    # A tract's path is its county's plus its own segment: no tract row is
+    # needed to build it (api-place-search, tract pages).
+    rows = [*rows, *fixture["tracts"]]
     expected = fixture["expected_paths"]
     assert sorted(row["geo_id"] for row in rows) == sorted(expected)
     assert {row["geo_id"]: paths.path(row["geo_id"]) for row in rows} == expected
@@ -65,6 +68,8 @@ def test_a_grain_without_a_page_has_no_path() -> None:
     assert paths.path("state:48") == "/us/texas"
     assert paths.path("cbsa:12420") is None
     assert paths.path("zcta:78701") is None
+    # A tract whose county is not among the rows has no path, not a guess.
+    assert paths.path("state:48|county:453|tract:001805") is None
     assert paths.path(None) is None
 
 
