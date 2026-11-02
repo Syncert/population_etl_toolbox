@@ -136,7 +136,7 @@ def test_columns_not_published_reach_silver_as_not_available(lodes_warehouse) ->
 def test_a_state_year_without_workplace_files_serves_no_workplace_row(
     lodes_warehouse,
 ) -> None:
-    """Covers: ETL-063 — a state that published no WAC or OD file (Alaska from 2017) has no jobs row, not zero."""
+    """Covers: ETL-063 — a state that published no WAC or OD file (Alaska from 2017) has no jobs row, not zero, and serves no residence count."""
     factory = lodes_warehouse
     listed = [
         line
@@ -161,13 +161,21 @@ def test_a_state_year_without_workplace_files_serves_no_workplace_row(
         ("rac", "captured"),
         ("wac", "not_published"),
     ]
-    measures = {
+    computed = {
         row[0]
         for row in _rows(
-            factory, "SELECT metric_key FROM gold_census_lodes.observation_latest"
+            factory, "SELECT metric_key FROM gold_census_lodes.observation_fact"
         )
     }
-    assert measures == {"resident_workers"}
+    assert computed == {"resident_workers"}
+    # With no workplace file, LEHD's residence file counts only residents
+    # employed in other states, so the count is computed but not served.
+    assert _rows(
+        factory, "SELECT DISTINCT metric_key FROM gold_census_lodes.coverage_gap"
+    ) == [("resident_workers",)]
+    assert _rows(
+        factory, "SELECT COUNT(*) FROM gold_census_lodes.observation_latest"
+    ) == [(0,)]
 
 
 def test_the_same_vintage_fetches_nothing_and_a_new_one_is_kept_beside_it(
