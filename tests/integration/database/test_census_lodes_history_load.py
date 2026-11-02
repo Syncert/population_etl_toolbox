@@ -336,6 +336,29 @@ def test_a_state_year_lehd_did_not_cover_is_not_served(lodes_warehouse) -> None:
     ]
 
 
+def test_a_state_year_with_no_workplace_file_serves_no_residence_count(
+    lodes_warehouse,
+) -> None:
+    """Covers: ETL-108 — with no workplace file, the residence count is of out-of-state jobs only and is not served."""
+    factory = lodes_warehouse
+    _load(factory)
+    # The District of Columbia 2002-2009: LEHD published no workplace file,
+    # and its residence file, about 30 % of a covered year, counts only the
+    # residents employed in other states, above the tenth the floor catches.
+    _execute(
+        factory,
+        """
+        DELETE FROM gold_census_lodes.observation_fact
+        WHERE year = 2008 AND metric_key = 'jobs'
+        """,
+    )
+    _execute(factory, "SELECT gold_census_lodes.refresh_coverage_gap()")
+    assert _rows(
+        factory, "SELECT year, metric_key FROM gold_census_lodes.coverage_gap"
+    ) == [(2008, "resident_workers")]
+    assert [year for year, _metric in _served(factory)] == [2023] * 5
+
+
 def test_a_capture_stopped_part_way_is_withdrawn_and_captured_again(
     lodes_warehouse,
 ) -> None:

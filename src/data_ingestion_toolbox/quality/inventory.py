@@ -2906,7 +2906,8 @@ _LODES_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method=(
             "published state-years whose state total of jobs or resident "
             "workers is under a tenth of the state's upper-quartile year "
-            "(LEHD had not yet covered that file); the measures the file "
+            "(LEHD had not yet covered that file), and residence totals of "
+            "state-years with no workplace total; the measures the file "
             "feeds are not served"
         ),
         cadence="rebuilt with every refresh_observation_fact",
