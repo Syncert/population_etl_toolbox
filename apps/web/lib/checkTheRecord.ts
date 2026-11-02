@@ -487,6 +487,7 @@ interface ChangeParts {
  * indistinguishable change states both values and no change figure.
  */
 export function changeSentence(parts: ChangeParts): string {
+  parts = { ...parts, place: inSentence(parts.place) };
   const tail = parts.unitTail || "";
   const from = `${valueText(parts.from.value, parts.kind)}${tail}`;
   const to = `${valueText(parts.to.value, parts.kind)}${tail}`;
@@ -502,8 +503,13 @@ export function changeSentence(parts: ChangeParts): string {
   return `${parts.measure} in ${parts.place} ${parts.verb} from ${from} in ${parts.from.period} to ${to} in ${parts.to.period}, a change of ${changeWords}.`;
 }
 
+/** A place's name inside a sentence: "the United States", never "United States". */
+export function inSentence(name: string): string {
+  return name === "United States" ? "the United States" : name;
+}
+
 function tooShort(place: string, measure: string): string {
-  return `The record for ${place} is too short to compare ${measure} across years: it holds no two published periods within ten years of each other.`;
+  return `The record for ${inSentence(place)} is too short to compare ${measure} across years: it holds no two published periods within ten years of each other.`;
 }
 
 function blank(id: RecordQuestionId): RecordAnswer {
@@ -573,7 +579,7 @@ export function rentIncomeAnswer(
       ...base,
       status: "unanswered",
       charts,
-      sentences: [`Median household income for ${place.name} was not published for ${missing}, the periods rent is compared over, so the two are not compared.`],
+      sentences: [`Median household income for ${inSentence(place.name)} was not published for ${missing}, the periods rent is compared over, so the two are not compared.`],
     };
   }
   const series = [
@@ -603,7 +609,7 @@ export function rentIncomeAnswer(
           to: { value: item.toValue, period: period(item.to) },
           kind: "dollars",
         })
-      : `${item.name} in ${place.name} was ${valueText(item.fromValue, "dollars")} in ${period(item.from)} and ${valueText(item.toValue, "dollars")} in ${period(item.to)}; the Bureau published no usable margin of error for one of them, so no change is stated.`,
+      : `${item.name} in ${inSentence(place.name)} was ${valueText(item.fromValue, "dollars")} in ${period(item.from)} and ${valueText(item.toValue, "dollars")} in ${period(item.to)}; the Bureau published no usable margin of error for one of them, so no change is stated.`,
   );
   const [rentSeries, incomeSeries] = series as [typeof series[number], typeof series[number]];
   if (rentSeries.percent !== null && incomeSeries.percent !== null) {
@@ -682,7 +688,7 @@ export function populationAnswer(
     const parts = COMPONENT_MEASURES.map((id) => components.get(id)).filter((entry): entry is { measure: ResolvedPlaceMeasure; row: ObservationRow | null } => Boolean(entry));
     const numbered = parts.filter((entry) => entry.row && publishedNumber(entry.row.value) !== null);
     if (!numbered.length) {
-      sentences.push(`The program's components of change (births, deaths and migration) are not published for ${place.name} here.`);
+      sentences.push(`The program's components of change (births, deaths and migration) are not published for ${inSentence(place.name)} here.`);
     } else {
       for (const part of numbered) base.sources.push({ label: `Population Estimates Program, ${part.measure.measure.label.toLowerCase()}`, metricCode: part.measure.metricCode });
       const byPeriod = new Map<string, string[]>();
@@ -693,10 +699,10 @@ export function populationAnswer(
         byPeriod.set(label, list);
       }
       for (const [period, words] of byPeriod) {
-        sentences.push(`For ${period}, the program estimates ${listWords(words)} in ${place.name}.`);
+        sentences.push(`For ${period}, the program estimates ${listWords(words)} in ${inSentence(place.name)}.`);
       }
       const missing = parts.filter((entry) => !numbered.includes(entry)).map((entry) => entry.measure.measure.label.toLowerCase());
-      if (missing.length) sentences.push(`Not published for ${place.name}: ${listWords(missing)}.`);
+      if (missing.length) sentences.push(`Not published for ${inSentence(place.name)}: ${listWords(missing)}.`);
       base.caveats.push("Components are estimates for the year ending July 1 of the vintage. The program also publishes a residual, which is not a component and is not shown. These are the only parts of the change the program publishes; nothing else is attributed here.");
     }
   }

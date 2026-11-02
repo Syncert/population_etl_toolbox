@@ -270,6 +270,17 @@ describe("is the population growing or shrinking, and why", () => {
   });
 });
 
+describe("the nation's name in a sentence", () => {
+  it("reads the United States, with its article", () => {
+    const rows = [year(2015, 320738994), year(2025, 341784857)];
+    const answer = populationAnswer(nation, POP, new Map(), histories([[POP.metricCode, nation.geoId, rows]]), { componentsElsewhere: null, links: [] });
+    expect(answer.sentences[0]).toBe(
+      "The estimated resident population in the United States rose from 320,738,994 in 2015 to 341,784,857 in 2025, a change of +21,045,863 (+6.6 percent).",
+    );
+    expect(answer.charts[0].label).toBe("Resident population estimate, United States");
+  });
+});
+
 describe("how does unemployment here compare", () => {
   const sa = (status) => ({ dimensions: { seasonal_adjustment_status: status } });
   it("compares the newest month both publish", () => {

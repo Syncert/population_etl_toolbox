@@ -23,8 +23,9 @@ API change and no DDL. The first live check (dev 346786ec) found the state
 and national crime spans comparing different months, fixed by #256
 (95d7f006). The second (dev 3748996) confirmed that fix and found two display
 faults, fixed in the PR that moved this plan here: see "Live check results".
-Left for review: after the web rebuild, read each population and
-unemployment card's sentences (whole-card captures) against its chart.
+The third (dev cdd825c1) read every population and
+unemployment card; all correct, and the one copy nit ("in United States") is
+fixed. Left for review: Nick's read of the section.
 
 ## Why
 
@@ -200,3 +201,25 @@ Recheck after the web rebuild: capture each whole card
 `/us/wisconsin/dane-county#record`, `/us/texas/austin-city#record`,
 `/us/wisconsin#record`, `/us#record`, and the US population chart's value
 labels in full.
+
+### 2026-11-01, OFFICE_LAB at dev cdd825c1 (after #267)
+
+Whole-card captures: `/mnt/project-files/record-{dane,austin,wisconsin,us}-{population,unemployment}-card.png`.
+
+- **Population.** Dane "rose from 523,399 in July 2015 to 590,375 in July
+  2025, a change of +66,976 (+12.8 percent)", with 2025's births 5,536,
+  deaths 3,946, net domestic 357 and net international 2,049. Austin
+  962,163 (2020) to 1,002,632 (2025), +40,469 (+4.2 percent), with the
+  components sent to Travis County. Wisconsin 5,762,927 to 5,972,787,
+  +209,860 (+3.6 percent). US 320,738,994 to 341,784,857, +21,045,863
+  (+6.6 percent); net domestic migration is 0 for the nation, as it must
+  be. Every difference and percent checks out, and every chart rises. Correct.
+- **Unemployment.** Dane "In September 2026 … 2.5 percent and in Wisconsin
+  2.9 percent. Dane County's rate was lower than Wisconsin's", with the Dane
+  line under Wisconsin's. Wisconsin: "not compared with a national rate",
+  chart titled Wisconsin alone. Austin sent to Travis County; US "no larger
+  area". Correct.
+- **Value labels** read in full: 341,784,857 and 206,826,000. Correct.
+- **Copy nit:** "population in United States" now reads "in the United
+  States" (`inSentence`, unit test "reads the United States, with its
+  article").
