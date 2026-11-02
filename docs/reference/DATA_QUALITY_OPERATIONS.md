@@ -27,13 +27,34 @@ tables it writes are the evidence relations above. The task fails when the
 assessment finishes `fail` or `error`, so a red DAG run means a blocking
 contract violation, not a flake.
 
+Each rule runs under a 30-minute `statement_timeout`
+(`quality.runner.DEFAULT_RULE_STATEMENT_TIMEOUT`), restored after the rule. A
+rule that times out or raises records no evidence, is named in the run's
+`failure_summary`, and the run carries on with the next rule and finishes
+`error`, so one runaway rule neither holds the warehouse nor hides the rules
+after it.
+
 Target one source, rule, or partition for repair verification by triggering
 the DAG with configuration:
 
 ```json
 {"cadence": "weekly", "source_code": "USDA_NASS"}
 {"rule_id": "DQ-CDC-003", "scope": {"asset_id": "cdi", "release_watermark": "1780605223"}}
+{"cadence": "weekly", "exclude_rules": ["DQ-ACS-007"]}
 ```
+
+`exclude_rules` leaves the named rules out of a cadence run, for example to
+take the weekly gate while a long rule's sweep runs separately. The run's
+`scope.excluded_rules` records what was left out, so an excluded rule is never
+mistaken for a pass; naming a rule the cadence does not run, or excluding every
+rule, is refused before anything is measured.
+
+A rule may also finish *partially*: an executor that measures several
+partitions and has one cancelled by the timeout raises
+`quality.runner.PartialRuleResult`. The partitions it finished keep their
+evidence, the timed-out one records none and is named in `failure_summary`,
+and the run finishes `error`. A later run carries the recorded partitions and
+measures only the one that was missed.
 
 ### Aborted runs are finalized first
 
@@ -250,6 +271,63 @@ covers it instead, under one of two states:
   for a reason that is not about the data. The second compares grouped counts
   and value digests, runs in 815 seconds and 60, and caught a real defect on
   its first run against the warehouse.
+
+  After the history loads made the served relation ten times larger (1.19
+  billion rows, 1.18 TB), that second form read two to three terabytes a week
+  and its superseded probe alone ran past 41 minutes. **`DQ-ACS-007` now
+  measures one release partition of `gold_census.rpt_acs_observations` at a
+  time, and on a scheduled run only the partitions that changed.** Each
+  outcome's `partition_key` is the partition's vintage (`2024`, `default`)
+  and its `source_watermark` the partition's fingerprint: newest
+  `updated_at`, file node, and insert/update/delete counters. A partition
+  whose fingerprint matches its newest DQ-ACS-007 pass is carried, with
+  `partition_detail.measured = false` and `verified_by_quality_run_id`
+  naming the run that measured it. The monthly sweep and release
+  certification re-measure every partition; to force one on any day, trigger
+  `{"rule_id": "DQ-ACS-007", "scope": {"full_sweep": true}}`. The sweep is
+  what sees a silver row deleted, or a dimension row removed, beneath a
+  partition nobody re-served. The first scheduled run after this change has
+  no partitioned results to carry and measures everything once; run that
+  sweep in a quiet window rather than beside a load.
+
+  The superseded probe (served rows no longer the latest release) is cut by
+  `metric_code` into ranges of about ten million served rows each
+  (`pg_class.reltuples` of the partition, cut on its own distinct codes),
+  with the same bounds on the latest and served sides so both
+  `(metric_code, geo_id)` indexes are read only within the range, plus one
+  statement for rows with a NULL code. The 2024 partition timed out whole in
+  the sweep of 2026-11-01; ranged, each statement is short and the 30-minute
+  limit applies to each rule as before. Every partition is measured inside
+  its own savepoint, so a partition that still times out is the only one left
+  unrecorded.
+
+  Only the newest vintage needs that: it holds ~105M of mv_acs_latest's 117M
+  rows, and each older vintage a few million at most, yet merging those few
+  still streamed the whole 32–55 GB partition index (2023 took ~75 min in the
+  sweep of 2026-11-01). A partition whose vintages hold fewer than
+  `_ACS_SUPERSEDED_PROBE_ROWS` (5M) latest rows is therefore a correlated
+  probe: one index scan of the partition per latest row, reading the
+  partition only where a latest row points.
+
+  The scheduled DAG commits each DQ-ACS-007 partition's result as it
+  finishes (`commit_progress`), so a sweep in progress already shows its
+  finished partitions with the query above, and a stopped sweep keeps them:
+  the next run carries those and measures the rest. The run row reads
+  `running` until the run ends; a run stopped part-way stays `running` with
+  the results it committed, and `data_quality_source_status` shows the next
+  run once it starts. Release certification is still one transaction.
+
+  ```sql
+  -- What DQ-ACS-007 measured, and what it carried, on its newest run.
+  SELECT partition_key, object_name, result, observed_count,
+         partition_detail ->> 'measured' AS measured, duration_ms
+    FROM control.data_quality_result
+   WHERE rule_id = 'DQ-ACS-007'
+     AND quality_run_id = (SELECT quality_run_id FROM control.data_quality_result
+                            WHERE rule_id = 'DQ-ACS-007'
+                            ORDER BY evaluated_at DESC LIMIT 1)
+   ORDER BY partition_key DESC, object_name;
+  ```
 
   `DQ-SHARED-004` left this set when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the

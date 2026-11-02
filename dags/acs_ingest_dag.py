@@ -67,6 +67,10 @@ from data_ingestion_toolbox.census_acs.metadata import (
     sync_variable_metadata_for_year,
 )
 from data_ingestion_toolbox.census_acs.backfill import BackfillScope
+from data_ingestion_toolbox.census_acs.disk_guard import (
+    assert_room_for,
+    projected_plan_bytes,
+)
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
@@ -74,6 +78,7 @@ from data_ingestion_toolbox.census_acs.silver_census.transform import (
 from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.operator_stop import fail_without_retry_when_stopped
 from data_ingestion_toolbox.utility.serving_reserve import ACS_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
@@ -416,6 +421,11 @@ def acs_ingest():
                     "dataset publishes"
                 )
 
+        # The nation, states and counties: every scheduled run, or a backfill
+        # run that names the `area` grain (a census year has no other run to
+        # load them: decennial-2000-and-1990-history).
+        area_planned = scope is None or scope.geo_level == "area"
+
         # ACS county coverage includes the 50 states, DC, and Puerto Rico.
         # Use the explicit Census state/territory codes so gaps in the numeric
         # FIPS range (for example, invalid code 52) cannot become empty slices.
@@ -469,7 +479,7 @@ def acs_ingest():
             return (dataset, year, geo_level, state_fips, current_hash) in completed
 
         # Place slices are requested for each dataset's newest years only
-        # (`AcsConfig.place_recent_years`), because they are ten times the
+        # (`AcsConfig.place_year_scope`), because they are ten times the
         # counties' volume.
         years_by_dataset = {
             dataset: [year for ds, year in varset_meta if ds == dataset]
@@ -480,12 +490,22 @@ def acs_ingest():
             for dataset, years in years_by_dataset.items()
         }
         # Tract slices (sub-county-geography): the 5-year estimates' newest
-        # years only (`AcsConfig.tract_recent_years`), for `tract_tables`.
+        # years only (`AcsConfig.tract_year_scope`), for `tract_tables`.
         tract_years_by_dataset = {
             dataset: CONFIG.tract_years(dataset, years)
             for dataset, years in years_by_dataset.items()
         }
+        # Metro slices (W-7): every CBSA of one dataset and year in one
+        # request, for the years `AcsConfig.metro_year_scope` declares.
+        metro_years_by_dataset = {
+            dataset: CONFIG.metro_years(dataset, years)
+            for dataset, years in years_by_dataset.items()
+        }
         if scope is not None:
+            metro_years_by_dataset = {
+                dataset: {scope.year} if scope.geo_level == "metro" else set()
+                for dataset in years_by_dataset
+            }
             # Only the named grain, and that one whatever the scheduled years.
             place_years_by_dataset = {
                 dataset: {scope.year} if scope.geo_level == "place" else set()
@@ -516,11 +536,27 @@ def acs_ingest():
                         "variables_count": vcount,
                     }
 
+        # A tract slice requests `tract_tables` only, so it carries a
+        # fingerprint of that list rather than of the whole curated list:
+        # widening the tract tables (W-4) changed no (dataset, year)
+        # fingerprint, so every tract year already loaded on the first five
+        # tables was skipped as done and never requested the rest.
+        tract_scope: dict[tuple[str, int], dict] = {}
+        for dataset, years in tract_years_by_dataset.items():
+            for year in years:
+                vhash, vcount = _variables_fingerprint(
+                    year, dataset, CONFIG.tract_tables
+                )
+                tract_scope[(dataset, year)] = {
+                    "variables_hash": vhash,
+                    "variables_count": vcount,
+                }
+
         # Build the plan. Include anything not done for current hash.
         plan: list[dict] = []
         for (dataset, year), meta in varset_meta.items():
             # US slice
-            if scope is None and not is_done_for_current_varset(
+            if area_planned and not is_done_for_current_varset(
                 dataset, year, "us", None
             ):
                 plan.append(
@@ -535,7 +571,7 @@ def acs_ingest():
                 )
 
             # STATE slice (all states in one call)
-            if scope is None and not is_done_for_current_varset(
+            if area_planned and not is_done_for_current_varset(
                 dataset, year, "state", None
             ):
                 plan.append(
@@ -549,8 +585,23 @@ def acs_ingest():
                     }
                 )
 
+            # METRO slice (every CBSA at once; a CBSA spans states).
+            if year in metro_years_by_dataset.get(
+                dataset, set()
+            ) and not is_done_for_current_varset(dataset, year, "metro", None):
+                plan.append(
+                    {
+                        "dataset": dataset,
+                        "year": year,
+                        "geo_level": "metro",
+                        "state_fips": None,
+                        "variables_hash": meta["variables_hash"],
+                        "variables_count": meta["variables_count"],
+                    }
+                )
+
             # COUNTY slices (by state)
-            for sf in state_fips_list if scope is None else ():
+            for sf in state_fips_list if area_planned else ():
                 if is_done_for_current_varset(dataset, year, "county", sf):
                     continue
                 plan.append(
@@ -593,8 +644,15 @@ def acs_ingest():
             # TRACT slices (by state, every county at once), for the datasets
             # that publish tracts: the 5-year estimates only.
             if year in tract_years_by_dataset.get(dataset, set()):
+                tract_meta = tract_scope[(dataset, year)]
                 for sf in tract_parent_fips(dataset):
-                    if is_done_for_current_varset(dataset, year, "tract", sf):
+                    if (
+                        dataset,
+                        year,
+                        "tract",
+                        sf,
+                        tract_meta["variables_hash"],
+                    ) in completed:
                         continue
                     plan.append(
                         {
@@ -602,8 +660,8 @@ def acs_ingest():
                             "year": year,
                             "geo_level": "tract",
                             "state_fips": sf,
-                            "variables_hash": meta["variables_hash"],
-                            "variables_count": meta["variables_count"],
+                            "variables_hash": tract_meta["variables_hash"],
+                            "variables_count": tract_meta["variables_count"],
                         }
                     )
 
@@ -614,8 +672,27 @@ def acs_ingest():
         if not plan:
             return [[]]
 
-        # About 8 batches per (dataset, year) once place slices are planned.
-        batches = chunk_list(plan, chunk_size=25)
+        # A backfill year refuses up front when the warehouse's disk cannot
+        # hold it with the reserve free (`census_acs/disk_guard.py`).
+        if scope is not None:
+            parents = {
+                (dataset, level): len(fips(dataset))
+                for dataset in years_by_dataset
+                for level, fips in (
+                    ("place", place_parent_fips),
+                    ("tract", tract_parent_fips),
+                )
+            }
+            assert_room_for(
+                projected_plan_bytes(plan, CONFIG.backfill_bytes_per_variable, parents),
+                CONFIG.backfill_disk_path,
+                CONFIG.backfill_reserve_fraction,
+            )
+
+        # Batches of eight, so a backfill year's 52 state slices spread over
+        # the `census_api` pool's slots: in batches of 25 a tract year ran two
+        # sequential batches and its download took 30 minutes (2026-10-31).
+        batches = chunk_list(plan, chunk_size=8)
         return batches
 
     # -----------------------------
@@ -743,20 +820,40 @@ def acs_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule="none_failed")
+    # One retry, not the DAG's three: the transform runs for hours, and each
+    # attempt resumes from the slice ledger, so a second retry of the same
+    # fault only spends the hours again. In November 2026 an operator stopped
+    # a 3 h 15 m read of acs5 place California and Airflow restarted it at
+    # once; a stop now fails the task outright (see below).
+    @task(trigger_rule="none_failed", retries=1)
     def transform_to_silver(
-        run_id: str | None = None, dag_run: Optional[object] = None
+        run_id: str | None = None,
+        dag_run: Optional[object] = None,
+        ti: Optional[object] = None,
     ) -> int:
         """Transform ALL raw Census data to silver (full load).
 
         Airflow injects ``run_id``. It keys the transform's slice checkpoints,
-        so a retry or a cleared task resumes after the last finished slice.
-        A backfill run (`census_acs/backfill.py`) transforms its year only.
+        so a retry or a cleared task resumes after the last finished slice:
+        only slices with no checkpoint under the run, and no unchanged ledger
+        fingerprint, are read again (the log's `[CENSUS_ACS RESUME]` lines say
+        which). A backfill run (`census_acs/backfill.py`) transforms its year
+        only. A statement an operator cancels or terminates fails the task
+        without a retry; clearing it resumes the same way.
         """
+        logger.info(
+            "[CENSUS_ACS RESUME] transform_to_silver attempt %s for run %s",
+            getattr(ti, "try_number", "?"),
+            run_id,
+        )
         scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
-        if scope is None:
-            return transform_census_to_silver(resume_key=run_id)
-        return transform_census_to_silver(resume_key=run_id, years=[scope.year])
+        with fail_without_retry_when_stopped(
+            "the ACS silver transform",
+            f"Clear this task to resume run {run_id} from its finished slices.",
+        ):
+            if scope is None:
+                return transform_census_to_silver(resume_key=run_id)
+            return transform_census_to_silver(resume_key=run_id, years=[scope.year])
 
     # -----------------------------
     # DAG wiring
@@ -776,8 +873,12 @@ def acs_ingest():
     planned = mark_slices_planned(batches)
     batches >> planned
 
-    # 4) Execute mapped ingestion batches
+    # 4) Execute mapped ingestion batches, after the slices are marked
+    # planned: marking resets a slice's `started_at`, so a batch that started
+    # alongside it (the 2024 metro run, 2026-10-31) finished a slice with no
+    # start and broke the slice ledger's CHECK.
     raw_ingest = ingest_batch.expand(batch=batches)
+    planned >> raw_ingest
 
     silver_schema = ensure_silver_schema()
     silver_transform = transform_to_silver()
@@ -806,22 +907,40 @@ def acs_ingest():
             conn.commit()
 
     @task(trigger_rule="none_failed")
-    def refresh_gold_census_elements() -> int:
-        """Refresh ACS dimensions and metric mappings in gold_census."""
+    def refresh_gold_census_elements(dag_run: Optional[object] = None) -> int:
+        """Refresh ACS dimensions and metric mappings in gold_census.
+
+        A backfill run refreshes its own year's releases only; it changed no
+        other year.
+        """
         from data_ingestion_toolbox.census_acs.gold_census.transform import (
             refresh_acs_elements,
         )
 
-        return refresh_acs_elements()
+        scope = BackfillScope.from_conf(getattr(dag_run, "conf", None))
+        return refresh_acs_elements(years=None if scope is None else [scope.year])
 
     @task(trigger_rule="none_failed")
     def refresh_gold_census_serving_layer() -> dict[str, int]:
         """Refresh changed ACS vintages as independently committed annual chunks."""
-        return refresh_serving_layer_in_year_chunks(
-            hook=_get_postgres_hook(),
-            config=ACS_CHUNK_CONFIG,
-            task_logger=logger,
+        with fail_without_retry_when_stopped(
+            "the ACS serving refresh",
+            "Clear this task to resume: finished years are committed and skipped.",
+        ):
+            return refresh_serving_layer_in_year_chunks(
+                hook=_get_postgres_hook(),
+                config=ACS_CHUNK_CONFIG,
+                task_logger=logger,
+            )
+
+    @task(trigger_rule="none_failed")
+    def refresh_age_structure_summary() -> dict[str, int]:
+        """Rebuild the age summary (ADR-0013) for releases whose lines changed."""
+        from data_ingestion_toolbox.census_acs.gold_census.age_summary import (
+            build_age_structure_summary,
         )
+
+        return build_age_structure_summary(_get_postgres_hook())
 
     @task(trigger_rule="none_failed")
     def emit_census_publisher_ready() -> None:
@@ -836,6 +955,7 @@ def acs_ingest():
     gold_census_elements = refresh_gold_census_elements()
     gold_census_refresh = refresh_gold_census_serving_layer()
     publisher_ready = emit_census_publisher_ready()
+    age_summary = refresh_age_structure_summary()
 
     (
         silver_transform
@@ -845,6 +965,8 @@ def acs_ingest():
         >> gold_census_refresh
         >> publisher_ready
     )
+    # Reads only what the refresh served; nothing downstream waits on it.
+    gold_census_refresh >> age_summary
 
 
 # Instantiate DAG

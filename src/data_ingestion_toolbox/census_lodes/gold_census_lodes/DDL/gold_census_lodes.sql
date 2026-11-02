@@ -19,88 +19,282 @@ FROM (VALUES
     ('outbound_in_state', 'Jobs elsewhere in the state held by people living here')
 ) AS measure(measure, measure_label);
 
--- Every published state-year, one row per measure and geography. A county
--- that did not resolve is not served (DB-035), though its blocks still count
--- toward its state, which is a sum of every block the state published. A measure
--- whose file the state did not publish (no workplace file, for instance) has
--- no row, never a zero. The release identity is the state's data vintage.
-CREATE OR REPLACE VIEW gold_census_lodes.observation_revision AS
-WITH published AS (
-    SELECT slice.run_id, slice.state, slice.year, slice.data_vintage, slice.published_at
-    FROM control.census_lodes_slice AS slice
-    WHERE slice.status = 'published'
-),
-area AS (
-    SELECT area.run_id, area.family, area.geo_id, area.geo_sk, area.value, area.capture_id
-    FROM silver_census_lodes.fact_area AS area
-    JOIN published USING (run_id)
-    WHERE area.column_code = 'C000'
-      AND area.geography_status NOT IN ('unsupported', 'ambiguous', 'unmapped')
-),
-flow AS (
-    SELECT flow.* FROM silver_census_lodes.fact_flow AS flow JOIN published USING (run_id)
-),
-county AS (
-    SELECT run_id, CASE family WHEN 'rac' THEN 'resident_workers' ELSE 'jobs' END AS measure,
-           geo_id, value, capture_id
-    FROM area
-    UNION ALL
-    SELECT run_id, 'live_and_work', work_geo_id, SUM(jobs), MIN(capture_id::TEXT)::UUID
-    FROM flow WHERE part = 'main' AND home_geo_id = work_geo_id
-    GROUP BY run_id, work_geo_id
-    UNION ALL
-    SELECT run_id, 'inbound', work_geo_id, SUM(jobs), MIN(capture_id::TEXT)::UUID
-    FROM flow WHERE home_geo_id <> work_geo_id
-    GROUP BY run_id, work_geo_id
-    UNION ALL
-    SELECT run_id, 'outbound_in_state', home_geo_id, SUM(jobs), MIN(capture_id::TEXT)::UUID
-    FROM flow WHERE part = 'main' AND home_geo_id <> work_geo_id
-    GROUP BY run_id, home_geo_id
-),
-state AS (
-    SELECT area.run_id, CASE area.family WHEN 'rac' THEN 'resident_workers' ELSE 'jobs' END AS measure,
-           SPLIT_PART(area.geo_id, '|', 1) AS geo_id,
-           SUM(area.value) AS value, MIN(area.capture_id::TEXT)::UUID AS capture_id
-    FROM silver_census_lodes.fact_area AS area
-    JOIN published USING (run_id)
-    WHERE area.column_code = 'C000'
-    GROUP BY area.run_id, area.family, 3
-    UNION ALL
-    SELECT run_id, CASE part WHEN 'main' THEN 'live_and_work' ELSE 'inbound' END,
-           SPLIT_PART(work_geo_id, '|', 1), SUM(jobs), MIN(capture_id::TEXT)::UUID
-    FROM flow
-    GROUP BY run_id, part, 3
-),
-measured AS (
-    SELECT county.*, 'county'::TEXT AS geo_type FROM county
-    UNION ALL
-    SELECT state.run_id, state.measure, state.geo_id, state.value, state.capture_id, 'state'::TEXT
-    FROM state
+-- Every published state-year's county and state sums, one row per measure
+-- and geography, computed once when the state-year publishes
+-- (`refresh_observation_fact`) instead of on every read. The serving views
+-- below read this table by key: a place page asks for one geography and
+-- never makes the warehouse re-sum every published year's flows (W-9 loads
+-- 2002 onwards, about 1,100 state-years).
+--
+-- A county that did not resolve is not computed (DB-035), though its blocks
+-- still count toward its state, which is a sum of every block the state
+-- published. A measure whose file the state did not publish (no workplace
+-- file, for instance) has no row, never a zero. The release identity is the
+-- state's data vintage. Rows of every published run stay: a new vintage is a
+-- second release beside the one it revised.
+CREATE TABLE IF NOT EXISTS gold_census_lodes.observation_fact (
+    metric_key TEXT NOT NULL,
+    geo_id TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    release_key TEXT NOT NULL,
+    run_id UUID NOT NULL REFERENCES control.census_lodes_slice(run_id),
+    geo_type TEXT NOT NULL CHECK (geo_type IN ('county', 'state')),
+    value BIGINT NOT NULL CHECK (value >= 0),
+    capture_id UUID NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT lodes_observation_fact_pkey
+        PRIMARY KEY (metric_key, geo_id, year, release_key, run_id)
+);
+
+-- A place page reads every measure of one geography.
+CREATE INDEX IF NOT EXISTS ix_lodes_observation_fact_geo_year
+    ON gold_census_lodes.observation_fact (geo_id, year);
+-- The refresh replaces one run's rows.
+CREATE INDEX IF NOT EXISTS ix_lodes_observation_fact_run
+    ON gold_census_lodes.observation_fact (run_id);
+
+-- LEHD did not cover every state from 2002: a state that joined late
+-- (Massachusetts until 2011, Arkansas until 2003) publishes files for its
+-- early years that hold a handful of jobs, not the state, and some states'
+-- residence files cover only part of their workers in some years (Alaska
+-- 2017 onwards, Michigan 2022-2023). Those are coverage gaps, not economies,
+-- and are not served: a page reads them as "not published that year", never
+-- as 13 jobs in Massachusetts.
+--
+-- The rule is the data's own, not a list of states: a state-year whose state
+-- total of jobs located there (the workplace file) or of resident workers
+-- (the residence file) is under a tenth of the same state's upper-quartile
+-- year is incomplete for that file. An economy has never lost nine tenths of
+-- its jobs in a year; a file covering a few employers has. A state-year with
+-- no workplace file at all is a residence gap too, whatever its size: LEHD
+-- says its residence file counts only residents employed in other states.
+--
+-- A gap hides only the measures that file feeds (see `coverage_gap_hides`):
+-- a workplace gap hides `jobs`, a residence gap hides `resident_workers`, and
+-- the commuting measures, which pair a home with a workplace, are hidden when
+-- either file is short. A state whose residence file alone is short keeps its
+-- jobs served.
+--
+-- The sums stay in `observation_fact` (DQ-LODES-005 still sees them); this
+-- table names the runs and files the serving views leave out and why. It is rebuilt
+-- from the state rows alone (about 1,100 state-years per measure) each time
+-- sums are refreshed, so a later year that raises a state's typical total is
+-- applied to its earlier years too.
+CREATE TABLE IF NOT EXISTS gold_census_lodes.coverage_gap (
+    run_id UUID NOT NULL REFERENCES control.census_lodes_slice(run_id),
+    metric_key TEXT NOT NULL,
+    state_geo_id TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    state_value BIGINT NOT NULL,
+    typical_value NUMERIC NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'incomplete_coverage'
+        CHECK (reason = 'incomplete_coverage'),
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT lodes_coverage_gap_pkey PRIMARY KEY (run_id, metric_key)
+);
+
+-- A state-year is incomplete when its state total is under this share of the
+-- state's upper-quartile year.
+CREATE OR REPLACE FUNCTION gold_census_lodes.coverage_floor_share()
+RETURNS NUMERIC
+LANGUAGE sql
+IMMUTABLE
+AS $$ SELECT 0.10::NUMERIC $$;
+
+-- Whether a coverage gap found in `gap_metric_key` (the state total that fell
+-- short: `jobs` or `resident_workers`) hides `metric_key`: the measure itself,
+-- and the commuting measures, which need both files.
+CREATE OR REPLACE FUNCTION gold_census_lodes.coverage_gap_hides(
+    gap_metric_key TEXT, metric_key TEXT
 )
-SELECT measured.measure AS metric_key,
-       measured.measure,
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT gap_metric_key = metric_key
+        OR metric_key IN ('live_and_work', 'inbound', 'outbound_in_state')
+$$;
+
+-- Rebuild the coverage gaps from the published state totals. Returns the
+-- gaps written.
+CREATE OR REPLACE FUNCTION gold_census_lodes.refresh_coverage_gap()
+RETURNS BIGINT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_written BIGINT;
+BEGIN
+    DELETE FROM gold_census_lodes.coverage_gap;
+
+    WITH state_total AS (
+        SELECT fact.run_id, fact.metric_key, fact.geo_id, fact.year, fact.value
+        FROM gold_census_lodes.observation_fact AS fact
+        WHERE fact.metric_key IN ('jobs', 'resident_workers')
+          AND fact.geo_type = 'state'
+    ),
+    typical AS (
+        SELECT geo_id, metric_key,
+               PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value)::NUMERIC AS typical_value
+        FROM state_total
+        GROUP BY geo_id, metric_key
+    )
+    INSERT INTO gold_census_lodes.coverage_gap (
+        run_id, metric_key, state_geo_id, year, state_value, typical_value
+    )
+    SELECT state_total.run_id, state_total.metric_key, state_total.geo_id,
+           state_total.year, state_total.value, typical.typical_value
+    FROM state_total
+    JOIN typical USING (geo_id, metric_key)
+    WHERE state_total.value
+          < typical.typical_value * gold_census_lodes.coverage_floor_share()
+       -- A state-year LEHD published no workplace file for has residence
+       -- counts of only "residents who are employed in other states" (LODES
+       -- Technical Documentation 8.4, Data Coverage and Availability): never
+       -- the state's resident workers, however large the share that commutes
+       -- out (the District of Columbia 2002-2009).
+       OR (state_total.metric_key = 'resident_workers'
+           AND NOT EXISTS (
+               SELECT 1 FROM state_total AS workplace
+               WHERE workplace.run_id = state_total.run_id
+                 AND workplace.metric_key = 'jobs'
+           ));
+    GET DIAGNOSTICS v_written = ROW_COUNT;
+    RETURN v_written;
+END;
+$$;
+
+-- Recompute the served sums of the given published runs, or, given NULL, of
+-- every published run that has none yet. Each run's sums read only its own
+-- silver rows (both fact tables are keyed by run first), so a refresh costs
+-- the state-years it names, never the whole history. Returns the rows written.
+CREATE OR REPLACE FUNCTION gold_census_lodes.refresh_observation_fact(p_run_ids UUID[])
+RETURNS BIGINT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_runs UUID[];
+    v_written BIGINT;
+BEGIN
+    IF p_run_ids IS NULL THEN
+        SELECT COALESCE(ARRAY_AGG(slice.run_id), ARRAY[]::UUID[]) INTO v_runs
+        FROM control.census_lodes_slice AS slice
+        WHERE slice.status = 'published'
+          AND NOT EXISTS (
+              SELECT 1 FROM gold_census_lodes.observation_fact AS fact
+              WHERE fact.run_id = slice.run_id
+          );
+    ELSE
+        SELECT COALESCE(ARRAY_AGG(slice.run_id), ARRAY[]::UUID[]) INTO v_runs
+        FROM control.census_lodes_slice AS slice
+        WHERE slice.status = 'published' AND slice.run_id = ANY(p_run_ids);
+    END IF;
+    IF CARDINALITY(v_runs) = 0 THEN
+        RETURN 0;
+    END IF;
+
+    DELETE FROM gold_census_lodes.observation_fact WHERE run_id = ANY(v_runs);
+
+    WITH published AS (
+        SELECT slice.run_id, slice.data_vintage, slice.published_at
+        FROM control.census_lodes_slice AS slice
+        WHERE slice.run_id = ANY(v_runs)
+    ),
+    area AS (
+        SELECT area.run_id, area.family, area.geo_id, area.geography_status,
+               area.value, area.capture_id
+        FROM silver_census_lodes.fact_area AS area
+        WHERE area.run_id = ANY(v_runs) AND area.column_code = 'C000'
+    ),
+    flow AS (
+        SELECT flow.run_id, flow.part, flow.home_geo_id, flow.work_geo_id,
+               flow.jobs, flow.capture_id
+        FROM silver_census_lodes.fact_flow AS flow
+        WHERE flow.run_id = ANY(v_runs)
+    ),
+    measured AS (
+        SELECT run_id, CASE family WHEN 'rac' THEN 'resident_workers' ELSE 'jobs' END AS measure,
+               geo_id, value, capture_id, 'county'::TEXT AS geo_type
+        FROM area
+        WHERE geography_status NOT IN ('unsupported', 'ambiguous', 'unmapped')
+        UNION ALL
+        SELECT run_id, 'live_and_work', work_geo_id, SUM(jobs), MIN(capture_id::TEXT)::UUID, 'county'
+        FROM flow WHERE part = 'main' AND home_geo_id = work_geo_id
+        GROUP BY run_id, work_geo_id
+        UNION ALL
+        SELECT run_id, 'inbound', work_geo_id, SUM(jobs), MIN(capture_id::TEXT)::UUID, 'county'
+        FROM flow WHERE home_geo_id <> work_geo_id
+        GROUP BY run_id, work_geo_id
+        UNION ALL
+        SELECT run_id, 'outbound_in_state', home_geo_id, SUM(jobs), MIN(capture_id::TEXT)::UUID, 'county'
+        FROM flow WHERE part = 'main' AND home_geo_id <> work_geo_id
+        GROUP BY run_id, home_geo_id
+        UNION ALL
+        SELECT run_id, CASE family WHEN 'rac' THEN 'resident_workers' ELSE 'jobs' END,
+               SPLIT_PART(geo_id, '|', 1), SUM(value), MIN(capture_id::TEXT)::UUID, 'state'
+        FROM area
+        GROUP BY run_id, family, SPLIT_PART(geo_id, '|', 1)
+        UNION ALL
+        SELECT run_id, CASE part WHEN 'main' THEN 'live_and_work' ELSE 'inbound' END,
+               SPLIT_PART(work_geo_id, '|', 1), SUM(jobs), MIN(capture_id::TEXT)::UUID, 'state'
+        FROM flow
+        GROUP BY run_id, part, SPLIT_PART(work_geo_id, '|', 1)
+    )
+    INSERT INTO gold_census_lodes.observation_fact (
+        metric_key, geo_id, year, release_key, run_id, geo_type, value,
+        capture_id, retrieved_at
+    )
+    SELECT measured.measure, measured.geo_id, slice.year, published.data_vintage,
+           measured.run_id, measured.geo_type, measured.value, measured.capture_id,
+           published.published_at
+    FROM measured
+    JOIN published USING (run_id)
+    JOIN control.census_lodes_slice AS slice USING (run_id);
+    GET DIAGNOSTICS v_written = ROW_COUNT;
+    PERFORM gold_census_lodes.refresh_coverage_gap();
+    RETURN v_written;
+END;
+$$;
+
+-- Every published state-year LEHD covered, one row per measure and
+-- geography, read from the precomputed sums by key. The measures a coverage
+-- gap hides are left out for that run, its counties' rows included.
+CREATE OR REPLACE VIEW gold_census_lodes.observation_revision AS
+SELECT fact.metric_key,
+       fact.metric_key AS measure,
        definition.measure_label,
        definition.unit,
        definition.observation_basis,
-       published.year,
-       MAKE_DATE(published.year, 1, 1) AS period_start,
-       MAKE_DATE(published.year, 12, 31) AS period_end,
-       measured.geo_id,
+       fact.year,
+       MAKE_DATE(fact.year, 1, 1) AS period_start,
+       MAKE_DATE(fact.year, 12, 31) AS period_end,
+       fact.geo_id,
        entity.geo_sk,
-       measured.geo_type,
-       gold_glossary.geo_grain(measured.geo_type) AS geo_level,
-       measured.value::NUMERIC AS value,
+       fact.geo_type,
+       gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+       fact.value::NUMERIC AS value,
        'valid'::TEXT AS value_status,
-       published.data_vintage AS release_key,
-       published.published_at AS retrieved_at,
-       md5(measured.measure || '|' || measured.geo_id || '|' || published.year::TEXT
-           || '|' || published.data_vintage) AS source_record_id,
-       measured.capture_id,
-       measured.run_id
-FROM measured
-JOIN published USING (run_id)
-JOIN gold_census_lodes.measure_definition AS definition ON definition.measure = measured.measure
-JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = measured.geo_id;
+       fact.release_key,
+       fact.retrieved_at,
+       md5(fact.metric_key || '|' || fact.geo_id || '|' || fact.year::TEXT
+           || '|' || fact.release_key) AS source_record_id,
+       fact.capture_id,
+       fact.run_id
+FROM gold_census_lodes.observation_fact AS fact
+JOIN gold_census_lodes.measure_definition AS definition ON definition.measure = fact.metric_key
+JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = fact.geo_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM gold_census_lodes.coverage_gap AS gap
+    WHERE gap.run_id = fact.run_id
+      AND gold_census_lodes.coverage_gap_hides(gap.metric_key, fact.metric_key)
+);
+
+-- The served sums of every state-year published before this table existed.
+-- A no-op once each published run has its rows.
+SELECT gold_census_lodes.refresh_observation_fact(NULL);
+-- The coverage gaps of sums computed before the gaps were (the refresh above
+-- writes nothing, and so rebuilds nothing, once every run has its rows).
+SELECT gold_census_lodes.refresh_coverage_gap();
 
 -- The newest published vintage of each observation.
 CREATE OR REPLACE VIEW gold_census_lodes.observation_latest AS

@@ -41,7 +41,11 @@ export const SOURCE_NAMES: Record<string, string> = {
 };
 
 export const NO_LOCAL_PRICES =
-  "No source publishes grocery or gas prices for a county. Each figure here is for the larger area named beside it.";
+  "No source publishes grocery or gas prices for a county or a city. Each figure here is for the larger area named beside it.";
+
+/** On a metro's page: the price level is its own, the rest a larger area's. */
+export const NO_METRO_PRICES =
+  "No source publishes grocery or gas prices for a metro area as the Census Bureau draws it. The price level is BEA's figure for this metro; each other figure is for the larger area named beside it.";
 
 const LEVEL_WORDS: Record<Area["level"], string> = {
   NATIONAL: "the nation",
@@ -73,6 +77,7 @@ export function containingAreas(
     place ? { geoId: place.geo_id, level: areaLevel, name: areaName({ ...place, geo_level: areaLevel }) } : null;
   if (level === "NATIONAL") areas.nation = own("NATIONAL");
   if (level === "STATE") areas.state = own("STATE");
+  if (level === "METRO") areas.metro = own("METRO");
   for (const row of related?.items || []) {
     if (row.relationship !== "part_of") continue;
     const area = { geoId: row.geo_id, level: row.geo_level as Area["level"], name: areaName(row) };

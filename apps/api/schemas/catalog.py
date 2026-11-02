@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from apps.api.schemas.labels import (
+    MetricDefinitionSummary,
+    PlainLabelled,
+    definition_summary,
+)
 
 
 class SourceSystem(BaseModel):
@@ -17,7 +23,7 @@ class SourceSystem(BaseModel):
     reference_url: Optional[str] = None
 
 
-class MetricCatalog(BaseModel):
+class MetricCatalog(PlainLabelled):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     metric_code: str
@@ -37,6 +43,15 @@ class MetricCatalog(BaseModel):
     publication_time: Optional[datetime] = None
     harvested_at: Optional[datetime] = None
     freshness_state: Optional[str] = None
+    #: The plain-language definition from `docs/semantics/` (A-2), with its
+    #: review status; `null` for a metric no entry defines yet.
+    definition: Optional[MetricDefinitionSummary] = None
+
+    @model_validator(mode="after")
+    def _definition(self):  # type: ignore[no-untyped-def]
+        if self.definition is None:
+            self.definition = definition_summary(self.metric_code)
+        return self
 
 
 class MetricListResponse(BaseModel):
@@ -83,6 +98,9 @@ class GeographyRelationship(BaseModel):
     place whose boundaries overlap) or ``adjacent`` (two counties sharing a
     boundary). ``overlap_weight`` is the overlap's share of the place's area
     and ``overlap_area_m2`` the overlap itself, both only for ``intersects``.
+    ``page_path`` is a metro's page (``/metro/<segment>``), so a city or
+    county links its metro by name; NULL for every other level, whose pages
+    a client builds from its siblings.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -96,6 +114,7 @@ class GeographyRelationship(BaseModel):
     evidence_source: str
     overlap_area_m2: Optional[float] = None
     overlap_weight: Optional[float] = None
+    page_path: Optional[str] = None
 
 
 class GeographyRelatedResponse(BaseModel):
@@ -110,6 +129,225 @@ class GeographyListResponse(BaseModel):
     limit: int
     offset: int
     items: list[GeographyLatest]
+
+
+class GeographySearchVia(BaseModel):
+    """The matched city a ``contains_match`` result was offered for."""
+
+    geo_id: str
+    geo_name: str
+
+
+class GeographySearchItem(BaseModel):
+    """One geography offered for a name typed into "find your place".
+
+    ``match`` says why it was offered: ``exact`` (its name without the Census
+    description is the query), ``prefix`` (its name starts with the query),
+    ``word_prefix`` (a later word of its name does), ``fuzzy`` (a close
+    spelling, by trigram similarity) or ``contains_match`` (it contains a
+    city that matched, named in ``matched_via``: Travis County for "Austin").
+
+    ``population`` ranks the matches. It is the newest valid ACS 5-year total
+    population, named by ``population_metric_code`` and ``population_year``,
+    and NULL where none is served (a ZCTA before its ACS grain lands): an
+    unranked geography is listed after the ranked ones, never as zero.
+
+    ``page_path`` is the web address of the geography's page, made by the
+    web's own address rule, or NULL for a grain with no page yet (ZCTA).
+    """
+
+    geo_id: str
+    geo_level: str
+    geo_name: str
+    short_name: str
+    match: str
+    matched_via: Optional[GeographySearchVia] = None
+    state_fips: Optional[str] = None
+    state_name: Optional[str] = None
+    #: A city's containing county: the one holding the largest share of it.
+    #: A city crossing a county line has others; ``/related`` lists them.
+    county_geo_id: Optional[str] = None
+    county_name: Optional[str] = None
+    population: Optional[float] = None
+    population_year: Optional[int] = None
+    population_metric_code: Optional[str] = None
+    page_path: Optional[str] = None
+
+
+class GeographySearchResponse(BaseModel):
+    #: The query as matched: lower case, accents removed, punctuation spaced.
+    query: str
+    limit: int
+    items: list[GeographySearchItem]
+
+
+class MetroSummary(BaseModel):
+    """One metro (a CBSA) as its page names it (web-metro-pages).
+
+    ``segment`` is its address segment and ``page_path`` its page,
+    ``/metro/<segment>``: the slug of the published name, or the five-digit
+    CBSA code when another metro's name slugs the same way.
+
+    ``principal_state_fips`` is the state a metro page reads beside the
+    nation: the state of its most populous member county, the same rule the
+    place search uses. A metro can span states; ``/metros/{segment}`` lists
+    every state it reaches into.
+    """
+
+    geo_id: str
+    geo_name: str
+    short_name: str
+    cbsa_code: str
+    segment: str
+    page_path: str
+    principal_state_fips: Optional[str] = None
+    principal_state_name: Optional[str] = None
+    population: Optional[float] = None
+    population_year: Optional[int] = None
+    population_metric_code: Optional[str] = None
+
+
+class MetroListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[MetroSummary]
+
+
+class MetroMemberCounty(BaseModel):
+    """A county the newest delineation the reference holds puts in the metro."""
+
+    geo_id: str
+    geo_name: str
+    state_fips: Optional[str] = None
+    state_name: Optional[str] = None
+    page_path: Optional[str] = None
+    population: Optional[float] = None
+    population_year: Optional[int] = None
+
+
+class MetroState(BaseModel):
+    """A state the metro reaches into, with how many member counties lie in it."""
+
+    geo_id: str
+    state_fips: str
+    state_name: Optional[str] = None
+    page_path: Optional[str] = None
+    member_counties: int
+    principal: bool
+
+
+class MetroArea(BaseModel):
+    """An area the principal state lies in: its Census division, region, nation."""
+
+    geo_id: str
+    geo_level: str
+    geo_name: Optional[str] = None
+
+
+class MetroPageResponse(BaseModel):
+    """What a metro page needs before it reads any figure (web-metro-pages).
+
+    ``requested_segment`` is the segment asked for; when it is the CBSA code
+    or another accepted form, ``metro.segment`` is the canonical one the page
+    settles on. ``member_counties`` are the newest delineation's
+    (``delineation_vintage``, ``evidence_source``), most populous first.
+    ``states`` lists every state a member county lies in, the principal one
+    first; ``principal_state_areas`` are the areas the principal state lies
+    in, for figures no source publishes for a metro (gas, food prices).
+    """
+
+    requested_segment: str
+    metro: MetroSummary
+    delineation_vintage: Optional[int] = None
+    evidence_source: Optional[str] = None
+    member_counties: list[MetroMemberCounty]
+    states: list[MetroState]
+    principal_state_areas: list[MetroArea]
+
+
+class LocatedGeography(BaseModel):
+    """A geography whose current boundary covers the requested point."""
+
+    geo_id: str
+    geo_level: str
+    geo_name: Optional[str] = None
+    #: The boundary vintage the point was tested against; for a metro, the
+    #: delineation vintage of its county membership.
+    boundary_vintage: Optional[int] = None
+    page_path: Optional[str] = None
+
+
+class GeographyLocateResponse(BaseModel):
+    """The geographies containing one point, smallest page first in ``landing``.
+
+    The coordinates are not echoed. ``landing`` is the city or town the point
+    is in, or its county when it is in none (unincorporated land), so "use
+    my location" opens the page a resident calls home. ``metro`` comes from
+    the county's delineated membership, not from a boundary.
+    """
+
+    landing: LocatedGeography
+    state: LocatedGeography
+    county: Optional[LocatedGeography] = None
+    place: Optional[LocatedGeography] = None
+    tract: Optional[LocatedGeography] = None
+    zcta: Optional[LocatedGeography] = None
+    metro: Optional[LocatedGeography] = None
+
+
+class TileLayerVintage(BaseModel):
+    """One boundary vintage a versioned tile layer holds."""
+
+    boundary_vintage: int
+    feature_count: int
+    is_default: bool = Field(
+        description="The vintage a tile request that names none is drawn on (the newest)."
+    )
+    tile_template: str = Field(
+        description="Same-origin tile URL template that draws exactly this vintage."
+    )
+
+
+class TileLayer(BaseModel):
+    """One vector tile layer the tile server publishes (tiles-places-and-metros).
+
+    ``versioned`` layers draw the boundary vintage a request names with
+    ``?vintage=``, and never another: a vintage not listed in ``vintages``
+    draws nothing. Unversioned layers draw the current boundaries only.
+    Features carry identity, never values; a map joins published values on
+    ``join_key``.
+    """
+
+    layer_id: str
+    source_layer: str = Field(description="The MVT layer name inside each tile.")
+    grains: list[str]
+    versioned: bool
+    minzoom: int
+    maxzoom: int
+    join_key: str
+    name_field: str
+    tile_template: str = Field(
+        description=(
+            "Same-origin tile URL template. For a versioned layer it draws the "
+            "default vintage."
+        )
+    )
+    vintages: list[TileLayerVintage] = Field(default_factory=list)
+    default_vintage: Optional[int] = None
+    available: bool = Field(
+        description=(
+            "False for a versioned layer that holds no boundary yet: its tiles "
+            "are empty, and a map should say so rather than draw nothing."
+        )
+    )
+
+
+class TileLayerCatalogResponse(BaseModel):
+    """Every tile layer, and the rule a map drawn from them follows."""
+
+    layers: list[TileLayer]
+    uncoloured_rule: str
 
 
 class ObservationRouteCapability(BaseModel):

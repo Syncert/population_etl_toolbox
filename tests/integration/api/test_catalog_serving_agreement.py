@@ -2485,6 +2485,10 @@ def _grain_requests(
     return {
         "/api/v1/observations": {"metric_code": pep_metric, "limit": 5},
         "/api/v1/observations/latest": {"metric_code": fred_metric, "limit": 5},
+        # A provider-rate pairing over the published PEP metric, registered
+        # by the test itself: every shipped pairing names a code this
+        # fixture corpus does not publish.
+        "/api/v1/observations/derived": {"ratio_id": "grain_probe", "limit": 5},
         "/api/v1/comparison": {
             "metric_code_a": pep_metric,
             "metric_code_b": pep_metric,
@@ -2492,6 +2496,8 @@ def _grain_requests(
         },
         "/api/v1/distribution/bins": {"metric_code": pep_metric, "bin_count": 3},
         "/api/v1/catalog/geographies": {"limit": 5},
+        # The age summary's one-indicator map; NATIONAL is a stateless grain.
+        "/api/v1/age-structure/map": {"indicator": "old_age_dependency_ratio"},
         "/api/v1/pep/observations/latest": {"metric_code": pep_metric, "limit": 5},
         "/api/v1/fred/observations/latest": {"metric_code": fred_metric, "limit": 5},
         "/api/v1/census/observations/latest": {"metric_code": acs_metric, "limit": 5},
@@ -2525,6 +2531,7 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     published_pep_metrics: list[str],
     published_fred_metric: str,
     published_acs_metric: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Covers: API-094 — an alias answers what its vocabulary word answers.
 
@@ -2544,6 +2551,31 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     """
     from apps.api.main import app
     from apps.api.registry import GEO_GRAIN_ALIASES
+    from apps.api.services import derived_ratio_service
+    from data_ingestion_toolbox.semantics.derived_ratios import parse_registry
+
+    probe = parse_registry(
+        {
+            "entries": [
+                {
+                    "ratio_id": "grain_probe",
+                    "kind": "provider_rate",
+                    "scale": 1000,
+                    "unit": "per 1,000 residents",
+                    "label": "Grain probe",
+                    "numerator": "CENSUS_PEP:PROBE_COUNT",
+                    "provider_rate": published_pep_metrics[0],
+                    "denominator_label": "residents",
+                    "universe": "residents",
+                    "status": "approved",
+                    "reviewer": "test",
+                    "version": 1,
+                    "citations": ["https://www.census.gov/"],
+                }
+            ]
+        }
+    )
+    monkeypatch.setattr(derived_ratio_service, "pairing_for", probe.get)
 
     declared = {
         path
@@ -2596,6 +2628,7 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     assert "/api/v1/distribution/bins@NATIONAL" in exercised, exercised
     assert "/api/v1/pep/observations/latest@NATIONAL" in exercised, exercised
     assert "/api/v1/observations/latest@NATIONAL" in exercised, exercised
+    assert "/api/v1/observations/derived@NATIONAL" in exercised, exercised
 
 
 def test_the_distribution_reports_the_grain_it_binned(

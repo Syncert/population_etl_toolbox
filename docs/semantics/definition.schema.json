@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "metric_id",
+    "metric_codes",
     "name",
     "definition",
     "intended_use",
@@ -19,22 +20,97 @@
     "citations"
   ],
   "properties": {
-    "metric_id": {"type": "string", "minLength": 1},
-    "name": {"type": "string", "minLength": 1},
-    "definition": {"type": "string", "minLength": 1},
-    "intended_use": {"type": "string", "minLength": 1},
-    "limitations": {"type": "array", "items": {"type": "string"}},
-    "comparison_guidance": {"type": "array", "items": {"type": "string"}},
-    "status": {"enum": ["draft", "approved", "deprecated", "needs_review"]},
-    "owner": {"type": "string", "minLength": 1},
-    "reviewer": {"type": "string", "minLength": 1},
-    "version": {"type": "integer", "minimum": 1},
-    "effective_date": {"type": "string", "format": "date"},
-    "last_reviewed_date": {"type": "string", "format": "date"},
+    "metric_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metric_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "definition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intended_use": {
+      "type": "string",
+      "minLength": 1
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "comparison_guidance": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "approved",
+        "deprecated",
+        "needs_review"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "last_reviewed_date": {
+      "type": "string",
+      "format": "date"
+    },
     "citations": {
       "type": "array",
-      "items": {"type": "string", "format": "uri"},
+      "items": {
+        "type": "string",
+        "format": "uri"
+      },
       "minItems": 1
+    },
+    "unit": {
+      "type": "string"
+    },
+    "universe": {
+      "type": "string"
+    },
+    "caveat": {
+      "type": "string"
+    },
+    "kind": {
+      "description": "What the value measures, which decides whether it compares across geographic levels (ADR-0010 rule 2): a count grows with the place, a median, mean, rate, share or index describes its population whatever its size. An entry with no kind is treated as a count.",
+      "enum": [
+        "count",
+        "median",
+        "mean",
+        "rate",
+        "share",
+        "index"
+      ]
     }
   }
 }

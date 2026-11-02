@@ -9,7 +9,17 @@ silently and re-serves the wrong years. One definition, two callers.
 
 from __future__ import annotations
 
-from data_ingestion_toolbox.utility.gold_schema import ServingRefreshChunkConfig
+import os
+
+from data_ingestion_toolbox.utility.gold_schema import (
+    GrainStep,
+    ServingRefreshChunkConfig,
+)
+
+#: Sessions publishing an ACS tract or place step at once, one state each.
+#: One session left all but one of the internal stack's 32 cores idle
+#: through a tract year (2026-10-31); bounded well under the connection limit.
+ACS_SERVING_WORKERS = int(os.environ.get("ACS_SERVING_WORKERS", "8"))
 
 
 BLS_CHUNK_CONFIG = ServingRefreshChunkConfig(
@@ -117,6 +127,31 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
         WHERE bounds.first_year IS NOT NULL
         ORDER BY y
     """,
+    silver_rows_sql="""
+        SELECT EXISTS (
+            SELECT 1
+            FROM silver_census.fact_demographics AS s
+            WHERE s.source_system = 'CENSUS_ACS'
+              AND s.estimate_year BETWEEN EXTRACT(YEAR FROM %s::DATE)::INT
+                                      AND EXTRACT(YEAR FROM %s::DATE)::INT
+              AND s.estimate_value IS NOT NULL
+        )
+    """,
+    # Tracts and places are published a state per session (by_state steps).
+    state_list_sql="""
+        SELECT DISTINCT state_fips
+        FROM silver_ref.dim_geo_entity
+        WHERE geo_type = 'state' AND state_fips IS NOT NULL
+        ORDER BY state_fips
+    """,
+    step_workers=ACS_SERVING_WORKERS,
+    stateless_rows_sql="""
+        SELECT COUNT(*)
+        FROM gold_census.rpt_acs_observations
+        WHERE observation_date BETWEEN %(start)s AND %(end)s
+          AND geo_level = ANY(%(geo_levels)s::TEXT[])
+          AND state_fips IS NULL
+    """,
     report_procedure="gold_census.refresh_rpt_acs_observations",
     latest_procedure="gold_census.refresh_mv_acs_latest",
     latest_table="gold_census.mv_acs_latest",
@@ -126,6 +161,68 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     # on the internal stack. A 90-minute limit failed that year every time.
     statement_timeout="600min",
     full_statement_timeout="600min",
+    # The year is served one grain group at a time (backfill plan,
+    # Deliverable 5), so a place year never holds that year's county, state
+    # and nation rows. Limits per step: the area grains were served inside 90
+    # minutes a year before places and tracts existed; a tract year (five
+    # tables, about 11M revision rows) inside the 120 minutes the year chunk
+    # had before 2024; a full-list place year (2024, about 159M revision rows)
+    # needed hours, and keeps the 600 minutes. Each step's duration is logged
+    # (`step=... duration_seconds=`), and the backfill records them per year.
+    # A grain step is skipped when the transform's per-slice ledger says no
+    # slice of that year and grain changed a row since the chunk was last
+    # served. Slice keys are `dataset/geo_level[/state]`; the step names the
+    # served levels. A grain-year with no ledger row, or a ledger row older
+    # than the column recording changes, counts as changed.
+    #
+    # A small year is transformed as whole-year slices (`*`, or `dataset/*`)
+    # that name no level, so the ledger cannot say which grain changed. When
+    # one changed since the last serve, the step asks silver itself: did a
+    # fact at its levels change after the watermark the last complete serve
+    # published through (`served_through`)? Without that, every grain of a
+    # small year was re-served whenever any grain changed: a 2000 tract load
+    # re-served the year's area and place grains, and the next area load would
+    # re-serve 1.4 million unchanged tract rows (25 minutes).
+    step_changed_sql="""
+        WITH grains AS (
+            SELECT CASE level
+                       WHEN 'NATIONAL' THEN 'us'
+                       ELSE LOWER(level)
+                   END AS slice_level
+            FROM UNNEST(%(geo_levels)s::TEXT[]) AS level
+        ), ledger AS (
+            SELECT s.last_changed_at
+            FROM silver_census.transform_slice_state AS s
+            JOIN grains AS g ON g.slice_level = split_part(s.slice_key, '/', 2)
+            WHERE s.year = %(year)s
+        ), whole_year AS (
+            SELECT s.last_changed_at
+            FROM silver_census.transform_slice_state AS s
+            WHERE s.year = %(year)s
+              AND (s.slice_key = '*' OR split_part(s.slice_key, '/', 2) = '*')
+        )
+        SELECT (NOT EXISTS (SELECT 1 FROM ledger)
+                AND NOT EXISTS (SELECT 1 FROM whole_year))
+            OR EXISTS (SELECT 1 FROM ledger WHERE last_changed_at > %(since)s)
+            OR (
+                EXISTS (SELECT 1 FROM whole_year WHERE last_changed_at > %(since)s)
+                AND (
+                    %(served_through)s::TIMESTAMPTZ IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM silver_census.fact_demographics AS fact
+                        WHERE fact.ingested_at > %(served_through)s::TIMESTAMPTZ
+                          AND fact.estimate_year = %(year)s
+                          AND fact.geo_level IN (SELECT slice_level FROM grains)
+                    )
+                )
+            )
+    """,
+    grain_steps=(
+        GrainStep("area", ("NATIONAL", "STATE", "COUNTY", "METRO"), "90min"),
+        GrainStep("tract", ("TRACT",), "120min", by_state=True),
+        GrainStep("place", ("PLACE",), "600min", by_state=True),
+    ),
 )
 
 FRED_CHUNK_CONFIG = ServingRefreshChunkConfig(

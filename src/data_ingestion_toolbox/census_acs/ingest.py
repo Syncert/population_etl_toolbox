@@ -33,7 +33,13 @@ from data_ingestion_toolbox.capture import (
 from data_ingestion_toolbox.census_acs.silver_census.replay import (
     replay_census_capture,
 )
-from .config import CONFIG, place_parent_fips, tract_parent_fips
+from .config import (
+    ACS_METRO_GEOGRAPHY,
+    CONFIG,
+    census_api_url,
+    place_parent_fips,
+    tract_parent_fips,
+)
 
 CENSUS_NULL_SENTINELS = {
     "-222222222",
@@ -160,6 +166,10 @@ def build_geo_params(
                 f"{dataset or 'unknown dataset'} publishes no places for state {state_fips}"
             )
         return {"for": "place:*", "in": f"state:{state_fips}"}
+    elif geo_level == "metro":
+        # Every metropolitan and micropolitan statistical area at once: the
+        # Bureau's own CBSA estimates, which span states (W-7).
+        return {"for": f"{ACS_METRO_GEOGRAPHY}:*"}
     elif geo_level == "tract":
         # Every tract in every county of one state: the API takes the county
         # wildcard inside `in` (sub-county-geography).
@@ -197,7 +207,7 @@ def fetch_acs_api(
     Call the Census API and return the raw JSON (list-of-lists).
 
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    base_url = census_api_url(year, dataset)
 
     params: Dict[str, str] = {
         "get": ",".join(variables),
@@ -288,6 +298,7 @@ def rows_to_polars(
         "county": {"state", "county"},
         "place": {"state", "place"},
         "tract": {"state", "county", "tract"},
+        "metro": {ACS_METRO_GEOGRAPHY},
     }
     if geo_level not in expected_geo_columns:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -301,7 +312,9 @@ def rows_to_polars(
 
     # Determine which columns are variables and which are geos
     geo_cols = [
-        c for c in df.columns if c in ("us", "state", "county", "place", "tract")
+        c
+        for c in df.columns
+        if c in ("us", "state", "county", "place", "tract", ACS_METRO_GEOGRAPHY)
     ]
     var_cols = [c for c in df.columns if c not in geo_cols]
 
@@ -337,6 +350,12 @@ def rows_to_polars(
                 [pl.lit("state:"), pl.col("state"), pl.lit("|place:"), pl.col("place")]
             ),
             state_fips=pl.col("state"),
+            county_fips=pl.lit(None, dtype=pl.Utf8),
+        )
+    elif geo_level == "metro":
+        df = df.with_columns(
+            geo_id=pl.concat_str([pl.lit("cbsa:"), pl.col(ACS_METRO_GEOGRAPHY)]),
+            state_fips=pl.lit(None, dtype=pl.Utf8),
             county_fips=pl.lit(None, dtype=pl.Utf8),
         )
     elif geo_level == "tract":
@@ -463,7 +482,7 @@ def ingest_slice(
             "state_fips": state_fips,
         }
     )
-    endpoint = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    endpoint = census_api_url(year, dataset)
     total_rows = 0
 
     return _ingest_capture_chunks(

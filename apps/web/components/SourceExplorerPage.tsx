@@ -132,6 +132,7 @@ import {
   unsupportedViewModes,
 } from "../lib/viewModes";
 import { displayMetricName, formatNumber } from "../lib/format";
+import { MetricName } from "./MetricName";
 import {
   GEO_GRAIN_LABELS,
   GEO_GRAIN_ORDER,
@@ -1127,7 +1128,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
 
     const request = observationTracker.begin();
-    setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
+    // The plain name, never the code: the status shows while the page loads (WEB-144).
+    setObservationStatus({ state: "loading", message: `loading ${selectedMetricMeta ? displayMetricName(selectedMetricMeta) : "the measure"}` });
 
     async function loadObservations(source: ExplorerSource) {
       try {
@@ -2700,7 +2702,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </p>
           ) : null}
           {requestedMetricNotice ? (
-            <p className="subtle" data-testid="requested-metric-note">
+            // Quotes the code the link asked for, which no catalog row names,
+            // so there is no label to show instead (WEB-144).
+            <p className="subtle" data-testid="requested-metric-note" data-provenance="link">
               {requestedMetricNotice}
             </p>
           ) : null}
@@ -2953,7 +2957,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td>{observationName(geographyById.get(String(item.geo_id ?? "")) || item)}</td>
                     <td>{String(item.geo_level || "-")}</td>
                     <td>{observationPeriodLabel(item) || "-"}</td>
-                    <td>{item.metric_code}</td>
+                    <td><MetricName metric={item.metric_label || item.metric_code !== selectedMetricMeta?.metric_code ? (item as MetricSummary) : selectedMetricMeta} code={String(item.metric_code ?? "")} /></td>
                     {/* A missing or suppressed value is never rendered as a
                         number; the source's own status says why. */}
                     <td>{item.value ?? "-"}</td>
@@ -3032,7 +3036,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           ) : null}
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={selectedPeriod || observations[0]?.period_start || observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
+          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? <MetricName metric={selectedMetricMeta} /> : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={selectedPeriod || observations[0]?.period_start || observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
         </article>
         {viewModes.quality.supported ? (
           <article className="card workspace-panel" data-active={effectiveTab === "quality"}>

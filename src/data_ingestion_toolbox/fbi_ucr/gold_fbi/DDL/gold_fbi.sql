@@ -243,6 +243,392 @@ JOIN (
   ON latest.product_id = rollup.product_id
  AND latest.refresh_date = rollup.refresh_date;
 
+-- A county crime rate computed the way the FBI computes a state rate
+-- (ADR-0012). For a county and a month, the reported offenses of the
+-- agencies linked to that county alone are divided by those same agencies'
+-- FBI-published populations, times 100,000:
+--
+-- * Numerator and denominator are both FBI figures from one release and one
+--   month; no Census population enters the rate or its coverage (ADR-0009
+--   rule 2 holds unchanged).
+-- * An agency resolved to more than one county that month is left out of
+--   both sides, because the FBI publishes one count and one population for
+--   its whole jurisdiction and any split would be invented. It is listed.
+-- * An agency whose population the FBI did not publish is left out of both
+--   sides too, and listed, so no offense is counted without its population.
+-- * Coverage is published on every row: the covered population (reporting
+--   agencies) over the linked population (every single-county agency with a
+--   published population, reporting or not). A county-month with no
+--   reporting agency, only multi-county reporters, or coverage under the 50 %
+--   floor carries no rate and says why; it is never a zero.
+-- * An agency the directory links to the county alone whose reports were
+--   never loaded has no population here, so it would drop out of both sides
+--   and make coverage look complete. Such a month is refused
+--   (`agencies_not_loaded`) and the agencies are listed.
+-- * Monthly only, like the agency reports it divides; never rolled up.
+-- The rate is computed once per publication, not per read. Computed on read
+-- it aggregated every agency-month in the country before a county filter
+-- could apply (the summed CTE is read twice, so it is materialized), and
+-- with every Return A agency loaded a single county card took over two
+-- minutes. `refresh_county_agency_rate(product)` recomputes one product
+-- inside the transaction that publishes it; readers see the previous rows
+-- until it commits.
+CREATE TABLE IF NOT EXISTS gold_fbi.county_agency_rate_month (
+    product_id TEXT NOT NULL,
+    release_key TEXT NOT NULL,
+    measure_id TEXT NOT NULL,
+    geo_id TEXT NOT NULL,
+    state_fips TEXT,
+    county_fips TEXT,
+    county_name TEXT,
+    period TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    rate NUMERIC,
+    unavailable_reason TEXT,
+    offenses NUMERIC,
+    covered_population NUMERIC,
+    linked_population NUMERIC,
+    coverage_share NUMERIC,
+    contributing_oris TEXT[] NOT NULL,
+    excluded_multi_county_oris TEXT[] NOT NULL,
+    non_reporting_oris TEXT[] NOT NULL,
+    unknown_population_oris TEXT[] NOT NULL,
+    not_loaded_oris TEXT[] NOT NULL,
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (product_id, release_key, measure_id, geo_id, period),
+    CHECK ((rate IS NULL) = (unavailable_reason IS NOT NULL))
+);
+
+-- One county (a county card) and one state's counties (a state map). Each
+-- leads with the geography, so a read naming only the county is served too;
+-- the API also names the product and measure.
+CREATE INDEX IF NOT EXISTS fbi_county_agency_rate_geo_idx
+    ON gold_fbi.county_agency_rate_month (
+        geo_id, product_id, measure_id, period_start DESC
+    );
+CREATE INDEX IF NOT EXISTS fbi_county_agency_rate_state_idx
+    ON gold_fbi.county_agency_rate_month (
+        state_fips, product_id, measure_id, period_start DESC
+    );
+
+-- The rate rows of one product, computed from its published agency months.
+CREATE OR REPLACE FUNCTION gold_fbi.county_agency_rate_rows(p_product_id TEXT)
+RETURNS TABLE (
+    product_id TEXT, release_key TEXT, measure_id TEXT, geo_id TEXT,
+    state_fips TEXT, county_fips TEXT, county_name TEXT, period TEXT,
+    period_start DATE, period_end DATE, rate NUMERIC,
+    unavailable_reason TEXT, offenses NUMERIC, covered_population NUMERIC,
+    linked_population NUMERIC, coverage_share NUMERIC,
+    contributing_oris TEXT[], excluded_multi_county_oris TEXT[],
+    non_reporting_oris TEXT[], unknown_population_oris TEXT[],
+    not_loaded_oris TEXT[]
+)
+LANGUAGE sql STABLE AS $rate$
+    WITH agency_month AS (
+        SELECT DISTINCT observation.product_id, observation.release_key,
+               observation.measure_id, link.geo_id, observation.period,
+               observation.period_start, observation.period_end,
+               observation.subject_code AS ori, observation.value,
+               observation.value_status, observation.population,
+               (SELECT COUNT(DISTINCT sibling.geo_id) > 1
+                FROM silver_fbi.agency_geography_relationship AS sibling
+                WHERE sibling.relationship_type = 'county'
+                  AND sibling.resolution_status = 'resolved'
+                  AND sibling.product_id = observation.product_id
+                  AND sibling.ori = observation.subject_code
+                  AND observation.period_start >= sibling.effective_start
+                  AND observation.period_end <= sibling.effective_end
+               ) AS is_multi_county
+        FROM gold_fbi.crime_observation AS observation
+        JOIN silver_fbi.agency_geography_relationship AS link
+          ON link.product_id = observation.product_id
+         AND link.ori = observation.subject_code
+         AND link.relationship_type = 'county'
+         AND link.resolution_status = 'resolved'
+         -- Effective-dated, so a county follows the observation's own month.
+         AND observation.period_start >= link.effective_start
+         AND observation.period_end <= link.effective_end
+        WHERE observation.product_id = p_product_id
+          AND observation.subject_type = 'agency'
+          AND observation.measure_form = 'absolute_total'
+          AND observation.counted_entity_basis = 'offense'
+    ), classified AS (
+        SELECT agency_month.*,
+               NOT agency_month.is_multi_county AS is_single_county,
+               agency_month.value_status = 'reported' AS is_reported,
+               agency_month.population IS NOT NULL AS has_population
+        FROM agency_month
+    ), summed AS (
+        SELECT classified.product_id, classified.release_key,
+               classified.measure_id, classified.geo_id, classified.period,
+               classified.period_start, classified.period_end,
+               SUM(classified.value) FILTER (
+                   WHERE classified.is_single_county AND classified.is_reported
+                     AND classified.has_population
+               ) AS offenses,
+               SUM(classified.population) FILTER (
+                   WHERE classified.is_single_county AND classified.is_reported
+                     AND classified.has_population
+               ) AS covered_population,
+               SUM(classified.population) FILTER (
+                   WHERE classified.is_single_county AND classified.has_population
+               ) AS linked_population,
+               ARRAY_AGG(DISTINCT classified.ori ORDER BY classified.ori) FILTER (
+                   WHERE classified.is_single_county AND classified.is_reported
+                     AND classified.has_population
+               ) AS contributing_oris,
+               ARRAY_AGG(DISTINCT classified.ori ORDER BY classified.ori) FILTER (
+                   WHERE classified.is_multi_county
+               ) AS excluded_multi_county_oris,
+               ARRAY_AGG(DISTINCT classified.ori ORDER BY classified.ori) FILTER (
+                   WHERE classified.is_single_county AND NOT classified.is_reported
+               ) AS non_reporting_oris,
+               ARRAY_AGG(DISTINCT classified.ori ORDER BY classified.ori) FILTER (
+                   WHERE classified.is_single_county AND classified.is_reported
+                     AND NOT classified.has_population
+               ) AS unknown_population_oris,
+               COUNT(*) FILTER (WHERE classified.is_reported) AS reporting_rows,
+               COUNT(*) FILTER (
+                   WHERE classified.is_single_county AND classified.is_reported
+               ) AS single_county_reporting_rows
+        FROM classified
+        GROUP BY classified.product_id, classified.release_key,
+                 classified.measure_id, classified.geo_id, classified.period,
+                 classified.period_start, classified.period_end
+    ), not_loaded AS (
+        -- Agencies the directory links to this county alone for the month whose
+        -- reports for it were never loaded. Their population is unknown, so the
+        -- linked population cannot be judged without them and the month is
+        -- refused rather than read on the loaded agencies alone.
+        SELECT summed.product_id, summed.release_key, summed.measure_id,
+               summed.geo_id, summed.period,
+               ARRAY_AGG(DISTINCT link.ori ORDER BY link.ori) AS oris
+        FROM summed
+        JOIN silver_fbi.agency_geography_relationship AS link
+          ON link.product_id = summed.product_id
+         AND link.geo_id = summed.geo_id
+         AND link.relationship_type = 'county'
+         AND link.resolution_status = 'resolved'
+         AND summed.period_start >= link.effective_start
+         AND summed.period_end <= link.effective_end
+        WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM silver_fbi.fact_crime_observation AS loaded
+                  WHERE loaded.product_id = summed.product_id
+                    AND loaded.measure_id = summed.measure_id
+                    AND loaded.subject_type = 'agency'
+                    AND loaded.subject_code = link.ori
+                    AND loaded.period = summed.period
+                    AND loaded.release_key = summed.release_key
+              )
+          AND (SELECT COUNT(DISTINCT sibling.geo_id)
+               FROM silver_fbi.agency_geography_relationship AS sibling
+               WHERE sibling.relationship_type = 'county'
+                 AND sibling.resolution_status = 'resolved'
+                 AND sibling.product_id = link.product_id
+                 AND sibling.ori = link.ori
+                 AND summed.period_start >= sibling.effective_start
+                 AND summed.period_end <= sibling.effective_end) = 1
+        GROUP BY summed.product_id, summed.release_key, summed.measure_id,
+                 summed.geo_id, summed.period
+    ), assessed AS (
+        SELECT summed.*, not_loaded.oris AS not_loaded_oris,
+               CASE WHEN summed.linked_population > 0
+                     AND not_loaded.oris IS NULL
+                    THEN summed.covered_population / summed.linked_population
+               END AS coverage_share,
+               CASE
+                   WHEN not_loaded.oris IS NOT NULL THEN 'agencies_not_loaded'
+                   WHEN summed.reporting_rows = 0 THEN 'no_reporting_agency'
+                   WHEN summed.single_county_reporting_rows = 0
+                       THEN 'only_multi_county_agencies'
+                   WHEN summed.covered_population IS NULL
+                     OR summed.linked_population IS NULL
+                     OR summed.linked_population = 0
+                     OR summed.covered_population = 0
+                     OR summed.covered_population < 0.5 * summed.linked_population
+                       THEN 'coverage_below_floor'
+               END AS unavailable_reason
+        FROM summed
+        LEFT JOIN not_loaded
+          ON not_loaded.product_id = summed.product_id
+         AND not_loaded.release_key = summed.release_key
+         AND not_loaded.measure_id = summed.measure_id
+         AND not_loaded.geo_id = summed.geo_id
+         AND not_loaded.period = summed.period
+    )
+    SELECT assessed.product_id, assessed.release_key, assessed.measure_id,
+           assessed.geo_id, county.state_fips, county.county_fips,
+           attribute.name, assessed.period, assessed.period_start,
+           assessed.period_end,
+           CASE WHEN assessed.unavailable_reason IS NULL
+                THEN assessed.offenses * 100000 / assessed.covered_population
+           END,
+           assessed.unavailable_reason, assessed.offenses,
+           assessed.covered_population, assessed.linked_population,
+           assessed.coverage_share,
+           COALESCE(assessed.contributing_oris, ARRAY[]::TEXT[]),
+           COALESCE(assessed.excluded_multi_county_oris, ARRAY[]::TEXT[]),
+           COALESCE(assessed.non_reporting_oris, ARRAY[]::TEXT[]),
+           COALESCE(assessed.unknown_population_oris, ARRAY[]::TEXT[]),
+           COALESCE(assessed.not_loaded_oris, ARRAY[]::TEXT[])
+    FROM assessed
+    JOIN silver_ref.dim_geo_entity AS county
+      ON county.geo_id = assessed.geo_id
+    LEFT JOIN LATERAL (
+        SELECT version.name
+        FROM silver_ref.dim_geo_entity_version AS version
+        WHERE version.geo_sk = county.geo_sk
+        ORDER BY version.geography_vintage DESC, version.ingested_at DESC
+        LIMIT 1
+    ) AS attribute ON TRUE
+$rate$;
+
+-- Replace one product's served rate rows; returns how many it now has.
+-- How many facts each product's newest published release holds per subject
+-- type and month: what the admin Source Map's coverage reads. Counted from
+-- `latest_release_fact` once per publication, not per read: with every
+-- Return A agency loaded (11 years x 26k agencies) grouping the facts on
+-- read took 45 s against a 20 s ceiling. A few thousand rows in all.
+CREATE TABLE IF NOT EXISTS gold_fbi.release_fact_count (
+    product_id TEXT NOT NULL,
+    release_key TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    row_count BIGINT NOT NULL,
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (product_id, release_key, subject_type, period_start)
+);
+
+CREATE OR REPLACE FUNCTION gold_fbi.refresh_release_fact_count(p_product_id TEXT)
+RETURNS BIGINT
+LANGUAGE plpgsql AS $count$
+DECLARE
+    refreshed BIGINT;
+BEGIN
+    DELETE FROM gold_fbi.release_fact_count AS counted
+     WHERE counted.product_id = p_product_id;
+    INSERT INTO gold_fbi.release_fact_count (
+        product_id, release_key, subject_type, period_start, row_count
+    )
+    SELECT fact.product_id, fact.release_key, fact.subject_type,
+           fact.period_start, COUNT(*)
+      FROM gold_fbi.latest_release_fact AS fact
+     WHERE fact.product_id = p_product_id
+       AND fact.period_start IS NOT NULL
+     GROUP BY 1, 2, 3, 4;
+    GET DIAGNOSTICS refreshed = ROW_COUNT;
+    RETURN refreshed;
+END
+$count$;
+
+CREATE OR REPLACE FUNCTION gold_fbi.refresh_county_agency_rate(p_product_id TEXT)
+RETURNS BIGINT
+LANGUAGE plpgsql AS $refresh$
+DECLARE
+    refreshed BIGINT;
+BEGIN
+    DELETE FROM gold_fbi.county_agency_rate_month AS served
+     WHERE served.product_id = p_product_id;
+    INSERT INTO gold_fbi.county_agency_rate_month (
+        product_id, release_key, measure_id, geo_id, state_fips, county_fips,
+        county_name, period, period_start, period_end, rate,
+        unavailable_reason, offenses, covered_population, linked_population,
+        coverage_share, contributing_oris, excluded_multi_county_oris,
+        non_reporting_oris, unknown_population_oris, not_loaded_oris
+    )
+    SELECT * FROM gold_fbi.county_agency_rate_rows(p_product_id);
+    GET DIAGNOSTICS refreshed = ROW_COUNT;
+    -- The product's other precomputed read, in the same transaction, so the
+    -- publish paths and the one-time fill after a deploy refresh both.
+    PERFORM gold_fbi.refresh_release_fact_count(p_product_id);
+    RETURN refreshed;
+END
+$refresh$;
+
+CREATE OR REPLACE VIEW gold_fbi.county_agency_rate AS
+SELECT served.product_id, served.release_key, release.refresh_date,
+       release.max_data_month, release.ucr_program, measure.offense_code,
+       measure.offense_label, served.measure_id, measure.measure_form,
+       measure.counted_entity_basis, served.geo_id, served.state_fips,
+       served.county_fips, served.county_name, served.period,
+       served.period_start, served.period_end, served.rate,
+       served.unavailable_reason, served.offenses,
+       served.covered_population, served.linked_population,
+       served.coverage_share, 0.5::NUMERIC AS coverage_floor,
+       served.contributing_oris, served.excluded_multi_county_oris,
+       served.non_reporting_oris, served.unknown_population_oris,
+       TRUE AS derived,
+       'agency_reported_offenses_per_covered_population'::TEXT
+           AS derivation_method,
+       'per 100,000 people covered by reporting agencies in this county'::TEXT
+           AS unit,
+       ('Offenses reported by the agencies serving only this county, divided '
+        || 'by those agencies'' FBI-published populations, times 100,000 '
+        || '(ADR-0012). Agencies serving more than one county, and agencies '
+        || 'with no published population, are left out of both sides. No '
+        || 'rate is given when no agency reported, when only multi-county '
+        || 'agencies reported, or when the reporting agencies cover under '
+        || 'half the population the county''s agencies serve.')::TEXT
+           AS methodology_note,
+       release.counted_entity_note, release.methodology_url,
+       release.documentation_url,
+       -- Appended: `CREATE OR REPLACE VIEW` can only add columns at the end.
+       served.not_loaded_oris
+FROM gold_fbi.county_agency_rate_month AS served
+JOIN silver_fbi.dim_offense_measure AS measure
+  ON measure.product_id = served.product_id
+ AND measure.measure_id = served.measure_id
+JOIN silver_fbi.dim_ucr_dataset_release AS release
+  ON release.product_id = served.product_id
+ AND release.release_key = served.release_key
+-- Rows are only computed from published releases; a release withdrawn
+-- afterwards stops being served at once.
+WHERE release.status = 'published';
+
+-- The county rate at each product's most recent published release.
+CREATE OR REPLACE VIEW gold_fbi.latest_county_agency_rate AS
+SELECT rate.*
+FROM gold_fbi.county_agency_rate AS rate
+JOIN (
+    SELECT product_id, MAX(refresh_date) AS refresh_date
+    FROM silver_fbi.dim_ucr_dataset_release
+    WHERE status = 'published'
+    GROUP BY product_id
+) AS latest
+  ON latest.product_id = rate.product_id
+ AND latest.refresh_date = rate.refresh_date;
+
+-- The fact columns of each product's newest published release, without the
+-- participation, measure and release joins of `latest_release_observation`.
+-- Same rows (every fact has its participation and measure rows by foreign
+-- key, and the same release and geography filters apply); read where only
+-- the fact's own columns are needed, such as the admin coverage scan, which
+-- passed its 20 s ceiling through the joined view once every Return A
+-- agency was loaded. In gold so the API's read-only role may read it.
+CREATE OR REPLACE VIEW gold_fbi.latest_release_fact AS
+SELECT fact.product_id, fact.release_key, fact.measure_id,
+       fact.subject_type, fact.subject_code, fact.period,
+       fact.period_start, fact.period_end, fact.value_status
+FROM silver_fbi.fact_crime_observation AS fact
+JOIN (
+    SELECT release.product_id, release.release_key
+    FROM silver_fbi.dim_ucr_dataset_release AS release
+    JOIN (
+        SELECT product_id, MAX(refresh_date) AS refresh_date
+        FROM silver_fbi.dim_ucr_dataset_release
+        WHERE status = 'published'
+        GROUP BY product_id
+    ) AS newest
+      ON newest.product_id = release.product_id
+     AND newest.refresh_date = release.refresh_date
+    WHERE release.status = 'published'
+) AS latest
+  ON latest.product_id = fact.product_id
+ AND latest.release_key = fact.release_key
+WHERE fact.geography_status NOT IN ('ambiguous', 'unsupported');
+
 CREATE OR REPLACE VIEW gold_fbi.latest_release_observation AS
 SELECT observation.*
 FROM gold_fbi.crime_observation AS observation

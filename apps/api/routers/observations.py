@@ -8,10 +8,22 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
 from apps.api.services.neutral_observations_service import (
+    HISTORY_BATCH_MOST_CODES,
+    HISTORY_BATCH_MOST_GEOGRAPHIES,
+    NEWEST_BATCH_MOST_CODES,
+    NEWEST_BATCH_MOST_GEOGRAPHIES,
     NeutralQueryError,
     list_metric_releases,
     list_metric_periods,
     list_neutral_observations,
+    history_batch,
+    newest_values_batch,
+)
+from apps.api.query_lists import code_list
+from apps.api.schemas.derived import DerivedRatioListResponse
+from apps.api.services.derived_ratio_service import (
+    UnknownRatio,
+    list_derived_observations,
 )
 from apps.api.services.observations_service import (
     list_latest_observations,
@@ -22,6 +34,10 @@ from apps.api.schemas import (
     MetricReleaseListResponse,
     MetricPeriodListResponse,
     NeutralObservationListResponse,
+    HistoryBatchItem,
+    HistoryBatchResponse,
+    NewestValuesBatchItem,
+    NewestValuesBatchResponse,
     ObservationListResponse,
 )
 
@@ -196,6 +212,218 @@ def get_neutral_observations(
     if response is None:
         raise HTTPException(status_code=404, detail=METRIC_NOT_FOUND_DETAIL)
     return response
+
+
+@router.get(
+    "/newest/batch",
+    response_model=NewestValuesBatchResponse,
+    name="get_newest_values_batch",
+    summary="Several metrics' newest values for a few places, in one request",
+)
+def get_newest_values_batch(
+    metric_codes: str = Query(
+        ...,
+        min_length=1,
+        max_length=12000,
+        description=(
+            f"Comma-separated metric codes, at most {NEWEST_BATCH_MOST_CODES}."
+        ),
+    ),
+    geo_ids: str = Query(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Comma-separated geography identities, at most "
+            f"{NEWEST_BATCH_MOST_GEOGRAPHIES}."
+        ),
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> NewestValuesBatchResponse:
+    """Each metric's newest published value for each geography.
+
+    Every item is what ``/observations?metric_code=&scope=latest
+    &newest_per_geography=true&geo_id=&limit=1`` answers for that pair, so a
+    page that reads a dozen measures for a place, its state and the nation
+    makes one request instead of one per measure and place. A metric the
+    single read refuses is refused per item with that read's status and
+    detail (``404`` unknown, ``422`` cannot be reduced, ``503`` relation
+    absent); the batch itself fails only when the database does.
+    """
+    codes = code_list(metric_codes, "metric_codes", NEWEST_BATCH_MOST_CODES) or []
+    places = code_list(geo_ids, "geo_ids", NEWEST_BATCH_MOST_GEOGRAPHIES) or []
+    if not codes or not places:
+        raise HTTPException(
+            status_code=422, detail="name at least one metric code and one geo_id"
+        )
+    try:
+        answers = newest_values_batch(db, codes, places)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    return NewestValuesBatchResponse(
+        metric_codes=codes,
+        geo_ids=places,
+        items=[
+            NewestValuesBatchItem(
+                metric_code=code,
+                geo_id=geo_id,
+                status=status,
+                detail=detail,
+                observations=response,
+            )
+            for code, geo_id, status, detail, response in answers
+        ],
+    )
+
+
+@router.get(
+    "/history/batch",
+    response_model=HistoryBatchResponse,
+    name="get_history_batch",
+    summary="Several metrics' settled histories for a few places, in one request",
+)
+def get_history_batch(
+    metric_codes: str = Query(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description=(
+            f"Comma-separated metric codes, at most {HISTORY_BATCH_MOST_CODES}."
+        ),
+    ),
+    geo_ids: str = Query(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Comma-separated geography identities, at most "
+            f"{HISTORY_BATCH_MOST_GEOGRAPHIES}."
+        ),
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> HistoryBatchResponse:
+    """Each metric's settled history for each geography.
+
+    Every item is what ``/observations?metric_code=&scope=as_released
+    &newest_release_per_period=true&geo_id=&limit=1000`` answers for that
+    pair: each period as its newest release left it, oldest first. A page
+    that draws a city's trends beside its county, state and nation makes one
+    request per chapter instead of one per line. A metric the single read
+    refuses is refused per item with that read's status and detail; the batch
+    itself fails only when the database does.
+    """
+    codes = code_list(metric_codes, "metric_codes", HISTORY_BATCH_MOST_CODES) or []
+    places = code_list(geo_ids, "geo_ids", HISTORY_BATCH_MOST_GEOGRAPHIES) or []
+    if not codes or not places:
+        raise HTTPException(
+            status_code=422, detail="name at least one metric code and one geo_id"
+        )
+    try:
+        answers = history_batch(db, codes, places)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    return HistoryBatchResponse(
+        metric_codes=codes,
+        geo_ids=places,
+        items=[
+            HistoryBatchItem(
+                metric_code=code,
+                geo_id=geo_id,
+                status=status,
+                detail=detail,
+                observations=response,
+            )
+            for code, geo_id, status, detail, response in answers
+        ],
+    )
+
+
+@router.get(
+    "/derived",
+    response_model=DerivedRatioListResponse,
+    name="get_derived_observations",
+    summary="Per-capita and share values from a reviewed pairing",
+    responses=NOT_FOUND,
+)
+def get_derived_observations(
+    ratio_id: str = Query(
+        ...,
+        min_length=1,
+        max_length=200,
+        description=(
+            "A pairing from /catalog/derived-ratios, such as "
+            "poverty_share:acs5. Only an approved pairing is served."
+        ),
+    ),
+    scope: Literal["latest", "as_released"] = Query("latest"),
+    release: Optional[str] = Query(None, max_length=100),
+    period_start: Optional[str] = Query(None, max_length=10),
+    geo_id: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length
+    ),
+    geo_level: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_level"].max_length
+    ),
+    state_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["state_fips"].max_length
+    ),
+    county_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["county_fips"].max_length
+    ),
+    year_from: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_from"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_from"].maximum,
+    ),
+    year_to: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_to"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_to"].maximum,
+    ),
+    newest_per_geography: bool = Query(False),
+    newest_release_per_period: bool = Query(False),
+    limit: int = Query(100, ge=1, le=5000),
+    offset: int = Query(0, ge=0, le=100000),
+    db: Session = Depends(get_db_session_dep),
+) -> DerivedRatioListResponse:
+    """A per-capita or share value for each numerator row (ADR-0009).
+
+    The numerator's rows are read exactly as ``/observations`` reads them
+    with the same parameters, and each is divided by the denominator row
+    with the same geography, period and release -- never another period,
+    never another program. A row that cannot be computed carries no value
+    and its ``unavailable_reason``. ACS rows carry a margin of error by the
+    Census Bureau's formulas, with the method named. A pairing whose provider
+    publishes the rate answers the provider's own rows, ``derived: false``.
+    """
+    if year_from is not None and year_to is not None and year_from > year_to:
+        raise HTTPException(status_code=422, detail=REVERSED_YEAR_DETAIL)
+    try:
+        return list_derived_observations(
+            db,
+            ratio_id=ratio_id,
+            scope=scope,
+            release=release,
+            period_start=period_start,
+            filters={
+                "geo_id": geo_id,
+                "geo_level": geo_level,
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "year_from": year_from,
+                "year_to": year_to,
+            },
+            limit=limit,
+            offset=offset,
+            newest_per_geography=newest_per_geography,
+            newest_release_per_period=newest_release_per_period,
+        )
+    except UnknownRatio as exc:
+        raise HTTPException(status_code=404, detail="ratio_id not found") from exc
+    except NeutralQueryError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
 
 
 @router.get(

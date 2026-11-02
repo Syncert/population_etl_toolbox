@@ -34,9 +34,22 @@ GEOGRAPHY_RELATION = "gold_glossary.dim_geography"
 #: The served geography relationship projection (nearby-and-related-places).
 RELATIONSHIP_RELATION = "gold_glossary.geo_relationship"
 
+#: The place-search projection: one row per current state, county, metro,
+#: place and ZCTA with its match words and ranking population (api-place-search).
+GEO_SEARCH_RELATION = "gold_glossary.geo_search"
+#: Current boundaries, for locating a point (api-place-search).
+GEO_BOUNDARY_RELATION = "gold_glossary.geo_boundary"
+
 #: Every relation a catalog query may read, for the allowlist assertions.
 CATALOG_RELATIONS: frozenset[str] = frozenset(
-    {SOURCE_RELATION, METRIC_RELATION, GEOGRAPHY_RELATION, RELATIONSHIP_RELATION}
+    {
+        SOURCE_RELATION,
+        METRIC_RELATION,
+        GEOGRAPHY_RELATION,
+        RELATIONSHIP_RELATION,
+        GEO_SEARCH_RELATION,
+        GEO_BOUNDARY_RELATION,
+    }
 )
 
 #: The escape character the ``q`` searches declare, rather than relying on the
@@ -113,8 +126,14 @@ def _build_metric_where(
     active_only: Optional[bool],
     q: Optional[str],
     params: dict,
+    metric_codes: Optional[Sequence[str]] = None,
 ) -> str:
     clauses: list[str] = []
+    if metric_codes:
+        # A page that shows a dozen measures reads their rows in one request
+        # rather than one request each; the browser sends six at a time.
+        clauses.append("metric_code = ANY(:metric_codes)")
+        params["metric_codes"] = list(metric_codes)
     if source_code:
         clauses.append("UPPER(source_code) = UPPER(:source_code)")
         params["source_code"] = source_code
@@ -135,9 +154,10 @@ def build_metrics_queries(
     q: Optional[str],
     limit: int,
     offset: int,
+    metric_codes: Optional[Sequence[str]] = None,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(source_code, active_only, q, params)
+    where = _build_metric_where(source_code, active_only, q, params, metric_codes)
     list_q = text(
         f"SELECT {_METRIC_COLUMNS} FROM {METRIC_RELATION} WHERE {where} "
         "ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -261,9 +281,8 @@ def build_geographies_queries(
 #: nothing makes the place nest in it: ``overlap_weight`` is the share of the
 #: place inside that metro's counties (the sum of its county overlaps) and the
 #: vintage and evidence are the delineation's that put those counties in it.
-GEOGRAPHY_RELATED_QUERY: TextClause = text(
-    f"""
-    WITH related AS (
+GEOGRAPHY_RELATED_QUERY_SQL = f"""
+    WITH outward AS MATERIALIZED (
         SELECT relationship.related_geo_id AS other_geo_id,
                relationship.relationship_type AS relationship,
                relationship.geography_vintage,
@@ -272,12 +291,10 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
                relationship.evidence_source
         FROM {RELATIONSHIP_RELATION} AS relationship
         WHERE relationship.geo_id = :geo_id
-        UNION ALL
-        SELECT relationship.geo_id,
-               CASE relationship.relationship_type
-                   WHEN 'contains' THEN 'part_of'
-                   ELSE relationship.relationship_type
-               END,
+    ),
+    inward AS MATERIALIZED (
+        SELECT relationship.geo_id AS other_geo_id,
+               relationship.relationship_type,
                relationship.geography_vintage,
                relationship.overlap_area_m2,
                relationship.overlap_weight,
@@ -285,39 +302,73 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
         FROM {RELATIONSHIP_RELATION} AS relationship
         WHERE relationship.related_geo_id = :geo_id
           AND relationship.relationship_type IN ('contains', 'intersects')
-        UNION ALL
-        SELECT ancestor.geo_id,
-               'part_of',
+    ),
+    -- Each later step starts from an array of known identities, so each read
+    -- is an index probe rather than a join the planner has to guess the size
+    -- of (8.7 s for one county on OFFICE_LAB, 2026-10-31).
+    ancestors AS MATERIALIZED (
+        SELECT ancestor.geo_id AS other_geo_id,
                ancestor.geography_vintage,
                ancestor.overlap_area_m2,
                ancestor.overlap_weight,
                ancestor.evidence_source
-        FROM {RELATIONSHIP_RELATION} AS parent_link
-        JOIN {RELATIONSHIP_RELATION} AS ancestor
-             ON ancestor.related_geo_id = parent_link.geo_id
-            AND ancestor.relationship_type = 'contains'
-        WHERE parent_link.related_geo_id = :geo_id
-          AND parent_link.relationship_type = 'contains'
-        UNION ALL
-        SELECT metro_link.geo_id,
-               'intersects',
-               MAX(metro_link.geography_vintage),
-               SUM(place_county.overlap_area_m2),
-               SUM(place_county.overlap_weight),
-               MIN(metro_link.evidence_source)
-        FROM {RELATIONSHIP_RELATION} AS place_county
-        JOIN {RELATIONSHIP_RELATION} AS metro_link
-             ON metro_link.related_geo_id = place_county.geo_id
-            AND metro_link.relationship_type = 'contains'
+        FROM {RELATIONSHIP_RELATION} AS ancestor
+        WHERE ancestor.related_geo_id = ANY(ARRAY(
+                SELECT other_geo_id FROM inward WHERE relationship_type = 'contains'
+              ))
+          AND ancestor.relationship_type = 'contains'
+    ),
+    county_overlaps AS MATERIALIZED (
+        SELECT inward.other_geo_id AS county_geo_id,
+               inward.overlap_area_m2,
+               inward.overlap_weight
+        FROM inward
         JOIN {GEOGRAPHY_RELATION} AS county
-             ON county.geo_id = place_county.geo_id
+             ON county.geo_id = inward.other_geo_id
             AND county.geo_level = 'COUNTY'
+        WHERE inward.relationship_type = 'intersects'
+    ),
+    metro_links AS MATERIALIZED (
+        SELECT metro_link.geo_id AS metro_geo_id,
+               metro_link.related_geo_id AS county_geo_id,
+               metro_link.geography_vintage,
+               metro_link.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS metro_link
+        WHERE metro_link.related_geo_id = ANY(ARRAY(
+                SELECT county_geo_id FROM county_overlaps
+              ))
+          AND metro_link.relationship_type = 'contains'
+    ),
+    related AS MATERIALIZED (
+        SELECT other_geo_id, relationship, geography_vintage, overlap_area_m2,
+               overlap_weight, evidence_source
+        FROM outward
+        UNION ALL
+        SELECT other_geo_id,
+               CASE relationship_type
+                   WHEN 'contains' THEN 'part_of'
+                   ELSE relationship_type
+               END,
+               geography_vintage, overlap_area_m2, overlap_weight, evidence_source
+        FROM inward
+        UNION ALL
+        SELECT other_geo_id, 'part_of', geography_vintage, overlap_area_m2,
+               overlap_weight, evidence_source
+        FROM ancestors
+        UNION ALL
+        SELECT metro_links.metro_geo_id,
+               'intersects',
+               MAX(metro_links.geography_vintage),
+               SUM(county_overlaps.overlap_area_m2),
+               SUM(county_overlaps.overlap_weight),
+               MIN(metro_links.evidence_source)
+        FROM metro_links
+        JOIN county_overlaps
+             ON county_overlaps.county_geo_id = metro_links.county_geo_id
         JOIN {GEOGRAPHY_RELATION} AS metro
-             ON metro.geo_id = metro_link.geo_id
+             ON metro.geo_id = metro_links.metro_geo_id
             AND metro.geo_level = 'METRO'
-        WHERE place_county.related_geo_id = :geo_id
-          AND place_county.relationship_type = 'intersects'
-        GROUP BY metro_link.geo_id
+        GROUP BY metro_links.metro_geo_id
     )
     SELECT DISTINCT ON (related.relationship, geography.geo_id)
            related.relationship,
@@ -332,9 +383,24 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
     FROM related
     JOIN {GEOGRAPHY_RELATION} AS geography
          ON geography.geo_id = related.other_geo_id
-    WHERE NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
+    -- The names for exactly these places, by key: the catalog view computes a
+    -- name per row, and a join it chose to hash computed one for all of them.
+    WHERE geography.geo_id = ANY(ARRAY(SELECT other_geo_id FROM related))
+      AND NOT (related.relationship = 'contains' AND geography.geo_level = 'PLACE')
     ORDER BY related.relationship, geography.geo_id, related.geography_vintage DESC
-    """
+"""
+
+GEOGRAPHY_RELATED_QUERY: TextClause = text(GEOGRAPHY_RELATED_QUERY_SQL)
+
+
+#: How one geography relates to one other, from the first one's point of view:
+#: exactly the rows of ``GEOGRAPHY_RELATED_QUERY`` for ``:geo_id`` that name
+#: ``:other_geo_id``. The cross-level comparison (ADR-0010) needs only whether
+#: its two places nest or overlap; it is the related read, filtered, so the two
+#: cannot disagree.
+GEOGRAPHY_PAIR_RELATIONSHIP_QUERY: TextClause = text(
+    f"SELECT * FROM ({GEOGRAPHY_RELATED_QUERY_SQL}) AS pair "
+    "WHERE pair.geo_id = :other_geo_id"
 )
 
 #: The catalog's names for a page of geographies, by id. An observation row
@@ -342,6 +408,13 @@ GEOGRAPHY_RELATED_QUERY: TextClause = text(
 #: county-level attribution to fall back on, so this is the one name it has.
 GEOGRAPHY_NAMES_QUERY: TextClause = text(
     f"SELECT geo_id, geo_name FROM {GEOGRAPHY_RELATION} WHERE geo_id = ANY(:geo_ids)"
+)
+
+#: Two or more geographies' identity, by id, for ``/comparison/places``: the
+#: level decides which comparison rules apply and the name labels each side.
+GEOGRAPHY_IDENTITY_QUERY: TextClause = text(
+    f"SELECT geo_id, geo_level, geo_name, state_fips FROM {GEOGRAPHY_RELATION} "
+    "WHERE geo_id = ANY(:geo_ids)"
 )
 
 #: Whether the catalog serves a geography at all, for the route's 404.
@@ -384,5 +457,273 @@ SOURCE_FRESHNESS_QUERY: TextClause = text(
     FROM {METRIC_RELATION} AS metric
     GROUP BY source_code
     ORDER BY source_code
+    """
+)
+
+
+# ---------------------------------------------------------------------------
+# Finding a place by name or by location (api-place-search)
+# ---------------------------------------------------------------------------
+
+#: What a search result carries, from the projection.
+_GEO_SEARCH_COLUMNS = (
+    "search.geo_id, search.geo_level, search.geo_name, search.short_name, "
+    "search.state_fips, search.state_name, search.county_geo_id, "
+    "search.county_name, search.population, search.population_year, "
+    "search.population_metric_code"
+)
+
+#: The grains a search may be narrowed to, and the order a tie in population
+#: falls back to: the page a resident most likely means first.
+GEO_SEARCH_GRAINS: tuple[str, ...] = ("STATE", "COUNTY", "METRO", "PLACE", "ZCTA")
+
+#: Names matched to a query, best first.
+#:
+#: ``:words`` is the normalised query with the projection's leading space
+#: (``" austin"``), ``:prefix`` that followed by ``%`` and ``:word_prefix``
+#: that preceded by ``%`` too; the normaliser leaves only ``[a-z0-9 ]`` in
+#: them, so neither ``LIKE`` operand can carry a wildcard the caller typed.
+#: Tiers: 0 the short or full name is the query, 1 it starts with it, 2 a
+#: later word does, 3 a trigram near-miss (``%``, pg_trgm's default 0.3
+#: threshold). Within a tier: closeness for a near-miss, then population,
+#: larger first and unranked last, then grain, then ``geo_id`` so the order
+#: is total.
+GEO_SEARCH_QUERY: TextClause = text(
+    f"""
+    SELECT matched.geo_id, matched.geo_level, matched.geo_name,
+           matched.short_name, matched.state_fips, matched.state_name,
+           matched.county_geo_id, matched.county_name, matched.population,
+           matched.population_year, matched.population_metric_code,
+           matched.match_tier
+    FROM (
+        SELECT {_GEO_SEARCH_COLUMNS},
+               CASE
+                   WHEN search.short_words = :words OR search.name_words = :words THEN 0
+                   WHEN search.name_words LIKE :prefix OR search.short_words LIKE :prefix THEN 1
+                   WHEN search.name_words LIKE :word_prefix THEN 2
+                   ELSE 3
+               END AS match_tier,
+               similarity(search.short_words, :words) AS closeness
+        FROM {GEO_SEARCH_RELATION} AS search
+        WHERE (
+                search.name_words LIKE :word_prefix
+             OR search.short_words LIKE :prefix
+             OR search.short_words % :words
+              )
+          AND (CAST(:grains AS TEXT[]) IS NULL
+               OR search.geo_level = ANY(CAST(:grains AS TEXT[])))
+          AND (CAST(:state_fips AS TEXT) IS NULL
+               OR search.state_fips = CAST(:state_fips AS TEXT))
+    ) AS matched
+    ORDER BY matched.match_tier,
+             CASE WHEN matched.match_tier = 3 THEN matched.closeness ELSE 0 END DESC,
+             matched.population DESC NULLS LAST,
+             CASE matched.geo_level
+                 WHEN 'PLACE' THEN 0
+                 WHEN 'COUNTY' THEN 1
+                 WHEN 'METRO' THEN 2
+                 WHEN 'STATE' THEN 3
+                 ELSE 4
+             END,
+             matched.geo_id
+    LIMIT :fetch
+    """
+)
+
+#: Search rows by id: the county and metro offered beside a matched city.
+GEO_SEARCH_ROWS_QUERY: TextClause = text(
+    f"""
+    SELECT {_GEO_SEARCH_COLUMNS}
+    FROM {GEO_SEARCH_RELATION} AS search
+    WHERE search.geo_id = ANY(:geo_ids)
+    ORDER BY search.geo_id
+    """
+)
+
+#: The metro each county is delineated into, by the relationship the
+#: reference recorded (a county is in at most one CBSA per delineation).
+GEO_SEARCH_COUNTY_METROS_QUERY: TextClause = text(
+    f"""
+    SELECT link.related_geo_id AS county_geo_id, link.geo_id AS metro_geo_id
+    FROM {RELATIONSHIP_RELATION} AS link
+    JOIN {GEO_SEARCH_RELATION} AS metro
+         ON metro.geo_id = link.geo_id
+        AND metro.geo_level = 'METRO'
+    WHERE link.relationship_type = 'contains'
+      AND link.related_geo_id = ANY(:county_geo_ids)
+    ORDER BY link.related_geo_id, link.geography_vintage DESC, link.geo_id
+    """
+)
+
+#: The names the web's address rule slugs -- the published ``geo_name``, which
+#: is the state, county or place name the web's helpers read -- for every
+#: state and for the counties and places of the states asked for. A county or city segment falls back to its
+#: FIPS code when a sibling slugs the same way, so a path needs its siblings.
+GEO_SEARCH_SEGMENTS_QUERY: TextClause = text(
+    f"""
+    SELECT search.geo_id, search.geo_level, search.state_fips,
+           search.county_fips, search.place_fips,
+           search.geo_name AS segment_name
+    FROM {GEO_SEARCH_RELATION} AS search
+    WHERE search.geo_level IN ('STATE', 'METRO')
+       OR (search.geo_level IN ('COUNTY', 'PLACE')
+           AND search.state_fips = ANY(:state_fips))
+    ORDER BY search.geo_id
+    """
+)
+
+# ---------------------------------------------------------------------------
+# Metro pages (web-metro-pages)
+# ---------------------------------------------------------------------------
+
+#: Every current metro, as its page names it: the published name, the short
+#: name, the principal state (``geo_search``'s rule: the state of its most
+#: populous member county) and the newest ACS population. About 925 rows; a
+#: metro's segment is decided against all of them, as a county's is against
+#: its state's counties.
+METRO_PAGES_QUERY: TextClause = text(
+    f"""
+    SELECT search.geo_id, search.geo_level, search.geo_name,
+           search.short_name, search.state_fips, search.state_name,
+           search.population, search.population_year,
+           search.population_metric_code,
+           search.geo_name AS segment_name
+    FROM {GEO_SEARCH_RELATION} AS search
+    WHERE search.geo_level = 'METRO'
+    ORDER BY search.geo_id
+    """
+)
+
+#: The metros with a member county in each of ``:state_fips``' states, by the
+#: delineation's own ``contains`` rows. The states' counties are read once
+#: into a small materialized set (about 250 for Texas) and the relationship
+#: read starts from their keys, so it is an index probe on
+#: ``related_geo_id``; the search projection is not joined a second time
+#: (1.54 s cold for Texas on OFFICE_LAB, 2026-11-01).
+METRO_STATE_MEMBERS_QUERY: TextClause = text(
+    f"""
+    WITH counties AS MATERIALIZED (
+        SELECT member.geo_id, member.state_fips
+        FROM {GEO_SEARCH_RELATION} AS member
+        WHERE member.geo_level = 'COUNTY'
+          AND member.state_fips = ANY(:state_fips)
+    ),
+    links AS MATERIALIZED (
+        SELECT link.geo_id, link.related_geo_id
+        FROM {RELATIONSHIP_RELATION} AS link
+        WHERE link.related_geo_id = ANY(ARRAY(SELECT geo_id FROM counties))
+          AND link.relationship_type = 'contains'
+          AND link.geo_id LIKE 'cbsa:%'
+    )
+    SELECT DISTINCT links.geo_id AS metro_geo_id, counties.state_fips
+    FROM links
+    JOIN counties ON counties.geo_id = links.related_geo_id
+    """
+)
+
+#: One metro's member counties under the newest delineation the reference
+#: holds for it, most populous first. A county the delineation names that the
+#: search projection does not hold (not current) is left out, not guessed.
+METRO_MEMBER_COUNTIES_QUERY: TextClause = text(
+    f"""
+    WITH links AS MATERIALIZED (
+        SELECT link.related_geo_id, link.geography_vintage,
+               link.evidence_source
+        FROM {RELATIONSHIP_RELATION} AS link
+        WHERE link.geo_id = :metro_geo_id
+          AND link.relationship_type = 'contains'
+    ),
+    newest AS MATERIALIZED (
+        SELECT related_geo_id, geography_vintage, evidence_source
+        FROM links
+        WHERE geography_vintage = (SELECT MAX(geography_vintage) FROM links)
+    )
+    SELECT county.geo_id, county.geo_name, county.state_fips,
+           county.state_name, county.population, county.population_year,
+           newest.geography_vintage, newest.evidence_source
+    FROM newest
+    JOIN {GEO_SEARCH_RELATION} AS county
+         ON county.geo_id = newest.related_geo_id
+        AND county.geo_level = 'COUNTY'
+    WHERE county.geo_id = ANY(ARRAY(SELECT related_geo_id FROM newest))
+    ORDER BY county.population DESC NULLS LAST, county.geo_id
+    """
+)
+
+#: The areas a state lies in (its Census division, region and the nation),
+#: by the reference's ``contains`` rows, named by key. A metro page reads its
+#: principal state's, so its grocery and gas lines have a region to fall
+#: back to; nothing is matched by name.
+STATE_CONTAINING_AREAS_QUERY: TextClause = text(
+    f"""
+    WITH links AS MATERIALIZED (
+        SELECT DISTINCT link.geo_id
+        FROM {RELATIONSHIP_RELATION} AS link
+        WHERE link.related_geo_id = :state_geo_id
+          AND link.relationship_type = 'contains'
+    )
+    SELECT geography.geo_id, geography.geo_level, geography.geo_name
+    FROM {GEOGRAPHY_RELATION} AS geography
+    WHERE geography.geo_id = ANY(ARRAY(SELECT geo_id FROM links))
+    ORDER BY geography.geo_id
+    """
+)
+
+#: The grains a point is located in by boundary. A metro is not: OMB
+#: delineates it from whole counties, so it follows from the county.
+GEO_LOCATE_GRAINS: tuple[str, ...] = ("STATE", "COUNTY", "PLACE", "TRACT", "ZCTA")
+
+#: The current geographies whose boundary covers a point, one per grain. Where
+#: two boundaries of one grain cover it (a tract the newer decade split, both
+#: still current), the newer boundary vintage wins, then ``geo_id``.
+GEO_LOCATE_QUERY: TextClause = text(
+    f"""
+    SELECT DISTINCT ON (boundary.geo_level)
+           boundary.geo_id, boundary.geo_level, boundary.geo_name,
+           boundary.state_fips, boundary.county_fips, boundary.place_fips,
+           boundary.boundary_vintage
+    FROM {GEO_BOUNDARY_RELATION} AS boundary
+    WHERE boundary.geo_level IN ('STATE', 'COUNTY', 'PLACE', 'TRACT', 'ZCTA')
+      AND ST_Covers(
+              boundary.geo_geom,
+              ST_SetSRID(
+                  ST_MakePoint(
+                      CAST(:lon AS DOUBLE PRECISION),
+                      CAST(:lat AS DOUBLE PRECISION)
+                  ),
+                  4326
+              )
+          )
+    ORDER BY boundary.geo_level, boundary.boundary_vintage DESC NULLS LAST,
+             boundary.geo_id
+    """
+)
+
+#: A county's metro, newest delineation first.
+GEO_LOCATE_METRO_QUERY: TextClause = text(
+    f"""
+    SELECT metro.geo_id, metro.geo_level, metro.geo_name,
+           link.geography_vintage AS boundary_vintage
+    FROM {RELATIONSHIP_RELATION} AS link
+    JOIN {GEOGRAPHY_RELATION} AS metro
+         ON metro.geo_id = link.geo_id
+        AND metro.geo_level = 'METRO'
+        AND metro.geography_state = 'current'
+    WHERE link.relationship_type = 'contains'
+      AND link.related_geo_id = :county_geo_id
+    ORDER BY link.geography_vintage DESC, metro.geo_id
+    LIMIT 1
+    """
+)
+
+#: The boundary vintages each versioned tile layer holds
+#: (tiles-places-and-metros), newest first per grain.
+TILE_LAYER_VINTAGE_RELATION = "gold.tile_layer_vintage"
+TILE_LAYER_VINTAGES_QUERY: TextClause = text(
+    f"""
+    SELECT held.geo_level, held.boundary_vintage, held.feature_count,
+           held.is_default
+    FROM {TILE_LAYER_VINTAGE_RELATION} AS held
+    ORDER BY held.geo_level, held.boundary_vintage DESC
     """
 )

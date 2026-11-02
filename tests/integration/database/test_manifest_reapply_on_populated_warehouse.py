@@ -243,6 +243,8 @@ def test_reapplying_after_tract_rows_exist_keeps_the_tract_constraints(
     032 swapped them again to admit tracts. Re-running 031 dropped 032's wider
     checks and re-added its own, which the first tract row then violated, so
     the documented upgrade path failed on every warehouse holding tracts.
+    036 widened them once more, for metros, and both earlier steps now leave
+    that alone too, so the kept constraints are 036's.
     """
     capture_year = 2088
     database = postgres_connection_factory()
@@ -270,8 +272,8 @@ def test_reapplying_after_tract_rows_exist_keeps_the_tract_constraints(
                     """
                     SELECT conname FROM pg_constraint
                     WHERE conname IN (
-                        'observation_revision_geo_level_tract_check',
-                        'acs_ingestion_slices_geo_level_tract_check'
+                        'observation_revision_geo_level_metro_check',
+                        'acs_ingestion_slices_geo_level_metro_check'
                     ) ORDER BY conname
                     """
                 )
@@ -286,6 +288,6 @@ def test_reapplying_after_tract_rows_exist_keeps_the_tract_constraints(
         database.close()
 
     assert kept == [
-        "acs_ingestion_slices_geo_level_tract_check",
-        "observation_revision_geo_level_tract_check",
+        "acs_ingestion_slices_geo_level_metro_check",
+        "observation_revision_geo_level_metro_check",
     ]

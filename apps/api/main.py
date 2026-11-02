@@ -1,3 +1,4 @@
+import functools
 import hashlib
 import json
 import logging
@@ -29,6 +30,8 @@ from apps.api.registry import platform_description
 from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
     account,
+    admin,
+    age_structure,
     catalog,
     cdc,
     comparison,
@@ -75,6 +78,9 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     migration.router,
     place.router,
     population.router,
+    # Age and sex structure (ADR-0013): sums of one provider table, cacheable
+    # like every other public warehouse read.
+    age_structure.router,
     # The derived FBI county roll-up (ETL-053): a warehouse-published
     # derived aggregate, cacheable like every other public warehouse read.
     crime.router,
@@ -99,6 +105,8 @@ PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     # whoever asked next.
     identity.router,
     account.router,
+    # The admin warehouse pages: authenticated, allowlisted, and never cached.
+    admin.router,
 )
 
 #: The content report (API-137). A warehouse read, so it is deliberately not
@@ -136,6 +144,9 @@ def contract_fingerprint(application: FastAPI) -> str:
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
+    fingerprint = getattr(application.state, "contract_fingerprint", None)
+    if fingerprint is not None:
+        fingerprint()
     yield
     # Graceful shutdown: return pooled connections before the process exits.
     # Uvicorn drains in-flight requests first (--timeout-graceful-shutdown in
@@ -252,11 +263,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         identity_per_minute=configured.api_rate_limit_identity_per_minute,
         trusted_proxies=configured.api_trusted_proxy_ips,
     )
+    application.state.contract_fingerprint = functools.cache(
+        functools.partial(contract_fingerprint, application)
+    )
     application.add_middleware(
         RedisResponseCacheMiddleware,
         redis_url=configured.redis_url,
         ttl_seconds=configured.api_cache_ttl_seconds,
-        contract_fingerprint=contract_fingerprint(application),
+        # Deferred: the document takes about two seconds to build, and every
+        # test that builds an application paid it whether or not it served a
+        # cacheable request (PERF-001). The lifespan computes it at startup,
+        # so a deployed process still pays once, before its first request.
+        contract_fingerprint=application.state.contract_fingerprint,
         epoch_provider=PublicationEpochProvider(configured.api_cache_freshness_seconds),
         targets=PUBLIC_CACHE_TARGETS,
     )

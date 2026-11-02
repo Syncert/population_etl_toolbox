@@ -304,3 +304,52 @@ def test_orchestrated_run_publishes_partial_county_place_overlaps(
     assert abs(highest_total - 1) < 1e-3, (
         f"a place's four overlap weights sum to {highest_total}, not 1"
     )
+
+
+@pytest.mark.integration
+@pytest.mark.database
+@pytest.mark.slow
+def test_orchestrated_run_serves_acs_at_metro_grain_and_the_catalog_says_so(
+    orchestrated_execution: dict[str, dict[str, str]],
+    orchestrated_warehouse: PostgresTestConfig,
+) -> None:
+    """Covers: DAG-016 — an ACS metro slice reaches the latest relation and the catalog.
+
+    The tile coverage read and the map's "Draw by" list both found no ACS
+    metro on the internal warehouse (2026-10-31). Both read the same thing:
+    `gold_census.mv_acs_latest` rows at METRO, which the catalog's grains are
+    derived from. This pins that a captured metro response, once loaded,
+    is served at METRO and listed as a METRO grain, so an empty grain there
+    is a load that has not run rather than a path that drops it.
+    """
+    assert orchestrated_execution["acs_ingest"], (
+        "the orchestrated run must have executed acs_ingest before its "
+        "serving can be asserted"
+    )
+
+    connection = orchestrated_warehouse.connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT geo_id
+                FROM gold_census.mv_acs_latest
+                WHERE geo_level = 'METRO'
+                  AND metric_code = 'CENSUS_ACS:acs5:B01003_001'
+                  AND value IS NOT NULL
+                """
+            )
+            served = {row[0] for row in cursor.fetchall()}
+            cursor.execute(
+                """
+                SELECT valid_geo_grains
+                FROM gold_glossary.dim_metric_catalog
+                WHERE metric_code = 'CENSUS_ACS:acs5:B01003_001'
+                """
+            )
+            (grains,) = cursor.fetchone()
+    finally:
+        connection.close()
+
+    assert served == {"cbsa:10180"}
+    assert "METRO" in grains

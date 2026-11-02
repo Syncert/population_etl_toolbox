@@ -113,6 +113,7 @@
       "datasets": [],
       "display_name": "Bureau of Economic Analysis regional economic accounts",
       "observation_dimensions": [
+        "derivation",
         "description",
         "dollar_basis",
         "line_code",
@@ -1193,6 +1194,7 @@
       "observation_filters": [
         "geo_id",
         "geo_level",
+        "state_fips",
         "year_from",
         "year_to"
       ],
@@ -1340,6 +1342,7 @@
       "observation_filters": [
         "geo_id",
         "geo_level",
+        "state_fips",
         "year_from",
         "year_to"
       ],

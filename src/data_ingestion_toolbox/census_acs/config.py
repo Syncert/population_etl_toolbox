@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import List
+from dataclasses import dataclass
+from typing import Dict, List
 
 import os
 from pydantic import BaseModel, Field, field_validator
+
+from data_ingestion_toolbox.census_acs.year_scope import YearScope, validate_year_scope
 
 
 # County endpoints are available for the 50 states, DC, and Puerto Rico.
@@ -78,6 +81,9 @@ ACS_COUNTY_PARENT_FIPS: tuple[str, ...] = (
 ACS_PLACE_PARENT_FIPS: dict[str, tuple[str, ...]] = {
     "acs5": ACS_COUNTY_PARENT_FIPS,
     "acs1": tuple(code for code in ACS_COUNTY_PARENT_FIPS if code not in {"50", "54"}),
+    # Census 2000 publishes places and tracts in every state, DC and Puerto Rico.
+    "dec2000sf1": ACS_COUNTY_PARENT_FIPS,
+    "dec2000sf3": ACS_COUNTY_PARENT_FIPS,
 }
 
 
@@ -88,7 +94,52 @@ def place_parent_fips(dataset: str) -> tuple[str, ...]:
 
 #: States whose tracts each dataset publishes (sub-county-geography). Only the
 #: 5-year estimates publish tracts; the 1-year estimates publish none.
-ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {"acs5": ACS_COUNTY_PARENT_FIPS}
+ACS_TRACT_PARENT_FIPS: dict[str, tuple[str, ...]] = {
+    "acs5": ACS_COUNTY_PARENT_FIPS,
+    "dec2000sf1": ACS_COUNTY_PARENT_FIPS,
+    "dec2000sf3": ACS_COUNTY_PARENT_FIPS,
+}
+
+
+@dataclass(frozen=True)
+class CensusDataset:
+    """Where a dataset the adapter reads lives on the Data API.
+
+    `api_path` follows `/data/{year}/`. `years` is empty for a dataset
+    published every year, or names the only years it exists for: a decennial
+    census exists for its census year alone. `margins` is whether the
+    dataset publishes margins of error (decennial-2000-and-1990-history).
+    """
+
+    api_path: str
+    margins: bool = True
+    years: tuple[int, ...] = ()
+
+
+CENSUS_DATASETS: dict[str, CensusDataset] = {
+    "acs1": CensusDataset("acs/acs1"),
+    "acs5": CensusDataset("acs/acs5"),
+    # Census 2000: Summary File 1 (100-percent counts) and Summary File 3
+    # (the long-form sample). Neither publishes margins.
+    "dec2000sf1": CensusDataset("dec/sf1", margins=False, years=(2000,)),
+    "dec2000sf3": CensusDataset("dec/sf3", margins=False, years=(2000,)),
+}
+
+
+def census_api_url(year: int, dataset: str) -> str:
+    """The Data API endpoint of one dataset's year; refuses one it lacks."""
+    spec = CENSUS_DATASETS.get(dataset)
+    if spec is None:
+        raise ValueError(f"Unsupported dataset: {dataset}")
+    if spec.years and year not in spec.years:
+        raise ValueError(f"{dataset} exists for {list(spec.years)}, not {year}")
+    return f"https://api.census.gov/data/{year}/{spec.api_path}"
+
+
+#: The Data API's geography name for a metropolitan or micropolitan
+#: statistical area (CBSA), as a request names it and as the response's
+#: header column carries the five-digit CBSA code (W-7).
+ACS_METRO_GEOGRAPHY = "metropolitan statistical area/micropolitan statistical area"
 
 
 def tract_parent_fips(dataset: str) -> tuple[str, ...]:
@@ -101,7 +152,9 @@ class AcsConfig(BaseModel):
         default_factory=lambda: os.environ.get("CENSUS_API_KEY", "")
     )
     # dataset names used locally
-    datasets: List[str] = ["acs1", "acs5"]
+    # The ACS, and the 2000 census's Summary Files 1 and 3 for the history
+    # before it (decennial-2000-and-1990-history).
+    datasets: List[str] = ["acs1", "acs5", "dec2000sf1", "dec2000sf3"]
     # curated table IDs (can expand later)
     curated_tables: List[str] = [
         # https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/documentation/
@@ -166,31 +219,75 @@ class AcsConfig(BaseModel):
         "C24050",  # Industry by occupation for the civilian employed population age 16+
     ]
     # geo levels we ingest
-    geo_levels: List[str] = ["us", "state", "county", "place", "tract"]
-    # How many of each dataset's newest available years are requested at
-    # place grain. Places are ten times the counties' volume -- about 62
-    # million 5-year facts for one year against the counties' 6.2 million --
-    # so the default is the newest year, which is what a place page reads;
-    # raise it to backfill place history.
-    place_recent_years: int = 1
-    # The tables requested at tract grain (sub-county-geography): the few a
-    # "within this county" map shows. Tracts are about 85,000 against the
-    # counties' 3,200, so the whole curated list at tract grain would be some
-    # 25 times the county volume per year. These five tables are 63
-    # variables (B17001 is 59 of them): about 5.4 million facts and 10.7
-    # million revision rows (estimate and margin) for one year, in 51 state
-    # slices. Each must also be in `curated_tables`.
-    tract_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
-    # How many of the 5-year dataset's newest years are requested at tract
-    # grain; the default is the newest, which is what a county page reads.
-    tract_recent_years: int = 1
-    # Place years beyond the newest `place_full_table_years` are requested
-    # for `place_history_tables` only (acs-place-tract-history-backfill). A
-    # place year on the whole curated list measured about 136 GB on the
-    # internal stack in 2026-10; a city history on every table would not fit
-    # on its disk, and the city page's history charts read these tables.
-    place_full_table_years: int = 1
+    geo_levels: List[str] = ["us", "state", "county", "place", "tract", "metro"]
+    # The years requested at place grain, declared (`year_scope.py`):
+    # "newest", "newest:N", "YYYY-YYYY", "YYYY" or "none". Places are ten
+    # times the counties' volume -- about 62 million 5-year facts for one
+    # year against the counties' 6.2 million. The city history is every
+    # published year (v1.0, W-3): the 5-year from 2009, the 1-year from 2005
+    # (places of 65,000 or more, no 2020 release); measured to fit with the
+    # reserve free on 2026-10-26 (`measure.py`, the backfill plan).
+    place_year_scope: str = "2000-2024"
+    # The tables requested at tract grain (sub-county-geography). Tracts are
+    # about 85,000 against the counties' 3,200, so the whole curated list at
+    # tract grain would be some 25 times the county volume per year. The
+    # first five (63 variables) are what the "within this county" map began
+    # with; v1.0 (W-4) adds what the tract and city chapters show -- age,
+    # households, race and ethnicity, education, employment, commute,
+    # tenure, rent burden, owner costs, vacancy, health insurance, broadband,
+    # per capita income and housing units -- 558 variables a year from 2017,
+    # measured at about 159 MB per variable-year (about 1,140 GiB for
+    # 2010-2024); Nick chose the whole list on 2026-10-26. Each must also be
+    # in `curated_tables`.
+    tract_tables: List[str] = [
+        "B01003", "B19013", "B17001", "B25064", "B25077",
+        "B01001", "B01002", "B11001", "B02001", "B03002", "B15003", "B23025",
+        "B08301", "B08303", "B25003", "B25070", "B25091", "B25002", "B27010",
+        "B28002", "B19301", "B25001",
+    ]  # fmt: skip
+    # The 5-year years requested at tract grain, declared as for places:
+    # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
+    # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.
+    tract_year_scope: str = "2000-2024"
+    # Place years outside `place_full_table_year_scope` are requested for
+    # `place_history_tables` only (acs-place-tract-history-backfill). A place
+    # year on the whole curated list measured about 136 GB on the internal
+    # stack in 2026-10; widened to every year after
+    # `python -m data_ingestion_toolbox.census_acs.measure` showed the disk
+    # holds the whole list with 41% free (2026-10-26).
+    place_full_table_year_scope: str = "2000-2024"
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]
+    # The years requested at metro (CBSA) grain, declared as for places: the
+    # Bureau's own metro and micro area estimates on the whole curated list,
+    # 1-year from 2005 and 5-year from 2009 (W-7). About 935 areas, under a
+    # third of the counties' volume.
+    metro_year_scope: str = "2005-2024"
+    # Concurrent sessions for one year's transform slices. A slice writes
+    # rows no other slice touches (one dataset, level and state), so they
+    # need not wait on each other; one at a time left all but one of the
+    # internal stack's 32 cores idle through a tract year (2026-10-31).
+    # Bounded well under the warehouse's connection limit.
+    transform_workers: int = Field(
+        default_factory=lambda: int(os.environ.get("ACS_TRANSFORM_WORKERS", "8"))
+    )
+    # Free-disk guard for operator backfill runs (`disk_guard.py`). The path
+    # must sit on the warehouse's filesystem; on the internal stack every
+    # container's `/` is Docker's one data disk. A run refuses when its
+    # projected bytes would leave less than the reserve free.
+    backfill_disk_path: str = Field(
+        default_factory=lambda: os.environ.get("ACS_BACKFILL_DISK_PATH", "/")
+    )
+    backfill_reserve_fraction: float = 0.20
+    # Bytes one curated variable adds per (year, "<dataset>/<grain>") across
+    # all of the grain's state slices, silver and gold together, measured on
+    # the internal stack by `python -m data_ingestion_toolbox.census_acs.measure`
+    # on 2026-10-26 from the 2024 year (recorded in the backfill plan). A
+    # grain left out projects nothing.
+    backfill_bytes_per_variable: Dict[str, float] = {
+        "acs5/place": 38_454_870.0,
+        "acs1/place": 611_340.0,
+        "acs5/tract": 158_899_297.0,
+    }
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
@@ -229,11 +326,21 @@ class AcsConfig(BaseModel):
             raise ValueError("configured ingestion scope must not be empty")
         return value
 
-    @field_validator("place_recent_years")
+    @field_validator(
+        "place_year_scope",
+        "tract_year_scope",
+        "place_full_table_year_scope",
+        "metro_year_scope",
+    )
     @classmethod
-    def validate_place_recent_years(cls, value: int) -> int:
-        if value < 0:
-            raise ValueError("place_recent_years must not be negative")
+    def validate_year_scopes(cls, value: str) -> str:
+        return validate_year_scope(value)
+
+    @field_validator("backfill_reserve_fraction")
+    @classmethod
+    def validate_reserve_fraction(cls, value: float) -> float:
+        if not 0 <= value < 1:
+            raise ValueError("backfill_reserve_fraction must be in [0, 1)")
         return value
 
     @field_validator("place_history_tables")
@@ -243,36 +350,33 @@ class AcsConfig(BaseModel):
             raise ValueError("place_history_tables must name at least one table")
         return value
 
-    @field_validator("tract_recent_years")
-    @classmethod
-    def validate_tract_recent_years(cls, value: int) -> int:
-        if value < 0:
-            raise ValueError("tract_recent_years must not be negative")
-        return value
-
     def tract_years(self, dataset: str, years: List[int]) -> set[int]:
-        """The years of ``dataset`` requested at tract grain: the newest ones."""
+        """The years of ``dataset`` requested at tract grain, by its declared scope."""
         if "tract" not in self.geo_levels or not tract_parent_fips(dataset):
             return set()
-        newest = sorted(set(years), reverse=True)
-        return set(newest[: self.tract_recent_years])
+        return YearScope.parse(self.tract_year_scope).select(years)
 
     def place_tables(self, year: int, years: List[int]) -> List[str] | None:
         """The tables requested for ``year`` at place grain.
 
-        ``None`` means the whole curated list: the newest
-        `place_full_table_years` of ``years``. Any older year is requested for
+        ``None`` means the whole curated list: a year of ``years`` inside
+        `place_full_table_year_scope`. Any other year is requested for
         `place_history_tables` only.
         """
-        newest = sorted(set(years), reverse=True)[: self.place_full_table_years]
-        return None if year in newest else list(self.place_history_tables)
+        full = YearScope.parse(self.place_full_table_year_scope).select(years)
+        return None if year in full else list(self.place_history_tables)
+
+    def metro_years(self, dataset: str, years: List[int]) -> set[int]:
+        """The years of ``dataset`` requested at metro grain, by its declared scope."""
+        if "metro" not in self.geo_levels:
+            return set()
+        return YearScope.parse(self.metro_year_scope).select(years)
 
     def place_years(self, dataset: str, years: List[int]) -> set[int]:
-        """The years of ``dataset`` requested at place grain: the newest ones."""
+        """The years of ``dataset`` requested at place grain, by its declared scope."""
         if "place" not in self.geo_levels or not place_parent_fips(dataset):
             return set()
-        newest = sorted(set(years), reverse=True)
-        return set(newest[: self.place_recent_years])
+        return YearScope.parse(self.place_year_scope).select(years)
 
     @field_validator("census_api_global_concurrency", "raw_load_max_rows")
     @classmethod

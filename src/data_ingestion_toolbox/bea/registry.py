@@ -12,7 +12,9 @@ Only the lines named here are loaded. A row for a BEA region (``9X000``) or
 for one of the Bureau's combined areas -- the Virginia independent cities
 merged with their surrounding county (``51901`` "Albemarle +
 Charlottesville") and Kalawao merged into Maui (``15901``) -- is BEA's own
-geography, not a county, and is counted, not loaded.
+geography, not a county, and is counted, not loaded. A combined area's
+values still stand in for its member counties when a metro area is summed
+from its counties (``silver_bea.metro``).
 """
 
 from __future__ import annotations
@@ -74,6 +76,51 @@ _GDP_SECTOR_LINES = (
 _RPP_LINES = ("1", "2", "3", "4", "5")
 
 
+#: Metro areas are summed from these bases only: a current-dollar or persons
+#: line adds across counties. A chained-dollar line does not (BEA chains each
+#: area separately), and a price level is not a total.
+ADDITIVE_BASES = frozenset({"current_dollars", "persons"})
+
+#: (table, line) -> (numerator line, denominator line, scale): a per-capita
+#: line is its metro's summed numerator over its summed denominator, never a
+#: sum. Personal income is in thousands of dollars and per capita income in
+#: dollars.
+RATIO_LINES: dict[tuple[str, str], tuple[str, str, int]] = {
+    ("CAINC1", "3"): ("1", "2", 1000),
+}
+
+#: BEA's combined areas and the counties each stands for, by FIPS, from the
+#: Bureau's note on Virginia independent cities and Kalawao (checked
+#: 2026-10-30 against the names the county reference holds for each code).
+#: BEA publishes no figure for the member counties themselves.
+COMBINED_AREAS: dict[str, tuple[str, ...]] = {
+    "15901": ("15005", "15009"),
+    "51901": ("51003", "51540"),
+    "51903": ("51005", "51580"),
+    "51907": ("51015", "51790", "51820"),
+    "51911": ("51031", "51680"),
+    "51913": ("51035", "51640"),
+    "51918": ("51053", "51570", "51730"),
+    "51919": ("51059", "51600", "51610"),
+    "51921": ("51069", "51840"),
+    "51923": ("51081", "51595"),
+    "51929": ("51089", "51690"),
+    "51931": ("51095", "51830"),
+    "51933": ("51121", "51750"),
+    "51939": ("51143", "51590"),
+    "51941": ("51149", "51670"),
+    "51942": ("51153", "51683", "51685"),
+    "51944": ("51161", "51775"),
+    "51945": ("51163", "51530", "51678"),
+    "51947": ("51165", "51660"),
+    "51949": ("51175", "51620"),
+    "51951": ("51177", "51630"),
+    "51953": ("51191", "51520"),
+    "51955": ("51195", "51720"),
+    "51958": ("51199", "51735"),
+}
+
+
 @dataclass(frozen=True)
 class BeaTable:
     code: str
@@ -92,10 +139,12 @@ class BeaTable:
     #: number: a state with no nonmetropolitan county has `0.000` as the
     #: price level of its nonmetropolitan portion.
     absent_area_value: str | None = None
+    #: The zip the table is published in where it is not `<TABLE>.zip`.
+    archive: str | None = None
 
     @property
     def path(self) -> str:
-        return f"/{self.code}.zip"
+        return f"/{self.archive or self.code}.zip"
 
     @property
     def member_prefix(self) -> str:
@@ -153,6 +202,17 @@ TABLES: tuple[BeaTable, ...] = (
         geography="portion",
         member="PARPP_PORT_",
         absent_area_value="0.000",
+    ),
+    # The implicit regional price deflator: an area's price index (2017 = 100)
+    # that turns its current-dollar income into real income. Published in the
+    # metro parities' zip, beside them.
+    BeaTable(
+        "MAIRPD",
+        "Implicit regional price deflators by metropolitan statistical area",
+        {"1": "price_index"},
+        geography="metro",
+        member="MAIRPD_MSA_",
+        archive="MARPP",
     ),
 )
 

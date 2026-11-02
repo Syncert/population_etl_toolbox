@@ -34,7 +34,26 @@ OPERATIONAL_SCRIPTS = {
     # applied, so the warehouse can answer which steps it carries (DB-049).
     # It replaces the `jq | psql -f` loop the reset procedure used to carry.
     "apply_warehouse_manifest.py",
+    # Dumps the warehouse to a drive outside its volume, prunes old dumps,
+    # and restores the newest into a scratch database to prove it (ENV-025).
+    "backup_warehouse.py",
+    # Checks every by-age rate scheme's lines against the labels the Bureau
+    # published for them in the warehouse (API-192). Read-only; run before a
+    # scheme is approved, since only a loaded warehouse holds the labels.
+    "check_age_rate_labels.py",
     "deploy_stack.ps1",
+    # Measures the place and metro tile layers on a loaded stack: bytes per
+    # sample tile against a budget, and coverage of published geographies
+    # (MARTIN-013). Read-only; a check only a loaded warehouse can answer.
+    "measure_tile_layers.py",
+    # Times the place tiles a state's city map opens on, with and without
+    # `?state=`, six at a time as a browser asks (MARTIN-013). Read-only.
+    "measure_state_tile_wait.py",
+    # Schedules backup_warehouse.py weekly on OFFICE_LAB (ENV-025).
+    "register_backup_task.ps1",
+    # Runs an ACS backfill one year per `acs_ingest` run, newest first, and
+    # records each year's duration and size (ETL-090).
+    "run_acs_backfill.py",
     # The POSIX half of the same entrypoint. Both are thin callers over
     # tools/deployment.py, so the deployment path runs on the host a
     # deployment will actually run on rather than only on a workstation.

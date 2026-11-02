@@ -350,6 +350,13 @@ def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
         )
 
 
+@pytest.mark.dag
+def test_acs_transform_retries_once_because_each_attempt_resumes(dagbag) -> None:
+    """Covers: DAG-008 — the hours-long ACS transform retries once, not three times."""
+    task = dagbag.dags["acs_ingest"].get_task("transform_to_silver")
+    assert task.retries == 1
+
+
 # --------------------------------------------------------------------------
 # DAG-009: Reference dimension dependencies
 # --------------------------------------------------------------------------
@@ -621,3 +628,16 @@ def test_silver_ref_publishes_place_and_tract_history_after_the_newest_tracts(
     dag = dagbag.dags["silver_ref"]
     history = dag.get_task("load_sub_county_history")
     assert "load_sub_county_geo" in {t.task_id for t in history.upstream_list}
+
+
+@pytest.mark.dag
+def test_acs_slices_are_marked_planned_before_any_batch_ingests(dagbag) -> None:
+    """Covers: DAG-009 — marking a slice planned resets its start, so it runs first.
+
+    Run side by side, marking reset `started_at` on a slice a batch had
+    already started, and the batch's finish then broke the ledger's
+    started-before-finished CHECK (the 2024 metro backfill, 2026-10-31).
+    """
+    dag = dagbag.dags["acs_ingest"]
+    ingest = dag.get_task("ingest_batch")
+    assert "mark_slices_planned" in {t.task_id for t in ingest.upstream_list}

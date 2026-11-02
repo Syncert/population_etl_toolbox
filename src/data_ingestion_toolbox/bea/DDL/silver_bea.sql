@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS silver_bea.dim_line (
     unit TEXT NOT NULL,
     dollar_basis TEXT NOT NULL CONSTRAINT dim_line_dollar_basis_check CHECK (dollar_basis IN (
         'current_dollars', 'chained_dollars', 'per_capita_current_dollars', 'persons',
-        'price_level_us_100'
+        'price_level_us_100', 'price_index'
     )),
     observation_basis TEXT NOT NULL,
     methodology_url TEXT NOT NULL,
@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS silver_bea.fact_observation (
     )),
     source_record_id TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- NULL for a figure BEA published; otherwise how the warehouse derived it
+    -- from BEA's published figures (a metro summed from its counties).
+    derivation TEXT CONSTRAINT fact_observation_derivation_check CHECK (
+        derivation IS NULL
+        OR derivation IN ('sum_of_member_counties', 'ratio_of_member_county_sums')
+    ),
     PRIMARY KEY (table_code, line_code, geo_id, year, capture_id),
     FOREIGN KEY (table_code, line_code) REFERENCES silver_bea.dim_line(table_code, line_code),
     CONSTRAINT bea_fact_valid_value_present CHECK (value_status <> 'valid' OR value IS NOT NULL),
@@ -134,17 +140,18 @@ BEGIN
         ALTER TABLE control.bea_table_capture ADD CONSTRAINT bea_table_capture_table_code_check
             CHECK (table_code ~ '^(CA|SA|MA|PA)[A-Z0-9]+$');
     END IF;
+    -- The implicit regional price deflator adds `price_index`.
     IF EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'silver_bea.dim_line'::regclass
           AND conname = 'dim_line_dollar_basis_check'
-          AND pg_get_constraintdef(oid) NOT LIKE '%price_level_us_100%'
+          AND pg_get_constraintdef(oid) NOT LIKE '%price_index%'
     ) THEN
         ALTER TABLE silver_bea.dim_line DROP CONSTRAINT dim_line_dollar_basis_check;
         ALTER TABLE silver_bea.dim_line ADD CONSTRAINT dim_line_dollar_basis_check
             CHECK (dollar_basis IN (
                 'current_dollars', 'chained_dollars', 'per_capita_current_dollars', 'persons',
-                'price_level_us_100'
+                'price_level_us_100', 'price_index'
             ));
     END IF;
     IF EXISTS (
@@ -166,5 +173,25 @@ BEGIN
         ALTER TABLE silver_bea.fact_observation DROP CONSTRAINT fact_observation_geo_type_check;
         ALTER TABLE silver_bea.fact_observation ADD CONSTRAINT fact_observation_geo_type_check
             CHECK (geo_type IN ('nation', 'state', 'county', 'metro', 'provider_area'));
+    END IF;
+END $$;
+
+-- Metro areas summed from their counties (bea-metro-income-gdp) are marked
+-- by `derivation`; a fact table created before them gains the column, NULL
+-- on every existing row, which BEA published as it stands.
+ALTER TABLE silver_bea.fact_observation ADD COLUMN IF NOT EXISTS derivation TEXT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_bea.fact_observation'::regclass
+          AND conname = 'fact_observation_derivation_check'
+    ) THEN
+        ALTER TABLE silver_bea.fact_observation
+            ADD CONSTRAINT fact_observation_derivation_check CHECK (
+                derivation IS NULL
+                OR derivation IN ('sum_of_member_counties', 'ratio_of_member_county_sums')
+            );
     END IF;
 END $$;

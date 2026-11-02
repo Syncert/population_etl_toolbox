@@ -9,6 +9,10 @@ verification through ``dag_run.conf``:
     {"cadence": "weekly", "source_code": "USDA_NASS"}
     {"rule_id": "DQ-CDC-003", "scope": {"asset_id": "cdi",
                                         "release_watermark": "1780605223"}}
+    {"cadence": "weekly", "exclude_rules": ["DQ-ACS-007"]}
+
+``exclude_rules`` drops named rules from the run and is recorded in its
+``evaluated_scope`` as ``excluded_rules``.
 
 The assessment never mutates source observations: its executors are
 read-only measurements, and the only relations it writes are the
@@ -168,6 +172,10 @@ def _run_assessment(**context: Any) -> dict[str, Any]:
             rule_id=conf.get("rule_id"),
             scope=conf.get("scope"),
             code_commit_sha=conf.get("code_commit_sha"),
+            exclude_rules=tuple(conf.get("exclude_rules") or ()),
+            # A long rule's finished partitions are committed as they come,
+            # so they are visible during the run and kept if it stops.
+            commit_progress=True,
         )
         connection.commit()
         _log_assessment_report(connection, record, cadence)
@@ -177,7 +185,14 @@ def _run_assessment(**context: Any) -> dict[str, Any]:
     finally:
         connection.close()
     if record.overall_status in {"fail", "error"}:
-        raise RuntimeError(
+        from airflow.exceptions import AirflowFailException
+
+        # A finished assessment is a verdict, already committed with its
+        # evidence: retrying it re-runs every rule, passed ones included, and
+        # reaches the same verdict hours later. AirflowFailException fails
+        # the task without the retry, which stays for what it is for -- an
+        # exception before the run finished (the warehouse unreachable).
+        raise AirflowFailException(
             f"Quality assessment {record.quality_run_id} finished "
             f"{record.overall_status}: {record.failure_summary} "
             "(per-rule evidence is logged above this traceback)"

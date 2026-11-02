@@ -39,7 +39,10 @@ export default async function ExplainerPage({ params }) {
       ))}
       <footer className="explainer-footer subtle">
         <p>
-          Applies to {explainer.metricCodes.join(", ")} ({explainer.sources.join(", ")}). Reviewed{" "}
+          <span title={explainer.metricCodes.join(", ")} data-metric-codes={explainer.metricCodes.join(" ")}>
+            Applies to {explainer.metricCodes.length} published {explainer.metricCodes.length === 1 ? "measure" : "measures"}
+          </span>{" "}
+          ({explainer.sources.join(", ")}). Reviewed{" "}
           {explainer.reviewed} · {explainer.reviewer}.
         </p>
         {explainer.definitions.length ? <p>Reviewed definitions: {explainer.definitions.join(", ")}.</p> : null}

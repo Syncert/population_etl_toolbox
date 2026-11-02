@@ -225,7 +225,8 @@ class RedisResponseCacheMiddleware:
     Cache identity (API-006) is three-part:
 
     - ``contract_fingerprint`` — a digest of the served OpenAPI document,
-      computed by the application factory. Any change to the public contract
+      computed by the application factory, or a callable returning it that
+      is resolved on first use. Any change to the public contract
       rotates every key, so a schema change can never serve a body cached
       under the previous shape. It replaces a hand-bumped namespace literal
       that only changed when someone remembered it.
@@ -242,14 +243,14 @@ class RedisResponseCacheMiddleware:
         app,
         redis_url: str = "",
         ttl_seconds: int = 300,
-        contract_fingerprint: str = "unversioned",
+        contract_fingerprint: str | Callable[[], str] = "unversioned",
         epoch_provider: Callable[[], Awaitable[str]] | None = None,
         targets: CacheTargets | None = None,
     ) -> None:
         self.app = app
         self.redis_url = redis_url
         self.ttl_seconds = max(1, ttl_seconds)
-        self.contract_fingerprint = contract_fingerprint
+        self._contract_fingerprint = contract_fingerprint
         self.epoch_provider = epoch_provider
         #: Nothing is cacheable until the application declares what is. An
         #: empty default caches nothing rather than guessing, so a caller that
@@ -257,6 +258,18 @@ class RedisResponseCacheMiddleware:
         #: resource nobody classified.
         self.targets = targets or CacheTargets(frozenset(), ())
         self._client: Redis | None = None
+
+    @property
+    def contract_fingerprint(self) -> str:
+        """The digest, resolved on first use when the factory passed a callable.
+
+        Building the OpenAPI document it digests takes about two seconds, and
+        an application that serves no cacheable request never needs it; the
+        application factory warms it at startup instead (PERF-001).
+        """
+        if callable(self._contract_fingerprint):
+            self._contract_fingerprint = self._contract_fingerprint()
+        return self._contract_fingerprint
 
     def _is_cache_target(self, scope: dict[str, Any]) -> bool:
         """Whether the request addresses a resource the cache-control contract covers.

@@ -79,6 +79,9 @@ services:
       # whole internet.
       API_RATE_LIMIT_IDENTITY_PER_MINUTE: ${API_RATE_LIMIT_IDENTITY_PER_MINUTE:-30}
       API_ACCOUNT_CREATION_PER_HOUR: ${API_ACCOUNT_CREATION_PER_HOUR:-60}
+      # Show only reviewed plain metric labels (API-170); empty shows drafts.
+      METRIC_LABELS_REVIEWED_ONLY: ${METRIC_LABELS_REVIEWED_ONLY:-}
+      DERIVED_RATIOS_SERVE_DRAFTS: ${DERIVED_RATIOS_SERVE_DRAFTS:-}
       # How recently an account must have signed in to delete itself.
       API_DELETION_FRESHNESS_SECONDS: ${API_DELETION_FRESHNESS_SECONDS:-600}
       # Per-account storage quotas (ADR-0005 s4).
@@ -88,6 +91,8 @@ services:
       # declare rather than leave to accident. 0 means undeclared, and the API
       # reports it absent rather than inventing one.
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-0}
+      # Admin warehouse page allowlist (operator labels or emails); empty = off.
+      API_ADMIN_ACCOUNTS: ${API_ADMIN_ACCOUNTS:-}
     depends_on:
       - redis
     ports:
@@ -135,6 +140,23 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      # The image is the standalone production server (`node server.js`, see
+      # Dockerfile.web), not `next dev`. A hung Node process shows here as
+      # `unhealthy` in `docker compose ps` instead of as 30 s page timeouts
+      # nobody can attribute. `/robots.txt` is rendered by this process alone
+      # and asks the API nothing, so a slow API does not mark the web unhealthy.
+      # `node` is the only client in the image: there is no curl or wget.
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://127.0.0.1:3100/robots.txt',
+          (r) => process.exit(r.statusCode === 200 ? 0 : 1))
+          .on('error', () => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   airflow-common: &airflow-common
     build:
@@ -172,8 +194,12 @@ services:
       FCC_BDC_USERNAME: ${FCC_BDC_USERNAME:-}
       FCC_BDC_API_TOKEN: ${FCC_BDC_API_TOKEN:-}
       HUD_USER_API_TOKEN: ${HUD_USER_API_TOKEN:-}
+      # Where `raw_capture_export` writes (DAG-019); no default.
+      CAPTURE_EXPORT_ROOT: ${CAPTURE_EXPORT_ROOT:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
+      # A drive outside the warehouse's volume for the capture export.
+      - ${BACKUP_HOST_DIR:-./backups-not-configured}:/opt/backups
       # Shared so the webserver reads task logs directly from disk and
       # history survives container recreates.
       - airflow_logs:/opt/airflow/logs
@@ -196,7 +222,7 @@ services:
       --email admin@example.com || true;
       airflow connections delete public_data >/dev/null 2>&1 || true;
       airflow connections add public_data --conn-type postgres --conn-host ${PUBLIC_DATA_DB_HOST:-${ANALYTICS_DB_HOST}} --conn-port ${PUBLIC_DATA_DB_PORT:-${ANALYTICS_DB_PORT}} --conn-login ${PUBLIC_DATA_DB_USER:-${ANALYTICS_DB_USER}} --conn-password ${PUBLIC_DATA_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}} --conn-schema ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME}};
-      airflow pools set census_api 4 'Census Bureau API limit';
+      airflow pools set census_api 6 'Census Bureau API limit';
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';

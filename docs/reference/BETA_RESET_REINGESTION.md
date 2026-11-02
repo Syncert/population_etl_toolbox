@@ -343,15 +343,15 @@ beside its months.
 
 `acs_ingest` requests five levels per dataset and year: the nation, all
 states, each county parent's counties, and -- for the newest year only, by
-default (`AcsConfig.place_recent_years`) -- each state's places. The place
+default (`AcsConfig.place_year_scope`, `"newest"`) -- each state's places. The place
 slices are the large ones. One 5-year year is 52 place slices of 77 requests
 each (3,844 curated variables in chunks of 50), about 4,000 requests, and
 about 62 million facts for some 32,000 places against the counties' 6.2
 million; the 1-year estimates add 50 smaller slices (their 649 places of
 65,000 or more; Vermont and West Virginia have none and are never asked).
 Expect the first place load to dominate the run and the silver transform and
-`mv_acs_latest` refresh to grow roughly tenfold. Raise `place_recent_years`
-only with that volume in mind. A place the shared reference does not carry
+`mv_acs_latest` refresh to grow roughly tenfold. Widen `place_year_scope`
+(for example to `"2009-2024"`) only with that volume in mind. A place the shared reference does not carry
 is recorded `unmapped` in `silver_ref.geography_resolution` with the year it
 was requested under and left out of the facts; unlike a missing state or
 county it does not stop the transform.
@@ -391,8 +391,11 @@ Business Patterns file, three a year from 2016, through the one-slot
 
 Trigger `census_lodes_ingest` once after the shared geography loads: it
 captures the newest registered LODES year for every state, four files each,
-through the one-slot `census_lodes_files` pool; earlier years are captured
-as the [operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md)
+through the one-slot `census_lodes_files` pool. The years before it load
+once with `python -m data_ingestion_toolbox.census_lodes.history --years
+2023-2002` in the scheduler container, which resumes by state-year and
+publishes when every year is in, as the
+[operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md#loading-the-history)
 describes.
 
 Trigger `epa_aqs_ingest` once after the shared geography loads: it reads
@@ -1050,3 +1053,463 @@ Three operator rules follow:
 3. Confirm the ingest pause actually held. On this run `acs_ingest` was
    unpaused through the UI before the re-serve started; it was harmless only
    because the schedule is monthly.
+4. After a geography reference load (boundaries, delineations, crosswalks),
+   vacuum the relationship bridge by hand:
+
+   ```sql
+   VACUUM (ANALYZE) silver_ref.bridge_geo_relationship_version;
+   ```
+
+   Autovacuum did not keep its visibility map current after the 2026 loads,
+   so the index-only reads behind `/related`, cross-level compare and the
+   metro lists fetched heap pages for every row. On OFFICE_LAB (2026-11-01)
+   this vacuum alone took Texas's metro list from 1,397 ms to 664 ms and
+   Dane County's `/related` from 450–650 ms to about 216 ms.
+
+## 8. Backups of the internal stack
+
+The internal stack's warehouse lives on a two-drive stripe (H: on OFFICE_LAB,
+Docker's data disk) with no redundancy: one drive failing loses the volume.
+Two copies are kept on drives outside it (E:, F: or G:).
+
+**Raw captures, nightly.** `raw_capture_export` (DAG-019) writes every
+capture to `CAPTURE_EXPORT_ROOT`. Set `BACKUP_HOST_DIR` in
+`infra/docker/stack.env` to a directory on another drive (it is mounted into
+Airflow at `/opt/backups`) and `CAPTURE_EXPORT_ROOT=/opt/backups/captures`,
+then recreate the Airflow containers with `make deploy-up`. Unset, the export
+refuses rather than writing into the volume it protects.
+
+**The warehouse, weekly.** `scripts/backup_warehouse.py` (ENV-025):
+
+```powershell
+# One dump now (directory format, parallel, zstd), then keep the newest two.
+python scripts/backup_warehouse.py dump --target E:/population_backups/warehouse --jobs 6
+python scripts/backup_warehouse.py prune --target E:/population_backups/warehouse --keep 2
+# Schedule both, Sundays 03:00, skipping while a load or refresh is running.
+powershell -ExecutionPolicy Bypass -File scripts\register_backup_task.ps1 -Target E:\population_backups\warehouse
+```
+
+`pg_dump` runs in a throwaway container of the warehouse's own image on the
+stack's network, so nothing is installed on the host and the client always
+matches the server. A dump is written as `warehouse-<UTC>.partial` and renamed
+only when `pg_dump` succeeds; `manifest.json` beside it records the database
+size, the dump size, the duration and exact row counts of every table under
+2 GiB. Set `APP_API_DSN` and the account deletion log is exported into the
+dump directory too (ADR-0005 s5; see "Restoring an `app_api` backup" above).
+As the warehouse grows past what one drive holds twice, point alternate weeks
+at different drives rather than lowering `--keep` to one.
+
+**The restore drill.** A backup is only known to work once it has been
+restored:
+
+```powershell
+python scripts/backup_warehouse.py restore-drill --target E:/population_backups/warehouse --jobs 6
+```
+
+It restores the newest complete dump into `population_etl_restore_drill` on
+the same server (it needs free space about the size of the database), applies
+the deletion log when `APP_API_DRILL_DSN` names that database, compares row
+counts with the manifest, writes `restore-drill.json` beside the dump and
+drops the scratch database. Any count that differs fails the drill. A real
+restore is the same `pg_restore` into the production database name, followed
+by `apply_deletion_log.py --apply` before the API serves traffic.
+
+The first dump and restore drill are recorded in the warehouse backups
+plan (`docs/plans/needs_review/WAREHOUSE_BACKUPS_PLAN.md`).
+
+## 9. Backfilling ACS and census history
+
+The scheduled `acs_ingest` run keeps the newest years current. History --
+every ACS place and tract year, the metro grain, and the 2000 and 1990
+censuses -- is loaded by operator backfill runs, one year and one grain per
+run (`acs-place-and-tract-history`, W-10).
+
+### Order
+
+1. `silver_ref` first: every decade's place and tract identities (1990, 2000,
+   2010s, 2020s), the CBSA delineation and the tract decade crosswalk. A
+   backfill run refuses (`require_shared_geography`) without them, and a
+   transform refuses a year whose geographies the reference lacks.
+2. Tracts, newest year first, then places newest first, then metro, then the
+   census years (`--grain area`, `place`, `tract` for 2000; the 1990 loader
+   below). Newest first, so a stop at any point leaves a contiguous recent
+   history.
+3. After the last load, the weekly data-quality run
+   (`warehouse_data_quality` with conf `{"cadence": "weekly"}`) must pass its
+   data rules before the history is called published.
+
+### Commands
+
+On the internal stack, from the checkout, with the stack up:
+
+```bash
+# One grain over a range of years, newest first, one acs_ingest run per year.
+python scripts/run_acs_backfill.py --grain tract --years 2024-2010     --log /h/backfill-logs/backfill-tract.jsonl
+python scripts/run_acs_backfill.py --grain place --years 2024-2005     --log /h/backfill-logs/backfill-place.jsonl
+python scripts/run_acs_backfill.py --grain area --years 2000
+
+# The 1990 census (STF1A and STF3A dBase files): capture, replay,
+# transform, gold dimensions, serve. Resumes by state.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_acs.load_1990
+
+# FBI Return A master files: every agency's monthly offenses, one national
+# file a year. Apply migration 040 first. Resumes by year; a rerun skips a
+# year already loaded from the same file. Then back to 1985 the same way.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.fbi_ucr.return_a.load --years 2025-2015
+
+# LEHD LODES history: every state, 2002 onwards (the DAG keeps the newest
+# year). Resumes by state-year; publishes once every year is in; exit 1
+# means rerun the same command.
+docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002
+```
+
+Run a long driver detached so it survives the terminal. On Windows,
+`nohup` or `setsid` from a tool shell does not survive; start Git Bash with
+`Start-Process -WindowStyle Hidden "C:\Program Files\Git\bin\bash.exe"
+-ArgumentList '-c "<script> >> /h/backfill-logs/driver.log 2>&1"'`.
+
+Each run is `acs_ingest` with conf `{"acs_backfill": {"year": Y,
+"geo_level": G}}`. The driver writes one JSON line per year (state, hours,
+database bytes before and after) and stops at the first run that does not
+succeed. It waits on a run of the same year and grain already queued or
+running rather than starting a second.
+
+### Expected duration and size (internal stack, measured)
+
+| Grain | Years | Hours per year | GiB per year |
+| --- | --- | --- | --- |
+| place, full curated list | 2023 (first, before the latest-row skip) | 17.8 | 145 |
+| place, full curated list | 2018-2021 | 4.5-5.5 | 87-111 |
+| place, full curated list | 2010-2017 | 2.6-3.0 | 46-58 |
+| place | 2009 | 2.0 | 26 |
+| place, 1-year only | 2005-2008 | 1.1 | 2 |
+| tract, 18 of 22 tables published | 2009 | 1.8 | 31 |
+| tract, 22 tables | 2024 (first wide year) | see the backfill plan | about 66 projected |
+| Census 2000 place / area | 2000 | 3.7 / 0.9 | 2 / 3 |
+
+These were measured on the single-session path. From #173 a year's
+transform slices run on `ACS_TRANSFORM_WORKERS` threads and a tract or place
+step is published a state per session (`ACS_SERVING_WORKERS`); the backfill
+plan records per-step times on that path.
+
+Measured on the parallel path (8 transform workers, 8 serving sessions,
+`census_api` pool 6), 2026-10-31 to 11-01. Two drivers ran side by side and
+their runs alternated (`max_active_runs=1`), so each year's hours include
+the time it waited queued behind the other grain, and its GiB includes what
+the other grain's run added in the same window:
+
+| Grain | Years | Hours per year, driver clock | Hours per year, own run | GiB per year |
+| --- | --- | --- | --- | --- |
+| tract, 22 tables | 2024 (before the publish fixes) | 6.0 | about 6 | 52 |
+| tract, 22 tables | 2010-2023 | 1.0-2.2 | 0.5-1.1 | 33-75 |
+| metro | 2024 | 2.6 | about 1.3 | 55 |
+| metro | 2015-2023 | 1.0-1.6 | 0.4-0.6 | 32-62 |
+
+A 2020s tract year's own run splits roughly into ingest 25-30 min,
+transform 15 min, elements 4 min and publish 12 min; the 2010s years, with
+fewer tables published, take 30-40 min. The two drivers loaded tract
+2017-2010 and metro 2024-2015 in about 18 hours of wall time.
+
+FBI Return A master files load all 26,000 agencies a year in about 1.5 min
+a year (2025-2015 in 18 min), then about 160 s to rebuild
+`gold_fbi.county_agency_rate_month` for every published product.
+
+### Guards that stop a run, and what each means
+
+- **Disk.** A run refuses when its projected bytes would leave less than
+  `backfill_reserve_fraction` (20%) of the warehouse disk free.
+- **Shared geography.** `require_shared_geography` fails before any request
+  when `silver_ref` has not loaded.
+- **Zero rows served.** A chunk that serves no report rows while silver
+  holds publishable rows for its year fails instead of being checkpointed:
+  usually the year's gold table and variable rows were never built
+  (`refresh_acs_elements`).
+- **Manifest ledger.** After pulling DDL changes, record them with
+  `python -m scripts.apply_warehouse_manifest --only-flagged`. Never re-apply
+  the whole manifest on the populated warehouse: migration 027 re-validates
+  its constraints over every ACS fact under an exclusive lock. Run `--check`
+  first to see what is flagged. Do not apply `gold-census` while a run is
+  publishing (`CALL gold_census...` active in `pg_stat_activity`): its view
+  replacement takes locks the per-state publish sessions then time out on.
+  Other sources' gold DDL (for example `gold-fbi`) touches nothing the ACS
+  publish reads and can go in with `PGOPTIONS="-c lock_timeout=10s"`.
+
+### Resume
+
+Re-run the same driver command. A slice is skipped only when it finished
+for the *current* variable set (tract slices fingerprint `tract_tables`,
+older place years `place_history_tables`); a transform slice is skipped when
+an earlier run finished it against the same content; a grain step is
+re-served only when silver changed it. A year that failed part way is
+re-run from its first unfinished slice.
+
+### Stop safely
+
+1. Stop the driver process. The `acs_ingest` run already started goes on
+   to finish or fail on its own.
+2. To stop that run too, mark it failed in Airflow and terminate its
+   warehouse statement (`pg_terminate_backend`); `airflow tasks clear`
+   alone leaves the statement running and can leave the task in
+   `restarting`.
+3. A run stopped this way leaves its `control.ingestion_run` row
+   `running`. Mark it `failed` with a reason so the quality finalizer
+   accounts for its requests (DQ-SHARED-002).
+
+Then resume as in section 10, "A stuck `acs_ingest` run".
+
+To pause between years without stopping anything (for a measurement, or a
+rebuild that restarts the scheduler), wait for the current run to reach
+`success`, then `airflow dags pause acs_ingest` and confirm it took:
+`airflow dags details acs_ingest` must show `is_paused True` before the
+driver's next poll (every 2 minutes). The driver's next year is then created
+and waits queued; `airflow dags unpause acs_ingest` lets it start. On
+2026-11-01 a pause issued with its output discarded did not hold, and the
+next year started 90 seconds later.
+Do not pause the DAG while a run is in flight: a paused DAG schedules none
+of its tasks, so the running year stalls rather than finishing.
+
+The scheduler mounts the checkout, so pulling new Python or DAG code needs
+no image rebuild unless a dependency or Dockerfile changed. Rebuild the
+scheduler only between years, paused as above.
+
+### Pitfalls the history load taught
+
+- Widening a table list must change the slice fingerprint, or every year
+  already loaded is skipped as done (the tract list, 2026-10-31).
+- A view column computed from a fact column (`observation_date`) defeats
+  the fact's index; check `EXPLAIN` for any step that reads
+  `silver_census.fact_demographics`.
+- Two drivers for the same work started duplicate runs; the driver now
+  waits on the one in flight.
+- Threads that shared one `PostgresHook` raced on its connection
+  ("connection cannot be re-entered recursively"); each worker takes
+  `copy.copy(hook)`. A process pool deadlocked with polars after `fork`.
+- The per-state publish joined `dim_geo` by nested loop until its
+  `vintage_year` bounds were made sargable and the state path set
+  `enable_nestloop` off; a publish went from 95 to 12 minutes with the
+  `(geo_level, state_fips)` index on the report table.
+- The ingest batches marked slices planned while another batch ingested
+  them (a check violation); planning now finishes before any ingest starts.
+- After a large load, re-check the serving reads that aggregate across the
+  new rows. The nationwide FBI load turned a 30 ms county rate into a
+  131 s one until the rate was precomputed per load.
+
+
+## 10. After the loads
+
+The order to follow once a big history load (section 9) has finished, before
+the history is called published and before the web is checked live. Every
+command runs on the internal stack from `H:\population_etl_toolbox` with the
+stack up; Airflow commands run in `docker-airflow-scheduler-1`. Never
+`git checkout` in that folder (the scheduler mounts it): read a branch from a
+worktree or a scratch clone.
+
+### 1. ANALYZE the big tables
+
+The chunk driver analyses `rpt_acs_observations` and `mv_acs_latest` after
+each chunk (DB-048); nothing analyses the silver tables a load grew. Run, in a
+quiet window, one statement at a time:
+
+```sql
+ANALYZE silver_census.observation_revision;
+ANALYZE silver_census.fact_demographics;
+ANALYZE gold_census.rpt_acs_observations;
+ANALYZE gold_census.mv_acs_latest;
+```
+
+Use `VACUUM (ANALYZE, PARALLEL 0)` instead on a table a full re-serve
+rewrote (section 7). A plan read against stale statistics is how the 2024
+publish and DQ-ACS-007 first went to nested loops.
+
+### 2. Deploy only what the ledger lacks
+
+After pulling `dev`:
+
+```bash
+python -m scripts.apply_warehouse_manifest --check          # what is flagged
+python -m scripts.apply_warehouse_manifest --only-flagged   # apply just that
+```
+
+Never re-apply the whole manifest on the populated warehouse (migration 027
+re-validates every ACS fact under an exclusive lock), and never apply
+`gold-census` while a run is publishing (`CALL gold_census...` in
+`pg_stat_activity`). Rebuild only the images whose code changed
+(`make deploy-up`); a Python or DAG change in the mounted checkout needs no
+scheduler rebuild.
+
+### 3. Pre-build a PR's index DDL before merging it
+
+A PR that adds an index states it in its body. Build it on the warehouse
+under the **same name** before the PR merges, so the repo's
+`CREATE INDEX IF NOT EXISTS` is a no-op when the manifest applies it and no
+deploy builds an index under lock.
+
+```sql
+-- An ordinary table (for example #251's place slice index):
+CREATE INDEX CONCURRENTLY IF NOT EXISTS census_observation_revision_place_slice_idx
+    ON silver_census.observation_revision (
+        dataset, year, state_fips_source, county_fips_source, place_fips_source)
+    WHERE geo_level = 'place';
+ANALYZE silver_census.observation_revision;
+
+-- A partitioned table: CONCURRENTLY is refused on the parent, so create the
+-- parent index ON ONLY (instant, invalid), build each partition's index
+-- concurrently, then attach each one. The parent turns valid when the last
+-- partition is attached.
+CREATE INDEX IF NOT EXISTS <name> ON ONLY gold_census.rpt_acs_observations (<columns>);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS <name>_2024
+    ON gold_census.rpt_acs_observations_2024 (<columns>);
+ALTER INDEX <name> ATTACH PARTITION <name>_2024;
+-- ...repeat for every partition, then:
+SELECT indisvalid FROM pg_index WHERE indexrelid = '<schema>.<name>'::regclass;
+```
+
+A `CONCURRENTLY` build that fails leaves an invalid index of that name: drop
+it (`DROP INDEX CONCURRENTLY`) and build again. Then run the PR's EXPLAIN
+helper (named in its body, for example
+`/mnt/project-files/quality/explain_acs_raw_slice.py`) and merge only on an
+index scan with no nested loop over a big relation.
+
+### 4. Fill the age summary
+
+`acs_ingest` builds `gold_census.age_structure_summary` after each serving
+refresh (`refresh_age_structure_summary`), a release at a time and only for
+releases whose year partition changed. After loads run outside the DAG, or
+after a band-scheme version change, build it by hand:
+
+```bash
+docker exec docker-airflow-scheduler-1 \
+    python -m data_ingestion_toolbox.census_acs.gold_census.age_summary
+```
+
+It prints `{"releases": N, "rows": M}`; the first full build on 2026-11-01
+was 35 releases, 1.82M rows, about 50 minutes. `AGE_SUMMARY_BACKFILL_WORKERS`
+(default 4) sets the sessions for a many-release build. Before a rate scheme
+in `docs/semantics/age_bands.json` is approved, run
+`python scripts/check_age_rate_labels.py --env-file infra/docker/stack.env`
+(with `ANALYTICS_DB_HOST=localhost`, `ANALYTICS_DB_PORT=5435`); it must print
+`0 problems` for each scheme.
+
+### 5. Sweep DQ-ACS-007 in full
+
+A scheduled run re-measures only the `rpt_acs_observations` partitions whose
+fingerprint changed. After a history load, sweep every partition once, in a
+quiet window, not beside a load:
+
+```bash
+docker exec docker-airflow-scheduler-1 airflow dags trigger warehouse_data_quality \
+    --conf '{"rule_id": "DQ-ACS-007", "scope": {"full_sweep": true}}'
+```
+
+Each partition is measured under its own savepoint (#259): a partition that
+hits the 30-minute rule timeout is named in `failure_summary`, the run ends
+`error`, and the next run carries the partitions already recorded and measures
+only the missed one. Read the result with the DQ-ACS-007 query in
+[`DATA_QUALITY_OPERATIONS.md`](DATA_QUALITY_OPERATIONS.md).
+
+### 6. The weekly DQ run is the publish gate
+
+```bash
+docker exec docker-airflow-scheduler-1 airflow dags trigger warehouse_data_quality \
+    --conf '{"cadence": "weekly"}'
+```
+
+The history is published only when this run's data rules pass. Each rule has
+a 30-minute `statement_timeout` and a failed rule does not stop the rules
+after it (#247). While a long rule is being swept on its own (step 5), the
+weekly run can leave it out (#259) and the run records it as
+`scope.excluded_rules`:
+
+```bash
+--conf '{"cadence": "weekly", "exclude_rules": ["DQ-ACS-007"]}'
+```
+
+An excluded rule still needs its own passing run before the gate is met.
+
+### 7. Confirm serving caught up
+
+Each `acs_backfill` run serves its own changed grain steps
+(`refresh_gold_census_serving_layer`), so a finished history needs no
+separate serving run. Two cases do:
+
+- **Silver rows not yet served.** A run stopped after its transform (see
+  "A stuck `acs_ingest` run" below) leaves new silver rows unserved; run the
+  targeted backfill for that year and grain. Its transform skips the finished
+  slices and the serving step publishes them.
+- **A metric-identity change.** Trigger `serving_full_reserve` (section 7).
+
+The `/admin/warehouse` coverage page shows what is served per source.
+
+### A stuck `acs_ingest` run: stop it, then resume
+
+`transform_to_silver` retries **once**, and every attempt resumes from the
+slice ledger (#251): slices finished under the run's key are not read, and
+slices stamped by earlier runs are read only if they changed. Each attempt
+logs `[CENSUS_ACS RESUME] transform_to_silver attempt N for run X` and per
+year how many slices are finished, stamped, or never finished. A slice whose
+raw read passes 45 minutes is read again in two halves, and the ledger keeps
+the halves.
+
+To stop a run that is stuck anyway:
+
+1. **Pause the DAG** so nothing new starts:
+   `airflow dags pause acs_ingest`, then confirm `is_paused True` with
+   `airflow dags details acs_ingest`.
+2. **Terminate the warehouse statement**
+   (`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE ...`). A
+   statement an operator cancels fails the task with "clear this task to
+   resume run X" and does not retry.
+3. **Mark the run failed in the Airflow UI** (Browse → DAG Runs, select the
+   run, Mark state as failed). The operator does this by hand; `airflow tasks
+   clear` alone leaves the statement running and the task in `restarting`.
+4. Mark the run's `control.ingestion_run` row `failed` with a reason, so
+   DQ-SHARED-002 accounts for its requests.
+5. **Resume with a targeted run**, one year and grain at a time, newest first:
+
+   ```bash
+   airflow dags unpause acs_ingest
+   airflow dags trigger acs_ingest --conf '{"acs_backfill": {"year": 2009, "geo_level": "tract"}}'
+   ```
+
+   It transforms only that year, skips every slice the ledger already holds
+   unchanged, and serves what changed. After #248 the first run logs
+   "legacy fingerprint, restamped; skipping" for old stamps; a run that
+   re-reads everything means the reference changed since they were stamped
+   (safe, once).
+
+Clearing the stopped task instead of a new run also resumes from the
+ledger, under the same run id.
+
+### Live checks on the web
+
+After the batch of merges, rebuild the api and web images once and check, at
+`http://localhost:3001` (API `localhost:8000`). Save captures to the project
+Library.
+
+| Page | Address | Pass when |
+| --- | --- | --- |
+| Metro | `/metro/austin-round-rock-san-marcos-tx`; `curl -sI localhost:3001/metro/45500` | Unemployment, income (BEA row marked derived), rent and home value beside Texas and the U.S.; the code address answers 307 to `/metro/texarkana-tx-ar`, which shows the two-state note; Austin city's "Part of" links the metro page |
+| City history | `/us/texas/austin-city`, `/us/wisconsin/madison-city` | Each chapter's trend reads beside Travis County, Texas and the U.S. with margins; one history batch per chapter, always naming the county; "Not published that year" where a vintage lacks a table |
+| Tract | `/us/texas/travis-county/tract-22-19` | 2020 boundary notice; years before 2020 marked Derived; the age-and-sex section shows; `/place/tract-history` under 500 ms cold |
+| Check the record | `/us/wisconsin/dane-county#record`, `/us/texas/austin-city#record`, `/us/wisconsin#record`, `/us#record` | Every card's sentence matches its chart (population and unemployment included); crime compares the same calendar month ten years apart, with agency coverage; Austin's crime and unemployment link to Travis County |
+| Age maps | `/map/age/median_age`, `/map/age/age_65_plus?grain=METRO`, `?grain=PLACE&state=55`, `?grain=TRACT&state=55` | Coloured in bands, "No value (N)" listed with the reason, newest boundaries with the vintage asterisk; a state-scoped map fills its frame |
+| Rates by age | `curl 'localhost:8000/api/v1/age-structure/rates?geo_id=state:55\|county:025&rate=poverty_by_age'`, and `geo_id=state:55\|place:48000` | Every group carries `all` (and `men`/`women` for by-sex tables) with a rate and margin; a level without the release says `not_published` |
+
+**Capturing a map.** A full-page screenshot of a MapLibre page can show a
+stale WebGL frame. Capture maps as an **element** screenshot of the map
+shell (canvas and legend), once the canvas says `data-map-ready="true"`, at a fixed viewport (1440 × 900), and name
+the file `-viewport` (for example `agemap-median-place-wi-viewport.png`):
+
+```js
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.goto("http://localhost:3001/map/age/median_age?grain=PLACE&state=55");
+const map = page.locator('.map-canvas[data-map-ready="true"]');
+await map.waitFor();
+await page.waitForLoadState("networkidle");
+await map.locator("xpath=..").screenshot({ path: "agemap-median-place-wi-viewport.png" }); // canvas + legend
+```
+
+Cards and tables can be full-page captures; scroll a card into view
+(`locator.scrollIntoViewIfNeeded()`) before capturing, since cards below
+the fold were missed on 2026-11-01. The screenshot tool writes to the
+Library root, not `screenshots/`.

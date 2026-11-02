@@ -98,6 +98,10 @@ const METRIC_B2 = "CENSUS_PEP:pep_cty_alldata:BIRTHS";
 const METRIC_CDC = "CDC:cdc_places_county:OBESITY";
 const METRIC_FBI = "FBI_UCR:summarized:VIOLENT_CRIME";
 
+// The workspace fills only side A by default (a pair is the reader's
+// choice), so a test about a compared pair opens one by its link.
+const PAIR = `/compare?a=${encodeURIComponent(METRIC_A)}&b=${encodeURIComponent(METRIC_B)}&source_a=census&source_b=pep`;
+
 // `/catalog/metrics` publishes `valid_geo_grains`, and the grain control is
 // built from it: a fixture without them models a weaker contract than the one
 // that ships, and the client then goes untested for the narrowing (WEB-043,
@@ -145,11 +149,21 @@ const metricsBySource = {
   ],
 };
 
+// The plain labels `/comparison` and its preflight serve beside each code
+// (A-2); a reader sees these, never the code (WEB-144).
+const PAIR_LABELS = {
+  metric_label_a: "Total population (survey estimate)",
+  metric_label_status_a: "draft",
+  metric_label_b: "Resident population estimate",
+  metric_label_status_b: "draft",
+};
+
 // The served ComparisonPreflightResponse for a comparable pair: one rule the
 // publication leaves unverifiable, which is a caveat rather than a block.
 const comparableVerdict = {
   metric_code_a: METRIC_A,
   metric_code_b: METRIC_B,
+  ...PAIR_LABELS,
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   comparable: true,
@@ -193,6 +207,7 @@ const blockedVerdict = {
 const comparisonPayload = {
   metric_code_a: METRIC_A,
   metric_code_b: METRIC_B,
+  ...PAIR_LABELS,
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   units_a: null,
@@ -379,12 +394,13 @@ test("a comparable pair is preflighted, then compared with inputs and derivation
   expect(request.geo_level).toBe("COUNTY");
   await expect(workspace).toHaveAttribute("data-row-count", "2");
 
-  // Each side keeps its own identity, published value, and period.
+  // Each side keeps its own identity, published value, and period, named by
+  // the plain label the API served for it (WEB-144).
   const table = page.getByTestId("comparison-table-panel");
-  await expect(table.getByRole("columnheader", { name: METRIC_A, exact: true })).toBeVisible();
-  await expect(table.getByRole("columnheader", { name: METRIC_B, exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: PAIR_LABELS.metric_label_a, exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: PAIR_LABELS.metric_label_b, exact: true })).toBeVisible();
   await expect(
-    table.getByRole("columnheader", { name: `${METRIC_A} period`, exact: true }),
+    table.getByRole("columnheader", { name: `${PAIR_LABELS.metric_label_a} period`, exact: true }),
   ).toBeVisible();
   await expect(table.getByRole("cell", { name: "561,504" })).toBeVisible();
   await expect(table.getByRole("cell", { name: "568,203" })).toBeVisible();
@@ -409,7 +425,7 @@ test("a pair the declared policy blocks is explained and never queried", async (
   const preflightRequests = [];
   const comparisonRequests = [];
   await installRoutes(page, { preflightRequests, comparisonRequests });
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   const workspace = page.getByTestId("comparison-workspace");
   await expect(workspace).toHaveAttribute("data-comparable", "true");
@@ -459,7 +475,7 @@ test("a pair the declared policy blocks is explained and never queried", async (
 
 test("the comparison link reproduces the pair and carries no verdict", async ({ page }) => {
   await installRoutes(page);
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   const workspace = page.getByTestId("comparison-workspace");
   await expect(workspace).toHaveAttribute("data-comparable", "true");
@@ -494,7 +510,7 @@ test("the view levels are the ones both measures publish", async ({ page }) => {
   // leaving the control showing one grain while the request sent another.
   const comparisonRequests = [];
   await installRoutes(page, { comparisonRequests });
-  await page.goto("/compare?geo_level=PLACE");
+  await page.goto(`${PAIR}&geo_level=PLACE`);
 
   const level = page.getByTestId("comparison-geo-level");
   await expect(level.locator("option")).toHaveText(["National", "State", "County"]);
@@ -565,7 +581,7 @@ test("the aligned presentations appear only where the comparison can answer them
   page,
 }) => {
   await installRoutes(page);
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   const workspace = page.getByTestId("comparison-workspace");
   await expect(workspace).toHaveAttribute("data-comparable", "true");
@@ -609,7 +625,7 @@ test("the aligned presentations appear only where the comparison can answer them
 
 test("a blocked pair presents no aligned view at all", async ({ page }) => {
   await installRoutes(page);
-  await page.goto("/compare");
+  await page.goto(PAIR);
   await expect(page.getByTestId("comparison-workspace")).toHaveAttribute(
     "data-comparable",
     "true",
@@ -687,7 +703,7 @@ test("a comparison too large for the page bound says so, and is not reported hea
   const comparisonRequests = [];
   await installRoutes(page, { comparisonRequests, truncate: true });
   await page.goto(
-    `/compare?metric_a=${encodeURIComponent(METRIC_A)}&metric_b=${encodeURIComponent(METRIC_B)}`,
+    PAIR,
   );
 
   const status = page.getByTestId("comparison-status");
@@ -711,7 +727,7 @@ test("the file of a page-bounded comparison says so in its own name", async ({
   // the explorer's export name its own shortfall for the same reason.
   await installRoutes(page, { truncate: true });
   await page.goto(
-    `/compare?metric_a=${encodeURIComponent(METRIC_A)}&metric_b=${encodeURIComponent(METRIC_B)}`,
+    PAIR,
   );
   await expect(page.getByTestId("comparison-status")).toContainText(
     "the page bound cut the answer short",
@@ -756,7 +772,7 @@ test("an aligned view says when a pair is not contemporaneous", async ({ page })
     ],
   };
   await installRoutes(page, { payload });
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   const workspace = page.getByTestId("comparison-workspace");
   await expect(workspace).toHaveAttribute("data-plottable-points", "2");
@@ -784,7 +800,7 @@ test("a comparison whose sides share a period says nothing extra", async ({ page
     items: comparisonPayload.items.map((row) => ({ ...row, period_b: row.period_a })),
   };
   await installRoutes(page, { payload: contemporaneous });
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   await expect(page.getByTestId("comparison-map-panel")).toBeVisible();
   await expect(page.getByTestId("map-period-note")).toHaveCount(0);
@@ -803,7 +819,7 @@ test("the screen says what its geographies are an intersection of", async ({ pag
     geographies_b: 2,
   };
   await installRoutes(page, { payload: narrowed });
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   const note = page.getByTestId("comparison-coverage-note");
   await expect(note).toContainText("2 geographies are paired here");
@@ -819,7 +835,7 @@ test("a comparison that paired everything says nothing extra", async ({ page }) 
   await installRoutes(page, {
     payload: { ...comparisonPayload, total: 2, geographies_a: 2, geographies_b: 2 },
   });
-  await page.goto("/compare");
+  await page.goto(PAIR);
 
   await expect(page.getByTestId("comparison-table-panel")).toBeVisible();
   await expect(page.getByTestId("comparison-coverage-note")).toHaveCount(0);

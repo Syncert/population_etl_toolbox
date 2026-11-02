@@ -280,6 +280,12 @@ class ObservationDispatch:
     identity_columns: tuple[str, ...] = ()
     # -- projection onto the neutral envelope ------------------------------
     release_expression: str = ""
+    #: An integer column holding the release, when ``release_expression`` is
+    #: that column cast to text. A pinned release is then matched on the
+    #: column itself (``vintage_year = :release_number``), which an index can
+    #: serve, rather than on the cast, which none can (web-place-maps: an
+    #: earlier ACS release of one state's cities).
+    release_integer_column: str | None = None
     #: Orders releases oldest-to-newest (``release_watermark::BIGINT`` for CDC,
     #: dates elsewhere). Never carries ``DESC``.
     release_order_expression: str = ""
@@ -391,6 +397,13 @@ _UNION_PERIOD_START = "COALESCE(duration_start, observation_date)::TEXT"
 _UNION_PERIOD_END = "COALESCE(duration_end, observation_date)::TEXT"
 _GEO_ID_FILTER = ("geo_id", "geo_id = :geo_id")
 _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
+#: The same filter for a relation whose ``geo_level`` is already the
+#: vocabulary word: ACS serving writes it through ``gold_glossary.geo_grain``,
+#: which upper-cases and trims, and the bound value is normalised by
+#: ``normalize_geo_level`` before it is bound. Plain equality is the same
+#: answer, and unlike ``UPPER(geo_level)`` an index can serve it, which is what
+#: keeps an all-county read from scanning every tract row of the metric.
+_CANONICAL_GEO_LEVEL_FILTER = ("geo_level", "geo_level = :geo_level")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
@@ -522,6 +535,15 @@ _GRAIN_OF_GEO_TYPE = "gold_glossary.geo_grain(geo_type)"
 _GEO_TYPE_GRAIN_FILTER = ("geo_level", f"{_GRAIN_OF_GEO_TYPE} = UPPER(:geo_level)")
 _STATE_FIPS_FILTER = ("state_fips", "state_fips = :state_fips")
 _COUNTY_FIPS_FILTER = ("county_fips", "county_fips = :county_fips")
+#: The state filter for a source whose relation carries no ``state_fips``
+#: column but whose ``geo_id`` is the canonical ``state:NN[|county:NNN]`` key:
+#: the state is the key's first segment, so a state row and every county or
+#: place inside it match, and a row keyed otherwise (a metro, the nation)
+#: does not, as it does not on a ``state_fips`` column.
+_STATE_OF_GEO_ID_FILTER = (
+    "state_fips",
+    "split_part(geo_id, '|', 1) = 'state:' || :state_fips",
+)
 
 #: One reviewed dispatch entry per completed source, keyed by glossary source
 #: code. This is the registry dispatch API-001 recorded: the neutral
@@ -584,6 +606,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             lineage_relation="fact_acs_observation",
             metric_code_column="metric_code",
             release_expression="vintage_year::TEXT",
+            release_integer_column="vintage_year",
             release_order_expression="vintage_year",
             as_of_expression="as_of_date::TEXT",
             period_start_expression=_UNION_PERIOD_START,
@@ -598,7 +621,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             filter_conditions=(
                 _GEO_ID_FILTER,
-                _GEO_LEVEL_FILTER,
+                _CANONICAL_GEO_LEVEL_FILTER,
                 _STATE_FIPS_FILTER,
                 _COUNTY_FIPS_FILTER,
                 ("year_from", _DATE_YEAR_FROM),
@@ -719,6 +742,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "observation_year >= :year_from"),
                 ("year_to", "observation_year <= :year_to"),
             ),
@@ -960,6 +984,11 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("dollar_basis", "dollar_basis"),
                 ("observation_basis", "observation_basis"),
                 ("value_source", "value_source"),
+                # NULL on every figure BEA published; on a metro area summed
+                # from its member counties, how it was derived
+                # (`sum_of_member_counties`, `ratio_of_member_county_sums`),
+                # so a reader never takes it for BEA's own (web-metro-pages).
+                ("derivation", "derivation"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -1100,6 +1129,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "estimate_year >= :year_from"),
                 ("year_to", "estimate_year <= :year_to"),
             ),

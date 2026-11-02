@@ -152,6 +152,8 @@ def test_martin_configuration_has_no_implicit_table_publication() -> None:
     postgres = _martin_config()["postgres"]
     assert postgres["auto_publish"] is False
     assert list(postgres["tables"]) == ["counties", "tracts"]
+    assert list(postgres["functions"]) == ["places", "metros"]
+    assert set(postgres) == {"connection_string", "auto_publish", "tables", "functions"}
 
 
 def test_disposable_postgres_healthcheck_waits_for_martin_contract() -> None:
@@ -168,3 +170,72 @@ def test_disposable_postgres_healthcheck_waits_for_martin_contract() -> None:
     assert "-h 127.0.0.1" in readiness_command
     assert "-U martin_test" in readiness_command
     assert "SELECT 1 FROM gold.tile_boundary LIMIT 1" in readiness_command
+
+
+def test_martin_places_and_metros_are_function_sources_versioned_by_vintage() -> None:
+    """Covers: MARTIN-012 — tiles-places-and-metros: two versioned layers, one rule each.
+
+    Places and metros are function sources so a request can name the
+    boundary vintage it draws. Places start at zoom 6 as tracts do; metros,
+    about 925 polygons, start at zoom 0 as counties do. Each function serves
+    one grain from the boundaries-by-vintage relation, takes the vintage from
+    the query parameters, and carries no value column: colouring is the
+    client's join, so a geography with no published value stays uncoloured.
+    """
+    functions = _martin_config()["postgres"]["functions"]
+    assert functions == {
+        "places": {
+            "schema": "gold",
+            "function": "tile_places",
+            "minzoom": 6,
+            "maxzoom": 14,
+            "bounds": [-180.0, -90.0, 180.0, 90.0],
+        },
+        "metros": {
+            "schema": "gold",
+            "function": "tile_metros",
+            "minzoom": 0,
+            "maxzoom": 12,
+            "bounds": [-180.0, -90.0, 180.0, 90.0],
+        },
+    }
+    views = (
+        REPOSITORY_ROOT / "sql/gold_contract/001_gold_contract_views.sql"
+    ).read_text(encoding="utf-8")
+    for layer, grain in (("places", "place"), ("metros", "metro")):
+        signature = (
+            f"CREATE OR REPLACE FUNCTION gold.tile_{layer}(\n"
+            "    z INTEGER,\n    x INTEGER,\n    y INTEGER,\n    query_params JSON\n)"
+        )
+        assert signature in views
+        body = views.split(signature, 1)[1].split("$$;", 1)[0]
+        assert (
+            f"gold.tile_requested_vintage(\n        gold_glossary.geo_grain('{grain}')"
+            in body
+        )
+        assert "FROM gold_glossary.tile_boundary_version AS boundary" in body
+        assert f"WHERE boundary.geo_level = gold_glossary.geo_grain('{grain}')" in body
+        assert "AND boundary.boundary_vintage = wanted" in body
+        assert f"ST_AsMVT(feature, '{layer}', 4096, 'geom')" in body
+        assert "value" not in body.lower().replace("query_params", "")
+        comment = views.split(f"COMMENT ON FUNCTION gold.tile_{layer}(", 1)[1].split(
+            "';\n", 1
+        )[0]
+        assert f'"id":"{layer}"' in comment
+        assert "boundary_vintage" in comment
+
+
+def test_an_unheld_or_malformed_vintage_never_falls_back() -> None:
+    """Covers: MARTIN-012 — a named vintage is served as named, or nothing is drawn."""
+    views = (
+        REPOSITORY_ROOT / "sql/gold_contract/001_gold_contract_views.sql"
+    ).read_text(encoding="utf-8")
+    body = views.split("CREATE OR REPLACE FUNCTION gold.tile_requested_vintage(", 1)[
+        1
+    ].split("$$;", 1)[0]
+    # The newest is chosen only when no vintage is named.
+    assert body.index("IF requested IS NULL THEN") < body.index(
+        "MAX(boundary.boundary_vintage)"
+    )
+    assert "IF requested !~ '^[0-9]{4}$' THEN\n        RETURN NULL;" in body
+    assert body.rstrip().endswith("RETURN requested::INTEGER;\nEND;")

@@ -34,7 +34,10 @@ SELECT fact.table_code || ':' || fact.line_code AS metric_key,
        fact.retrieved_at,
        fact.source_record_id,
        fact.capture_id,
-       fact.run_id
+       fact.run_id,
+       -- NULL for a figure BEA published; otherwise how it was derived from
+       -- BEA's figures (a metro area summed from its counties).
+       fact.derivation
 FROM silver_bea.fact_observation AS fact
 JOIN silver_bea.dim_line AS line
   ON line.table_code = fact.table_code

@@ -76,7 +76,7 @@ import {
   normalizeObservationRows,
   observationPeriodLabel,
 } from "../lib/observationAccess";
-import { GEO_GRAIN_LABELS, geographyPickerState } from "../lib/geographyPicker";
+import { GEO_GRAIN_LABELS, GRAINS_WITHIN_A_STATE, geographyPickerState } from "../lib/geographyPicker";
 import { GEO_GRAIN_ORDER } from "../lib/geographyPicker";
 import {
   metricSupportedGeoLevels,
@@ -139,7 +139,7 @@ import {
   workbenchLinkCeiling,
 } from "../lib/urlState";
 import type { WorkbenchUrlState } from "../lib/urlState";
-import { formatNumber } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 
 const CATALOG_PAGE_SIZE = 1000;
 /** Pages of history per series. Ten pages of 1,000 covers any published run. */
@@ -161,10 +161,7 @@ function metricLabel(metric: MetricSummary | undefined): string {
   if (!metric) {
     return "";
   }
-  return String(metric.metric_display_name || metric.metric_code).replaceAll(
-    "!!",
-    " › ",
-  );
+  return displayMetricName(metric);
 }
 
 function metricUnit(metric: MetricSummary | undefined): string | null {
@@ -465,7 +462,7 @@ export default function WorkbenchPage() {
       setGeographiesRead(true);
       return;
     }
-    const needsState = grain === "COUNTY" || grain === "PLACE";
+    const needsState = GRAINS_WITHIN_A_STATE.includes(grain);
     if (needsState && !draftStateFips) {
       setGeographies([]);
       setGeographiesRead(true);
@@ -1547,7 +1544,7 @@ export default function WorkbenchPage() {
     const named = rememberObservationNames(geographyNames, heatmapRows);
     if (named !== geographyNames) setGeographyNames(named);
     if (!unnamedGeographies(heatmapRows, named).length) return;
-    const needsState = grain === "COUNTY" || grain === "PLACE" || grain === "TRACT";
+    const needsState = GRAINS_WITHIN_A_STATE.includes(grain);
     if (needsState && !heatmapStateFips) return;
     let cancelled = false;
     fetchAllPages<GeographySummary>("/catalog/geographies", {
@@ -1781,7 +1778,7 @@ export default function WorkbenchPage() {
                     key={String(metric.metric_code)}
                     value={String(metric.metric_code)}
                   >
-                    {metricLabel(metric)} ({String(metric.metric_code)})
+                    {metricLabel(metric)}
                   </option>
                 ))}
               </select>
@@ -1812,7 +1809,7 @@ export default function WorkbenchPage() {
               ) : null}
             </div>
 
-            {draftGeoLevel === "COUNTY" || draftGeoLevel === "PLACE" ? (
+            {GRAINS_WITHIN_A_STATE.includes(draftGeoLevel) ? (
               <div className="control-group">
                 <label htmlFor="workbench-state">State</label>
                 <select
@@ -1980,7 +1977,7 @@ export default function WorkbenchPage() {
             <ul className="notice error" data-testid="workbench-series-errors">
               {errors.map((row) => (
                 <li key={row.entry.key}>
-                  {row.entry.series.metricCode}: {row.error}
+                  {metricLabel(metricIndex[row.entry.series.metricCode]) || row.entry.series.metricCode}: {row.error}
                 </li>
               ))}
             </ul>
@@ -2243,7 +2240,7 @@ export default function WorkbenchPage() {
                 .map((entry) => (
                   <span key={entry.level} data-absent-grain={entry.level}>
                     {` ${GEO_GRAIN_LABELS[entry.level]?.one || entry.level} is ` +
-                      `not offered because ${entry.withoutIt.join(", ")} ` +
+                      `not offered because ${entry.withoutIt.map((code) => metricLabel(metricIndex[code]) || code).join(", ")} ` +
                       `${entry.withoutIt.length === 1 ? "does" : "do"} not publish it.`}
                   </span>
                 ))}

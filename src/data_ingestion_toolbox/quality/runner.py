@@ -39,6 +39,15 @@ _COMMIT_SHA_PATTERN = re.compile(r"\A[0-9a-f]{40}\Z")
 
 _SUMMARY_LIMIT = 2000
 
+#: The longest one statement of one rule may run before PostgreSQL cancels it.
+#: Applied per rule and restored after it, so a rule that runs away records an
+#: error naming itself and the run goes on to the next rule instead of holding
+#: the warehouse: the whole-relation DQ-ACS-007 ran for 1 h 54 min in the
+#: weekly run of 2026-11-01 until an operator cancelled it. Thirty minutes is
+#: above the largest measured statement (a changed 2024 ACS partition, 15-25
+#: min for the rule) and well below that.
+DEFAULT_RULE_STATEMENT_TIMEOUT = "30min"
+
 #: Substrings that must never leak into a persisted failure summary.
 _SENSITIVE_MARKERS: tuple[str, ...] = (
     "password",
@@ -80,6 +89,34 @@ class RuleOutcome:
 #: An executor measures one rule within the requested scope. It receives an
 #: open database cursor and the scope mapping, and must not write.
 RuleExecutor = Callable[[Any, Mapping[str, Any]], Iterable[RuleOutcome]]
+
+
+def commits_each_outcome(executor: RuleExecutor) -> RuleExecutor:
+    """Mark ``executor`` as one whose outcomes may be committed as they arrive.
+
+    Such an executor yields its outcomes one part at a time (a generator) and
+    holds no transaction-local state between yields. Under
+    ``execute_rules(..., commit_progress=True)`` each yielded outcome is
+    persisted and committed at once, so a long rule's finished parts are
+    visible -- and survive a crash of the run -- before the rule ends.
+    """
+    executor.commits_each_outcome = True  # type: ignore[attr-defined]
+    return executor
+
+
+class PartialRuleResult(Exception):
+    """A rule that measured some of its scope and could not measure the rest.
+
+    Raised by an executor that keeps going past a part it could not measure
+    (a partition whose statement timed out) instead of discarding the parts
+    it did. The runner persists ``outcomes`` -- so the next run can carry
+    the measured parts forward rather than starting from zero -- and records
+    ``str(self)`` as the rule's error, so the run still ends ``error``.
+    """
+
+    def __init__(self, message: str, outcomes: Sequence[RuleOutcome]) -> None:
+        super().__init__(message)
+        self.outcomes = tuple(outcomes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,13 +215,28 @@ def execute_rules(
     rules: Sequence[QualityRule] = ALL_RULES,
     ingestion_run_id: str | None = None,
     publication_event_id: str | None = None,
+    rule_statement_timeout: str = DEFAULT_RULE_STATEMENT_TIMEOUT,
+    commit_progress: bool = False,
 ) -> QualityRunRecord:
     """Execute the registered rule executors and persist their evidence.
 
     The run row is written first with status ``running``; results are inserted
     as each executor completes; the run row is then finalized exactly once.
     An executor exception finalizes the run as ``error`` with a sanitized
-    summary — never a silent partial pass.
+    summary — never a silent partial pass. The failing rule writes no
+    evidence and the remaining rules still run, so one broken or timed-out
+    rule does not hide every rule sorted after it.
+
+    Each rule runs with ``statement_timeout`` set to
+    ``rule_statement_timeout`` (a PostgreSQL interval such as ``30min``;
+    ``0`` disables it), transaction-local and restored after the rule.
+
+    With ``commit_progress``, an executor marked by `commits_each_outcome`
+    has each outcome committed as it is yielded (the run row with it), and
+    the rule's savepoint and timeout are set again after each commit. A rule
+    that then fails keeps the outcomes already committed; only what came
+    after them is rolled back. Without it the run is the caller's one
+    transaction, as before.
     """
     rules_by_id = _validate_setup(rules, executors, code_commit_sha)
     catalog = objects_by_name()
@@ -213,11 +265,53 @@ def execute_rules(
             ),
         )
 
+    def _commit_progress() -> None:
+        connection.commit()
+        with connection.cursor() as cursor:
+            cursor.execute("SAVEPOINT quality_rule")
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (rule_statement_timeout,),
+            )
+        # Failures committed so far stay reported if the rule fails later.
+        committed_failures[0] = len(failures)
+
     def _persist_rule(rule_id: str) -> list[RuleOutcome]:
-        rule = rules_by_id[rule_id]
+        executor = executors[rule_id]
+        streaming = commit_progress and bool(
+            getattr(executor, "commits_each_outcome", False)
+        )
+        measured: list[RuleOutcome] = []
+        partial: PartialRuleResult | None = None
         started = time.monotonic()
         with connection.cursor() as cursor:
-            measured = list(executors[rule_id](cursor, dict(scope or {})))
+            produced = iter(executor(cursor, dict(scope or {})))
+            while True:
+                try:
+                    outcome = next(produced)
+                except StopIteration:
+                    break
+                except PartialRuleResult as raised:
+                    # What it yielded before stopping, then any it carried.
+                    partial = raised
+                    if streaming:
+                        _persist_outcomes(rule_id, raised.outcomes, started)
+                    measured.extend(raised.outcomes)
+                    break
+                measured.append(outcome)
+                if streaming:
+                    _persist_outcomes(rule_id, [outcome], started)
+                    _commit_progress()
+        if not streaming:
+            _persist_outcomes(rule_id, measured, started)
+        if partial is not None:
+            raise PartialRuleResult(str(partial), measured) from partial
+        return measured
+
+    def _persist_outcomes(
+        rule_id: str, measured: Sequence[RuleOutcome], started: float
+    ) -> None:
+        rule = rules_by_id[rule_id]
         duration_ms = max(0, int((time.monotonic() - started) * 1000))
         for outcome in measured:
             entry = catalog.get(outcome.object_name)
@@ -270,27 +364,54 @@ def execute_rules(
                         "open" if outcome.result == "warn" else None,
                     ),
                 )
-        return measured
 
     outcomes: dict[str, list[RuleOutcome]] = {}
     failures: list[str] = []
-    error_summary = ""
-    try:
-        for rule_id in sorted(executors):
-            # A savepoint keeps one failing rule from aborting the whole
-            # transaction: the run row and prior results must still finalize.
-            with connection.cursor() as cursor:
-                cursor.execute("SAVEPOINT quality_rule")
-            try:
-                outcomes[rule_id] = _persist_rule(rule_id)
-            except Exception:
-                with connection.cursor() as cursor:
-                    cursor.execute("ROLLBACK TO SAVEPOINT quality_rule")
-                raise
+    errors: list[str] = []
+    committed_failures = [0]
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_setting('statement_timeout')")
+        caller_timeout = cursor.fetchone()[0]
+    for rule_id in sorted(executors):
+        # A savepoint keeps one failing rule from aborting the whole
+        # transaction: the run row and other rules' results must still
+        # finalize. Rolling back to it also reverts the rule's timeout.
+        with connection.cursor() as cursor:
+            cursor.execute("SAVEPOINT quality_rule")
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (rule_statement_timeout,),
+            )
+        committed_failures[0] = len(failures)
+        try:
+            outcomes[rule_id] = _persist_rule(rule_id)
+        except PartialRuleResult as partial:
+            # What it measured is persisted and kept; what it could not is
+            # the rule's error, so the run still ends `error`.
+            outcomes[rule_id] = list(partial.outcomes)
+            errors.append(f"{rule_id} partial: {partial}")
             with connection.cursor() as cursor:
                 cursor.execute("RELEASE SAVEPOINT quality_rule")
-    except Exception as error:  # noqa: BLE001 - the error becomes evidence
-        error_summary = sanitize_summary(f"{type(error).__name__}: {error}")
+                cursor.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (caller_timeout,),
+                )
+            continue
+        except Exception as error:  # noqa: BLE001 - the error becomes evidence
+            with connection.cursor() as cursor:
+                cursor.execute("ROLLBACK TO SAVEPOINT quality_rule")
+            # Its uncommitted evidence was rolled back, so those failures are
+            # not reported; any it committed under commit_progress stand.
+            del failures[committed_failures[0] :]
+            errors.append(f"{rule_id} {type(error).__name__}: {error}")
+            continue
+        with connection.cursor() as cursor:
+            cursor.execute("RELEASE SAVEPOINT quality_rule")
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (caller_timeout,),
+            )
+    error_summary = sanitize_summary("; ".join(errors)) if errors else ""
 
     status = overall_status(outcomes, rules_by_id, errored=bool(error_summary))
     summary = error_summary or sanitize_summary("; ".join(failures))
@@ -299,7 +420,12 @@ def execute_rules(
             """
             UPDATE control.data_quality_run
                SET overall_status = %s,
-                   finished_at = NOW(),
+                   -- clock_timestamp(), not NOW(): a run is one transaction,
+                   -- and NOW() is when it began, so every run row recorded
+                   -- finished_at = started_at however long it ran (the
+                   -- weekly run of 2026-11-01 read 06:05:25 for both after
+                   -- hours of work).
+                   finished_at = clock_timestamp(),
                    failure_summary = %s
              WHERE quality_run_id = %s
             """,

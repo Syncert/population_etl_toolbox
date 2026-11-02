@@ -271,6 +271,22 @@ def test_dq_bls_007_does_not_count_an_annual_average_as_an_unserved_month(
             fact, _, _ = bls_contract_conformance(cursor, {})
             assert fact.result == "fail"
             assert f"{metric}|2093" in fact.evidence
+
+            # Silver moved after the last refresh: the next refresh replaces
+            # the served value, so the group is exempt rather than unbacked.
+            # The published side used to drop it with a HAVING, which left
+            # the served group unmatched and reported it anyway.
+            cursor.execute(
+                """
+                INSERT INTO control.serving_refresh_state
+                    (source_code, last_silver_ingested_at)
+                VALUES ('BLS', NOW() - INTERVAL '1 day')
+                ON CONFLICT (source_code) DO UPDATE
+                   SET last_silver_ingested_at = EXCLUDED.last_silver_ingested_at
+                """
+            )
+            fact, _, _ = bls_contract_conformance(cursor, {})
+            assert f"{metric}|2093" not in fact.evidence, fact.evidence
         writer.rollback()
     finally:
         writer.close()

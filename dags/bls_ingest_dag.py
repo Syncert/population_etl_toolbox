@@ -59,6 +59,7 @@ from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_sil
 from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.operator_stop import fail_without_retry_when_stopped
 from data_ingestion_toolbox.utility.serving_reserve import BLS_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
@@ -694,9 +695,12 @@ def bls_ingest():
 
         for program in synced_programs:
             if program == "la":
-                geos: list[tuple[str, Optional[str]]] = [("state", None)] + [
-                    ("county", sf) for sf in state_fips_list
-                ]
+                # Metropolitan areas are one national slice: a CBSA can span
+                # states, and LAUS publishes ~390 of them (W-7).
+                geos: list[tuple[str, Optional[str]]] = [
+                    ("state", None),
+                    ("metro", None),
+                ] + [("county", sf) for sf in state_fips_list]
                 for geo_level, state_fips in geos:
                     # Historical band — skip if already done
                     if hist_end >= hist_start:
@@ -955,11 +959,15 @@ def bls_ingest():
     @task(trigger_rule="none_failed")
     def refresh_gold_bls_serving_layer() -> dict[str, int]:
         """Refresh changed BLS years as independently committed annual chunks."""
-        return refresh_serving_layer_in_year_chunks(
-            hook=_get_postgres_hook(),
-            config=BLS_CHUNK_CONFIG,
-            task_logger=logger,
-        )
+        with fail_without_retry_when_stopped(
+            "the BLS serving refresh",
+            "Clear this task to resume: finished years are committed and skipped.",
+        ):
+            return refresh_serving_layer_in_year_chunks(
+                hook=_get_postgres_hook(),
+                config=BLS_CHUNK_CONFIG,
+                task_logger=logger,
+            )
 
     @task(trigger_rule="none_failed")
     def emit_bls_publisher_ready() -> None:

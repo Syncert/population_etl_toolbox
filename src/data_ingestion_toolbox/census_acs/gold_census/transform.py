@@ -33,9 +33,11 @@ _REQUIRED_RELATIONS = (
     "gold_census.rpt_acs_observations",
     "gold_census.mv_acs_latest",
     "gold_census.metric_publisher",
+    "gold_census.age_structure_summary",
+    "gold_census.age_structure_summary_build",
 )
 _REQUIRED_PROCEDURES = (
-    "gold_census.refresh_rpt_acs_observations(date,date)",
+    "gold_census.refresh_rpt_acs_observations(date,date,text[],text)",
     "gold_census.refresh_mv_acs_latest(date,date)",
     "gold_census.refresh_dashboard_serving_layer_acs(date,date,boolean)",
 )
@@ -60,8 +62,17 @@ def ensure_acs_gold_schema(hook: PostgresHook | None = None) -> None:
     )
 
 
-def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
-    """Sync ACS source-specific metadata into gold_census.dim_acs_table and gold_census.dim_acs_variable."""
+def refresh_acs_elements(
+    hook: PostgresHook | None = None, years: list[int] | None = None
+) -> int:
+    """Sync ACS source-specific metadata into gold_census.dim_acs_table and gold_census.dim_acs_variable.
+
+    ``years`` limits the refresh to those estimate years' releases: an
+    operator backfill run transforms one year and leaves every other year's
+    facts as they were, so their dimension rows cannot change. Refreshing
+    every release scanned the whole fact table, about 24 of a backfill year's
+    roughly 270 minutes. ``None`` refreshes every release.
+    """
     if hook is None:
         hook = _get_hook()
 
@@ -74,9 +85,17 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
             SELECT DISTINCT dataset, estimate_year
             FROM silver_census.fact_demographics
             WHERE source_system = 'CENSUS_ACS'
-              AND dataset IN ('acs1', 'acs5')
+              AND dataset IN (
+                  'acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                  'dec1990stf1', 'dec1990stf3'
+              )
+              AND (
+                  %(years)s::INT[] IS NULL
+                  OR estimate_year = ANY(%(years)s::INT[])
+              )
             ORDER BY dataset, estimate_year
-            """
+            """,
+            {"years": years},
         )
         releases = cur.fetchall()
 
@@ -98,9 +117,23 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                     )) AS table_title,
                     UPPER(MIN(f.variable_concept)) AS concept,
                     MIN(f.universe) AS universe,
-                    CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
-                    'https://api.census.gov/data/' || f.estimate_year::TEXT ||
-                        '/acs/' || f.dataset || '/variables.json' AS reference_url
+                    CASE WHEN f.dataset = 'acs5' THEN 5
+                         WHEN LEFT(f.dataset, 3) = 'dec' THEN 0 ELSE 1 END
+                        AS survey_span_years,
+                    CASE f.dataset
+                        -- The 1990 files are not on the Data API; their
+                        -- reference is the archive page that documents them.
+                        WHEN 'dec1990stf1'
+                            THEN 'https://www2.census.gov/census_1990/1990STF1.html'
+                        WHEN 'dec1990stf3'
+                            THEN 'https://www2.census.gov/census_1990/1990STF3.html'
+                        ELSE 'https://api.census.gov/data/' || f.estimate_year::TEXT ||
+                            CASE f.dataset
+                                WHEN 'dec2000sf1' THEN '/dec/sf1'
+                                WHEN 'dec2000sf3' THEN '/dec/sf3'
+                                ELSE '/acs/' || f.dataset
+                            END || '/variables.json'
+                    END AS reference_url
                 FROM silver_census.fact_demographics f
                 LEFT JOIN raw_census.acs_tables rt
                   ON rt.dataset = f.dataset

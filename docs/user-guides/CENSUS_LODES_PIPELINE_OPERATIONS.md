@@ -71,9 +71,63 @@ vintage, and `observation_latest` serves the newest. State-years run one at a
 time through the one-slot `census_lodes_files` pool; a large state's
 origin-destination file is tens of megabytes.
 
-The DAG takes no backfill parameter. An older year is captured by raising
-`recent_years` in `LodesConfig`, or by calling `capture_state_year`,
-`replay_run` and `publish_run` for that state and year.
+The DAG takes no backfill parameter; the years before the newest are loaded
+once with the history command below.
+
+## Loading the history
+
+Run inside the scheduler container on the internal stack, detached so it
+survives the terminal:
+
+```text
+docker exec docker-airflow-scheduler-1 \
+    python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002
+```
+
+It plans every state for every year asked (newest first) and:
+
+- skips, without a request, a state-year that already has a `silver_ready`
+  or `published` slice, so a stopped run resumes where it stopped and a
+  rerun fetches nothing (`--refresh` asks the Bureau again; the capture then
+  downloads only a new vintage);
+- replays, without downloading again, a state-year whose files were
+  captured but whose replay never finished;
+- captures and replays the rest through the same code the DAG runs,
+  `--workers` state-years at a time (default 6), each in a spawned (never
+  forked) worker process with its own connection; the log names each
+  state-year when it starts and when it ends;
+- stops a worker whose state-year is still running after
+  `--slice-timeout` seconds (default 1800), records that state-year
+  `timed_out` and lists it under `stuck` in the summary;
+- withdraws a capture that was stopped part way (fewer file rows than
+  registered files) and captures that state-year again, never replaying it
+  with files missing;
+- records a failed or quarantined state-year and carries on with the rest;
+- publishes only when every requested state-year is in: the replayed slices
+  turn `published` and their county and state sums are computed into
+  `gold_census_lodes.observation_fact` in one transaction, then the glossary
+  harvest is signalled. A run with any failure publishes nothing and exits
+  1; rerun the same command and only the failures are retried.
+
+`--plan` prints, per year, which states would load and exits without
+fetching. `--states de,wi` limits the run. Only one history load runs at a
+time: a second exits 2 rather than wait. Pause `census_lodes_ingest` while
+it runs so the DAG does not capture the newest year beside it.
+
+The command prints a JSON summary per year (states by outcome, rows, worker
+seconds). To size a run before it starts, read what the newest year cost:
+
+```sql
+SELECT slice.year, COUNT(*) AS states,
+       pg_size_pretty(SUM(blob.payload_size)) AS captured,
+       MAX(slice.updated_at) - MIN(slice.created_at) AS wall_clock
+FROM control.census_lodes_slice AS slice
+JOIN control.census_lodes_file AS file USING (run_id)
+JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+JOIN raw_capture.payload_blob AS blob USING (payload_checksum)
+WHERE slice.status = 'published'
+GROUP BY slice.year ORDER BY slice.year DESC;
+```
 
 ## Deployment prerequisites
 
@@ -96,9 +150,10 @@ airflow pools set census_lodes_files 1 'Census LEHD LODES files (serialized)'
    `silver_census_lodes.quarantine`, and a header that is not the family's
    quarantines the file and stops publication. It writes the geography
    resolution ledger. The run commits only if every aggregate was written.
-3. Marks the slice `published`, which exposes it through
-   `gold_census_lodes.observation_revision` and `observation_latest`, and
-   signals the glossary harvest. Each measure is one metric, for example
+3. Marks the slice `published` and, in the same transaction, computes its
+   county and state sums into `gold_census_lodes.observation_fact`
+   (`refresh_observation_fact`), which `observation_revision` and
+   `observation_latest` read by key; then signals the glossary harvest. Each measure is one metric, for example
    `CENSUS_LODES:jobs`.
 
 ## Checks after a run
@@ -123,3 +178,80 @@ FROM gold_census_lodes.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
   reached no silver row, and runs in the daily sweep.
 - `DQ-LODES-004` warns when a county's origin-destination jobs by work
   county differ from its workplace total.
+- `DQ-LODES-005` fails a published state-year with readable residence or
+  workplace rows that serves no sums (a publish whose refresh never ran).
+  `SELECT gold_census_lodes.refresh_observation_fact(NULL)` computes every
+  published state-year still missing its sums.
+- `DQ-LODES-006` warns, naming each state, when a published year is missing
+  a registered state: a history load that stopped part way.
+- `DQ-LODES-007` warns when a state's served jobs move by more than a
+  quarter between consecutive published years, a coverage break to explain.
+  State-years with a `jobs` gap in `gold_census_lodes.coverage_gap` are not
+  compared.
+
+## Years LEHD did not cover
+
+LEHD did not cover every state from 2002. The LODES Technical Documentation
+8.4 (Rev. 20251203, "Data Coverage and Availability", table "States Without
+OD and WAC Data") lists the state-years with no workplace or
+origin-destination data:
+
+| Years | States without OD and WAC data |
+|---|---|
+| 2002 | Arkansas, Arizona, District of Columbia, Massachusetts, Mississippi, New Hampshire |
+| 2003 | Arizona, District of Columbia, Massachusetts, Mississippi |
+| 2004–2009 | District of Columbia, Massachusetts |
+| 2010 | Massachusetts |
+| 2011–2016 | none |
+| 2017–2021 | Alaska |
+| 2022–2023 | Alaska, Michigan |
+
+For those state-years LEHD says the state "will not have OD or WAC files, but
+will have RAC files that include residents who are employed in other states".
+So the residence count is not the state's resident workers: Alaska's is about
+3 thousand against a typical 297 thousand, and Michigan 2022–2023's is about
+140 thousand against 4.23 million. Massachusetts 2002–2010 and Arkansas 2002
+also carry workplace totals of a handful of jobs (4 to 17 in Massachusetts,
+then 3,140,314 in 2011; 32 in Arkansas, then 1,079,276 in 2003).
+
+These are gaps in the source, not in the capture: a `--refresh` reads the same
+checksum list and brings nothing new. The only route to Michigan's and
+Alaska's jobs for 2022–2023 is a new LODES release that adds them; LEHD
+expects LODES 2024 in early fall 2026.
+
+`gold_census_lodes.coverage_gap` names each incomplete file, one row per run
+and state total:
+
+- a state-year whose total of jobs located there (`jobs`, the workplace file)
+  or of resident workers (`resident_workers`, the residence file) is under a
+  tenth (`gold_census_lodes.coverage_floor_share()`) of the same state's
+  upper-quartile year; and
+- a state-year with no workplace total at all, whose residence total is
+  then a residence gap whatever its size, because it counts only residents
+  employed in other states. This is what catches the District of Columbia
+  2002–2009, whose residents commute out in large numbers, so its residence
+  count stays above the tenth.
+
+The sums stay in `gold_census_lodes.observation_fact`. `observation_revision`
+and `observation_latest` leave out, for that run and its counties, only the
+measures the incomplete file feeds (`gold_census_lodes.coverage_gap_hides`):
+
+| Gap in | Not served |
+|---|---|
+| `jobs` (workplace file) | `jobs`, `live_and_work`, `inbound`, `outbound_in_state` |
+| `resident_workers` (residence file) | `resident_workers`, `live_and_work`, `inbound`, `outbound_in_state` |
+
+The commuting measures pair a home with a workplace, so either gap hides
+them. A state-year in the table above therefore serves no LODES measure at
+all, and Massachusetts 2008 jobs reads "Not published that year" on a page.
+
+The table is rebuilt from the state rows alone each time
+`refresh_observation_fact` runs, and when the schema is applied. To rebuild it
+by hand and see what is hidden:
+
+```sql
+SELECT gold_census_lodes.refresh_coverage_gap();
+SELECT state_geo_id, year, metric_key, state_value, ROUND(typical_value) AS typical
+  FROM gold_census_lodes.coverage_gap ORDER BY state_geo_id, year, metric_key;
+```
+

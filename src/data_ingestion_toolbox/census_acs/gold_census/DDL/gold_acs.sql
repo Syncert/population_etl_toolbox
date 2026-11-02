@@ -11,13 +11,18 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE IF NOT EXISTS gold_census.dim_acs_table (
     acs_table_sk      BIGSERIAL PRIMARY KEY,
-    dataset_code      TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code      TEXT NOT NULL CONSTRAINT dim_acs_table_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                                'dec1990stf1', 'dec1990stf3')),
     vintage_year      INTEGER NOT NULL,
     table_id          TEXT NOT NULL,
     table_title       TEXT,
     concept           TEXT,
     universe          TEXT,
-    survey_span_years INTEGER NOT NULL CHECK (survey_span_years IN (1, 5)),
+    -- 0 is a census: one day's count, pooling no survey years.
+    survey_span_years INTEGER NOT NULL
+        CONSTRAINT dim_acs_table_survey_span_years_census_check
+        CHECK (survey_span_years IN (0, 1, 5)),
     reference_url     TEXT,
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (dataset_code, vintage_year, table_id)
@@ -26,7 +31,9 @@ CREATE TABLE IF NOT EXISTS gold_census.dim_acs_table (
 CREATE TABLE IF NOT EXISTS gold_census.dim_acs_variable (
     acs_variable_sk        BIGSERIAL PRIMARY KEY,
     acs_table_sk           BIGINT NOT NULL REFERENCES gold_census.dim_acs_table(acs_table_sk),
-    dataset_code           TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code           TEXT NOT NULL CONSTRAINT dim_acs_variable_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                                'dec1990stf1', 'dec1990stf3')),
     vintage_year           INTEGER NOT NULL,
     variable_code          TEXT NOT NULL,
     variable_label         TEXT,
@@ -90,7 +97,10 @@ SELECT
     -- every warehouse that matters.
     s.value_status,
     s.source_value,
-    s.capture_id
+    s.capture_id,
+    -- The fact's own state, so the serving refresh can read one year and one
+    -- state through `idx_fact_demo_year_state` (appended, as above).
+    s.state_fips
 FROM silver_census.fact_demographics s
 JOIN gold_census.dim_acs_variable av
     ON av.dataset_code  = s.dataset
@@ -138,7 +148,9 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     -- the provider's or this pipeline's -- constrained so a row cannot claim
     -- a published value and carry none.
     value                      NUMERIC,
-    dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    dataset_code               TEXT NOT NULL CONSTRAINT rpt_acs_observations_dataset_code_census_check
+        CHECK (dataset_code IN ('acs1', 'acs5', 'dec2000sf1', 'dec2000sf3',
+                                'dec1990stf1', 'dec1990stf3')),
     vintage_year               INTEGER NOT NULL,
     table_id                   TEXT NOT NULL,
     table_title                TEXT,
@@ -297,11 +309,49 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_dataset_vintage
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_vintage
     ON gold_census.rpt_acs_observations (metric_code, vintage_year, as_of_date);
 
+-- The listing later learned to name each release's newest period
+-- (newest_period_start/end, read as COALESCE(duration_*, observation_date)),
+-- and those columns are not in the index above, so every row went back to the
+-- heap: 16.8 s for one tract-backed metric on the internal stack in October
+-- 2026, past the 15 s statement timeout. This index holds every column the
+-- listing reads, so it is index-only again; the extra key columns repeat
+-- within a vintage, so deduplication keeps it about the size of the one above,
+-- which it makes redundant (drop that one in a quiet window once this exists).
+-- This table is partitioned: on a live warehouse create it ON ONLY the parent,
+-- build each partition's index CONCURRENTLY and ATTACH it, so the build never
+-- holds a write lock on a load (runbook in the change that added it).
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_release_period
+    ON gold_census.rpt_acs_observations (
+        metric_code, vintage_year, as_of_date,
+        observation_date, duration_start, duration_end
+    );
+
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_geo_date
     ON gold_census.rpt_acs_observations (metric_code, geo_id, observation_date);
 
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_updated_at
     ON gold_census.rpt_acs_observations (updated_at DESC);
+
+-- A tract or place step is published one state per session, and each session
+-- reads, clears and re-reads its own state's rows of the year three times. On
+-- the 2024 partition (68 GB, 102M rows) each of those was a 29-second
+-- sequential scan, so a state cost minutes of I/O before writing anything.
+-- On the internal stack it was built per partition with CREATE INDEX
+-- CONCURRENTLY, then created ON ONLY the parent and attached (2026-10-31), so
+-- this statement finds it and does nothing there.
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_level_state
+    ON gold_census.rpt_acs_observations (geo_level, state_fips, observation_date);
+
+-- One metric's earlier release at one grain in one state: a city or tract map
+-- of an older ACS period reads the as-released relation pinned to its release
+-- (web-place-maps), because mv_acs_latest keeps only each key's newest
+-- period. With only (metric_code, observation_date) that read visited every
+-- row of the metric at every grain in every year. The API matches the pin on
+-- `vintage_year` itself (API-182), so all four columns are index conditions.
+-- This table is partitioned: on a live warehouse build it per partition with
+-- CREATE INDEX CONCURRENTLY, then create it ON ONLY the parent and attach.
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_level_state_vintage
+    ON gold_census.rpt_acs_observations (metric_code, geo_level, state_fips, vintage_year);
 
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_latest_selection
     ON gold_census.rpt_acs_observations (
@@ -355,14 +405,55 @@ CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_vintage
 CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_geo
     ON gold_census.mv_acs_latest (metric_code, geo_id);
 
+-- One metric at one grain, and one metric's served periods. The API filters
+-- a grain with `geo_level = :geo_level` (the column is already the
+-- vocabulary word), so an all-county map, a sibling ranking or a county
+-- derived read reaches only that grain's rows instead of every tract row of
+-- the metric. The period columns make /observations/periods an index-only
+-- scan: with tract rows for many years, B17001_002's periods read every heap
+-- row and hit the 15 s statement timeout in October 2026. On a live warehouse
+-- build it with CREATE INDEX CONCURRENTLY.
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_level_geo_period
+    ON gold_census.mv_acs_latest (
+        metric_code, geo_level, geo_id,
+        observation_date, duration_start, duration_end
+    );
+
+-- One metric at one grain in one state: a city or tract map is drawn a state
+-- at a time (web-place-maps), and with only the index above `state_fips` was
+-- a filter over every row of the metric at that grain nationally. On
+-- OFFICE_LAB (2026-10-31) Texas places read 32,631 rows to keep 1,863
+-- (7.0 s) and Wisconsin tracts 111,538 to keep 1,542 (18.8 s); with this
+-- index, 8.1 ms and 10.3 ms. About 11 GB. On a live warehouse build it with
+-- CREATE INDEX CONCURRENTLY first (4 min 38 s there).
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_level_state_geo_period
+    ON gold_census.mv_acs_latest (
+        metric_code, geo_level, state_fips, geo_id,
+        observation_date, duration_start, duration_end
+    );
+
 -- ============================================================
 -- ACS REFRESH PROCEDURES
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observations(DATE, DATE);
+-- `p_geo_levels` scopes a chunk to those served grains (`ACS_CHUNK_CONFIG`'s
+-- grain steps): the serving driver refreshes a year as one committed step per
+-- grain group -- nation, state and county first, then tracts, then places --
+-- so a place year that takes hours never holds the county rows of that year.
+-- A grain-scoped step deletes rather than truncates: a truncate would take
+-- ACCESS EXCLUSIVE on the whole year partition, and every reader of the year
+-- (whatever grain it asked for) would wait behind it. NULL is every grain.
+-- The three-argument form is replaced by one that also takes a state: left
+-- in place, a three-argument call would match both and be refused.
+DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observations(DATE, DATE, TEXT[]);
 CREATE OR REPLACE PROCEDURE gold_census.refresh_rpt_acs_observations(
     p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL
+    p_end_date DATE DEFAULT NULL,
+    p_geo_levels TEXT[] DEFAULT NULL,
+    -- One state of a grain step, so a large grain is published by several
+    -- sessions at once (each its own states). Requires `p_geo_levels`.
+    p_state_fips TEXT DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
@@ -375,8 +466,13 @@ DECLARE
     v_year INTEGER;
     v_partition TEXT;
     v_cleared_years INTEGER := 0;
+    v_prev_nestloop TEXT;
 BEGIN
     RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
+    IF p_state_fips IS NOT NULL AND p_geo_levels IS NULL THEN
+        RAISE EXCEPTION 'a state''s refresh names its grains: truncating a year '
+                        'partition for one state would clear every other state';
+    END IF;
 
     DROP TABLE IF EXISTS pg_temp.gold_acs_affected_keys;
     CREATE TEMP TABLE gold_acs_affected_keys (
@@ -394,6 +490,8 @@ BEGIN
         FROM gold_census.rpt_acs_observations d
         WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
           AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+          AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
+          AND (p_state_fips IS NULL OR d.state_fips = p_state_fips)
     ), recorded AS (
         INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
         SELECT DISTINCT geo_id, variable_code, metric_code FROM scanned
@@ -417,7 +515,15 @@ BEGIN
     FROM pg_class c
     WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
 
-    IF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
+    IF p_geo_levels IS NOT NULL THEN
+        -- A grain step: row locks only, so readers of other grains (and of
+        -- this grain's previous rows) carry on.
+        DELETE FROM gold_census.rpt_acs_observations
+        WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR observation_date <= p_end_date)
+          AND geo_level = ANY(p_geo_levels)
+          AND (p_state_fips IS NULL OR state_fips = p_state_fips);
+    ELSIF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
         -- Every year, including the default partition.
         TRUNCATE TABLE gold_census.rpt_acs_observations;
         v_cleared_years := -1;
@@ -454,6 +560,17 @@ BEGIN
         DELETE FROM gold_census.rpt_acs_observations
         WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
           AND (p_end_date IS NULL OR observation_date <= p_end_date);
+    END IF;
+
+    -- One state's read is estimated at a handful of rows (the view's computed
+    -- grain defeats the statistics), so the planner joined the geography
+    -- view by nested loop: for Delaware's 89,604 tract facts it compared
+    -- 17.4 billion row pairs, and a large state ran for over twenty minutes.
+    -- The real counts are thousands to millions; hash joins are right for
+    -- every state. Restored after the insert, and with the transaction.
+    IF p_state_fips IS NOT NULL THEN
+        v_prev_nestloop := current_setting('enable_nestloop');
+        PERFORM set_config('enable_nestloop', 'off', true);
     END IF;
 
     INSERT INTO gold_census.rpt_acs_observations (
@@ -549,21 +666,37 @@ BEGIN
     -- 'us'/'state'/'county'; served rows promise NATIONAL/STATE/COUNTY.
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = ao.geo_id
     WHERE (p_start_date IS NULL OR ao.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR ao.observation_date <= p_end_date);
+      AND (p_end_date IS NULL OR ao.observation_date <= p_end_date)
+      -- The same window on the fact's own year, which the year index can
+      -- read: `observation_date` is computed in the view, so the date bounds
+      -- alone scanned the whole fact. A date in the window implies its year.
+      AND (p_start_date IS NULL
+           OR ao.vintage_year >= EXTRACT(YEAR FROM p_start_date)::INT)
+      AND (p_end_date IS NULL
+           OR ao.vintage_year <= EXTRACT(YEAR FROM p_end_date)::INT)
+      AND (p_geo_levels IS NULL OR ao.geo_level = ANY(p_geo_levels))
+      AND (p_state_fips IS NULL OR ao.state_fips = p_state_fips);
     GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+
+    IF p_state_fips IS NOT NULL THEN
+        PERFORM set_config('enable_nestloop', v_prev_nestloop, true);
+    END IF;
 
     INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
     SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
     FROM gold_census.rpt_acs_observations d
     WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+      AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
+      AND (p_state_fips IS NULL OR d.state_fips = p_state_fips)
     ON CONFLICT DO NOTHING;
 
     SELECT COUNT(*) INTO v_affected_keys FROM gold_acs_affected_keys;
     RAISE NOTICE
-        '[ACS RPT CHUNK] status=COMPLETE start=% end=% cleared_partitions=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        '[ACS RPT CHUNK] status=COMPLETE start=% end=% grains=% cleared_partitions=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
         p_start_date,
         p_end_date,
+        COALESCE(array_to_string(p_geo_levels, ','), 'ALL'),
         -- -1 means the whole relation was truncated, 0 means the range was
         -- deleted rather than truncated. A reader watching a re-serve can tell
         -- a chunk that took the partitioned path from one that did not.
@@ -609,6 +742,21 @@ BEGIN
         WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
           AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
         ON CONFLICT DO NOTHING;
+    END IF;
+
+    -- A key whose latest row is already newer than this chunk cannot change:
+    -- nothing inside the chunk outranks a later observation, and the chunk's
+    -- own report refresh never touches a later year. Backfilling 2023 places
+    -- under a loaded 2024 deleted and re-inserted 63.6 million identical
+    -- latest rows in about ten hours; for a backfill year this leaves only
+    -- the keys that year adds. A chunk with no upper bound keeps every key.
+    IF p_end_date IS NOT NULL THEN
+        DELETE FROM gold_acs_affected_keys k
+        USING gold_census.mv_acs_latest m
+        WHERE m.geo_id = k.geo_id
+          AND m.variable_code = k.variable_code
+          AND m.metric_code = k.metric_code
+          AND m.observation_date > p_end_date;
     END IF;
 
     -- PostgreSQL does not auto-analyze session-local temporary tables. Accurate
@@ -843,3 +991,233 @@ BEGIN
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
+
+-- A tract's counts on the 2020 Census tract it now lies in, for the years the
+-- ACS published them on an earlier decade's tracts (acs-place-and-tract-
+-- history, deliverable 7). DERIVED, never a published value: each earlier
+-- tract's estimate is apportioned to the 2020 tracts its area became by the
+-- Bureau's relationship files (`silver_ref.tract_decade_crosswalk`) -- the
+-- share of its 2010 population for 2000 to 2010, the share of its land area
+-- for 2010 to 2020 (the 2020 file publishes no population) -- and the shares
+-- landing on one 2020 tract are summed. Only count tables are apportioned: a
+-- median, a per-capita figure or a margin of error cannot be split by a
+-- weight, so none appears here. A 2020 tract whose earlier tract is the same
+-- area under the same code keeps that tract's published value, marked
+-- `unchanged`; a 2020 tract any of whose contributing estimates was not
+-- published has no value (`incomplete`), never a partial sum. The published
+-- series in `rpt_acs_observations` is untouched.
+CREATE OR REPLACE VIEW gold_census.acs_tract_comparable AS
+-- The tract identities are joined in each branch rather than read from one
+-- shared CTE: a CTE named more than once is materialised over every tract in
+-- the country, and a read of one tract (`WHERE geo_id = ...`, the tract page)
+-- then could not reach the dimension's `geo_id` index or the crosswalk's.
+WITH to_2020 AS (
+    SELECT 2010 AS source_decade,
+           earlier.geo_id AS source_geo_id,
+           later.geo_id AS geo_id,
+           step.earlier_land_share AS weight,
+           (step.earlier_geo_sk = step.later_geo_sk
+            AND step.earlier_land_share = 1 AND step.later_land_share = 1) AS unchanged
+    FROM silver_ref.tract_decade_crosswalk AS step
+    JOIN silver_ref.dim_geo_entity AS earlier
+      ON earlier.geo_sk = step.earlier_geo_sk AND earlier.geo_type = 'tract'
+    JOIN silver_ref.dim_geo_entity AS later
+      ON later.geo_sk = step.later_geo_sk AND later.geo_type = 'tract'
+    -- `later_vintage` is implied by the decade (a CHECK holds it to +10);
+    -- naming it lets a read of one tract use the crosswalk's later index.
+    WHERE step.earlier_vintage = 2010 AND step.later_vintage = 2020
+    UNION ALL
+    SELECT 2000,
+           earlier.geo_id,
+           later.geo_id,
+           first_step.earlier_population_share * second_step.earlier_land_share,
+           (first_step.earlier_geo_sk = second_step.later_geo_sk
+            AND first_step.earlier_land_share = 1 AND first_step.later_land_share = 1
+            AND second_step.earlier_land_share = 1 AND second_step.later_land_share = 1)
+    FROM silver_ref.tract_decade_crosswalk AS first_step
+    JOIN silver_ref.tract_decade_crosswalk AS second_step
+      ON second_step.earlier_vintage = 2010
+     AND second_step.later_vintage = 2020
+     AND second_step.earlier_geo_sk = first_step.later_geo_sk
+    JOIN silver_ref.dim_geo_entity AS earlier
+      ON earlier.geo_sk = first_step.earlier_geo_sk AND earlier.geo_type = 'tract'
+    JOIN silver_ref.dim_geo_entity AS later
+      ON later.geo_sk = second_step.later_geo_sk AND later.geo_type = 'tract'
+    WHERE first_step.earlier_vintage = 2000 AND first_step.later_vintage = 2010
+),
+source AS (
+    SELECT published.*,
+           CASE WHEN published.vintage_year BETWEEN 2000 AND 2009 THEN 2000
+                WHEN published.vintage_year BETWEEN 2010 AND 2019 THEN 2010
+           END AS source_decade
+    FROM gold_census.rpt_acs_observations AS published
+    WHERE published.geo_level = 'TRACT'
+      AND published.vintage_year BETWEEN 2000 AND 2019
+      -- Count tables only; medians and per-capita figures do not apportion.
+      AND published.table_id IN (
+          'B01001', 'B01003', 'B02001', 'B03002', 'B08301', 'B08303', 'B11001',
+          'B15003', 'B17001', 'B23025', 'B25001', 'B25002', 'B25003', 'B25070',
+          'B25091', 'B27010', 'B28002'
+      )
+)
+SELECT weight.geo_id,
+       source.observation_date,
+       source.dataset_code,
+       source.vintage_year,
+       source.table_id,
+       source.variable_code,
+       source.metric_code,
+       source.variable_label,
+       source.units,
+       CASE WHEN BOOL_AND(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL)
+            THEN SUM(source.estimate_value * weight.weight)
+       END AS comparable_value,
+       CASE WHEN BOOL_AND(weight.unchanged) AND COUNT(*) = 1 THEN 'unchanged'
+            WHEN BOOL_AND(source.estimate_value IS NOT NULL AND weight.weight IS NOT NULL)
+                THEN 'apportioned'
+            ELSE 'incomplete'
+       END AS comparable_status,
+       CASE MIN(source.source_decade)
+            WHEN 2000 THEN 'share of 2010 population, then share of land area'
+            ELSE 'share of land area'
+       END AS weight_basis,
+       COUNT(*) AS source_tract_count,
+       ARRAY_AGG(source.geo_id ORDER BY source.geo_id) AS source_geo_ids,
+       2020 AS target_tract_vintage,
+       'decade_crosswalk'::TEXT AS derivation
+FROM source
+JOIN to_2020 AS weight
+  ON weight.source_geo_id = source.geo_id
+ AND weight.source_decade = source.source_decade
+WHERE weight.weight IS NULL OR weight.weight > 0
+GROUP BY weight.geo_id, source.observation_date, source.dataset_code,
+         source.vintage_year, source.table_id, source.variable_code,
+         source.metric_code, source.variable_label, source.units;
+
+COMMENT ON VIEW gold_census.acs_tract_comparable IS
+    'DERIVED: earlier-decade ACS and Census 2000 tract counts apportioned to 2020 Census tracts by the Bureau''s relationship files. Never a published value; medians, per-capita figures and margins of error are not apportioned.';
+
+
+-- ---------------------------------------------------------------------------
+-- Age and sex structure summary (ADR-0013, api-age-and-sex-structure part 2)
+-- ---------------------------------------------------------------------------
+-- One row per place and ACS release: the broad age groups as shares of the
+-- place's total, the Bureau-definition dependency ratios and the sex ratio,
+-- each with its margin and the reason it is absent, and the provider's own
+-- median ages. DERIVED: computed from the B01001/B01002 lines in
+-- rpt_acs_observations by `age_summary.build_age_structure_summary`, with the
+-- same arithmetic `/age-structure` serves (semantics/age_structure.py), so a
+-- mapped ratio is the number the place page prints. It exists so a map of one
+-- indicator reads one row per place instead of 52 lines per place.
+--
+-- Not partitioned: about two million rows (tracts x sixteen 5-year releases
+-- dominate). A release is rebuilt whole, in one transaction, after the ACS
+-- serving refresh has written its year.
+CREATE TABLE IF NOT EXISTS gold_census.age_structure_summary (
+    geo_id                                 TEXT    NOT NULL,
+    geo_level                              TEXT    NOT NULL,
+    state_fips                             TEXT,
+    dataset_code                           TEXT    NOT NULL
+        CONSTRAINT age_structure_summary_dataset_code_check
+        CHECK (dataset_code IN ('acs1', 'acs5')),
+    vintage_year                           INTEGER NOT NULL,
+    observation_date                       DATE    NOT NULL,
+    period_start                           DATE,
+    period_end                             DATE,
+    scheme_id                              TEXT    NOT NULL,
+    scheme_version                         INTEGER NOT NULL,
+    total_count                            NUMERIC,
+    total_moe                              NUMERIC,
+    men_count                              NUMERIC,
+    men_moe                                NUMERIC,
+    women_count                            NUMERIC,
+    women_moe                              NUMERIC,
+    under_18_count                         NUMERIC,
+    under_18_moe                           NUMERIC,
+    under_18_share                         NUMERIC,
+    under_18_share_moe                     NUMERIC,
+    under_18_unavailable_reason            TEXT,
+    age_18_64_count                        NUMERIC,
+    age_18_64_moe                          NUMERIC,
+    age_18_64_share                        NUMERIC,
+    age_18_64_share_moe                    NUMERIC,
+    age_18_64_unavailable_reason           TEXT,
+    age_65_plus_count                      NUMERIC,
+    age_65_plus_moe                        NUMERIC,
+    age_65_plus_share                      NUMERIC,
+    age_65_plus_share_moe                  NUMERIC,
+    age_65_plus_unavailable_reason         TEXT,
+    age_85_plus_count                      NUMERIC,
+    age_85_plus_moe                        NUMERIC,
+    age_85_plus_share                      NUMERIC,
+    age_85_plus_share_moe                  NUMERIC,
+    age_85_plus_unavailable_reason         TEXT,
+    child_dependency_ratio                 NUMERIC,
+    child_dependency_ratio_moe             NUMERIC,
+    child_dependency_ratio_unavailable_reason TEXT,
+    old_age_dependency_ratio               NUMERIC,
+    old_age_dependency_ratio_moe           NUMERIC,
+    old_age_dependency_ratio_unavailable_reason TEXT,
+    total_dependency_ratio                 NUMERIC,
+    total_dependency_ratio_moe             NUMERIC,
+    total_dependency_ratio_unavailable_reason TEXT,
+    sex_ratio                              NUMERIC,
+    sex_ratio_moe                          NUMERIC,
+    sex_ratio_unavailable_reason           TEXT,
+    median_age                             NUMERIC,
+    median_age_moe                         NUMERIC,
+    median_age_men                         NUMERIC,
+    median_age_men_moe                     NUMERIC,
+    median_age_women                       NUMERIC,
+    median_age_women_moe                   NUMERIC,
+    built_at                               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE gold_census.age_structure_summary IS
+    'DERIVED (ADR-0013): broad age groups, dependency ratios and sex ratio per place and ACS release, computed from B01001/B01002 with Census Bureau margins. Medians are the provider''s own.';
+
+-- One place's releases: led by geo_id.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_age_structure_summary_key
+    ON gold_census.age_structure_summary (geo_id, dataset_code, vintage_year, observation_date);
+
+-- One indicator map: a grain nationally (first three columns) or in one state
+-- (all four). The rebuild's delete of one release uses the first two.
+CREATE INDEX IF NOT EXISTS ix_age_structure_summary_release_level_state
+    ON gold_census.age_structure_summary (dataset_code, vintage_year, geo_level, state_fips);
+
+-- Which releases the summary was last built from, and from what: a release is
+-- rebuilt when its year partition of rpt_acs_observations has changed since.
+CREATE TABLE IF NOT EXISTS gold_census.age_structure_summary_build (
+    dataset_code      TEXT        NOT NULL,
+    vintage_year      INTEGER     NOT NULL,
+    scheme_id         TEXT        NOT NULL,
+    scheme_version    INTEGER     NOT NULL,
+    source_watermark  TIMESTAMPTZ NOT NULL,
+    row_count         INTEGER     NOT NULL,
+    built_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (dataset_code, vintage_year)
+);
+
+-- How each 2020 tract relates to the tracts of the decade before it, as the
+-- Bureau's relationship files record it: one row per (earlier tract, later
+-- tract) part with both sides' land shares. The tract page reads it for one
+-- tract to say whether its code named the same area before 2020 (served
+-- under `api_reader`, which reads gold only). A plain join, so a filter on
+-- `later_geo_id` or `earlier_geo_id` reaches the dimension's `geo_id` index
+-- and the crosswalk's keys.
+CREATE OR REPLACE VIEW gold_census.tract_decade_change AS
+SELECT step.earlier_vintage,
+       step.later_vintage,
+       earlier.geo_id AS earlier_geo_id,
+       later.geo_id AS later_geo_id,
+       step.earlier_land_share,
+       step.later_land_share,
+       step.earlier_population_share,
+       step.land_area_part_m2
+FROM silver_ref.tract_decade_crosswalk AS step
+JOIN silver_ref.dim_geo_entity AS earlier ON earlier.geo_sk = step.earlier_geo_sk
+JOIN silver_ref.dim_geo_entity AS later ON later.geo_sk = step.later_geo_sk;
+
+COMMENT ON VIEW gold_census.tract_decade_change IS
+    'Census tract relationship-file parts between consecutive decades, by tract geo_id, with each side''s land share. Reference, not an estimate.';
+
