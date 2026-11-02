@@ -228,6 +228,114 @@ def test_history_quality_rules_pass_then_catch_a_gap(lodes_warehouse) -> None:
     assert lost.result == "fail" and lost.observed_count == 1
 
 
+def _served(factory, relation="observation_latest"):
+    return _rows(
+        factory,
+        f"""
+        SELECT year, metric_key FROM gold_census_lodes.{relation}
+        WHERE geo_id = %s ORDER BY year, metric_key
+        """,
+        (lodes.KENT,),
+    )
+
+
+def test_a_state_year_lehd_did_not_cover_is_not_served(lodes_warehouse) -> None:
+    """Covers: ETL-108 — a file holding a handful of jobs is a coverage gap; the measures it feeds are not served."""
+    factory = lodes_warehouse
+    _load(factory)
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_census_lodes.coverage_gap") == [
+        (0,)
+    ]
+    computed = _rows(factory, "SELECT COUNT(*) FROM gold_census_lodes.observation_fact")
+    state_totals = _rows(
+        factory,
+        """
+        SELECT run_id, metric_key, value FROM gold_census_lodes.observation_fact
+        WHERE geo_type = 'state'
+        """,
+    )
+    everything = _served(factory)
+    assert everything == [
+        (2008, "jobs"),
+        (2008, "resident_workers"),
+        (2023, "inbound"),
+        (2023, "jobs"),
+        (2023, "live_and_work"),
+        (2023, "outbound_in_state"),
+        (2023, "resident_workers"),
+    ]
+
+    # Delaware's 2008 workplace file covers a dozen jobs, as Massachusetts'
+    # did before LEHD covered it: the refresh names the file's gap and serves
+    # no 2008 jobs, state or county, while the residence counts stay.
+    _execute(
+        factory,
+        """
+        UPDATE gold_census_lodes.observation_fact SET value = 13
+        WHERE year = 2008 AND geo_type = 'state' AND metric_key = 'jobs'
+        """,
+    )
+    _execute(factory, "SELECT gold_census_lodes.refresh_coverage_gap()")
+    gaps = _rows(
+        factory,
+        "SELECT year, metric_key, state_value FROM gold_census_lodes.coverage_gap",
+    )
+    assert gaps == [(2008, "jobs", 13)]
+    for relation in ("observation_revision", "observation_latest"):
+        assert _served(factory, relation) == [
+            row for row in everything if row != (2008, "jobs")
+        ]
+
+    # A residence file that covers a sliver of its workers (Michigan 2022-2023)
+    # hides the residence counts and the commuting measures that pair a home
+    # with a workplace, never the jobs located there.
+    _execute(
+        factory,
+        """
+        UPDATE gold_census_lodes.observation_fact SET value = 13
+        WHERE year = 2023 AND geo_type = 'state' AND metric_key = 'resident_workers'
+        """,
+    )
+    _execute(factory, "SELECT gold_census_lodes.refresh_coverage_gap()")
+    assert _rows(
+        factory,
+        "SELECT year, metric_key FROM gold_census_lodes.coverage_gap ORDER BY 1",
+    ) == [(2008, "jobs"), (2023, "resident_workers")]
+    assert _served(factory) == [(2008, "resident_workers"), (2023, "jobs")]
+
+    # The sums stay computed, so DQ-LODES-005 still sees every state-year.
+    assert (
+        _rows(factory, "SELECT COUNT(*) FROM gold_census_lodes.observation_fact")
+        == computed
+    )
+    assert _outcome(factory, lodes_served_sums).result == "pass"
+
+    # A jump out of a year whose jobs were not covered is not a step to explain.
+    _execute(
+        factory,
+        "UPDATE gold_census_lodes.observation_fact SET year = 2022 WHERE year = 2008",
+    )
+    assert _outcome(factory, lodes_state_jobs_continuity).result == "pass"
+
+    # A refresh after the files are complete serves every measure again.
+    for run_id, metric_key, value in state_totals:
+        _execute(
+            factory,
+            """
+            UPDATE gold_census_lodes.observation_fact SET value = %s
+            WHERE run_id = %s AND metric_key = %s AND geo_type = 'state'
+            """,
+            (value, run_id, metric_key),
+        )
+    _execute(factory, "SELECT gold_census_lodes.refresh_coverage_gap()")
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_census_lodes.coverage_gap") == [
+        (0,)
+    ]
+    assert _served(factory) == [
+        (2022 if year == 2008 else year, metric) for year, metric in everything
+    ]
+
+
 def test_a_capture_stopped_part_way_is_withdrawn_and_captured_again(
     lodes_warehouse,
 ) -> None:

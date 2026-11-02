@@ -442,6 +442,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         silver=["silver_census_lodes.fact_area", "silver_census_lodes.fact_flow"],
         gold=[
             "gold_census_lodes.observation_fact",
+            "gold_census_lodes.coverage_gap",
             "gold_census_lodes.observation_revision",
             "gold_census_lodes.observation_latest",
         ],

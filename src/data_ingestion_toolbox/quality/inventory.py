@@ -2898,12 +2898,30 @@ _LODES_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published state-year",
     ),
     _obj(
+        "gold_census_lodes.coverage_gap",
+        "gold",
+        "CENSUS_LODES",
+        grain="run_id, metric_key",
+        lineage="gold_census_lodes.observation_fact",
+        scope_method=(
+            "published state-years whose state total of jobs or resident "
+            "workers is under a tenth of the state's upper-quartile year "
+            "(LEHD had not yet covered that file); the measures the file "
+            "feeds are not served"
+        ),
+        cadence="rebuilt with every refresh_observation_fact",
+        empty_behavior="empty when every published state-year was covered",
+    ),
+    _obj(
         "gold_census_lodes.observation_revision",
         "gold",
         "CENSUS_LODES",
         grain="metric_key, geo_id, year, run_id (published vintages only)",
         lineage="gold_census_lodes.observation_fact",
-        scope_method="published state-years; every vintage kept",
+        scope_method=(
+            "published state-years; measures a coverage gap hides left out; "
+            "every vintage kept"
+        ),
         cadence="per publication",
         empty_behavior="empty only before the first published state-year",
     ),
@@ -6139,11 +6157,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census_lodes.observation_revision",
             "gold_census_lodes.observation_latest",
             "gold_census_lodes.measure_definition",
+            "gold_census_lodes.coverage_gap",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: the grains are the two fact tables' primary "
-            "keys; the gold relations are views over them."
+            "keys and the coverage gaps' (one row per run and measure); the "
+            "gold relations are views over them."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -6153,6 +6173,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
             EnforcedGrain(
                 "silver_census_lodes.fact_flow",
                 ("run_id", "part", "home_geo_id", "work_geo_id"),
+            ),
+            EnforcedGrain(
+                "gold_census_lodes.coverage_gap",
+                ("run_id", "metric_key"),
             ),
         ),
     ),
@@ -6232,10 +6256,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-LODES-007",
         "WARN",
         "plausibility",
-        "A state's LODES jobs do not move by more than a quarter between "
-        "consecutive published years; a larger step is a coverage break in "
-        "the files to explain, not an economy.",
-        ("gold_census_lodes.observation_fact",),
+        "A state's served LODES jobs do not move by more than a quarter "
+        "between consecutive published years; a larger step is a coverage "
+        "break in the files to explain, not an economy. State-years whose jobs "
+        "LEHD had not yet covered (a jobs row in gold_census_lodes.coverage_gap) "
+        "are not served and not compared.",
+        ("gold_census_lodes.observation_fact", "gold_census_lodes.coverage_gap"),
     ),
     # -- EPA air quality (AirData annual monitor files) ------------------------
     _rule(
