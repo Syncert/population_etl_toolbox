@@ -66,13 +66,15 @@ CREATE INDEX IF NOT EXISTS ix_lodes_observation_fact_run
 -- total of jobs located there (the workplace file) or of resident workers
 -- (the residence file) is under a tenth of the same state's upper-quartile
 -- year is incomplete for that file. An economy has never lost nine tenths of
--- its jobs in a year; a file covering a few employers has.
+-- its jobs in a year; a file covering a few employers has. A state-year with
+-- no workplace file at all is a residence gap too, whatever its size: LEHD
+-- says its residence file counts only residents employed in other states.
 --
 -- A gap hides only the measures that file feeds (see `coverage_gap_hides`):
 -- a workplace gap hides `jobs`, a residence gap hides `resident_workers`, and
 -- the commuting measures, which pair a home with a workplace, are hidden when
--- either file is short. Michigan's jobs stay served while its residence
--- counts for 2022-2023 do not.
+-- either file is short. A state whose residence file alone is short keeps its
+-- jobs served.
 --
 -- The sums stay in `observation_fact` (DQ-LODES-005 still sees them); this
 -- table names the runs and files the serving views leave out and why. It is rebuilt
@@ -145,7 +147,18 @@ BEGIN
     FROM state_total
     JOIN typical USING (geo_id, metric_key)
     WHERE state_total.value
-          < typical.typical_value * gold_census_lodes.coverage_floor_share();
+          < typical.typical_value * gold_census_lodes.coverage_floor_share()
+       -- A state-year LEHD published no workplace file for has residence
+       -- counts of only "residents who are employed in other states" (LODES
+       -- Technical Documentation 8.4, Data Coverage and Availability): never
+       -- the state's resident workers, however large the share that commutes
+       -- out (the District of Columbia 2002-2009).
+       OR (state_total.metric_key = 'resident_workers'
+           AND NOT EXISTS (
+               SELECT 1 FROM state_total AS workplace
+               WHERE workplace.run_id = state_total.run_id
+                 AND workplace.metric_key = 'jobs'
+           ));
     GET DIAGNOSTICS v_written = ROW_COUNT;
     RETURN v_written;
 END;

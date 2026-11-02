@@ -191,22 +191,50 @@ FROM gold_census_lodes.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
 
 ## Years LEHD did not cover
 
-LEHD did not cover every state from 2002. A state that joined late still has
-files for its early years, but they hold a handful of jobs rather than the
-state: Massachusetts 2002–2010 (4 to 17 jobs, then 3,140,314 in 2011) and
-Arkansas 2002 (32 jobs, then 1,079,276 in 2003). Some residence files also
-cover only part of a state's workers: Alaska 2017–2023, Arizona and
-Mississippi 2002–2003, Michigan 2022–2023 and New Hampshire 2002, as well as
-Massachusetts 2002–2010 and Arkansas 2002.
+LEHD did not cover every state from 2002. The LODES Technical Documentation
+8.4 (Rev. 20251203, "Data Coverage and Availability", table "States Without
+OD and WAC Data") lists the state-years with no workplace or
+origin-destination data:
 
-`gold_census_lodes.coverage_gap` names each such file, one row per run and
-state total: a state-year whose total of jobs located there (`jobs`, the
-workplace file) or of resident workers (`resident_workers`, the residence
-file) is under a tenth (`gold_census_lodes.coverage_floor_share()`) of the
-same state's upper-quartile year. The sums stay in
-`gold_census_lodes.observation_fact`. `observation_revision` and
-`observation_latest` leave out, for that run and its counties, only the
-measures the short file feeds (`gold_census_lodes.coverage_gap_hides`):
+| Years | States without OD and WAC data |
+|---|---|
+| 2002 | Arkansas, Arizona, District of Columbia, Massachusetts, Mississippi, New Hampshire |
+| 2003 | Arizona, District of Columbia, Massachusetts, Mississippi |
+| 2004–2009 | District of Columbia, Massachusetts |
+| 2010 | Massachusetts |
+| 2011–2016 | none |
+| 2017–2021 | Alaska |
+| 2022–2023 | Alaska, Michigan |
+
+For those state-years LEHD says the state "will not have OD or WAC files, but
+will have RAC files that include residents who are employed in other states".
+So the residence count is not the state's resident workers: Alaska's is about
+3 thousand against a typical 297 thousand, and Michigan 2022–2023's is about
+140 thousand against 4.23 million. Massachusetts 2002–2010 and Arkansas 2002
+also carry workplace totals of a handful of jobs (4 to 17 in Massachusetts,
+then 3,140,314 in 2011; 32 in Arkansas, then 1,079,276 in 2003).
+
+These are gaps in the source, not in the capture: a `--refresh` reads the same
+checksum list and brings nothing new. The only route to Michigan's and
+Alaska's jobs for 2022–2023 is a new LODES release that adds them; LEHD
+expects LODES 2024 in early fall 2026.
+
+`gold_census_lodes.coverage_gap` names each incomplete file, one row per run
+and state total:
+
+- a state-year whose total of jobs located there (`jobs`, the workplace file)
+  or of resident workers (`resident_workers`, the residence file) is under a
+  tenth (`gold_census_lodes.coverage_floor_share()`) of the same state's
+  upper-quartile year; and
+- a state-year with no workplace total at all, whose residence total is
+  then a residence gap whatever its size, because it counts only residents
+  employed in other states. This is what catches the District of Columbia
+  2002–2009, whose residents commute out in large numbers, so its residence
+  count stays above the tenth.
+
+The sums stay in `gold_census_lodes.observation_fact`. `observation_revision`
+and `observation_latest` leave out, for that run and its counties, only the
+measures the incomplete file feeds (`gold_census_lodes.coverage_gap_hides`):
 
 | Gap in | Not served |
 |---|---|
@@ -214,9 +242,8 @@ measures the short file feeds (`gold_census_lodes.coverage_gap_hides`):
 | `resident_workers` (residence file) | `resident_workers`, `live_and_work`, `inbound`, `outbound_in_state` |
 
 The commuting measures pair a home with a workplace, so either gap hides
-them. Michigan 2022–2023 keeps its jobs and loses its residence and commuting
-counts; Massachusetts 2008 serves nothing, so a page reads its jobs as "Not
-published that year".
+them. A state-year in the table above therefore serves no LODES measure at
+all, and Massachusetts 2008 jobs reads "Not published that year" on a page.
 
 The table is rebuilt from the state rows alone each time
 `refresh_observation_fact` runs, and when the schema is applied. To rebuild it
