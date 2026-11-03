@@ -433,6 +433,14 @@ describe("homes authorized", () => {
     expect(permits.every((measure) => measure.showReported)).toBe(true);
   });
 
+  it("says when Census publishes the yearly permit totals, and only on the yearly cards", () => {
+    const permits = housing.headline.filter((measure) => measure.candidates[0].startsWith("CENSUS_BPS:"));
+    const annual = permits.filter((measure) => measure.candidates[0].endsWith(":annual"));
+    expect(annual.map((measure) => measure.id)).toEqual(["bps-single-family-year", "bps-multifamily-year"]);
+    for (const measure of annual) expect(measure.whenPublished).toBe("Census publishes each year's total early the following year.");
+    expect(permits.find((measure) => measure.id === "bps-single-family-month").whenPublished).toBeUndefined();
+  });
+
   it("draws the monthly permits as a trend after the rent and home value trends", () => {
     expect(housing.trend).toEqual({ measureId: "median-gross-rent", scale: "level" });
     expect(housing.moreTrends).toEqual([

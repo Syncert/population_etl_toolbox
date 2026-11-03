@@ -41,8 +41,10 @@ month of the year is `not_reported`, with no number.
 
 The DAG runs at 13:00 UTC on the 25th of each month. An ordinary run asks
 for the last six calendar months (`BpsConfig.recent_months`) and the annual
-files of the years they fall in. A month not yet released answers 404 and
-is recorded `empty`.
+files of the years they fall in, plus always last year's annual files: from
+July on the six months are all this year's, yet the newest published year
+total is last year's. A month or year not yet released answers 404 and is
+recorded `empty`.
 
 A fresh warehouse is loaded with a history run:
 

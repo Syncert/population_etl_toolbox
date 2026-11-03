@@ -53,6 +53,12 @@ export interface PlaceMeasure {
    * (bea-regional-accounts).
    */
   basis?: string;
+  /**
+   * Said after "Not loaded into this site yet." when the catalog serves no
+   * row of the measure: when the publisher puts it out, so the reader knows
+   * the figure exists and when to expect it (census-building-permits).
+   */
+  whenPublished?: string;
   /** Depth rows rendered together as one table rather than a list. */
   group?: "bea-earnings" | "industry-mix";
   /**
@@ -155,6 +161,9 @@ const bps = (measure: string, structure: string, frequency: string): string[] =>
 ];
 
 const AUTHORIZED_BASIS = "Authorized by building permits, not started or completed";
+
+/** When the Bureau puts out a year's permit totals (its December year-to-date file). */
+const BPS_ANNUAL_PUBLISHED = "Census publishes each year's total early the following year.";
 
 /**
  * Said wherever IRS migration flows sit near PEP net migration
@@ -357,6 +366,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: bps("units", "1_unit", "annual"),
         basis: AUTHORIZED_BASIS,
         showReported: true,
+        whenPublished: BPS_ANNUAL_PUBLISHED,
       },
       {
         id: "bps-multifamily-year",
@@ -364,6 +374,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: bps("units", "5_plus_units", "annual"),
         basis: AUTHORIZED_BASIS,
         showReported: true,
+        whenPublished: BPS_ANNUAL_PUBLISHED,
       },
       {
         id: "bps-single-family-month",
