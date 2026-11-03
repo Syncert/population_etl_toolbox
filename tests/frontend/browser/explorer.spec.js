@@ -806,7 +806,13 @@ async function installRoutes(
 
 test("catalog, observation coloring, Martin tile, selection, history, and keyboard flow", async ({ page }) => {
   const tileRequests = await installRoutes(page);
+  // The boundaries are drawn from the tile at the zoom on screen, not from
+  // the zoom-0 sample discovery decodes: that tile spends about 10 km on
+  // each of its 4,096 units, so a county border drawn from it is a
+  // staircase at state zoom.
+  const zoomedTile = page.waitForRequest(/\/tiles\/counties\/[1-9]\d*\/\d+\/\d+/);
   await page.goto("/explore");
+  await zoomedTile;
 
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toHaveAttribute("data-metric-count", "3");
