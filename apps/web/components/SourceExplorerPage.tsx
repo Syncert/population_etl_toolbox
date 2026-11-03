@@ -154,7 +154,10 @@ import type { SaveOutcome } from "../lib/savedAnalysis";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
 import {
   EXPLORER_CHOROPLETH_LAYERS,
+  EXPLORER_TILE_MAXZOOM,
+  EXPLORER_TILE_MINZOOM,
   US_OVERVIEW_VIEW,
+  boundaryTileUrl,
   pitchForMapMode,
   syncExplorerMapMode,
   syncLayerFilter,
@@ -401,8 +404,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     complete: boolean;
   }>({ total: null, complete: true });
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
-  // The polygons currently drawn, kept so a state selection can fit their
+  // The decoded zoom-0 preview tile, kept so a state selection can fit its
   // extent; set once the layers exist so the fit never runs ahead of them.
+  // The map draws from the vector source, not from these polygons.
   const [choroplethFeatures, setChoroplethFeatures] = useState<FeatureLike[]>([]);
   const fittedStateRef = useRef("");
   const [distributionStatus, setDistributionStatus] = useState<RequestStatus>({
@@ -1648,9 +1652,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       removeChoropleth();
       const geoFilter = tileFilterForGeoLevel(selectedGeoLevel) as FilterSpecification;
 
+      // The polygons are drawn from the tile pyramid, not from the decoded
+      // sample. The sample is the zoom-0 tile: the whole world in 4,096
+      // units, about 10 km each, so a county border drawn from it is a
+      // staircase at state zoom (a Wisconsin lakeshore drawn as
+      // blocks). A vector source asks for the tile at the zoom on screen,
+      // which carries the boundary at the detail that zoom can show. The
+      // sample is kept for what it is good for: a state's extent to fit.
       map.addSource("choropleth", {
-        type: "geojson",
-        data: featureCollection as FeatureCollection,
+        type: "vector",
+        tiles: [boundaryTileUrl(tileMetadata.tileTemplate, window.location.origin)],
+        minzoom: EXPLORER_TILE_MINZOOM,
+        maxzoom: EXPLORER_TILE_MAXZOOM,
       });
 
       map.addLayer(
@@ -1658,6 +1671,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-fill",
           type: "fill",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: geoFilter,
           paint: {
             "fill-color": buildChoroplethMatchExpression(
@@ -1678,6 +1692,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-extrusion",
           type: "fill-extrusion",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: geoFilter,
           layout: {
             visibility: mapMode === "extrusion" ? "visible" : "none",
@@ -1706,6 +1721,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-outline",
           type: "line",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: geoFilter,
           paint: {
             "line-color": "#22384d",
@@ -1726,6 +1742,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-selected",
           type: "line",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: buildSelectionFilter(
             selectedJoinValue,
             tileMetadata.joinKey,

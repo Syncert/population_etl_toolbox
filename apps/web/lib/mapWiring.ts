@@ -1,9 +1,9 @@
 // The one MapLibre wiring, in the parts that do not need MapLibre.
 //
 // The explorer and the comparison workspace draw different maps -- the
-// explorer decodes tile previews into GeoJSON for a fill, an extrusion, an
-// outline, and a selection ring, with hover, click, keyboard, and a state
-// fit; the comparison draws one fill straight off the vector source -- but
+// explorer draws a fill, an extrusion, an outline, and a selection ring off
+// the vector source, with hover, click, keyboard, and a state fit (from one
+// decoded preview tile, which is coarse but places a state); the comparison draws one fill straight off the vector source -- but
 // they were built the same way and kept in sync the same way, in two copies.
 // Two copies of "set this paint property on whichever of these layers exist"
 // is two places for one of them to stop checking whether the layer exists.
@@ -25,6 +25,15 @@ export const US_OVERVIEW_VIEW = Object.freeze({
   center: [-98.5, 38.5] as [number, number],
   zoom: 3.05,
 });
+
+/**
+ * The zoom range the explorer requests boundary tiles over: the `counties`
+ * layer's range in `infra/martin/martin.yml`. Past the maximum MapLibre
+ * overzooms the last tile, which at zoom 12 still holds the cartographic
+ * boundary at full detail.
+ */
+export const EXPLORER_TILE_MINZOOM = 0;
+export const EXPLORER_TILE_MAXZOOM = 12;
 
 export const MAP_BACKGROUND_COLOR = "#dfe8ed";
 
