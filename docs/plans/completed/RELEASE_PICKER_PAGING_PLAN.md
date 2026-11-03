@@ -138,3 +138,13 @@ has no daemon for. The paging contract is `/observations/releases`' own
 ## Remaining work
 
 None.
+
+## Note (2026-11-03, WEB-158)
+
+The release listing this plan pages still feeds the publication picker, but
+the explorer's status row no longer prints its count: for Census SAIPE the
+release identity is a load's capture time, and "11 published releases" read
+as eleven years where two were published. The row now says "N years
+published, first–last" from `/observations/periods`, and shows the release
+pill only when the listing failed or the page bound cut it short (the
+WEB-045 case this plan added).

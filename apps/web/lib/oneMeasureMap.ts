@@ -201,11 +201,30 @@ export const RELEASE_CHOICE_PREFIX = "release:";
  * so each release but the newest (whose periods the latest publication
  * already offers) is a choice, labelled by the newest period it published.
  * The API lists releases newest first; that order is kept.
+ *
+ * Where a release identity is a load's capture time rather than a vintage
+ * (Census SAIPE), several releases publish the same newest period: one load
+ * per run, eleven of them for two years (OFFICE_LAB, 2026-11-03). Only the
+ * newest release for a period is offered, so the selector lists the periods
+ * a reader can choose between rather than every load of them (WEB-158). A
+ * release that names no period is always offered.
  */
 export function earlierReleaseChoices(
   releases: readonly MapRelease[],
 ): { value: string; label: string }[] {
-  return releases.slice(1).map((item) => {
+  const periodKey = (item: MapRelease) =>
+    item.newest_period_start ? `${item.newest_period_start}|${item.newest_period_end || ""}` : "";
+  const seen = new Set<string>();
+  const newestKey = releases[0] ? periodKey(releases[0]) : "";
+  if (newestKey) seen.add(newestKey);
+  const distinct = releases.slice(1).filter((item) => {
+    const key = periodKey(item);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return distinct.map((item) => {
     const start = item.newest_period_start || "";
     const end = item.newest_period_end || "";
     const span = start ? (end && end !== start ? `${start} – ${end}` : start) : "";
