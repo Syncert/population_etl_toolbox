@@ -135,12 +135,50 @@
 .place-trend {
   margin: 16px 0;
   min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px;
+}
+
+.place-trend-head {
+  margin-bottom: 4px;
+}
+
+.place-trend-title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.place-trend-meta,
+.place-trend-source,
+.place-trend-for {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .place-trend svg[role="img"] {
+  display: block;
   width: 100%;
+  max-width: 900px;
   height: auto;
-  max-height: 260px;
+}
+
+.place-trend-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.place-trend-grid {
+  stroke: var(--line);
+  stroke-dasharray: 2 3;
+}
+
+.place-trend-notes .subtle {
+  margin: 4px 0;
 }
 
 .place-trend-axis {
@@ -664,8 +702,6 @@
   margin: 10px 0 0;
 }
 
-.place-record-chart-title {
-  margin: 12px 0 4px;
+.place-record-chart .place-trend-title {
   font-size: 0.92rem;
-  font-weight: 600;
 }

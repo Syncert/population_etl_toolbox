@@ -66,6 +66,7 @@ import {
   stateSegment,
   threeLevelCard,
   trendNotes,
+  trendSourceName,
 } from "../lib/placeChapters";
 import type {
   LevelAnswer,
@@ -140,6 +141,9 @@ function publishedUnit(row: ObservationRow): string {
 }
 
 const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}`;
+
+/** A headline card's anchor, which the chart drawing its measure links back to. */
+const cardAnchor = (chapterId: string, measureId: string) => `chapter-${chapterId}-card-${measureId}`;
 
 /** One place's value under one pairing, as `/observations/derived` answered it. */
 interface DerivedAnswer {
@@ -1077,6 +1081,11 @@ function Chapter({
     );
     return model ? [{ measure, model }] : [];
   });
+  // A card whose measure is drawn below links to its chart, and the chart back.
+  const trendAnchorFor = (measureId: string): string | null => {
+    if (trend && trendMeasure?.measure.id === measureId) return `chapter-${chapter.id}-trend`;
+    return moreTrends.some((entry) => entry.measure.measure.id === measureId) ? `chapter-${chapter.id}-trend-${measureId}` : null;
+  };
   const sourcesShown = [...new Set([...resolved.headline, ...resolved.depth].map((measure) => measure.metric?.source_code).filter(Boolean))];
   const periods = [...new Set(
     [...resolved.headline, ...resolved.depth]
@@ -1138,6 +1147,8 @@ function Chapter({
             pageLevel={pageLevel}
             stateContext={resolved.stateContext}
             county={county}
+            anchor={cardAnchor(chapter.id, measure.measure.id)}
+            trendAnchor={trendAnchorFor(measure.measure.id)}
             pairing={pairingFor(pairings, measure.metricCode, view)}
             providerRate={providerRateFor(pairings, measure.metricCode)}
             agencyRate={agencyRateFor(pairings, measure.metricCode)}
@@ -1148,8 +1159,11 @@ function Chapter({
       {trend && trendMeasure ? (
         <PlaceTrend
           model={trend}
-          label={`${trendMeasure.measure.label} trend`}
+          title={`${trendMeasure.measure.label} over time`}
+          metricName={displayMetricName(trendMeasure.metric)}
           unit={primaryRow ? publishedUnit(primaryRow) : unitText(trendMeasure.metric?.units)}
+          source={trendSourceName(trendMeasure.metricCode, trendMeasure.metric?.source_code)}
+          forCard={{ label: trendMeasure.measure.label, anchor: cardAnchor(chapter.id, trendMeasure.measure.id) }}
           notes={trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend`}
         />
@@ -1158,8 +1172,11 @@ function Chapter({
         <PlaceTrend
           key={measure.measure.id}
           model={model}
-          label={`${measure.measure.label} trend`}
+          title={`${measure.measure.label} over time`}
+          metricName={displayMetricName(measure.metric)}
           unit={unitText(measure.metric?.units)}
+          source={trendSourceName(measure.metricCode, measure.metric?.source_code)}
+          forCard={{ label: measure.measure.label, anchor: cardAnchor(chapter.id, measure.measure.id) }}
           notes={trendNotes(measure.metricCode, String(measure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
         />
@@ -1281,6 +1298,8 @@ function HeadlineCard({
   providerRate,
   agencyRate,
   derived,
+  anchor,
+  trendAnchor = null,
 }: {
   measure: ResolvedPlaceMeasure;
   levels: LevelPlace[];
@@ -1288,6 +1307,10 @@ function HeadlineCard({
   pageLevel: PlaceLevel;
   stateContext: boolean;
   county: GeographySummary | null;
+  /** The card's own anchor, which its trend chart links back to. */
+  anchor: string;
+  /** The anchor of the chart drawing this measure over time, if one is drawn. */
+  trendAnchor?: string | null;
   /** The pairing the chapter's view divides this count by, if any. */
   pairing: DerivedRatioPairing | null;
   /** The pairing that names this metric as the provider's own rate, if any. */
@@ -1298,7 +1321,7 @@ function HeadlineCard({
 }) {
   if (!measure.metric) {
     return (
-      <div className="place-card" data-testid={`card-${measure.measure.id}`} data-available="false">
+      <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="false">
         <h3>{measure.measure.label}</h3>
         <p className="subtle" title={measure.measure.candidates.join(", ")} data-looked-for={measure.measure.candidates.join(" ")}>
           Not published by this warehouse.
@@ -1310,7 +1333,7 @@ function HeadlineCard({
   const card = threeLevelCard(levels, byGeo, (level) => publishesAt(measure, level));
   const unit = card.rows.find((entry) => entry.row)?.row;
   return (
-    <div className="place-card" data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
+    <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
       <h3>{measure.measure.label}</h3>
       <p className="subtle">
         <span title={measure.metricCode} data-metric-code={measure.metricCode}>
@@ -1376,6 +1399,13 @@ function HeadlineCard({
       {measure.measure.showReported ? <ReportedLine measure={measure} row={card.rows[0]?.row ?? null} /> : null}
       {providerRate ? <ProviderRateNote pairing={providerRate} testId={`card-${measure.measure.id}-denominator`} /> : null}
       {measure.measure.note ? <p className="subtle">{measure.measure.note}</p> : null}
+      {trendAnchor ? (
+        <p className="place-card-trend-link">
+          <a className="text-link" href={`#${trendAnchor}`} data-testid={`card-${measure.measure.id}-trend-link`}>
+            See {measure.measure.label.toLowerCase()} over time, below
+          </a>
+        </p>
+      ) : null}
     </div>
   );
 }

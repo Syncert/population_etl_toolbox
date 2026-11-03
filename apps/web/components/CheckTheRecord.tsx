@@ -118,11 +118,12 @@ function RecordCard({ answer }: { answer: RecordAnswer }) {
       ) : null}
       {answer.charts.map((chart) => (
         <div key={chart.id} className="place-record-chart">
-          <h4 className="place-record-chart-title">{chart.label}</h4>
           <PlaceTrend
             model={chart.model}
-            label={chart.label}
+            title={chart.label}
+            titleTag="h4"
             unit={chart.unit}
+            source={chart.source}
             notes={chart.notes}
             testId={`${testId}-chart-${chart.id}`}
           />

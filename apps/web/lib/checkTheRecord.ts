@@ -76,6 +76,8 @@ export interface RecordChart {
   id: string;
   label: string;
   unit: string;
+  /** Who publishes the series drawn, in words, stated under the chart's title. */
+  source: string;
   model: TrendModel;
   notes: string[];
 }
@@ -407,6 +409,7 @@ function crimeChart(place: LevelPlace, rows: DerivedRatioObservation[]): RecordC
     id: "crime",
     label: "Violent crime rate computed from agency reports",
     unit: "offenses per 100,000 people the reporting agencies serve, each month",
+    source: "FBI Uniform Crime Reporting Program agency reports; the rate is computed here from them",
     model: buildTrend([place], new Map([[place.geoId, asRows]]), "level"),
     notes: ["A month with no point is one with no rate: too few agencies reported, or none did."],
   };
@@ -433,6 +436,7 @@ export function publishedCrimeAnswer(
     id: "crime",
     label: "Violent crime rate, as the program published it",
     unit: "offenses per 100,000 residents",
+    source: "FBI Uniform Crime Reporting Program",
     model: buildTrend([place], new Map([[place.geoId, settled]]), "level"),
     notes: [],
   };
@@ -629,6 +633,7 @@ function surveyChart(id: string, label: string, metricCode: string, place: Level
     id,
     label: `${label} in ${place.name}`,
     unit: "dollars",
+    source: `U.S. Census Bureau, ${surveyLabel(metricCode)}`,
     model: buildTrend([place], new Map([[place.geoId, rows]]), "level"),
     notes: trendNotes(metricCode, "dollars"),
   };
@@ -660,7 +665,7 @@ export function populationAnswer(
   base.caveats = ["Population estimates are the program's, not a count; each year's figure is the newest vintage published for it."];
   const rows = collapseToNewestRelease([...(histories.get(key(estimate.metricCode, place.geoId)) || [])]);
   const chart: RecordChart | null = rows.length
-    ? { id: "population", label: `Resident population estimate, ${place.name}`, unit: "people", model: buildTrend([place], new Map([[place.geoId, rows]]), "level"), notes: [] }
+    ? { id: "population", label: `Resident population estimate, ${place.name}`, unit: "people", source: "U.S. Census Bureau, Population Estimates Program", model: buildTrend([place], new Map([[place.geoId, rows]]), "level"), notes: [] }
     : null;
   const span = chooseSpan(rows);
   const sentences: string[] = [];
@@ -758,6 +763,7 @@ export function unemploymentAnswer(
         // Name only the places drawn: a title must not promise a line.
         label: `Unemployment rate, ${lines.map((entry) => entry.name).join(" and ")}`,
         unit: "percent",
+        source: "Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)",
         model: buildTrend(lines, new Map([[place.geoId, own], [other.geoId, theirs]]), "level"),
         notes: [],
       }

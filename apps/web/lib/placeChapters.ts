@@ -924,6 +924,71 @@ export interface TrendModel {
   basePeriod: string;
   /** Lines that could not be indexed, because they lack the base period. */
   unindexed: string[];
+  /**
+   * How often the drawn series is published, in words ("monthly", "yearly",
+   * "five-year estimates"), read from the rows' own periods; "" when the
+   * rows do not say.
+   */
+  frequency: TrendFrequency;
+}
+
+export type TrendFrequency = "monthly" | "quarterly" | "yearly" | "five-year estimates" | "multi-year" | "";
+
+const DAY_MS = 86_400_000;
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
+/**
+ * How often a series is published, from its rows: each row's own span from
+ * period start to period end, or, where rows publish only a date, the usual
+ * gap between them.
+ */
+export function trendFrequency(rows: readonly ObservationRow[]): TrendFrequency {
+  const spans = rows.flatMap((row) => {
+    const start = Date.parse(String(row.period_start || ""));
+    const end = Date.parse(String(row.period_end || ""));
+    return Number.isFinite(start) && Number.isFinite(end) && end >= start ? [(end - start) / DAY_MS + 1] : [];
+  });
+  let days = median(spans);
+  if (days === null) {
+    const times = [...new Set(rows.map(rowTime).filter(Number.isFinite))].sort((left, right) => left - right);
+    days = median(times.slice(1).map((time, index) => (time - times[index]!) / DAY_MS));
+  }
+  if (days === null) return "";
+  if (days <= 35) return "monthly";
+  if (days <= 100) return "quarterly";
+  if (days <= 370) return "yearly";
+  if (days >= 1700 && days <= 1900) return "five-year estimates";
+  return "multi-year";
+}
+
+/** Who publishes a series, in plain words, by its metric code's program. */
+const TREND_SOURCES: readonly (readonly [string, string])[] = [
+  ["CENSUS_ACS:acs5:", "U.S. Census Bureau, American Community Survey 5-year estimates"],
+  ["CENSUS_ACS:acs1:", "U.S. Census Bureau, American Community Survey 1-year estimates"],
+  ["CENSUS_ACS:", "U.S. Census Bureau, American Community Survey"],
+  ["CENSUS_PEP:", "U.S. Census Bureau, Population Estimates Program"],
+  ["CENSUS_SAIPE_SAHIE:saipe:", "U.S. Census Bureau, Small Area Income and Poverty Estimates (SAIPE)"],
+  ["CENSUS_SAIPE_SAHIE:sahie:", "U.S. Census Bureau, Small Area Health Insurance Estimates (SAHIE)"],
+  ["CENSUS_BPS:", "U.S. Census Bureau, Building Permits Survey"],
+  ["BLS:LAU", "Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)"],
+  ["BLS_QCEW:", "Bureau of Labor Statistics, Quarterly Census of Employment and Wages (QCEW)"],
+  ["BLS:", "Bureau of Labor Statistics"],
+  ["BEA:", "Bureau of Economic Analysis, regional economic accounts"],
+  ["CDC:", "Centers for Disease Control and Prevention, PLACES model-based estimates"],
+  ["FBI_UCR:", "FBI Uniform Crime Reporting Program"],
+  ["USDA_NASS:", "USDA National Agricultural Statistics Service"],
+];
+
+/** The source line a trend chart states: the program in words, else its code. */
+export function trendSourceName(metricCode: string | null | undefined, sourceCode?: string | null): string {
+  const code = String(metricCode || "");
+  const match = TREND_SOURCES.find(([prefix]) => code.startsWith(prefix));
+  return match ? match[1] : String(sourceCode || "");
 }
 
 const WHOLE_YEAR_START = /^(\d{4})-01-01$/;
@@ -1013,9 +1078,13 @@ export function buildTrend(
       .map((entry) => trendPeriodLabel(entry.row));
     return { place, points, unpublished: rows.length - points.length, unpublishedPeriods };
   }).filter((line) => line.points.length > 0 || line.unpublished > 0);
+  // The page's own place speaks for the series; a parent only when it has none.
+  const frequency = trendFrequency(
+    levels.map((place) => histories.get(place.geoId) || []).find((rows) => rows.length) || [],
+  );
 
   if (scale === "level") {
-    return { lines: raw, scale, basePeriod: "", unindexed: [] };
+    return { lines: raw, scale, basePeriod: "", unindexed: [], frequency };
   }
   const drawn = raw.filter((line) => line.points.length > 0);
   const shared = drawn.length
@@ -1031,6 +1100,7 @@ export function buildTrend(
       scale: "level",
       basePeriod: "",
       unindexed: drawn.slice(1).map((line) => line.place.name),
+      frequency,
     };
   }
   const unindexed: string[] = [];
@@ -1049,5 +1119,5 @@ export function buildTrend(
       })),
     });
   }
-  return { lines, scale, basePeriod: basePoint.period, unindexed };
+  return { lines, scale, basePeriod: basePoint.period, unindexed, frequency };
 }
