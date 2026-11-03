@@ -61,6 +61,12 @@ export interface PlaceMeasure {
    * non-reporters (census-building-permits).
    */
   showReported?: boolean;
+  /**
+   * Why a grain the measure is not published for has no figure, when the
+   * plain "Not published" would leave a reader thinking it was missed: LAUS
+   * has no national series, because the nation's rate is another survey's.
+   */
+  gaps?: Partial<Record<PlaceLevel, string>>;
 }
 
 export interface PlaceChapter {
@@ -269,6 +275,10 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: ["BLS:LAU:UNEMP_RATE"],
         note: "Local Area Unemployment Statistics, a different universe from the survey counts below.",
         basis: HOUSEHOLD_BASIS,
+        gaps: {
+          NATIONAL:
+            "Not published nationally by LAUS; BLS states the nation's rate from a different survey (the Current Population Survey), so it is not set beside these",
+        },
       },
       {
         id: "qcew-jobs",
@@ -814,7 +824,7 @@ export interface LevelPlace {
   geoId: string;
   name: string;
   /** "state context" when a county page reads its state's value. */
-  role: "this place" | "state context" | "parent";
+  role: "this place" | "state context" | "parent" | "member county";
 }
 
 export interface LevelAnswer {
@@ -878,6 +888,62 @@ export function threeLevelCard(
     return { place, row, message: "" };
   });
   return { period, rows };
+}
+
+// --- Member counties beside a metro's gap ------------------------------------
+
+/**
+ * Measures whose county figures add up to the metro's own: counts of the same
+ * thing in every county, so the sum is the metro's count. A median, a rate, a
+ * per-capita figure or a chained-dollar figure is never added (BEA chains each
+ * area on its own, so chained dollars are not additive); its counties are
+ * listed instead (web-metro-member-counties).
+ */
+export const ADDITIVE_MEMBER_MEASURES: ReadonlySet<string> = new Set(["population-estimate", "qcew-jobs"]);
+
+export interface MemberCountyRows {
+  rows: CardRow[];
+  /** The member counties' sum, when every one published a value for the card's period. */
+  sum: { value: number; counties: number } | null;
+}
+
+/**
+ * A metro card's rows for its member counties, when the measure is published
+ * for counties and not for metro areas. Each county is read on the card's
+ * period, as `threeLevelCard` reads a parent; a county whose newest period is
+ * another says so. The sum is offered only for an additive measure and only
+ * when every member county has a value for that period, never as a partial
+ * total.
+ */
+export function memberCountyRows(
+  members: readonly LevelPlace[],
+  answers: ReadonlyMap<string, LevelAnswer>,
+  cardPeriod: string,
+  additive: boolean,
+): MemberCountyRows {
+  const firstRow = members.map((place) => answers.get(place.geoId)?.row).find(Boolean) || null;
+  const period = cardPeriod || (firstRow ? observationPeriodLabel(firstRow) : "");
+  const rows = members.map((place): CardRow => {
+    const answer = answers.get(place.geoId);
+    if (answer?.error) return { place, row: null, message: answer.error };
+    if (answer?.pending) return { place, row: null, message: "Reading…" };
+    const row = answer?.row ?? null;
+    if (!row) return { place, row: null, message: "Not published for this county" };
+    const own = observationPeriodLabel(row);
+    if (period && own !== period) return { place, row: null, message: `Not published for ${period} (newest published: ${own})` };
+    if (publishedNumber(row.value) === null) {
+      return { place, row, message: row.value_status ? `Published without a value: ${String(row.value_status)}` : "Published without a value" };
+    }
+    return { place, row, message: "" };
+  });
+  let sum: MemberCountyRows["sum"] = null;
+  if (additive && rows.length) {
+    const values = rows.map((entry) => (entry.row && !entry.message ? publishedNumber(entry.row.value) : null));
+    if (values.every((value) => value !== null)) {
+      sum = { value: values.reduce<number>((total, value) => total + (value as number), 0), counties: rows.length };
+    }
+  }
+  return { rows, sum };
 }
 
 /** Whether any measure in the chapter answered a value for this place. */

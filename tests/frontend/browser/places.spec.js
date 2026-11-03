@@ -28,8 +28,9 @@ test("the nation's page reads every chapter it publishes and lists the states", 
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("United States");
   await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows"]);
-  // BLS publishes no national unemployment rate in this catalog.
-  await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published at national grain");
+  // LAUS publishes no national rate; the card says the nation's is another survey's.
+  await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published nationally by LAUS");
+  await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Current Population Survey");
   await expect(page.getByTestId("place-children").getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin");
   await expect(page.getByTestId("chapter-people-trend")).toHaveAttribute("data-scale", "index");
   await noViolations(page);
@@ -476,10 +477,25 @@ test("a metro page reads its own figures beside its state and the nation and lis
   // BEA's metro income is summed from the counties, and the card says so.
   await expect(page.getByTestId("card-bea-per-capita-income-metro-derivation")).toContainText("Derived: its member counties' summed income");
   await expect(page.getByTestId("card-bea-per-capita-income-state-derivation")).toHaveCount(0);
-  // A measure no source publishes for a metro is said, not borrowed.
-  await expect(page.getByTestId("card-population-estimate-metro")).toContainText("Not published at metro area grain");
+  // A count published for counties and not for metros is its counties' sum,
+  // and says it was derived (WEB-158).
+  await expect(page.getByTestId("card-population-estimate-metro")).toContainText("(derived from member counties)");
   await expect(page.getByTestId("chapter-health")).toHaveCount(0);
   await expect(page.getByTestId("place-omissions")).toContainText("Health: no published metro area values for this place");
+
+  // Covers: WEB-158 — a measure published for counties and not for metro
+  // areas lists the member counties; a count is summed and says so, a
+  // median or a chained-dollar figure is not.
+  await expect(page.getByTestId("card-qcew-jobs-metro")).toContainText("1,100 jobs (derived from member counties)");
+  await expect(page.getByTestId("card-qcew-jobs-members")).toContainText("Dane County");
+  await expect(page.getByTestId("card-qcew-jobs-members-note")).toContainText("the sum of its 1 member county's published figures");
+  await expect(page.getByTestId("card-saipe-median-household-income-metro")).toContainText("its member counties are listed below");
+  await expect(page.getByTestId("card-saipe-median-household-income-members").locator('tr[data-geo-id="state:55|county:025"]')).toContainText("dollars");
+  await expect(page.getByTestId("card-saipe-median-household-income-members-note")).toContainText("not added up from its counties");
+  await expect(page.getByTestId("card-bea-real-gdp-metro")).toContainText("its member counties are listed below");
+  await expect(page.getByTestId("card-bea-real-gdp-members")).toContainText("Dane County");
+  // A measure published for metros reads its own row, with no member list.
+  await expect(page.getByTestId("card-median-household-income-members")).toHaveCount(0);
 
   // Prices: BEA's price level is the metro's own; gas and food are larger areas'.
   await expect(page.getByTestId("place-cost-no-local")).toContainText("The price level is BEA's figure for this metro");
