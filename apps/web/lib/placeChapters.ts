@@ -972,6 +972,8 @@ export function chapterHasValues(
 export interface TrendPoint {
   period: string;
   time: number;
+  /** When the period ends, as published (NaN when it is not), so a chart can say how often the series is published. */
+  end: number;
   value: number;
   published: number;
   /**
@@ -1001,6 +1003,9 @@ export interface TrendModel {
   /** Lines that could not be indexed, because they lack the base period. */
   unindexed: string[];
 }
+
+/** A headline card's anchor, which the chart drawing its measure links back to. */
+export const cardAnchor = (chapterId: string, measureId: string) => `chapter-${chapterId}-card-${measureId}`;
 
 const WHOLE_YEAR_START = /^(\d{4})-01-01$/;
 const WHOLE_YEAR_END = /^(\d{4})-12-31$/;
@@ -1079,6 +1084,7 @@ export function buildTrend(
       .map((entry) => ({
         period: trendPeriodLabel(entry.row),
         time: entry.time,
+        end: Date.parse(String(entry.row.period_end || "")),
         value: entry.number as number,
         published: entry.number as number,
         ...publishedMargin(entry.row),
@@ -1089,6 +1095,7 @@ export function buildTrend(
       .map((entry) => trendPeriodLabel(entry.row));
     return { place, points, unpublished: rows.length - points.length, unpublishedPeriods };
   }).filter((line) => line.points.length > 0 || line.unpublished > 0);
+  // The page's own place speaks for the series; a parent only when it has none.
 
   if (scale === "level") {
     return { lines: raw, scale, basePeriod: "", unindexed: [] };

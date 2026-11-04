@@ -8,8 +8,18 @@
 // states. A published margin of error is drawn as a bar through its point and
 // stated beside its value in the table (web-city-history); a period one place
 // did not publish is named as such, never drawn as a gap filled in.
+//
+// Every chart says what it is before it is read (UAT, metro pages): a title
+// naming the measure in plain words, a line with its unit, how often it is
+// published and the span drawn, its source, a y-axis label, and the legend
+// above the plot so it never falls below the card. A chart that belongs to a
+// headline card names that card and links back to it.
 
-import type { TrendModel } from "../lib/placeChapters";
+import { cardAnchor } from "../lib/placeChapters";
+import type { ResolvedPlaceMeasure, TrendModel } from "../lib/placeChapters";
+import { displayMetricName } from "../lib/format";
+import { trendFrequency, trendSourceName } from "../lib/trendLabels";
+import type { TrendFrequency } from "../lib/trendLabels";
 import { formatNumber } from "../lib/format";
 
 const WIDTH = 640;
@@ -18,7 +28,8 @@ const PAD_LEFT = 52;
 /** About one 11px digit's width: the value labels set the left margin. */
 const TICK_CHAR_WIDTH = 6.6;
 const PAD_RIGHT = 16;
-const PAD_TOP = 14;
+/** Room above the plot for the y-axis label. */
+const PAD_TOP = 30;
 const PAD_BOTTOM = 34;
 
 const STROKES = ["#0b6b57", "#8c3b17", "#2b4c8c"] as const;
@@ -34,6 +45,20 @@ function tick(period: string | undefined): string {
   return /^\d{4}(–\d{4})?$/.test(period) ? period : period.slice(0, 4);
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** A drawn period in words: a month or quarter by its year, else the axis label. */
+function periodWords(time: number, period: string, frequency: TrendFrequency): string {
+  const date = new Date(time);
+  if (Number.isFinite(time) && frequency === "monthly") return `${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  if (Number.isFinite(time) && frequency === "quarterly") return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${date.getUTCFullYear()}`;
+  return tick(period);
+}
+
+function capitalise(text: string): string {
+  return text ? text[0]!.toUpperCase() + text.slice(1) : text;
+}
+
 function listNames(names: string[]): string {
   if (names.length <= 1) return names.join("");
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -41,14 +66,41 @@ function listNames(names: string[]): string {
 
 export default function PlaceTrend({
   model,
-  label,
+  measure = null,
+  chapterId = "",
+  title = measure ? `${measure.measure.label} over time` : "",
+  metricName = measure ? displayMetricName(measure.metric) : "",
   unit,
+  source = "",
+  metricCode = measure?.metricCode || "",
+  sourceCode = measure?.metric?.source_code || "",
+  forCard = measure && chapterId ? { label: measure.measure.label, anchor: cardAnchor(chapterId, measure.measure.id) } : null,
+  titleTag: Title = "h3",
   notes = [],
   testId,
 }: {
   model: TrendModel;
-  label: string;
+  /**
+   * The chapter measure drawn, on a place page: it names the title, metric,
+   * source and, with `chapterId`, the headline card the chart links back to.
+   */
+  measure?: ResolvedPlaceMeasure | null;
+  chapterId?: string;
+  /** The visible title: the measure in plain words, e.g. "Unemployment rate over time". */
+  title?: string;
+  /** The metric's plain name (`displayMetricName`), stated when it says more than the title. */
+  metricName?: string;
   unit: string;
+  /** Who publishes the series, in words; when absent it is named from `metricCode`. */
+  source?: string;
+  /** The series' identity, which names its source (`trendSourceName`). */
+  metricCode?: string;
+  /** The catalog's source code, said when the program has no name here. */
+  sourceCode?: string | null;
+  /** The headline card this chart draws, linked back to by its anchor. */
+  forCard?: { label: string; anchor: string } | null;
+  /** The title's heading level, one below the section it sits in. */
+  titleTag?: "h3" | "h4";
   /** What the chart says about its own measure: margins, overlapping periods. */
   notes?: string[];
   testId: string;
@@ -57,7 +109,7 @@ export default function PlaceTrend({
   if (drawn.length === 0) {
     return (
       <p className="subtle chart-empty" data-testid={`${testId}-empty`}>
-        No published history to draw for {label}.
+        No published history to draw for {title.replace(/ over time$/, "").toLowerCase()}.
       </p>
     );
   }
@@ -94,18 +146,73 @@ export default function PlaceTrend({
   const periods = [...periodTimes.keys()].sort((left, right) => periodTimes.get(left)! - periodTimes.get(right)!);
   const notPublishedThatYear = drawn.filter((line) => periods.some((period) => !line.points.some((point) => point.period === period)));
   const unpublished = model.lines.reduce((total, line) => total + line.unpublished, 0);
+  const frequency = trendFrequency(model);
+  const sourceLine = source || trendSourceName(metricCode, sourceCode);
+  const yAxisLabel =
+    model.scale === "index" ? `Index (${model.basePeriod} = 100)` : capitalise(unit) || "Value as published";
+  const firstPeriod = periods[0] || "";
+  const lastPeriod = periods.at(-1) || "";
+  const span = firstPeriod === lastPeriod
+    ? periodWords(periodTimes.get(firstPeriod)!, firstPeriod, frequency)
+    : `${periodWords(periodTimes.get(firstPeriod)!, firstPeriod, frequency)} to ${periodWords(periodTimes.get(lastPeriod)!, lastPeriod, frequency)}`;
+  const shownName = metricName && metricName.toLowerCase() !== title.replace(/ over time$/, "").toLowerCase() ? metricName : "";
+  const meta = [
+    shownName,
+    model.scale === "index" ? `index, ${model.basePeriod} = 100` : unit,
+    frequency ? `${frequency}, ${span}` : span,
+  ].filter(Boolean);
+  // A middle gridline, so a reader can place a line between the extremes.
+  const midValue = (minValue + maxValue) / 2;
+  const midPeriod = periods.length > 2 ? periods[Math.floor(periods.length / 2)] : undefined;
+  const titleId = `${testId}-title`;
 
   return (
-    <figure className="place-trend" data-testid={testId} data-scale={model.scale} data-base-period={model.basePeriod}>
+    <figure
+      className="place-trend"
+      id={testId}
+      data-testid={testId}
+      data-scale={model.scale}
+      data-base-period={model.basePeriod}
+      data-frequency={frequency}
+      aria-labelledby={titleId}
+    >
+      <figcaption className="place-trend-head">
+        <Title className="place-trend-title" id={titleId} data-testid={titleId}>{title}</Title>
+        <p className="subtle place-trend-meta" data-testid={`${testId}-meta`}>{meta.join(" · ")}</p>
+        {sourceLine ? <p className="subtle place-trend-source" data-testid={`${testId}-source`}>Source: {sourceLine}</p> : null}
+        {forCard ? (
+          <p className="subtle place-trend-for" data-testid={`${testId}-for`}>
+            Draws the <a className="text-link" href={`#${forCard.anchor}`}>{forCard.label}</a> card above.
+          </p>
+        ) : null}
+        <ul className="place-trend-legend" aria-label="Lines">
+          {drawn.map((line, index) => (
+            <li key={line.place.geoId}>
+              <svg width="24" height="8" aria-hidden="true">
+                <line x1="0" x2="24" y1="4" y2="4" stroke={STROKES[index % STROKES.length]} strokeWidth="2" strokeDasharray={DASHES[index % DASHES.length] || undefined} />
+              </svg>
+              {line.place.name}
+              {index === 0 ? " (this page)" : " (reference)"}
+            </li>
+          ))}
+        </ul>
+      </figcaption>
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
-        aria-label={`${label}: ${drawn.length} line${drawn.length === 1 ? "" : "s"}, ${drawn.map((line) => line.place.name).join(", ")}`}
+        aria-label={`${title}, ${yAxisLabel.toLowerCase()}, ${span}: ${drawn.length} line${drawn.length === 1 ? "" : "s"}, ${drawn.map((line) => line.place.name).join(", ")}`}
       >
+        <text x={4} y={12} className="place-trend-axis-label" data-testid={`${testId}-y-label`}>{yAxisLabel}</text>
+        <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={y(maxValue)} y2={y(maxValue)} className="place-trend-grid" />
+        <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={y(midValue)} y2={y(midValue)} className="place-trend-grid" />
         <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={HEIGHT - PAD_BOTTOM} y2={HEIGHT - PAD_BOTTOM} className="place-trend-axis" />
         <text x={padLeft - 6} y={y(maxValue) + 4} textAnchor="end" className="place-trend-tick">{format(maxValue)}</text>
+        <text x={padLeft - 6} y={y(midValue) + 4} textAnchor="end" className="place-trend-tick">{format(midValue)}</text>
         <text x={padLeft - 6} y={y(minValue) + 4} textAnchor="end" className="place-trend-tick">{format(minValue)}</text>
         <text x={padLeft} y={HEIGHT - 10} className="place-trend-tick">{tick(periods[0])}</text>
+        {midPeriod && tick(midPeriod) !== tick(periods[0]) && tick(midPeriod) !== tick(periods.at(-1)) ? (
+          <text x={x(periodTimes.get(midPeriod)!)} y={HEIGHT - 10} textAnchor="middle" className="place-trend-tick">{tick(midPeriod)}</text>
+        ) : null}
         <text x={WIDTH - PAD_RIGHT} y={HEIGHT - 10} textAnchor="end" className="place-trend-tick">{tick(periods.at(-1))}</text>
         {hasBars
           ? drawn.map((line, index) => (
@@ -132,18 +239,7 @@ export default function PlaceTrend({
           />
         ))}
       </svg>
-      <figcaption>
-        <ul className="place-trend-legend">
-          {drawn.map((line, index) => (
-            <li key={line.place.geoId}>
-              <svg width="24" height="8" aria-hidden="true">
-                <line x1="0" x2="24" y1="4" y2="4" stroke={STROKES[index % STROKES.length]} strokeWidth="2" strokeDasharray={DASHES[index % DASHES.length] || undefined} />
-              </svg>
-              {line.place.name}
-              {index === 0 ? " (this page)" : " (reference)"}
-            </li>
-          ))}
-        </ul>
+      <div className="place-trend-notes">
         <p className="subtle" data-testid={`${testId}-scale`}>{scaleText}</p>
         {notes.filter((note) => hasBars || !note.startsWith("The bar")).map((note) => (
           <p className="subtle" key={note} data-testid={`${testId}-note`}>{note}</p>
@@ -160,12 +256,12 @@ export default function PlaceTrend({
         {unpublished ? (
           <p className="subtle">{unpublished} published period{unpublished === 1 ? "" : "s"} without a number {unpublished === 1 ? "is" : "are"} not drawn.</p>
         ) : null}
-      </figcaption>
+      </div>
       <details className="place-trend-values">
         <summary>Values drawn ({periods.length} period{periods.length === 1 ? "" : "s"})</summary>
         <div className="table-scroll">
         <table className="place-trend-table">
-          <caption className="sr-only">{label}, values drawn</caption>
+          <caption className="sr-only">{title}, values drawn</caption>
           <thead>
             <tr>
               <th scope="col">Period</th>

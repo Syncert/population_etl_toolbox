@@ -66,6 +66,7 @@ import {
   stateSegment,
   threeLevelCard,
   trendNotes,
+  cardAnchor,
   ADDITIVE_MEMBER_MEASURES,
   memberCountyRows,
 } from "../lib/placeChapters";
@@ -1192,6 +1193,7 @@ function Chapter({
             pageLevel={pageLevel}
             stateContext={resolved.stateContext}
             county={county}
+            anchor={cardAnchor(chapter.id, measure.measure.id)}
             pairing={pairingFor(pairings, measure.metricCode, view)}
             providerRate={providerRateFor(pairings, measure.metricCode)}
             agencyRate={agencyRateFor(pairings, measure.metricCode)}
@@ -1202,7 +1204,8 @@ function Chapter({
       {trend && trendMeasure ? (
         <PlaceTrend
           model={trend}
-          label={`${trendMeasure.measure.label} trend`}
+          measure={trendMeasure}
+          chapterId={chapter.id}
           unit={primaryRow ? publishedUnit(primaryRow, trendMeasure.measure.unit) : unitText(trendMeasure.metric?.units) || trendMeasure.measure.unit || ""}
           notes={trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend`}
@@ -1212,7 +1215,8 @@ function Chapter({
         <PlaceTrend
           key={measure.measure.id}
           model={model}
-          label={`${measure.measure.label} trend`}
+          measure={measure}
+          chapterId={chapter.id}
           unit={unitText(measure.metric?.units) || measure.measure.unit || ""}
           notes={trendNotes(measure.metricCode, String(measure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
@@ -1393,6 +1397,7 @@ function HeadlineCard({
   providerRate,
   agencyRate,
   derived,
+  anchor,
 }: {
   measure: ResolvedPlaceMeasure;
   levels: LevelPlace[];
@@ -1402,6 +1407,8 @@ function HeadlineCard({
   pageLevel: PlaceLevel;
   stateContext: boolean;
   county: GeographySummary | null;
+  /** The card's own anchor, which the chart drawing its measure links back to. */
+  anchor: string;
   /** The pairing the chapter's view divides this count by, if any. */
   pairing: DerivedRatioPairing | null;
   /** The pairing that names this metric as the provider's own rate, if any. */
@@ -1412,7 +1419,7 @@ function HeadlineCard({
 }) {
   if (!measure.metric) {
     return (
-      <div className="place-card" data-testid={`card-${measure.measure.id}`} data-available="false">
+      <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="false">
         <h3>{measure.measure.label}</h3>
         <p className="subtle" title={measure.measure.candidates.join(", ")} data-looked-for={measure.measure.candidates.join(" ")}>
           Not published by this warehouse.
@@ -1432,7 +1439,7 @@ function HeadlineCard({
     : null;
   const unit = card.rows.find((entry) => entry.row)?.row || memberRows?.rows.find((entry) => entry.row)?.row;
   return (
-    <div className="place-card" data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
+    <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
       <h3>{measure.measure.label}</h3>
       <p className="subtle">
         <span title={measure.metricCode} data-metric-code={measure.metricCode}>
