@@ -338,7 +338,9 @@
 /* Where the place falls among its siblings, lowest to highest (web-standout-strips). */
 .standout-track { position: relative; height: 12px; border-radius: 6px; background: var(--bg-2); }
 .standout-track i { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card); }
-.standout-value { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.standout-value { min-width: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.standout-value b { white-space: nowrap; }
+.standout-value small { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.2; overflow-wrap: normal; }
 .place-standout details { margin-top: 10px; }
 /* Home finder and public data page (find-your-place-home) */
 .place-finder { margin-top: 18px; max-width: 640px; }

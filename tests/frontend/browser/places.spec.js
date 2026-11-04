@@ -487,6 +487,27 @@ test("what stands out lists the highest and lowest measures apart, with withheld
   await expect(section).not.toContainText(/score|overall/i);
 });
 
+test("what stands out names a bulk-file rate in words and keeps its long unit inside the panel", async ({ page }) => {
+  // Covers: WEB-167 — PEP's provider label is the bare variable ("Rdeath");
+  // the row reads the registry's plain name, and "per 1,000 people" wraps
+  // under the number instead of running past the panel edge.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const death = page.getByTestId("standout-CENSUS_PEP:RDEATH");
+  await expect(death.getByRole("link")).toHaveText("Death rate");
+  await expect(death).not.toContainText("Rdeath");
+  const value = death.locator(".standout-value");
+  await expect(value).toContainText("7.1");
+  await expect(value).toContainText("per 1,000 people");
+  await expect(value).toHaveAttribute("title", "7.1 per 1,000 people");
+  const fits = await value.evaluate((element) => {
+    const row = element.closest("li").getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    return element.scrollWidth <= element.clientWidth + 1 && box.right <= row.right + 1;
+  });
+  expect(fits).toBe(true);
+});
+
 test("a place with no ranked measure omits What stands out and says why", async ({ page }) => {
   // Covers: WEB-131 — an empty answer is stated in the footer.
   await ready(page, "/us/wisconsin/rock-county");
