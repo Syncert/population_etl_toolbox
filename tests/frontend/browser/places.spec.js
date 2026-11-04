@@ -140,10 +140,15 @@ test("BEA income and GDP sit beside the survey income, labelled apart, with earn
   await expect(page.getByTestId("card-median-household-income")).not.toContainText("BEA:");
 
   const earnings = page.getByTestId("bea-earnings");
-  await expect(earnings.locator("tbody tr")).toHaveCount(21);
+  await expect(earnings.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("bea-earnings-basis")).toContainText("BEA personal income account");
   await expect(page.getByTestId("bea-earnings-bea-earnings-1600")).toContainText("Health care and social assistance");
-  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toContainText("Published without a value: withheld");
+  // WEB-162: bars sorted largest first; a withheld sector has no bar and is
+  // named once in the line under them.
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toHaveText("Mining, quarrying, and oil and gas extraction.");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
+  const bea_earningsValues = (await page.getByTestId("bea-earnings").locator(".place-industry-value").allTextContents()).map((text) => Number(text.replace(/,/g, "")));
+  expect(bea_earningsValues).toEqual([...bea_earningsValues].sort((left, right) => right - left));
   await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never combined with the survey's income");
   await noViolations(page);
   await noHorizontalScroll(page);
@@ -180,10 +185,15 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
 
   const mix = page.getByTestId("industry-mix");
-  await expect(mix.locator("tbody tr")).toHaveCount(21);
+  await expect(mix.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("industry-mix-basis")).toContainText("counted by employers (QCEW)");
   await expect(page.getByTestId("industry-mix-qcew-sector-62")).toContainText("Health care and social assistance");
-  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toContainText("Published without a value: withheld");
+  // WEB-162: bars sorted largest first; a withheld sector has no bar and is
+  // named once in the line under them.
+  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toHaveText("Mining, quarrying, and oil and gas extraction.");
+  await expect(page.getByTestId("industry-mix-qcew-sector-21").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
+  const industry_mixValues = (await page.getByTestId("industry-mix").locator(".place-industry-value").allTextContents()).map((text) => Number(text.replace(/,/g, "")));
+  expect(industry_mixValues).toEqual([...industry_mixValues].sort((left, right) => right - left));
   await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never added or subtracted");
   await noViolations(page);
   await noHorizontalScroll(page);
@@ -233,6 +243,13 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");
+  // WEB-162: what the depth rows share is said once above them; a row says
+  // its source only where it differs from that line.
+  await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("± is the 90% margin of error");
+  await expect(page.getByTestId("depth-below-poverty-basis")).toHaveClass("sr-only");
+  await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toHaveClass("place-basis");
+  await expect(page.getByTestId("depth-below-poverty")).not.toContainText("margin of error ±");
 
   await expect(page.getByTestId("card-sahie-uninsured-rate-basis")).toHaveText("Model-based annual estimate (SAHIE)");
   await expect(page.getByTestId("card-sahie-uninsured-rate-county")).toContainText("confidence upper");

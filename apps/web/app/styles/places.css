@@ -148,8 +148,27 @@
 
 .place-depth dd {
   margin: 2px 0 0;
-  font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+/* What the depth rows share, said once (web-compact-depth). */
+.place-depth-shared {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.place-depth-block .place-depth {
+  margin-top: 6px;
+}
+
+.place-depth-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.place-depth [data-care="true"] .place-depth-value {
+  color: var(--muted);
 }
 
 .place-trend {
@@ -342,26 +361,65 @@
   overflow-wrap: anywhere;
 }
 
-.place-industry-mix {
-  width: 100%;
-  border-collapse: collapse;
+/* Industry tables as bars sorted largest first (web-compact-depth). */
+.place-industry {
   margin: 12px 0;
+}
+
+.place-industry-bars {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
   font-size: 0.85rem;
 }
 
-.place-industry-mix caption {
+.place-industry-bars caption {
   text-align: left;
   font-weight: 700;
   padding-bottom: 6px;
 }
 
-.place-industry-mix th,
-.place-industry-mix td {
-  border-top: 1px solid var(--line);
-  padding: 4px 8px 4px 0;
+.place-industry-bars th {
+  width: 38%;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  color: var(--ink);
+  padding: 3px 12px 3px 0;
   text-align: left;
-  vertical-align: top;
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+
+.place-industry-bars td {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.place-industry-track {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.place-industry-bar {
+  display: block;
+  height: 14px;
+  min-width: 2px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.place-industry-value {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.place-industry-gaps {
+  margin: 6px 0 0;
 }
 
 /* How a figure was made: a survey estimate and a model-based estimate of the
