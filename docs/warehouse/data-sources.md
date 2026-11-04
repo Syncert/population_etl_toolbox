@@ -36,6 +36,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Loaded |
 | [Crime Data Explorer summarized offenses](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2023 | Weekly | Loaded |
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
+| [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly | Not yet loaded |
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
 | [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Loaded |
@@ -45,7 +46,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Quick Stats crops](#usda_nass) | USDA NASS | ● | ● | ● |  |  |  |  | 1990–2024 | Business days | Loaded |
 | [Census geography (Gazetteer, boundaries, delineations)](#census_geo) | U.S. Census Bureau and OMB | ● | ● | ● | ● | ● | ● | ● | 1990–2025 | Monthly | Partly loaded |
 
-Other areas: Census regions and divisions and county subdivisions (PEP), CPI and average-price areas (BLS), BEA state metro/nonmetro portions, EIA PADDs and cities, reviewed law-enforcement agencies (FBI).
+Other areas: Census regions and divisions and county subdivisions (PEP), CPI and average-price areas (BLS), BEA state metro/nonmetro portions, EIA PADDs and cities, reviewed law-enforcement agencies (FBI), House districts (elections, as contests only).
 
 ## People and population
 
@@ -311,6 +312,23 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_fema_nri.nri_fact`, `silver_fema_nri.declaration_revision`
 - **Gold:** `gold_fema_nri.nri_observation`, `gold_fema_nri.declaration_count`, `gold_fema_nri.observation_revision`, `gold_fema_nri.observation_latest`
 - **Status (live count 2026-10-31):** Loaded. County 1959–2026.
+
+## Elections and government
+
+<a id="elections"></a>
+### Election results and seat holders (`ELECTIONS`)
+
+- **Publisher:** MIT Election Data and Science Lab (results, on Harvard Dataverse); the unitedstates/congress-legislators project (U.S. House and Senate members, CC0 1.0); Wikidata (governors, CC0 1.0)
+- **Code:** `src/data_ingestion_toolbox/elections` · DAG `elections_ingest` · Monthly, 3rd, 07:00 UTC
+- **Publisher releases:** MEDSL after each certified election; congress-legislators as members change; Wikidata continuously
+- **Credential:** none
+- **Years:** seat terms in office on or after 1969-01-01; presidential results by county 2000–2024 and by state 1976–2020; Senate 1976–2020; House 1976–2024 (MEDSL's own spans)
+- **Datasets:** MEDSL `countypres_2000-2024`, `1976-2020-president`, `1976-2020-senate`, `1976-2024-house`; `legislators-current.json`, `legislators-historical.json`; one Wikidata SPARQL query for governors
+- **Measures:** Presidential vote at state and county: Republican share of the two-party vote, two-party margin (Republican minus Democratic), total votes. Seat-term spans (party, caucus, dates) and contest results are served as relations, not measures (ADR-0014).
+- **Capture and control:** `control.elections_run`, `control.elections_file`
+- **Silver:** `silver_elections.seat_term`, `silver_elections.candidate_result`, `silver_elections.quarantine`
+- **Gold:** `gold_elections.seat_term`, `gold_elections.contest_result`, `gold_elections.candidate_total`, `gold_elections.observation_revision`, `gold_elections.observation_latest`
+- **Status:** Not yet loaded (added 2026-11-04). House districts are kept as contests until district boundaries are a shared geography; state legislatures wait on decision L-1.
 
 ## Health
 

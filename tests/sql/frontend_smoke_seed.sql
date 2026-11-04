@@ -1174,6 +1174,7 @@ UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
+UNION ALL SELECT * FROM gold_elections.metric_publisher
 UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
 UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
 UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher

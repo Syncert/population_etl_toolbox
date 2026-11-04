@@ -21,6 +21,7 @@ from data_ingestion_toolbox.nces_ccd import schema as nces_ccd_schema
 from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
 from data_ingestion_toolbox.hud_fmr_il import schema as hud_fmr_il_schema
 from data_ingestion_toolbox.fema_nri import schema as fema_nri_schema
+from data_ingestion_toolbox.elections import schema as elections_schema
 from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
 from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
@@ -129,6 +130,13 @@ SOURCES = [
         "ingest_batch_",
         fema_nri_schema,
         "FEMA_NRI",
+    ),
+    (
+        "elections_ingest",
+        "ensure_elections_schema",
+        "ingest_batch_",
+        elections_schema,
+        "ELECTIONS",
     ),
     (
         "fhfa_hpi_ingest",

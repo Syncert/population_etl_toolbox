@@ -676,6 +676,45 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="elections.presidential_vote",
+        source="ELECTIONS",
+        publisher_schema="gold_elections",
+        datasets=(
+            "medsl:countypres_2000-2024",
+            "medsl:1976-2020-president",
+            "medsl:1976-2020-senate",
+            "medsl:1976-2024-house",
+            "congress-legislators:gh-pages",
+            "wikidata:governors",
+        ),
+        fixtures=(
+            "tests/fixtures/elections/county_president.csv",
+            "tests/fixtures/elections/state_president.csv",
+            "tests/fixtures/elections/legislators-current.json",
+            "tests/fixtures/elections/wikidata-governors.json",
+        ),
+        serving_relations=(
+            "gold_elections.observation_revision",
+            "gold_elections.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_elections_pipeline.py::"
+            "test_presidential_margins_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The elections source publishes no source-specific HTTP route yet: "
+            "each presidential row is the neutral observation shape with how the "
+            "share or margin is counted and the leading party as declared "
+            "dimensions, so `/api/v1/observations` serves it. Seat terms and "
+            "contest results get their own routes in the API step (E-4)."
+        ),
+    ),
+    DataProductE2E(
         product_id="fema_nri.risk_and_declarations",
         source="FEMA_NRI",
         publisher_schema="gold_fema_nri",

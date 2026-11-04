@@ -18,7 +18,8 @@ verify:
 
 ## Status
 
-To do. Written 2026-11-04 after Nick's discovery request ("understanding
+In progress: E-1 merged (#281), E-2 open on `claude/project-thread-moxcyd`
+(2026-11-04). Written 2026-11-04 after Nick's discovery request ("understanding
 better the economic performance of areas that voted republican ... maps of
 voter histories that go back the same timespan, and a means to assemble net
 economic performance and history of republican/democrat house/senate/governor
@@ -164,4 +165,33 @@ with fixtures under `tests/frontend/support/`.
 
 ## Checkpoint
 
-Not started.
+2026-11-04, E-2 (elections source) built and held for go:
+
+- `src/data_ingestion_toolbox/elections/`: six streams (congress-legislators
+  current and historical, one Wikidata governor query, four MEDSL Dataverse
+  files), capture-first, replayed into `silver_elections.seat_term` and
+  `silver_elections.candidate_result`, served by `gold_elections` (seat terms,
+  contest results, and three presidential measures at state and county in the
+  neutral observation shape). DAG `elections_ingest`, monthly on the 3rd;
+  every stream is re-read whole, which satisfies the loader rule.
+  Operations: `docs/user-guides/ELECTIONS_PIPELINE_OPERATIONS.md`. Catalog
+  ETL-111, EXT-031.
+- Changed from the deliverable text, on purpose:
+  - Governors come from Wikidata (CC0) rather than a hand-kept
+    `governors.yaml`, so a new governor loads on the next run. EXT-031 must
+    confirm the query on a machine that can reach Wikidata before the first
+    deploy; the fixture's identifiers are invented.
+  - Gold relations are `seat_term`, `contest_result`, `candidate_total`,
+    `office_definition`, `party_definition` (views over the current read)
+    rather than `fact_*`/`dim_*` tables.
+  - DQ rules shipped: DQ-ELEC-001 keys, -002 reconciliation, -003 no
+    overlapping spans for one seat, -004 county sums against the state
+    (warn). Not shipped: the FEC comparison (no FEC source yet), "one
+    governor every day since 1969" (Wikidata leaves gaps for acting
+    governors; measure it on the first live load before making it a rule),
+    and the 0-100 share bound (a CHECK-free view; the arithmetic cannot
+    leave it).
+- Not yet: the legislature file (decision L-1), the 2024 state presidential
+  row (MEDSL's state file ends at 2020; derive from the county file in E-3),
+  the MEDSL licence check on each Dataverse page.
+- Next: E-3 lean groups, after E-2 merges and one live load on OFFICE_LAB.
