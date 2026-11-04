@@ -162,3 +162,56 @@ FROM gold_elections.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
 - `DQ-ELEC-003` fails when two current spans hold one seat on one day.
 - `DQ-ELEC-004` warns when a state's county presidential sums disagree with
   its state total, or a place does not resolve.
+- `DQ-ELEC-005` fails when a lean-group county row is not its change minus
+  the nation's, sits in a band its window-start margin does not name, or the
+  all-county groups do not count exactly the county rows.
+
+## Lean groups (ADR-0014)
+
+`gold_elections.lean_place_change` holds, for each window between two
+presidential election years from 2000, each county's change in five measures
+against the nation's change over the same window, with the county's lean from
+the vote in the window's first year. `gold_elections.lean_group_change` holds
+each lean band within each peer group: the count of counties and the median
+and quartiles of their change net of the nation. Nothing combines measures.
+
+| Measure | Source | Change |
+| --- | --- | --- |
+| `real_income_per_person` | BEA CAINC1 line 3, deflated to the window's last year with the annual mean of FRED `PCEPI` | percent growth |
+| `real_gdp` | BEA CAGDP1 line 1 (chained 2017 dollars; county GDP starts in 2001) | percent growth |
+| `jobs` | QCEW annual average employment, all industries, total covered | percent growth |
+| `unemployment_rate` | LAUS annual averages; the nation is the 51 states' unemployed over their labor force | points |
+| `poverty_rate` | SAIPE, all ages | points |
+
+Lean bands from the two-party margin (Republican minus Democratic share, in
+points): `R20_plus` (20 or more), `R0_20`, `D0_20`, `D20_plus` (20 or more the
+other way). An exact tie is in no band. Peer groups: `all`, `state`,
+`rural_urban` (RUCC 2023 as large metro, other metro, nonmetro next to a
+metro, remote nonmetro), `starting_level` (quarter of counties by the
+window's first-year value) and `industry` (ERS 2025 industry dependence).
+The RUCC and typology editions are the newest loaded, used for every window.
+
+Inputs are read only for presidential election years, since a window starts
+and ends on one; with fewer than two election years loaded the rebuild reads
+nothing else and writes no rows.
+
+A county appears only where every input names it by the same county code at
+both ends of a window, so Connecticut's planning regions (2022 onward),
+Alaska's election districts and BEA's combined Virginia areas drop out. The
+annual PCE level deflates only; it is never served.
+
+The `elections_lean_groups` DAG runs daily at 13:00 UTC and rebuilds only
+when an input published since the last rebuild (`gold_elections.lean_refresh`
+records `rebuilt` or `unchanged`). It is separate from `elections_ingest`,
+which stays monthly because each MEDSL county or House download answers the
+Dataverse guestbook with the operator's identity. To rebuild by hand:
+
+```sql
+SELECT * FROM gold_elections.refresh_lean_groups(TRUE);
+
+SELECT measure, window_start_year, window_end_year, lean_band, place_count,
+       net_change_p25, net_change_median, net_change_p75, nation_change
+FROM gold_elections.lean_group_change
+WHERE peer_type = 'all' AND window_start_year = 2000 AND window_end_year = 2024
+ORDER BY measure, lean_band;
+```

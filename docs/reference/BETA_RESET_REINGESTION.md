@@ -429,6 +429,9 @@ both congress-legislators files, the Wikidata governor query and the four
 MEDSL results files, each whole, through the one-slot `elections_files` pool
 ([operations](../user-guides/ELECTIONS_PIPELINE_OPERATIONS.md)). Every run
 re-reads every stream, so there is no history run.
+`elections_lean_groups` rebuilds the lean groups (ADR-0014) by itself on its
+daily run once the elections and the BEA, QCEW, SAIPE, BLS, FRED and ERS
+sources have published; trigger it after they finish to have them at once.
 
 Trigger `fhfa_hpi_ingest` once after the shared geography loads: it reads
 FHFA's annual county workbook, every county and year in one file, through the

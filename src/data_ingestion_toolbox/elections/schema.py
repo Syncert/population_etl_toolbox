@@ -20,6 +20,7 @@ _PACKAGE = Path(__file__).resolve().parent
 DDL_FILES = [
     _PACKAGE / "DDL" / "silver_elections.sql",
     _PACKAGE / "gold_elections" / "DDL" / "gold_elections.sql",
+    _PACKAGE / "gold_elections" / "DDL" / "lean_groups.sql",
     _PACKAGE / "gold_elections" / "DDL" / "publisher.sql",
 ]
 
@@ -40,6 +41,20 @@ REQUIRED_RELATIONS = (
     "gold_elections.observation_latest",
     "gold_elections.measure_export",
     "gold_elections.metric_publisher",
+    "gold_elections.lean_measure_definition",
+    "gold_elections.lean_band_definition",
+    "gold_elections.lean_peer_definition",
+    "gold_elections.lean_refresh",
+    "gold_elections.lean_place_change",
+    "gold_elections.lean_group_change",
+)
+
+#: The lean-group rebuild (E-3), resolved by name.
+REQUIRED_PROCEDURES = (
+    "gold_elections.load_lean_inputs(integer[])",
+    "gold_elections.build_lean_groups(bigint)",
+    "gold_elections.lean_input_fingerprint()",
+    "gold_elections.refresh_lean_groups(boolean)",
 )
 
 
@@ -55,6 +70,6 @@ def ensure_elections_schema(hook: PostgresHook | None = None) -> None:
         ddl_files=list(DDL_FILES),
         component_name=SOURCE_SCHEMA_COMPONENTS["ELECTIONS"],
         required_relations=REQUIRED_RELATIONS,
-        required_procedures=(),
+        required_procedures=REQUIRED_PROCEDURES,
         hook=hook or _get_hook(),
     )

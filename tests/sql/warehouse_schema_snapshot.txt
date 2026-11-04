@@ -4900,6 +4900,104 @@ v gold_elections.current_read
     body   WHERE status = 'published'::text
     body   ORDER BY stream, published_at DESC, run_id DESC;
 
+v gold_elections.lean_band_definition
+    column lean_band text
+    column lean_label text
+    column lower_margin numeric
+    column upper_margin numeric
+    column display_order integer
+    body SELECT lean_band,
+    body     lean_label,
+    body     lower_margin,
+    body     upper_margin,
+    body     display_order
+    body    FROM ( VALUES ('R20_plus'::text,'Republican by 20 points or more'::text,20::numeric,NULL::numeric,1), ('R0_20'::text,'Republican by less than 20 points'::text,0::numeric,20::numeric,2), ('D0_20'::text,'Democratic by less than 20 points'::text,- 20::numeric,0::numeric,3), ('D20_plus'::text,'Democratic by 20 points or more'::text,NULL::numeric,- 20::numeric,4)) band(lean_band, lean_label, lower_margin, upper_margin, display_order);
+
+r gold_elections.lean_group_change
+    column window_start_year smallint NOT NULL
+    column window_end_year smallint NOT NULL
+    column measure text NOT NULL
+    column peer_type text NOT NULL
+    column peer_group text NOT NULL
+    column peer_group_label text NOT NULL
+    column lean_band text NOT NULL
+    column place_count integer NOT NULL
+    column net_change_p25 numeric NOT NULL
+    column net_change_median numeric NOT NULL
+    column net_change_p75 numeric NOT NULL
+    column nation_change numeric NOT NULL
+    column refresh_id bigint NOT NULL
+    constraint lean_group_change_check CHECK (((net_change_p25 <= net_change_median) AND (net_change_median <= net_change_p75)))
+    constraint lean_group_change_pkey PRIMARY KEY (window_start_year, window_end_year, measure, peer_type, peer_group, lean_band)
+    constraint lean_group_change_place_count_check CHECK ((place_count > 0))
+    index lean_group_change_pkey CREATE UNIQUE INDEX lean_group_change_pkey ON gold_elections.lean_group_change USING btree (window_start_year, window_end_year, measure, peer_type, peer_group, lean_band)
+
+v gold_elections.lean_measure_definition
+    column measure text
+    column measure_label text
+    column change_kind text
+    column change_unit text
+    column value_unit text
+    column source_label text
+    column observation_basis text
+    column display_order integer
+    body SELECT measure,
+    body     measure_label,
+    body     change_kind,
+    body     change_unit,
+    body     value_unit,
+    body     source_label,
+    body     observation_basis,
+    body     display_order
+    body    FROM ( VALUES ('real_income_per_person'::text,'Income per person, after inflation'::text,'growth'::text,'percent growth'::text,'dollars of the window''s last year'::text,'BEA CAINC1 line 3, deflated with the national PCE price index (FRED PCEPI)'::text,'Per capita personal income as BEA publishes it, converted to the prices of the window''s last '::text || 'year with the national PCE price index (the mean of its twelve months).'::text,1), ('real_gdp'::text,'Economic output (real GDP)'::text,'growth'::text,'percent growth'::text,'thousands of chained 2017 dollars'::text,'BEA CAGDP1 line 1'::text,'Real gross domestic product as BEA publishes it, in chained 2017 dollars. BEA publishes '::text || 'county GDP from 2001.'::text,2), ('jobs'::text,'Jobs (annual average)'::text,'growth'::text,'percent growth'::text,'jobs'::text,'BLS QCEW, total covered employment, all industries'::text,'Annual average employment covered by unemployment insurance, all industries and owners, '::text || 'counted where people work.'::text,3), ('unemployment_rate'::text,'Unemployment rate'::text,'points'::text,'percentage points'::text,'percent of the labor force'::text,'BLS LAUS annual averages'::text,'BLS''s annual average unemployment rate for the county. The nation''s rate is the 50 states '::text || 'and DC''s annual average unemployed divided by their annual average labor force.'::text,4), ('poverty_rate'::text,'People in poverty'::text,'points'::text,'percentage points'::text,'percent of people'::text,'Census SAIPE'::text,'Census Small Area Income and Poverty Estimates: the share of people of all ages below the '::text || 'poverty line.'::text,5)) definition(measure, measure_label, change_kind, change_unit, value_unit, source_label, observation_basis, display_order);
+
+v gold_elections.lean_peer_definition
+    column peer_type text
+    column peer_label text
+    column peer_basis text
+    column display_order integer
+    body SELECT peer_type,
+    body     peer_label,
+    body     peer_basis,
+    body     display_order
+    body    FROM ( VALUES ('all'::text,'All counties'::text,'Every county with a vote and both ends of the window.'::text,1), ('rural_urban'::text,'Same rural-urban type'::text,('USDA ERS Rural-Urban Continuum Codes, 2023 edition (the only edition loaded), grouped as '::text || 'large metro (1), other metro (2-3), nonmetro next to a metro (4, 6, 8) and remote '::text) || 'nonmetro (5, 7, 9). Earlier windows use the 2023 codes too.'::text,2), ('state'::text,'Same state'::text,'Counties in the same state.'::text,3), ('starting_level'::text,'Similar starting level'::text,'Quarter of all counties by the measure''s value in the window''s first year.'::text,4), ('industry'::text,'Same industry dependence'::text,'USDA ERS County Typology Codes, 2025 edition: the industry a county depends on, or none.'::text,5)) peer(peer_type, peer_label, peer_basis, display_order);
+
+r gold_elections.lean_place_change
+    column window_start_year smallint NOT NULL
+    column window_end_year smallint NOT NULL
+    column measure text NOT NULL
+    column geo_id text NOT NULL
+    column state_fips text NOT NULL
+    column lean_margin numeric NOT NULL
+    column lean_band text NOT NULL
+    column start_value numeric NOT NULL
+    column end_value numeric NOT NULL
+    column place_change numeric NOT NULL
+    column nation_change numeric NOT NULL
+    column net_change numeric NOT NULL
+    column rural_urban_group text
+    column starting_level_group text NOT NULL
+    column industry_group text
+    column industry_label text
+    column refresh_id bigint NOT NULL
+    constraint lean_place_change_check CHECK ((window_end_year > window_start_year))
+    constraint lean_place_change_lean_band_check CHECK ((lean_band = ANY (ARRAY['R20_plus'::text, 'R0_20'::text, 'D0_20'::text, 'D20_plus'::text])))
+    constraint lean_place_change_pkey PRIMARY KEY (window_start_year, window_end_year, measure, geo_id)
+    index lean_place_change_geo_idx CREATE INDEX lean_place_change_geo_idx ON gold_elections.lean_place_change USING btree (geo_id, measure)
+    index lean_place_change_pkey CREATE UNIQUE INDEX lean_place_change_pkey ON gold_elections.lean_place_change USING btree (window_start_year, window_end_year, measure, geo_id)
+
+r gold_elections.lean_refresh
+    column refresh_id bigint NOT NULL DEFAULT nextval('gold_elections.lean_refresh_refresh_id_seq'::regclass)
+    column input_fingerprint text NOT NULL
+    column status text NOT NULL
+    column place_rows integer
+    column group_rows integer
+    column started_at timestamp with time zone NOT NULL
+    column finished_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()
+    constraint lean_refresh_pkey PRIMARY KEY (refresh_id)
+    constraint lean_refresh_status_check CHECK ((status = ANY (ARRAY['rebuilt'::text, 'unchanged'::text])))
+    index lean_refresh_pkey CREATE UNIQUE INDEX lean_refresh_pkey ON gold_elections.lean_refresh USING btree (refresh_id)
+
 v gold_elections.measure_definition
     column measure text
     column measure_label text

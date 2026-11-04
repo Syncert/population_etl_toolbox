@@ -64,6 +64,9 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "bls_qcew_ingest",
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
+    # After every source it derives from: the election lean groups (ADR-0014)
+    # read the presidential vote and BEA, QCEW, SAIPE, LAUS, FRED and ERS.
+    "elections_lean_groups",
 )
 
 #: DAGs this suite deliberately does not execute, and why. An operator-

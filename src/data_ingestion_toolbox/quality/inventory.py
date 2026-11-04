@@ -3558,6 +3558,66 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published results read",
     ),
+    _obj(
+        "gold_elections.lean_measure_definition",
+        "gold",
+        "ELECTIONS",
+        grain="measure",
+        scope_method="the five measures a lean group compares, one at a time (ADR-0014)",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_elections.lean_band_definition",
+        "gold",
+        "ELECTIONS",
+        grain="lean_band",
+        scope_method="the four bands of the window-start two-party margin",
+        cadence="static",
+        empty_behavior="never empty: the bands are registered",
+    ),
+    _obj(
+        "gold_elections.lean_peer_definition",
+        "gold",
+        "ELECTIONS",
+        grain="peer_type",
+        scope_method="the peer groups a lean comparison can be narrowed to",
+        cadence="static",
+        empty_behavior="never empty: the peer types are registered",
+    ),
+    _obj(
+        "gold_elections.lean_refresh",
+        "gold",
+        "ELECTIONS",
+        grain="refresh_id",
+        scope_method="one row per daily rebuild check, rebuilt or unchanged",
+        cadence="daily (elections_lean_groups)",
+        empty_behavior="empty only before the first rebuild check",
+    ),
+    _obj(
+        "gold_elections.lean_place_change",
+        "gold",
+        "ELECTIONS",
+        grain="window_start_year, window_end_year, measure, geo_id",
+        lineage="gold_elections.observation_latest, gold_bea.observation_latest, "
+        "gold_bls_qcew.observation_latest, gold_census_sae.estimate_latest, "
+        "gold_bls.provider_annual_average, gold_fred.fact_fred_observation, "
+        "gold_usda_ers.observation_latest",
+        scope_method="every county with a presidential vote at the window's start and the "
+        "measure at both ends, windows between election years from 2000",
+        cadence="rebuilt daily when an input published",
+        empty_behavior="empty until the elections and an economic source are loaded",
+    ),
+    _obj(
+        "gold_elections.lean_group_change",
+        "gold",
+        "ELECTIONS",
+        grain="window_start_year, window_end_year, measure, peer_type, peer_group, lean_band",
+        lineage="gold_elections.lean_place_change",
+        scope_method="every lean band within every peer group that holds a county",
+        cadence="rebuilt with gold_elections.lean_place_change",
+        empty_behavior="empty when gold_elections.lean_place_change is",
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -6831,6 +6891,23 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.contest_result",
             "gold_elections.measure_export",
             "gold_elections.metric_publisher",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-005",
+        "BLOCK",
+        "reconciliation",
+        "Every lean-group county row is its change minus the nation's, in the "
+        "band its window-start margin names (no tie in any band), and every lean "
+        "group of all counties counts exactly the county rows of its window, "
+        "measure and band (ADR-0014).",
+        (
+            "gold_elections.lean_place_change",
+            "gold_elections.lean_group_change",
+            "gold_elections.lean_refresh",
+            "gold_elections.lean_measure_definition",
+            "gold_elections.lean_band_definition",
+            "gold_elections.lean_peer_definition",
         ),
     ),
     # -- FHFA annual House Price Index ----------------------------------------
