@@ -116,6 +116,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
         "gold_fhfa_hpi": "FHFA_HPI",
         "gold_hud_fmr_il": "HUD_FMR_IL",
         "gold_fema_nri": "FEMA_NRI",
+        "gold_elections": "ELECTIONS",
         "gold_fcc_bdc": "FCC_BDC",
         "gold_epa_aqs": "EPA_AQS",
         "gold_noaa_normals": "NOAA_NORMALS",

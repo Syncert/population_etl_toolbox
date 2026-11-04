@@ -43,6 +43,7 @@ from tests.support import bls_qcew as qcew_support
 from tests.support import epa_aqs as aqs_support
 from tests.support import noaa_normals as normals_support
 from tests.support import fcc_bdc as bdc_support
+from tests.support import elections as elections_support
 from tests.support import fema_nri as fema_support
 from tests.support import fhfa_hpi as hpi_support
 from tests.support import hud_fmr_il as hud_support
@@ -1041,6 +1042,18 @@ def published_fema_metric(
 
 
 @pytest.fixture
+def published_elections_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the MEDSL state and county presidential measures."""
+    factory = elections_support.reviewed_warehouse(postgres_connection_factory, request)
+    elections_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_elections"))
+    return _one_published_code(factory, "ELECTIONS")
+
+
+@pytest.fixture
 def published_hpi_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1148,6 +1161,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_hpi_metric: str,
     published_hud_metric: str,
     published_fema_metric: str,
+    published_elections_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,
@@ -1229,6 +1243,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FHFA_HPI", published_hpi_metric),
         ("HUD_FMR_IL", published_hud_metric),
         ("FEMA_NRI", published_fema_metric),
+        ("ELECTIONS", published_elections_metric),
         ("FCC_BDC", published_bdc_metric),
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
@@ -1382,6 +1397,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_fema_metric: str,
+    published_elections_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,

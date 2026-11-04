@@ -38,6 +38,7 @@ TOPICS: tuple[str, ...] = (
     "Housing",
     "Prices and the national economy",
     "Crime and hazards",
+    "Elections and government",
     "Health",
     "Environment",
     "Schools and broadband",
@@ -667,6 +668,44 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         ],
         credential="none",
         catalog_source_code="FEMA_NRI",
+    ),
+    WarehouseSource(
+        code="ELECTIONS",
+        name="Election results and seat holders",
+        publisher="MIT Election Data and Science Lab; unitedstates/congress-legislators; Wikidata",
+        topic="Elections and government",
+        module="elections",
+        dag="elections_ingest",
+        cadence="Monthly, 3rd 07:00 UTC",
+        release="MEDSL after certification; legislators and governors as they change",
+        grains={"state": "n", "county": "n", "other": "n"},
+        years=[(1969, 2026)],
+        years_note=(
+            "Seat terms from 1969; county presidential returns from 2000; state presidential, "
+            "Senate and House (district, not yet a shared geography) returns from 1976"
+        ),
+        datasets=[
+            "MEDSL County Presidential Election Returns (doi:10.7910/DVN/VOQCHQ)",
+            "MEDSL U.S. President, Senate and House returns (Harvard Dataverse)",
+            "unitedstates/congress-legislators (CC0)",
+            "Wikidata governor terms (CC0)",
+        ],
+        measures=(
+            "Presidential two-party Republican share, two-party margin and total votes by county "
+            "and state; Senate and House contest results; governor, senator and representative "
+            "terms with party."
+        ),
+        raw=[],
+        control=["control.elections_run", "control.elections_file"],
+        silver=["silver_elections.seat_term", "silver_elections.candidate_result"],
+        gold=[
+            "gold_elections.seat_term",
+            "gold_elections.contest_result",
+            "gold_elections.observation_revision",
+            "gold_elections.observation_latest",
+        ],
+        credential="none",
+        catalog_source_code="ELECTIONS",
     ),
     WarehouseSource(
         code="CDC",

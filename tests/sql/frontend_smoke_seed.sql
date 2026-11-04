@@ -110,6 +110,7 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
+    ('00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'success'),
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
     ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
     ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
@@ -156,6 +157,8 @@ INSERT INTO control.ingestion_request (
      'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
     ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
      'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured'),
+    ('00000000-0000-4000-9000-000000000e1e', '00000000-0000-4000-8000-000000000e1e',
+     'ELECTIONS', 'smoke://seed', '{}'::JSONB, '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', 'captured'),
     ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
      'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
     ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
@@ -234,6 +237,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000fe1', '00000000-0000-4000-9000-000000000fe1',
      '00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'smoke://seed', '{}'::JSONB,
      '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e1e', '00000000-0000-4000-9000-000000000e1e',
+     '00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'smoke://seed', '{}'::JSONB,
+     '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
      '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
@@ -1016,6 +1023,41 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Elections (MEDSL) -- one county's 2096 presidential TOTAL lines from a
+-- published county read. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.elections_run (
+    run_id, stream, status, run_checksum, source_file, file_count, record_count, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e1e', 'county_president', 'published',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'countypres_2000-2096.csv', 1, 2, '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.elections_file (run_id, file_index, file_key, file_kind, capture_id)
+VALUES ('00000000-0000-4000-8000-000000000e1e', 0, 'data', 'results', '00000000-0000-4000-a000-000000000e1e')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_elections.candidate_result (
+    run_id, result_key, office, election_year, stage, special, state_code, state_fips,
+    county_fips, district, candidate, party_text, party_code, writein, mode, candidate_votes,
+    total_votes, geo_level, geo_id, geo_sk, geography_status, source_record_id, capture_id,
+    record_index
+)
+SELECT '00000000-0000-4000-8000-000000000e1e', candidate.result_key, 'president', 2096, 'GEN', FALSE,
+       'WI', '55', '55025', NULL, candidate.name, candidate.party_text, candidate.party_code, FALSE,
+       'TOTAL', candidate.votes, 300000, 'county', 'state:55|county:025', entity.geo_sk, 'resolved',
+       candidate.result_key, '00000000-0000-4000-a000-000000000e1e', candidate.record_index
+FROM silver_ref.dim_geo_entity AS entity
+CROSS JOIN (VALUES
+    ('e1e0000000000000000000000000000000000000000000000000000000000001', 'SMOKE REPUBLICAN', 'REPUBLICAN', 'REP', 100000::BIGINT, 1),
+    ('e1e0000000000000000000000000000000000000000000000000000000000002', 'SMOKE DEMOCRAT', 'DEMOCRAT', 'DEM', 190000::BIGINT, 2)
+) AS candidate(result_key, name, party_text, party_code, votes, record_index)
+WHERE entity.geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- FHFA House Price Index -- one county's annual index from a published
 -- county workbook. COUNTY only.
 -- ---------------------------------------------------------------------------
@@ -1174,6 +1216,7 @@ UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
+UNION ALL SELECT * FROM gold_elections.metric_publisher
 UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
 UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
 UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher

@@ -63,6 +63,9 @@ from __future__ import annotations
 #:   availability summaries; CBSA, district and tribal rows are not kept.
 #: * ``FEMA_NRI`` -- the NRI county layer and county declaration counts;
 #:   statewide and tribal-area declarations are not counted toward a county.
+#: * ``ELECTIONS`` -- MEDSL's state and county presidential vote; House
+#:   districts are not yet a shared geography, so they are not published as
+#:   observations.
 #: * ``FHFA_HPI`` -- the annual county workbook only; the ZIP and tract
 #:   files wait on sub-county identities.
 #: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
@@ -103,6 +106,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "HUD_FMR_IL": frozenset({"COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),
     "FEMA_NRI": frozenset({"COUNTY"}),
+    "ELECTIONS": frozenset({"STATE", "COUNTY"}),
     "FCC_BDC": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "NOAA_NORMALS": frozenset({"COUNTY"}),
     "EPA_AQS": frozenset({"COUNTY"}),

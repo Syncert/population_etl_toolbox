@@ -1931,6 +1931,128 @@ def fema_value_and_geography(
     ]
 
 
+def elections_run_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-002 — no read left unreplayed; every readable read reached silver."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.elections_run")
+    if total == 0:
+        return [RuleOutcome("control.elections_run", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT run.run_id, run.stream, run.status, run.record_count
+          FROM control.elections_run AS run
+         WHERE run.status IN ('capturing', 'captured')
+            OR (run.status IN ('silver_ready', 'published')
+                AND run.record_count > (
+                    SELECT COUNT(*) FROM silver_elections.quarantine AS quarantine
+                     WHERE quarantine.run_id = run.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_elections.seat_term AS term
+                     WHERE term.run_id = run.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_elections.candidate_result AS result
+                     WHERE result.run_id = run.run_id
+                ))
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.elections_run",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def elections_seat_overlap(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-ELEC-003 — no two current seat-term spans hold one seat on one day."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_elections.seat_term")
+    if total == 0:
+        return [RuleOutcome("gold_elections.seat_term", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT earlier.seat_label, earlier.holder_name AS earlier_holder,
+               later.holder_name AS later_holder, later.start_date
+          FROM gold_elections.seat_term AS earlier
+          JOIN gold_elections.seat_term AS later
+            ON later.office = earlier.office
+           AND later.state_code = earlier.state_code
+           AND later.senate_class IS NOT DISTINCT FROM earlier.senate_class
+           AND later.district IS NOT DISTINCT FROM earlier.district
+           AND later.term_key <> earlier.term_key
+           AND later.start_date >= earlier.start_date
+           AND later.start_date < COALESCE(earlier.end_date, DATE '9999-12-31')
+           AND NOT (later.start_date = earlier.start_date AND later.term_key < earlier.term_key)
+        """,
+        order_by="1, 4",
+    )
+    return [
+        RuleOutcome(
+            "gold_elections.seat_term",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def elections_totals_and_geography(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-004 — county presidential sums agree with the state's; places resolve."""
+    del scope
+    total = _count(
+        cursor, "SELECT COUNT(*) FROM control.elections_run WHERE status = 'published'"
+    )
+    if total == 0:
+        return [RuleOutcome("gold_elections.contest_result", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH county_sum AS (
+            SELECT state_code, election_year, SUM(total_votes) AS votes
+              FROM gold_elections.contest_result
+             WHERE office = 'president' AND geo_level = 'county' AND stage = 'GEN'
+             GROUP BY state_code, election_year
+        )
+        SELECT state.state_code AS item, state.election_year::TEXT AS year,
+               'county sum ' || county_sum.votes || ' against state ' || state.total_votes AS detail
+          FROM gold_elections.contest_result AS state
+          JOIN county_sum USING (state_code, election_year)
+         WHERE state.office = 'president' AND state.geo_level = 'state' AND state.stage = 'GEN'
+           AND ABS(county_sum.votes - state.total_votes) > 0.005 * state.total_votes
+        UNION ALL
+        SELECT COALESCE(result.county_fips, result.state_code), result.election_year::TEXT,
+               'unmapped ' || result.geo_level
+          FROM silver_elections.candidate_result AS result
+          JOIN gold_elections.current_read AS read ON read.run_id = result.run_id
+         WHERE result.geography_status = 'unmapped'
+         GROUP BY 1, 2, 3
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "gold_elections.contest_result",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def hpi_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-HPI-002 — no workbook left unreplayed; every readable one reached silver."""
     del scope
@@ -3934,6 +4056,9 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-HUD-004": hud_value_plausibility,
     "DQ-FEMA-002": fema_run_reconciliation,
     "DQ-FEMA-004": fema_value_and_geography,
+    "DQ-ELEC-002": elections_run_reconciliation,
+    "DQ-ELEC-003": elections_seat_overlap,
+    "DQ-ELEC-004": elections_totals_and_geography,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

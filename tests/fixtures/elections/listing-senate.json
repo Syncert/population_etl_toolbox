@@ -1,0 +1,16 @@
+{
+ "status": "OK",
+ "data": [
+  {
+   "label": "1976-2024-senate-state.tab",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 6559998,
+    "filename": "1976-2024-senate-state.tab",
+    "contentType": "text/tab-separated-values",
+    "originalFileName": "1976-2024-senate-state.csv"
+   }
+  }
+ ]
+}

@@ -93,6 +93,53 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-164 — a headline card draws its own place's history as a
+// sparkline, read in one history batch per chapter for that place only, with
+// a change line in the record page's verbs.
+test("a county's headline cards carry a sparkline of the county's own history", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const batches = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/observations/history/batch") batches.push(url);
+  });
+  await ready(page, "/us/wisconsin/dane-county");
+  const spark = page.getByTestId("card-bea-per-capita-income-spark");
+  await expect(spark).toHaveAttribute("data-points", "6");
+  await expect(spark.locator("figcaption")).toContainText("2019");
+  await expect(page.getByTestId("card-bea-per-capita-income-spark-change")).toHaveText("Rose from 1,000 in 2019.");
+  await expect(page.getByTestId("card-median-household-income-spark-change")).toHaveText(
+    "Not distinguishable from 41 in 2019 at the published margins of error.",
+  );
+  // The sparkline-only reads ask the county alone; a trend's batch asks every level.
+  const own = batches.filter((url) => url.searchParams.get("geo_ids") === "state:55|county:025");
+  expect(own.length).toBeGreaterThan(0);
+  expect(own.some((url) => url.searchParams.get("metric_codes").includes("BEA:CAINC1:3"))).toBe(true);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-162 — a headline card draws its levels on one scale, margins as
+// whiskers, and says how the place compares in the record page's verbs; a
+// count draws no strip and keeps its table.
+test("a county's headline cards place the county beside its state and the nation on one scale", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const age = page.getByTestId("card-median-age");
+  await expect(page.getByTestId("card-median-age-strip").locator(".level-strip-row:not(.level-strip-axis)")).toHaveCount(2);
+  await expect(page.getByTestId("card-median-age-strip-sentence")).toHaveText(
+    "Dane County was not distinguishable from Wisconsin at the published margins of error.",
+  );
+  // The table stays for screen readers and copying, out of sight.
+  expect((await age.locator("table").boundingBox()).width).toBeLessThanOrEqual(1);
+  await expect(page.getByTestId("card-median-age-county")).toContainText("margin of error");
+  await expect(page.getByTestId("card-unemployment-rate-strip-sentence")).toHaveText("Dane County was lower than Wisconsin.");
+  await expect(page.getByTestId("card-population-estimate-strip")).toHaveCount(0);
+  await expect(page.getByTestId("card-population-estimate").locator("table")).toBeVisible();
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 // Covers: WEB-139 — sub-county-geography: a county page paints one ACS
 // measure over its tracts, counts the tract with no value instead of
 // painting it as zero, and lists every tract in a table.
@@ -140,10 +187,15 @@ test("BEA income and GDP sit beside the survey income, labelled apart, with earn
   await expect(page.getByTestId("card-median-household-income")).not.toContainText("BEA:");
 
   const earnings = page.getByTestId("bea-earnings");
-  await expect(earnings.locator("tbody tr")).toHaveCount(21);
+  await expect(earnings.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("bea-earnings-basis")).toContainText("BEA personal income account");
   await expect(page.getByTestId("bea-earnings-bea-earnings-1600")).toContainText("Health care and social assistance");
-  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toContainText("Published without a value: withheld");
+  // WEB-163: bars sorted largest first; a withheld sector has no bar and is
+  // named once in the line under them.
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toHaveText("Mining, quarrying, and oil and gas extraction.");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
+  const bea_earningsValues = (await page.getByTestId("bea-earnings").locator(".place-industry-value").allTextContents()).map((text) => Number(text.replace(/,/g, "")));
+  expect(bea_earningsValues).toEqual([...bea_earningsValues].sort((left, right) => right - left));
   await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never combined with the survey's income");
   await noViolations(page);
   await noHorizontalScroll(page);
@@ -180,10 +232,15 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
 
   const mix = page.getByTestId("industry-mix");
-  await expect(mix.locator("tbody tr")).toHaveCount(21);
+  await expect(mix.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("industry-mix-basis")).toContainText("counted by employers (QCEW)");
   await expect(page.getByTestId("industry-mix-qcew-sector-62")).toContainText("Health care and social assistance");
-  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toContainText("Published without a value: withheld");
+  // WEB-163: bars sorted largest first; a withheld sector has no bar and is
+  // named once in the line under them.
+  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toHaveText("Mining, quarrying, and oil and gas extraction.");
+  await expect(page.getByTestId("industry-mix-qcew-sector-21").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
+  const industry_mixValues = (await page.getByTestId("industry-mix").locator(".place-industry-value").allTextContents()).map((text) => Number(text.replace(/,/g, "")));
+  expect(industry_mixValues).toEqual([...industry_mixValues].sort((left, right) => right - left));
   await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never added or subtracted");
   await noViolations(page);
   await noHorizontalScroll(page);
@@ -233,6 +290,13 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");
+  // WEB-163: what the depth rows share is said once above them; a row says
+  // its source only where it differs from that line.
+  await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("± is the 90% margin of error");
+  await expect(page.getByTestId("depth-below-poverty-basis")).toHaveClass("sr-only");
+  await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toHaveClass("place-basis");
+  await expect(page.getByTestId("depth-below-poverty")).not.toContainText("margin of error ±");
 
   await expect(page.getByTestId("card-sahie-uninsured-rate-basis")).toHaveText("Model-based annual estimate (SAHIE)");
   await expect(page.getByTestId("card-sahie-uninsured-rate-county")).toContainText("confidence upper");
@@ -401,7 +465,7 @@ test("a place with no recorded relationships omits the section and says why", as
 
 test("what stands out lists the highest and lowest measures apart, with withheld siblings named", async ({ page }) => {
   // Covers: WEB-131 — one measure per row; a withheld sibling is counted, not zero.
-  // Covers: WEB-162 — each rank drawn as a position; caveats said once.
+  // Covers: WEB-165 — each rank drawn as a position; caveats said once.
   await ready(page, "/us/wisconsin/dane-county");
   const section = page.getByTestId("place-standout");
   await expect(section.getByTestId("place-standout-count")).toContainText("6 measures could be ranked among Wisconsin counties, each on its own");
@@ -409,7 +473,7 @@ test("what stands out lists the highest and lowest measures apart, with withheld
   await expect(section.getByTestId("place-standout-lowest").locator("li")).toHaveCount(3);
   const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
   await expect(income).toContainText("Higher than 68 of 70 Wisconsin counties with a published value (1 withheld a value)");
-  // WEB-162: the measure's name opens its map; the dot sits at its rank,
+  // WEB-165: the measure's name opens its map; the dot sits at its rank,
   // lowest to highest; the sources' caveats are said once, not per row.
   await expect(income.getByRole("link")).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
   const dot = await income.locator(".standout-track i").getAttribute("style");
