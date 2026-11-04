@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ADDITIVE_MEMBER_MEASURES,
   INDUSTRY_MIX_SECTORS,
   MIGRATION_POPULATION_NOTE,
   PLACE_CHAPTERS,
@@ -10,6 +11,7 @@ import {
   countySegment,
   citySegment,
   measureBasis,
+  memberCountyRows,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
@@ -257,6 +259,57 @@ describe("the three-level card", () => {
   });
 });
 
+// Covers: WEB-159 — web-metro-member-counties: a metro card on a measure not
+// published for metro areas lists its member counties, and sums them only
+// for a count every member published for the card's period.
+describe("a metro card's member counties", () => {
+  const members = [
+    { level: "COUNTY", geoId: "a", name: "Dane County", role: "member county" },
+    { level: "COUNTY", geoId: "b", name: "Columbia County", role: "member county" },
+    { level: "COUNTY", geoId: "c", name: "Green County", role: "member county" },
+  ];
+  const row = (year, value = "10", extra = {}) => ({ period_start: `${year}-01-01`, period_end: `${year}-12-31`, value, ...extra });
+  const period = "2024-01-01 – 2024-12-31";
+
+  it("lists every member county's own figure on the card's period", () => {
+    const { rows, sum } = memberCountyRows(members, new Map([
+      ["a", { row: row(2024, "300") }], ["b", { row: row(2024, "20") }], ["c", { row: row(2023, "15") }],
+    ]), period, false);
+    expect(rows.map((entry) => entry.place.name)).toEqual(["Dane County", "Columbia County", "Green County"]);
+    expect(rows.map((entry) => entry.message)).toEqual(["", "", `Not published for ${period} (newest published: 2023-01-01 – 2023-12-31)`]);
+    expect(sum).toBeNull();
+  });
+
+  it("sums a count only when every member county published a value for the period", () => {
+    const all = new Map([["a", { row: row(2024, "300") }], ["b", { row: row(2024, "20") }], ["c", { row: row(2024, "15.5") }]]);
+    expect(memberCountyRows(members, all, period, true).sum).toEqual({ value: 335.5, counties: 3 });
+    // A withheld county leaves no partial total.
+    const withheld = new Map(all);
+    withheld.set("b", { row: row(2024, null, { value_status: "withheld" }) });
+    const read = memberCountyRows(members, withheld, period, true);
+    expect(read.sum).toBeNull();
+    expect(read.rows[1].message).toBe("Published without a value: withheld");
+    // Another period, a missing county or a failed read leaves none either.
+    expect(memberCountyRows(members, new Map([...all, ["c", { row: row(2023, "15") }]]), period, true).sum).toBeNull();
+    expect(memberCountyRows(members, new Map([...all, ["c", { row: null }]]), period, true).sum).toBeNull();
+    expect(memberCountyRows(members, new Map([...all, ["c", { error: "503" }]]), period, true).rows[2].message).toBe("503");
+  });
+
+  it("anchors on the first county's period when no other row set one", () => {
+    const { rows } = memberCountyRows(members.slice(0, 2), new Map([["a", { row: row(2024) }], ["b", { row: row(2023) }]]), "", false);
+    expect(rows[1].message).toBe(`Not published for ${period} (newest published: 2023-01-01 – 2023-12-31)`);
+  });
+
+  it("adds up only counts: never a median, a rate, a per-capita or a chained-dollar figure", () => {
+    expect([...ADDITIVE_MEMBER_MEASURES]).toEqual(["population-estimate", "qcew-jobs"]);
+    const headline = PLACE_CHAPTERS.flatMap((chapter) => chapter.headline);
+    for (const id of ADDITIVE_MEMBER_MEASURES) {
+      const measure = headline.find((entry) => entry.id === id);
+      expect(measure.candidates).toEqual(id === "qcew-jobs" ? ["BLS_QCEW:employment:10:0"] : ["CENSUS_PEP:POPESTIMATE"]);
+    }
+  });
+});
+
 describe("the trend", () => {
   const levels = [
     { level: "COUNTY", geoId: "c", name: "Dane County", role: "this place" },
@@ -431,6 +484,14 @@ describe("homes authorized", () => {
     expect(permits.map((measure) => measure.id)).toEqual(["bps-single-family-year", "bps-multifamily-year", "bps-single-family-month"]);
     expect(permits.every((measure) => measure.basis === "Authorized by building permits, not started or completed")).toBe(true);
     expect(permits.every((measure) => measure.showReported)).toBe(true);
+  });
+
+  it("says when Census publishes the yearly permit totals, and only on the yearly cards", () => {
+    const permits = housing.headline.filter((measure) => measure.candidates[0].startsWith("CENSUS_BPS:"));
+    const annual = permits.filter((measure) => measure.candidates[0].endsWith(":annual"));
+    expect(annual.map((measure) => measure.id)).toEqual(["bps-single-family-year", "bps-multifamily-year"]);
+    for (const measure of annual) expect(measure.whenPublished).toBe("Census publishes each year's total early the next year.");
+    expect(permits.find((measure) => measure.id === "bps-single-family-month").whenPublished).toBeUndefined();
   });
 
   it("draws the monthly permits as a trend after the rent and home value trends", () => {

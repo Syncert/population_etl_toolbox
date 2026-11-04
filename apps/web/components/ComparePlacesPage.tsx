@@ -37,6 +37,7 @@ import {
   buildNewestValueRequest,
   normalizeObservationRows,
 } from "../lib/observationAccess";
+import { displayMetricName } from "../lib/format";
 import { buildUseCaseHistory, verifyUseCaseRows } from "../lib/useCaseAnalysis";
 import {
   PLACE_CHAPTERS,
@@ -699,8 +700,11 @@ function CompareChapter({
       {trendRow && trendMeasure ? (
         <PlaceTrend
           model={buildTrend(trendLevels, new Map(trendLevels.map((place) => [place.geoId, histories.get(keyOf(trendMeasure.code, place.geoId)) || []])), chapter.trend.scale)}
-          label={`${trendMeasure.measure.label} trend`}
+          title={`${trendMeasure.measure.label} over time`}
           unit={unitText(trendRow.a.row)}
+          metricName={displayMetricName(trendMeasure.metric)}
+          metricCode={trendMeasure.code}
+          sourceCode={trendMeasure.metric.source_code}
           testId={`compare-chapter-${chapter.id}-trend`}
         />
       ) : null}
