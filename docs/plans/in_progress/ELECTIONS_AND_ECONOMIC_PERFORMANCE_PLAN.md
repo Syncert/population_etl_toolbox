@@ -18,7 +18,8 @@ verify:
 
 ## Status
 
-To do. Written 2026-11-04 after Nick's discovery request ("understanding
+In progress: E-1 merged (#281), E-2 open on `claude/project-thread-moxcyd`
+(2026-11-04). Written 2026-11-04 after Nick's discovery request ("understanding
 better the economic performance of areas that voted republican ... maps of
 voter histories that go back the same timespan, and a means to assemble net
 economic performance and history of republican/democrat house/senate/governor
@@ -56,9 +57,9 @@ names the districts that touch it, without residents' shares.
 | Source | Holds | Grain | Years | Licence | Status |
 | --- | --- | --- | --- | --- | --- |
 | MEDSL County Presidential Returns (doi:10.7910/DVN/VOQCHQ) | Votes by candidate and party | County | 2000–2024 | Harvard Dataverse; believed CC0 | Confirm licence by hand (Dataverse refuses automated reads) |
-| MEDSL U.S. House (doi:10.7910/DVN/IGFUJS) | Votes by candidate and party | District | 1976–2024 | Same | Same |
+| MEDSL U.S. House (doi:10.7910/DVN/IG0UN2) | Votes by candidate and party | District | 1976–2024 | Same | Same |
 | MEDSL U.S. Senate (doi:10.7910/DVN/PEJ5QU) | Votes by candidate and party | State | 1976–2020 | Same | 2022–2024 from FEC or MEDSL precinct files |
-| MEDSL U.S. President (doi:10.7910/DVN/42MVDX) | Votes by candidate and party | State | 1976–2020 | Same | 2024 summed from the county file |
+| MEDSL U.S. President (doi:10.7910/DVN/42MVDX) | Votes by candidate and party | State | 1976–2024 | Same | Published by MEDSL (`1976-2024-president`, confirmed 2026-11-04) |
 | [unitedstates/congress-legislators](https://github.com/unitedstates/congress-legislators) | Terms: chamber, state, district, class, party, start, end | Seat | 1789–now | CC0 1.0 (checked) | Ready |
 | Governors file (built here) | Governor, party, start, end, source link | State | 1969–now, about 600 rows | Facts from NGA and state blue books, each row cited | To build |
 | State legislative control | Party holding a majority of each chamber, per session | State chamber | 1969–now | Candidates: Klarner's partisan composition data (Harvard Dataverse), NCSL partisan composition (2009 onward), state blue books | Decision L-1 |
@@ -164,4 +165,40 @@ with fixtures under `tests/frontend/support/`.
 
 ## Checkpoint
 
-Not started.
+2026-11-04, E-2 (elections source) built and held for go:
+
+- `src/data_ingestion_toolbox/elections/`: six streams (congress-legislators
+  current and historical, one Wikidata governor query, four MEDSL Dataverse
+  files), capture-first, replayed into `silver_elections.seat_term` and
+  `silver_elections.candidate_result`, served by `gold_elections` (seat terms,
+  contest results, and three presidential measures at state and county in the
+  neutral observation shape). DAG `elections_ingest`, monthly on the 3rd;
+  every stream is re-read whole, which satisfies the loader rule.
+  Operations: `docs/user-guides/ELECTIONS_PIPELINE_OPERATIONS.md`. Catalog
+  ETL-111, EXT-031.
+- Changed from the deliverable text, on purpose:
+  - Governors come from Wikidata (CC0) rather than a hand-kept
+    `governors.yaml`, so a new governor loads on the next run. EXT-031 must
+    confirm the query on a machine that can reach Wikidata before the first
+    deploy; the fixture's identifiers are invented.
+  - Gold relations are `seat_term`, `contest_result`, `candidate_total`,
+    `office_definition`, `party_definition` (views over the current read)
+    rather than `fact_*`/`dim_*` tables.
+  - DQ rules shipped: DQ-ELEC-001 keys, -002 reconciliation, -003 no
+    overlapping spans for one seat, -004 county sums against the state
+    (warn). Not shipped: the FEC comparison (no FEC source yet), "one
+    governor every day since 1969" (Wikidata leaves gaps for acting
+    governors; measure it on the first live load before making it a rule),
+    and the 0-100 share bound (a CHECK-free view; the arithmetic cannot
+    leave it).
+- Not yet: the legislature file (decision L-1), the MEDSL licence check on
+  each Dataverse page.
+- First live check (OFFICE_LAB, 2026-11-04, EXT-031): legislators and state
+  president passed; fixed on the PR: Wikidata unknown-value dates on one
+  Alabama governor aborted the parse; the Senate file is now
+  `1976-2024-senate-state.tab`; the House DOI is `10.7910/DVN/IG0UN2`; the
+  county and House files need a Dataverse guestbook answer (operator
+  identity in `stack.env`; whose identity is Nick's call). Rerun at c8a26241:
+  8 of 10 pass (512 governor terms, none rejected; state president is now
+  `1976-2024-president`); county and House wait on the guestbook identity.
+- Next: E-3 lean groups, after E-2 merges and one live load on OFFICE_LAB.

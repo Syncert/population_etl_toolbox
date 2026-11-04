@@ -4,7 +4,7 @@
   (option B of the elections proposal, with state legislatures added).
 - **Date:** 2026-11-04
 - **Decision owners:** Repository owner and data-product maintainers
-- **Related work:** [`ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md`](../plans/to_do/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md);
+- **Related work:** [`ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md`](../plans/in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md);
   the discovery proposal <https://claude.ai/artifact/NJW5bJZ8RXiURwkZuGSBPH>
   (private to Nick); the tax and policy proposal
   <https://claude.ai/artifact/BJ5y3sdnDkRPhDVvickfUx>, which adds fiscal
