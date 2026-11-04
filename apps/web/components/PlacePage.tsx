@@ -103,6 +103,7 @@ import {
 import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
 const PlaceDepth = dynamic(() => import("./PlaceDepth"));
 const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
@@ -657,6 +658,7 @@ export default function PlacePage({
       // publishes at, so every batch asks only the pairs the cards show.
       const batches = new Map<string, { measure: ResolvedPlaceMeasure; geoId: string }[]>();
       const historyPairs: { measure: ResolvedPlaceMeasure; place: LevelPlace }[] = [];
+      const sparkPairs: { measure: ResolvedPlaceMeasure; place: LevelPlace }[] = [];
       const ask = (measure: ResolvedPlaceMeasure, entries: LevelPlace[]) => {
         if (!entries.length) return;
         series += entries.length;
@@ -684,6 +686,10 @@ export default function PlacePage({
               else tasks.push(askHistory(measure, entry));
             }
           }
+        } else if (own && publishesAt(measure, own.level) && batchesHistory(sourceFor(measure.metric))) {
+          // The card's sparkline: the place's own history only, in one batch per chapter.
+          series += 1;
+          sparkPairs.push({ measure, place: own });
         }
       }
       if (own) {
@@ -693,6 +699,7 @@ export default function PlacePage({
       }
       batchTasks.push(...[...batches.values()].map((pairs) => askNewestBatch(pairs)));
       if (historyPairs.length) batchTasks.push(askHistoryBatch(historyPairs));
+      if (sparkPairs.length) batchTasks.push(askHistoryBatch(sparkPairs));
     }
     // Batches first: they hold most of the page's values.
     tasks.unshift(...batchTasks);
@@ -1194,6 +1201,7 @@ function Chapter({
             providerRate={providerRateFor(pairings, measure.metricCode)}
             agencyRate={agencyRateFor(pairings, measure.metricCode)}
             derived={derived}
+            history={own && publishesAt(measure, own.level) ? histories.get(answerKey(measure.metricCode, own.geoId)) : undefined}
           />
         ))}
       </div>
@@ -1367,9 +1375,12 @@ function HeadlineCard({
   agencyRate,
   derived,
   anchor,
+  history,
 }: {
   measure: ResolvedPlaceMeasure;
   levels: LevelPlace[];
+  /** The page's own place's published history, for the card's sparkline. */
+  history?: ObservationRow[];
   /** Member counties shown in place of a metro row the measure is not published for. */
   members: LevelPlace[];
   answers: Map<string, LevelAnswer>;
@@ -1467,6 +1478,7 @@ function HeadlineCard({
           ))}
         </tbody>
       </table>
+      {history && !pairing ? <PlaceSparkline rows={history} name={levels[0]!.name} testId={`card-${measure.measure.id}-spark`} /> : null}
       {memberRows ? <MemberCountyTable rows={memberRows.rows} unit={measure.measure.unit} testId={`card-${measure.measure.id}-members`} /> : null}
       {memberRows ? (
         <p className="place-basis" data-testid={`card-${measure.measure.id}-members-note`}>
