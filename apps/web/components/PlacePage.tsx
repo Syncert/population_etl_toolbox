@@ -133,10 +133,15 @@ async function inPool(tasks: (() => Promise<void>)[], limit: number): Promise<vo
   await Promise.all(workers);
 }
 
-/** The row's published unit, or nothing: `observationUnit`'s "value" is a placeholder. */
-function publishedUnit(row: ObservationRow): string {
+/**
+ * The row's published unit, or nothing: `observationUnit`'s "value" is a
+ * placeholder. A row that carries no unit (every ACS row) reads the unit the
+ * chapter names for its measure, so a median income says "Dollars" the way
+ * BEA's income beside it does.
+ */
+function publishedUnit(row: ObservationRow, fallback?: string): string {
   const unit = observationUnit(row);
-  return unit === "value" ? "" : unitText(unit);
+  return unit === "value" ? fallback || "" : unitText(unit);
 }
 
 const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}`;
@@ -998,11 +1003,26 @@ function Chapter({
   const [view, setView] = useState<ViewChoice>("count");
   const [derived, setDerived] = useState<Map<string, DerivedAnswer>>(new Map());
   const measured = useMemo(() => [...resolved.headline, ...resolved.depth].filter((measure) => measure.metric), [resolved]);
-  const choices = useMemo(() => viewChoices(pairings, measured.map((measure) => measure.metricCode)), [pairings, measured]);
+  // A view is offered only for a count this page's own place publishes: a
+  // metro offered "Percent" for SAIPE's poverty count, which SAIPE publishes
+  // for counties and states only, and the button changed nothing on the
+  // metro's own lines (UAT 2026-11-03).
+  const switchable = useMemo(() => measured.filter((measure) => publishesAt(measure, pageLevel)), [measured, pageLevel]);
+  const choices = useMemo(() => viewChoices(pairings, switchable.map((measure) => measure.metricCode)), [pairings, switchable]);
   const viewPairings = useMemo(
-    () => measured.flatMap((measure) => VIEWABLE.flatMap((choice) => pairingFor(pairings, measure.metricCode, choice) || [])),
-    [pairings, measured],
+    () => switchable.flatMap((measure) => VIEWABLE.flatMap((choice) => pairingFor(pairings, measure.metricCode, choice) || [])),
+    [pairings, switchable],
   );
+  // The switch stands beside what it changes. When no headline card is a
+  // count it can switch (Work and Money's cards are medians, rates and
+  // dollars), it sits over the list of counts below the cards, so pressing
+  // it changes what is in front of the reader, and it says the cards stay.
+  const switchesCards = choices.some(
+    (choice) => choice !== "count" && resolved.headline.some((measure) => measure.metric && publishesAt(measure, pageLevel) && pairingFor(pairings, measure.metricCode, choice)),
+  );
+  useEffect(() => {
+    if (!choices.includes(view)) setView("count");
+  }, [choices, view]);
 
   // A derived view reads each paired measure for every level the chapter
   // shows, so a county reads beside its state on one denominator. Each answer
@@ -1120,14 +1140,16 @@ function Chapter({
           )}
         </p>
       ) : null}
-      <ViewToggle
-        choices={choices}
-        value={view}
-        onChange={setView}
-        pairings={viewPairings}
-        label="Show counts as"
-        testId={`chapter-${chapter.id}-view`}
-      />
+      {switchesCards ? (
+        <ViewToggle
+          choices={choices}
+          value={view}
+          onChange={setView}
+          pairings={viewPairings}
+          label="Show counts as"
+          testId={`chapter-${chapter.id}-view`}
+        />
+      ) : null}
       <div className="place-cards">
         {resolved.headline.map((measure) => (
           <HeadlineCard
@@ -1149,7 +1171,7 @@ function Chapter({
         <PlaceTrend
           model={trend}
           label={`${trendMeasure.measure.label} trend`}
-          unit={primaryRow ? publishedUnit(primaryRow) : unitText(trendMeasure.metric?.units)}
+          unit={primaryRow ? publishedUnit(primaryRow, trendMeasure.measure.unit) : unitText(trendMeasure.metric?.units) || trendMeasure.measure.unit || ""}
           notes={trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend`}
         />
@@ -1159,11 +1181,26 @@ function Chapter({
           key={measure.measure.id}
           model={model}
           label={`${measure.measure.label} trend`}
-          unit={unitText(measure.metric?.units)}
+          unit={unitText(measure.metric?.units) || measure.measure.unit || ""}
           notes={trendNotes(measure.metricCode, String(measure.metric?.units || ""))}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
         />
       ))}
+      {!switchesCards && choices.length > 1 && own ? (
+        <div className="place-depth-toggle" data-testid={`chapter-${chapter.id}-view-below`}>
+          <ViewToggle
+            choices={choices}
+            value={view}
+            onChange={setView}
+            pairings={viewPairings}
+            label="Show the counts below as"
+            testId={`chapter-${chapter.id}-view`}
+          />
+          <p className="subtle" data-testid={`chapter-${chapter.id}-view-note`}>
+            The cards above are medians, rates and totals with no reviewed share or per-resident view, so they stay as published.
+          </p>
+        </div>
+      ) : null}
       {resolved.depth.some((measure) => !measure.measure.group) && own ? (
         <dl className="place-depth" data-testid={`chapter-${chapter.id}-depth`}>
           {resolved.depth.filter((measure) => !measure.measure.group).map((measure) => (
@@ -1317,7 +1354,7 @@ function HeadlineCard({
           {displayMetricName(measure.metric)}
         </span>
         {card.period ? ` · ${card.period}` : ""}
-        {unit ? ` · ${publishedUnit(unit) || "unit not published"}` : ""}
+        {unit ? ` · ${publishedUnit(unit, measure.measure.unit) || "unit not published"}` : ""}
       </p>
       <table className="place-card-table">
         <caption className="sr-only">{measure.measure.label}{card.period ? `, ${card.period}` : ""}</caption>
@@ -1351,7 +1388,7 @@ function HeadlineCard({
               ) : (
                 <>
                   <td>
-                    {entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row)}`.trim() : entry.message}
+                    {entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row, measure.measure.unit)}`.trim() : entry.message}
                   </td>
                   <td className="subtle">
                     {entry.row && !entry.message ? uncertaintyText(entry.row) : ""}
@@ -1585,7 +1622,7 @@ function DepthRow({
               : answer?.pending
                 ? "Reading…"
                 : published
-                  ? `${formatObservationValue(row!.value)} ${publishedUnit(row!)}`.trim()
+                  ? `${formatObservationValue(row!.value)} ${publishedUnit(row!, measure.measure.unit)}`.trim()
                   : row?.value_status
                     ? `Published without a value: ${String(row.value_status)}`
                     : "Not published for this place"}

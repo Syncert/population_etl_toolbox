@@ -45,8 +45,10 @@ export const PLACES = [
 
 // The measures this fixture publishes for metros (web-metro-pages): ACS
 // income, rent and median age, LAUS unemployment, and BEA's per capita
-// income, which the warehouse sums from member counties.
-const METRO_CODES = new Set(["CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B01002_001", "BLS:LAU:UNEMP_RATE", "BEA:CAINC1:3"]);
+// income, which the warehouse sums from member counties; and one ACS count,
+// the unemployed, whose share of the labor force the metro's toggle switches.
+const METRO_CODES = new Set(["CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B01002_001", "BLS:LAU:UNEMP_RATE", "BEA:CAINC1:3",
+  "CENSUS_ACS:acs5:B23025_005"]);
 
 function grainsFor(code) {
   const own = baseGrainsFor(code);
@@ -77,7 +79,8 @@ function unitFor(code) {
   if (code.startsWith("CENSUS_SAIPE_SAHIE:")) return "people";
   if (code.startsWith("FBI_UCR:")) return "per_100000_population";
   if (code.startsWith("USDA_NASS:")) return "ACRES";
-  if (/B19013|B19301|B25064|B25077/.test(code)) return "dollars";
+  // The ACS serves no unit, on a row or in the catalog (gold_census.metric_publisher
+  // says NULL::TEXT AS units), so the page names a median's unit itself.
   return null;
 }
 
@@ -215,7 +218,7 @@ export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || [nu
 // Synthetic derived values. Rock County's survey count has no same-period
 // denominator in this fixture, so its shares answer `different_period`.
 function derivedRows(ratio, geoId, history = false) {
-  const place = [NATION, ...STATES, ...COUNTIES, ...PLACES].find((item) => item.geo_id === geoId);
+  const place = [NATION, ...STATES, ...COUNTIES, ...PLACES, AREAS.metro].find((item) => item.geo_id === geoId);
   if (!place) return [];
   if (ratio.kind === "agency_rate") return history ? agencyRateHistory(ratio, place) : agencyRateRows(ratio, place);
   const metric = metrics[ratio.provider_rate || ratio.numerator];
