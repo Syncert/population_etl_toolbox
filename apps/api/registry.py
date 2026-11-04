@@ -1123,6 +1123,12 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("confidence_lower", "confidence_lower::TEXT"),
                 ("confidence_upper", "confidence_upper::TEXT"),
                 ("margin_of_error", "margin_of_error::TEXT"),
+                # The margin as a percent of the estimate, as the ACS silver
+                # transform derives it; no percentage for a zero estimate.
+                (
+                    "margin_of_error_pct",
+                    "(margin_of_error / NULLIF(value, 0) * 100)::TEXT",
+                ),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",

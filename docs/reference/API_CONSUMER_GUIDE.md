@@ -1359,7 +1359,9 @@ source-scoped routes serve it; that is what they are for.
   happened to read.
 - `uncertainty` is `null` when the source publishes none, and otherwise
   carries only the fields that source publishes — the rest stay `null`.
-  Census ACS publishes `margin_of_error` and `margin_of_error_pct`; CDC
+  Census ACS publishes `margin_of_error` and `margin_of_error_pct`; Census
+  SAIPE and SAHIE publish `confidence_lower`, `confidence_upper`,
+  `margin_of_error` and `margin_of_error_pct`; CDC
   publishes `confidence_lower` and `confidence_upper`; USDA NASS publishes
   `cv_value` with `cv_status` and `cv_symbol`, which is how it says an
   estimate is unreliable; County Business Patterns publishes `noise_flag`
