@@ -24,16 +24,29 @@ export function frequencyOf(days: number | null | undefined): TrendFrequency {
   return "multi-year";
 }
 
+/** Programs that publish one value a year, said when the points cannot tell. */
+const YEARLY_PROGRAMS = ["CDC:", "CENSUS_PEP:", "CENSUS_SAIPE_SAHIE:", "USDA_NASS:"] as const;
+
 /**
  * How often a drawn series is published, from the page's own line (or the
  * first line drawn): each point's own span from period start to end, or,
- * where points carry only a date, the usual gap between them.
+ * where points carry only a date (a start equal to its end, as an annual
+ * series stamped with its year often is), the usual gap between them. A
+ * single dated point has neither, so a bare-year label, an `:annual` code or
+ * a program that publishes yearly says "yearly" (UAT, /us: one CDC PLACES
+ * year read "monthly, Jan 2023").
  */
-export function trendFrequency(model: TrendModel): TrendFrequency {
+export function trendFrequency(model: TrendModel, metricCode = ""): TrendFrequency {
   const points = model.lines.find((line) => line.points.length)?.points || [];
-  const spans = points.filter((point) => point.end >= point.time).map((point) => (point.end - point.time) / DAY_MS + 1);
+  const spans = points.filter((point) => point.end > point.time).map((point) => (point.end - point.time) / DAY_MS + 1);
   const times = points.map((point) => point.time);
-  return frequencyOf(median(spans) ?? median(times.slice(1).map((time, index) => (time - times[index]!) / DAY_MS)));
+  const read = frequencyOf(median(spans) ?? median(times.slice(1).map((time, index) => (time - times[index]!) / DAY_MS)));
+  if (read) return read;
+  const yearly =
+    (points.length > 0 && points.every((point) => /^\d{4}$/.test(point.period))) ||
+    /:annual(:|$)/i.test(metricCode) ||
+    YEARLY_PROGRAMS.some((prefix) => metricCode.startsWith(prefix));
+  return yearly ? "yearly" : "";
 }
 
 /** Who publishes a series, in plain words, by its metric code's program. */

@@ -19,7 +19,7 @@ AUDITED_COUNTS = {
     "ETL": 110,
     "DB": 68,
     "API": 193,
-    "WEB": 160,
+    "WEB": 161,
     "DEPLOY": 13,
     "MARTIN": 13,
     "EXT": 30,
