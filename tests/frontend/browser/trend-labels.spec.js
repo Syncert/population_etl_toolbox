@@ -62,6 +62,6 @@ test("a city's history charts are titled and sourced the same way", async ({ pag
   await expect(income.getByTestId("chapter-work-money-trend-median-household-income-source")).toHaveText(
     "Source: U.S. Census Bureau, American Community Survey 5-year estimates",
   );
-  await expect(income.getByTestId("chapter-work-money-trend-median-household-income-meta")).toHaveText(/^dollars · (yearly|five-year estimates), \d{4}/);
+  await expect(income.getByTestId("chapter-work-money-trend-median-household-income-meta")).toHaveText(/^dollars · (yearly|five-year estimates), \d{4}/i);
   await expect(page.getByTestId("card-median-household-income-trend-link")).toHaveAttribute("href", "#chapter-work-money-trend-median-household-income");
 });

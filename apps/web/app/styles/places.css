@@ -418,6 +418,16 @@
   list-style: none;
   padding: 0;
 }
+/* The switch over a chapter's counts when its cards have none to switch. */
+.place-depth-toggle {
+  margin-top: 16px;
+}
+.place-depth-toggle .derived-toggle {
+  margin-bottom: 4px;
+}
+.place-depth-toggle p {
+  margin: 0;
+}
 
 /* Age and sex (web-age-and-sex-structure): the pyramid, its toggle, the
    at-a-glance cards, the difference bars, history and cohorts. */
