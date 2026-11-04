@@ -125,6 +125,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "hud_fmr_il_api_capture"),
         ("control", "fema_nri_run"),
         ("control", "fema_nri_page"),
+        ("control", "elections_run"),
+        ("control", "elections_file"),
         ("control", "fcc_bdc_read"),
         ("control", "fcc_bdc_file"),
         ("control", "epa_aqs_file"),

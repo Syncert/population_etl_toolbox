@@ -76,6 +76,16 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "ELECTIONS",
+        SRC / "elections/DDL/silver_elections.sql",
+        "silver_elections.candidate_result",
+        "valid",
+        # A vote count MEDSL leaves as NA is quarantined, not kept: a
+        # candidate row with no count is a row the warehouse does not hold.
+        can_withhold=False,
+        value_column="candidate_votes",
+    ),
+    FactContract(
         "FCC_BDC",
         SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
         "silver_fcc_bdc.availability_row",

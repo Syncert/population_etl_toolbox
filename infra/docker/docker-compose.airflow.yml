@@ -43,6 +43,11 @@ services:
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       BLS_API_KEY: ${BLS_API_KEY:-}
       EIA_API_KEY: ${EIA_API_KEY:-}
+      ELECTIONS_GUESTBOOK_NAME: ${ELECTIONS_GUESTBOOK_NAME:-}
+      ELECTIONS_GUESTBOOK_EMAIL: ${ELECTIONS_GUESTBOOK_EMAIL:-}
+      ELECTIONS_GUESTBOOK_INSTITUTION: ${ELECTIONS_GUESTBOOK_INSTITUTION:-}
+      ELECTIONS_GUESTBOOK_POSITION: ${ELECTIONS_GUESTBOOK_POSITION:-}
+      DATAVERSE_API_TOKEN: ${DATAVERSE_API_TOKEN:-}
       FRED_API_KEY: ${FRED_API_KEY:-}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
@@ -81,6 +86,7 @@ services:
       airflow pools set fhfa_hpi_files 1 'FHFA HPI workbooks (serialized)';
       airflow pools set hud_fmr_il_files 1 'HUD FMR and income-limit workbooks (serialized)';
       airflow pools set fema_files 1 'FEMA NRI and OpenFEMA pages (serialized)';
+      airflow pools set elections_files 1 'Election files: congress-legislators, Wikidata, Dataverse (serialized)';
       airflow pools set fcc_bdc_api 1 'FCC broadband map API (10 calls a minute)';
       airflow pools set epa_aqs_files 1 'EPA AirData files (serialized)';
       airflow pools set noaa_normals_files 1 'NOAA climate normals archive (serialized)';

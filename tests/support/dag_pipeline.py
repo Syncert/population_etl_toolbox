@@ -47,6 +47,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fhfa_hpi_files",
     "hud_fmr_il_files",
     "fema_files",
+    "elections_files",
     "fcc_bdc_api",
     "epa_aqs_files",
     "noaa_normals_files",
@@ -1153,6 +1154,21 @@ def stub_fema_nri(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fema_capture, "fetch_page", fetch_page)
 
 
+def stub_elections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed elections files in place of GitHub, Wikidata and Dataverse."""
+    from data_ingestion_toolbox.elections import capture as elections_capture
+    from data_ingestion_toolbox.elections.client import fetch_file
+    from tests.support.elections import FixtureClient
+
+    client = FixtureClient()
+
+    def fetch(request: Any, **kwargs: Any) -> Any:
+        kwargs["client"] = client
+        return fetch_file(request, **kwargs)
+
+    monkeypatch.setattr(elections_capture, "fetch_file", fetch)
+
+
 def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed county workbook in place of FHFA's download."""
     from data_ingestion_toolbox.fhfa_hpi import capture as hpi_capture
@@ -1682,6 +1698,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("noaa_normals", stub_noaa_normals),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),
+        ("elections", stub_elections),
         ("fhfa_hpi", stub_fhfa_hpi),
         ("hud_fmr_il", stub_hud_fmr_il),
         ("nces_ccd", stub_nces_ccd),
