@@ -67,6 +67,18 @@ export interface PlaceMeasure {
    * non-reporters (census-building-permits).
    */
   showReported?: boolean;
+  /**
+   * The measure's unit, in the publisher's own terms, for a source whose rows
+   * carry none: the ACS serves no unit on a row, yet its table title names it
+   * ("in inflation-adjusted dollars"). A unit the row carries always wins.
+   */
+  unit?: string;
+  /**
+   * Why a grain the measure is not published for has no figure, when the
+   * plain "Not published" would leave a reader thinking it was missed: LAUS
+   * has no national series, because the nation's rate is another survey's.
+   */
+  gaps?: Partial<Record<PlaceLevel, string>>;
 }
 
 export interface PlaceChapter {
@@ -229,6 +241,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         id: "median-age",
         label: "Median age",
         candidates: acs("B01002_001"),
+        unit: "Years",
       },
     ],
     depth: [
@@ -255,6 +268,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         id: "median-household-income",
         label: "Median household income",
         candidates: acs("B19013_001"),
+        unit: "Dollars",
         note: "In the survey year's inflation-adjusted dollars.",
         basis: SURVEY_BASIS,
       },
@@ -278,6 +292,10 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: ["BLS:LAU:UNEMP_RATE"],
         note: "Local Area Unemployment Statistics, a different universe from the survey counts below.",
         basis: HOUSEHOLD_BASIS,
+        gaps: {
+          NATIONAL:
+            "Not published nationally by LAUS; BLS states the nation's rate from a different survey (the Current Population Survey), so it is not set beside these",
+        },
       },
       {
         id: "qcew-jobs",
@@ -306,7 +324,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       },
     ],
     depth: [
-      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), basis: SURVEY_BASIS },
+      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), unit: "Dollars", basis: SURVEY_BASIS },
       { id: "gini", label: "Gini index of income inequality", candidates: acs("B19083_001"), note: "0 is perfect equality and 1 is one household holding all income." },
       { id: "below-poverty", label: "People with income below the poverty level", candidates: acs("B17001_002"), universe: "people whose poverty status is determined" },
       { id: "saipe-poverty-count", label: "People in poverty, all ages, single year", candidates: saipe("SAEPOVALL"), universe: "people whose poverty status is determined" },
@@ -352,12 +370,14 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         id: "median-gross-rent",
         label: "Median gross rent",
         candidates: acs("B25064_001"),
+        unit: "Dollars",
         note: "Rent plus the utilities the renter pays.",
       },
       {
         id: "median-home-value",
         label: "Median home value",
         candidates: acs("B25077_001"),
+        unit: "Dollars",
         note: "The owner's own estimate, which is what the ACS asks.",
       },
       {
@@ -825,7 +845,7 @@ export interface LevelPlace {
   geoId: string;
   name: string;
   /** "state context" when a county page reads its state's value. */
-  role: "this place" | "state context" | "parent";
+  role: "this place" | "state context" | "parent" | "member county";
 }
 
 export interface LevelAnswer {
@@ -891,6 +911,62 @@ export function threeLevelCard(
   return { period, rows };
 }
 
+// --- Member counties beside a metro's gap ------------------------------------
+
+/**
+ * Measures whose county figures add up to the metro's own: counts of the same
+ * thing in every county, so the sum is the metro's count. A median, a rate, a
+ * per-capita figure or a chained-dollar figure is never added (BEA chains each
+ * area on its own, so chained dollars are not additive); its counties are
+ * listed instead (web-metro-member-counties).
+ */
+export const ADDITIVE_MEMBER_MEASURES: ReadonlySet<string> = new Set(["population-estimate", "qcew-jobs"]);
+
+export interface MemberCountyRows {
+  rows: CardRow[];
+  /** The member counties' sum, when every one published a value for the card's period. */
+  sum: { value: number; counties: number } | null;
+}
+
+/**
+ * A metro card's rows for its member counties, when the measure is published
+ * for counties and not for metro areas. Each county is read on the card's
+ * period, as `threeLevelCard` reads a parent; a county whose newest period is
+ * another says so. The sum is offered only for an additive measure and only
+ * when every member county has a value for that period, never as a partial
+ * total.
+ */
+export function memberCountyRows(
+  members: readonly LevelPlace[],
+  answers: ReadonlyMap<string, LevelAnswer>,
+  cardPeriod: string,
+  additive: boolean,
+): MemberCountyRows {
+  const firstRow = members.map((place) => answers.get(place.geoId)?.row).find(Boolean) || null;
+  const period = cardPeriod || (firstRow ? observationPeriodLabel(firstRow) : "");
+  const rows = members.map((place): CardRow => {
+    const answer = answers.get(place.geoId);
+    if (answer?.error) return { place, row: null, message: answer.error };
+    if (answer?.pending) return { place, row: null, message: "Reading…" };
+    const row = answer?.row ?? null;
+    if (!row) return { place, row: null, message: "Not published for this county" };
+    const own = observationPeriodLabel(row);
+    if (period && own !== period) return { place, row: null, message: `Not published for ${period} (newest published: ${own})` };
+    if (publishedNumber(row.value) === null) {
+      return { place, row, message: row.value_status ? `Published without a value: ${String(row.value_status)}` : "Published without a value" };
+    }
+    return { place, row, message: "" };
+  });
+  let sum: MemberCountyRows["sum"] = null;
+  if (additive && rows.length) {
+    const values = rows.map((entry) => (entry.row && !entry.message ? publishedNumber(entry.row.value) : null));
+    if (values.every((value) => value !== null)) {
+      sum = { value: values.reduce<number>((total, value) => total + (value as number), 0), counties: rows.length };
+    }
+  }
+  return { rows, sum };
+}
+
 /** Whether any measure in the chapter answered a value for this place. */
 export function chapterHasValues(
   resolved: ResolvedChapter,
@@ -907,6 +983,8 @@ export function chapterHasValues(
 export interface TrendPoint {
   period: string;
   time: number;
+  /** When the period ends, as published (NaN when it is not), so a chart can say how often the series is published. */
+  end: number;
   value: number;
   published: number;
   /**
@@ -936,6 +1014,9 @@ export interface TrendModel {
   /** Lines that could not be indexed, because they lack the base period. */
   unindexed: string[];
 }
+
+/** A headline card's anchor, which the chart drawing its measure links back to. */
+export const cardAnchor = (chapterId: string, measureId: string) => `chapter-${chapterId}-card-${measureId}`;
 
 const WHOLE_YEAR_START = /^(\d{4})-01-01$/;
 const WHOLE_YEAR_END = /^(\d{4})-12-31$/;
@@ -1014,6 +1095,7 @@ export function buildTrend(
       .map((entry) => ({
         period: trendPeriodLabel(entry.row),
         time: entry.time,
+        end: Date.parse(String(entry.row.period_end || "")),
         value: entry.number as number,
         published: entry.number as number,
         ...publishedMargin(entry.row),
@@ -1024,6 +1106,7 @@ export function buildTrend(
       .map((entry) => trendPeriodLabel(entry.row));
     return { place, points, unpublished: rows.length - points.length, unpublishedPeriods };
   }).filter((line) => line.points.length > 0 || line.unpublished > 0);
+  // The page's own place speaks for the series; a parent only when it has none.
 
   if (scale === "level") {
     return { lines: raw, scale, basePeriod: "", unindexed: [] };

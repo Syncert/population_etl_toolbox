@@ -24,9 +24,14 @@ The DAG runs at 06:00 UTC on the 15th of each month. SAIPE publishes each
 December and SAHIE each spring, so most runs find the bytes already held: they
 add a capture and no estimate.
 
-An ordinary run captures the two newest registered years of each dataset. A
-manual run with `{"history": true}` in its conf captures every registered
-year, which is how a fresh warehouse is loaded:
+An ordinary run captures the two newest registered years of each dataset,
+plus every registered year whose three grains have not all been published or
+answered empty. On a fresh warehouse, or one that only ever ran the two-year
+window, that is the whole history (SAIPE from 1989, SAHIE from 2006), so no
+manual step is needed; once every year is answered, runs are the two-year
+window again. A year answering `204` (a year the API holds no estimates for)
+counts as answered. A manual run with `{"history": true}`
+in its conf re-captures every registered year, answered or not:
 
 ```text
 airflow dags trigger census_saipe_sahie_ingest --conf '{"history": true}'

@@ -170,3 +170,14 @@ every-county figures for the Work and Money and Health chapters.
 
 Implementation complete; awaiting human review of `feat/census-saipe-sahie`
 and then `feat/census-saipe-sahie-cards`.
+
+## Follow-up (2026-11-03, UAT): history loads by itself
+
+OFFICE_LAB held SAIPE 2023–2024 and SAHIE 2022–2023 only: the DAG captured
+the two newest years unless a run carried `{"history": true}`, and that run
+was never made. Since ETL-110 a scheduled run also captures every registered
+year whose grains have not all been published or answered `204`, so the next
+run loads 1989 onward (SAIPE) and 2006 onward (SAHIE) and later runs are the
+two-year window again. Building Permits and QCEW follow the same rule. The
+explorer's status row also stopped counting `/observations/releases` (11 load
+captures for SAIPE) and counts published years instead (WEB-158).

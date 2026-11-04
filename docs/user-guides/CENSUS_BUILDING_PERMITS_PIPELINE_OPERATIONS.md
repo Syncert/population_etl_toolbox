@@ -46,7 +46,10 @@ July on the six months are all this year's, yet the newest published year
 total is last year's. A month or year not yet released answers 404 and is
 recorded `empty`.
 
-A fresh warehouse is loaded with a history run:
+A scheduled run also asks for every registered period whose files have not
+all been published or answered empty, so the first run on a fresh warehouse
+loads the history by itself (ETL-110). A history run re-asks for every
+period, answered or not:
 
 ```text
 airflow dags trigger census_building_permits_ingest --conf '{"history": true}'

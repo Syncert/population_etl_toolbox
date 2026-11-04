@@ -368,13 +368,14 @@ Trigger `bea_regional_ingest` once: every run reads every year of every
 registered BEA table, five zips through the one-slot `bea_files` pool
 ([operations](../user-guides/BEA_REGIONAL_PIPELINE_OPERATIONS.md)).
 
-Trigger `bls_qcew_ingest` with `--conf '{"history": true}'` to load every
+Trigger `bls_qcew_ingest` (a plain run backfills every unanswered period
+since ETL-110; `--conf '{"history": true}'` re-asks for all of them) to load every
 registered QCEW period from 2014: about 1,300 slice requests through the
 one-slot `bls_qcew_api` pool
 ([operations](../user-guides/BLS_QCEW_PIPELINE_OPERATIONS.md)).
 
-Trigger `census_building_permits_ingest` with `--conf '{"history": true}'` to
-load every registered permits file from 2000 (places from 2007): two files
+Trigger `census_building_permits_ingest` (a plain run backfills every
+unanswered period since ETL-110) to load every registered permits file from 2000 (places from 2007): two files
 per month and six per year, about 750 requests through the one-slot
 `census_bps_files` pool
 ([operations](../user-guides/CENSUS_BUILDING_PERMITS_PIPELINE_OPERATIONS.md)).
@@ -445,9 +446,9 @@ one-slot `usda_ers_files` pool
 Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 `bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
 `fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography
-reference succeeds. Trigger `census_saipe_sahie_ingest` with
-`--conf '{"history": true}'` so the first run captures every registered year
-rather than the two newest
+reference succeeds. Trigger `census_saipe_sahie_ingest`; since ETL-110 a plain run captures every
+registered year not yet answered as well as the two newest, so the first run
+loads the whole history (`--conf '{"history": true}'` re-asks for every year)
 ([operations](../user-guides/CENSUS_SAIPE_SAHIE_PIPELINE_OPERATIONS.md)). A USDA NASS run whose logical date falls on the first of
 the month sweeps the whole registered year range, so a bootstrap should be
 triggered on that date, or with that logical date, to reproduce the reviewed
