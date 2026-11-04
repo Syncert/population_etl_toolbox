@@ -175,7 +175,7 @@ const bps = (measure: string, structure: string, frequency: string): string[] =>
 const AUTHORIZED_BASIS = "Authorized by building permits, not started or completed";
 
 /** When the Bureau puts out a year's permit totals (its December year-to-date file). */
-const BPS_ANNUAL_PUBLISHED = "Census publishes each year's total early the following year.";
+const BPS_ANNUAL_PUBLISHED = "Census publishes each year's total early the next year.";
 
 /**
  * Said wherever IRS migration flows sit near PEP net migration

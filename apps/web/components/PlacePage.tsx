@@ -1428,9 +1428,8 @@ function HeadlineCard({
     return (
       <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="false">
         <h3>{measure.measure.label}</h3>
-        <p className="subtle" title={measure.measure.candidates.join(", ")} data-looked-for={measure.measure.candidates.join(" ")}>
-          {NOT_LOADED}
-          {measure.measure.whenPublished ? ` ${measure.measure.whenPublished}` : ""}
+        <p className="subtle" title={measure.measure.candidates.join(", ")}>
+          {NOT_LOADED} {measure.measure.whenPublished}
         </p>
       </div>
     );

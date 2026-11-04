@@ -490,7 +490,7 @@ describe("homes authorized", () => {
     const permits = housing.headline.filter((measure) => measure.candidates[0].startsWith("CENSUS_BPS:"));
     const annual = permits.filter((measure) => measure.candidates[0].endsWith(":annual"));
     expect(annual.map((measure) => measure.id)).toEqual(["bps-single-family-year", "bps-multifamily-year"]);
-    for (const measure of annual) expect(measure.whenPublished).toBe("Census publishes each year's total early the following year.");
+    for (const measure of annual) expect(measure.whenPublished).toBe("Census publishes each year's total early the next year.");
     expect(permits.find((measure) => measure.id === "bps-single-family-month").whenPublished).toBeUndefined();
   });
 
