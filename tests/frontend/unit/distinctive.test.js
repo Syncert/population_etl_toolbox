@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { rankSentence, standouts } from "../../../apps/web/lib/distinctive";
+import { rankSentence, standoutName, standouts } from "../../../apps/web/lib/distinctive";
 
 // Covers: WEB-131 — the highest and lowest are separate lists of single
 // measures, worded with their gaps; nothing is combined.
@@ -23,5 +23,13 @@ describe("what stands out", () => {
     expect(rankSentence(measure("a", 0.4, { siblings_below: 4, siblings_withheld: 1, siblings_missing: 2, siblings_tied: 1 }), "Wisconsin counties"))
       .toBe("Higher than 4 of 10 Wisconsin counties with a published value, equal to 1 (1 withheld a value; 2 published none)");
     expect(rankSentence(measure("a", 0.4, { siblings_below: 4 }), "states")).toBe("Higher than 4 of 10 states with a published value");
+  });
+
+  it("never shows a bare variable code as a measure's name", () => {
+    // Covers: WEB-167 — an unmapped code falls back to words, not "Rdeath".
+    expect(standoutName(measure("CENSUS_PEP:RDEATH", 0.1, { metric_display_name: "Rdeath", metric_label: "Rdeath" }))).toBe("Measure not yet named in plain words");
+    expect(standoutName(measure("SOME:CODE", 0.1, { metric_display_name: "some:code" }))).toBe("Measure not yet named in plain words");
+    expect(standoutName(measure("CENSUS_PEP:RDEATH", 0.1, { metric_display_name: "Rdeath", metric_label: "Death rate" }))).toBe("Death rate");
+    expect(standoutName(measure("CDC:places_county:OBESITY:AgeAdjPrv", 0.1, { metric_display_name: "Obesity among adults" }))).toBe("Obesity among adults");
   });
 });

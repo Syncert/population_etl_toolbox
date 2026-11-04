@@ -434,7 +434,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
         rank("CENSUS_ACS:acs5:B19301_001", "Per capita income", 51000, 64),
         rank("CENSUS_ACS:acs5:B01002_001", "Median age", 35.7, 2),
         rank("BLS:LAU:UNEMP_RATE", "Unemployment rate", 2.4, 4),
-        rank("CENSUS_PEP:RDEATH", "Death rate", 7.1, 5),
+        rank("CENSUS_PEP:RDEATH", "Rdeath", 7.1, 5, { metric_display_name: "Rdeath", units: "per_1000_population" }),
       ] : [];
       return route.fulfill({ json: { derived: true, geo_id: geoId, geo_level: geoId.includes("county") ? "COUNTY" : "STATE", parent_scope: "state:55", minimum_siblings: 10,
         method: "UI fixture", ranked, not_ranked: [{ metric_code: "CDC:places_county:OBESITY:AgeAdjPrv", reason: "not published at COUNTY (UI fixture)" }] } });
