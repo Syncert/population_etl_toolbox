@@ -202,3 +202,31 @@ with fixtures under `tests/frontend/support/`.
   8 of 10 pass (512 governor terms, none rejected; state president is now
   `1976-2024-president`); county and House wait on the guestbook identity.
 - Next: E-3 lean groups, after E-2 merges and one live load on OFFICE_LAB.
+
+2026-11-04, E-3 (lean groups) built on top of E-2 and held for go:
+
+- `gold_elections/DDL/lean_groups.sql`: tables `lean_place_change` (county
+  per window and measure) and `lean_group_change` (lean band within peer
+  group: count, median, quartiles of change net of the nation), the
+  definitions of measures, bands and peer types, and the rebuild functions.
+  PL/pgSQL so the file does not depend on the other sources' gold DDL order.
+  DAG `elections_lean_groups`, daily, rebuilds only when an input's
+  fingerprint changed (`lean_refresh`). Catalog ETL-112; rule DQ-ELEC-005.
+- Decisions applied: four bands from the window-start presidential margin
+  (an exact tie is in no band); income deflated with the annual mean of the
+  twelve monthly PCEPI values, internal only; change against the nation, one
+  measure at a time, no combined score.
+- Changed from the deliverable text, on purpose: the industry-mix peer group
+  uses ERS's 2025 industry dependence code (already loaded, one code per
+  county) instead of a CAINC5N classification; the nation's unemployment rate
+  is the LAUS states' annual unemployed over labor force (LAUS has no national
+  series and CPS's seasonally adjusted series has no annual average). RUCC and
+  the typology are the newest editions loaded and serve every window.
+- Known gaps: counties named differently across inputs drop out
+  (Connecticut planning regions, Alaska districts, BEA's combined Virginia
+  areas); windows end at 2024 until 2028's vote loads.
+- Before merge: EXPLAIN ANALYZE of `gold_elections.refresh_lean_groups(TRUE)`
+  on OFFICE_LAB (it scans BEA, QCEW and LAUS once per rebuild), then one
+  live rebuild and a read of the 2000 to 2024 groups.
+- Next: E-4 API (`/elections/lean-groups`), reading `lean_group_change` by
+  window, measure and peer type.

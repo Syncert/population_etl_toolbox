@@ -2053,6 +2053,61 @@ def elections_totals_and_geography(
     ]
 
 
+def elections_lean_group_arithmetic(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-005 — lean groups are net of the nation, banded by the start vote, and add up."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_elections.lean_place_change")
+    if total == 0:
+        return [RuleOutcome("gold_elections.lean_place_change", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT place.geo_id AS item,
+               place.measure || ' ' || place.window_start_year || '-' || place.window_end_year AS window,
+               'net ' || place.net_change || ', band ' || place.lean_band
+                   || ' for margin ' || place.lean_margin AS detail
+          FROM gold_elections.lean_place_change AS place
+         WHERE ABS(place.net_change - (place.place_change - place.nation_change)) > 0.0002
+            OR place.lean_margin = 0
+            OR place.lean_band <> CASE WHEN place.lean_margin >= 20 THEN 'R20_plus'
+                                       WHEN place.lean_margin > 0 THEN 'R0_20'
+                                       WHEN place.lean_margin > -20 THEN 'D0_20'
+                                       ELSE 'D20_plus' END
+        UNION ALL
+        SELECT COALESCE(grouped.lean_band, counted.lean_band),
+               COALESCE(grouped.measure, counted.measure) || ' '
+                   || COALESCE(grouped.window_start_year, counted.window_start_year) || '-'
+                   || COALESCE(grouped.window_end_year, counted.window_end_year),
+               'all-county group counts ' || COALESCE(grouped.place_count, 0)
+                   || ' of ' || COALESCE(counted.places, 0)
+          FROM (
+              SELECT window_start_year, window_end_year, measure, lean_band, place_count
+                FROM gold_elections.lean_group_change
+               WHERE peer_type = 'all'
+          ) AS grouped
+          FULL JOIN (
+              SELECT window_start_year, window_end_year, measure, lean_band, COUNT(*) AS places
+                FROM gold_elections.lean_place_change
+               GROUP BY window_start_year, window_end_year, measure, lean_band
+          ) AS counted
+            USING (window_start_year, window_end_year, measure, lean_band)
+         WHERE grouped.place_count IS DISTINCT FROM counted.places
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "gold_elections.lean_place_change",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def hpi_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-HPI-002 — no workbook left unreplayed; every readable one reached silver."""
     del scope
@@ -4059,6 +4114,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ELEC-002": elections_run_reconciliation,
     "DQ-ELEC-003": elections_seat_overlap,
     "DQ-ELEC-004": elections_totals_and_geography,
+    "DQ-ELEC-005": elections_lean_group_arithmetic,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

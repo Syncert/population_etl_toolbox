@@ -54,6 +54,7 @@ EXPECTED_DAG_IDS = {
     "fcc_bdc_ingest",
     "fema_nri_ingest",
     "elections_ingest",
+    "elections_lean_groups",
     "fhfa_hpi_ingest",
     "hud_fmr_il_ingest",
     "nces_ccd_ingest",
@@ -117,6 +118,9 @@ EXPECTED_SCHEDULES = {
     # certification; every stream is re-read whole, and an unchanged read
     # replays nothing.
     "elections_ingest": "0 7 3 * *",
+    # Daily: the lean groups derive from four sources that publish on their
+    # own schedules; a day with no new input publication rebuilds nothing.
+    "elections_lean_groups": "0 13 * * *",
     # Monthly: FHFA revises the annual workbook without a published
     # calendar, and an unchanged file replays nothing.
     "fhfa_hpi_ingest": "0 15 25 * *",
@@ -165,6 +169,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
     "elections_ingest": 2,
+    "elections_lean_groups": 1,
     "fhfa_hpi_ingest": 2,
     "hud_fmr_il_ingest": 2,
     "nces_ccd_ingest": 2,
