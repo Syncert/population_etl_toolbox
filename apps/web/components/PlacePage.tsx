@@ -84,7 +84,7 @@ import type {
 import { COMPARE_GEO_ID, compareHref } from "../lib/placeComparison";
 import { crossCountyNote, groupNearby, isEmpty, partOfShareText, relatedPath, shareText } from "../lib/placeRelationships";
 import type { NearbyEntry, NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
-import { rankSentence, standouts } from "../lib/distinctive";
+import { rankSentence, standoutName, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
 import { agencyRateFor, getDerivedObservations, getDerivedRatios, pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
@@ -1532,12 +1532,15 @@ function uncertaintyText(row: ObservationRow): string {
 }
 
 function StandoutRow({ measure, siblingsName }: { measure: DistinctiveMeasure; siblingsName: string }) {
-  const unit = measure.units && measure.units !== "value" ? ` ${unitText(measure.units)}` : "";
+  // The unit sits under the number and wraps there: "per 1,000 people" ran
+  // past the panel edge when it shared the number's unbroken line.
+  const unit = measure.units && measure.units !== "value" ? unitText(measure.units) : "";
+  const value = formatObservationValue(measure.value);
   return (
     <li data-testid={`standout-${measure.metric_code}`}>
-      <Link className="text-link" href={`/map/${encodeURIComponent(measure.metric_code)}`} title="See every county on a map">{displayMetricName(measure)}</Link>
+      <Link className="text-link" href={`/map/${encodeURIComponent(measure.metric_code)}`} title={`See every county on a map · ${measure.metric_code}`}>{standoutName(measure)}</Link>
       <span className="standout-track" aria-hidden="true"><i style={{ left: `${Math.min(100, Math.max(0, measure.percentile_rank * 100))}%` }} /></span>
-      <span className="standout-value">{formatObservationValue(measure.value)}{unit}</span>
+      <span className="standout-value" title={unit ? `${value} ${unit}` : value}><b>{value}</b>{unit ? <small> {unit}</small> : null}</span>
       <p className="subtle">{rankSentence(measure, siblingsName)}{measure.period_start ? `, period beginning ${measure.period_start}` : ""}.</p>
     </li>
   );

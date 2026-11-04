@@ -295,9 +295,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-166 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-167 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **712 of 712** | **0 of 712** |
+| **Total** | **713 of 713** | **0 of 713** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 712-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 713-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -1031,6 +1031,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-164 | P1 | Frontend / `frontend unit`, Browser / `web-browser` | A headline card carries its own history | A headline card with at least three published periods for the page's own place in the record's last ten years draws them as a sparkline of the published values (never an index), newest point marked, first and last periods in words; the history of a headline measure no trend chart draws is read in one history batch per chapter that names only the page's own place, so no parent history is read for it; one line under it says how the series moved by ADR-0011's rules: a monthly series against the same month of an earlier year, a multi-year survey estimate against one sharing none of its years, "Rose"/"Fell" only beyond the published 90 percent margins and "Not distinguishable from" otherwise, and nothing when only one margin is published; a card showing a derived view draws no sparkline | A card whose number stands with no sense of direction, a sparkline drawn on an index, a change line that calls overlapping survey estimates a rise, or a sparkline read that fans out into one request per card |
 | WEB-165 | P1 | Browser / `web-browser` | What stands out shows each rank as a position | Each What stands out row draws the measure's within-parent rank as a dot on a lowest-to-highest track placed at the served `percentile_rank`, its value beside it and the rank sentence (with withheld and missing siblings named) under it; the measure's plain name links to its map; the sources' caveats are said once in a disclosure under the section, never repeated under every row; the section still says each measure is ranked on its own and that a rank is not a distance | Two columns of sentences the reader must parse to find where the place falls, or the same caveat paragraph printed under each row |
 | WEB-166 | P1 | Frontend / `frontend unit` | Every map reads darker as more | Every choropleth band (the API's quantile bins, the equal-width fallback, the log scale) takes one hue from light to dark, the five steps of the site's green, validated for monotone lightness, step gaps, light-end contrast and one hue; when a measure's bands run below and above zero, bands wholly below take a purple arm and bands wholly above a green arm, each darker away from zero, and the band holding zero a neutral grey; a withheld geography's legend row names the publisher's status in words ("coded as unavailable", "no value given") rather than an internal code | A map whose third and fourth bands differ mostly by hue so it reads as regions, a loss and a gain painted the same colour, or "Value not published: sentinel" in a legend |
+| WEB-167 | P1 | Frontend / `frontend unit`, Browser / `web-browser` | A What stands out row names its measure in words and keeps its unit inside the panel | Every measure the API ranks has a plain-label entry, so a bulk-file rate reads by name ("Death rate", not PEP's bare variable "Rdeath"); a name that is still only the measure's code reads "Measure not yet named in plain words", with the code kept in the link's hover text; the value's unit sits on its own line under the number and wraps there, so "7.1 per 1,000 people" stays inside its row at a 390-pixel phone width, with the full value and unit in its hover text | A row titled with a raw code, or "6.7 per 1,000 pe" cut off at the panel edge |
 
 ### Deployment Tests
 

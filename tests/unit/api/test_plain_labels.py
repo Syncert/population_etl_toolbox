@@ -18,6 +18,7 @@ from apps.api.schemas.analysis import (
 from apps.api.schemas.catalog import MetricCatalog
 from apps.api.schemas.labels import label_fields
 from apps.api.schemas.observations import NeutralObservation
+from apps.api.services.distinctive_service import DISTINCTIVE_MEASURES
 from data_ingestion_toolbox.semantics.definitions import (
     DefinitionError,
     parse_registry,
@@ -93,11 +94,17 @@ def _place_page_codes() -> set[str]:
 
 
 def test_every_metric_a_place_page_shows_has_a_definition() -> None:
-    """Covers: API-170 -- the place pages' measures are all defined."""
+    """Covers: API-170 -- the place pages' measures are all defined.
+
+    "What stands out" ranks are included: a ranked measure with no entry fell
+    back to its provider label, and PEP's is the bare variable ("Rdeath").
+    """
     defined = set(registry())
     undefined = sorted(
         code
-        for code in _place_page_codes() | _groceries_and_gas_codes()
+        for code in _place_page_codes()
+        | _groceries_and_gas_codes()
+        | set(DISTINCTIVE_MEASURES)
         if code not in defined and not code.startswith("USDA_NASS:")
     )
     assert undefined == []

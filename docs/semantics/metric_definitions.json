@@ -1266,6 +1266,56 @@
       "last_reviewed_date": "2026-10-26"
     },
     {
+      "metric_id": "CENSUS_PEP:RBIRTH",
+      "metric_codes": [
+        "CENSUS_PEP:RBIRTH"
+      ],
+      "name": "Birth rate",
+      "definition": "Births per 1,000 residents, as the program published it.",
+      "unit": "per 1,000 residents",
+      "universe": "people",
+      "kind": "rate",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-04",
+      "last_reviewed_date": "2026-11-04"
+    },
+    {
+      "metric_id": "CENSUS_PEP:RDEATH",
+      "metric_codes": [
+        "CENSUS_PEP:RDEATH"
+      ],
+      "name": "Death rate",
+      "definition": "Deaths per 1,000 residents, as the program published it.",
+      "unit": "per 1,000 residents",
+      "universe": "people",
+      "kind": "rate",
+      "caveat": "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "An estimate for the year ending July 1 of the vintage; each new vintage revises earlier years."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/methodology.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-04",
+      "last_reviewed_date": "2026-11-04"
+    },
+    {
       "metric_id": "BLS:LAU:UNEMP_RATE",
       "metric_codes": [
         "BLS:LAU:UNEMP_RATE"
@@ -1589,6 +1639,81 @@
       "version": 1,
       "effective_date": "2026-10-26",
       "last_reviewed_date": "2026-10-26"
+    },
+    {
+      "metric_id": "CDC:places_county:CSMOKING:AgeAdjPrv",
+      "metric_codes": [
+        "CDC:places_county:CSMOKING:AgeAdjPrv"
+      ],
+      "name": "Current smoking among adults (age-adjusted)",
+      "definition": "The share of adults 18 and over who have smoked at least 100 cigarettes in their life and smoke now, age-adjusted.",
+      "unit": "percent",
+      "universe": "adults 18 and over",
+      "kind": "rate",
+      "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate from survey responses with a confidence interval, not a clinical count."
+      ],
+      "citations": [
+        "https://www.cdc.gov/places/methodology/index.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-04",
+      "last_reviewed_date": "2026-11-04"
+    },
+    {
+      "metric_id": "CDC:places_county:ACCESS2:AgeAdjPrv",
+      "metric_codes": [
+        "CDC:places_county:ACCESS2:AgeAdjPrv"
+      ],
+      "name": "No health insurance among adults 18 to 64 (age-adjusted)",
+      "definition": "The share of adults aged 18 to 64 with no current health insurance, age-adjusted.",
+      "unit": "percent",
+      "universe": "adults 18 to 64",
+      "kind": "rate",
+      "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate from survey responses with a confidence interval, not a clinical count."
+      ],
+      "citations": [
+        "https://www.cdc.gov/places/methodology/index.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-04",
+      "last_reviewed_date": "2026-11-04"
+    },
+    {
+      "metric_id": "CDC:places_county:DEPRESSION:AgeAdjPrv",
+      "metric_codes": [
+        "CDC:places_county:DEPRESSION:AgeAdjPrv"
+      ],
+      "name": "Depression among adults (age-adjusted)",
+      "definition": "The share of adults 18 and over ever told by a doctor or other health professional they have a depressive disorder, age-adjusted.",
+      "unit": "percent",
+      "universe": "adults 18 and over",
+      "kind": "rate",
+      "caveat": "A model-based estimate from survey responses with a confidence interval, not a clinical count.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "A model-based estimate from survey responses with a confidence interval, not a clinical count."
+      ],
+      "citations": [
+        "https://www.cdc.gov/places/methodology/index.html"
+      ],
+      "status": "draft",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-04",
+      "last_reviewed_date": "2026-11-04"
     },
     {
       "metric_id": "FBI_UCR:summarized_violent_crime:V:offense:rate",
