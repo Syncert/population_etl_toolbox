@@ -53,7 +53,6 @@ import {
   resolveStateSegment,
   stateName,
   stateSegment,
-  trendSourceName,
 } from "../lib/placeChapters";
 import type { LevelPlace, PlaceChapter, PlaceLevel, PlaceMeasure } from "../lib/placeChapters";
 import { COMPARE_GEO_ID, barPosition, compareHref, compareMeasure, intervalsOverlap, pairPath } from "../lib/placeComparison";
@@ -704,7 +703,8 @@ function CompareChapter({
           title={`${trendMeasure.measure.label} over time`}
           unit={unitText(trendRow.a.row)}
           metricName={displayMetricName(trendMeasure.metric)}
-          source={trendSourceName(trendMeasure.code, trendMeasure.metric.source_code)}
+          metricCode={trendMeasure.code}
+          sourceCode={trendMeasure.metric.source_code}
           testId={`compare-chapter-${chapter.id}-trend`}
         />
       ) : null}

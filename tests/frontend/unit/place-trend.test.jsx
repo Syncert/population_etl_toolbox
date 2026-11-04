@@ -1,6 +1,6 @@
 import React from "react";
 
-// Covers: WEB-159 — every trend chart on a place page says what it draws: a
+// Covers: WEB-160 — every trend chart on a place page says what it draws: a
 // title naming the measure in plain words, its unit, how often it is published
 // and the span drawn, its source, a y-axis label and a legend above the plot,
 // linked to the headline card it draws (UAT on /metro/madison-wi, where the
@@ -9,7 +9,8 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import PlaceTrend from "../../../apps/web/components/PlaceTrend";
-import { buildTrend, trendFrequency, trendSourceName } from "../../../apps/web/lib/placeChapters";
+import { buildTrend } from "../../../apps/web/lib/placeChapters";
+import { trendFrequency, trendSourceName } from "../../../apps/web/lib/trendLabels";
 
 const levels = [
   { level: "METRO", geoId: "m", name: "Madison, WI", role: "this place" },
@@ -27,21 +28,23 @@ const yearly = (values, start = 2019) =>
   values.map((value, index) => ({ period_start: `${start + index}-01-01`, period_end: `${start + index}-12-31`, value }));
 
 describe("how often a trend is published", () => {
-  it("is read from the rows' own periods", () => {
-    expect(trendFrequency(monthly(["1", "2", "3"]))).toBe("monthly");
-    expect(trendFrequency(yearly(["1", "2"]))).toBe("yearly");
-    expect(trendFrequency([{ period_start: "2020-01-01", period_end: "2024-12-31", value: "1" }])).toBe("five-year estimates");
-    expect(trendFrequency([{ period_start: "2024-01-01", period_end: "2024-03-31", value: "1" }])).toBe("quarterly");
+  const one = (rows) => buildTrend([levels[0]], new Map([["m", rows]]), "level");
+
+  it("is read from the drawn points' own periods", () => {
+    expect(trendFrequency(one(monthly(["1", "2", "3"])))).toBe("monthly");
+    expect(trendFrequency(one(yearly(["1", "2"])))).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2020-01-01", period_end: "2024-12-31", value: "1" }]))).toBe("five-year estimates");
+    expect(trendFrequency(one([{ period_start: "2024-01-01", period_end: "2024-03-31", value: "1" }]))).toBe("quarterly");
   });
 
-  it("falls back to the gap between dated rows, and says nothing when it cannot tell", () => {
-    expect(trendFrequency([{ observation_date: "2024-01-01" }, { observation_date: "2024-02-01" }, { observation_date: "2024-03-01" }])).toBe("monthly");
-    expect(trendFrequency([{ observation_date: "2024-01-01" }])).toBe("");
+  it("falls back to the gap between dated points, and says nothing when it cannot tell", () => {
+    expect(trendFrequency(one([{ period_start: "2024-01-01", value: "1" }, { period_start: "2024-02-01", value: "2" }, { period_start: "2024-03-01", value: "3" }]))).toBe("monthly");
+    expect(trendFrequency(one([{ period_start: "2024-01-01", value: "1" }]))).toBe("");
   });
 
-  it("is carried on the model, from the page's own place first", () => {
-    const trend = buildTrend(levels, new Map([["m", monthly(["3.1", "3.0"])], ["s", monthly(["3.4", "3.3"])]]), "level");
-    expect(trend.frequency).toBe("monthly");
+  it("is the page's own line's, before a parent's", () => {
+    const trend = buildTrend(levels, new Map([["m", monthly(["3.1", "3.0"])], ["s", yearly(["3.4", "3.3"])]]), "level");
+    expect(trendFrequency(trend)).toBe("monthly");
   });
 });
 
@@ -68,11 +71,14 @@ describe("a trend chart says what it draws", () => {
     render(
       <PlaceTrend
         model={model}
-        title="Unemployment rate over time"
-        metricName="Unemployment rate"
+        measure={{
+          measure: { id: "unemployment-rate", label: "Unemployment rate", candidates: ["BLS:LAU:UNEMP_RATE"] },
+          metric: { metric_code: "BLS:LAU:UNEMP_RATE", metric_label: "Unemployment rate", source_code: "BLS" },
+          metricCode: "BLS:LAU:UNEMP_RATE",
+          publishedAtGrain: true,
+        }}
+        chapterId="work-money"
         unit="percent"
-        source={trendSourceName("BLS:LAU:UNEMP_RATE", "BLS")}
-        forCard={{ label: "Unemployment rate", anchor: "chapter-work-money-card-unemployment-rate" }}
         testId="trend"
       />,
     );

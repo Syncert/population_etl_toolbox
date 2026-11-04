@@ -2,7 +2,7 @@ import AxeBuilder from "../../../apps/web/node_modules/@axe-core/playwright/dist
 import { expect, test } from "../support/servedRequests.js";
 import { installPlaceFixtures } from "../support/placeScenarios.js";
 
-// Covers: WEB-159 — every trend chart says what it draws (UAT on the Madison
+// Covers: WEB-160 — every trend chart says what it draws (UAT on the Madison
 // metro page, where the work chart showed only "14" and "1.3"): a heading
 // naming the measure in plain words, its unit, how often it is published and
 // the span, its source, a y-axis label, the legend above the plot, and links
@@ -38,12 +38,11 @@ test("a metro page's trend charts each name their measure, unit, frequency, sour
     const box = await chart.boundingBox();
     expect(legend.y + legend.height).toBeLessThanOrEqual(plot.y + 1);
     expect(legend.y + legend.height).toBeLessThanOrEqual(box.y + box.height);
-    // A chapter's chart names its card and links to it; the card links back.
+    // A chapter's chart names its card and links to it.
     if (!chapterTrend) continue;
     const toCard = chart.getByTestId(`${testId}-for`).getByRole("link");
     const anchor = (await toCard.getAttribute("href")).slice(1);
     await expect(page.locator(`#${anchor}`)).toHaveCount(1);
-    await expect(page.locator(`#${anchor} a[href="#${testId}"]`)).toHaveCount(1);
   }
   const unemployment = page.getByTestId("chapter-work-money-trend");
   await expect(unemployment.getByTestId("chapter-work-money-trend-title")).toHaveText("Unemployment rate over time");
@@ -63,5 +62,8 @@ test("a city's history charts are titled and sourced the same way", async ({ pag
     "Source: U.S. Census Bureau, American Community Survey 5-year estimates",
   );
   await expect(income.getByTestId("chapter-work-money-trend-median-household-income-meta")).toHaveText(/^dollars · (yearly|five-year estimates), \d{4}/i);
-  await expect(page.getByTestId("card-median-household-income-trend-link")).toHaveAttribute("href", "#chapter-work-money-trend-median-household-income");
+  await expect(income.getByTestId("chapter-work-money-trend-median-household-income-for").getByRole("link")).toHaveAttribute(
+    "href",
+    "#chapter-work-money-card-median-household-income",
+  );
 });

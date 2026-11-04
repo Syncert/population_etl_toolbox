@@ -67,6 +67,12 @@ export interface PlaceMeasure {
    * ("in inflation-adjusted dollars"). A unit the row carries always wins.
    */
   unit?: string;
+  /**
+   * Why a grain the measure is not published for has no figure, when the
+   * plain "Not published" would leave a reader thinking it was missed: LAUS
+   * has no national series, because the nation's rate is another survey's.
+   */
+  gaps?: Partial<Record<PlaceLevel, string>>;
 }
 
 export interface PlaceChapter {
@@ -277,6 +283,10 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         candidates: ["BLS:LAU:UNEMP_RATE"],
         note: "Local Area Unemployment Statistics, a different universe from the survey counts below.",
         basis: HOUSEHOLD_BASIS,
+        gaps: {
+          NATIONAL:
+            "Not published nationally by LAUS; BLS states the nation's rate from a different survey (the Current Population Survey), so it is not set beside these",
+        },
       },
       {
         id: "qcew-jobs",
@@ -824,7 +834,7 @@ export interface LevelPlace {
   geoId: string;
   name: string;
   /** "state context" when a county page reads its state's value. */
-  role: "this place" | "state context" | "parent";
+  role: "this place" | "state context" | "parent" | "member county";
 }
 
 export interface LevelAnswer {
@@ -890,6 +900,62 @@ export function threeLevelCard(
   return { period, rows };
 }
 
+// --- Member counties beside a metro's gap ------------------------------------
+
+/**
+ * Measures whose county figures add up to the metro's own: counts of the same
+ * thing in every county, so the sum is the metro's count. A median, a rate, a
+ * per-capita figure or a chained-dollar figure is never added (BEA chains each
+ * area on its own, so chained dollars are not additive); its counties are
+ * listed instead (web-metro-member-counties).
+ */
+export const ADDITIVE_MEMBER_MEASURES: ReadonlySet<string> = new Set(["population-estimate", "qcew-jobs"]);
+
+export interface MemberCountyRows {
+  rows: CardRow[];
+  /** The member counties' sum, when every one published a value for the card's period. */
+  sum: { value: number; counties: number } | null;
+}
+
+/**
+ * A metro card's rows for its member counties, when the measure is published
+ * for counties and not for metro areas. Each county is read on the card's
+ * period, as `threeLevelCard` reads a parent; a county whose newest period is
+ * another says so. The sum is offered only for an additive measure and only
+ * when every member county has a value for that period, never as a partial
+ * total.
+ */
+export function memberCountyRows(
+  members: readonly LevelPlace[],
+  answers: ReadonlyMap<string, LevelAnswer>,
+  cardPeriod: string,
+  additive: boolean,
+): MemberCountyRows {
+  const firstRow = members.map((place) => answers.get(place.geoId)?.row).find(Boolean) || null;
+  const period = cardPeriod || (firstRow ? observationPeriodLabel(firstRow) : "");
+  const rows = members.map((place): CardRow => {
+    const answer = answers.get(place.geoId);
+    if (answer?.error) return { place, row: null, message: answer.error };
+    if (answer?.pending) return { place, row: null, message: "Reading…" };
+    const row = answer?.row ?? null;
+    if (!row) return { place, row: null, message: "Not published for this county" };
+    const own = observationPeriodLabel(row);
+    if (period && own !== period) return { place, row: null, message: `Not published for ${period} (newest published: ${own})` };
+    if (publishedNumber(row.value) === null) {
+      return { place, row, message: row.value_status ? `Published without a value: ${String(row.value_status)}` : "Published without a value" };
+    }
+    return { place, row, message: "" };
+  });
+  let sum: MemberCountyRows["sum"] = null;
+  if (additive && rows.length) {
+    const values = rows.map((entry) => (entry.row && !entry.message ? publishedNumber(entry.row.value) : null));
+    if (values.every((value) => value !== null)) {
+      sum = { value: values.reduce<number>((total, value) => total + (value as number), 0), counties: rows.length };
+    }
+  }
+  return { rows, sum };
+}
+
 /** Whether any measure in the chapter answered a value for this place. */
 export function chapterHasValues(
   resolved: ResolvedChapter,
@@ -906,6 +972,8 @@ export function chapterHasValues(
 export interface TrendPoint {
   period: string;
   time: number;
+  /** When the period ends, as published (NaN when it is not), so a chart can say how often the series is published. */
+  end: number;
   value: number;
   published: number;
   /**
@@ -934,72 +1002,10 @@ export interface TrendModel {
   basePeriod: string;
   /** Lines that could not be indexed, because they lack the base period. */
   unindexed: string[];
-  /**
-   * How often the drawn series is published, in words ("monthly", "yearly",
-   * "five-year estimates"), read from the rows' own periods; "" when the
-   * rows do not say.
-   */
-  frequency: TrendFrequency;
 }
 
-export type TrendFrequency = "monthly" | "quarterly" | "yearly" | "five-year estimates" | "multi-year" | "";
-
-const DAY_MS = 86_400_000;
-
-function median(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.floor(sorted.length / 2)]!;
-}
-
-/**
- * How often a series is published, from its rows: each row's own span from
- * period start to period end, or, where rows publish only a date, the usual
- * gap between them.
- */
-export function trendFrequency(rows: readonly ObservationRow[]): TrendFrequency {
-  const spans = rows.flatMap((row) => {
-    const start = Date.parse(String(row.period_start || ""));
-    const end = Date.parse(String(row.period_end || ""));
-    return Number.isFinite(start) && Number.isFinite(end) && end >= start ? [(end - start) / DAY_MS + 1] : [];
-  });
-  let days = median(spans);
-  if (days === null) {
-    const times = [...new Set(rows.map(rowTime).filter(Number.isFinite))].sort((left, right) => left - right);
-    days = median(times.slice(1).map((time, index) => (time - times[index]!) / DAY_MS));
-  }
-  if (days === null) return "";
-  if (days <= 35) return "monthly";
-  if (days <= 100) return "quarterly";
-  if (days <= 370) return "yearly";
-  if (days >= 1700 && days <= 1900) return "five-year estimates";
-  return "multi-year";
-}
-
-/** Who publishes a series, in plain words, by its metric code's program. */
-const TREND_SOURCES: readonly (readonly [string, string])[] = [
-  ["CENSUS_ACS:acs5:", "U.S. Census Bureau, American Community Survey 5-year estimates"],
-  ["CENSUS_ACS:acs1:", "U.S. Census Bureau, American Community Survey 1-year estimates"],
-  ["CENSUS_ACS:", "U.S. Census Bureau, American Community Survey"],
-  ["CENSUS_PEP:", "U.S. Census Bureau, Population Estimates Program"],
-  ["CENSUS_SAIPE_SAHIE:saipe:", "U.S. Census Bureau, Small Area Income and Poverty Estimates (SAIPE)"],
-  ["CENSUS_SAIPE_SAHIE:sahie:", "U.S. Census Bureau, Small Area Health Insurance Estimates (SAHIE)"],
-  ["CENSUS_BPS:", "U.S. Census Bureau, Building Permits Survey"],
-  ["BLS:LAU:", "Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)"],
-  ["BLS_QCEW:", "Bureau of Labor Statistics, Quarterly Census of Employment and Wages (QCEW)"],
-  ["BLS:", "Bureau of Labor Statistics"],
-  ["BEA:", "Bureau of Economic Analysis, regional economic accounts"],
-  ["CDC:", "Centers for Disease Control and Prevention, PLACES model-based estimates"],
-  ["FBI_UCR:", "FBI Uniform Crime Reporting Program"],
-  ["USDA_NASS:", "USDA National Agricultural Statistics Service"],
-];
-
-/** The source line a trend chart states: the program in words, else its code. */
-export function trendSourceName(metricCode: string | null | undefined, sourceCode?: string | null): string {
-  const code = String(metricCode || "");
-  const match = TREND_SOURCES.find(([prefix]) => code.startsWith(prefix));
-  return match ? match[1] : String(sourceCode || "");
-}
+/** A headline card's anchor, which the chart drawing its measure links back to. */
+export const cardAnchor = (chapterId: string, measureId: string) => `chapter-${chapterId}-card-${measureId}`;
 
 const WHOLE_YEAR_START = /^(\d{4})-01-01$/;
 const WHOLE_YEAR_END = /^(\d{4})-12-31$/;
@@ -1078,6 +1084,7 @@ export function buildTrend(
       .map((entry) => ({
         period: trendPeriodLabel(entry.row),
         time: entry.time,
+        end: Date.parse(String(entry.row.period_end || "")),
         value: entry.number as number,
         published: entry.number as number,
         ...publishedMargin(entry.row),
@@ -1089,12 +1096,9 @@ export function buildTrend(
     return { place, points, unpublished: rows.length - points.length, unpublishedPeriods };
   }).filter((line) => line.points.length > 0 || line.unpublished > 0);
   // The page's own place speaks for the series; a parent only when it has none.
-  const frequency = trendFrequency(
-    levels.map((place) => histories.get(place.geoId) || []).find((rows) => rows.length) || [],
-  );
 
   if (scale === "level") {
-    return { lines: raw, scale, basePeriod: "", unindexed: [], frequency };
+    return { lines: raw, scale, basePeriod: "", unindexed: [] };
   }
   const drawn = raw.filter((line) => line.points.length > 0);
   const shared = drawn.length
@@ -1110,7 +1114,6 @@ export function buildTrend(
       scale: "level",
       basePeriod: "",
       unindexed: drawn.slice(1).map((line) => line.place.name),
-      frequency,
     };
   }
   const unindexed: string[] = [];
@@ -1129,5 +1132,5 @@ export function buildTrend(
       })),
     });
   }
-  return { lines, scale, basePeriod: basePoint.period, unindexed, frequency };
+  return { lines, scale, basePeriod: basePoint.period, unindexed };
 }

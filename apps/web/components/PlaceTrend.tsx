@@ -15,7 +15,11 @@
 // above the plot so it never falls below the card. A chart that belongs to a
 // headline card names that card and links back to it.
 
-import type { TrendFrequency, TrendModel } from "../lib/placeChapters";
+import { cardAnchor } from "../lib/placeChapters";
+import type { ResolvedPlaceMeasure, TrendModel } from "../lib/placeChapters";
+import { displayMetricName } from "../lib/format";
+import { trendFrequency, trendSourceName } from "../lib/trendLabels";
+import type { TrendFrequency } from "../lib/trendLabels";
 import { formatNumber } from "../lib/format";
 
 const WIDTH = 640;
@@ -62,23 +66,37 @@ function listNames(names: string[]): string {
 
 export default function PlaceTrend({
   model,
-  title,
-  metricName = "",
+  measure = null,
+  chapterId = "",
+  title = measure ? `${measure.measure.label} over time` : "",
+  metricName = measure ? displayMetricName(measure.metric) : "",
   unit,
   source = "",
-  forCard = null,
+  metricCode = measure?.metricCode || "",
+  sourceCode = measure?.metric?.source_code || "",
+  forCard = measure && chapterId ? { label: measure.measure.label, anchor: cardAnchor(chapterId, measure.measure.id) } : null,
   titleTag: Title = "h3",
   notes = [],
   testId,
 }: {
   model: TrendModel;
+  /**
+   * The chapter measure drawn, on a place page: it names the title, metric,
+   * source and, with `chapterId`, the headline card the chart links back to.
+   */
+  measure?: ResolvedPlaceMeasure | null;
+  chapterId?: string;
   /** The visible title: the measure in plain words, e.g. "Unemployment rate over time". */
-  title: string;
+  title?: string;
   /** The metric's plain name (`displayMetricName`), stated when it says more than the title. */
   metricName?: string;
   unit: string;
-  /** Who publishes the series, in words (`trendSourceName`). */
+  /** Who publishes the series, in words; when absent it is named from `metricCode`. */
   source?: string;
+  /** The series' identity, which names its source (`trendSourceName`). */
+  metricCode?: string;
+  /** The catalog's source code, said when the program has no name here. */
+  sourceCode?: string | null;
   /** The headline card this chart draws, linked back to by its anchor. */
   forCard?: { label: string; anchor: string } | null;
   /** The title's heading level, one below the section it sits in. */
@@ -128,18 +146,20 @@ export default function PlaceTrend({
   const periods = [...periodTimes.keys()].sort((left, right) => periodTimes.get(left)! - periodTimes.get(right)!);
   const notPublishedThatYear = drawn.filter((line) => periods.some((period) => !line.points.some((point) => point.period === period)));
   const unpublished = model.lines.reduce((total, line) => total + line.unpublished, 0);
+  const frequency = trendFrequency(model);
+  const sourceLine = source || trendSourceName(metricCode, sourceCode);
   const yAxisLabel =
     model.scale === "index" ? `Index (${model.basePeriod} = 100)` : capitalise(unit) || "Value as published";
   const firstPeriod = periods[0] || "";
   const lastPeriod = periods.at(-1) || "";
   const span = firstPeriod === lastPeriod
-    ? periodWords(periodTimes.get(firstPeriod)!, firstPeriod, model.frequency)
-    : `${periodWords(periodTimes.get(firstPeriod)!, firstPeriod, model.frequency)} to ${periodWords(periodTimes.get(lastPeriod)!, lastPeriod, model.frequency)}`;
+    ? periodWords(periodTimes.get(firstPeriod)!, firstPeriod, frequency)
+    : `${periodWords(periodTimes.get(firstPeriod)!, firstPeriod, frequency)} to ${periodWords(periodTimes.get(lastPeriod)!, lastPeriod, frequency)}`;
   const shownName = metricName && metricName.toLowerCase() !== title.replace(/ over time$/, "").toLowerCase() ? metricName : "";
   const meta = [
     shownName,
     model.scale === "index" ? `index, ${model.basePeriod} = 100` : unit,
-    model.frequency ? `${model.frequency}, ${span}` : span,
+    frequency ? `${frequency}, ${span}` : span,
   ].filter(Boolean);
   // A middle gridline, so a reader can place a line between the extremes.
   const midValue = (minValue + maxValue) / 2;
@@ -153,13 +173,13 @@ export default function PlaceTrend({
       data-testid={testId}
       data-scale={model.scale}
       data-base-period={model.basePeriod}
-      data-frequency={model.frequency}
+      data-frequency={frequency}
       aria-labelledby={titleId}
     >
       <figcaption className="place-trend-head">
         <Title className="place-trend-title" id={titleId} data-testid={titleId}>{title}</Title>
         <p className="subtle place-trend-meta" data-testid={`${testId}-meta`}>{meta.join(" · ")}</p>
-        {source ? <p className="subtle place-trend-source" data-testid={`${testId}-source`}>Source: {source}</p> : null}
+        {sourceLine ? <p className="subtle place-trend-source" data-testid={`${testId}-source`}>Source: {sourceLine}</p> : null}
         {forCard ? (
           <p className="subtle place-trend-for" data-testid={`${testId}-for`}>
             Draws the <a className="text-link" href={`#${forCard.anchor}`}>{forCard.label}</a> card above.
