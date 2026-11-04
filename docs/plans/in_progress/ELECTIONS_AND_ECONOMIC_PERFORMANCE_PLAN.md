@@ -57,7 +57,7 @@ names the districts that touch it, without residents' shares.
 | Source | Holds | Grain | Years | Licence | Status |
 | --- | --- | --- | --- | --- | --- |
 | MEDSL County Presidential Returns (doi:10.7910/DVN/VOQCHQ) | Votes by candidate and party | County | 2000–2024 | Harvard Dataverse; believed CC0 | Confirm licence by hand (Dataverse refuses automated reads) |
-| MEDSL U.S. House (doi:10.7910/DVN/IGFUJS) | Votes by candidate and party | District | 1976–2024 | Same | Same |
+| MEDSL U.S. House (doi:10.7910/DVN/IG0UN2) | Votes by candidate and party | District | 1976–2024 | Same | Same |
 | MEDSL U.S. Senate (doi:10.7910/DVN/PEJ5QU) | Votes by candidate and party | State | 1976–2020 | Same | 2022–2024 from FEC or MEDSL precinct files |
 | MEDSL U.S. President (doi:10.7910/DVN/42MVDX) | Votes by candidate and party | State | 1976–2020 | Same | 2024 summed from the county file |
 | [unitedstates/congress-legislators](https://github.com/unitedstates/congress-legislators) | Terms: chamber, state, district, class, party, start, end | Seat | 1789–now | CC0 1.0 (checked) | Ready |
@@ -194,4 +194,10 @@ with fixtures under `tests/frontend/support/`.
 - Not yet: the legislature file (decision L-1), the 2024 state presidential
   row (MEDSL's state file ends at 2020; derive from the county file in E-3),
   the MEDSL licence check on each Dataverse page.
+- First live check (OFFICE_LAB, 2026-11-04, EXT-031): legislators and state
+  president passed; fixed on the PR: Wikidata unknown-value dates on one
+  Alabama governor aborted the parse; the Senate file is now
+  `1976-2024-senate-state.tab`; the House DOI is `10.7910/DVN/IG0UN2`; the
+  county file needs a Dataverse guestbook answer (operator identity in
+  `stack.env`; whose identity is Nick's call).
 - Next: E-3 lean groups, after E-2 merges and one live load on OFFICE_LAB.

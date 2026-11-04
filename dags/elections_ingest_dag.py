@@ -48,7 +48,7 @@ def _get_postgres_hook():  # noqa: ANN202
 def _ingest(stream: str) -> dict[str, Any]:
     connection_factory = _get_postgres_hook().get_conn
     run_id, status = capture_stream(
-        connection_factory, stream, config=ElectionsConfig()
+        connection_factory, stream, config=ElectionsConfig.from_environment()
     )
     rows = replay_run(connection_factory, run_id=UUID(str(run_id)))
     published = publish_run(connection_factory, run_id=UUID(str(run_id)))

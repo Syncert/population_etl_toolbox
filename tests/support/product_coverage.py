@@ -682,7 +682,7 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         datasets=(
             "medsl:countypres_2000-2024",
             "medsl:1976-2020-president",
-            "medsl:1976-2020-senate",
+            "medsl:1976-2024-senate-state",
             "medsl:1976-2024-house",
             "congress-legislators:gh-pages",
             "wikidata:governors",

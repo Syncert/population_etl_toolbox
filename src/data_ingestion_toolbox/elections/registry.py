@@ -130,22 +130,23 @@ RESULT_DATASETS: tuple[ResultDataset, ...] = (
     ResultDataset(
         SENATE,
         "10.7910/DVN/PEJ5QU",
-        "U.S. Senate statewide 1976-2020",
+        "U.S. Senate statewide 1976-2024",
         "us_senate",
         "state",
-        re.compile(r"^1976-20\d\d-senate\.(csv|tab)$"),
+        # MEDSL renamed the file "1976-2024-senate-state" with the 2024 edition.
+        re.compile(r"^1976-20\d\d-senate(-state)?\.(csv|tab)$"),
         1976,
         "https://doi.org/10.7910/DVN/PEJ5QU",
     ),
     ResultDataset(
         HOUSE,
-        "10.7910/DVN/IGFUJS",
+        "10.7910/DVN/IG0UN2",
         "U.S. House 1976-2024",
         "us_house",
         "district",
         re.compile(r"^1976-20\d\d-house\.(csv|tab)$"),
         1976,
-        "https://doi.org/10.7910/DVN/IGFUJS",
+        "https://doi.org/10.7910/DVN/IG0UN2",
     ),
 )
 

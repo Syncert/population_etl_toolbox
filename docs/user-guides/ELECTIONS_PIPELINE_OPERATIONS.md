@@ -21,8 +21,8 @@ needs a credential.
 | `governors` | `query.wikidata.org/sparql` | one SPARQL query: holders of each state's governor position (P39), with start, end and party (CC0 1.0) |
 | `county_president` | Harvard Dataverse `doi:10.7910/DVN/VOQCHQ` | the file matching `countypres_2000-20NN` |
 | `state_president` | `doi:10.7910/DVN/42MVDX` | `1976-20NN-president` |
-| `senate` | `doi:10.7910/DVN/PEJ5QU` | `1976-20NN-senate` |
-| `house` | `doi:10.7910/DVN/IGFUJS` | `1976-20NN-house` |
+| `senate` | `doi:10.7910/DVN/PEJ5QU` | `1976-20NN-senate-state` (or `1976-20NN-senate`) |
+| `house` | `doi:10.7910/DVN/IG0UN2` | `1976-20NN-house` |
 
 For each MEDSL stream the run first captures the dataset's file list, then
 the one file whose name matches the registered pattern, in its original
@@ -78,6 +78,29 @@ Quarantined, never served as zero: a county row with no county code (Maine's
 UOCAVA rows, for example), an `NA` vote count, a duplicate row, a row with no
 state.
 
+## The county file's Dataverse guestbook
+
+MEDSL's county presidential file sits behind a Dataverse guestbook
+(guestbook 458 on 2026-11-04). Dataverse 6.10 and later answer a plain
+download with HTTP 400 "required Guestbook response". The client then:
+
+1. reads the guestbook (`GET /api/guestbooks/{id}`); a guestbook with a
+   required custom question fails the run as `guestbook_questions_unanswered`,
+   because this pipeline answers only the four standard fields;
+2. POSTs the same download URL with
+   `{"guestbookResponse": {"name", "email", "institution", "position", "answers": []}}`;
+3. keeps the answer if it is the file, or follows the signed URL it returns.
+
+The four answers are the operator's, set in `infra/docker/stack.env`:
+`ELECTIONS_GUESTBOOK_NAME`, `ELECTIONS_GUESTBOOK_EMAIL`,
+`ELECTIONS_GUESTBOOK_INSTITUTION`, `ELECTIONS_GUESTBOOK_POSITION`, and
+`DATAVERSE_API_TOKEN` if Harvard's installation requires a signed-in user.
+They are sent only to Dataverse, with each download (once a month), and are
+never written to a capture or the repository. With none set, the county
+stream fails as `guestbook_required` and the other five streams still load.
+Answering the guestbook records a download in MEDSL's guestbook log; read the
+dataset's terms on its Dataverse page before setting them.
+
 ## Not yet verified against the live services
 
 The build container could not reach Wikidata or Dataverse, so:
@@ -91,6 +114,8 @@ The build container could not reach Wikidata or Dataverse, so:
 - MEDSL publishes its data for research use under the licence stated on each
   Dataverse dataset; confirm the terms on each dataset page before serving
   results outside the warehouse.
+- The guestbook POST's answer shape (the file itself or a signed URL) is
+  taken from Dataverse's guide, which does not show it; EXT-031 exercises it.
 - The 2024 state presidential result is not in `1976-2020-president`; until
   MEDSL publishes a newer state file it can be summed from the county file
   (a later step), and is not served as a state observation now.

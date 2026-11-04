@@ -12,6 +12,7 @@ files, and a results file starts with a header naming ``year`` and
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -232,6 +233,14 @@ def fetch_file(
                     return ElectionFile(
                         request, raw_bytes, kept_headers, response.status_code
                     )
+                if (
+                    request.kind == "results"
+                    and response.status_code == 400
+                    and b"guestbook" in raw_bytes.lower()
+                ):
+                    return _guestbook_download(
+                        active, request, raw_bytes, config=config, headers=headers
+                    )
                 if response.status_code != 429 and response.status_code < 500:
                     raise ElectionsFetchError(
                         request.endpoint,
@@ -251,3 +260,114 @@ def fetch_file(
     finally:
         if own_client:
             active.close()
+
+
+# ---------------------------------------------------------------------------
+# Dataverse guestbooks.
+# ---------------------------------------------------------------------------
+
+_GUESTBOOK_ID = re.compile(rb"guestbook\s*id\s*[:=]?\s*(\d+)", re.IGNORECASE)
+
+
+def _custom_questions(body: Any) -> list[dict[str, Any]]:
+    """The custom questions of a ``GET /api/guestbooks/{id}`` answer."""
+    data = body.get("data", body) if isinstance(body, dict) else {}
+    questions = data.get("customQuestions") if isinstance(data, dict) else None
+    return [q for q in questions or [] if isinstance(q, dict)]
+
+
+def _signed_url(body: Any) -> str | None:
+    """The first download URL anywhere in a guestbook POST's JSON answer."""
+    if isinstance(body, str):
+        return body if body.startswith("https://") else None
+    if isinstance(body, dict):
+        for key in ("signedUrl", "signed_url", "url"):
+            value = body.get(key)
+            if isinstance(value, str) and value.startswith("https://"):
+                return value
+        values = list(body.values())
+    elif isinstance(body, list):
+        values = body
+    else:
+        return None
+    for value in values:
+        found = _signed_url(value)
+        if found:
+            return found
+    return None
+
+
+def _guestbook_download(
+    active: Any,
+    request: FileRequest,
+    refusal: bytes,
+    *,
+    config: ElectionsConfig,
+    headers: Mapping[str, str],
+) -> ElectionFile:
+    """Answer the file's Dataverse guestbook, then download it.
+
+    Dataverse 6.10 answers a GET for a guestbooked file with HTTP 400 naming
+    the guestbook. A POST to the same URL with a ``guestbookResponse`` returns
+    either the file or a signed URL to fetch it from. The identity comes from
+    the operator's environment and is never stored; a guestbook that asks a
+    required custom question this pipeline cannot answer is refused by name.
+    """
+    identity = config.guestbook_identity
+    if identity is None:
+        raise ElectionsFetchError(
+            request.endpoint, code="guestbook_required", status=400
+        )
+    match = _GUESTBOOK_ID.search(refusal)
+    post_headers = {**headers, "Content-Type": "application/json"}
+    if config.dataverse_api_token:
+        post_headers["X-Dataverse-key"] = config.dataverse_api_token
+    if match:
+        questions_response = active.get(
+            f"{DATAVERSE_BASE_URL}/api/guestbooks/{match.group(1).decode()}",
+            params={},
+            headers=post_headers,
+        )
+        questions = (
+            _custom_questions(_json(questions_response.content, request.endpoint))
+            if questions_response.status_code < 400
+            else []
+        )
+        unanswerable = [q for q in questions if q.get("required")]
+        if unanswerable:
+            raise ElectionsFetchError(
+                request.endpoint, code="guestbook_questions_unanswered", status=400
+            )
+    response = active.post(
+        request.url,
+        params=dict(request.parameters),
+        headers=post_headers,
+        content=json.dumps({"guestbookResponse": {**identity, "answers": []}}),
+    )
+    if response.status_code >= 400:
+        raise ElectionsFetchError(
+            request.endpoint, code="guestbook_refused", status=response.status_code
+        )
+    raw_bytes = response.content
+    final = response
+    try:
+        check_body(request, raw_bytes)
+    except ElectionsPayloadError:
+        url = _signed_url(_json(raw_bytes, request.endpoint))
+        if url is None:
+            raise ElectionsPayloadError(
+                request.endpoint, code="guestbook_no_url"
+            ) from None
+        final = active.get(url, params={}, headers=dict(headers))
+        if final.status_code >= 400:
+            raise ElectionsFetchError(
+                request.endpoint, code="non_retryable_http", status=final.status_code
+            ) from None
+        raw_bytes = final.content
+        check_body(request, raw_bytes)
+    return ElectionFile(
+        request,
+        raw_bytes,
+        allowlisted_response_headers(dict(final.headers)),
+        final.status_code,
+    )

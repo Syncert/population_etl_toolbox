@@ -130,6 +130,20 @@ def _day(text: Any, field: str) -> date:
         raise _RowError("unreadable_date", f"{field} {text!r} is not a date") from exc
 
 
+def _known_day(text: str | None) -> date | None:
+    """A Wikidata qualifier date, or None where Wikidata has none to give.
+
+    Wikidata writes an "unknown value" as a blank-node link
+    (``http://www.wikidata.org/.well-known/genid/...``) where a date would be.
+    """
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Congressional terms.
 # ---------------------------------------------------------------------------
@@ -300,6 +314,7 @@ def parse_governors(raw_bytes: bytes) -> tuple[list[SeatTerm], list[Quarantine]]
     bindings = body.get("results", {}).get("bindings", [])
     grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
     quarantined: list[Quarantine] = []
+    refused: set[tuple[str, str, str]] = set()
     for position, binding in enumerate(bindings, start=1):
         try:
             person = _qid(_value(binding, "person"))
@@ -318,7 +333,12 @@ def parse_governors(raw_bytes: bytes) -> tuple[list[SeatTerm], list[Quarantine]]
                 )
             start = _day(start_text, "start")
             end_text = _value(binding, "end")
-            end = _day(end_text, "end") if end_text else None
+            end = _known_day(end_text)
+            if end_text and end is None:
+                # The term ended on a date Wikidata does not know. It must not
+                # read as serving, so the whole term is held back.
+                refused.add((person, office_item, start.isoformat()))
+                raise _RowError("unreadable_date", f"end {end_text!r} is not a date")
             if end is not None and end < start:
                 raise _RowError(
                     "dates_reversed", f"term ends {end} before it starts {start}"
@@ -348,14 +368,18 @@ def parse_governors(raw_bytes: bytes) -> tuple[list[SeatTerm], list[Quarantine]]
                 (
                     _value(binding, "partyLabel"),
                     _qid(party_uri),
-                    _day(party_start, "partyStart") if party_start else None,
-                    _day(party_end, "partyEnd") if party_end else None,
+                    # A party statement with an unknown date is kept as
+                    # undated on that side; it never aborts the read.
+                    _known_day(party_start),
+                    _known_day(party_end),
                 )
             )
     terms: list[SeatTerm] = []
     for (person, office_item, _start), entry in sorted(
         grouped.items(), key=lambda kv: kv[1]["record_index"]
     ):
+        if (person, office_item, _start) in refused:
+            continue
         label, code = _term_party(entry["start"], sorted(entry["parties"], key=str))
         state = FIPS_STATE[entry["fips"]]
         terms.append(
