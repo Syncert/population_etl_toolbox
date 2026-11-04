@@ -628,6 +628,72 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
         assert len(starts) == 2
 
 
+def test_bls_history_captured_under_an_older_request_is_planned_again(
+    dagbag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-113 — a scheduled run re-plans history answered for another request."""
+    callable_ = _callable(dagbag, "bls_ingest", "build_ingestion_plan")
+
+    # The DAG's fingerprint is the request fingerprint, options included.
+    fingerprint = callable_.__globals__["_series_fingerprint"]
+    curated = callable_.__globals__["CONFIG"].curated_by_program["ln"]
+    assert fingerprint("ln") == (
+        callable_.__globals__["slice_fingerprint"](curated),
+        len(curated),
+    )
+
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_series_fingerprint",
+        lambda *args: ("current-request", 3),
+    )
+    programs = ["la", "ln", "ce", "cu", "jt", "ap"]
+
+    def plan(completed: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
+        database = RecordingDatabase(fetches=[completed, []])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return [unit for batch in callable_(programs) for unit in batch]
+
+    def ledger(units: list[dict[str, Any]], digest: str) -> list[tuple[Any, ...]]:
+        return [
+            (
+                u["program"],
+                u["start_year"],
+                u["end_year"],
+                u["geo_level"],
+                u["state_fips"],
+                digest,
+            )
+            for u in units
+        ]
+
+    history = [u for u in plan([]) if u["start_year"] == 1990]
+    history_slices = {(u["program"], u["geo_level"], u["state_fips"]) for u in history}
+    # Every LAUS state, metro and county-parent slice has a history band.
+    assert {("la", "state", None), ("la", "metro", None)} <= history_slices
+    assert ("la", "county", "55") in history_slices
+
+    # Answered under the request made before annual averages were asked for:
+    # the whole history is asked for again, under the current fingerprint.
+    stale = [
+        u
+        for u in plan(ledger(history, "pre-annual-average-request"))
+        if u["start_year"] == 1990
+    ]
+    assert {(u["program"], u["geo_level"], u["state_fips"]) for u in stale} == (
+        history_slices
+    )
+    assert {u["series_hash"] for u in stale} == {"current-request"}
+
+    # Answered under today's request: only the rolling window is planned.
+    current = plan(ledger(history, "current-request"))
+    assert current
+    assert not [u for u in current if u["start_year"] == 1990]
+
+
 def test_acs_target_selection_rejects_empty_metadata(
     dagbag, monkeypatch: pytest.MonkeyPatch
 ) -> None:

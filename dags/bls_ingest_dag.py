@@ -29,7 +29,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -54,6 +53,7 @@ from data_ingestion_toolbox.bls.ingest import (
     BlsRetryableHTTP,
     get_curated_series_for_program,
     ingest_slice,
+    slice_fingerprint,
 )
 from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
 from data_ingestion_toolbox.utility.gold_schema import (
@@ -134,10 +134,10 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
         if not series_list:
             return "", 0
 
-    series_sorted = sorted(series_list)
-    payload = "|".join(series_sorted).encode("utf-8")
-    digest = hashlib.sha256(payload).hexdigest()
-    return digest, len(series_sorted)
+    # The request options are part of the digest (ETL-113): history captured
+    # before BLS was asked for its annual averages is not an answer to
+    # today's request, so it is planned again instead of staying "done".
+    return slice_fingerprint(series_list), len(series_list)
 
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
@@ -554,7 +554,9 @@ def bls_ingest():
 
         1. Historical band  (1990 → current_year - 3)
            Treated as immutable once status='success' for the current series hash.
-           Re-runs only when the curated series list changes.
+           Re-runs only when the series or the request options change: the hash
+           digests both (ETL-113), so history captured under an older request
+           (before BLS was asked for its annual averages) is planned again.
 
         2. Rolling window   (current_year - 2 → current_year)
            Always re-ingested unconditionally, regardless of prior status.
