@@ -93,6 +93,27 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-162 — a headline card draws its levels on one scale, margins as
+// whiskers, and says how the place compares in the record page's verbs; a
+// count draws no strip and keeps its table.
+test("a county's headline cards place the county beside its state and the nation on one scale", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const age = page.getByTestId("card-median-age");
+  await expect(page.getByTestId("card-median-age-strip").locator(".level-strip-row:not(.level-strip-axis)")).toHaveCount(2);
+  await expect(page.getByTestId("card-median-age-strip-sentence")).toHaveText(
+    "Dane County was not distinguishable from Wisconsin at the published margins of error.",
+  );
+  // The table stays for screen readers and copying, out of sight.
+  expect((await age.locator("table").boundingBox()).width).toBeLessThanOrEqual(1);
+  await expect(page.getByTestId("card-median-age-county")).toContainText("margin of error");
+  await expect(page.getByTestId("card-unemployment-rate-strip-sentence")).toHaveText("Dane County was lower than Wisconsin.");
+  await expect(page.getByTestId("card-population-estimate-strip")).toHaveCount(0);
+  await expect(page.getByTestId("card-population-estimate").locator("table")).toBeVisible();
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 // Covers: WEB-139 — sub-county-geography: a county page paints one ACS
 // measure over its tracts, counts the tract with no value instead of
 // painting it as zero, and lists every tract in a table.
@@ -143,7 +164,7 @@ test("BEA income and GDP sit beside the survey income, labelled apart, with earn
   await expect(earnings.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("bea-earnings-basis")).toContainText("BEA personal income account");
   await expect(page.getByTestId("bea-earnings-bea-earnings-1600")).toContainText("Health care and social assistance");
-  // WEB-162: bars sorted largest first; a withheld sector has no bar and is
+  // WEB-163: bars sorted largest first; a withheld sector has no bar and is
   // named once in the line under them.
   await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toHaveText("Mining, quarrying, and oil and gas extraction.");
   await expect(page.getByTestId("bea-earnings-bea-earnings-200").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
@@ -188,7 +209,7 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await expect(mix.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("industry-mix-basis")).toContainText("counted by employers (QCEW)");
   await expect(page.getByTestId("industry-mix-qcew-sector-62")).toContainText("Health care and social assistance");
-  // WEB-162: bars sorted largest first; a withheld sector has no bar and is
+  // WEB-163: bars sorted largest first; a withheld sector has no bar and is
   // named once in the line under them.
   await expect(page.getByTestId("industry-mix-qcew-sector-21")).toHaveText("Mining, quarrying, and oil and gas extraction.");
   await expect(page.getByTestId("industry-mix-qcew-sector-21").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
@@ -243,7 +264,7 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");
-  // WEB-162: what the depth rows share is said once above them; a row says
+  // WEB-163: what the depth rows share is said once above them; a row says
   // its source only where it differs from that line.
   await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("Survey estimate (American Community Survey)");
   await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("± is the 90% margin of error");

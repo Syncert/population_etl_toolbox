@@ -793,3 +793,87 @@
 .place-record-chart .place-trend-title {
   font-size: 0.92rem;
 }
+
+/* A headline card's levels on one scale (web-level-strip). The table it
+   draws stays for screen readers and copying, out of sight. */
+.place-card:has(.level-strip) .place-card-table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.level-strip {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.level-strip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 26px;
+  font-size: 0.88rem;
+}
+.level-strip-name {
+  overflow-wrap: anywhere;
+}
+.level-strip-row[data-index="0"] .level-strip-name,
+.level-strip-row[data-index="0"] .level-strip-value {
+  font-weight: 700;
+}
+.level-strip-track {
+  position: relative;
+  height: 18px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat;
+}
+.level-strip-moe {
+  position: absolute;
+  top: 4px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-bottom: 0;
+  background: linear-gradient(currentColor, currentColor) 0 50% / 100% 2px no-repeat;
+  box-sizing: border-box;
+}
+.level-strip-dot {
+  position: absolute;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.level-strip-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.level-strip-value small,
+.level-strip-axis small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.level-strip-axis {
+  min-height: 16px;
+}
+.level-strip-axis .level-strip-track {
+  border: 0;
+  background: none;
+}
+.level-strip-axis small {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.level-strip-sentence {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+}

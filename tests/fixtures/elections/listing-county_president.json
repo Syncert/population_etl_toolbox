@@ -1,0 +1,26 @@
+{
+ "status": "OK",
+ "data": [
+  {
+   "label": "countypres_2000-2024.tab",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 6104603,
+    "filename": "countypres_2000-2024.tab",
+    "contentType": "text/tab-separated-values",
+    "originalFileName": "countypres_2000-2024.csv"
+   }
+  },
+  {
+   "label": "countypres_readme.pdf",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 6104604,
+    "filename": "countypres_readme.pdf",
+    "contentType": "application/octet-stream"
+   }
+  }
+ ]
+}

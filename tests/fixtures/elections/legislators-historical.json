@@ -1,0 +1,536 @@
+[
+ {
+  "id": {
+   "bioguide": "P000553",
+   "wikidata": "Q1894476"
+  },
+  "name": {
+   "first": "William",
+   "last": "Proxmire"
+  },
+  "terms": [
+   {
+    "type": "sen",
+    "start": "1957-08-28",
+    "end": "1959-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1959-01-07",
+    "end": "1965-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1965-01-04",
+    "end": "1971-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1971-01-21",
+    "end": "1977-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1977-01-04",
+    "end": "1983-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1983-01-03",
+    "end": "1989-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "K000019",
+   "wikidata": "Q368462"
+  },
+  "name": {
+   "first": "Robert",
+   "last": "Kasten"
+  },
+  "terms": [
+   {
+    "type": "rep",
+    "start": "1975-01-14",
+    "end": "1977-01-03",
+    "state": "WI",
+    "district": 9,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "1977-01-04",
+    "end": "1979-01-03",
+    "state": "WI",
+    "district": 9,
+    "party": "Republican"
+   },
+   {
+    "type": "sen",
+    "start": "1981-01-05",
+    "end": "1987-01-03",
+    "state": "WI",
+    "class": 3,
+    "party": "Republican"
+   },
+   {
+    "type": "sen",
+    "start": "1987-01-06",
+    "end": "1993-01-03",
+    "state": "WI",
+    "class": 3,
+    "party": "Republican"
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "G000382",
+   "wikidata": "Q598241"
+  },
+  "name": {
+   "first": "James",
+   "last": "Grant"
+  },
+  "terms": [
+   {
+    "type": "rep",
+    "start": "1987-01-06",
+    "end": "1989-01-03",
+    "state": "FL",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1989-01-03",
+    "end": "1991-01-03",
+    "state": "FL",
+    "district": 2,
+    "party": "Republican",
+    "party_affiliations": [
+     {
+      "start": "1989-01-03",
+      "end": "1989-02-21",
+      "party": "Democrat"
+     },
+     {
+      "start": "1989-02-21",
+      "end": "1991-01-03",
+      "party": "Republican"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "K000020",
+   "wikidata": "Q2157813"
+  },
+  "name": {
+   "first": "Robert",
+   "last": "Kastenmeier"
+  },
+  "terms": [
+   {
+    "type": "rep",
+    "start": "1959-01-07",
+    "end": "1961-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1961-01-03",
+    "end": "1963-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1963-01-09",
+    "end": "1965-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1965-01-04",
+    "end": "1967-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1967-01-10",
+    "end": "1969-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1969-01-03",
+    "end": "1971-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1971-01-21",
+    "end": "1973-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1973-01-03",
+    "end": "1975-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1975-01-14",
+    "end": "1977-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1977-01-04",
+    "end": "1979-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1979-01-15",
+    "end": "1981-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1981-01-05",
+    "end": "1983-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1983-01-03",
+    "end": "1985-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1985-01-03",
+    "end": "1987-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1987-01-06",
+    "end": "1989-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   },
+   {
+    "type": "rep",
+    "start": "1989-01-03",
+    "end": "1991-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Democrat"
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "K000274",
+   "wikidata": "Q2260923"
+  },
+  "name": {
+   "first": "Scott",
+   "last": "Klug"
+  },
+  "terms": [
+   {
+    "type": "rep",
+    "start": "1991-01-03",
+    "end": "1993-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "1993-01-05",
+    "end": "1995-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "1995-01-04",
+    "end": "1997-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "1997-01-07",
+    "end": "1999-01-03",
+    "state": "WI",
+    "district": 2,
+    "party": "Republican"
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "F000061",
+   "wikidata": "Q356475"
+  },
+  "name": {
+   "first": "Russell",
+   "last": "Feingold"
+  },
+  "terms": [
+   {
+    "type": "sen",
+    "start": "1993-01-05",
+    "end": "1999-01-03",
+    "state": "WI",
+    "class": 3,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1999-01-06",
+    "end": "2005-01-03",
+    "state": "WI",
+    "class": 3,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "2005-01-04",
+    "end": "2011-01-03",
+    "state": "WI",
+    "class": 3,
+    "party": "Democrat"
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "K000305",
+   "wikidata": "Q560447"
+  },
+  "name": {
+   "first": "Herbert",
+   "last": "Kohl",
+   "official_full": "Herb Kohl"
+  },
+  "terms": [
+   {
+    "type": "sen",
+    "start": "1989-01-03",
+    "end": "1995-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "1995-01-04",
+    "end": "2001-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "2001-01-03",
+    "end": "2007-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   },
+   {
+    "type": "sen",
+    "start": "2007-01-04",
+    "end": "2013-01-03",
+    "state": "WI",
+    "class": 1,
+    "party": "Democrat"
+   }
+  ]
+ },
+ {
+  "id": {
+   "bioguide": "G000377",
+   "wikidata": "Q468807"
+  },
+  "name": {
+   "first": "Kay",
+   "last": "Granger",
+   "official_full": "Kay Granger"
+  },
+  "terms": [
+   {
+    "type": "rep",
+    "start": "1997-01-07",
+    "end": "1999-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "1999-01-06",
+    "end": "2001-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2001-01-03",
+    "end": "2003-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2003-01-07",
+    "end": "2005-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2005-01-04",
+    "end": "2007-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2007-01-04",
+    "end": "2009-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2009-01-06",
+    "end": "2011-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2011-01-05",
+    "end": "2013-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2013-01-03",
+    "end": "2015-01-03",
+    "state": "TX",
+    "party": "Republican",
+    "district": 12
+   },
+   {
+    "type": "rep",
+    "start": "2015-01-06",
+    "end": "2017-01-03",
+    "state": "TX",
+    "party": "Republican",
+    "district": 12
+   },
+   {
+    "type": "rep",
+    "start": "2017-01-03",
+    "end": "2019-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2019-01-03",
+    "end": "2021-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2021-01-03",
+    "end": "2023-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   },
+   {
+    "type": "rep",
+    "start": "2023-01-03",
+    "end": "2025-01-03",
+    "state": "TX",
+    "district": 12,
+    "party": "Republican"
+   }
+  ]
+ }
+]
