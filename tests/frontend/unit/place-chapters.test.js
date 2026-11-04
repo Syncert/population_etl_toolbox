@@ -259,7 +259,7 @@ describe("the three-level card", () => {
   });
 });
 
-// Covers: WEB-158 — web-metro-member-counties: a metro card on a measure not
+// Covers: WEB-159 — web-metro-member-counties: a metro card on a measure not
 // published for metro areas lists its member counties, and sums them only
 // for a count every member published for the card's period.
 describe("a metro card's member counties", () => {

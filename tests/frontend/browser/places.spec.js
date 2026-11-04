@@ -478,12 +478,12 @@ test("a metro page reads its own figures beside its state and the nation and lis
   await expect(page.getByTestId("card-bea-per-capita-income-metro-derivation")).toContainText("Derived: its member counties' summed income");
   await expect(page.getByTestId("card-bea-per-capita-income-state-derivation")).toHaveCount(0);
   // A count published for counties and not for metros is its counties' sum,
-  // and says it was derived (WEB-158).
+  // and says it was derived (WEB-159).
   await expect(page.getByTestId("card-population-estimate-metro")).toContainText("(derived from member counties)");
   await expect(page.getByTestId("chapter-health")).toHaveCount(0);
   await expect(page.getByTestId("place-omissions")).toContainText("Health: no published metro area values for this place");
 
-  // Covers: WEB-158 — a measure published for counties and not for metro
+  // Covers: WEB-159 — a measure published for counties and not for metro
   // areas lists the member counties; a count is summed and says so, a
   // median or a chained-dollar figure is not.
   await expect(page.getByTestId("card-qcew-jobs-metro")).toContainText("1,100 jobs (derived from member counties)");

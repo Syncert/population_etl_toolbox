@@ -151,6 +151,52 @@ test("births per 1,000 residents are the Census Bureau's own rate, named as such
   await expect(births.locator("[data-ratio-id]")).toHaveAttribute("data-derived", "false");
 });
 
+test("Work and Money on a metro: the switch sits over the counts it changes, and the cards say Dollars", async ({ page }) => {
+  // UAT 2026-11-03: on /metro/madison-wi the switch sat over cards that are
+  // all medians, rates and dollars, so pressing it changed nothing in view;
+  // it offered "Percent" for SAIPE's poverty count, which SAIPE publishes for
+  // no metro; and the ACS median read "unit not published" beside BEA's
+  // "Dollars". The ACS serves no unit, so the page names it.
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/metro/madison-wi-metro-area");
+  const chapter = page.getByTestId("chapter-work-money");
+  const income = page.getByTestId("card-median-household-income");
+  await expect(income.locator("p.subtle").first()).toContainText("Dollars");
+  await expect(income).not.toContainText("unit not published");
+  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("Dollars");
+
+  const below = page.getByTestId("chapter-work-money-view-below");
+  const toggle = page.getByTestId("chapter-work-money-view");
+  await expect(below).toHaveCount(1);
+  await expect(below.getByTestId("chapter-work-money-view")).toHaveCount(1);
+  await expect(toggle.getByRole("button")).toHaveText(["Count", "Share"]);
+  await expect(page.getByTestId("chapter-work-money-view-note")).toContainText("stay as published");
+
+  await expect(page.getByTestId("depth-unemployed")).toContainText("Unemployed people (survey count)");
+  await toggle.getByRole("button", { name: "Share" }).click();
+  const metro = page.getByTestId("depth-unemployed-metro");
+  await expect(metro).toContainText("Madison, WI Metro Area:");
+  await expect(metro).toContainText("percent");
+  await expect(page.getByTestId("depth-unemployed-state")).toContainText("Wisconsin:");
+  // The cards are not counts, so they read the same either way.
+  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("Dollars");
+  await chapter.screenshot({ path: "test-results/per-capita/metro-work-money-share.png" });
+  await noViolations(page);
+});
+
+test("Work and Money on a county: SAIPE's own poverty rate and the survey shares both switch the list", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const toggle = page.getByTestId("chapter-work-money-view");
+  await expect(page.getByTestId("chapter-work-money-view-below").getByTestId("chapter-work-money-view")).toHaveCount(1);
+  await expect(toggle.getByRole("button")).toHaveText(["Count", "Percent", "Share"]);
+  await toggle.getByRole("button", { name: "Percent" }).click();
+  await expect(page.getByTestId("depth-saipe-poverty-count-county")).toContainText("percent");
+  await toggle.getByRole("button", { name: "Share" }).click();
+  await expect(page.getByTestId("depth-unemployed-county")).toContainText("percent");
+  await expect(page.getByTestId("depth-below-poverty-county")).toContainText("percent");
+});
+
 const POVERTY = "CENSUS_ACS:acs5:B17001_002";
 const counties = [["001", "Adams County"], ["025", "Dane County"], ["105", "Rock County"]].map(([fips, name]) => ({
   geo_id: `state:55|county:${fips}`, geo_level: "COUNTY", state_fips: "55", county_fips: fips, county_name: name, state_name: "Wisconsin" }));

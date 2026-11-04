@@ -4,9 +4,12 @@ Each run asks for the registered industry slices of the last few calendar
 quarters and of the annual averages of the years they fall in
 (``QcewConfig.recent_quarters``). A quarter QCEW has not published yet
 answers 404 and is recorded empty, so the run that first finds it published
-needs no release calendar. A manual run with ``{"history": true}`` in its
-conf sweeps every registered period from 2014, which is how a fresh
-warehouse is loaded (``docs/reference/BETA_RESET_REINGESTION.md``).
+needs no release calendar. Each run also asks for every registered period
+from 2014 the warehouse has never had answered, so the first run on a fresh
+warehouse loads the whole history and later runs are the window again
+(``data_ingestion_toolbox.utility.backfill``). A manual run with
+``{"history": true}`` in its conf re-sweeps every registered period,
+answered or not (``docs/reference/BETA_RESET_REINGESTION.md``).
 
 One mapped task per (year, period): capture every industry slice, replay
 the run into silver, publish it. Requests go through the ``bls_qcew_api``
@@ -16,7 +19,7 @@ pool, one at a time, because data.bls.gov throttles bursts.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -24,7 +27,10 @@ from airflow.decorators import dag, task
 
 from data_ingestion_toolbox.bls_qcew.capture import capture_period
 from data_ingestion_toolbox.bls_qcew.config import QcewConfig
-from data_ingestion_toolbox.bls_qcew.registry import recent_periods, registered_periods
+from data_ingestion_toolbox.bls_qcew.plan import (
+    answered_qcew_periods,
+    periods_to_capture,
+)
 from data_ingestion_toolbox.bls_qcew.schema import ensure_bls_qcew_schema
 from data_ingestion_toolbox.bls_qcew.silver_bls_qcew.load import publish_run, replay_run
 from data_ingestion_toolbox.silver_ref.geography_guard import (
@@ -39,23 +45,10 @@ DEFAULT_ARGS = {
 }
 
 
-def _get_postgres_hook():  # noqa: ANN202
+def _get_postgres_hook():
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
     return PostgresHook(postgres_conn_id=QcewConfig().postgres_conn_id.strip())
-
-
-def periods_to_capture(
-    today: date, conf: dict[str, Any] | None, config: QcewConfig
-) -> list[str]:
-    """The `year-period` keys one run captures: recent by default, all on request."""
-    if conf and conf.get("history"):
-        quarter = (today.month - 1) // 3
-        year = today.year if quarter else today.year - 1
-        periods = registered_periods(year, quarter or 4)
-    else:
-        periods = recent_periods(today, config.recent_quarters)
-    return [f"{year}-{period}" for year, period in periods]
 
 
 @dag(
@@ -89,7 +82,13 @@ def bls_qcew_ingest():
         dag_run = context.get("dag_run")
         conf = dict(getattr(dag_run, "conf", None) or {})
         logical = context.get("logical_date") or datetime.now(timezone.utc)
-        return periods_to_capture(logical.date(), conf, QcewConfig())
+        with _get_postgres_hook().get_conn() as connection:
+            answered = answered_qcew_periods(connection)
+        planned = periods_to_capture(logical.date(), conf, QcewConfig(), answered)
+        logging.getLogger("airflow.task").info(
+            "capturing %d period(s); %d already answered", len(planned), len(answered)
+        )
+        return planned
 
     @task(pool="bls_qcew_api")
     def ingest_batch_period(period_key: str) -> dict[str, Any]:

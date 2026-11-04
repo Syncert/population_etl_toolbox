@@ -62,6 +62,12 @@ export interface PlaceMeasure {
    */
   showReported?: boolean;
   /**
+   * The measure's unit, in the publisher's own terms, for a source whose rows
+   * carry none: the ACS serves no unit on a row, yet its table title names it
+   * ("in inflation-adjusted dollars"). A unit the row carries always wins.
+   */
+  unit?: string;
+  /**
    * Why a grain the measure is not published for has no figure, when the
    * plain "Not published" would leave a reader thinking it was missed: LAUS
    * has no national series, because the nation's rate is another survey's.
@@ -226,6 +232,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         id: "median-age",
         label: "Median age",
         candidates: acs("B01002_001"),
+        unit: "Years",
       },
     ],
     depth: [
@@ -252,6 +259,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         id: "median-household-income",
         label: "Median household income",
         candidates: acs("B19013_001"),
+        unit: "Dollars",
         note: "In the survey year's inflation-adjusted dollars.",
         basis: SURVEY_BASIS,
       },
@@ -307,7 +315,7 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
       },
     ],
     depth: [
-      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), basis: SURVEY_BASIS },
+      { id: "per-capita-income", label: "Per capita income", candidates: acs("B19301_001"), unit: "Dollars", basis: SURVEY_BASIS },
       { id: "gini", label: "Gini index of income inequality", candidates: acs("B19083_001"), note: "0 is perfect equality and 1 is one household holding all income." },
       { id: "below-poverty", label: "People with income below the poverty level", candidates: acs("B17001_002"), universe: "people whose poverty status is determined" },
       { id: "saipe-poverty-count", label: "People in poverty, all ages, single year", candidates: saipe("SAEPOVALL"), universe: "people whose poverty status is determined" },
@@ -353,12 +361,14 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
         id: "median-gross-rent",
         label: "Median gross rent",
         candidates: acs("B25064_001"),
+        unit: "Dollars",
         note: "Rent plus the utilities the renter pays.",
       },
       {
         id: "median-home-value",
         label: "Median home value",
         candidates: acs("B25077_001"),
+        unit: "Dollars",
         note: "The owner's own estimate, which is what the ACS asks.",
       },
       {
