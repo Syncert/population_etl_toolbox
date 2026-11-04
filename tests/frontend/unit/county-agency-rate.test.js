@@ -68,6 +68,8 @@ describe("county agency rate", () => {
 
   test("the FBI's unit code reads in words", () => {
     expect(unitText("per_100000_population")).toBe("per 100,000 people");
+    // WEB-161: PEP's rates are per 1,000 residents.
+    expect(unitText("per_1000_population")).toBe("per 1,000 people");
     expect(unitText("dollars")).toBe("dollars");
     expect(unitText(null)).toBe("");
   });

@@ -48,6 +48,49 @@ describe("how often a trend is published", () => {
   });
 });
 
+// Covers: WEB-161 — a trend whose rows carry only a date (a start equal to its
+// end, as an annual series stamped with its year often is) reads its cadence
+// from the gap between points, and a single such point from its year or its
+// program, never as "monthly"; a rate unit code reads in words (UAT on /us,
+// where obesity read "monthly, Jan 2023" and net migration
+// "per_1000_population").
+describe("a dated series' cadence", () => {
+  const one = (rows) => buildTrend([levels[0]], new Map([["m", rows]]), "level");
+  const stamped = (values, start = 2019) =>
+    values.map((value, index) => ({ period_start: `${start + index}-07-01`, period_end: `${start + index}-07-01`, value }));
+
+  it("reads a start equal to its end as a date, not a one-day period", () => {
+    expect(trendFrequency(one(stamped(["1", "2", "3"])))).toBe("yearly");
+    const months = ["2024-01-01", "2024-02-01", "2024-03-01"].map((day, index) => ({ period_start: day, period_end: day, value: String(index) }));
+    expect(trendFrequency(one(months))).toBe("monthly");
+  });
+
+  it("says yearly for one year's point, by its label, its code or its program", () => {
+    expect(trendFrequency(one([{ period_start: "2023", period_end: "2023", value: "33" }]))).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2023-01-01", period_end: "2023-01-01", value: "33" }]), "CDC:places_county:OBESITY:AgeAdjPrv")).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2025-01-01", value: "9" }]), "CENSUS_BPS:units:annual")).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2023-01-01", period_end: "2023-01-01", value: "33" }]))).toBe("");
+  });
+
+  it("labels a single CDC year as yearly on the chart, never by its month", () => {
+    render(
+      <PlaceTrend
+        model={one([{ period_start: "2023", period_end: "2023", value: "33.1" }])}
+        title="Obesity among adults (age-adjusted) over time"
+        unit="%"
+        metricCode="CDC:places_county:OBESITY:AgeAdjPrv"
+        testId="obesity"
+      />,
+    );
+    expect(screen.getByTestId("obesity-meta").textContent).toBe("% · yearly, 2023");
+    expect(screen.getByTestId("obesity").getAttribute("data-frequency")).toBe("yearly");
+  });
+
+  it("keeps a monthly series monthly", () => {
+    expect(trendFrequency(one(monthly(["1", "2", "3"])), "FBI_UCR:summarized_violent_crime:V:offense:rate")).toBe("monthly");
+  });
+});
+
 describe("a trend's source line", () => {
   it("names the program in words", () => {
     expect(trendSourceName("BLS:LAU:UNEMP_RATE", "BLS")).toBe("Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)");

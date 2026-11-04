@@ -146,7 +146,7 @@ export default function PlaceTrend({
   const periods = [...periodTimes.keys()].sort((left, right) => periodTimes.get(left)! - periodTimes.get(right)!);
   const notPublishedThatYear = drawn.filter((line) => periods.some((period) => !line.points.some((point) => point.period === period)));
   const unpublished = model.lines.reduce((total, line) => total + line.unpublished, 0);
-  const frequency = trendFrequency(model);
+  const frequency = trendFrequency(model, metricCode);
   const sourceLine = source || trendSourceName(metricCode, sourceCode);
   const yAxisLabel =
     model.scale === "index" ? `Index (${model.basePeriod} = 100)` : capitalise(unit) || "Value as published";
