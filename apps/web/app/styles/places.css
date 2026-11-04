@@ -148,8 +148,27 @@
 
 .place-depth dd {
   margin: 2px 0 0;
-  font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+/* What the depth rows share, said once (web-compact-depth). */
+.place-depth-shared {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.place-depth-block .place-depth {
+  margin-top: 6px;
+}
+
+.place-depth-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.place-depth [data-care="true"] .place-depth-value {
+  color: var(--muted);
 }
 
 .place-trend {
@@ -314,7 +333,13 @@
 /* What stands out (what-makes-this-place-distinctive) */
 .place-standout-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .place-standout-groups ul { margin: 0; padding: 0; list-style: none; }
-.place-standout-groups li { border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+.place-standout-groups li { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 6rem; gap: 4px 12px; align-items: center; border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+.place-standout-groups li > p { grid-column: 1 / -1; margin: 0; font-size: 0.78rem; }
+/* Where the place falls among its siblings, lowest to highest (web-standout-strips). */
+.standout-track { position: relative; height: 12px; border-radius: 6px; background: var(--bg-2); }
+.standout-track i { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card); }
+.standout-value { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.place-standout details { margin-top: 10px; }
 /* Home finder and public data page (find-your-place-home) */
 .place-finder { margin-top: 18px; max-width: 640px; }
 .place-finder-label { display: block; margin-bottom: 6px; font-weight: 700; }
@@ -342,26 +367,65 @@
   overflow-wrap: anywhere;
 }
 
-.place-industry-mix {
-  width: 100%;
-  border-collapse: collapse;
+/* Industry tables as bars sorted largest first (web-compact-depth). */
+.place-industry {
   margin: 12px 0;
+}
+
+.place-industry-bars {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
   font-size: 0.85rem;
 }
 
-.place-industry-mix caption {
+.place-industry-bars caption {
   text-align: left;
   font-weight: 700;
   padding-bottom: 6px;
 }
 
-.place-industry-mix th,
-.place-industry-mix td {
-  border-top: 1px solid var(--line);
-  padding: 4px 8px 4px 0;
+.place-industry-bars th {
+  width: 38%;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  color: var(--ink);
+  padding: 3px 12px 3px 0;
   text-align: left;
-  vertical-align: top;
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+
+.place-industry-bars td {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.place-industry-track {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.place-industry-bar {
+  display: block;
+  height: 14px;
+  min-width: 2px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.place-industry-value {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.place-industry-gaps {
+  margin: 6px 0 0;
 }
 
 /* How a figure was made: a survey estimate and a model-based estimate of the
@@ -733,5 +797,127 @@
 }
 
 .place-record-chart .place-trend-title {
+  font-size: 0.92rem;
+}
+
+/* A headline card's own history, drawn small (web-card-sparkline). */
+.place-spark {
+  margin: 10px 0 0;
+}
+.place-spark svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 64px;
+}
+.place-spark-area {
+  fill: var(--accent);
+  opacity: 0.1;
+}
+.place-spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.place-spark-end {
+  fill: var(--accent);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+.place-spark figcaption {
+  display: grid;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.place-spark-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+/* A headline card's levels on one scale (web-level-strip). The table it
+   draws stays for screen readers and copying, out of sight. */
+.place-card:has(.level-strip) .place-card-table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.level-strip {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.level-strip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 26px;
+  font-size: 0.88rem;
+}
+.level-strip-name {
+  overflow-wrap: anywhere;
+}
+.level-strip-row[data-index="0"] .level-strip-name,
+.level-strip-row[data-index="0"] .level-strip-value {
+  font-weight: 700;
+}
+.level-strip-track {
+  position: relative;
+  height: 18px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat;
+}
+.level-strip-moe {
+  position: absolute;
+  top: 4px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-bottom: 0;
+  background: linear-gradient(currentColor, currentColor) 0 50% / 100% 2px no-repeat;
+  box-sizing: border-box;
+}
+.level-strip-dot {
+  position: absolute;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.level-strip-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.level-strip-value small,
+.level-strip-axis small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.level-strip-axis {
+  min-height: 16px;
+}
+.level-strip-axis .level-strip-track {
+  border: 0;
+  background: none;
+}
+.level-strip-axis small {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.level-strip-sentence {
+  margin: 4px 0 0;
   font-size: 0.92rem;
 }
