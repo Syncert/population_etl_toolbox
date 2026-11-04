@@ -53,6 +53,7 @@ EXPECTED_DAG_IDS = {
     "noaa_normals_ingest",
     "fcc_bdc_ingest",
     "fema_nri_ingest",
+    "elections_ingest",
     "fhfa_hpi_ingest",
     "hud_fmr_il_ingest",
     "nces_ccd_ingest",
@@ -112,6 +113,10 @@ EXPECTED_SCHEDULES = {
     # Daily: OpenFEMA refreshes declarations every twenty minutes, and an
     # unchanged NRI read replays nothing.
     "fema_nri_ingest": "0 6 * * *",
+    # Monthly: members change between elections and MEDSL republishes after
+    # certification; every stream is re-read whole, and an unchanged read
+    # replays nothing.
+    "elections_ingest": "0 7 3 * *",
     # Monthly: FHFA revises the annual workbook without a published
     # calendar, and an unchanged file replays nothing.
     "fhfa_hpi_ingest": "0 15 25 * *",
@@ -159,6 +164,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "noaa_normals_ingest": 2,
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
+    "elections_ingest": 2,
     "fhfa_hpi_ingest": 2,
     "hud_fmr_il_ingest": 2,
     "nces_ccd_ingest": 2,
@@ -186,6 +192,7 @@ EXPECTED_INGEST_POOLS = {
     "noaa_normals_ingest": "noaa_normals_files",
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",
+    "elections_ingest": "elections_files",
     "fhfa_hpi_ingest": "fhfa_hpi_files",
     "hud_fmr_il_ingest": "hud_fmr_il_files",
     "nces_ccd_ingest": "nces_ccd_files",

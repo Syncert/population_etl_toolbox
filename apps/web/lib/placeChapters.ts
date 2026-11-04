@@ -14,7 +14,7 @@
 
 import type { GeographySummary, MetricSummary } from "./api/types";
 import type { ObservationRow } from "./explorerViewModel";
-import { marginOfErrorText, publishedNumber } from "./explorerViewModel";
+import { marginOfErrorText, observationUnit, publishedNumber, unitText } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
 /** The grains a place page exists for, broadest first. A metro (a CBSA) is
@@ -1144,4 +1144,21 @@ export function buildTrend(
     });
   }
   return { lines, scale, basePeriod: basePoint.period, unindexed };
+}
+
+/**
+ * The row's published unit, or nothing: `observationUnit`'s "value" is a
+ * placeholder. A row that carries no unit (every ACS row) reads the unit the
+ * chapter names for its measure, so a median income says "Dollars" the way
+ * BEA's income beside it does.
+ */
+export function publishedUnit(row: ObservationRow, fallback?: string): string {
+  const unit = observationUnit(row);
+  return unit === "value" ? fallback || "" : unitText(unit);
+}
+
+/** Whether the catalog publishes the measure at this grain. */
+export function publishesAt(measure: ResolvedPlaceMeasure, level: PlaceLevel): boolean {
+  const grains = measure.metric?.valid_geo_grains;
+  return Boolean(measure.metric) && (!Array.isArray(grains) || grains.includes(level));
 }

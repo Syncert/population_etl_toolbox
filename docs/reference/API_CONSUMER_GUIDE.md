@@ -1032,6 +1032,35 @@ per county and calendar year.
 - **Required notice:** This product uses the Federal Emergency Management
   Agency's OpenFEMA API, but is not endorsed by FEMA.
 
+### Reading an elections row: a two-party share, dated on election day
+
+`ELECTIONS` serves the MIT Election Data and Science Lab's presidential
+general-election returns for states and counties as three measures:
+`ELECTIONS:president_two_party_republican_share` (percent),
+`ELECTIONS:president_two_party_margin` (percentage points) and
+`ELECTIONS:president_total_votes` (votes).
+
+- **Two-party, by construction.** The share is the Republican candidate's
+  votes over the Republican and Democratic candidates' combined votes; the
+  margin is the Republican share minus the Democratic share, so positive
+  leans Republican. Third-party votes count only toward the total.
+  `dimensions.observation_basis` says so on every row.
+- **A candidate is counted once.** Where a candidate stands on several
+  ballot lines (New York's fusion lines) the lines are added; where a county
+  publishes its vote only by mode (election day, absentee, early) the modes
+  are added.
+- **Dated on election day.** `period_start` and `period_end` are the
+  Tuesday after the first Monday of November; `year` is the election year.
+- **`dimensions.leading_party`** is the party of the candidate with the
+  most votes in the area (`REP`, `DEM`, `IND` or `OTH`).
+- **A missing count is not zero.** A county row MEDSL publishes without a
+  vote count is held back, so an area with no row was not published, not
+  won by nobody.
+- **Not an economic measure.** Nothing here is scored, ranked or combined
+  with another source's measure (ADR-0014). Seat holders (who held each
+  House, Senate and governor seat, and when) are not observations; they get
+  their own routes in a later release.
+
 ### Reading an FCC broadband row: reported availability, not subscription
 
 `FCC_BDC` serves the FCC National Broadband Map's own fixed-broadband
@@ -1442,6 +1471,7 @@ prevent:
 | HUD Fair Market Rents and income limits | the fiscal year and edition (`FY2026`, `FY2026-revised`) | HUD's own fiscal-year label; a reissued year is a second release beside the first |
 | FHFA House Price Index | the workbook's "Last updated" date | FHFA's own date in the file; a second file of the same date with different bytes is that date with `.2` |
 | FEMA National Risk Index | the NRI version (`December 2025`) | FEMA's own version label; declaration counts take the date of the OpenFEMA refresh the warehouse read |
+| Elections (MEDSL) | `MEDSL <file name>` (`MEDSL countypres_2000-2024.csv`) | MEDSL's own file, whose name carries the span it covers; a corrected file under the same name is a new read that replaces the old as current |
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |

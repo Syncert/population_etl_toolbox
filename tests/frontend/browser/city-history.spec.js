@@ -108,7 +108,7 @@ test("a city page waits for its county before reading any trend, so every batch 
   });
   const batches = calls.filter((url) => url.pathname === "/api/v1/observations/history/batch");
   expect(batches.length).toBeGreaterThan(0);
-  // A trend's batch names the whole chain; a card sparkline's (WEB-162) names
+  // A trend's batch names the whole chain; a card sparkline's (WEB-164) names
   // the city alone. Neither is asked before the county is known.
   const trends = batches.filter((url) => url.searchParams.get("geo_ids") !== "state:55|place:48000");
   expect(trends.length).toBeGreaterThan(0);

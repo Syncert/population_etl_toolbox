@@ -69,6 +69,8 @@ import {
   cardAnchor,
   ADDITIVE_MEMBER_MEASURES,
   memberCountyRows,
+  publishedUnit,
+  publishesAt,
 } from "../lib/placeChapters";
 import type {
   CardRow,
@@ -102,6 +104,8 @@ import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
+const PlaceDepth = dynamic(() => import("./PlaceDepth"));
+const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
@@ -146,16 +150,6 @@ async function inPool(tasks: (() => Promise<void>)[], limit: number): Promise<vo
   await Promise.all(workers);
 }
 
-/**
- * The row's published unit, or nothing: `observationUnit`'s "value" is a
- * placeholder. A row that carries no unit (every ACS row) reads the unit the
- * chapter names for its measure, so a median income says "Dollars" the way
- * BEA's income beside it does.
- */
-function publishedUnit(row: ObservationRow, fallback?: string): string {
-  const unit = observationUnit(row);
-  return unit === "value" ? fallback || "" : unitText(unit);
-}
 
 const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}`;
 
@@ -1007,11 +1001,6 @@ function chapterOrder(line: string): number {
   return index < 0 ? PLACE_CHAPTERS.length : index;
 }
 
-function publishesAt(measure: ResolvedPlaceMeasure, level: PlaceLevel): boolean {
-  const grains = measure.metric?.valid_geo_grains;
-  return Boolean(measure.metric) && (!Array.isArray(grains) || grains.includes(level));
-}
-
 /**
  * Whether a metro card lists its member counties: the measure is published
  * for counties and not for metro areas (web-metro-member-counties).
@@ -1252,35 +1241,8 @@ function Chapter({
           </p>
         </div>
       ) : null}
-      {resolved.depth.some((measure) => !measure.measure.group) && own ? (
-        <dl className="place-depth" data-testid={`chapter-${chapter.id}-depth`}>
-          {resolved.depth.filter((measure) => !measure.measure.group).map((measure) => (
-            <DepthRow
-              key={measure.measure.id}
-              measure={measure}
-              place={own}
-              answer={answers.get(answerKey(measure.metricCode, own.geoId))}
-              view={view}
-              pairing={pairingFor(pairings, measure.metricCode, view)}
-              levels={levels}
-              derived={derived}
-            />
-          ))}
-        </dl>
-      ) : null}
       {own ? (
-        <EarningsByIndustry
-          rows={resolved.depth.filter((measure) => measure.measure.group === "bea-earnings" && measure.metric)}
-          place={own}
-          answers={answers}
-        />
-      ) : null}
-      {own ? (
-        <IndustryMix
-          rows={resolved.depth.filter((measure) => measure.measure.group === "industry-mix" && measure.metric)}
-          place={own}
-          answers={answers}
-        />
+        <PlaceDepth chapterId={chapter.id} measures={resolved.depth} place={own} levels={levels} answers={answers} view={view} pairings={pairings} derived={derived} />
       ) : null}
       {/* Only once the page's own place has resolved: before then the chapter's
           first level is a placeholder (the state, on a county page), and its
@@ -1466,6 +1428,7 @@ function HeadlineCard({
         {card.period ? ` · ${card.period}` : ""}
         {unit ? ` · ${publishedUnit(unit, measure.measure.unit) || "unit not published"}` : ""}
       </p>
+      {pairing ? null : <PlaceLevelStrip measureId={measure.measure.id} rows={card.rows} />}
       <table className="place-card-table">
         <caption className="sr-only">{measure.measure.label}{card.period ? `, ${card.period}` : ""}</caption>
         <tbody>
@@ -1545,129 +1508,6 @@ function HeadlineCard({
 }
 
 /**
- * Earnings by place of work, by NAICS sector (bea-regional-accounts).
- *
- * Each row is BEA's own published figure for its newest year; nothing here
- * sums the sectors or computes a share, so a withheld sector reads as
- * withheld rather than as a gap someone filled with arithmetic.
- */
-function EarningsByIndustry({
-  rows,
-  place,
-  answers,
-}: {
-  rows: ResolvedPlaceMeasure[];
-  place: LevelPlace;
-  answers: Map<string, LevelAnswer>;
-}) {
-  if (!rows.length) return null;
-  const read = rows.map((measure) => ({ measure, answer: answers.get(answerKey(measure.metricCode, place.geoId)) }));
-  const period = read.map((entry) => (entry.answer?.row ? observationPeriodLabel(entry.answer.row) : "")).find(Boolean) || "";
-  const unit = read.map((entry) => (entry.answer?.row ? publishedUnit(entry.answer.row) : "")).find(Boolean) || "";
-  return (
-    <div className="table-scroll" data-testid="bea-earnings">
-      <table className="place-industry-mix">
-        <caption>
-          Earnings from work located in {place.name}, by industry{period ? `, ${period}` : ""}
-          <span className="place-basis" data-testid="bea-earnings-basis"> · {rows[0]!.measure.basis}</span>
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Industry</th>
-            <th scope="col">Earnings{unit ? ` (${unit})` : ""}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {read.map(({ measure, answer }) => {
-            const row = answer?.row ?? null;
-            const published = row && row.value !== null && row.value !== undefined;
-            return (
-              <tr key={measure.measure.id} data-testid={`bea-earnings-${measure.measure.id}`}>
-                <th scope="row">{measure.measure.label}</th>
-                <td>
-                  {!publishesAt(measure, place.level)
-                    ? `Not published at ${place.level.toLowerCase()} grain`
-                    : answer?.error
-                      ? answer.error
-                      : answer?.pending
-                        ? "Reading…"
-                        : published
-                          ? formatObservationValue(row!.value)
-                          : row?.value_status
-                            ? `Published without a value: ${String(row.value_status)}`
-                            : "Not published for this place"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/**
- * Private jobs located in this place, by NAICS sector (bls-qcew-county-wages).
- *
- * Each row is QCEW's own published figure for its newest month; nothing here
- * sums the sectors or computes a share, so a withheld sector reads as
- * withheld rather than as a gap someone filled with arithmetic.
- */
-function IndustryMix({
-  rows,
-  place,
-  answers,
-}: {
-  rows: ResolvedPlaceMeasure[];
-  place: LevelPlace;
-  answers: Map<string, LevelAnswer>;
-}) {
-  if (!rows.length) return null;
-  const read = rows.map((measure) => ({ measure, answer: answers.get(answerKey(measure.metricCode, place.geoId)) }));
-  const period = read.map((entry) => (entry.answer?.row ? observationPeriodLabel(entry.answer.row) : "")).find(Boolean) || "";
-  return (
-    <div className="table-scroll" data-testid="industry-mix">
-      <table className="place-industry-mix">
-        <caption>
-          Private jobs located in {place.name}, by industry{period ? `, ${period}` : ""}
-          <span className="place-basis" data-testid="industry-mix-basis"> · {rows[0]!.measure.basis}</span>
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Industry</th>
-            <th scope="col">Jobs</th>
-          </tr>
-        </thead>
-        <tbody>
-          {read.map(({ measure, answer }) => {
-            const row = answer?.row ?? null;
-            const published = row && row.value !== null && row.value !== undefined;
-            return (
-              <tr key={measure.measure.id} data-testid={`industry-mix-${measure.measure.id}`}>
-                <th scope="row">{measure.measure.label}</th>
-                <td>
-                  {!publishesAt(measure, place.level)
-                    ? `Not published at ${place.level.toLowerCase()} grain`
-                    : answer?.error
-                      ? answer.error
-                      : answer?.pending
-                        ? "Reading…"
-                        : published
-                          ? formatObservationValue(row!.value)
-                          : row?.value_status
-                            ? `Published without a value: ${String(row.value_status)}`
-                            : "Not published for this place"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/**
  * What jurisdictions reported directly, beside the Bureau's estimate
  * (census-building-permits). Read from the row as published; nothing is
  * subtracted, so the imputed part is stated rather than computed.
@@ -1689,74 +1529,6 @@ function uncertaintyText(row: ObservationRow): string {
   const margin = marginOfErrorText(row);
   const beyond = observationUncertaintyLabel(row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN);
   return [margin !== "Not provided" ? `margin of error ${margin}` : "", beyond].filter(Boolean).join(" · ");
-}
-
-function DepthRow({
-  measure,
-  place,
-  answer,
-  view,
-  pairing,
-  levels,
-  derived,
-}: {
-  measure: ResolvedPlaceMeasure;
-  place: LevelPlace;
-  answer: LevelAnswer | undefined;
-  view: ViewChoice;
-  pairing: DerivedRatioPairing | null;
-  levels: LevelPlace[];
-  derived: Map<string, DerivedAnswer>;
-}) {
-  if (pairing && measure.metric) {
-    const shown = levels.filter((entry) => publishesAt(measure, entry.level));
-    return (
-      <div data-testid={`depth-${measure.measure.id}`} data-view={view}>
-        <dt>
-          {pairing.label}
-          <span className="place-universe"> · Universe: {pairing.universe}</span>
-        </dt>
-        <dd>
-          <ul className="derived-levels">
-            {shown.map((entry) => (
-              <li key={entry.geoId} data-testid={`depth-${measure.measure.id}-${entry.level.toLowerCase()}`}>
-                <strong>{entry.name}:</strong>{" "}
-                <DerivedValue pairing={pairing} {...(derived.get(derivedKey(pairing.ratio_id, entry.geoId)) || { row: null, pending: true })} />
-              </li>
-            ))}
-          </ul>
-        </dd>
-      </div>
-    );
-  }
-  const row = answer?.row ?? null;
-  const published = row && row.value !== null && row.value !== undefined;
-  return (
-    <div data-testid={`depth-${measure.measure.id}`}>
-      <dt>
-        {measure.measure.label}
-        {measure.measure.universe ? <span className="place-universe"> · Universe: {measure.measure.universe}</span> : null}
-        {measure.measure.basis || (measure.metric && measureBasis(measure.metricCode)) ? <span className="place-basis" data-testid={`depth-${measure.measure.id}-basis`}> · {measure.measure.basis || measureBasis(measure.metricCode)}</span> : null}
-      </dt>
-      <dd>
-        {view !== "count" && measure.metric ? <span className="subtle" data-testid={`depth-${measure.measure.id}-count-only`}>No reviewed {view === "share" ? "share" : "per-resident view"} for this count; showing the count. </span> : null}
-        {!measure.metric
-          ? NOT_LOADED
-          : !publishesAt(measure, place.level)
-            ? `Not published at ${place.level.toLowerCase()} grain`
-            : answer?.error
-              ? answer.error
-              : answer?.pending
-                ? "Reading…"
-                : published
-                  ? `${formatObservationValue(row!.value)} ${publishedUnit(row!, measure.measure.unit)}`.trim()
-                  : row?.value_status
-                    ? `Published without a value: ${String(row.value_status)}`
-                    : "Not published for this place"}
-        {published ? <span className="subtle"> · {observationPeriodLabel(row)}{uncertaintyText(row!) ? ` · ${uncertaintyText(row!)}` : ""}</span> : null}
-      </dd>
-    </div>
-  );
 }
 
 function StandoutRow({ measure, siblingsName }: { measure: DistinctiveMeasure; siblingsName: string }) {

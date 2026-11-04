@@ -1,4 +1,4 @@
-// Covers: WEB-162 — a headline card's sparkline draws the place's own values
+// Covers: WEB-164 — a headline card's sparkline draws the place's own values
 // over the record's last ten years and says how they moved in ADR-0011 verbs.
 
 import { describe, expect, it } from "vitest";
