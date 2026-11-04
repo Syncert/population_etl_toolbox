@@ -19,6 +19,12 @@ const DEFINED = new Map(
 
 const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
 
+const UNCERTAINTY_FIELDS = ["margin_of_error", "margin_of_error_pct", "confidence_lower", "confidence_upper", "cv_value", "cv_status", "cv_symbol", "noise_flag"];
+/** A served uncertainty object: the published fields, every other one null. */
+function servedUncertainty(published) {
+  return { ...Object.fromEntries(UNCERTAINTY_FIELDS.map((field) => [field, null])), ...published };
+}
+
 export const NATION = { geo_id: "us:1", geo_level: "NATIONAL", geo_name: "us:1" };
 export const STATES = [
   { geo_id: "state:55", geo_level: "STATE", geo_name: "Wisconsin", state_fips: "55", state_name: "Wisconsin" },
@@ -376,9 +382,11 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
             ? { dollar_basis: code === "BEA:CAGDP1:1" ? "chained_dollars" : "current_dollars", value_source: withheld ? "(D)" : "",
               derivation: place.geo_level === "METRO" ? "ratio_of_member_county_sums" : null }
             : code.startsWith("CENSUS_BPS:") ? { reported_value: String(Math.round(base * 0.9)), observation_basis: "authorized by building permits" } : {},
-          uncertainty: code.startsWith("CENSUS_ACS") ? { margin_of_error: "12" }
-            : code.startsWith("CDC") ? { confidence_lower: "30.1", confidence_upper: "33.4" }
-            : code.startsWith("CENSUS_SAIPE_SAHIE") ? { margin_of_error: "1.4", confidence_lower: "39.6", confidence_upper: "42.4" }
+          // The API serves every uncertainty field, null where the source
+          // publishes none (ObservationUncertainty), so the fixture does too.
+          uncertainty: code.startsWith("CENSUS_ACS") ? servedUncertainty({ margin_of_error: "12" })
+            : code.startsWith("CDC") ? servedUncertainty({ confidence_lower: "30.1", confidence_upper: "33.4" })
+            : code.startsWith("CENSUS_SAIPE_SAHIE") ? servedUncertainty({ margin_of_error: "1.4", margin_of_error_pct: "3.2215", confidence_lower: "39.6", confidence_upper: "42.4" })
             : null,
           ...(code.startsWith("CENSUS_SAIPE_SAHIE") ? { dimensions: { estimate_method: "model-based annual estimate" } } : {}),
           coverage: null };
