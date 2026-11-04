@@ -2,7 +2,7 @@ import AxeBuilder from "../../../apps/web/node_modules/@axe-core/playwright/dist
 import { expect, test } from "../support/servedRequests.js";
 import { installPlaceFixtures } from "../support/placeScenarios.js";
 
-// Covers: WEB-158 — every trend chart says what it draws (UAT on the Madison
+// Covers: WEB-159 — every trend chart says what it draws (UAT on the Madison
 // metro page, where the work chart showed only "14" and "1.3"): a heading
 // naming the measure in plain words, its unit, how often it is published and
 // the span, its source, a y-axis label, the legend above the plot, and links

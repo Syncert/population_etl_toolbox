@@ -1,6 +1,6 @@
 import React from "react";
 
-// Covers: WEB-158 — every trend chart on a place page says what it draws: a
+// Covers: WEB-159 — every trend chart on a place page says what it draws: a
 // title naming the measure in plain words, its unit, how often it is published
 // and the span drawn, its source, a y-axis label and a legend above the plot,
 // linked to the headline card it draws (UAT on /metro/madison-wi, where the

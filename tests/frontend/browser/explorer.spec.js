@@ -806,7 +806,13 @@ async function installRoutes(
 
 test("catalog, observation coloring, Martin tile, selection, history, and keyboard flow", async ({ page }) => {
   const tileRequests = await installRoutes(page);
+  // The boundaries are drawn from the tile at the zoom on screen, not from
+  // the zoom-0 sample discovery decodes: that tile spends about 10 km on
+  // each of its 4,096 units, so a county border drawn from it is a
+  // staircase at state zoom.
+  const zoomedTile = page.waitForRequest(/\/tiles\/counties\/[1-9]\d*\/\d+\/\d+/);
   await page.goto("/explore");
+  await zoomedTile;
 
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toHaveAttribute("data-metric-count", "3");
@@ -1158,8 +1164,13 @@ test("as-released exploration pins a published release and reproduces it", async
 
   // The release identities come from /observations/releases for the selected
   // metric; nothing infers them from a period or a vintage.
-  await expect(page.getByTestId("releases-status")).toContainText("2 published releases");
   await expect(dashboard).toHaveAttribute("data-release-count", "2");
+  // Covers: WEB-158 — the status row counts the years a reader can look at,
+  // from the period listing, not the release identities (a load's capture
+  // time for some sources), and a release listing that answered in full is
+  // not a status a reader needs.
+  await expect(page.getByTestId("years-status")).toContainText("2 years published, 2022–2023");
+  await expect(page.getByTestId("releases-status")).toHaveCount(0);
   expect(releaseRequests.at(-1).metric_code).toBe("CENSUS_ACS:acs5:B01003_001");
 
   // Reading every published release: the request moves to the neutral
