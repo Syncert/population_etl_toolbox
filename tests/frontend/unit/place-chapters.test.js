@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { marginOfErrorText } from "../../../apps/web/lib/explorerViewModel";
+
 import {
   ADDITIVE_MEMBER_MEASURES,
   INDUSTRY_MIX_SECTORS,
@@ -55,6 +57,17 @@ describe("how a figure was made", () => {
     expect(measureBasis("CENSUS_SAIPE_SAHIE:sahie:PCTUI")).toBe("Model-based annual estimate (SAHIE)");
     expect(measureBasis("BLS:LAU:UNEMP_RATE")).toBeNull();
     expect(measureBasis(null)).toBeNull();
+  });
+
+  it("prints a served margin's percentage and never a null one as 0%", () => {
+    // UAT on 65cb758d: Dane County's SAIPE income read "±2,947 (0%)" because
+    // the API serves an unpublished field as null and Number(null) is 0.
+    expect(marginOfErrorText({ margin_of_error: "2947", margin_of_error_pct: "3.2215" })).toBe("±2,947 (3.22%)");
+    expect(marginOfErrorText({ margin_of_error: "2947", margin_of_error_pct: null })).toBe("±2,947");
+    expect(marginOfErrorText({ margin_of_error: "2947", margin_of_error_pct: "" })).toBe("±2,947");
+    expect(marginOfErrorText({ margin_of_error: null, margin_of_error_pct: null })).toBe("Not provided");
+    expect(marginOfErrorText({ margin_of_error: "-555555555" })).toBe("0 (Census-controlled estimate)");
+    expect(marginOfErrorText({ margin_of_error: 0, margin_of_error_pct: 0 })).toBe("±0 (0%)");
   });
 
   it("never lists an ACS identity and a SAIPE/SAHIE identity in one slot", () => {

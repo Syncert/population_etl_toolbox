@@ -225,6 +225,11 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(survey).not.toContainText("CENSUS_SAIPE_SAHIE");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("margin of error");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("confidence lower");
+  // The margin's percentage is the served one; a field the source does not
+  // publish arrives null and is never printed as 0 (UAT: "±2,947 (0%)").
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("(3.22%)");
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).not.toContainText("(0%)");
+  await expect(page.getByTestId("card-obesity-county")).not.toContainText("margin of error");
   await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");

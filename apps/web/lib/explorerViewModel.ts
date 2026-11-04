@@ -729,10 +729,15 @@ export function unitText(unit: unknown): string {
   return String(unit || "").replace(/^per_(\d+)_population$/, (_, count) => `per ${formatObservationValue(count)} people`);
 }
 
+/**
+ * A served margin decoded for a reader. parseFloat, not Number: the API serves
+ * a field the source does not publish as null, and Number(null) is 0, which
+ * printed SAIPE's unpublished percentage as "(0%)".
+ */
 export function marginOfErrorText(item: ObservationRow | null | undefined): string {
-  const marginOfError = Number(item?.margin_of_error);
+  const marginOfError = parseFloat(item?.margin_of_error as string);
   if (Number.isFinite(marginOfError) && marginOfError >= 0) {
-    const marginPct = Number(item?.margin_of_error_pct);
+    const marginPct = parseFloat(item?.margin_of_error_pct as string);
     const pctText = Number.isFinite(marginPct) && marginPct >= 0
       ? ` (${formatObservationValue(marginPct, 2)}%)`
       : "";
