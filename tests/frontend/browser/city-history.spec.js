@@ -108,11 +108,15 @@ test("a city page waits for its county before reading any trend, so every batch 
   });
   const batches = calls.filter((url) => url.pathname === "/api/v1/observations/history/batch");
   expect(batches.length).toBeGreaterThan(0);
-  for (const url of batches) {
+  // A trend's batch names the whole chain; a card sparkline's (WEB-164) names
+  // the city alone. Neither is asked before the county is known.
+  const trends = batches.filter((url) => url.searchParams.get("geo_ids") !== "state:55|place:48000");
+  expect(trends.length).toBeGreaterThan(0);
+  for (const url of trends) {
     expect(url.searchParams.get("geo_ids").split(",")).toEqual(["state:55|place:48000", "state:55|county:025", "state:55", "us:1"]);
   }
   // One batch per chapter: no trend is asked twice.
-  const asked = batches.flatMap((url) => url.searchParams.get("metric_codes").split(","));
+  const asked = trends.flatMap((url) => url.searchParams.get("metric_codes").split(","));
   expect(new Set(asked).size).toBe(asked.length);
   // Nor is any newest value read for the chain without its county.
   const newest = calls.filter((url) => url.pathname === "/api/v1/observations/newest/batch");

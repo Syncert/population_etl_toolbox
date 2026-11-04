@@ -71,6 +71,7 @@ SOURCES: tuple[str, ...] = (
     "FHFA_HPI",
     "HUD_FMR_IL",
     "FEMA_NRI",
+    "ELECTIONS",
     "FCC_BDC",
     "EPA_AQS",
     "NOAA_NORMALS",
@@ -3393,6 +3394,173 @@ _FEMA_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Elections: seat terms, governors and MEDSL results.
+# ---------------------------------------------------------------------------
+
+_ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.elections_run",
+        "control",
+        "ELECTIONS",
+        grain="run_id (one run per read of a stream)",
+        lineage="control.ingestion_run",
+        scope_method="the six streams: legislators, governors and four MEDSL results files",
+        cadence="monthly; a read whose files match the last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.elections_file",
+        "control",
+        "ELECTIONS",
+        grain="run_id, file_index",
+        lineage="control.elections_run, raw_capture.response_capture",
+        scope_method="every committed file of every read",
+        cadence="per capture",
+        empty_behavior="a run with no file failed and was withdrawn",
+    ),
+    _obj(
+        "silver_elections.quarantine",
+        "silver",
+        "ELECTIONS",
+        grain="capture_id, record_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated record; populated only on failure",
+        cadence="per elections replay",
+        empty_behavior="empty when every record conformed",
+    ),
+    _obj(
+        "silver_elections.seat_term",
+        "silver",
+        "ELECTIONS",
+        grain="run_id, term_key",
+        lineage="control.elections_file, silver_ref.dim_geo_entity",
+        scope_method="every congressional and governor term span ending on or after 1969-01-01",
+        cadence="per elections replay",
+        empty_behavior="a term whose party changed is one span per affiliation",
+    ),
+    _obj(
+        "silver_elections.candidate_result",
+        "silver",
+        "ELECTIONS",
+        grain="run_id, result_key",
+        lineage="control.elections_file, silver_ref.dim_geo_entity",
+        scope_method="every MEDSL row of a replayed results file",
+        cadence="per elections replay",
+        empty_behavior="a House row's area is its district, kept and never served as a place",
+    ),
+    _obj(
+        "gold_elections.office_definition",
+        "gold",
+        "ELECTIONS",
+        grain="office",
+        lineage="",
+        scope_method="the four offices",
+        cadence="static",
+        empty_behavior="never empty: the offices are registered",
+    ),
+    _obj(
+        "gold_elections.party_definition",
+        "gold",
+        "ELECTIONS",
+        grain="party_code",
+        lineage="",
+        scope_method="the four party codes",
+        cadence="static",
+        empty_behavior="never empty: the parties are registered",
+    ),
+    _obj(
+        "gold_elections.current_read",
+        "gold",
+        "ELECTIONS",
+        grain="stream",
+        lineage="control.elections_run",
+        scope_method="the newest published read of each stream",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_elections.seat_term",
+        "gold",
+        "ELECTIONS",
+        grain="term_key (current reads)",
+        lineage="silver_elections.seat_term, gold_elections.current_read",
+        scope_method="resolved seat-term spans of the current legislators and governors reads",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_elections.candidate_total",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area, candidate",
+        lineage="silver_elections.candidate_result, gold_elections.current_read",
+        scope_method="one mode per area: the TOTAL line where published, else the sum of modes",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.contest_result",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area",
+        lineage="gold_elections.candidate_total",
+        scope_method="major-party votes, total votes and the leading party per contest and area",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.measure_definition",
+        "gold",
+        "ELECTIONS",
+        grain="measure",
+        lineage="",
+        scope_method="the three published presidential measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_elections.observation_revision",
+        "gold",
+        "ELECTIONS",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_elections.contest_result",
+        scope_method="presidential general-election measures by county and state in the observation shape",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.observation_latest",
+        "gold",
+        "ELECTIONS",
+        grain="metric_key, geo_id, year (newest release)",
+        lineage="gold_elections.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.measure_export",
+        "publisher",
+        "ELECTIONS",
+        grain="source_object_key (measure)",
+        lineage="gold_elections.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_elections.metric_publisher",
+        "publisher",
+        "ELECTIONS",
+        grain="source_object_key (measure)",
+        lineage="gold_elections.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published results read",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # FHFA annual House Price Index.
 # ---------------------------------------------------------------------------
 
@@ -3833,6 +4001,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _HPI_OBJECTS
     + _HUD_OBJECTS
     + _FEMA_OBJECTS
+    + _ELECTIONS_OBJECTS
     + _BDC_OBJECTS
     + _AQS_OBJECTS
     + _NORMALS_OBJECTS
@@ -6596,6 +6765,72 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fema_nri.nri_fact",
             "silver_fema_nri.declaration_revision",
             "control.fema_nri_run",
+        ),
+    ),
+    # -- Elections: seat terms, governors and MEDSL results --------------------
+    _rule(
+        "DQ-ELEC-001",
+        "BLOCK",
+        "uniqueness",
+        "A seat-term span is unique per (read, term key) and a result row per "
+        "(read, result key): a repeated span or a repeated candidate line in one "
+        "contest, area and mode is quarantined.",
+        (
+            "silver_elections.seat_term",
+            "silver_elections.candidate_result",
+            "gold_elections.seat_term",
+            "gold_elections.candidate_total",
+            "gold_elections.contest_result",
+            "gold_elections.observation_revision",
+            "gold_elections.observation_latest",
+            "gold_elections.office_definition",
+            "gold_elections.party_definition",
+            "gold_elections.current_read",
+            "gold_elections.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the two silver tables' "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_elections.seat_term", ("run_id", "term_key")),
+            EnforcedGrain(
+                "silver_elections.candidate_result", ("run_id", "result_key")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured elections read is left unreplayed, and every replayed read "
+        "with readable records reached its terms or results.",
+        (
+            "control.elections_run",
+            "control.elections_file",
+            "silver_elections.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-003",
+        "BLOCK",
+        "temporal_integrity",
+        "No two current seat-term spans hold one seat (a state's governorship, "
+        "Senate class or House district) on the same day.",
+        ("gold_elections.seat_term",),
+    ),
+    _rule(
+        "DQ-ELEC-004",
+        "WARN",
+        "reconciliation",
+        "Each state's county presidential totals sum to within 0.5 percent of "
+        "its state total, and every county and state row of the current results "
+        "reads resolved to the shared geography.",
+        (
+            "gold_elections.contest_result",
+            "gold_elections.measure_export",
+            "gold_elections.metric_publisher",
         ),
     ),
     # -- FHFA annual House Price Index ----------------------------------------

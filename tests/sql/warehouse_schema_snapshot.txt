@@ -471,6 +471,40 @@ r control.eia_read
     constraint eia_read_window_ordered CHECK (((end_week IS NULL) OR (end_week >= start_week)))
     index eia_read_pkey CREATE UNIQUE INDEX eia_read_pkey ON control.eia_read USING btree (run_id)
 
+r control.elections_file
+    column run_id uuid NOT NULL
+    column file_index integer NOT NULL
+    column file_key text NOT NULL
+    column file_kind text NOT NULL
+    column capture_id uuid NOT NULL
+    constraint elections_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint elections_file_file_index_check CHECK ((file_index >= 0))
+    constraint elections_file_file_kind_check CHECK ((file_kind = ANY (ARRAY['legislators'::text, 'sparql'::text, 'listing'::text, 'results'::text])))
+    constraint elections_file_pkey PRIMARY KEY (run_id, file_index)
+    constraint elections_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.elections_run(run_id)
+    index elections_file_pkey CREATE UNIQUE INDEX elections_file_pkey ON control.elections_file USING btree (run_id, file_index)
+
+r control.elections_run
+    column run_id uuid NOT NULL
+    column stream text NOT NULL
+    column status text NOT NULL
+    column run_checksum text
+    column source_file text
+    column file_count integer NOT NULL DEFAULT 0
+    column record_count integer NOT NULL DEFAULT 0
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint elections_run_file_count_check CHECK ((file_count >= 0))
+    constraint elections_run_pkey PRIMARY KEY (run_id)
+    constraint elections_run_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint elections_run_record_count_check CHECK ((record_count >= 0))
+    constraint elections_run_run_checksum_check CHECK (((run_checksum IS NULL) OR (run_checksum ~ '^[0-9a-f]{64}$'::text)))
+    constraint elections_run_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint elections_run_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text])))
+    index elections_run_pkey CREATE UNIQUE INDEX elections_run_pkey ON control.elections_run USING btree (run_id)
+
 r control.epa_aqs_file
     column run_id uuid NOT NULL
     column year integer NOT NULL
@@ -4655,6 +4689,538 @@ v gold_eia.observation_revision
     body    FROM silver_eia.fact_retail_price fact
     body      JOIN control.eia_read read ON read.run_id = fact.run_id
     body   WHERE read.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND fact.geo_id IS NOT NULL;
+
+v gold_elections.candidate_total
+    column run_id uuid
+    column stream text
+    column source_file text
+    column published_at timestamp with time zone
+    column office text
+    column election_year smallint
+    column stage text
+    column special boolean
+    column state_code text
+    column state_fips text
+    column county_fips text
+    column district integer
+    column geo_level text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column area_key text
+    column candidate text
+    column party_code text
+    column party_text text
+    column writein boolean
+    column votes bigint
+    column published_total_votes bigint
+    column capture_id uuid
+    body WITH current_rows AS (
+    body          SELECT result.run_id,
+    body             result.result_key,
+    body             result.office,
+    body             result.election_year,
+    body             result.stage,
+    body             result.special,
+    body             result.state_code,
+    body             result.state_fips,
+    body             result.county_fips,
+    body             result.district,
+    body             result.candidate,
+    body             result.party_text,
+    body             result.party_code,
+    body             result.writein,
+    body             result.mode,
+    body             result.candidate_votes,
+    body             result.total_votes,
+    body             result.geo_level,
+    body             result.geo_id,
+    body             result.geo_sk,
+    body             result.geography_status,
+    body             result.source_record_id,
+    body             result.capture_id,
+    body             result.record_index,
+    body             result.created_at,
+    body             read.stream,
+    body             read.source_file,
+    body             read.published_at,
+    body             (COALESCE(result.county_fips, ''::text) || '|'::text) || COALESCE(result.district::text, ''::text) AS area_key
+    body            FROM silver_elections.candidate_result result
+    body              JOIN gold_elections.current_read read ON read.run_id = result.run_id
+    body         ), mode_total AS (
+    body          SELECT current_rows.run_id,
+    body             current_rows.office,
+    body             current_rows.election_year,
+    body             current_rows.stage,
+    body             current_rows.special,
+    body             current_rows.state_code,
+    body             current_rows.area_key,
+    body             current_rows.mode,
+    body             max(current_rows.total_votes) AS total_votes
+    body            FROM current_rows
+    body           GROUP BY current_rows.run_id, current_rows.office, current_rows.election_year, current_rows.stage, current_rows.special, current_rows.state_code, current_rows.area_key, current_rows.mode
+    body         ), area AS (
+    body          SELECT mode_total.run_id,
+    body             mode_total.office,
+    body             mode_total.election_year,
+    body             mode_total.stage,
+    body             mode_total.special,
+    body             mode_total.state_code,
+    body             mode_total.area_key,
+    body             bool_or(mode_total.mode = 'TOTAL'::text) AS has_total,
+    body                 CASE
+    body                     WHEN bool_or(mode_total.mode = 'TOTAL'::text) THEN max(mode_total.total_votes) FILTER (WHERE mode_total.mode = 'TOTAL'::text)::numeric
+    body                     ELSE sum(mode_total.total_votes)
+    body                 END AS area_total_votes
+    body            FROM mode_total
+    body           GROUP BY mode_total.run_id, mode_total.office, mode_total.election_year, mode_total.stage, mode_total.special, mode_total.state_code, mode_total.area_key
+    body         )
+    body  SELECT rows.run_id,
+    body     rows.stream,
+    body     rows.source_file,
+    body     rows.published_at,
+    body     rows.office,
+    body     rows.election_year,
+    body     rows.stage,
+    body     rows.special,
+    body     rows.state_code,
+    body     rows.state_fips,
+    body     rows.county_fips,
+    body     rows.district,
+    body     rows.geo_level,
+    body     rows.geo_id,
+    body     rows.geo_sk,
+    body     rows.geography_status,
+    body     rows.area_key,
+    body     rows.candidate,
+    body         CASE
+    body             WHEN bool_or(rows.party_code = 'REP'::text) THEN 'REP'::text
+    body             WHEN bool_or(rows.party_code = 'DEM'::text) THEN 'DEM'::text
+    body             WHEN bool_or(rows.party_code = 'IND'::text) THEN 'IND'::text
+    body             ELSE 'OTH'::text
+    body         END AS party_code,
+    body     string_agg(DISTINCT rows.party_text, '; '::text ORDER BY rows.party_text) AS party_text,
+    body     bool_and(rows.writein) AS writein,
+    body     sum(rows.candidate_votes)::bigint AS votes,
+    body     max(area.area_total_votes)::bigint AS published_total_votes,
+    body     min(rows.capture_id::text)::uuid AS capture_id
+    body    FROM current_rows rows
+    body      JOIN area USING (run_id, office, election_year, stage, special, state_code, area_key)
+    body   WHERE NOT area.has_total OR rows.mode = 'TOTAL'::text
+    body   GROUP BY rows.run_id, rows.stream, rows.source_file, rows.published_at, rows.office, rows.election_year, rows.stage, rows.special, rows.state_code, rows.state_fips, rows.county_fips, rows.district, rows.geo_level, rows.geo_id, rows.geo_sk, rows.geography_status, rows.area_key, rows.candidate;
+
+v gold_elections.contest_result
+    column office text
+    column election_year smallint
+    column stage text
+    column special boolean
+    column state_code text
+    column state_fips text
+    column county_fips text
+    column district integer
+    column geo_level text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column republican_votes bigint
+    column democratic_votes bigint
+    column total_votes bigint
+    column leading_party_code text
+    column leading_candidate text
+    column candidate_count integer
+    column stream text
+    column source_file text
+    column run_id uuid
+    column published_at timestamp with time zone
+    column capture_id uuid
+    body WITH ranked AS (
+    body          SELECT total.run_id,
+    body             total.stream,
+    body             total.source_file,
+    body             total.published_at,
+    body             total.office,
+    body             total.election_year,
+    body             total.stage,
+    body             total.special,
+    body             total.state_code,
+    body             total.state_fips,
+    body             total.county_fips,
+    body             total.district,
+    body             total.geo_level,
+    body             total.geo_id,
+    body             total.geo_sk,
+    body             total.geography_status,
+    body             total.area_key,
+    body             total.candidate,
+    body             total.party_code,
+    body             total.party_text,
+    body             total.writein,
+    body             total.votes,
+    body             total.published_total_votes,
+    body             total.capture_id,
+    body             row_number() OVER (PARTITION BY total.run_id, total.office, total.election_year, total.stage, total.special, total.state_code, total.area_key ORDER BY total.votes DESC, total.candidate) AS place
+    body            FROM gold_elections.candidate_total total
+    body         )
+    body  SELECT office,
+    body     election_year,
+    body     stage,
+    body     special,
+    body     state_code,
+    body     state_fips,
+    body     county_fips,
+    body     district,
+    body     geo_level,
+    body     geo_id,
+    body     geo_sk,
+    body     geography_status,
+    body     sum(votes) FILTER (WHERE party_code = 'REP'::text)::bigint AS republican_votes,
+    body     sum(votes) FILTER (WHERE party_code = 'DEM'::text)::bigint AS democratic_votes,
+    body     GREATEST(COALESCE(max(published_total_votes), 0::bigint)::numeric, sum(votes))::bigint AS total_votes,
+    body     max(party_code) FILTER (WHERE place = 1) AS leading_party_code,
+    body     max(candidate) FILTER (WHERE place = 1) AS leading_candidate,
+    body     count(*)::integer AS candidate_count,
+    body     stream,
+    body     source_file,
+    body     run_id,
+    body     published_at,
+    body     min(capture_id::text)::uuid AS capture_id
+    body    FROM ranked
+    body   GROUP BY office, election_year, stage, special, state_code, state_fips, county_fips, district, geo_level, geo_id, geo_sk, geography_status, area_key, stream, source_file, run_id, published_at;
+
+v gold_elections.current_read
+    column stream text
+    column run_id uuid
+    column source_file text
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (stream) stream,
+    body     run_id,
+    body     source_file,
+    body     published_at
+    body    FROM control.elections_run run
+    body   WHERE status = 'published'::text
+    body   ORDER BY stream, published_at DESC, run_id DESC;
+
+v gold_elections.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis
+    body    FROM ( VALUES ('president_two_party_republican_share'::text,'Presidential vote: Republican share of the two-party vote'::text,'percent'::text,('MIT Election Data and Science Lab returns: the Republican candidate''s votes as a share of the '::text || 'Republican and Democratic candidates'' combined votes in the general election, counting a '::text) || 'candidate''s every ballot line. A comparison of places, not a measure of how any voter fared.'::text), ('president_two_party_margin'::text,'Presidential vote: two-party margin (Republican minus Democratic)'::text,'percentage points'::text,'MIT Election Data and Science Lab returns: the Republican share minus the Democratic share of '::text || 'the two-party vote in the general election; positive leans Republican, negative Democratic.'::text), ('president_total_votes'::text,'Presidential vote: total votes cast'::text,'votes'::text,'MIT Election Data and Science Lab returns: every vote cast for president in the area, as the '::text || 'returns publish it, including candidates of every party and write-ins.'::text)) definition(measure, measure_label, unit, observation_basis);
+
+v gold_elections.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'elections_files:v1'::text AS schema_version
+    body    FROM gold_elections.measure_definition;
+
+v gold_elections.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'ELECTIONS'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (MEDSL)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body         CASE served.metric_key
+    body             WHEN 'president_total_votes'::text THEN 'source_fact'::text
+    body             ELSE 'derived_summary'::text
+    body         END AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_elections', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'MIT Election Data and Science Lab'::text AS source_name,
+    body     'academic-data-archive'::text AS source_type,
+    body     'https://electionlab.mit.edu/data'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.release_key) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.published_at DESC))[1] AS source_run_id,
+    body             max(latest.published_at) AS publication_time
+    body            FROM gold_elections.observation_latest latest
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_elections.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_elections.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column republican_votes bigint
+    column democratic_votes bigint
+    column total_votes bigint
+    column leading_party_code text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     value,
+    body     value_status,
+    body     missing_reason,
+    body     republican_votes,
+    body     democratic_votes,
+    body     total_votes,
+    body     leading_party_code,
+    body     release_key,
+    body     published_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_elections.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, published_at DESC, run_id DESC;
+
+v gold_elections.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column republican_votes bigint
+    column democratic_votes bigint
+    column total_votes bigint
+    column leading_party_code text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH contest AS (
+    body          SELECT result.office,
+    body             result.election_year,
+    body             result.stage,
+    body             result.special,
+    body             result.state_code,
+    body             result.state_fips,
+    body             result.county_fips,
+    body             result.district,
+    body             result.geo_level,
+    body             result.geo_id,
+    body             result.geo_sk,
+    body             result.geography_status,
+    body             result.republican_votes,
+    body             result.democratic_votes,
+    body             result.total_votes,
+    body             result.leading_party_code,
+    body             result.leading_candidate,
+    body             result.candidate_count,
+    body             result.stream,
+    body             result.source_file,
+    body             result.run_id,
+    body             result.published_at,
+    body             result.capture_id,
+    body             make_date(result.election_year::integer, 11, 2) + (2 - EXTRACT(dow FROM make_date(result.election_year::integer, 11, 2))::integer + 7) % 7 AS election_day,
+    body             NULLIF(COALESCE(result.republican_votes, 0::bigint) + COALESCE(result.democratic_votes, 0::bigint), 0) AS two_party_votes
+    body            FROM gold_elections.contest_result result
+    body           WHERE result.office = 'president'::text AND result.stage = 'GEN'::text AND NOT result.special AND (result.geo_level = ANY (ARRAY['state'::text, 'county'::text]))
+    body         ), measured AS (
+    body          SELECT contest.office,
+    body             contest.election_year,
+    body             contest.stage,
+    body             contest.special,
+    body             contest.state_code,
+    body             contest.state_fips,
+    body             contest.county_fips,
+    body             contest.district,
+    body             contest.geo_level,
+    body             contest.geo_id,
+    body             contest.geo_sk,
+    body             contest.geography_status,
+    body             contest.republican_votes,
+    body             contest.democratic_votes,
+    body             contest.total_votes,
+    body             contest.leading_party_code,
+    body             contest.leading_candidate,
+    body             contest.candidate_count,
+    body             contest.stream,
+    body             contest.source_file,
+    body             contest.run_id,
+    body             contest.published_at,
+    body             contest.capture_id,
+    body             contest.election_day,
+    body             contest.two_party_votes,
+    body             measure.metric_key,
+    body                 CASE measure.metric_key
+    body                     WHEN 'president_two_party_republican_share'::text THEN round(100.0 * COALESCE(contest.republican_votes, 0::bigint)::numeric / contest.two_party_votes::numeric, 2)
+    body                     WHEN 'president_two_party_margin'::text THEN round(100.0 * (COALESCE(contest.republican_votes, 0::bigint) - COALESCE(contest.democratic_votes, 0::bigint))::numeric / contest.two_party_votes::numeric, 2)
+    body                     ELSE contest.total_votes::numeric
+    body                 END AS value
+    body            FROM contest
+    body              CROSS JOIN ( VALUES ('president_two_party_republican_share'::text), ('president_two_party_margin'::text), ('president_total_votes'::text)) measure(metric_key)
+    body         )
+    body  SELECT measured.metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     measured.election_year::integer AS year,
+    body     measured.election_day AS period_start,
+    body     measured.election_day AS period_end,
+    body     measured.geo_id,
+    body     measured.geo_sk,
+    body     measured.geo_level AS geo_type,
+    body     gold_glossary.geo_grain(measured.geo_level) AS geo_level,
+    body     measured.value,
+    body         CASE
+    body             WHEN measured.value IS NULL THEN 'missing'::text
+    body             ELSE 'valid'::text
+    body         END AS value_status,
+    body         CASE
+    body             WHEN measured.value IS NULL THEN 'no_major_party_votes'::text
+    body             ELSE NULL::text
+    body         END AS missing_reason,
+    body     measured.republican_votes,
+    body     measured.democratic_votes,
+    body     measured.total_votes,
+    body     measured.leading_party_code,
+    body     'MEDSL '::text || COALESCE(measured.source_file, measured.stream) AS release_key,
+    body     measured.published_at,
+    body     md5((((measured.metric_key || '|'::text) || measured.geo_id) || '|'::text) || measured.election_year::text) AS source_record_id,
+    body     measured.capture_id,
+    body     measured.run_id
+    body    FROM measured
+    body      JOIN gold_elections.measure_definition definition ON definition.measure = measured.metric_key
+    body   WHERE measured.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text, 'district'::text]);
+
+v gold_elections.office_definition
+    column office text
+    column office_label text
+    column seat_basis text
+    body SELECT office,
+    body     office_label,
+    body     seat_basis
+    body    FROM ( VALUES ('president'::text,'President of the United States'::text,'nation'::text), ('us_senate'::text,'U.S. Senate'::text,'state and Senate class'::text), ('us_house'::text,'U.S. House of Representatives'::text,'state and district, redrawn after each census'::text), ('governor'::text,'Governor'::text,'state'::text)) office(office, office_label, seat_basis);
+
+v gold_elections.party_definition
+    column party_code text
+    column party_label text
+    column display_order integer
+    body SELECT party_code,
+    body     party_label,
+    body     display_order
+    body    FROM ( VALUES ('REP'::text,'Republican'::text,1), ('DEM'::text,'Democratic'::text,2), ('IND'::text,'Independent'::text,3), ('OTH'::text,'Other'::text,4)) party(party_code, party_label, display_order);
+
+v gold_elections.seat_term
+    column office text
+    column state_code text
+    column state_fips text
+    column geo_id text
+    column geo_sk bigint
+    column seat_label text
+    column district integer
+    column senate_class smallint
+    column holder_id text
+    column holder_name text
+    column party_code text
+    column party_text text
+    column caucus_code text
+    column start_date date
+    column end_date date
+    column how text
+    column source_label text
+    column term_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column published_at timestamp with time zone
+    body SELECT term.office,
+    body     term.state_code,
+    body     term.state_fips,
+    body     term.geo_id,
+    body     term.geo_sk,
+    body         CASE term.office
+    body             WHEN 'us_senate'::text THEN (term.state_code || ' Senate class '::text) || term.senate_class
+    body             WHEN 'us_house'::text THEN (term.state_code || '-'::text) ||
+    body             CASE
+    body                 WHEN term.district = 0 THEN 'AL'::text
+    body                 ELSE lpad(term.district::text, 2, '0'::text)
+    body             END
+    body             ELSE term.state_code || ' governor'::text
+    body         END AS seat_label,
+    body     term.district,
+    body     term.senate_class,
+    body     term.holder_id,
+    body     term.holder_name,
+    body     term.party_code,
+    body     term.party_text,
+    body     term.caucus_code,
+    body     term.start_date,
+    body     term.end_date,
+    body     term.how,
+    body         CASE read.stream
+    body             WHEN 'legislators'::text THEN 'unitedstates/congress-legislators (CC0 1.0)'::text
+    body             ELSE 'Wikidata (CC0 1.0)'::text
+    body         END AS source_label,
+    body     term.term_key,
+    body     term.source_record_id,
+    body     term.capture_id,
+    body     term.run_id,
+    body     read.published_at
+    body    FROM silver_elections.seat_term term
+    body      JOIN gold_elections.current_read read ON read.run_id = term.run_id
+    body   WHERE term.geography_status = 'resolved'::text;
 
 v gold_epa_aqs.measure_definition
     column measure text
@@ -10560,6 +11126,111 @@ r silver_eia.price_revision
     constraint price_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index eia_revision_run_idx CREATE INDEX eia_revision_run_idx ON silver_eia.price_revision USING btree (run_id)
     index price_revision_pkey CREATE UNIQUE INDEX price_revision_pkey ON silver_eia.price_revision USING btree (capture_id, row_index)
+
+r silver_elections.candidate_result
+    column run_id uuid NOT NULL
+    column result_key text NOT NULL
+    column office text NOT NULL
+    column election_year smallint NOT NULL
+    column stage text NOT NULL
+    column special boolean NOT NULL
+    column state_code text NOT NULL
+    column state_fips text
+    column county_fips text
+    column district integer
+    column candidate text NOT NULL
+    column party_text text
+    column party_code text NOT NULL
+    column writein boolean NOT NULL
+    column mode text NOT NULL
+    column candidate_votes bigint NOT NULL
+    column total_votes bigint
+    column geo_level text NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column source_record_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column record_index integer NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint candidate_result_candidate_votes_check CHECK ((candidate_votes >= 0))
+    constraint candidate_result_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint candidate_result_county_fips_check CHECK (((county_fips IS NULL) OR (county_fips ~ '^[0-9]{5}$'::text)))
+    constraint candidate_result_district_check CHECK (((district IS NULL) OR (district >= 0)))
+    constraint candidate_result_election_year_check CHECK (((election_year >= 1789) AND (election_year <= 2100)))
+    constraint candidate_result_geo_level_check CHECK ((geo_level = ANY (ARRAY['state'::text, 'county'::text, 'district'::text])))
+    constraint candidate_result_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'district'::text])))
+    constraint candidate_result_office_check CHECK ((office = ANY (ARRAY['president'::text, 'us_senate'::text, 'us_house'::text])))
+    constraint candidate_result_party_code_check CHECK ((party_code = ANY (ARRAY['REP'::text, 'DEM'::text, 'IND'::text, 'OTH'::text])))
+    constraint candidate_result_pkey PRIMARY KEY (run_id, result_key)
+    constraint candidate_result_record_index_check CHECK ((record_index >= 1))
+    constraint candidate_result_result_key_check CHECK ((result_key ~ '^[0-9a-f]{64}$'::text))
+    constraint candidate_result_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.elections_run(run_id)
+    constraint candidate_result_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint candidate_result_state_code_check CHECK ((state_code ~ '^[A-Z]{2}$'::text))
+    constraint candidate_result_state_fips_check CHECK (((state_fips IS NULL) OR (state_fips ~ '^[0-9]{2}$'::text)))
+    constraint candidate_result_total_votes_check CHECK (((total_votes IS NULL) OR (total_votes >= 0)))
+    constraint elections_result_level_shape CHECK ((((geo_level = 'county'::text) AND (county_fips IS NOT NULL)) OR ((geo_level = 'district'::text) AND (district IS NOT NULL) AND (geography_status = 'district'::text)) OR ((geo_level = 'state'::text) AND (county_fips IS NULL))))
+    index candidate_result_pkey CREATE UNIQUE INDEX candidate_result_pkey ON silver_elections.candidate_result USING btree (run_id, result_key)
+    index elections_result_contest_idx CREATE INDEX elections_result_contest_idx ON silver_elections.candidate_result USING btree (run_id, office, election_year, geo_id)
+
+r silver_elections.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_elections.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column record_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_record_index_error_code_key UNIQUE (capture_id, record_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_record_index_check CHECK ((record_index >= 0))
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    index quarantine_capture_id_record_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_record_index_error_code_key ON silver_elections.quarantine USING btree (capture_id, record_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_elections.quarantine USING btree (quarantine_sk)
+
+r silver_elections.seat_term
+    column run_id uuid NOT NULL
+    column term_key text NOT NULL
+    column office text NOT NULL
+    column state_code text NOT NULL
+    column state_fips text
+    column district integer
+    column senate_class smallint
+    column holder_id text NOT NULL
+    column holder_name text NOT NULL
+    column party_text text
+    column party_code text NOT NULL
+    column caucus_code text
+    column start_date date NOT NULL
+    column end_date date
+    column how text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column source_record_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column record_index integer NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint elections_term_dates_ordered CHECK (((end_date IS NULL) OR (end_date >= start_date)))
+    constraint elections_term_seat_shape CHECK ((((office = 'us_senate'::text) AND (senate_class IS NOT NULL) AND (district IS NULL)) OR ((office = 'us_house'::text) AND (district IS NOT NULL) AND (senate_class IS NULL)) OR ((office = 'governor'::text) AND (district IS NULL) AND (senate_class IS NULL))))
+    constraint seat_term_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint seat_term_caucus_code_check CHECK (((caucus_code IS NULL) OR (caucus_code = ANY (ARRAY['REP'::text, 'DEM'::text]))))
+    constraint seat_term_district_check CHECK (((district IS NULL) OR (district >= 0)))
+    constraint seat_term_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint seat_term_office_check CHECK ((office = ANY (ARRAY['us_senate'::text, 'us_house'::text, 'governor'::text])))
+    constraint seat_term_party_code_check CHECK ((party_code = ANY (ARRAY['REP'::text, 'DEM'::text, 'IND'::text, 'OTH'::text])))
+    constraint seat_term_pkey PRIMARY KEY (run_id, term_key)
+    constraint seat_term_record_index_check CHECK ((record_index >= 1))
+    constraint seat_term_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.elections_run(run_id)
+    constraint seat_term_senate_class_check CHECK (((senate_class IS NULL) OR (senate_class = ANY (ARRAY[1, 2, 3]))))
+    constraint seat_term_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint seat_term_state_code_check CHECK ((state_code ~ '^[A-Z]{2}$'::text))
+    constraint seat_term_state_fips_check CHECK (((state_fips IS NULL) OR (state_fips ~ '^[0-9]{2}$'::text)))
+    constraint seat_term_term_key_check CHECK ((term_key ~ '^[0-9a-f]{64}$'::text))
+    index elections_seat_term_state_idx CREATE INDEX elections_seat_term_state_idx ON silver_elections.seat_term USING btree (state_fips, office, start_date)
+    index seat_term_pkey CREATE UNIQUE INDEX seat_term_pkey ON silver_elections.seat_term USING btree (run_id, term_key)
 
 r silver_epa_aqs.monitor_fact
     column run_id uuid NOT NULL

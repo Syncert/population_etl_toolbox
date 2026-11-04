@@ -424,6 +424,12 @@ the National Risk Index county layer and every OpenFEMA declaration through
 the one-slot `fema_files` pool
 ([operations](../user-guides/FEMA_NRI_PIPELINE_OPERATIONS.md)).
 
+Trigger `elections_ingest` once after the shared geography loads: it reads
+both congress-legislators files, the Wikidata governor query and the four
+MEDSL results files, each whole, through the one-slot `elections_files` pool
+([operations](../user-guides/ELECTIONS_PIPELINE_OPERATIONS.md)). Every run
+re-reads every stream, so there is no history run.
+
 Trigger `fhfa_hpi_ingest` once after the shared geography loads: it reads
 FHFA's annual county workbook, every county and year in one file, through the
 one-slot `fhfa_hpi_files` pool

@@ -1,4 +1,4 @@
-// Covers: WEB-162 — every map uses one hue light to dark for more and less,
+// Covers: WEB-166 — every map uses one hue light to dark for more and less,
 // and a measure running below and above zero meets at a neutral grey.
 
 import { describe, expect, it } from "vitest";
