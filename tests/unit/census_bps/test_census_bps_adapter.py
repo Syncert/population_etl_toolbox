@@ -107,10 +107,8 @@ def test_the_registry_names_every_file_it_requests() -> None:
     ]
     # From July the window is all this year's months, yet last year's total
     # is the newest published year, so it is always asked for.
-    assert recent_periods(date(2026, 10, 25), 6)[-1] == (ANNUAL, 2025, 12)
-    assert [item for item in recent_periods(date(2026, 10, 25), 6) if item[0] == ANNUAL] == [
-        (ANNUAL, 2025, 12)
-    ]
+    october = recent_periods(date(2026, 10, 25), 6)
+    assert [item for item in october if item[0] == ANNUAL] == [(ANNUAL, 2025, 12)]
     history = registered_periods(date(2001, 3, 1))
     assert history[:2] == [(MONTHLY, 2000, 1), (MONTHLY, 2000, 2)]
     assert history[-3:] == [(ANNUAL, 2000, 12), (MONTHLY, 2001, 1), (MONTHLY, 2001, 2)]
