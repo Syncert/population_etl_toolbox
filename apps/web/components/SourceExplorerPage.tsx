@@ -132,6 +132,7 @@ import {
   unsupportedViewModes,
 } from "../lib/viewModes";
 import { displayMetricName, formatNumber } from "../lib/format";
+import { describePublishedYears } from "../lib/publishedYears";
 import { MetricName } from "./MetricName";
 import {
   GEO_GRAIN_LABELS,
@@ -368,6 +369,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
     return [...byStart].map(([start, count]) => ({ start, count }));
   }, [periods]);
+  // The status row's year count, from the same listing the period picker
+  // reads; a listing the page bound cut short is a lower bound.
+  const publishedYearsMessage =
+    periodsStatus.state === "ok"
+      ? describePublishedYears(periods)
+      : periodsStatus.state === "bad" && periods.length
+        ? describePublishedYears(periods, false)
+        : periodsStatus.message;
   const [releases, setReleases] = useState<MetricRelease[]>([]);
   const [releasesStatus, setReleasesStatus] = useState<RequestStatus>({
     state: "idle",
@@ -2330,12 +2339,26 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           message={distributionStatus.message}
           testId="distribution-status"
         />
+        {/* Years, not releases: a release identity is a load's capture time
+            for some sources, so counting them read as eleven years of data
+            where two were published (WEB-158). */}
         <StatusPill
-          state={releasesStatus.state}
-          label="Releases"
-          message={releasesStatus.message}
-          testId="releases-status"
+          state={periodsStatus.state}
+          label="Years"
+          message={publishedYearsMessage}
+          testId="years-status"
         />
+        {/* The release listing is still read for the publication picker; it
+            is shown here only when that read failed or was cut short, which
+            the picker alone would not say. */}
+        {releasesStatus.state === "bad" ? (
+          <StatusPill
+            state={releasesStatus.state}
+            label="Releases"
+            message={releasesStatus.message}
+            testId="releases-status"
+          />
+        ) : null}
       </section>
 
       <div className="workspace-tabs" role="tablist" aria-label="Explorer views">
