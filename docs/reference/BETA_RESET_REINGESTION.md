@@ -392,10 +392,13 @@ Business Patterns file, three a year from 2016, through the one-slot
 
 Trigger `census_lodes_ingest` once after the shared geography loads: it
 captures the newest registered LODES year for every state, four files each,
-through the one-slot `census_lodes_files` pool. The years before it load
-once with `python -m data_ingestion_toolbox.census_lodes.history --years
-2023-2002` in the scheduler container, which resumes by state-year and
-publishes when every year is in, as the
+through the one-slot `census_lodes_files` pool, then backfills every
+registered year it has never had answered (2002 onward on a fresh
+warehouse) through the resumable history loader, publishing when every
+backfilled year is in. A state-year that fails is asked for again on the
+next run; no manual history command is needed, though
+`python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002`
+still works, as the
 [operations guide](../user-guides/CENSUS_LODES_PIPELINE_OPERATIONS.md#loading-the-history)
 describes.
 
@@ -1158,9 +1161,9 @@ docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.cens
 # year already loaded from the same file. Then back to 1985 the same way.
 docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.fbi_ucr.return_a.load --years 2025-2015
 
-# LEHD LODES history: every state, 2002 onwards (the DAG keeps the newest
-# year). Resumes by state-year; publishes once every year is in; exit 1
-# means rerun the same command.
+# LEHD LODES history: every state, 2002 onwards. Optional: the DAG's
+# scheduled run backfills unanswered years on its own. Resumes by
+# state-year; publishes once every year is in; exit 1 means rerun.
 docker exec docker-airflow-scheduler-1     python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002
 ```
 
