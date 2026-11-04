@@ -93,6 +93,32 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-162 — a headline card draws its own place's history as a
+// sparkline, read in one history batch per chapter for that place only, with
+// a change line in the record page's verbs.
+test("a county's headline cards carry a sparkline of the county's own history", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const batches = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/observations/history/batch") batches.push(url);
+  });
+  await ready(page, "/us/wisconsin/dane-county");
+  const spark = page.getByTestId("card-bea-per-capita-income-spark");
+  await expect(spark).toHaveAttribute("data-points", "6");
+  await expect(spark.locator("figcaption")).toContainText("2019");
+  await expect(page.getByTestId("card-bea-per-capita-income-spark-change")).toHaveText("Rose from 1,000 in 2019.");
+  await expect(page.getByTestId("card-median-household-income-spark-change")).toHaveText(
+    "Not distinguishable from 41 in 2019 at the published margins of error.",
+  );
+  // The sparkline-only reads ask the county alone; a trend's batch asks every level.
+  const own = batches.filter((url) => url.searchParams.get("geo_ids") === "state:55|county:025");
+  expect(own.length).toBeGreaterThan(0);
+  expect(own.some((url) => url.searchParams.get("metric_codes").includes("BEA:CAINC1:3"))).toBe(true);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 // Covers: WEB-139 — sub-county-geography: a county page paints one ACS
 // measure over its tracts, counts the tract with no value instead of
 // painting it as zero, and lists every tract in a table.
