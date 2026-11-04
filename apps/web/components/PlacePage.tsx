@@ -105,6 +105,13 @@ const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
+
+/**
+ * Said where the catalog serves no row of a chapter's measure. Every measure
+ * a chapter names is one the warehouse registers, so the true statement is
+ * that its figures are not loaded yet, not that nobody publishes them.
+ */
+const NOT_LOADED = "Not loaded into this site yet.";
 const CheckTheRecord = dynamic(() => import("./CheckTheRecord"));
 
 const CATALOG_PAGE_SIZE = 1000;
@@ -1421,8 +1428,8 @@ function HeadlineCard({
     return (
       <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="false">
         <h3>{measure.measure.label}</h3>
-        <p className="subtle" title={measure.measure.candidates.join(", ")} data-looked-for={measure.measure.candidates.join(" ")}>
-          Not published by this warehouse.
+        <p className="subtle" title={measure.measure.candidates.join(", ")}>
+          {NOT_LOADED} {measure.measure.whenPublished}
         </p>
       </div>
     );
@@ -1722,7 +1729,7 @@ function DepthRow({
       <dd>
         {view !== "count" && measure.metric ? <span className="subtle" data-testid={`depth-${measure.measure.id}-count-only`}>No reviewed {view === "share" ? "share" : "per-resident view"} for this count; showing the count. </span> : null}
         {!measure.metric
-          ? "Not published by this warehouse"
+          ? NOT_LOADED
           : !publishesAt(measure, place.level)
             ? `Not published at ${place.level.toLowerCase()} grain`
             : answer?.error

@@ -237,12 +237,12 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await noHorizontalScroll(page);
 });
 
-test("a SAIPE slot the catalog does not publish says so and borrows no ACS figure", async ({ page }) => {
+test("a SAIPE slot the catalog does not serve says it is not loaded yet and borrows no ACS figure", async ({ page }) => {
   await installPlaceFixtures(page, { withoutSource: "CENSUS_SAIPE_SAHIE" });
   await page.goto("/us/wisconsin/dane-county");
   await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
   await expect(page.getByTestId("card-saipe-median-household-income")).toHaveAttribute("data-available", "false");
-  await expect(page.getByTestId("card-saipe-median-household-income")).toContainText("Not published by this warehouse");
+  await expect(page.getByTestId("card-saipe-median-household-income")).toContainText("Not loaded into this site yet.");
   await expect(page.getByTestId("card-median-household-income")).toHaveAttribute("data-available", "true");
 });
 
