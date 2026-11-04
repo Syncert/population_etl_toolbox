@@ -333,7 +333,13 @@
 /* What stands out (what-makes-this-place-distinctive) */
 .place-standout-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .place-standout-groups ul { margin: 0; padding: 0; list-style: none; }
-.place-standout-groups li { border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+.place-standout-groups li { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 6rem; gap: 4px 12px; align-items: center; border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+.place-standout-groups li > p { grid-column: 1 / -1; margin: 0; font-size: 0.78rem; }
+/* Where the place falls among its siblings, lowest to highest (web-standout-strips). */
+.standout-track { position: relative; height: 12px; border-radius: 6px; background: var(--bg-2); }
+.standout-track i { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card); }
+.standout-value { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.place-standout details { margin-top: 10px; }
 /* Home finder and public data page (find-your-place-home) */
 .place-finder { margin-top: 18px; max-width: 640px; }
 .place-finder-label { display: block; margin-bottom: 6px; font-weight: 700; }
