@@ -225,8 +225,12 @@ with fixtures under `tests/frontend/support/`.
 - Known gaps: counties named differently across inputs drop out
   (Connecticut planning regions, Alaska districts, BEA's combined Virginia
   areas); windows end at 2024 until 2028's vote loads.
-- Before merge: EXPLAIN ANALYZE of `gold_elections.refresh_lean_groups(TRUE)`
-  on OFFICE_LAB (it scans BEA, QCEW and LAUS once per rebuild), then one
-  live rebuild and a read of the 2000 to 2024 groups.
+- OFFICE_LAB check (2026-11-04, rolled back): a forced rebuild with no
+  election results loaded took 56 s (29M shared buffer hits) reading every
+  input year. Fixed: inputs are now read only for the election years, and
+  nothing but the vote is read when fewer than two election years are
+  loaded; a forced rebuild also no longer re-reads the peer files after
+  building. Still to do after #287's county file loads: one live rebuild
+  and a read of the 2000 to 2024 groups.
 - Next: E-4 API (`/elections/lean-groups`), reading `lean_group_change` by
   window, measure and peer type.

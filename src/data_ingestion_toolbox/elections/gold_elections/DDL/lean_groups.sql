@@ -150,12 +150,15 @@ CREATE TABLE IF NOT EXISTS gold_elections.lean_group_change (
 -- `lean_vote` (county, election year, margin), `lean_peer` (county's
 -- rural-urban type and industry dependence) and `lean_state_name`.
 -- Counties and the nation only; valid values only.
-CREATE OR REPLACE FUNCTION gold_elections.load_lean_inputs()
+-- An argument-less first draft would make the call ambiguous.
+DROP FUNCTION IF EXISTS gold_elections.load_lean_inputs();
+CREATE OR REPLACE FUNCTION gold_elections.load_lean_inputs(p_years INTEGER[] DEFAULT NULL)
 RETURNS INTEGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
     _rows INTEGER;
+    _years INTEGER[];
 BEGIN
     DROP TABLE IF EXISTS pg_temp.lean_input;
     DROP TABLE IF EXISTS pg_temp.lean_pce;
@@ -172,8 +175,37 @@ BEGIN
       AND latest.year >= 2000
       AND latest.value IS NOT NULL;
 
+    -- Every input is read only for the election years: a window starts and
+    -- ends on one, so no other year can reach a comparison.
+    -- `p_years` overrides them (a test reading fixtures of other years).
+    SELECT COALESCE(p_years, ARRAY_AGG(DISTINCT year ORDER BY year), ARRAY[]::INTEGER[])
+      INTO _years FROM lean_vote;
+    _years := ARRAY(SELECT DISTINCT y FROM UNNEST(_years) AS y ORDER BY y);
+
+    CREATE TEMP TABLE lean_pce (year INTEGER PRIMARY KEY, price_level NUMERIC NOT NULL) ON COMMIT DROP;
+    CREATE TEMP TABLE lean_input (
+        measure TEXT NOT NULL,
+        geo_id TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        value NUMERIC NOT NULL,
+        deflate BOOLEAN NOT NULL,
+        PRIMARY KEY (measure, geo_id, year)
+    ) ON COMMIT DROP;
+    CREATE TEMP TABLE lean_peer (
+        geo_id TEXT PRIMARY KEY,
+        rural_urban_group TEXT,
+        industry_group TEXT,
+        industry_label TEXT
+    ) ON COMMIT DROP;
+    CREATE TEMP TABLE lean_state_name (state_fips TEXT, state_name TEXT) ON COMMIT DROP;
+
+    -- Fewer than two election years is no window: read nothing else.
+    IF CARDINALITY(_years) < 2 THEN
+        RETURN 0;
+    END IF;
+
     -- Peer classifications, the newest edition of each.
-    CREATE TEMP TABLE lean_peer ON COMMIT DROP AS
+    INSERT INTO lean_peer
     WITH rucc AS (
         SELECT DISTINCT ON (latest.geo_id) latest.geo_id,
                CASE WHEN latest.value = 1 THEN 'large_metro'
@@ -202,7 +234,7 @@ BEGIN
     FROM rucc
     FULL JOIN industry ON industry.geo_id = rucc.geo_id;
 
-    CREATE TEMP TABLE lean_state_name ON COMMIT DROP AS
+    INSERT INTO lean_state_name
     SELECT geo.state_fips, MIN(geo.state_name) AS state_name
     FROM gold_glossary.dim_geo_latest AS geo
     WHERE geo.geo_id = 'state:' || geo.state_fips
@@ -210,30 +242,24 @@ BEGIN
 
     -- The year's price level: the mean of its twelve months, only for a year
     -- with all twelve.
-    CREATE TEMP TABLE lean_pce ON COMMIT DROP AS
+    INSERT INTO lean_pce
     SELECT EXTRACT(YEAR FROM observation.observation_date)::INTEGER AS year,
            AVG(observation.value) AS price_level
     FROM gold_fred.fact_fred_observation AS observation
     JOIN gold_fred.dim_fred_series AS series ON series.fred_series_sk = observation.fred_series_sk
     WHERE series.series_id = 'PCEPI'
       AND observation.value IS NOT NULL
+      AND observation.observation_date >= MAKE_DATE(_years[1], 1, 1)
+      AND EXTRACT(YEAR FROM observation.observation_date)::INTEGER = ANY(_years)
     GROUP BY 1
     HAVING COUNT(DISTINCT EXTRACT(MONTH FROM observation.observation_date)) = 12;
-
-    CREATE TEMP TABLE lean_input (
-        measure TEXT NOT NULL,
-        geo_id TEXT NOT NULL,
-        year INTEGER NOT NULL,
-        value NUMERIC NOT NULL,
-        deflate BOOLEAN NOT NULL,
-        PRIMARY KEY (measure, geo_id, year)
-    ) ON COMMIT DROP;
 
     INSERT INTO lean_input
     SELECT CASE latest.metric_key WHEN 'CAINC1:3' THEN 'real_income_per_person' ELSE 'real_gdp' END,
            latest.geo_id, latest.year, latest.value, latest.metric_key = 'CAINC1:3'
     FROM gold_bea.observation_latest AS latest
     WHERE latest.metric_key IN ('CAINC1:3', 'CAGDP1:1')
+      AND latest.year = ANY(_years)
       AND latest.geo_type IN ('county', 'nation')
       AND latest.value_status = 'valid'
       AND latest.value IS NOT NULL;
@@ -243,6 +269,7 @@ BEGIN
     FROM gold_bls_qcew.observation_latest AS latest
     WHERE latest.metric_key = 'annual_avg_employment:10:0'
       AND latest.period = 'a'
+      AND latest.year = ANY(_years)
       AND latest.geo_type IN ('county', 'nation')
       AND latest.value_status = 'valid'
       AND latest.value IS NOT NULL;
@@ -251,6 +278,7 @@ BEGIN
     SELECT 'poverty_rate', latest.geo_id, latest.estimate_year, latest.value, FALSE
     FROM gold_census_sae.estimate_latest AS latest
     WHERE latest.metric_key = 'saipe:SAEPOVRTALL'
+      AND latest.estimate_year = ANY(_years)
       AND latest.geo_type IN ('county', 'nation')
       AND latest.value_status = 'valid'
       AND latest.value IS NOT NULL;
@@ -262,6 +290,7 @@ BEGIN
     SELECT 'unemployment_rate', annual.geo_id, annual.year, annual.value, FALSE
     FROM gold_bls.provider_annual_average AS annual
     WHERE annual.series_id LIKE 'LAUCN%'
+      AND annual.year = ANY(_years)
       AND RIGHT(annual.series_id, 2) = '03'
       AND annual.geo_id LIKE 'state:%|county:%'
       AND annual.value_status = 'valid'
@@ -278,6 +307,7 @@ BEGIN
                COUNT(DISTINCT annual.geo_id) FILTER (WHERE RIGHT(annual.series_id, 2) = '06') AS labor_force_states
         FROM gold_bls.provider_annual_average AS annual
         WHERE annual.series_id LIKE 'LAUST%'
+          AND annual.year = ANY(_years)
           AND RIGHT(annual.series_id, 2) IN ('04', '06')
           AND annual.geo_id ~ '^state:[0-9]{2}$'
           AND annual.geo_id <> 'state:72'
@@ -505,57 +535,12 @@ BEGIN
     DROP TABLE IF EXISTS pg_temp.lean_peer;
     DROP TABLE IF EXISTS pg_temp.lean_state_name;
 
-    -- The lean: each county's presidential two-party margin, 2000 onward.
-    CREATE TEMP TABLE lean_vote ON COMMIT DROP AS
-    SELECT latest.geo_id, latest.year, latest.value AS margin
-    FROM gold_elections.observation_latest AS latest
-    WHERE latest.metric_key = 'president_two_party_margin'
-      AND latest.geo_type = 'county'
-      AND latest.year >= 2000
-      AND latest.value IS NOT NULL;
-
-    -- Peer classifications, the newest edition of each.
-    CREATE TEMP TABLE lean_peer ON COMMIT DROP AS
-    WITH rucc AS (
-        SELECT DISTINCT ON (latest.geo_id) latest.geo_id,
-               CASE WHEN latest.value = 1 THEN 'large_metro'
-                    WHEN latest.value IN (2, 3) THEN 'other_metro'
-                    WHEN latest.value IN (4, 6, 8) THEN 'nonmetro_adjacent'
-                    WHEN latest.value IN (5, 7, 9) THEN 'nonmetro_remote'
-               END AS rural_urban_group
-        FROM gold_usda_ers.observation_latest AS latest
-        WHERE latest.metric_key = 'rural_urban_continuum_code'
-          AND latest.value_status = 'valid'
-        ORDER BY latest.geo_id, latest.year DESC
-    ),
-    industry AS (
-        SELECT DISTINCT ON (latest.geo_id) latest.geo_id,
-               latest.value::INTEGER::TEXT AS industry_group,
-               CASE WHEN latest.value = 0 THEN 'Not dependent on one industry'
-                    ELSE COALESCE(NULLIF(latest.code_label, ''), 'Industry code ' || latest.value::INTEGER)
-               END AS industry_label
-        FROM gold_usda_ers.observation_latest AS latest
-        WHERE latest.metric_key = 'industry_dependence'
-          AND latest.value_status = 'valid'
-        ORDER BY latest.geo_id, latest.year DESC
-    )
-    SELECT COALESCE(rucc.geo_id, industry.geo_id) AS geo_id,
-           rucc.rural_urban_group, industry.industry_group, industry.industry_label
-    FROM rucc
-    FULL JOIN industry ON industry.geo_id = rucc.geo_id;
-
-    CREATE TEMP TABLE lean_state_name ON COMMIT DROP AS
-    SELECT geo.state_fips, MIN(geo.state_name) AS state_name
-    FROM gold_glossary.dim_geo_latest AS geo
-    WHERE geo.geo_id = 'state:' || geo.state_fips
-    GROUP BY geo.state_fips;
-
     RETURN QUERY SELECT _refresh_id, 'rebuilt'::TEXT, _place_rows, _group_rows;
 END;
 $$;
 
 -- The serving role reads the tables; only the warehouse owner rebuilds them.
-REVOKE ALL ON FUNCTION gold_elections.load_lean_inputs() FROM PUBLIC;
+REVOKE ALL ON FUNCTION gold_elections.load_lean_inputs(INTEGER[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION gold_elections.build_lean_groups(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION gold_elections.refresh_lean_groups(BOOLEAN) FROM PUBLIC;
 

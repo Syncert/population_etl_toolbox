@@ -191,6 +191,10 @@ metro, remote nonmetro), `starting_level` (quarter of counties by the
 window's first-year value) and `industry` (ERS 2025 industry dependence).
 The RUCC and typology editions are the newest loaded, used for every window.
 
+Inputs are read only for presidential election years, since a window starts
+and ends on one; with fewer than two election years loaded the rebuild reads
+nothing else and writes no rows.
+
 A county appears only where every input names it by the same county code at
 both ends of a window, so Connecticut's planning regions (2022 onward),
 Alaska's election districts and BEA's combined Virginia areas drop out. The

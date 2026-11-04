@@ -51,7 +51,7 @@ REQUIRED_RELATIONS = (
 
 #: The lean-group rebuild (E-3), resolved by name.
 REQUIRED_PROCEDURES = (
-    "gold_elections.load_lean_inputs()",
+    "gold_elections.load_lean_inputs(integer[])",
     "gold_elections.build_lean_groups(bigint)",
     "gold_elections.lean_input_fingerprint()",
     "gold_elections.refresh_lean_groups(boolean)",

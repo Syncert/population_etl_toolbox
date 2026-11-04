@@ -443,7 +443,9 @@ def test_inputs_are_read_from_each_source_by_their_published_keys(
                 (county_sk,),
             )
 
-            db.execute("SELECT gold_elections.load_lean_inputs()")
+            db.execute(
+                "SELECT gold_elections.load_lean_inputs(ARRAY(SELECT generate_series(1990, 2099)))"
+            )
             assert db.fetchone()[0] > 0
             db.execute(
                 "SELECT measure, COUNT(*) FILTER (WHERE geo_id = 'us:1'), "
