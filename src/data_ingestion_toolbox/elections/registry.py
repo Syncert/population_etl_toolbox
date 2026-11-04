@@ -120,7 +120,7 @@ RESULT_DATASETS: tuple[ResultDataset, ...] = (
     ResultDataset(
         STATE_PRESIDENT,
         "10.7910/DVN/42MVDX",
-        "U.S. President 1976-2020",
+        "U.S. President 1976-2024",
         "president",
         "state",
         re.compile(r"^1976-20\d\d-president\.(csv|tab)$"),

@@ -352,6 +352,12 @@ def test_a_guestbooked_file_is_answered_with_the_operators_identity() -> None:
         request, config=operator, client=_Guestbooked(inline=True), **quiet
     )
     assert inline.raw_bytes == fixture_bytes("county_president.csv")
+    # The House file is guestbooked too (OFFICE_LAB, 2026-11-04): any
+    # results file that answers this way takes the same path.
+    house = data_request(result_dataset(HOUSE), 11384761)
+    assert fetch_file(house, config=operator, client=_Guestbooked(), **quiet).raw_bytes
+    with pytest.raises(ElectionsFetchError, match="guestbook_required"):
+        fetch_file(house, config=anonymous, client=_Guestbooked(), **quiet)
     asking = _Guestbooked([{"id": 9, "question": "Purpose?", "required": True}])
     with pytest.raises(ElectionsFetchError, match="guestbook_questions_unanswered"):
         fetch_file(request, config=operator, client=asking, **quiet)

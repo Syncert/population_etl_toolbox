@@ -44,7 +44,7 @@ from tests.support.external import classify_external_failure, observe_external_c
 pytestmark = [pytest.mark.external, pytest.mark.slow]
 
 LOGGER = logging.getLogger(__name__)
-# The county file's guestbook is answered from the operator's environment
+# The county and House files' guestbook is answered from the operator's environment
 # (ELECTIONS_GUESTBOOK_*), as the DAG answers it.
 CONFIG = ElectionsConfig.from_environment().model_copy(
     update={"min_spacing_seconds": 1.0, "max_attempts": 2}

@@ -321,9 +321,9 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Publisher:** MIT Election Data and Science Lab (results, on Harvard Dataverse); the unitedstates/congress-legislators project (U.S. House and Senate members, CC0 1.0); Wikidata (governors, CC0 1.0)
 - **Code:** `src/data_ingestion_toolbox/elections` · DAG `elections_ingest` · Monthly, 3rd, 07:00 UTC
 - **Publisher releases:** MEDSL after each certified election; congress-legislators as members change; Wikidata continuously
-- **Credential:** none; MEDSL's county file needs a Dataverse guestbook answer (`ELECTIONS_GUESTBOOK_*` in `stack.env`)
-- **Years:** seat terms in office on or after 1969-01-01; presidential results by county 2000–2024 and by state 1976–2020; Senate 1976–2024; House 1976–2024 (MEDSL's own spans)
-- **Datasets:** MEDSL `countypres_2000-2024`, `1976-2020-president`, `1976-2024-senate-state`, `1976-2024-house`; `legislators-current.json`, `legislators-historical.json`; one Wikidata SPARQL query for governors
+- **Credential:** none; MEDSL's county and House files need a Dataverse guestbook answer (`ELECTIONS_GUESTBOOK_*` in `stack.env`)
+- **Years:** seat terms in office on or after 1969-01-01; presidential results by county 2000–2024 and by state 1976–2024; Senate 1976–2024; House 1976–2024 (MEDSL's own spans)
+- **Datasets:** MEDSL `countypres_2000-2024`, `1976-2024-president`, `1976-2024-senate-state`, `1976-2024-house`; `legislators-current.json`, `legislators-historical.json`; one Wikidata SPARQL query for governors
 - **Measures:** Presidential vote at state and county: Republican share of the two-party vote, two-party margin (Republican minus Democratic), total votes. Seat-term spans (party, caucus, dates) and contest results are served as relations, not measures (ADR-0014).
 - **Capture and control:** `control.elections_run`, `control.elections_file`
 - **Silver:** `silver_elections.seat_term`, `silver_elections.candidate_result`, `silver_elections.quarantine`

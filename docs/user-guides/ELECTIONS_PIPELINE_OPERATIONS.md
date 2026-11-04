@@ -78,10 +78,11 @@ Quarantined, never served as zero: a county row with no county code (Maine's
 UOCAVA rows, for example), an `NA` vote count, a duplicate row, a row with no
 state.
 
-## The county file's Dataverse guestbook
+## The Dataverse guestbook on the county and House files
 
-MEDSL's county presidential file sits behind a Dataverse guestbook
-(guestbook 458 on 2026-11-04). Dataverse 6.10 and later answer a plain
+MEDSL's county presidential and House files sit behind a Dataverse
+guestbook (guestbook 458 on the county file, 2026-11-04); any results file
+that answers this way is handled the same. Dataverse 6.10 and later answer a plain
 download with HTTP 400 "required Guestbook response". The client then:
 
 1. reads the guestbook (`GET /api/guestbooks/{id}`); a guestbook with a
@@ -97,7 +98,8 @@ The four answers are the operator's, set in `infra/docker/stack.env`:
 `DATAVERSE_API_TOKEN` if Harvard's installation requires a signed-in user.
 They are sent only to Dataverse, with each download (once a month), and are
 never written to a capture or the repository. With none set, the county
-stream fails as `guestbook_required` and the other five streams still load.
+and House streams fail as `guestbook_required` and the other four streams
+still load.
 Answering the guestbook records a download in MEDSL's guestbook log; read the
 dataset's terms on its Dataverse page before setting them.
 
@@ -116,9 +118,8 @@ The build container could not reach Wikidata or Dataverse, so:
   results outside the warehouse.
 - The guestbook POST's answer shape (the file itself or a signed URL) is
   taken from Dataverse's guide, which does not show it; EXT-031 exercises it.
-- The 2024 state presidential result is not in `1976-2020-president`; until
-  MEDSL publishes a newer state file it can be summed from the county file
-  (a later step), and is not served as a state observation now.
+- The House file's header is unchecked until a guestbook answer lets it
+  download.
 
 State legislatures are not read; that waits on decision L-1 in the plan.
 

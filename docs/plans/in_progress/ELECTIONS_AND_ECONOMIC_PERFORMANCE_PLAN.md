@@ -59,7 +59,7 @@ names the districts that touch it, without residents' shares.
 | MEDSL County Presidential Returns (doi:10.7910/DVN/VOQCHQ) | Votes by candidate and party | County | 2000–2024 | Harvard Dataverse; believed CC0 | Confirm licence by hand (Dataverse refuses automated reads) |
 | MEDSL U.S. House (doi:10.7910/DVN/IG0UN2) | Votes by candidate and party | District | 1976–2024 | Same | Same |
 | MEDSL U.S. Senate (doi:10.7910/DVN/PEJ5QU) | Votes by candidate and party | State | 1976–2020 | Same | 2022–2024 from FEC or MEDSL precinct files |
-| MEDSL U.S. President (doi:10.7910/DVN/42MVDX) | Votes by candidate and party | State | 1976–2020 | Same | 2024 summed from the county file |
+| MEDSL U.S. President (doi:10.7910/DVN/42MVDX) | Votes by candidate and party | State | 1976–2024 | Same | Published by MEDSL (`1976-2024-president`, confirmed 2026-11-04) |
 | [unitedstates/congress-legislators](https://github.com/unitedstates/congress-legislators) | Terms: chamber, state, district, class, party, start, end | Seat | 1789–now | CC0 1.0 (checked) | Ready |
 | Governors file (built here) | Governor, party, start, end, source link | State | 1969–now, about 600 rows | Facts from NGA and state blue books, each row cited | To build |
 | State legislative control | Party holding a majority of each chamber, per session | State chamber | 1969–now | Candidates: Klarner's partisan composition data (Harvard Dataverse), NCSL partisan composition (2009 onward), state blue books | Decision L-1 |
@@ -191,13 +191,14 @@ with fixtures under `tests/frontend/support/`.
     governors; measure it on the first live load before making it a rule),
     and the 0-100 share bound (a CHECK-free view; the arithmetic cannot
     leave it).
-- Not yet: the legislature file (decision L-1), the 2024 state presidential
-  row (MEDSL's state file ends at 2020; derive from the county file in E-3),
-  the MEDSL licence check on each Dataverse page.
+- Not yet: the legislature file (decision L-1), the MEDSL licence check on
+  each Dataverse page.
 - First live check (OFFICE_LAB, 2026-11-04, EXT-031): legislators and state
   president passed; fixed on the PR: Wikidata unknown-value dates on one
   Alabama governor aborted the parse; the Senate file is now
   `1976-2024-senate-state.tab`; the House DOI is `10.7910/DVN/IG0UN2`; the
-  county file needs a Dataverse guestbook answer (operator identity in
-  `stack.env`; whose identity is Nick's call).
+  county and House files need a Dataverse guestbook answer (operator
+  identity in `stack.env`; whose identity is Nick's call). Rerun at c8a26241:
+  8 of 10 pass (512 governor terms, none rejected; state president is now
+  `1976-2024-president`); county and House wait on the guestbook identity.
 - Next: E-3 lean groups, after E-2 merges and one live load on OFFICE_LAB.

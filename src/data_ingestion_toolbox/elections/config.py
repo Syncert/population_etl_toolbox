@@ -3,7 +3,7 @@
 Every publisher this source reads is keyless: the congress-legislators files
 on GitHub, Wikidata's query service and Harvard Dataverse's public API.
 
-MEDSL's county presidential file carries a Dataverse guestbook: Dataverse
+MEDSL's county presidential and House files carry a Dataverse guestbook: Dataverse
 (6.10 and later) refuses the download until the requester says who they are
 (name, email, institution, position). That identity is the operator's, read
 from the environment at run time and sent only to Dataverse with the
