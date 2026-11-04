@@ -975,7 +975,7 @@ const TREND_SOURCES: readonly (readonly [string, string])[] = [
   ["CENSUS_SAIPE_SAHIE:saipe:", "U.S. Census Bureau, Small Area Income and Poverty Estimates (SAIPE)"],
   ["CENSUS_SAIPE_SAHIE:sahie:", "U.S. Census Bureau, Small Area Health Insurance Estimates (SAHIE)"],
   ["CENSUS_BPS:", "U.S. Census Bureau, Building Permits Survey"],
-  ["BLS:LAU", "Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)"],
+  ["BLS:LAU:", "Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)"],
   ["BLS_QCEW:", "Bureau of Labor Statistics, Quarterly Census of Employment and Wages (QCEW)"],
   ["BLS:", "Bureau of Labor Statistics"],
   ["BEA:", "Bureau of Economic Analysis, regional economic accounts"],
