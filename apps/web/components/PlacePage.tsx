@@ -101,6 +101,7 @@ import {
 import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
@@ -1455,6 +1456,7 @@ function HeadlineCard({
         {card.period ? ` · ${card.period}` : ""}
         {unit ? ` · ${publishedUnit(unit, measure.measure.unit) || "unit not published"}` : ""}
       </p>
+      {pairing ? null : <PlaceLevelStrip measureId={measure.measure.id} rows={card.rows} />}
       <table className="place-card-table">
         <caption className="sr-only">{measure.measure.label}{card.period ? `, ${card.period}` : ""}</caption>
         <tbody>

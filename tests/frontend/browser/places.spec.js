@@ -93,6 +93,27 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-162 — a headline card draws its levels on one scale, margins as
+// whiskers, and says how the place compares in the record page's verbs; a
+// count draws no strip and keeps its table.
+test("a county's headline cards place the county beside its state and the nation on one scale", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const age = page.getByTestId("card-median-age");
+  await expect(page.getByTestId("card-median-age-strip").locator(".level-strip-row:not(.level-strip-axis)")).toHaveCount(2);
+  await expect(page.getByTestId("card-median-age-strip-sentence")).toHaveText(
+    "Dane County was not distinguishable from Wisconsin at the published margins of error.",
+  );
+  // The table stays for screen readers and copying, out of sight.
+  expect((await age.locator("table").boundingBox()).width).toBeLessThanOrEqual(1);
+  await expect(page.getByTestId("card-median-age-county")).toContainText("margin of error");
+  await expect(page.getByTestId("card-unemployment-rate-strip-sentence")).toHaveText("Dane County was lower than Wisconsin.");
+  await expect(page.getByTestId("card-population-estimate-strip")).toHaveCount(0);
+  await expect(page.getByTestId("card-population-estimate").locator("table")).toBeVisible();
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 // Covers: WEB-139 — sub-county-geography: a county page paints one ACS
 // measure over its tracts, counts the tract with no value instead of
 // painting it as zero, and lists every tract in a table.
