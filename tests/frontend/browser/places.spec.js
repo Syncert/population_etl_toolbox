@@ -401,6 +401,7 @@ test("a place with no recorded relationships omits the section and says why", as
 
 test("what stands out lists the highest and lowest measures apart, with withheld siblings named", async ({ page }) => {
   // Covers: WEB-131 — one measure per row; a withheld sibling is counted, not zero.
+  // Covers: WEB-162 — each rank drawn as a position; caveats said once.
   await ready(page, "/us/wisconsin/dane-county");
   const section = page.getByTestId("place-standout");
   await expect(section.getByTestId("place-standout-count")).toContainText("6 measures could be ranked among Wisconsin counties, each on its own");
@@ -408,7 +409,14 @@ test("what stands out lists the highest and lowest measures apart, with withheld
   await expect(section.getByTestId("place-standout-lowest").locator("li")).toHaveCount(3);
   const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
   await expect(income).toContainText("Higher than 68 of 70 Wisconsin counties with a published value (1 withheld a value)");
-  await expect(income.getByRole("link", { name: "See every county on a map" })).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
+  // WEB-162: the measure's name opens its map; the dot sits at its rank,
+  // lowest to highest; the sources' caveats are said once, not per row.
+  await expect(income.getByRole("link")).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
+  const dot = await income.locator(".standout-track i").getAttribute("style");
+  expect(Number(/left: ([\d.]+)%/.exec(dot)[1])).toBeCloseTo((68 / 70) * 100, 1);
+  await expect(section.locator(".standout-track")).toHaveCount(6);
+  const caveats = await section.getByTestId("place-standout-caveats").locator("p").allTextContents();
+  expect(new Set(caveats).size).toBe(caveats.length);
   // Named by the API's plain label (WEB-144), not the provider's.
   await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age");
   await expect(section.getByTestId("place-standout-lowest")).not.toContainText("Median age (UI fixture)");
