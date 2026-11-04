@@ -440,6 +440,11 @@ def register_airflow_runtime(config: PostgresTestConfig) -> None:
 #: orchestrated fixtures deliberately do not load.
 DAG_RUN_CONF: dict[str, dict[str, Any]] = {
     "warehouse_data_quality": {"cadence": "daily"},
+    # The LODES backfill of never-loaded years runs in this process (spawned
+    # workers would not see the stubbed provider) and for one year, every
+    # state: the whole 2002-2022 history adds a thousand state-years to a
+    # tier with a time budget. The unit suite covers the full plan (ETL-110).
+    "census_lodes_ingest": {"backfill_workers": 1, "backfill_years": [2022]},
 }
 
 

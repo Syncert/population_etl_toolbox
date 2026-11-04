@@ -5,6 +5,8 @@ and loaded history only on an explicit ``{"history": true}`` run, which was
 never made on OFFICE_LAB: the warehouse held SAIPE 2023-2024 of 1989-2024
 (2026-11-03). A first run now loads the whole history, a part-loaded
 warehouse fills what is missing, and a complete one is back to the window.
+The LODES DAG kept only its newest year and left 2002 onward to a manual
+history command; its scheduled run now backfills the same way.
 """
 
 from __future__ import annotations
@@ -19,6 +21,11 @@ from data_ingestion_toolbox.bls_qcew.config import QcewConfig
 from data_ingestion_toolbox.bls_qcew.registry import INDUSTRIES
 from data_ingestion_toolbox.census_bps import plan as bps_plan
 from data_ingestion_toolbox.census_bps.config import BpsConfig
+from data_ingestion_toolbox.census_lodes import plan as lodes_plan
+from data_ingestion_toolbox.census_lodes.config import LodesConfig
+from data_ingestion_toolbox.census_lodes.history import HistoryLoadBusy
+from data_ingestion_toolbox.census_lodes.registry import STATES as LODES_STATES
+from data_ingestion_toolbox.census_lodes.registry import YEARS as LODES_YEARS
 from data_ingestion_toolbox.census_saipe_sahie import plan as sae_plan
 from data_ingestion_toolbox.census_saipe_sahie.registry import GEO_LEVELS, SAHIE, SAIPE
 from data_ingestion_toolbox.utility.backfill import (
@@ -55,6 +62,9 @@ class _Connection:
 
     def cursor(self) -> _Cursor:
         return _Cursor(self.rows, self.seen)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def test_plan_is_window_plus_unanswered_in_registered_order() -> None:
@@ -157,3 +167,102 @@ def test_bps_first_run_loads_from_2000_and_complete_is_the_window() -> None:
     steady = bps_plan.periods_to_capture(today, None, config, answered)
     assert "monthly-2000-01" not in steady
     assert len(steady) == len(bps_plan.recent_periods(today, config.recent_months))
+
+
+def _lodes_rows(years) -> list[tuple[int, str]]:
+    return [(year, state) for year in years for state, _fips in LODES_STATES]
+
+
+def test_lodes_first_run_backfills_2002_onward_and_complete_plans_nothing() -> None:
+    """Covers: ETL-110 -- LODES: the newest year is the window, every earlier unanswered year is backfilled."""
+    config = LodesConfig()
+    window = lodes_plan.window_years(config)
+    assert window == [max(LODES_YEARS)]
+    # First run on a fresh warehouse: every year before the window, newest first.
+    connection = _Connection([])
+    answered = lodes_plan.answered_years(connection)
+    query, params = connection.seen[0]
+    assert "control.census_lodes_slice" in query
+    assert params == (["published", "empty"],)
+    first = lodes_plan.backfill_years({}, answered, config)
+    assert first == sorted(set(LODES_YEARS) - set(window), reverse=True)
+    assert first[-1] == 2002
+    # Only the newest year loaded (what the DAG alone used to leave behind).
+    answered = lodes_plan.answered_years(_Connection(_lodes_rows(window)))
+    assert lodes_plan.backfill_years(None, answered, config) == first
+    # Complete: nothing to backfill, the steady-state run is the window.
+    answered = lodes_plan.answered_years(_Connection(_lodes_rows(LODES_YEARS)))
+    assert answered == set(LODES_YEARS)
+    assert lodes_plan.backfill_years(None, answered, config) == []
+    # history=true re-asks every year before the window, answered or not.
+    assert lodes_plan.backfill_years({"history": True}, answered, config) == first
+
+
+def test_lodes_year_missing_one_state_is_not_answered() -> None:
+    """Covers: ETL-110 -- a LODES year with a state never published is asked for again."""
+    rows = [row for row in _lodes_rows(LODES_YEARS) if row != (2010, "wi")]
+    answered = lodes_plan.answered_years(_Connection(rows))
+    assert 2010 not in answered
+    assert lodes_plan.backfill_years(None, answered, LodesConfig()) == [2010]
+
+
+def test_lodes_backfill_hands_unanswered_years_to_the_history_loader() -> None:
+    """Covers: ETL-110 -- the scheduled LODES backfill loads, skips when busy, and fails on a state-year that did not load."""
+    complete_but_2010 = [row for row in _lodes_rows(LODES_YEARS) if row[0] != 2010]
+    calls: list[tuple[list[int], dict]] = []
+
+    def load(_factory, years, **kwargs):
+        calls.append((list(years), kwargs))
+        return {
+            "published": True,
+            "published_slices": 51,
+            "served_rows_written": 9,
+            "failed": [],
+        }
+
+    summary = lodes_plan.run_backfill(
+        lambda: _Connection(complete_but_2010), {"backfill_workers": 1}, load=load
+    )
+    assert summary == {"years": [2010], "published": True, "published_slices": 51}
+    years, kwargs = calls[0]
+    assert years == [2010]
+    assert kwargs["workers"] == 1 and kwargs["worker_factory"] is None
+    assert kwargs["refresh"] is False
+    assert len(kwargs["states"]) == len(LODES_STATES)
+
+    # Parallel by default, through spawned workers with their own connections.
+    calls.clear()
+    lodes_plan.run_backfill(lambda: _Connection(complete_but_2010), {}, load=load)
+    assert calls[0][1]["workers"] == LodesConfig().backfill_workers > 1
+    assert calls[0][1]["worker_factory"] is not None
+
+    # Nothing unanswered: no load at all.
+    calls.clear()
+    full = _lodes_rows(LODES_YEARS)
+    assert lodes_plan.run_backfill(lambda: _Connection(full), {}, load=load) == {
+        "years": [],
+        "published": False,
+    }
+    assert calls == []
+
+    # backfill_years narrows the plan.
+    summary = lodes_plan.run_backfill(
+        lambda: _Connection([]), {"backfill_years": [2022, 2005]}, load=load
+    )
+    assert summary["years"] == [2022, 2005]
+
+    # An operator's history load holds the lock: skip, the next run retries.
+    def busy(*_args, **_kwargs):
+        raise HistoryLoadBusy("another LODES history load is running")
+
+    skipped = lodes_plan.run_backfill(
+        lambda: _Connection(complete_but_2010), {}, load=busy
+    )
+    assert skipped["skipped"] and skipped["published"] is False
+
+    # A state-year that did not load fails the task and is named.
+    def failed(*_args, **_kwargs):
+        return {"published": False, "failed": [{"state": "ca", "year": 2010}]}
+
+    with pytest.raises(RuntimeError, match="ca 2010"):
+        lodes_plan.run_backfill(lambda: _Connection(complete_but_2010), {}, load=failed)

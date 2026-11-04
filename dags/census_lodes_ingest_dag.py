@@ -9,6 +9,15 @@ fetches nothing else.
 
 One mapped task per state-year, through the one-slot ``census_lodes_files``
 pool: a large state's origin-destination file is tens of megabytes.
+
+Then the run loads every registered year before that window the warehouse
+has never had answered (``data_ingestion_toolbox.census_lodes.plan``),
+through the resumable history loader. So the first run on a fresh warehouse
+loads 2002 onward without anyone asking, a run after a failed state-year
+asks for that state-year again, and once every year is in the backfill
+plans nothing. A manual run with ``{"history": true}`` re-asks LEHD for
+every registered year, answered or not; ``backfill_years`` and
+``backfill_workers`` in the conf narrow the backfill.
 """
 
 from __future__ import annotations
@@ -22,7 +31,8 @@ from airflow.decorators import dag, task
 
 from data_ingestion_toolbox.census_lodes.capture import capture_state_year
 from data_ingestion_toolbox.census_lodes.config import LodesConfig
-from data_ingestion_toolbox.census_lodes.registry import STATES, YEARS
+from data_ingestion_toolbox.census_lodes.plan import run_backfill, window_years
+from data_ingestion_toolbox.census_lodes.registry import STATES
 from data_ingestion_toolbox.census_lodes.schema import ensure_census_lodes_schema
 from data_ingestion_toolbox.census_lodes.silver_census_lodes.load import (
     publish_run,
@@ -40,7 +50,7 @@ DEFAULT_ARGS = {
 }
 
 
-def _get_postgres_hook():  # noqa: ANN202
+def _get_postgres_hook():
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
     return PostgresHook(postgres_conn_id=LodesConfig().postgres_conn_id.strip())
@@ -74,7 +84,7 @@ def census_lodes_ingest():
 
     @task()
     def plan_slices() -> list[str]:
-        years = sorted(YEARS)[-LodesConfig().recent_years :]
+        years = window_years(LodesConfig())
         return [f"{state}:{year}" for year in years for state, _fips in STATES]
 
     @task(pool="census_lodes_files")
@@ -94,13 +104,26 @@ def census_lodes_ingest():
             "published": published,
         }
 
+    # After the window, whatever it did: a failed newest-year state must not
+    # stop the history from loading. The history loader holds its own
+    # advisory lock, so an operator's manual load and this one never race.
+    @task(
+        pool="census_lodes_files",
+        trigger_rule="all_done",
+        execution_timeout=timedelta(hours=12),
+    )
+    def backfill_history(**context: Any) -> dict[str, Any]:
+        dag_run = context.get("dag_run")
+        conf = dict(getattr(dag_run, "conf", None) or {})
+        return run_backfill(_get_postgres_hook().get_conn, conf)
+
     schema = ensure_census_lodes_schema_task.override(
         task_id="ensure_census_lodes_schema"
     )()
     geography = require_shared_geography()
     slices = plan_slices()
     schema >> geography >> slices
-    ingest_batch_slice.expand(slice_key=slices)
+    ingest_batch_slice.expand(slice_key=slices) >> backfill_history()
 
 
 census_lodes_ingest()

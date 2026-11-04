@@ -71,8 +71,28 @@ vintage, and `observation_latest` serves the newest. State-years run one at a
 time through the one-slot `census_lodes_files` pool; a large state's
 origin-destination file is tens of megabytes.
 
-The DAG takes no backfill parameter; the years before the newest are loaded
-once with the history command below.
+After the newest year, the same run backfills every registered year the
+warehouse has never had answered (`backfill_history`, after the per-state
+tasks whatever they did). A year is answered when every registered state
+has a `published` slice for it. A file LEHD did not publish for a
+state-year (Michigan 2022–2023 and Alaska 2017–2023 workplace and
+origin-destination files, Massachusetts 2002–2010 and the rest of the
+LODES Technical Document's "States Without OD and WAC Data") is recorded
+`not_published`, the state-year still publishes, and
+`gold_census_lodes.coverage_gap` hides what it fed, so a coverage gap is
+answered and never asked for again. The backfill runs the history loader
+below in the task (`backfill_workers`, default 6, spawned workers), so the
+first scheduled run on a fresh warehouse loads 2002 onward, a run after a
+failed or quarantined state-year asks for only that state-year again, and
+once every year is in it plans nothing and costs one query. A state-year
+that did not load fails the task, names it and publishes nothing for those
+years; the next run retries it. When a manual history load holds the lock
+the backfill logs that and skips.
+
+Run conf: `{"history": true}` re-asks LEHD for every registered year,
+answered or not (the history command's `--refresh`); `backfill_years` (a
+list) limits the backfill to those years; `backfill_workers` sets the
+worker count (1 runs in the task's own process).
 
 ## Loading the history
 
@@ -111,8 +131,11 @@ It plans every state for every year asked (newest first) and:
 
 `--plan` prints, per year, which states would load and exits without
 fetching. `--states de,wi` limits the run. Only one history load runs at a
-time: a second exits 2 rather than wait. Pause `census_lodes_ingest` while
-it runs so the DAG does not capture the newest year beside it.
+time: a second exits 2 rather than wait (the DAG's backfill skips instead).
+The scheduled run does this on its own; the command remains for a
+`--refresh`, a `--states` subset or a load outside the schedule. Pause
+`census_lodes_ingest` while it runs so the DAG does not capture the newest
+year beside it.
 
 The command prints a JSON summary per year (states by outcome, rows, worker
 seconds). To size a run before it starts, read what the newest year cost:

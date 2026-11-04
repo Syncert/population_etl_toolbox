@@ -5,8 +5,9 @@ Run inside the Airflow image on the internal stack::
     docker exec docker-airflow-scheduler-1 \\
         python -m data_ingestion_toolbox.census_lodes.history --years 2023-2002
 
-The monthly DAG keeps only the newest year current; this command fills the
-years before it (build-out W-9). What a run does:
+The monthly DAG keeps the newest year current and, through ``load_history``,
+backfills every year it has never had answered (``census_lodes.plan``); this
+command loads years on demand (build-out W-9). What a run does:
 
 1. Plans every (state, year) asked for. A state-year that already has a
    replayed (``silver_ready``) or ``published`` slice is skipped without a
