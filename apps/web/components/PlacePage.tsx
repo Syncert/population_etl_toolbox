@@ -66,10 +66,14 @@ import {
   stateSegment,
   threeLevelCard,
   trendNotes,
+  ADDITIVE_MEMBER_MEASURES,
+  memberCountyRows,
 } from "../lib/placeChapters";
 import type {
+  CardRow,
   LevelAnswer,
   LevelPlace,
+  MemberCountyRows,
   PlaceLevel,
   ResolvedChapter,
   ResolvedPlaceMeasure,
@@ -478,6 +482,20 @@ export default function PlacePage({
     return chain;
   }, [city, county, metro, state, nation, level]);
 
+  // A metro's member counties, read on its cards where a measure is published
+  // for counties and not for metro areas (web-metro-member-counties). They come
+  // from the metro read itself, so no further read names them.
+  const memberCounties = useMemo((): LevelPlace[] => {
+    if (level !== "METRO" || !metroPage) return [];
+    const multiState = metroPage.states.length > 1;
+    return metroPage.member_counties.map((member) => ({
+      level: "COUNTY",
+      geoId: member.geo_id,
+      name: multiState && member.state_name ? `${member.geo_name}, ${member.state_name}` : member.geo_name,
+      role: "member county",
+    }));
+  }, [level, metroPage]);
+
   const { shown, omitted } = useMemo(
     () => (metricsByCode.size ? resolvePlaceChapters(level, metricsByCode) : { shown: [], omitted: [] }),
     [level, metricsByCode],
@@ -652,6 +670,7 @@ export default function PlacePage({
       for (const measure of resolved.headline) {
         if (!measure.metric) continue;
         ask(measure, chain.filter((entry) => publishesAt(measure, entry.level)));
+        if (showsMemberCounties(measure, own)) ask(measure, memberCounties);
         const trended = [resolved.chapter.trend, ...(resolved.chapter.moreTrends || [])].map((item) => item.measureId);
         // A trend is drawn only where the chapter's own place publishes it:
         // a city page drew the unemployment rate's county line as "this page".
@@ -692,7 +711,7 @@ export default function PlacePage({
     return () => controller.abort();
     // `chapterLevels` and `sourceFor` read only the dependencies listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolution.state, shown, sources, levels, chainSettled]);
+  }, [resolution.state, shown, sources, levels, chainSettled, memberCounties]);
 
   // "What the record shows" links each answer to its rows in the explorer,
   // and a city's crime and unemployment questions to its county's page.
@@ -821,6 +840,7 @@ export default function PlacePage({
           key={resolved.chapter.id}
           resolved={resolved}
           levels={chapterLevels(resolved)}
+          members={memberCounties}
           pageLevel={level}
           county={county}
           state={state}
@@ -977,9 +997,18 @@ function publishesAt(measure: ResolvedPlaceMeasure, level: PlaceLevel): boolean 
   return Boolean(measure.metric) && (!Array.isArray(grains) || grains.includes(level));
 }
 
+/**
+ * Whether a metro card lists its member counties: the measure is published
+ * for counties and not for metro areas (web-metro-member-counties).
+ */
+function showsMemberCounties(measure: ResolvedPlaceMeasure, own: LevelPlace | undefined): boolean {
+  return own?.level === "METRO" && !publishesAt(measure, "METRO") && publishesAt(measure, "COUNTY");
+}
+
 function Chapter({
   resolved,
   levels,
+  members,
   pageLevel,
   county,
   state,
@@ -990,6 +1019,8 @@ function Chapter({
 }: {
   resolved: ResolvedChapter;
   levels: LevelPlace[];
+  /** A metro's member counties, for cards on measures not published for metro areas. */
+  members: LevelPlace[];
   pageLevel: PlaceLevel;
   county: GeographySummary | null;
   state: GeographySummary | null;
@@ -1156,6 +1187,7 @@ function Chapter({
             key={measure.measure.id}
             measure={measure}
             levels={levels}
+            members={showsMemberCounties(measure, levels[0]) ? members : []}
             answers={answers}
             pageLevel={pageLevel}
             stateContext={resolved.stateContext}
@@ -1292,6 +1324,48 @@ function CountyAgencyRate({ pairing, geoId, testId }: { pairing: DerivedRatioPai
   return <AgencyRateValue pairing={pairing} {...answer} testId={testId} />;
 }
 
+/** The metro row's cell when its member counties stand in for it. */
+function memberGapText(members: MemberCountyRows, unit: ObservationRow | null | undefined, fallback?: string): string {
+  if (!members.sum) return "Not published for metro areas; its member counties are listed below";
+  return `${formatObservationValue(members.sum.value)} ${unit ? publishedUnit(unit, fallback) : fallback || ""}`.trim() + " (derived from member counties)";
+}
+
+/** Member counties listed in full up to this many; beyond it, the rest fold away. */
+const MEMBER_ROWS_OPEN = 6;
+
+/**
+ * Each member county's own published figure, beside a metro row the measure
+ * is not published for (web-metro-member-counties).
+ */
+function MemberCountyTable({ rows, testId, unit }: { rows: CardRow[]; testId: string; unit?: string }) {
+  const cells = (entry: CardRow) => (
+    <tr key={entry.place.geoId} data-geo-id={entry.place.geoId}>
+      <th scope="row">{entry.place.name}</th>
+      <td>{entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row, unit)}`.trim() : entry.message}</td>
+      <td className="subtle">{entry.row && !entry.message ? uncertaintyText(entry.row) : ""}</td>
+    </tr>
+  );
+  const open = rows.length > MEMBER_ROWS_OPEN ? rows.slice(0, MEMBER_ROWS_OPEN - 1) : rows;
+  const folded = rows.length > MEMBER_ROWS_OPEN ? rows.slice(MEMBER_ROWS_OPEN - 1) : [];
+  return (
+    <div className="place-member-counties" data-testid={testId}>
+      <table className="place-card-table">
+        <caption>Member counties</caption>
+        <tbody>{open.map(cells)}</tbody>
+      </table>
+      {folded.length ? (
+        <details>
+          <summary>{folded.length} more member counties</summary>
+          <table className="place-card-table">
+            <caption className="sr-only">More member counties</caption>
+            <tbody>{folded.map(cells)}</tbody>
+          </table>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 const VIEWABLE: readonly ViewChoice[] = ["per_capita", "share"];
 
 const PENDING_ANSWER: LevelAnswer = Object.freeze({ row: null, pending: true }) as LevelAnswer;
@@ -1310,6 +1384,7 @@ function readingAnswers(answers: Map<string, LevelAnswer>): Map<string, LevelAns
 function HeadlineCard({
   measure,
   levels,
+  members,
   answers,
   pageLevel,
   stateContext,
@@ -1321,6 +1396,8 @@ function HeadlineCard({
 }: {
   measure: ResolvedPlaceMeasure;
   levels: LevelPlace[];
+  /** Member counties shown in place of a metro row the measure is not published for. */
+  members: LevelPlace[];
   answers: Map<string, LevelAnswer>;
   pageLevel: PlaceLevel;
   stateContext: boolean;
@@ -1345,7 +1422,15 @@ function HeadlineCard({
   }
   const byGeo = new Map(levels.map((entry) => [entry.geoId, answers.get(answerKey(measure.metricCode, entry.geoId)) || { row: null }]));
   const card = threeLevelCard(levels, byGeo, (level) => publishesAt(measure, level));
-  const unit = card.rows.find((entry) => entry.row)?.row;
+  const memberRows = members.length
+    ? memberCountyRows(
+        members,
+        new Map(members.map((entry) => [entry.geoId, answers.get(answerKey(measure.metricCode, entry.geoId)) || { row: null }])),
+        card.period,
+        ADDITIVE_MEMBER_MEASURES.has(measure.measure.id),
+      )
+    : null;
+  const unit = card.rows.find((entry) => entry.row)?.row || memberRows?.rows.find((entry) => entry.row)?.row;
   return (
     <div className="place-card" data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
       <h3>{measure.measure.label}</h3>
@@ -1388,7 +1473,13 @@ function HeadlineCard({
               ) : (
                 <>
                   <td>
-                    {entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row, measure.measure.unit)}`.trim() : entry.message}
+                    {entry.row && !entry.message
+                      ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row, measure.measure.unit)}`.trim()
+                      : memberRows && entry.place.level === "METRO"
+                        ? memberGapText(memberRows, unit, measure.measure.unit)
+                        : !publishesAt(measure, entry.place.level) && measure.measure.gaps?.[entry.place.level]
+                          ? measure.measure.gaps[entry.place.level]
+                          : entry.message}
                   </td>
                   <td className="subtle">
                     {entry.row && !entry.message ? uncertaintyText(entry.row) : ""}
@@ -1399,6 +1490,16 @@ function HeadlineCard({
           ))}
         </tbody>
       </table>
+      {memberRows ? <MemberCountyTable rows={memberRows.rows} unit={measure.measure.unit} testId={`card-${measure.measure.id}-members`} /> : null}
+      {memberRows ? (
+        <p className="place-basis" data-testid={`card-${measure.measure.id}-members-note`}>
+          {memberRows.sum
+            ? `Metro area: derived, the sum of its ${memberRows.sum.counties} member ${memberRows.sum.counties === 1 ? "county's" : "counties'"} published figures, not a figure published for the metro.`
+            : ADDITIVE_MEMBER_MEASURES.has(measure.measure.id)
+              ? "Not published for metro areas; no sum is shown because not every member county has a figure for this period."
+              : "Not published for metro areas, and not added up from its counties because it is not a count; each member county's own figure is shown."}
+        </p>
+      ) : null}
       {measure.measure.basis || measureBasis(measure.metricCode) ? (
         <p className="place-basis" data-testid={`card-${measure.measure.id}-basis`}>{measure.measure.basis || measureBasis(measure.metricCode)}</p>
       ) : null}

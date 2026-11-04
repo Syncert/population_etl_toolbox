@@ -109,6 +109,26 @@
   font-weight: 700;
 }
 
+/* A metro's member counties, beside a metro row not published for metro areas. */
+.place-member-counties caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding-top: 6px;
+}
+
+.place-member-counties th {
+  padding-left: 14px;
+  font-weight: 500;
+}
+
+.place-member-counties summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 6px 4px;
+}
+
 .place-depth {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
