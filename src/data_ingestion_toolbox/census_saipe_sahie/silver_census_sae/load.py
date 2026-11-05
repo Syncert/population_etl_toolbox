@@ -88,7 +88,7 @@ def replay_run(
             )
             expected_revisions = 0
             for geo_level, estimate_year, capture_id, status in slices:
-                if status == "empty":
+                if status in ("empty", "unchanged"):
                     continue
                 payload = load_captured_payload(connection_factory, UUID(capture_id))
                 parsed = parse_slice(

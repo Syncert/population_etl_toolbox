@@ -18,6 +18,7 @@ from apps.api.schemas.migration import MigrationFlowsResponse, MigrationRow
 from apps.api.services.neutral_observations_service import NeutralQueryError
 from data_ingestion_toolbox.irs_migration.registry import (
     CATEGORY_LABELS,
+    FIRST_INDIVIDUALS_YEAR2,
     MEASURES,
     TOTAL_CATEGORIES,
 )
@@ -37,6 +38,28 @@ FLOW_CAVEATS: tuple[str, ...] = (
     "These are tax filers, not the Census Bureau's population estimates, so "
     "they do not equal PEP net migration and no net figure is computed here.",
 )
+
+#: The same statements for a pair ending in 2018 or earlier: ``individuals``
+#: counts the exemptions claimed on the year-2 return, and SOI's guides for
+#: those years show a county flow from 10 returns (2011-2012) or 20.
+EXEMPTION_ERA_CAVEATS: tuple[str, ...] = (
+    "Returns are tax filers whose address changed between the two filing "
+    "years; individuals are the exemptions claimed on the year-2 return, "
+    "which approximate people (exemptions ended with tax year 2018); AGI is "
+    "the movers' adjusted gross income on the year-2 return, in thousands "
+    "of dollars.",
+    "Flows below SOI's disclosure threshold for these years (10 returns in "
+    "the 2011-2012 guide, 20 in the 2017-2018 guide) are aggregated by SOI "
+    "into its Other flows categories; a category SOI deleted to protect "
+    "taxpayers is withheld, not zero.",
+    FLOW_CAVEATS[2],
+)
+
+
+def flow_caveats(year_pair: str) -> tuple[str, ...]:
+    """The caveats for one pair of filing years."""
+    year2 = int(year_pair.split("-")[1])
+    return FLOW_CAVEATS if year2 >= FIRST_INDIVIDUALS_YEAR2 else EXEMPTION_ERA_CAVEATS
 
 
 class MigrationNotPublishedError(LookupError):
@@ -160,7 +183,7 @@ def list_migration_flows(
         measure=measure,
         unit=MEASURE_UNITS[measure],
         release=first["release_key"],
-        caveats=list(FLOW_CAVEATS),
+        caveats=list(flow_caveats(chosen)),
         totals=[_row(r) for r in totals],
         categories=[_row(r) for r in categories],
         total=len(flows),

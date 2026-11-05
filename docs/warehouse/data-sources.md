@@ -102,13 +102,13 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Code:** `src/data_ingestion_toolbox/irs_migration` · DAG `irs_migration_ingest` · Monthly, 5th 15:00 UTC
 - **Publisher releases:** One new year pair a year
 - **Credential:** none
-- **Years:** Filing-year pairs 2018-2019 to 2022-2023
+- **Years:** Filing-year pairs 2011-2012 to 2022-2023; before 2018-2019 the individuals count is exemptions claimed
 - **Datasets:** countyinflowYYYY.csv; countyoutflowYYYY.csv
-- **Measures:** Returns, individuals and adjusted gross income for each county pair, plus non-migrants and SOI's totals (same state, other state, foreign). Flows under 20 returns are withheld.
+- **Measures:** Returns, individuals and adjusted gross income for each county pair, plus non-migrants and SOI's totals (same state, other state, foreign). Small flows are in SOI's Other flows rows.
 - **Capture and control:** `control.irs_migration_file`
 - **Silver:** `silver_irs_migration.flow_revision`, `silver_irs_migration.fact_flow`, `silver_irs_migration.flow_quarantine`
 - **Gold:** `gold_irs_migration.flow_revision`, `gold_irs_migration.flow_latest`, `gold_irs_migration.total_observation_revision`, `gold_irs_migration.total_observation_latest`
-- **Status (live count 2026-10-31):** Loaded. County 2019–2023, 468,528 rows.
+- **Status (live count 2026-10-31):** Partly loaded. County 2019–2023, 468,528 rows; 2011-2012 to 2017-2018 load on the next scheduled run.
 
 ## Work, income and business
 
