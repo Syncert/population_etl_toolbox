@@ -12,7 +12,7 @@ import { formatNumber } from "./format";
 import type { ObservationRow } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
-export type DerivedKind = "share" | "per_capita" | "provider_rate" | "agency_rate";
+export type DerivedKind = "share" | "per_capita" | "ratio" | "provider_rate" | "agency_rate";
 export type PairingStatus = "approved" | "draft" | "needs_review" | "deprecated";
 export type MarginMethod = "proportion" | "ratio" | "ratio_fallback" | "unavailable" | "provider" | "none";
 export type UnavailableReason =
