@@ -114,7 +114,14 @@ need no key.
    `state_type_total`, or in `quarantine` with a reason. The roll-up then
    writes county areas, each state's local governments and each state
    government into `fact_observation` with `derivation`,
-   `government_count` and `record_coverage`. API rows land in
+   `government_count` and `record_coverage`. Before the roll-up the
+   replay runs `ANALYZE` on `unit_amount`, `unit_government` and
+   `measure_item` inside its own transaction, because the run's records
+   are not committed yet and older statistics estimate them as one row;
+   the roll-up then runs with nested loops off. A 2002 edition (about
+   1.4 million records) rolls up in well under a minute; one running for
+   hours with no wait event is planning from stale statistics.
+   API rows land in
    `api_revision` and then `fact_observation`.
    A slice whose bytes and parser contract repeat its last published
    capture, with no geography added to `silver_ref.dim_geo_entity` since,

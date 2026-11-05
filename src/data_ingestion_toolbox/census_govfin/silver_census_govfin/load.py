@@ -433,7 +433,32 @@ ON CONFLICT DO NOTHING
 """
 
 
+#: The tables the roll-up reads, analysed inside the replay's own transaction
+#: before it runs. The run's records are not committed yet, so the statistics
+#: autovacuum keeps cannot see them: planned from those, `run_id = <this run>`
+#: estimates one record, and the directory join becomes a nested loop that
+#: reads every government of the edition for each of its 1.4 million records
+#: (the first live 2002 replay ran for hours that way). ANALYZE in the
+#: transaction samples the run's own uncommitted rows, so the plan is made
+#: from real counts; a rollback discards the statistics with the rows.
+ROLLUP_ANALYZED_RELATIONS = (
+    "silver_census_govfin.unit_amount",
+    "silver_census_govfin.unit_government",
+    "silver_census_govfin.measure_item",
+)
+
+
 def _rollup(cursor: Any, run_id: UUID, period: int) -> int:
+    for relation in ROLLUP_ANALYZED_RELATIONS:
+        cursor.execute(f"ANALYZE {relation}")
+    # Every join of the roll-up is between whole sets (an edition's records,
+    # its directory, its places), so it is hashed or merged even when an
+    # estimate is off (prevention list: big joins run with nested loops off).
+    # The setting is local to the transaction; the previous value is put back
+    # for the statements after it, and a failure rolls it back with the rest.
+    cursor.execute("SELECT current_setting('enable_nestloop')")
+    previous = cursor.fetchone()[0]
+    cursor.execute("SELECT set_config('enable_nestloop', 'off', true)")
     cursor.execute(
         _ROLLUP_SQL,
         {
@@ -442,7 +467,9 @@ def _rollup(cursor: Any, run_id: UUID, period: int) -> int:
             "coverage": get_edition(period).record_coverage,
         },
     )
-    return int(cursor.rowcount)
+    written = int(cursor.rowcount)
+    cursor.execute("SELECT set_config('enable_nestloop', %s, true)", (previous,))
+    return written
 
 
 def _replay_api(
