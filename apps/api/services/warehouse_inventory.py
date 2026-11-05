@@ -222,12 +222,15 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         cadence="Monthly, 5th 15:00 UTC",
         release="One new year pair a year",
         grains={"county": "n"},
-        years=[(2019, 2023)],
-        years_note="Filing-year pairs 2018-2019 to 2022-2023",
+        years=[(2012, 2023)],
+        years_note=(
+            "Filing-year pairs 2011-2012 to 2022-2023; before 2018-2019 the individuals "
+            "count is exemptions claimed"
+        ),
         datasets=["countyinflowYYYY.csv", "countyoutflowYYYY.csv"],
         measures=(
             "Returns, individuals and adjusted gross income for each county pair, plus non-migrants and "
-            "SOI's totals (same state, other state, foreign). Flows under 20 returns are withheld."
+            "SOI's totals (same state, other state, foreign). Small flows are in SOI's Other flows rows."
         ),
         raw=[],
         control=["control.irs_migration_file"],

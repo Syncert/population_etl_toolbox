@@ -105,7 +105,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             _upsert_dimensions(cursor)
             expected = 0
             for industry_code, year, period, capture_id, status in slices:
-                if status == "empty":
+                if status in ("empty", "unchanged"):
                     continue
                 industry = get_industry(industry_code)
                 parsed = parse_slice(

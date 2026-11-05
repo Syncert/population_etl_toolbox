@@ -3,7 +3,8 @@
 Everything here reads the committed capture, never the network. One
 transaction per run: the parsed cells, the quarantine, the geography
 resolution ledger and the conformed facts land together or not at all, and
-the run is only marked ready when the counts reconcile.
+the run is only marked ready when the counts reconcile. A run the capture
+found ``unchanged`` replays nothing.
 """
 
 from __future__ import annotations
@@ -36,7 +37,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT file.kind, file.year, file.capture_id::TEXT, capture.retrieved_at
+                SELECT file.kind, file.year, file.capture_id::TEXT, capture.retrieved_at,
+                       file.status
                 FROM control.census_cbp_file AS file
                 JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
                 WHERE file.run_id = %s
@@ -48,7 +50,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 raise CbpReconciliationError(
                     "run has no captured County Business Patterns file"
                 )
-            kind, year, capture_id, _retrieved_at = row
+            kind, year, capture_id, _retrieved_at, status = row
+            if status == "unchanged":
+                # The bytes repeat the last published file: nothing to add.
+                connection.commit()
+                return 0
             item = get_file(kind, int(year))
             parsed = parse_file(
                 load_captured_payload(connection_factory, UUID(capture_id)), item=item

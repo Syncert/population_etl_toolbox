@@ -105,7 +105,7 @@ r control.bls_qcew_slice
     constraint bls_qcew_slice_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
     constraint bls_qcew_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint bls_qcew_slice_scope_within_rows CHECK ((in_scope_row_count <= captured_row_count))
-    constraint bls_qcew_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint bls_qcew_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
     constraint bls_qcew_slice_year_check CHECK (((year >= 2014) AND (year <= 2100)))
     index bls_qcew_slice_capture_idx CREATE INDEX bls_qcew_slice_capture_idx ON control.bls_qcew_slice USING btree (capture_id)
     index bls_qcew_slice_pkey CREATE UNIQUE INDEX bls_qcew_slice_pkey ON control.bls_qcew_slice USING btree (run_id, industry_code)
@@ -198,7 +198,7 @@ r control.census_bps_slice
     constraint census_bps_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint census_bps_slice_scope_within_rows CHECK ((in_scope_row_count <= captured_row_count))
     constraint census_bps_slice_slice_key_check CHECK ((slice_key ~ '^(county|state|place:(midwest|northeast|south|west))$'::text))
-    constraint census_bps_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint census_bps_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
     constraint census_bps_slice_year_check CHECK (((year >= 2000) AND (year <= 2100)))
     index census_bps_slice_capture_idx CREATE INDEX census_bps_slice_capture_idx ON control.census_bps_slice USING btree (capture_id)
     index census_bps_slice_pkey CREATE UNIQUE INDEX census_bps_slice_pkey ON control.census_bps_slice USING btree (run_id, slice_key)
@@ -222,7 +222,7 @@ r control.census_cbp_file
     constraint census_cbp_file_kind_check CHECK ((kind = ANY (ARRAY['county'::text, 'state'::text, 'nation'::text])))
     constraint census_cbp_file_pkey PRIMARY KEY (run_id)
     constraint census_cbp_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
-    constraint census_cbp_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint census_cbp_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
     constraint census_cbp_file_year_check CHECK (((year >= 1986) AND (year <= 2100)))
     index census_cbp_file_capture_idx CREATE INDEX census_cbp_file_capture_idx ON control.census_cbp_file USING btree (capture_id)
     index census_cbp_file_pkey CREATE UNIQUE INDEX census_cbp_file_pkey ON control.census_cbp_file USING btree (run_id)
@@ -289,7 +289,7 @@ r control.census_sae_slice
     constraint census_sae_slice_geo_level_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text])))
     constraint census_sae_slice_pkey PRIMARY KEY (run_id, geo_level)
     constraint census_sae_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
-    constraint census_sae_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'quarantined'::text, 'silver_ready'::text, 'published'::text])))
+    constraint census_sae_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'unchanged'::text, 'quarantined'::text, 'silver_ready'::text, 'published'::text])))
     index census_sae_slice_latest_idx CREATE INDEX census_sae_slice_latest_idx ON control.census_sae_slice USING btree (dataset_id, estimate_year, geo_level, created_at DESC)
     index census_sae_slice_pkey CREATE UNIQUE INDEX census_sae_slice_pkey ON control.census_sae_slice USING btree (run_id, geo_level)
 
@@ -841,7 +841,7 @@ r control.irs_migration_file
     constraint irs_migration_file_pkey PRIMARY KEY (run_id)
     constraint irs_migration_file_refused_row_count_check CHECK ((refused_row_count >= 0))
     constraint irs_migration_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
-    constraint irs_migration_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint irs_migration_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
     constraint irs_migration_file_year_pair_check CHECK ((year_pair ~ '^[0-9]{4}-[0-9]{4}$'::text))
     index irs_migration_file_capture_idx CREATE INDEX irs_migration_file_capture_idx ON control.irs_migration_file USING btree (capture_id)
     index irs_migration_file_pkey CREATE UNIQUE INDEX irs_migration_file_pkey ON control.irs_migration_file USING btree (run_id)
@@ -1779,6 +1779,69 @@ v gold.v_metric_timeseries_by_geo
     body     v_metric_timeseries_by_geo.margin_of_error,
     body     v_metric_timeseries_by_geo.margin_of_error_pct
     body    FROM gold_fred.v_metric_timeseries_by_geo;
+
+v gold_bea.disposable_income_real
+    column geo_id text
+    column geo_type text
+    column geo_level text
+    column year integer
+    column current_dollars numeric
+    column value_status text
+    column income_release_date date
+    column national_prices_2017_dollars numeric
+    column regional_price_parity numeric
+    column parity_release_date date
+    column regional_prices_2017_dollars numeric
+    column sources text
+    body WITH income AS (
+    body          SELECT DISTINCT ON (revision.geo_id, revision.year) revision.geo_id,
+    body             revision.geo_type,
+    body             revision.geo_level,
+    body             revision.year,
+    body             revision.value,
+    body             revision.value_status,
+    body             revision.release_date
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE revision.table_code = 'SAINC51'::text AND revision.line_code = '53'::text
+    body           ORDER BY revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    body         ), parity AS (
+    body          SELECT DISTINCT ON (revision.geo_id, revision.year) revision.geo_id,
+    body             revision.year,
+    body             revision.value,
+    body             revision.release_date
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE revision.table_code = 'SARPP'::text AND revision.line_code = '1'::text AND revision.value_status = 'valid'::text
+    body           ORDER BY revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    body         ), price_level AS (
+    body          SELECT EXTRACT(year FROM observation.observation_date)::integer AS year,
+    body             avg(observation.value) AS level
+    body            FROM gold_fred.fact_fred_observation observation
+    body              JOIN gold_fred.dim_fred_series series ON series.fred_series_sk = observation.fred_series_sk
+    body           WHERE series.series_id = 'PCEPI'::text AND observation.value IS NOT NULL
+    body           GROUP BY (EXTRACT(year FROM observation.observation_date)::integer)
+    body          HAVING count(DISTINCT EXTRACT(month FROM observation.observation_date)) = 12
+    body         )
+    body  SELECT income.geo_id,
+    body     income.geo_type,
+    body     income.geo_level,
+    body     income.year,
+    body     income.value AS current_dollars,
+    body     income.value_status,
+    body     income.release_date AS income_release_date,
+    body         CASE
+    body             WHEN income.value_status = 'valid'::text AND price_level.level > 0::numeric THEN round(income.value * 100::numeric / price_level.level)
+    body             ELSE NULL::numeric
+    body         END AS national_prices_2017_dollars,
+    body     parity.value AS regional_price_parity,
+    body     parity.release_date AS parity_release_date,
+    body         CASE
+    body             WHEN income.value_status = 'valid'::text AND price_level.level > 0::numeric AND parity.value > 0::numeric THEN round(income.value * 100::numeric / price_level.level * 100::numeric / parity.value)
+    body             ELSE NULL::numeric
+    body         END AS regional_prices_2017_dollars,
+    body     'BEA SAINC51 line 53 (per capita disposable personal income); FRED PCEPI; BEA SARPP line 1'::text AS sources
+    body    FROM income
+    body      LEFT JOIN price_level ON price_level.year = income.year
+    body      LEFT JOIN parity ON parity.geo_id = income.geo_id AND parity.year = income.year;
 
 v gold_bea.measure_export
     column source_object_key text
@@ -8235,6 +8298,7 @@ v gold_irs_migration.flow_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT DISTINCT ON (direction, year_pair, subject_geo_id, counterpart_code) direction,
     body     year_pair,
     body     year1,
@@ -8259,7 +8323,8 @@ v gold_irs_migration.flow_latest
     body     release_key,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     people_basis
     body    FROM gold_irs_migration.flow_revision revision
     body   ORDER BY direction, year_pair, subject_geo_id, counterpart_code, retrieved_at DESC, capture_id DESC;
 
@@ -8289,6 +8354,7 @@ v gold_irs_migration.flow_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT fact.direction,
     body     fact.year_pair,
     body     fact.year1,
@@ -8313,7 +8379,11 @@ v gold_irs_migration.flow_revision
     body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
     body     fact.source_record_id,
     body     fact.capture_id,
-    body     fact.run_id
+    body     fact.run_id,
+    body         CASE
+    body             WHEN fact.year2 >= 2019 THEN 'individuals'::text
+    body             ELSE 'exemptions'::text
+    body         END AS people_basis
     body    FROM silver_irs_migration.fact_flow fact
     body      JOIN control.irs_migration_file file ON file.capture_id = fact.capture_id
     body   WHERE file.status = 'published'::text;
@@ -8404,6 +8474,7 @@ v gold_irs_migration.total_observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT DISTINCT ON (metric_key, geo_id, year_pair) metric_key,
     body     direction,
     body     category,
@@ -8423,7 +8494,8 @@ v gold_irs_migration.total_observation_latest
     body     release_key,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     people_basis
     body    FROM gold_irs_migration.total_observation_revision revision
     body   ORDER BY metric_key, geo_id, year_pair, retrieved_at DESC, capture_id DESC;
 
@@ -8448,6 +8520,7 @@ v gold_irs_migration.total_observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT (((revision.direction || ':'::text) || revision.category) || ':'::text) || measure.measure AS metric_key,
     body     revision.direction,
     body     revision.category,
@@ -8471,7 +8544,8 @@ v gold_irs_migration.total_observation_revision
     body     revision.release_key,
     body     revision.source_record_id,
     body     revision.capture_id,
-    body     revision.run_id
+    body     revision.run_id,
+    body     revision.people_basis
     body    FROM gold_irs_migration.flow_revision revision
     body      CROSS JOIN ( VALUES ('returns'::text,'returns'::text), ('individuals'::text,'individuals'::text), ('agi'::text,'thousands of dollars'::text)) measure(measure, unit)
     body   WHERE revision.category = ANY (ARRAY['total_us_and_foreign'::text, 'total_us'::text, 'total_same_state'::text, 'total_different_state'::text, 'total_foreign'::text, 'non_migrants'::text]);

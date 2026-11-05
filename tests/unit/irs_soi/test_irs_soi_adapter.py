@@ -1,6 +1,6 @@
 """Offline contracts for the IRS SOI county and state income adapter.
 
-Covers: ETL-115
+Covers: ETL-117
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def _values(parsed, geo_id: str, band: str = ALL_RETURNS) -> dict[str, Decimal |
 
 
 def test_configuration_imports_without_io_and_holds_no_credential() -> None:
-    """Covers: ETL-115 — the SOI files need no key, so there is none to leak."""
+    """Covers: ETL-117 — the SOI files need no key, so there is none to leak."""
     for name in list(sys.modules):
         if name.startswith("data_ingestion_toolbox.irs_soi"):
             del sys.modules[name]
@@ -99,7 +99,7 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
 
 
 def test_the_registry_names_every_file_band_and_item() -> None:
-    """Covers: ETL-115 — two county files a year from 2011, the state file where it is a CSV."""
+    """Covers: ETL-117 — two county files a year from 2011, the state file where it is a CSV."""
     files = registered_files()
     assert registered_years() == tuple(range(1989, 2024))
     assert {item.key for item in files if item.tax_year == 2011} == {
@@ -132,7 +132,7 @@ def test_the_registry_names_every_file_band_and_item() -> None:
 
 
 def test_a_client_error_fails_once_a_server_error_retries_and_html_is_refused() -> None:
-    """Covers: ETL-115 — a 404 is not retried; a moved file answered with a page is refused."""
+    """Covers: ETL-117 — a 404 is not retried; a moved file answered with a page is refused."""
     config = IrsSoiConfig(min_spacing_seconds=0, max_attempts=3)
     missing = _Client([_response(404)])
     with pytest.raises(IrsSoiFetchError) as error:
@@ -158,7 +158,7 @@ def test_a_client_error_fails_once_a_server_error_retries_and_html_is_refused() 
 
 
 def test_the_county_totals_file_reads_counties_and_the_state_total() -> None:
-    """Covers: ETL-115 — county code 000 is the state; every item is read by its column name."""
+    """Covers: ETL-117 — county code 000 is the state; every item is read by its column name."""
     parsed = parse_file(TOTAL_2023, _fixture("23incyallnoagi.csv"))
     assert parsed.quarantined == ()
     assert parsed.row_count == 4
@@ -188,7 +188,7 @@ def test_the_county_totals_file_reads_counties_and_the_state_total() -> None:
 def test_the_band_file_maps_stubs_to_dollar_ranges_and_refuses_an_unregistered_stub() -> (
     None
 ):
-    """Covers: ETL-115 — a stub outside the year's scheme refuses the whole file."""
+    """Covers: ETL-117 — a stub outside the year's scheme refuses the whole file."""
     parsed = parse_file(AGI_2023, _fixture("23incyallagi.csv"))
     assert parsed.quarantined == ()
     bands = {obs.agi_band for obs in parsed.observations}
@@ -226,7 +226,7 @@ def test_the_band_file_maps_stubs_to_dollar_ranges_and_refuses_an_unregistered_s
 
 
 def test_the_state_file_reads_separators_the_nation_and_other_areas() -> None:
-    """Covers: ETL-115 — `"159,949,000"` is a number; `US` is the nation; `OA` is unmapped."""
+    """Covers: ETL-117 — `"159,949,000"` is a number; `US` is the nation; `OA` is unmapped."""
     parsed = parse_file(STATE_2023, _fixture("23in55cmcsv.csv"))
     assert parsed.quarantined == ()
     nation = _values(parsed, "us:1")
@@ -245,7 +245,7 @@ def test_the_state_file_reads_separators_the_nation_and_other_areas() -> None:
 
 
 def test_a_cell_that_is_not_a_number_is_missing_never_zero() -> None:
-    """Covers: ETL-115 — SOI's own text is kept beside a missing value."""
+    """Covers: ETL-117 — SOI's own text is kept beside a missing value."""
     payload = _fixture("23incyallnoagi.csv").decode()
     lines = payload.splitlines()
     cells = lines[2].split(",")
@@ -263,7 +263,7 @@ def test_a_cell_that_is_not_a_number_is_missing_never_zero() -> None:
 
 
 def test_unreadable_rows_and_a_wrong_header_are_quarantined() -> None:
-    """Covers: ETL-115 — a short row, a bad code and a repeated place are set aside; no N1 refuses the file."""
+    """Covers: ETL-117 — a short row, a bad code and a repeated place are set aside; no N1 refuses the file."""
     payload = _fixture("23incyallnoagi.csv").decode()
     lines = payload.splitlines()
     lines.append(lines[2])  # Kent again
@@ -286,7 +286,7 @@ def test_unreadable_rows_and_a_wrong_header_are_quarantined() -> None:
 
 
 def test_a_scheduled_run_plans_every_year_never_answered_and_the_window() -> None:
-    """Covers: ETL-115 — the loader rule: no manual history run is needed."""
+    """Covers: ETL-117 — the loader rule: no manual history run is needed."""
     years = registered_years()
     fresh = files_to_capture(None, set())
     assert [item.key for item in fresh] == [item.key for item in registered_files()]
@@ -318,7 +318,7 @@ WORKBOOK_ITEMS = (
     [(1989, "308166"), (1996, None), (2003, None), (2009, "371587")],
 )
 def test_each_era_workbook_reads_its_six_items_by_label(year, state_returns) -> None:
-    """Covers: ETL-115 — every 1989-2009 workbook layout reads the state, its counties and six items."""
+    """Covers: ETL-117 — every 1989-2009 workbook layout reads the state, its counties and six items."""
     item = SoiFile(COUNTY_TOTAL, year)
     assert item.path == f"/{year}countyincome.zip"
     parsed = parse_file(item, _fixture(f"{year}countyincome.zip"))
@@ -337,7 +337,7 @@ def test_each_era_workbook_reads_its_six_items_by_label(year, state_returns) -> 
 
 
 def test_the_1989_workbook_matches_its_published_county_values() -> None:
-    """Covers: ETL-115 — Delaware's 1989 counties as SOI printed them."""
+    """Covers: ETL-117 — Delaware's 1989 counties as SOI printed them."""
     parsed = parse_file(SoiFile(COUNTY_TOTAL, 1989), _fixture("1989countyincome.zip"))
     assert _values(parsed, KENT)["returns"] == Decimal("48600")
     assert _values(parsed, "state:10|county:003")["returns"] == Decimal("205299")
@@ -346,7 +346,7 @@ def test_the_1989_workbook_matches_its_published_county_values() -> None:
 
 
 def test_a_revised_workbook_is_read_before_the_original_it_replaces() -> None:
-    """Covers: ETL-115 — a ``cir`` workbook wins; the original's repeated rows are set aside."""
+    """Covers: ETL-117 — a ``cir`` workbook wins; the original's repeated rows are set aside."""
     original = zipfile.ZipFile(io.BytesIO(_fixture("1989countyincome.zip"))).read(
         "delaware89ci.xls"
     )
@@ -365,7 +365,7 @@ def test_a_revised_workbook_is_read_before_the_original_it_replaces() -> None:
 
 
 def test_the_2010_zip_reads_both_county_files_and_a_missing_member_is_refused() -> None:
-    """Covers: ETL-115 — 2010's zip holds the two CSVs; a zip without the named member is refused whole."""
+    """Covers: ETL-117 — 2010's zip holds the two CSVs; a zip without the named member is refused whole."""
     payload = _fixture("2010countydata.zip")
     totals = parse_file(SoiFile(COUNTY_TOTAL, 2010), payload)
     assert totals.quarantined == ()
@@ -472,7 +472,7 @@ class _Control:
 def test_a_read_that_repeats_the_last_publication_is_unchanged_and_replays_nothing(
     published, expected
 ) -> None:
-    """Covers: ETL-115 — the monthly read of an unchanged SOI file stores no second copy of its rows."""
+    """Covers: ETL-117 — the monthly read of an unchanged SOI file stores no second copy of its rows."""
     database = _UnchangedDatabase(published)
     run_id, _capture = capture_file(
         database.connect,

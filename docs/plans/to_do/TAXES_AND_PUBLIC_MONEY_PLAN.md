@@ -170,7 +170,7 @@ measures and term-table columns with fixtures under `tests/frontend/support/`.
 Next pickup: T-1. Read `bea/registry.py` table definitions, add CAINC35 with
 its line codes, and write the failing parser test for one county row.
 
-T-4 done (ETL-115, EXT-032): `irs_soi` loads county files 1989–2023 and
+T-4 done (ETL-117, EXT-032): `irs_soi` loads county files 1989–2023 and
 Historic Table 2 state files 2020–2023 through DAG `irs_soi_ingest`; guide
 `docs/user-guides/IRS_SOI_PIPELINE_OPERATIONS.md`. Found while building it:
 

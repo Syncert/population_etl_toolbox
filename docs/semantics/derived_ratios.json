@@ -1212,6 +1212,605 @@
       ]
     },
     {
+      "ratio_id": "transfer_share_all_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from all payments from government and others",
+      "numerator": "BEA:CAINC35:1000",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_social_security_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Social Security",
+      "numerator": "BEA:CAINC35:2110",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicare_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicare",
+      "numerator": "BEA:CAINC35:2210",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicaid_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicaid and other public medical care",
+      "numerator": "BEA:CAINC35:2220",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_ssi_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Supplemental Security Income",
+      "numerator": "BEA:CAINC35:2310",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_eitc_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from the Earned Income Tax Credit",
+      "numerator": "BEA:CAINC35:2320",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_snap_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from SNAP food assistance",
+      "numerator": "BEA:CAINC35:2330",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_unemployment_insurance_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from unemployment insurance",
+      "numerator": "BEA:CAINC35:2400",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_veterans_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from veterans' benefits",
+      "numerator": "BEA:CAINC35:2500",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_all_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from all payments from government and others",
+      "numerator": "BEA:SAINC35:1000",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_social_security_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Social Security",
+      "numerator": "BEA:SAINC35:2110",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicare_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicare",
+      "numerator": "BEA:SAINC35:2210",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicaid_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicaid and other public medical care",
+      "numerator": "BEA:SAINC35:2220",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_ssi_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Supplemental Security Income",
+      "numerator": "BEA:SAINC35:2310",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_eitc_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from the Earned Income Tax Credit",
+      "numerator": "BEA:SAINC35:2320",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_snap_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from SNAP food assistance",
+      "numerator": "BEA:SAINC35:2330",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_unemployment_insurance_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from unemployment insurance",
+      "numerator": "BEA:SAINC35:2400",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_veterans_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from veterans' benefits",
+      "numerator": "BEA:SAINC35:2500",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in all personal taxes",
+      "numerator": "BEA:SAINC50:60",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "federal_personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in federal personal taxes",
+      "numerator": "BEA:SAINC50:70",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "state_personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in state personal taxes",
+      "numerator": "BEA:SAINC50:120",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "local_personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in local personal taxes",
+      "numerator": "BEA:SAINC50:180",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
       "ratio_id": "income_tax_share_of_agi",
       "kind": "per_capita",
       "label": "Federal income tax as a share of adjusted gross income",

@@ -290,8 +290,12 @@ def _fetch_raw_rows(
                 ROW_NUMBER() OVER (
                     PARTITION BY observation.program, observation.series_id,
                                  observation.year, observation.period
-                    ORDER BY observation.is_latest DESC,
-                             capture.retrieved_at DESC,
+                    -- The newest read wins. BLS's `latest` flag marks a
+                    -- series' newest period within one answer, so an older
+                    -- read flagged its preliminary value latest while a later
+                    -- read carrying the revised value does not: ranking the
+                    -- flag first served the stale preliminary number.
+                    ORDER BY capture.retrieved_at DESC,
                              observation.capture_id DESC
                 ) AS revision_rank
             FROM silver_bls.observation_revision AS observation

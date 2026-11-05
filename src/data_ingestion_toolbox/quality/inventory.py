@@ -2201,6 +2201,23 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published table",
     ),
     _obj(
+        "gold_bea.disposable_income_real",
+        "gold",
+        "BEA",
+        grain="geo_id, year (newest release of SAINC51 line 53)",
+        lineage="gold_bea.observation_revision, gold_fred.fact_fred_observation",
+        scope_method=(
+            "SAINC51 line 53 deflated by FRED PCEPI and SARPP line 1: the "
+            "nation and states BEA publishes disposable income for; the "
+            "regional-prices column only for years with a price parity (2008 on)"
+        ),
+        cadence="per publication",
+        empty_behavior=(
+            "empty only before SAINC51 is published; a year without twelve PCE "
+            "months or without a parity has no deflated figure, never zero"
+        ),
+    ),
+    _obj(
         "gold_bea.measure_export",
         "publisher",
         "BEA",
@@ -2564,7 +2581,7 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
         lineage="silver_irs_migration.flow_revision, silver_ref.dim_geo_entity",
         scope_method="registered files; county flows with both ends resolved and SOI's own categories",
         cadence="per SOI migration replay",
-        empty_behavior="a deleted category is withheld with no value, never zero; a flow under 20 returns is in its Other flows category",
+        empty_behavior="a deleted category is withheld with no value, never zero; a flow under SOI's threshold (20 returns; 10 or 20 before 2018-2019) is in its Other flows category",
     ),
     _obj(
         "gold_irs_migration.flow_revision",
@@ -5878,11 +5895,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_bea.fact_observation",
             "gold_bea.observation_revision",
             "gold_bea.observation_latest",
+            "gold_bea.disposable_income_real",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: the grain is the fact table's primary key; "
-            "the gold relations are views over it."
+            "the gold relations are views over it, and "
+            "`disposable_income_real` keeps one row per geography and year by "
+            "its DISTINCT ON over the newest release."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -6443,6 +6463,44 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation="automated",
         automation_note=(
             "`quality.sources.bea_price_parity_reference` reads the newest published release of line 1 (all items) for `us:1` in SARPP, MARPP and PARPP and fails any year whose value is not exactly 100 -- a parity table whose national row is not 100 is not relative to the nation, and every area's level in it would be misread (grocery-and-gasoline-prices)."
+        ),
+    ),
+    _rule(
+        "DQ-BEA-006",
+        "WARN",
+        "reconciliation",
+        "Transfer receipts and personal current taxes add up within one "
+        "release: government, nonprofit and business receipts make the total "
+        "(line 1000), the seven program groups make government receipts (line "
+        "2000), and federal, state, local and property taxes make personal "
+        "current taxes (SAINC50 line 60), each within 0.5 percent.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_component_sums` reads the newest published "
+            "release of each CAINC35, SAINC35 and SAINC50 geography-year and "
+            "warns where every part is a valid figure and the parts differ from "
+            "their total by more than 0.5 percent (or three thousand dollars, "
+            "BEA's rounding). Refundable tax credits (line 5000) overlap the "
+            "programs and are never added to them (taxes-and-public-money, T-1)."
+        ),
+    ),
+    _rule(
+        "DQ-BEA-007",
+        "WARN",
+        "reconciliation",
+        "A county's transfer receipts by program (CAINC35 line 1000) agree with "
+        "the transfer line of its personal income (CAINC4 line 47) in the same "
+        "release, within 0.5 percent.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_transfer_total_agreement` pairs each CAINC35 "
+            "line 1000 figure with the CAINC4 line 47 figure for the same "
+            "geography, year and release date, and warns past 0.5 percent. BEA "
+            "publishes the program detail later than the totals, so a release of "
+            "one with no release of the other is not compared, and the result is "
+            "`not_applicable` when no release date is shared."
         ),
     ),
     # -- Census County Business Patterns ------------------------------------
