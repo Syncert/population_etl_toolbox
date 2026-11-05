@@ -86,6 +86,16 @@ easy and easy to get wrong:
 - Composite scores remain out of scope: a ratio of two measures is not an
   index, and nothing here sums unlike quantities.
 
+## Amendment, 2026-11-05: a ratio of two measures
+
+The taxes-and-public-money plan (T-2) divides median real estate taxes paid
+(B25103) by median home value (B25077). The tax is not a part of the value,
+so it is not a share, and it is not a value per resident. Such a pairing has
+kind `ratio`: same program, release, period and geography (rule 2), the
+Bureau's ratio formula for its margin (rule 4), a unit that names the
+denominator ("percent of median home value"), and no subset flag. Rule 1
+applies unchanged: each ratio is one reviewed entry.
+
 ## Alternatives considered
 
 - **Per-capita over PEP population for every count.** Rejected: it mixes

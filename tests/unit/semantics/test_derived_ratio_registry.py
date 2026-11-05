@@ -188,3 +188,29 @@ def test_every_numerator_is_a_metric_the_place_pages_define() -> None:
             assert {pairing.numerator, pairing.provider_rate} & defined, (
                 pairing.ratio_id
             )
+
+
+def test_a_ratio_divides_one_measure_by_another_it_is_not_part_of() -> None:
+    """Covers: ETL-114 — property tax over home value is a reviewed ratio, never a share."""
+    shipped = load_registry()
+    for dataset in ("acs5", "acs1"):
+        pairing = shipped[f"property_tax_to_home_value:{dataset}"]
+        assert pairing.kind == "ratio" and pairing.derived
+        assert pairing.numerator == f"CENSUS_ACS:{dataset}:B25103_001"
+        assert pairing.denominator == f"CENSUS_ACS:{dataset}:B25077_001"
+        assert pairing.scale == 100 and not pairing.numerator_is_subset
+        assert pairing.status == "approved"
+
+    ratio = _entry(
+        ratio_id="property_tax_to_home_value",
+        kind="ratio",
+        numerator="CENSUS_ACS:{dataset}:B25103_001",
+        denominator="CENSUS_ACS:{dataset}:B25077_001",
+        numerator_is_subset=None,
+    )
+    assert _parse(ratio)["property_tax_to_home_value:acs5"].kind == "ratio"
+    with pytest.raises(RatioRegistryError, match="not a part of"):
+        _parse({**ratio, "numerator_is_subset": True})
+    # Same program and dataset, as for every pairing (ADR-0009 rule 2).
+    with pytest.raises(RatioRegistryError, match="same program"):
+        _parse({**ratio, "denominator": "CENSUS_PEP:POP", "datasets": ["acs5"]})

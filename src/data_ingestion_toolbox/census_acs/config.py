@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 import os
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from data_ingestion_toolbox.census_acs.year_scope import YearScope, validate_year_scope
 
@@ -210,6 +210,7 @@ class AcsConfig(BaseModel):
         "B25075",  # Distribution of owner-occupied home values
         "B25077",  # Median owner-occupied home value
         "B25091",  # Owner costs as a percent of household income by mortgage status
+        "B25103",  # Median real estate taxes paid, by mortgage status (taxes-and-public-money T-2)
         "B25104",  # Monthly housing costs
         "B25108",  # Aggregate value by year structure built
         # Health coverage and digital access
@@ -244,7 +245,18 @@ class AcsConfig(BaseModel):
         "B01001", "B01002", "B11001", "B02001", "B03002", "B15003", "B23025",
         "B08301", "B08303", "B25003", "B25070", "B25091", "B25002", "B27010",
         "B28002", "B19301", "B25001",
+        # taxes-and-public-money T-2 (2026-11-05): the property tax a place's
+        # owners pay, beside the home value it is read against.
+        "B25103",
     ]  # fmt: skip
+    # Tables added to `curated_tables` (and, where listed, `tract_tables`)
+    # after the warehouse had loaded years without them, oldest first. A
+    # slice finished under the list as it stood before an addition is asked
+    # for the added tables only, on the next scheduled run, rather than for
+    # its whole list again (`table_additions.py`). Each must be in
+    # `curated_tables`; keep an entry for as long as any warehouse may hold
+    # slices finished before it.
+    added_tables: List[str] = ["B25103"]
     # The 5-year years requested at tract grain, declared as for places:
     # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
     # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.
@@ -342,6 +354,15 @@ class AcsConfig(BaseModel):
         if not 0 <= value < 1:
             raise ValueError("backfill_reserve_fraction must be in [0, 1)")
         return value
+
+    @model_validator(mode="after")
+    def validate_added_tables(self) -> "AcsConfig":
+        unknown = [t for t in self.added_tables if t not in self.curated_tables]
+        if unknown:
+            raise ValueError(f"added_tables not in curated_tables: {unknown}")
+        if len(set(self.added_tables)) != len(self.added_tables):
+            raise ValueError("added_tables names a table twice")
+        return self
 
     @field_validator("place_history_tables")
     @classmethod

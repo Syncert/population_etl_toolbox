@@ -1259,6 +1259,37 @@ an earlier run finished it against the same content; a grain step is
 re-served only when silver changed it. A year that failed part way is
 re-run from its first unfinished slice.
 
+### A table added to the curated list (ETL-114)
+
+Adding a table to `curated_tables` (and `tract_tables`) changes the
+fingerprint of every year that publishes it, so the next scheduled
+`acs_ingest` run (the 1st, 06:00) plans those years again with no manual
+step. Name the table in `AcsConfig.added_tables` as well: a slice that
+finished before the addition is then asked for the added table alone, and
+its ledger row reads `added-tables-pending:<earlier fingerprint>` until that
+request succeeds. Without the entry every slice would be asked for its whole
+list again and each cell already held would be stored twice.
+
+B25103 (median real estate taxes paid; taxes-and-public-money T-2) was
+added this way on 2026-11-05 at every grain, tracts included, for every
+year whose metadata lists it. To load it before the 1st, trigger
+`acs_ingest` with no conf, or one year and grain at a time with the
+backfill driver above. Every slice that gains B25103 rows is read again by
+the transform (its content changed), with the usual split of raw slices over
+5 million rows; the upsert rewrites only the new cells. Afterwards run
+`ANALYZE silver_census.observation_revision; ANALYZE
+silver_census.fact_demographics;` and check, for one 5-year year:
+
+```sql
+SELECT geo_level, count(*) FROM silver_census.observation_revision
+WHERE dataset = 'acs5' AND year = 2023 AND table_id = 'B25103'
+GROUP BY geo_level ORDER BY geo_level;
+```
+
+Expect every level (about 85,000 tracts' worth of rows per variable at
+tract grain), and no slice left `added-tables-pending:` in
+`control.acs_ingestion_slices`.
+
 ### Stop safely
 
 1. Stop the driver process. The `acs_ingest` run already started goes on

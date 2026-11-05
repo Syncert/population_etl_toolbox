@@ -67,6 +67,7 @@ from data_ingestion_toolbox.census_acs.metadata import (
     sync_variable_metadata_for_year,
 )
 from data_ingestion_toolbox.census_acs.backfill import BackfillScope
+from data_ingestion_toolbox.census_acs.table_additions import added_tables_request
 from data_ingestion_toolbox.census_acs.disk_guard import (
     assert_room_for,
     projected_plan_bytes,
@@ -160,6 +161,9 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     variables_hash: Optional[str] = work_unit.get("variables_hash")
     variables_count: int = int(work_unit.get("variables_count", 0))
+    # An added-tables request (`census_acs/table_additions.py`) holds its
+    # pending mark while it runs; only success stamps the current hash.
+    running_hash: Optional[str] = work_unit.get("ledger_hash") or variables_hash
 
     started = datetime.now(timezone.utc)
 
@@ -198,7 +202,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
             sql_running_update,
             (
                 started,
-                variables_hash,
+                running_hash,
                 variables_count,
                 started,  # variables_hash_seen_at
                 dataset,
@@ -217,7 +221,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
                     geo_level,
                     state_fips,
                     started,
-                    variables_hash,
+                    running_hash,
                     variables_count,
                     started,
                 ),
@@ -399,6 +403,8 @@ def acs_ingest():
 
         If you add variables later:
           variables_hash changes -> previously done slices become stale -> re-run -> backfill.
+          A table named in `AcsConfig.added_tables` is asked for alone in the
+          slices finished before it was added (`census_acs/table_additions.py`).
         """
         hook = _get_postgres_hook()
 
@@ -450,24 +456,28 @@ def acs_ingest():
         # Load all slices that are already done (success/empty) along with their variables_hash.
         # We'll only skip if the stored hash matches the current hash.
         completed: set[tuple[str, int, str, Optional[str], Optional[str]]] = set()
+        # Every slice's ledger row, done or not, for the added-tables check
+        # below (`census_acs/table_additions.py`).
+        ledger: dict[tuple[str, int, str, Optional[str]], tuple[str, str]] = {}
 
         sql_completed = """
-            SELECT dataset, year, geo_level, state_fips, variables_hash
-            FROM control.acs_ingestion_slices
-            WHERE status IN ('success','empty');
+            SELECT dataset, year, geo_level, state_fips, variables_hash, status
+            FROM control.acs_ingestion_slices;
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_completed)
-            for dataset, year, geo_level, state_fips, variables_hash in cur.fetchall():
-                completed.add(
-                    (
-                        str(dataset),
-                        int(year),
-                        str(geo_level),
-                        state_fips if state_fips is not None else None,
-                        variables_hash,
-                    )
+            for row in cur.fetchall():
+                dataset, year, geo_level, state_fips, variables_hash = row[:5]
+                status = row[5] if len(row) > 5 else "success"
+                key = (
+                    str(dataset),
+                    int(year),
+                    str(geo_level),
+                    state_fips if state_fips is not None else None,
                 )
+                ledger[key] = (variables_hash, status)
+                if status in ("success", "empty"):
+                    completed.add((*key, variables_hash))
 
         def is_done_for_current_varset(
             dataset: str, year: int, geo_level: str, state_fips: Optional[str]
@@ -665,6 +675,45 @@ def acs_ingest():
                         }
                     )
 
+        # A slice finished before a table was added to its list is asked for
+        # the added tables only (`AcsConfig.added_tables`): its other cells
+        # are held already, and asking again would store each a second time.
+        # Its ledger row says the request is outstanding until it succeeds.
+        fingerprints: dict[tuple[str, int, tuple[str, ...]], tuple[str, int]] = {}
+
+        def fingerprint(dataset: str, year: int, tables: list[str]) -> tuple[str, int]:
+            key = (dataset, year, tuple(tables))
+            if key not in fingerprints:
+                fingerprints[key] = _variables_fingerprint(year, dataset, tables)
+            return fingerprints[key]
+
+        for unit in plan:
+            stored = ledger.get(
+                (unit["dataset"], unit["year"], unit["geo_level"], unit["state_fips"])
+            )
+            if stored is None or stored[0] == unit["variables_hash"]:
+                continue
+            if unit.get("tables") is not None:
+                level_tables = list(unit["tables"])
+            elif unit["geo_level"] == "tract":
+                level_tables = list(CONFIG.tract_tables)
+            else:
+                level_tables = list(CONFIG.curated_tables)
+            request = added_tables_request(
+                stored[0],
+                stored[1],
+                level_tables,
+                CONFIG.added_tables,
+                lambda tables, u=unit: fingerprint(u["dataset"], u["year"], tables)[0],
+            )
+            if request is None:
+                continue
+            unit["tables"] = request.tables
+            unit["ledger_hash"] = request.ledger_hash
+            unit["requested_count"] = fingerprint(
+                unit["dataset"], unit["year"], request.tables
+            )[1]
+
         # Keep mapping sane: ~50–150 mapped tasks is a happy place.
         # IMPORTANT: return at least one batch so mapped-task retries remain stable.
         # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
@@ -758,13 +807,16 @@ def acs_ingest():
                     state_fips = w.get("state_fips")
                     vhash = w.get("variables_hash")
                     vcount = int(w.get("variables_count", 0))
+                    # An added-tables request holds its pending mark until
+                    # it succeeds (`census_acs/table_additions.py`).
+                    ledger_hash = w.get("ledger_hash") or vhash
 
                     cur.execute(
                         sql_planned_update,
                         (
                             vhash,  # hash compare #1
                             vhash,  # hash compare #2
-                            vhash,  # set variables_hash
+                            ledger_hash,  # set variables_hash
                             vcount,
                             now,
                             dataset,

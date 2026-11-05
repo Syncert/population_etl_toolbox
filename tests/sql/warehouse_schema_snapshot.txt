@@ -52,7 +52,7 @@ r control.bea_table_capture
     constraint bea_table_capture_in_scope_row_count_check CHECK ((in_scope_row_count >= 0))
     constraint bea_table_capture_pkey PRIMARY KEY (run_id)
     constraint bea_table_capture_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
-    constraint bea_table_capture_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint bea_table_capture_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
     constraint bea_table_capture_table_code_check CHECK ((table_code ~ '^(CA|SA|MA|PA)[A-Z0-9]+$'::text))
     index bea_table_capture_capture_idx CREATE INDEX bea_table_capture_capture_idx ON control.bea_table_capture USING btree (capture_id)
     index bea_table_capture_pkey CREATE UNIQUE INDEX bea_table_capture_pkey ON control.bea_table_capture USING btree (run_id)
