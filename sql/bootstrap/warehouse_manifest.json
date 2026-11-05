@@ -329,7 +329,7 @@
     {
       "id": "gold-bea-real-income",
       "phase": "gold",
-      "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/real_income.sql"
+      "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea_real_income.sql"
     },
     {
       "id": "gold-irs-migration",
