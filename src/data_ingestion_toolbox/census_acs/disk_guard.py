@@ -37,7 +37,9 @@ def projected_plan_bytes(
     Figures are keyed ``"<dataset>/<grain>"``: a 1-year place slice is a
     sixtieth of a 5-year one. A grain with no measured figure projects
     nothing: the guard only refuses on evidence, and the measurement is what
-    supplies it.
+    supplies it. A slice asked for its added tables only
+    (``requested_count``, `table_additions.py`) projects those variables,
+    not its whole list.
     """
     total = 0.0
     for unit in plan:
@@ -46,7 +48,8 @@ def projected_plan_bytes(
         if not per_variable:
             continue
         parents = parents_by_grain.get((str(unit["dataset"]), geo_level)) or 1
-        total += per_variable * int(unit.get("variables_count") or 0) / parents
+        variables = unit.get("requested_count", unit.get("variables_count"))
+        total += per_variable * int(variables or 0) / parents
     return int(total)
 
 

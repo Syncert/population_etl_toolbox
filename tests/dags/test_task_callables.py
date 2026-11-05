@@ -907,7 +907,11 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
     def fingerprint(year, dataset, tables=None):
         if tables is None:
             return ("whole-list", 30)
-        assert list(tables) == list(config.tract_tables)
+        if list(tables) != list(config.tract_tables):
+            # The planner's added-tables check (ETL-114) digests the tract
+            # list as it stood before each addition; nothing was loaded so.
+            assert set(tables) < set(config.tract_tables)
+            return ("earlier-tract-list", 21)
         return ("tract-list", 22)
 
     _patch_callable_global(
@@ -944,3 +948,86 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
     assert replanned and {unit["geo_level"] for unit in replanned} == {"tract"}
     assert {unit["variables_hash"] for unit in replanned} == {"tract-list"}
     assert plan("tract-list") == []
+
+
+def test_a_table_added_to_the_curated_list_is_asked_for_alone_in_slices_already_loaded(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-114 — a slice finished before a table was added asks for that table only.
+
+    Asking such a slice for its whole list again would store every cell it
+    holds a second time (revisions are append-only); B25103 at tract grain
+    is three variables beside some 560.
+    """
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    config = callable_.__globals__["CONFIG"]
+    assert "B25103" in config.added_tables
+    assert "B25103" in config.curated_tables and "B25103" in config.tract_tables
+
+    def fingerprint(year, dataset, tables=None):
+        tables = list(config.curated_tables if tables is None else tables)
+        if tables == ["B25103"]:
+            return ("b25103-only", 6)
+        added = "B25103" in tables
+        if tables == [t for t in config.tract_tables if added or t != "B25103"]:
+            return ("tract-now" if added else "tract-before", 9)
+        return ("whole-now" if added else "whole-before", 99)
+
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", fingerprint
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "assert_room_for", lambda *_a, **_k: None
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}]
+    tract_fips = list(callable_.__globals__["tract_parent_fips"]("acs5"))
+
+    def plan(rows: list[tuple]) -> dict[str, dict]:
+        database = RecordingDatabase(fetches=[rows])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return {
+            unit["state_fips"]: unit
+            for batch in callable_(targets, dag_run=Run())
+            for unit in batch
+        }
+
+    def ledger(stored: str, status: str) -> list[tuple]:
+        return [("acs5", 2019, "tract", fips, stored, status) for fips in tract_fips]
+
+    # Finished before B25103 was added: asked for B25103 alone, stamped with
+    # today's fingerprint only on success.
+    units = plan(ledger("tract-before", "success"))
+    assert set(units) == set(tract_fips)
+    for unit in units.values():
+        assert unit["tables"] == ["B25103"]
+        assert unit["variables_hash"] == "tract-now"
+        assert unit["ledger_hash"] == "added-tables-pending:tract-before"
+        assert unit["requested_count"] == 6
+
+    # The request failed part way: the pending mark asks for B25103 again.
+    units = plan(ledger("added-tables-pending:tract-before", "failed"))
+    assert {tuple(unit["tables"]) for unit in units.values()} == {("B25103",)}
+
+    # A slice that failed under the earlier list may hold partial cells, and
+    # one never loaded holds none: both are asked for the whole tract list.
+    for rows in (ledger("tract-before", "failed"), []):
+        units = plan(rows)
+        assert set(units) == set(tract_fips)
+        assert all(unit.get("tables") is None for unit in units.values())
+        assert all("ledger_hash" not in unit for unit in units.values())
+
+    # Finished under today's list: nothing to do.
+    assert plan(ledger("tract-now", "success")) == {}
