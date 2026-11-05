@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from apps.api.schemas.labels import PlainLabelled
 
-RatioKind = Literal["share", "per_capita", "provider_rate", "agency_rate"]
+RatioKind = Literal["share", "per_capita", "ratio", "provider_rate", "agency_rate"]
 PairingStatus = Literal["approved", "draft", "needs_review", "deprecated"]
 #: How a derived margin of error was reached (ADR-0009 rule 4).
 #:

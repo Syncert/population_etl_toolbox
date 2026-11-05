@@ -1,6 +1,6 @@
 """Offline contracts for the Census government finance adapter.
 
-Covers: ETL-114
+Covers: ETL-115
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _config(**overrides: object) -> GovFinConfig:
 def test_configuration_and_registry_import_without_io(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-114 -- importing reads no key, file or network."""
+    """Covers: ETL-115 -- importing reads no key, file or network."""
     monkeypatch.delenv("CENSUS_API_KEY", raising=False)
     for name in list(sys.modules):
         if name.startswith("data_ingestion_toolbox.census_govfin"):
@@ -91,7 +91,7 @@ def test_configuration_and_registry_import_without_io(
 
 
 def test_census_state_codes_are_alphabetical_not_fips() -> None:
-    """Covers: ETL-114 -- the government code's state is Census alphabetical (Arizona 03, FIPS 04)."""
+    """Covers: ETL-115 -- the government code's state is Census alphabetical (Arizona 03, FIPS 04)."""
     assert len(CENSUS_STATE_TO_FIPS) == 51
     assert CENSUS_STATE_TO_FIPS["03"] == "04"
     assert CENSUS_STATE_TO_FIPS["09"] == "11"
@@ -121,12 +121,12 @@ def test_census_state_codes_are_alphabetical_not_fips() -> None:
     ],
 )
 def test_item_codes_count_toward_their_measures(item: str, expected: set[str]) -> None:
-    """Covers: ETL-114 -- each Census item code reaches exactly the measures it belongs to."""
+    """Covers: ETL-115 -- each Census item code reaches exactly the measures it belongs to."""
     assert set(measures_for_item(item)) == expected
 
 
 def test_tax_types_partition_total_taxes() -> None:
-    """Covers: ETL-114 -- every tax item is in the total and in exactly one tax type."""
+    """Covers: ETL-115 -- every tax item is in the total and in exactly one tax type."""
     types = {
         "tax_property", "tax_general_sales", "tax_selective_sales",
         "tax_individual_income", "tax_corporate_income", "tax_other",
@@ -140,7 +140,7 @@ def test_tax_types_partition_total_taxes() -> None:
 
 
 def test_registered_periods_and_slices() -> None:
-    """Covers: ETL-114 -- editions declare their zips, the API its grains, QTAX runs to this year."""
+    """Covers: ETL-115 -- editions declare their zips, the API its grains, QTAX runs to this year."""
     assert registered_periods("cog_units") == tuple(
         e.census_year for e in CENSUS_EDITIONS
     )
@@ -151,7 +151,7 @@ def test_registered_periods_and_slices() -> None:
 
 
 def test_first_run_plans_everything_then_only_the_window() -> None:
-    """Covers: ETL-114 -- the loader rule: unanswered periods are planned without a manual run."""
+    """Covers: ETL-115 -- the loader rule: unanswered periods are planned without a manual run."""
     today = date(2026, 11, 5)
     years = list(registered_periods("qtax", today))
     assert plan.periods_to_capture("qtax", {}, set(), today=today) == years
@@ -175,7 +175,7 @@ def test_first_run_plans_everything_then_only_the_window() -> None:
 
 
 def test_answered_needs_every_declared_slice() -> None:
-    """Covers: ETL-114 -- an edition with only its units zip published is asked for again."""
+    """Covers: ETL-115 -- an edition with only its units zip published is asked for again."""
 
     class _Cursor:
         def __init__(self, rows):
@@ -208,7 +208,7 @@ def test_answered_needs_every_declared_slice() -> None:
 
 
 def test_key_rides_only_on_the_request_and_never_in_the_slice_or_error() -> None:
-    """Covers: ETL-114 -- the Census key is never captured, fingerprinted or raised."""
+    """Covers: ETL-115 -- the Census key is never captured, fingerprinted or raised."""
     payload = json.dumps([[*GOVS_VARIABLES, "time", "state"]]).encode()
     client = _ScriptedClient([httpx.Response(200, content=payload)])
     response = fetch_api_slice("asslgf", 2022, "state", config=_config(), client=client)
@@ -226,7 +226,7 @@ def test_key_rides_only_on_the_request_and_never_in_the_slice_or_error() -> None
 
 
 def test_no_content_is_an_empty_slice_and_a_client_error_is_not_retried() -> None:
-    """Covers: ETL-114 -- 204 is a published absence; 400 fails at once."""
+    """Covers: ETL-115 -- 204 is a published absence; 400 fails at once."""
     empty = fetch_api_slice(
         "qtax",
         1994,
@@ -243,7 +243,7 @@ def test_no_content_is_an_empty_slice_and_a_client_error_is_not_retried() -> Non
 
 
 def test_archive_must_be_a_zip_holding_the_registered_member() -> None:
-    """Covers: ETL-114 -- an HTML error page or a zip without the unit file is refused."""
+    """Covers: ETL-115 -- an HTML error page or a zip without the unit file is refused."""
     archive = get_edition(census_govfin.UNIT_YEAR).archives[0]
     assert archive.path == census_govfin.UNIT_ARCHIVE_PATH
     with pytest.raises(GovFinPayloadError) as raised:
@@ -277,7 +277,7 @@ def test_archive_must_be_a_zip_holding_the_registered_member() -> None:
 
 
 def test_unit_fixture_parses_with_quarantine_reasons() -> None:
-    """Covers: ETL-114 -- each record is read by position; a bad one is set aside with a reason."""
+    """Covers: ETL-115 -- each record is read by position; a bad one is set aside with a reason."""
     edition = get_edition(census_govfin.UNIT_YEAR)
     archive = edition.archives[0]
     parsed = parse_archive(edition, archive, census_govfin.unit_bundle())
@@ -319,7 +319,7 @@ def _fixed(width: int, **fields: tuple[int, str]) -> str:
 
 
 def test_2012_alphabetical_records_map_to_fips() -> None:
-    """Covers: ETL-114 -- 2012 codes use Census alphabetical states; the directory gives FIPS."""
+    """Covers: ETL-115 -- 2012 codes use Census alphabetical states; the directory gives FIPS."""
     edition = get_edition(2012)
     amounts, quarantined, _ = parse_unit_lines(
         ["0100000000000019T      7352842012R"], edition.data_layout
@@ -360,7 +360,7 @@ def test_2012_alphabetical_records_map_to_fips() -> None:
 
 
 def test_2002_is_reported_only_and_reads_its_longer_directory() -> None:
-    """Covers: ETL-114 -- 2002 has no imputation flag, no state totals, and a 161-character directory."""
+    """Covers: ETL-115 -- 2002 has no imputation flag, no state totals, and a 161-character directory."""
     edition = get_edition(2002)
     assert edition.record_coverage == "reported_only"
     assert edition.state_total_layout is None
@@ -389,7 +389,7 @@ def test_2002_is_reported_only_and_reads_its_longer_directory() -> None:
 
 
 def test_a_non_numeric_amount_is_missing_never_zero() -> None:
-    """Covers: ETL-114 -- Census text that is not a number is kept as missing."""
+    """Covers: ETL-115 -- Census text that is not a number is kept as missing."""
     line = "50201300100000T01" + "(X)".rjust(12) + " " * 6
     amounts, quarantined, count = parse_unit_lines([line], UNIT_LAYOUT_2002)
     assert count == 1 and not quarantined
