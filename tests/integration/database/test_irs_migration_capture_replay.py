@@ -190,10 +190,14 @@ def test_a_rerun_adds_nothing_and_a_revised_file_is_kept_beside_the_old(
     assert history[0][1] != history[1][1]
     # The second read repeats the first byte for byte: recorded, not stored again.
     assert _rows(
-        factory, "SELECT DISTINCT status FROM control.irs_migration_file WHERE run_id = %s", (str(second),)
+        factory,
+        "SELECT DISTINCT status FROM control.irs_migration_file WHERE run_id = %s",
+        (str(second),),
     ) == [("unchanged",)]
     assert _rows(
-        factory, "SELECT COUNT(*) FROM silver_irs_migration.fact_flow WHERE run_id = %s", (str(second),)
+        factory,
+        "SELECT COUNT(*) FROM silver_irs_migration.fact_flow WHERE run_id = %s",
+        (str(second),),
     ) == [(0,)]
     assert _rows(
         factory,

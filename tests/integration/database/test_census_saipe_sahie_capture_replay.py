@@ -205,10 +205,14 @@ def test_rerun_is_idempotent_and_a_changed_response_keeps_both_checksums(
     assert history[1][0] == "1"
     # The second read repeats the first byte for byte: recorded, not stored again.
     assert _rows(
-        sae_warehouse, "SELECT DISTINCT status FROM control.census_sae_slice WHERE run_id = %s", (str(second_run),)
+        sae_warehouse,
+        "SELECT DISTINCT status FROM control.census_sae_slice WHERE run_id = %s",
+        (str(second_run),),
     ) == [("unchanged",)]
     assert _rows(
-        sae_warehouse, "SELECT COUNT(*) FROM silver_census_sae.fact_estimate WHERE run_id = %s", (str(second_run),)
+        sae_warehouse,
+        "SELECT COUNT(*) FROM silver_census_sae.fact_estimate WHERE run_id = %s",
+        (str(second_run),),
     ) == [(0,)]
     current = _rows(
         sae_warehouse,

@@ -171,10 +171,14 @@ def test_a_rerun_is_idempotent_and_a_changed_file_keeps_both_checksums(
     assert history[0][1] != history[1][1]
     # The second read repeats the first byte for byte: recorded, not stored again.
     assert _rows(
-        factory, "SELECT DISTINCT status FROM control.census_bps_slice WHERE run_id = %s", (str(second),)
+        factory,
+        "SELECT DISTINCT status FROM control.census_bps_slice WHERE run_id = %s",
+        (str(second),),
     ) == [("unchanged",)]
     assert _rows(
-        factory, "SELECT COUNT(*) FROM silver_census_bps.fact_observation WHERE run_id = %s", (str(second),)
+        factory,
+        "SELECT COUNT(*) FROM silver_census_bps.fact_observation WHERE run_id = %s",
+        (str(second),),
     ) == [(0,)]
     assert _rows(
         factory,

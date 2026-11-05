@@ -175,10 +175,14 @@ def test_a_rerun_adds_nothing_and_a_corrected_file_is_kept_beside_the_old(
     assert history[0][1] != history[1][1]
     # The second read repeats the first byte for byte: recorded, not stored again.
     assert _rows(
-        factory, "SELECT DISTINCT status FROM control.census_cbp_file WHERE run_id = %s", (str(second),)
+        factory,
+        "SELECT DISTINCT status FROM control.census_cbp_file WHERE run_id = %s",
+        (str(second),),
     ) == [("unchanged",)]
     assert _rows(
-        factory, "SELECT COUNT(*) FROM silver_census_cbp.fact_observation WHERE run_id = %s", (str(second),)
+        factory,
+        "SELECT COUNT(*) FROM silver_census_cbp.fact_observation WHERE run_id = %s",
+        (str(second),),
     ) == [(0,)]
     assert (
         _rows(factory, "SELECT COUNT(*) FROM gold_census_cbp.observation_latest")
