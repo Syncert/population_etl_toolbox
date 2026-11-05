@@ -18,6 +18,7 @@ from apps.api.schemas.migration import MigrationFlowsResponse, MigrationRow
 from apps.api.services.neutral_observations_service import NeutralQueryError
 from data_ingestion_toolbox.irs_migration.registry import (
     CATEGORY_LABELS,
+    FIRST_AGI_YEAR1,
     FIRST_INDIVIDUALS_YEAR2,
     MEASURES,
     TOTAL_CATEGORIES,
@@ -49,17 +50,41 @@ EXEMPTION_ERA_CAVEATS: tuple[str, ...] = (
     "the movers' adjusted gross income on the year-2 return, in thousands "
     "of dollars.",
     "Flows below SOI's disclosure threshold for these years (10 returns in "
-    "the 2011-2012 guide, 20 in the 2017-2018 guide) are aggregated by SOI "
-    "into its Other flows categories; a category SOI deleted to protect "
+    "the 2011-2012 guide, 20 in the 2017-2018 guide; before 2011-2012 the "
+    "files list flows from 10 returns) are aggregated by SOI into its "
+    "Other flows or Region categories; a category SOI deleted to protect "
     "taxpayers is withheld, not zero.",
     FLOW_CAVEATS[2],
 )
 
 
+#: Added for a pair before 2011-2012.
+PARTIAL_YEAR_CAVEAT = (
+    "Before 2011-2012 SOI matched returns on the primary filer only and "
+    "counted returns processed by late September (95 to 98 percent of the "
+    "year's returns), so these years are not directly comparable with later "
+    "ones."
+)
+
+#: Added for a pair before 1995-1996.
+NO_AGI_CAVEAT = (
+    "SOI's files before 1995-1996 publish no adjusted gross income (the "
+    "1992-1993 to 1994-1995 files carry total money income instead), so AGI "
+    "is empty for these years."
+)
+
+
 def flow_caveats(year_pair: str) -> tuple[str, ...]:
     """The caveats for one pair of filing years."""
-    year2 = int(year_pair.split("-")[1])
-    return FLOW_CAVEATS if year2 >= FIRST_INDIVIDUALS_YEAR2 else EXEMPTION_ERA_CAVEATS
+    year1, year2 = (int(part) for part in year_pair.split("-"))
+    if year2 >= FIRST_INDIVIDUALS_YEAR2:
+        return FLOW_CAVEATS
+    caveats = EXEMPTION_ERA_CAVEATS
+    if year1 < 2011:
+        caveats = (*caveats, PARTIAL_YEAR_CAVEAT)
+    if year1 < FIRST_AGI_YEAR1:
+        caveats = (*caveats, NO_AGI_CAVEAT)
+    return caveats
 
 
 class MigrationNotPublishedError(LookupError):

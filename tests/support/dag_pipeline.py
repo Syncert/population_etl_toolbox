@@ -973,23 +973,27 @@ def stub_census_saipe_sahie(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed Delaware SOI files.
 
-    Three of the ten registered files have fixtures. The others answer with
-    their registered header and no rows, so the run captures, replays and
-    publishes every file without a network call.
+    Three of the CSV files have fixtures; the other CSVs answer with their
+    registered header and no rows. A zip (before 2011-2012) answers with
+    the reviewed Delaware members of its layout. The run captures, replays
+    and publishes every file without a network call.
     """
     from data_ingestion_toolbox.irs_migration import capture as irs_capture
     from data_ingestion_toolbox.irs_migration.client import (
         MigrationResponse,
         expected_header,
     )
+    from tests.support.irs_migration_zips import zip_payload_for
 
     def fetch(item: Any, **_kwargs: Any) -> MigrationResponse:
         path = FIXTURE_ROOT / "irs_migration" / item.path.lstrip("/")
-        payload = (
-            path.read_bytes()
-            if path.is_file()
-            else (",".join(expected_header(item)) + "\n").encode("ascii")
-        )
+        stand_in = zip_payload_for(item.path)
+        if stand_in is not None:
+            payload = stand_in
+        elif path.is_file():
+            payload = path.read_bytes()
+        else:
+            payload = (",".join(expected_header(item)) + "\n").encode("ascii")
         return MigrationResponse(
             item.path,
             {"direction": item.direction, "year_pair": item.year_pair},

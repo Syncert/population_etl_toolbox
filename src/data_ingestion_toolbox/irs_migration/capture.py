@@ -22,7 +22,7 @@ from data_ingestion_toolbox.capture import (
 )
 from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
-from .client import fetch_file
+from .client import fetch_file, media_type
 from .config import IRS_SOI_BASE_URL, SOURCE_CODE, IrsMigrationConfig
 from .registry import MigrationFile
 
@@ -37,6 +37,13 @@ LATEST_PUBLISHED_SQL = """
     ORDER BY file.published_at DESC
     LIMIT 1
 """
+
+#: The contract each layout's capture is parsed under.
+PARSER_CONTRACT_VERSIONS = {
+    "csv": PARSER_CONTRACT_VERSION,
+    "workbooks": "irs_soi_county_migration_state_workbooks:v1",
+    "text": "irs_soi_county_migration_state_text:v1",
+}
 
 
 def capture_file(
@@ -86,9 +93,9 @@ def capture_file(
                 retrieved_at=datetime.now(UTC),
                 http_status=response.http_status,
                 response_headers=dict(response.response_headers),
-                media_type="text/csv",
+                media_type=media_type(item),
                 payload=response.raw_bytes,
-                payload_schema_version=PARSER_CONTRACT_VERSION,
+                payload_schema_version=PARSER_CONTRACT_VERSIONS[item.layout],
                 source_revision=f"{item.direction}:{item.year_pair}",
             ),
         )
@@ -100,7 +107,7 @@ def capture_file(
                 LATEST_PUBLISHED_SQL,
                 (item.direction, item.year_pair),
                 payload_checksum=receipt.payload_checksum,
-                parser_contract=PARSER_CONTRACT_VERSION,
+                parser_contract=PARSER_CONTRACT_VERSIONS[item.layout],
             )
             else "captured"
         )

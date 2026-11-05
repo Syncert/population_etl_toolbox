@@ -13,37 +13,49 @@ its own fact shape ([ADR-0008](../decisions/0008-origin-destination-flow-facts.m
 pipeline requests from `https://www.irs.gov/pub/irs-soi/`. No credential is
 needed.
 
-| File | Path | Subject county |
-| --- | --- | --- |
-| County inflow | `countyinflowYYYY.csv` (`2223` for 2022-2023) | the destination (year 2) |
-| County outflow | `countyoutflowYYYY.csv` | the origin (year 1) |
+| Years | File | Path | Subject county |
+| --- | --- | --- | --- |
+| 2011-2012 on | County inflow | `countyinflowYYYY.csv` (`2223` for 2022-2023) | the destination (year 2) |
+| 2011-2012 on | County outflow | `countyoutflowYYYY.csv` | the origin (year 1) |
+| 2004-2005 to 2010-2011 | Both directions, one zip | `countyYYYY.zip` (`county0405.zip`) | as above |
+| 1990-1991 to 2003-2004 | Both directions, one zip | `YYYYtoYYYYcountymigration.zip` | as above |
 
-The pairs of filing years from 2011-2012 to 2022-2023 are registered. The
-files from 2011-2012 to 2017-2018 have the same columns and counterpart
-codes as the newer ones (SOI's users guides for 2011-2012 and 2017-2018),
-with three differences:
+All 33 pairs of filing years from 1990-1991 to 2022-2023 are registered,
+in these layouts:
 
-| | 2011-2012 to 2017-2018 | From 2018-2019 |
-| --- | --- | --- |
-| `n2` (served as `individuals`) | Exemptions claimed on the year-2 return, which approximate people | Individuals (personal exemptions ended with tax year 2018) |
-| State summary rows | Each state opens with five rows for subject county `000`: counted in the file's row count, not loaded | None |
-| Smallest county flow shown | 10 returns in the 2011-2012 guide; the 2017-2018 guide says 20 | 20 returns |
+| Pairs | Layout | `n2` (served as `individuals`) | Third measure | State summary rows |
+| --- | --- | --- | --- | --- |
+| 2018-2019 on | CSV | Individuals | AGI | None |
+| 2011-2012 to 2017-2018 | CSV, same columns | Exemptions claimed | AGI | Five per state, subject county `000`: counted, not loaded |
+| 1995-1996 to 2010-2011 | Zip of one workbook per state and direction, the CSV's nine columns | Exemptions | AGI | As above |
+| 1992-1993 to 1994-1995 | Zip of workbooks, earlier codes (below) | Exemptions | Total money income: **not loaded as AGI** (kept in `value_source`) | None |
+| 1990-1991, 1991-1992 | Zip of one fixed-width text file per state and direction | Exemptions | None | None |
+
+Personal exemptions ended with tax year 2018, so 2018-2019 is the first
+pair whose `n2` counts people directly. Before 2011-2012 SOI matched
+returns on the primary filer only and counted returns processed by late
+September, about 95 to 98 percent of a year's returns; the 2011-2012 file
+starts SOI's full-year series. Read the years either side of that break as
+two series.
 
 Gold's `flow_revision`, `flow_latest`, `total_observation_revision` and
 `total_observation_latest` carry `people_basis` (`exemptions` or
-`individuals`) on every row, and `/api/v1/migration-flows` states it in its
-caveats for an older pair. In every year a smaller flow is in one of SOI's
-Other flows rows and nothing is moved into a county.
+`individuals`) on every row. The totals publish no AGI row before
+1995-1996. `/api/v1/migration-flows` states the era's caveats with an
+older pair.
 
-Before 2011-2012 SOI matched returns on the primary filer only, counted
-returns filed by late September, and published each pair as a zip of
-per-state workbooks rather than these CSVs. Those pairs (1990-1991 to
-2010-2011) need their own reader and are not registered yet.
+A zip member's name does not say reliably what it holds (`co0304OH0.xls`
+beside `co0304OHo.xls`; `co1011ohi.xls` is Hawaii's outflow), so a
+workbook's direction is read from its title row and a member whose bytes
+repeat another's is read once. A workbook whose title names no direction,
+or bytes that are not a workbook, refuse the whole file (`quarantined`).
+Workbooks are read by `utility/xls.py`, with the standard library only.
+
 SOI labels a pair by the calendar years the returns were filed (2022-2023
 is returns filed in 2022 matched to returns filed in 2023); the warehouse
 keeps that label as `year_pair`.
 
-Each county's rows, in SOI's order:
+Each county's rows, in SOI's order (files from 1995-1996):
 
 | Counterpart code | What it is |
 | --- | --- |
@@ -53,8 +65,25 @@ Each county's rows, in SOI's order:
 | `58000`, `59000`, `59001`-`59007` | Other flows: same state, different state, and by region |
 | `57001`-`57009` | Foreign: overseas, Puerto Rico, APO/FPO, US Virgin Islands, other |
 
-A category SOI deleted is `-1` in all three measures and is loaded as
-`withheld` with no value. Nothing is moved from a category into counties.
+Before 1995-1996 the same rows carry other codes, kept as written:
+
+| Counterpart code | What it is | Category |
+| --- | --- | --- |
+| `00001` | The county's total migration | `total_us_and_foreign` |
+| a state and county | A county-to-county flow (10 returns or more) | `county` |
+| `57001`-`57009` | Foreign, as above | `foreign_*` |
+| `63011`-`63014` | Region 1 to 4: every remaining flow, by region | `other_flows_northeast` ... `other_flows_west` |
+| `63015` | Remaining foreign flows | `foreign_other_flows` |
+| `63050` | Non-migrants | `non_migrants` |
+
+The 1990-1991 and 1991-1992 text files write these as lines (a county's
+`Total Migration` line, its flows, `Region` lines, `County Non-Migrants`)
+and are stored under the same codes. Those years have only the total and
+non-migrants as file totals.
+
+A category SOI deleted is `-1` in the CSVs and `d` in the workbooks, in
+all three measures, and is loaded as `withheld` with no value. Nothing is
+moved from a category into counties.
 
 ## Schedule and scope
 
@@ -62,9 +91,10 @@ The DAG runs at 15:00 UTC on the 5th of each month. SOI publishes a new
 pair of years about once a year and seldom revises an older one. Each
 scheduled run (`irs_migration.plan`) captures the newest two registered
 pairs again, and every registered pair whose inflow or outflow file has
-never been published. On a fresh warehouse that is every pair, 24 files
-of about 4.5 MB each, through the one-slot `irs_soi_files` pool; once all
-are in it is four files a run. A file that failed or was quarantined is
+never been published. On a fresh warehouse that is every pair: 66 files
+through the one-slot `irs_soi_files` pool (24 CSVs of about 4.5 MB and,
+before 2011-2012, each pair's zip of 2.5 to 15 MB fetched once per
+direction and stored once). Once all are in it is four files a run. A file that failed or was quarantined is
 not published, so its pair is asked for again on the next run. No manual
 history run is needed; `{"history": true}` in the run's conf re-captures
 every registered pair:
@@ -139,5 +169,6 @@ it as a parser fault.
 - `DQ-IRS-002` is the file-ledger reconciliation and runs in the daily
   sweep.
 - `DQ-IRS-004` warns when, in the newest published file, a county's flows,
-  Other flows and foreign rows do not sum to the file's own total
+  Other flows (or, before 1995-1996, Region rows) and foreign rows do not
+  sum to the file's own total
   migration (exactly when nothing is withheld, at most when something is).
