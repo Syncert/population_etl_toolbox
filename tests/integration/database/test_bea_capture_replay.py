@@ -143,10 +143,26 @@ def test_the_publisher_names_each_line_with_its_unit_and_harvests(
 def test_a_rerun_adds_nothing_and_a_new_release_is_kept_beside_the_old(
     bea_warehouse,
 ) -> None:
-    """Covers: ETL-058 — the same bytes change nothing; a revised release is a second row."""
+    """Covers: ETL-058 — the same bytes are recorded unchanged and add no row; a revised release is a second row."""
     factory = bea_warehouse
     first, _f, _p = bea.run_to_gold(factory, "CAINC1")
-    second, _f, _p = bea.run_to_gold(factory, "CAINC1")
+    facts_before = _rows(factory, "SELECT COUNT(*) FROM silver_bea.fact_observation")
+    second, facts, published = bea.run_to_gold(factory, "CAINC1")
+    assert (facts, published) == (0, 0)
+    assert _rows(
+        factory,
+        "SELECT status FROM control.bea_table_capture WHERE run_id = %s",
+        (str(second),),
+    ) == [("unchanged",)]
+    assert (
+        _rows(factory, "SELECT COUNT(*) FROM silver_bea.fact_observation")
+        == facts_before
+    )
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_bea.observation_revision WHERE run_id = %s",
+        (str(second),),
+    ) == [(0,)]
     count = _rows(factory, "SELECT COUNT(*) FROM gold_bea.observation_latest")
 
     def revise(content: bytes) -> bytes:
@@ -172,9 +188,9 @@ def test_a_rerun_adds_nothing_and_a_new_release_is_kept_beside_the_old(
         ORDER BY revision.retrieved_at
         """,
     )
-    assert [row[3] for row in history] == [str(first), str(second), str(third)]
-    assert history[0][2] == history[1][2] != history[2][2]
-    assert [row[1] for row in history] == ["2026-02-05", "2026-02-05", "2026-11-19"]
+    assert [row[3] for row in history] == [str(first), str(third)]
+    assert history[0][2] != history[1][2]
+    assert [row[1] for row in history] == ["2026-02-05", "2026-11-19"]
     assert _rows(
         factory,
         """

@@ -95,8 +95,12 @@ nonmetropolitan county): it is `not_meaningful` with no value.
 
 The DAG runs at 14:00 UTC every Wednesday. BEA releases county personal
 income each November and county GDP each December, and revises earlier years
-with every release. A run that finds the same bytes adds a capture and no
-observation. A new release is kept beside the one it revised, and
+with every release. A run that finds the same bytes as the table's last
+published capture records that table `unchanged` in
+`control.bea_table_capture` and adds no observation. A county table is
+replayed anyway when a CBSA delineation was loaded after its last
+publication, so its metro areas follow the new delineation; a parser
+contract change also replays. A new release is kept beside the one it revised, and
 `observation_latest` serves the newest release date.
 
 Every run reads every year of every registered table, so a fresh warehouse
@@ -117,7 +121,7 @@ airflow pools set bea_files 1 'BEA regional bulk files (serialized)'
 ## What a run does
 
 1. Commits one capture per table and records it in
-   `control.bea_table_capture`.
+   `control.bea_table_capture`; an `unchanged` table stops here.
 2. Replays each capture into `silver_bea.observation_revision`: one row per
    registered line, geography and year. Rows whose table, geography code or
    column count cannot be read go to `observation_quarantine`. It writes the
