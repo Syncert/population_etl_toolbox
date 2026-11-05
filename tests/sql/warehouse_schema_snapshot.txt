@@ -846,6 +846,31 @@ r control.irs_migration_file
     index irs_migration_file_capture_idx CREATE INDEX irs_migration_file_capture_idx ON control.irs_migration_file USING btree (capture_id)
     index irs_migration_file_pkey CREATE UNIQUE INDEX irs_migration_file_pkey ON control.irs_migration_file USING btree (run_id)
 
+r control.irs_soi_file
+    column run_id uuid NOT NULL
+    column file_kind text NOT NULL
+    column tax_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column quarantined_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint irs_soi_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint irs_soi_file_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint irs_soi_file_file_kind_check CHECK ((file_kind = ANY (ARRAY['county_total'::text, 'county_agi'::text, 'state'::text])))
+    constraint irs_soi_file_pkey PRIMARY KEY (run_id)
+    constraint irs_soi_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint irs_soi_file_quarantine_within_rows CHECK ((quarantined_row_count <= captured_row_count))
+    constraint irs_soi_file_quarantined_row_count_check CHECK ((quarantined_row_count >= 0))
+    constraint irs_soi_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint irs_soi_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint irs_soi_file_tax_year_check CHECK (((tax_year >= 1989) AND (tax_year <= 2100)))
+    index irs_soi_file_capture_idx CREATE INDEX irs_soi_file_capture_idx ON control.irs_soi_file USING btree (capture_id)
+    index irs_soi_file_period_idx CREATE INDEX irs_soi_file_period_idx ON control.irs_soi_file USING btree (file_kind, tax_year, status)
+    index irs_soi_file_pkey CREATE UNIQUE INDEX irs_soi_file_pkey ON control.irs_soi_file USING btree (run_id)
+
 r control.nces_ccd_file
     column run_id uuid NOT NULL
     column component text NOT NULL
@@ -8451,6 +8476,202 @@ v gold_irs_migration.total_observation_revision
     body      CROSS JOIN ( VALUES ('returns'::text,'returns'::text), ('individuals'::text,'individuals'::text), ('agi'::text,'thousands of dollars'::text)) measure(measure, unit)
     body   WHERE revision.category = ANY (ARRAY['total_us_and_foreign'::text, 'total_us'::text, 'total_same_state'::text, 'total_different_state'::text, 'total_foreign'::text, 'non_migrants'::text]);
 
+v gold_irs_soi.measure_export
+    column source_object_key text
+    column measure_id text
+    column measure_label text
+    column soi_column text
+    column unit text
+    column agi_band text
+    column band_label text
+    column schema_version text
+    body SELECT measure.measure_id ||
+    body         CASE
+    body             WHEN band.agi_band = 'all'::text THEN ''::text
+    body             ELSE ':'::text || band.agi_band
+    body         END AS source_object_key,
+    body     measure.measure_id,
+    body     measure.measure_label,
+    body     measure.soi_column,
+    body     measure.unit,
+    body     band.agi_band,
+    body     band.band_label,
+    body     measure.parser_contract_version AS schema_version
+    body    FROM silver_irs_soi.dim_measure measure
+    body      CROSS JOIN silver_irs_soi.dim_agi_band band;
+
+v gold_irs_soi.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'IRS_SOI'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     (((export.measure_label ||
+    body         CASE
+    body             WHEN export.agi_band = 'all'::text THEN ''::text
+    body             ELSE ', AGI '::text || export.band_label
+    body         END) || ' ('::text) || export.unit) || ', IRS SOI)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_irs_soi', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'IRS Statistics of Income individual income tax statistics by county and state'::text AS source_name,
+    body     'government-administrative-records'::text AS source_type,
+    body     'https://www.irs.gov/statistics/soi-tax-stats-county-data'::text AS reference_url
+    body    FROM ( SELECT latest.metric_key,
+    body             max(latest.tax_year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(file.published_at) AS publication_time
+    body            FROM gold_irs_soi.observation_latest latest
+    body              JOIN control.irs_soi_file file ON file.capture_id = latest.capture_id
+    body           GROUP BY latest.metric_key) served
+    body      JOIN gold_irs_soi.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_irs_soi.observation_latest
+    column metric_key text
+    column measure_id text
+    column measure_label text
+    column soi_column text
+    column unit text
+    column agi_band text
+    column band_label text
+    column agi_lower_dollars bigint
+    column agi_upper_dollars bigint
+    column file_kind text
+    column product text
+    column tax_year integer
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value_source text
+    column value numeric
+    column value_status text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, tax_year) metric_key,
+    body     measure_id,
+    body     measure_label,
+    body     soi_column,
+    body     unit,
+    body     agi_band,
+    body     band_label,
+    body     agi_lower_dollars,
+    body     agi_upper_dollars,
+    body     file_kind,
+    body     product,
+    body     tax_year,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_irs_soi.observation_revision revision
+    body   ORDER BY metric_key, geo_id, tax_year, (product = 'county'::text) DESC, retrieved_at DESC, capture_id DESC;
+
+v gold_irs_soi.observation_revision
+    column metric_key text
+    column measure_id text
+    column measure_label text
+    column soi_column text
+    column unit text
+    column agi_band text
+    column band_label text
+    column agi_lower_dollars bigint
+    column agi_upper_dollars bigint
+    column file_kind text
+    column product text
+    column tax_year integer
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value_source text
+    column value numeric
+    column value_status text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT fact.metric_key,
+    body     fact.measure_id,
+    body     measure.measure_label,
+    body     measure.soi_column,
+    body     measure.unit,
+    body     fact.agi_band,
+    body     band.band_label,
+    body     band.lower_dollars AS agi_lower_dollars,
+    body     band.upper_dollars AS agi_upper_dollars,
+    body     fact.file_kind,
+    body         CASE
+    body             WHEN fact.file_kind = 'state'::text THEN 'state'::text
+    body             ELSE 'county'::text
+    body         END AS product,
+    body     fact.tax_year,
+    body     fact.tax_year AS year,
+    body     make_date(fact.tax_year, 1, 1) AS period_start,
+    body     make_date(fact.tax_year, 12, 31) AS period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.retrieved_at,
+    body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_irs_soi.fact_observation fact
+    body      JOIN silver_irs_soi.dim_measure measure ON measure.measure_id = fact.measure_id
+    body      JOIN silver_irs_soi.dim_agi_band band ON band.agi_band = fact.agi_band
+    body      JOIN control.irs_soi_file file ON file.capture_id = fact.capture_id
+    body   WHERE file.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unmapped'::text, 'unsupported'::text, 'ambiguous'::text])) AND NOT (fact.file_kind = 'county_agi'::text AND fact.agi_band = 'all'::text);
+
 v gold_nass.crop_observation
     column observation_sk bigint
     column product_id text
@@ -12221,6 +12442,120 @@ r silver_irs_migration.flow_revision
     constraint irs_revision_withheld_value_absent CHECK (((value_status <> 'withheld'::text) OR ((returns IS NULL) AND (individuals IS NULL) AND (agi IS NULL))))
     index flow_revision_pkey CREATE UNIQUE INDEX flow_revision_pkey ON silver_irs_migration.flow_revision USING btree (capture_id, source_row_index)
     index irs_flow_revision_run_idx CREATE INDEX irs_flow_revision_run_idx ON silver_irs_migration.flow_revision USING btree (run_id)
+
+r silver_irs_soi.dim_agi_band
+    column agi_band text NOT NULL
+    column band_label text NOT NULL
+    column lower_dollars bigint
+    column upper_dollars bigint
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_agi_band_agi_band_check CHECK ((agi_band ~ '^[a-z0-9_]+$'::text))
+    constraint dim_agi_band_pkey PRIMARY KEY (agi_band)
+    constraint irs_soi_band_ordered CHECK (((lower_dollars IS NULL) OR (upper_dollars IS NULL) OR (lower_dollars < upper_dollars)))
+    index dim_agi_band_pkey CREATE UNIQUE INDEX dim_agi_band_pkey ON silver_irs_soi.dim_agi_band USING btree (agi_band)
+
+r silver_irs_soi.dim_measure
+    column measure_id text NOT NULL
+    column soi_column text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_measure_id_check CHECK ((measure_id ~ '^[a-z0-9_]+$'::text))
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_irs_soi.dim_measure USING btree (measure_id)
+
+r silver_irs_soi.fact_observation
+    column file_kind text NOT NULL
+    column metric_key text NOT NULL
+    column tax_year integer NOT NULL
+    column geo_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column measure_id text NOT NULL
+    column agi_band text NOT NULL
+    column agi_stub integer NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_observation_agi_band_fkey FOREIGN KEY (agi_band) REFERENCES silver_irs_soi.dim_agi_band(agi_band)
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_file_kind_check CHECK ((file_kind = ANY (ARRAY['county_total'::text, 'county_agi'::text, 'state'::text])))
+    constraint fact_observation_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'other'::text])))
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_observation_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_irs_soi.dim_measure(measure_id)
+    constraint fact_observation_pkey PRIMARY KEY (file_kind, metric_key, tax_year, geo_id, capture_id)
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint irs_soi_fact_metric_key CHECK ((metric_key = (measure_id ||
+CASE
+    WHEN (agi_band = 'all'::text) THEN ''::text
+    ELSE (':'::text || agi_band)
+END)))
+    constraint irs_soi_fact_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (value IS NULL)))
+    constraint irs_soi_fact_resolved_has_key CHECK (((geography_status <> 'resolved'::text) OR (geo_sk IS NOT NULL)))
+    constraint irs_soi_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_irs_soi.fact_observation USING btree (file_kind, metric_key, tax_year, geo_id, capture_id)
+    index irs_soi_fact_capture_idx CREATE INDEX irs_soi_fact_capture_idx ON silver_irs_soi.fact_observation USING btree (capture_id)
+    index irs_soi_fact_lookup_idx CREATE INDEX irs_soi_fact_lookup_idx ON silver_irs_soi.fact_observation USING btree (metric_key, geo_id, tax_year)
+    index irs_soi_fact_run_idx CREATE INDEX irs_soi_fact_run_idx ON silver_irs_soi.fact_observation USING btree (run_id)
+
+r silver_irs_soi.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_irs_soi.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_irs_soi.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_irs_soi.observation_quarantine USING btree (quarantine_sk)
+
+r silver_irs_soi.observation_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column measure_id text NOT NULL
+    column run_id uuid NOT NULL
+    column file_kind text NOT NULL
+    column tax_year integer NOT NULL
+    column agi_stub integer NOT NULL
+    column agi_band text NOT NULL
+    column geo_type text NOT NULL
+    column geo_source_code text NOT NULL
+    column geo_source_label text
+    column geo_id text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint irs_soi_revision_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (value IS NULL)))
+    constraint irs_soi_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint observation_revision_agi_band_fkey FOREIGN KEY (agi_band) REFERENCES silver_irs_soi.dim_agi_band(agi_band)
+    constraint observation_revision_agi_stub_check CHECK ((agi_stub >= 0))
+    constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_revision_file_kind_check CHECK ((file_kind = ANY (ARRAY['county_total'::text, 'county_agi'::text, 'state'::text])))
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'other'::text])))
+    constraint observation_revision_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_irs_soi.dim_measure(measure_id)
+    constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index, measure_id)
+    constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint observation_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index irs_soi_revision_run_idx CREATE INDEX irs_soi_revision_run_idx ON silver_irs_soi.observation_revision USING btree (run_id)
+    index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_irs_soi.observation_revision USING btree (capture_id, source_row_index, measure_id)
 
 r silver_nass.dim_commodity
     column commodity_sk text NOT NULL
