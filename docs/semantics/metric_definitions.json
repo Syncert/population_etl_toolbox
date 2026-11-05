@@ -3097,6 +3097,658 @@
       "version": 1,
       "effective_date": "2026-10-31",
       "last_reviewed_date": "2026-10-31"
+    },
+    {
+      "metric_id": "BEA:CAINC35:1000",
+      "metric_codes": [
+        "BEA:CAINC35:1000"
+      ],
+      "name": "Payments to residents from government and others",
+      "definition": "All personal current transfer receipts: payments residents receive without providing work in return, from government (benefits), nonprofits and businesses.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2110",
+      "metric_codes": [
+        "BEA:CAINC35:2110"
+      ],
+      "name": "Social Security payments",
+      "definition": "Old-age, survivors and disability insurance benefits paid to residents.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2210",
+      "metric_codes": [
+        "BEA:CAINC35:2210"
+      ],
+      "name": "Medicare payments",
+      "definition": "Medicare benefits paid for residents' care, counted as their income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2220",
+      "metric_codes": [
+        "BEA:CAINC35:2220"
+      ],
+      "name": "Medicaid and other public medical care",
+      "definition": "Public assistance medical care benefits, mostly Medicaid, paid for residents' care and counted as their income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2310",
+      "metric_codes": [
+        "BEA:CAINC35:2310"
+      ],
+      "name": "Supplemental Security Income payments",
+      "definition": "Supplemental Security Income (SSI) benefits paid to residents with low income who are aged, blind or disabled.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2320",
+      "metric_codes": [
+        "BEA:CAINC35:2320"
+      ],
+      "name": "Earned Income Tax Credit payments",
+      "definition": "The refundable part of the Earned Income Tax Credit paid to working residents with low and moderate income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2330",
+      "metric_codes": [
+        "BEA:CAINC35:2330"
+      ],
+      "name": "SNAP food assistance",
+      "definition": "Supplemental Nutrition Assistance Program benefits paid to residents.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2400",
+      "metric_codes": [
+        "BEA:CAINC35:2400"
+      ],
+      "name": "Unemployment insurance payments",
+      "definition": "Unemployment insurance compensation paid to residents who lost work.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC35:2500",
+      "metric_codes": [
+        "BEA:CAINC35:2500"
+      ],
+      "name": "Veterans' benefits",
+      "definition": "Pension, disability, readjustment, life insurance and other benefits paid to veterans living in the place.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:1000",
+      "metric_codes": [
+        "BEA:SAINC35:1000"
+      ],
+      "name": "Payments to residents from government and others",
+      "definition": "All personal current transfer receipts: payments residents receive without providing work in return, from government (benefits), nonprofits and businesses.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2110",
+      "metric_codes": [
+        "BEA:SAINC35:2110"
+      ],
+      "name": "Social Security payments",
+      "definition": "Old-age, survivors and disability insurance benefits paid to residents.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2210",
+      "metric_codes": [
+        "BEA:SAINC35:2210"
+      ],
+      "name": "Medicare payments",
+      "definition": "Medicare benefits paid for residents' care, counted as their income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2220",
+      "metric_codes": [
+        "BEA:SAINC35:2220"
+      ],
+      "name": "Medicaid and other public medical care",
+      "definition": "Public assistance medical care benefits, mostly Medicaid, paid for residents' care and counted as their income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2310",
+      "metric_codes": [
+        "BEA:SAINC35:2310"
+      ],
+      "name": "Supplemental Security Income payments",
+      "definition": "Supplemental Security Income (SSI) benefits paid to residents with low income who are aged, blind or disabled.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2320",
+      "metric_codes": [
+        "BEA:SAINC35:2320"
+      ],
+      "name": "Earned Income Tax Credit payments",
+      "definition": "The refundable part of the Earned Income Tax Credit paid to working residents with low and moderate income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2330",
+      "metric_codes": [
+        "BEA:SAINC35:2330"
+      ],
+      "name": "SNAP food assistance",
+      "definition": "Supplemental Nutrition Assistance Program benefits paid to residents.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2400",
+      "metric_codes": [
+        "BEA:SAINC35:2400"
+      ],
+      "name": "Unemployment insurance payments",
+      "definition": "Unemployment insurance compensation paid to residents who lost work.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC35:2500",
+      "metric_codes": [
+        "BEA:SAINC35:2500"
+      ],
+      "name": "Veterans' benefits",
+      "definition": "Pension, disability, readjustment, life insurance and other benefits paid to veterans living in the place.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC50:60",
+      "metric_codes": [
+        "BEA:SAINC50:60"
+      ],
+      "name": "Personal taxes paid",
+      "definition": "Personal current taxes: income, property and other taxes residents pay to federal, state and local government.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC50:70",
+      "metric_codes": [
+        "BEA:SAINC50:70"
+      ],
+      "name": "Personal taxes paid to the federal government",
+      "definition": "Federal income taxes residents pay, net of refunds.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC50:120",
+      "metric_codes": [
+        "BEA:SAINC50:120"
+      ],
+      "name": "Personal taxes paid to the state government",
+      "definition": "State income taxes, motor vehicle licences and other taxes residents pay to their state.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC50:180",
+      "metric_codes": [
+        "BEA:SAINC50:180"
+      ],
+      "name": "Personal taxes paid to local governments",
+      "definition": "Local income taxes, motor vehicle licences and other taxes residents pay to local government.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC50:10",
+      "metric_codes": [
+        "BEA:SAINC50:10"
+      ],
+      "name": "Personal income",
+      "definition": "All income residents receive: earnings, dividends, interest and rent, and transfer receipts, as BEA measures it for personal taxes.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands. Personal taxes do not include sales, business or most property taxes, which are not paid by people as people."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:SAINC51:53",
+      "metric_codes": [
+        "BEA:SAINC51:53"
+      ],
+      "name": "Income per person after taxes",
+      "definition": "Per capita disposable personal income: personal income less personal current taxes, divided by BEA's population.",
+      "unit": "dollars",
+      "universe": "residents",
+      "kind": "mean",
+      "caveat": "Current dollars, not adjusted for inflation; gold_bea.disposable_income_real carries it in 2017 dollars at national and at state prices.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, not adjusted for inflation; gold_bea.disposable_income_real carries it in 2017 dollars at national and at state prices."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "BEA:CAINC4:46",
+      "metric_codes": [
+        "BEA:CAINC4:46"
+      ],
+      "name": "Dividends, interest and rent",
+      "definition": "Income residents receive from what they own: dividends, interest and rental income.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where the owners live.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where the owners live."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
     }
   ]
 }

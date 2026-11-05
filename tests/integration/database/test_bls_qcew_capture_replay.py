@@ -139,7 +139,7 @@ def test_the_publisher_states_the_establishment_basis_and_harvests(
 def test_a_rerun_is_idempotent_and_a_changed_file_keeps_both_checksums(
     qcew_warehouse,
 ) -> None:
-    """Covers: ETL-056 — the same bytes add nothing new; a revised file is a second row."""
+    """Covers: ETL-056, ETL-116 — the same bytes store nothing; a revised file is a second row."""
     factory = qcew_warehouse
     first, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))
     second, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))
@@ -171,8 +171,19 @@ def test_a_rerun_is_idempotent_and_a_changed_file_keeps_both_checksums(
         ORDER BY revision.retrieved_at
         """,
     )
-    assert [row[2] for row in history] == [str(first), str(second), str(third)]
-    assert history[0][1] == history[1][1] != history[2][1]
+    assert [row[2] for row in history] == [str(first), str(third)]
+    assert history[0][1] != history[1][1]
+    # The second read repeats the first byte for byte: recorded, not stored again.
+    assert _rows(
+        factory,
+        "SELECT DISTINCT status FROM control.bls_qcew_slice WHERE run_id = %s",
+        (str(second),),
+    ) == [("unchanged",)]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_bls_qcew.fact_observation WHERE run_id = %s",
+        (str(second),),
+    ) == [(0,)]
     assert _rows(
         factory,
         """

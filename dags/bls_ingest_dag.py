@@ -36,6 +36,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from airflow.decorators import dag, task
+from airflow.exceptions import AirflowRescheduleException
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox.silver_ref.geography_guard import (
@@ -148,17 +149,49 @@ def chunk_list(items: list, chunk_size: int) -> list[list]:
 _EST = ZoneInfo("America/New_York")
 
 
-def _compute_delay_until_1am_est() -> timedelta:
+def _next_quota_resume_utc(now: Optional[datetime] = None) -> datetime:
     """
-    Return the timedelta from now until 1:00am US/Eastern on the next calendar day.
+    Return the next 1:00am US/Eastern after a daily-quota stop, as a UTC datetime.
 
-    Using the next calendar day (not +24h) means the retry always lands at 01:00
-    regardless of when within the current day the threshold was hit.
+    The target is 01:00 on the next Eastern calendar day (not +24h), so the
+    resume always lands at 01:00 regardless of when in the day the quota ran
+    out. The answer is converted to UTC before any arithmetic: subtracting two
+    datetimes that share a ``ZoneInfo`` is wall-clock arithmetic in Python and
+    would be an hour off on the nights the clocks change.
     """
-    now_est = datetime.now(_EST)
-    next_day = (now_est + timedelta(days=1)).date()
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    next_day = (now_utc.astimezone(_EST) + timedelta(days=1)).date()
     target = datetime(next_day.year, next_day.month, next_day.day, 1, 0, 0, tzinfo=_EST)
-    return target - now_est
+    return target.astimezone(timezone.utc)
+
+
+def _compute_delay_until_1am_est(now: Optional[datetime] = None) -> timedelta:
+    """Return the real time from ``now`` until :func:`_next_quota_resume_utc`."""
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return _next_quota_resume_utc(now_utc) - now_utc
+
+
+def _quota_pause(
+    exc: BaseException, now: Optional[datetime] = None
+) -> AirflowRescheduleException:
+    """
+    Build the reschedule request that parks a quota-stopped batch until 1:00am ET.
+
+    Why a reschedule and not a retry: the scheduler decides when a retry runs
+    from ``retry_delay`` on its own copy of the task (the serialized DAG), so a
+    delay written onto ``ti.task`` inside the worker never reaches it and every
+    pause waited the static 23-hour fallback instead. An
+    ``AirflowRescheduleException`` carries the resume time itself: Airflow
+    stores it in ``task_reschedule`` and the scheduler leaves the mapped task
+    instance ``up_for_reschedule`` (releasing its pool slot) until then. A
+    reschedule also does not spend one of the task's retries, so a long
+    backfill can pause as many nights as it needs while real failures keep
+    their own retry budget.
+    """
+    resume_at = _next_quota_resume_utc(now)
+    pause = AirflowRescheduleException(reschedule_date=resume_at)
+    pause.__cause__ = exc
+    return pause
 
 
 def _run_one_work_unit(work_unit: dict) -> int:
@@ -305,17 +338,11 @@ def _run_one_work_unit(work_unit: dict) -> int:
         return int(rows_loaded)
 
     except BlsDailyThresholdExceeded as e:
-        # BLS daily API quota exhausted.  Mark slice 'planned' so the Airflow
-        # retry picks it up, then re-raise so Airflow records the task as
-        # up_for_retry rather than success.
+        # BLS daily API quota exhausted.  Mark slice 'planned' so the resumed
+        # task picks it up, then re-raise so the batch stops here.
         #
-        # Before re-raising, write the computed delay onto ti.task.retry_delay.
-        # Airflow reads this attribute when scheduling the retry; overriding it
-        # here targets 1:00am US/Eastern on the next calendar day regardless of
-        # when within the current day the threshold was hit.  The task runs in
-        # an isolated worker process, so mutating the task object is safe.
-        # ingest_batch has retries=10, covering up to 10 consecutive days of
-        # quota exhaustion — adequate for extensive backfills.
+        # ``ingest_batch`` turns the exception into an Airflow reschedule for
+        # 1:00am US/Eastern the next calendar day (see ``_quota_pause``).
         finished = datetime.now(timezone.utc)
         err_txt = sanitize_error_message(e)
         sql_planned = """
@@ -346,17 +373,12 @@ def _run_one_work_unit(work_unit: dict) -> int:
             )
             conn.commit()
 
-        retry_delay = _compute_delay_until_1am_est()
-        retry_at_str = (datetime.now(_EST) + retry_delay).strftime("%Y-%m-%d %H:%M %Z")
-        try:
-            ctx = get_current_context()
-            ctx["ti"].task.retry_delay = retry_delay
-        except Exception:
-            pass  # Outside Airflow (unit tests): fall back to decorator default.
-
+        retry_at_str = (
+            _next_quota_resume_utc().astimezone(_EST).strftime("%Y-%m-%d %H:%M %Z")
+        )
         logger.warning(
             "[BLS] Daily API threshold exceeded for %s %s-%s (geo=%s, state=%s) — "
-            "Airflow will retry at %s.",
+            "Airflow will resume at %s.",
             program,
             start_year,
             end_year,
@@ -443,12 +465,15 @@ def _run_one_work_unit(work_unit: dict) -> int:
             raise
 
 
-def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
+def _is_work_unit_done_for_current_hash(
+    work_unit: dict, since: Optional[datetime] = None
+) -> bool:
     """
     Return True when a slice is already success/empty for this work unit's series hash.
 
-    This is used only during mapped-task retries to avoid re-calling the BLS API
-    for work units that completed successfully in an earlier attempt.
+    Used when a mapped batch re-enters after a retry or a quota pause, to avoid
+    re-calling the BLS API for work units finished in an earlier attempt. With
+    ``since``, only a slice that finished at or after that time counts.
     """
     hook = _get_postgres_hook()
 
@@ -460,7 +485,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
     series_hash = work_unit.get("series_hash")
 
     sql = """
-        SELECT status, series_hash
+        SELECT status, series_hash, finished_at
         FROM control.bls_ingestion_slices
         WHERE program = %s
           AND year_start = %s
@@ -476,8 +501,12 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
     if not row:
         return False
 
-    status, existing_hash = row
-    return status in ("success", "empty") and existing_hash == series_hash
+    status, existing_hash, finished_at = row
+    if status not in ("success", "empty") or existing_hash != series_hash:
+        return False
+    if since is None:
+        return True
+    return finished_at is not None and finished_at >= since
 
 
 @dag(
@@ -843,26 +872,35 @@ def bls_ingest():
     # -----------------------------
     @task(
         pool=BLS_API_POOL,
-        # retries=10 covers up to 10 consecutive days of BLS daily-quota exhaustion
-        # (REQUEST_NOT_PROCESSED), adequate for extensive backfills.  retry_delay is
-        # a static fallback only — the except BlsDailyThresholdExceeded block overrides
-        # it dynamically to target 1:00am US/Eastern the next calendar day.
+        # A BLS daily-quota stop (REQUEST_NOT_PROCESSED) is not a retry: the
+        # batch raises AirflowRescheduleException for 1:00am US/Eastern the next
+        # calendar day (see ``_quota_pause``), which spends no retries and frees
+        # the pool slot while it waits. retries/retry_delay cover only real
+        # failures (network, database); 10 is kept from the old quota policy.
         retries=10,
-        retry_delay=timedelta(hours=23),  # fallback; normally overridden dynamically
+        retry_delay=timedelta(minutes=20),
     )
     def ingest_batch(batch: list[dict]) -> int:
         """Ingest a batch of work units sequentially."""
+        run_started_at: Optional[datetime] = None
         try:
             ctx = get_current_context()
-            try_number = int(ctx["ti"].try_number)
+            run_started_at = ctx["dag_run"].start_date
         except Exception:
-            try_number = 1
+            pass  # Outside Airflow (unit tests): nothing ran earlier in this run.
 
         total = 0
         for work_unit in batch:
-            if try_number > 1 and _is_work_unit_done_for_current_hash(work_unit):
+            # A batch resumed after a quota pause or a retry re-enters here with
+            # the slices it already finished in this DAG run. Skip those so the
+            # day's quota goes to unfinished work. "In this run" (finished at or
+            # after the run started) keeps forced rolling-window slices, which
+            # stay 'success' from earlier runs, from being skipped.
+            if run_started_at is not None and _is_work_unit_done_for_current_hash(
+                work_unit, since=run_started_at
+            ):
                 logger.info(
-                    "[Retry Skip] Skipping already-successful slice on retry: "
+                    "[Resume Skip] Skipping slice already finished in this run: "
                     "program=%s years=%s-%s geo=%s state=%s",
                     work_unit["program"],
                     work_unit["start_year"],
@@ -871,7 +909,10 @@ def bls_ingest():
                     work_unit.get("state_fips"),
                 )
                 continue
-            total += _run_one_work_unit(work_unit)
+            try:
+                total += _run_one_work_unit(work_unit)
+            except BlsDailyThresholdExceeded as exc:
+                raise _quota_pause(exc) from exc
         return total
 
     # -----------------------------
