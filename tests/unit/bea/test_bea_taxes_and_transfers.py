@@ -6,7 +6,7 @@ CAINC35 for the nation and Dane County, Wisconsin, and the nation's rows of
 SAINC35, SAINC50 and SAINC51 from the one state zip, each with its three
 newest year columns, its header and its footer.
 
-Covers: ETL-114
+Covers: ETL-115
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _values(code: str, geo_id: str, year: int) -> dict[str, Decimal | None]:
 
 
 def test_the_new_tables_are_registered_where_bea_publishes_them() -> None:
-    """Covers: ETL-114 — CAINC35 is its own zip; the state tables share SAINC.zip."""
+    """Covers: ETL-115 — CAINC35 is its own zip; the state tables share SAINC.zip."""
     assert get_table("CAINC35").path == "/CAINC35.zip"
     assert get_table("CAINC35").geography == "county"
     for code in ("SAINC35", "SAINC50", "SAINC51"):
@@ -64,7 +64,7 @@ def test_the_new_tables_are_registered_where_bea_publishes_them() -> None:
 
 
 def test_each_state_table_reads_its_own_member_of_the_shared_zip() -> None:
-    """Covers: ETL-114 — one zip, three tables, never the wrong member."""
+    """Covers: ETL-115 — one zip, three tables, never the wrong member."""
     payload = (FIXTURES / "SAINC.zip").read_bytes()
     members = {
         code: every_area_member(payload, "/SAINC.zip", get_table(code))[0]
@@ -78,7 +78,7 @@ def test_each_state_table_reads_its_own_member_of_the_shared_zip() -> None:
 
 
 def test_county_transfer_receipts_parse_by_program_with_their_release() -> None:
-    """Covers: ETL-114 — Dane County's 2022 programs, as BEA published them."""
+    """Covers: ETL-115 — Dane County's 2022 programs, as BEA published them."""
     parsed = _parsed("CAINC35")
     assert parsed.quarantined == ()
     assert parsed.release_date == date(2023, 11, 16)
@@ -92,7 +92,7 @@ def test_county_transfer_receipts_parse_by_program_with_their_release() -> None:
 
 
 def test_state_tables_load_taxes_and_after_tax_income_not_repeats() -> None:
-    """Covers: ETL-114 — SAINC50's repeats of SAINC51 and CAINC1 are counted, not loaded."""
+    """Covers: ETL-115 — SAINC50's repeats of SAINC51 and CAINC1 are counted, not loaded."""
     taxes = _parsed("SAINC50")
     assert taxes.release_date == date(2026, 9, 30)
     nation = _values("SAINC50", "us:1", 2025)
@@ -121,7 +121,7 @@ def test_state_tables_load_taxes_and_after_tax_income_not_repeats() -> None:
 def test_the_component_sums_the_quality_rule_checks_hold_on_bea_rows(
     code: str, geo_id: str, year: int
 ) -> None:
-    """Covers: ETL-114 — DQ-BEA-006's sums are BEA's, proved on its published rows."""
+    """Covers: ETL-115 — DQ-BEA-006's sums are BEA's, proved on its published rows."""
     values = _values(code, geo_id, year)
     checked = 0
     for table, total_line, parts in BEA_COMPONENT_SUMS:
@@ -137,7 +137,7 @@ def test_the_component_sums_the_quality_rule_checks_hold_on_bea_rows(
 
 
 def test_refundable_credits_overlap_the_programs_and_are_in_no_sum() -> None:
-    """Covers: ETL-114 — the EITC is a program and a credit; adding 5000 double-counts it."""
+    """Covers: ETL-115 — the EITC is a program and a credit; adding 5000 double-counts it."""
     for _table, total_line, parts in BEA_COMPONENT_SUMS:
         assert "5000" not in parts and total_line != "5000"
     nation = _values("SAINC35", "us:1", 2025)
@@ -149,7 +149,7 @@ def test_refundable_credits_overlap_the_programs_and_are_in_no_sum() -> None:
 
 
 def test_each_rate_divides_by_personal_income_of_the_same_release() -> None:
-    """Covers: ETL-114 — state rates use SAINC50's own income; county rates CAINC1's."""
+    """Covers: ETL-115 — state rates use SAINC50's own income; county rates CAINC1's."""
     pairings = {
         pairing.ratio_id: pairing
         for pairing in load_registry().values()
@@ -171,7 +171,7 @@ def test_each_rate_divides_by_personal_income_of_the_same_release() -> None:
 
 
 def test_the_weekly_run_captures_every_registered_table_with_no_conf() -> None:
-    """Covers: ETL-114 — the loader rule: a newly registered table needs no history run.
+    """Covers: ETL-115 — the loader rule: a newly registered table needs no history run.
 
     Each BEA zip holds every year of its table, and the scheduled run plans
     every registered table, so the first Wednesday run after this merges

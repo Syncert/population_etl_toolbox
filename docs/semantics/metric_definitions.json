@@ -954,6 +954,93 @@
       "last_reviewed_date": "2026-10-26"
     },
     {
+      "metric_id": "CENSUS_ACS:B25103_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25103_001",
+        "CENSUS_ACS:acs1:B25103_001"
+      ],
+      "name": "Median property tax paid",
+      "definition": "The middle yearly amount of real estate taxes owners pay on their homes.",
+      "unit": "dollars",
+      "universe": "owner-occupied housing units",
+      "kind": "median",
+      "caveat": "Yearly real estate taxes the owners report paying, in the survey year's dollars, with a margin of error.",
+      "intended_use": "Describe what owners in a place pay in property tax, beside its containing places and beside its home values.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Taxes paid on the home and its lot, as owners report them; where a tax is collected is not who bears it, and a place's levy also falls on businesses this measure does not see."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25103",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-2",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25103_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25103_002",
+        "CENSUS_ACS:acs1:B25103_002"
+      ],
+      "name": "Median property tax paid, homes with a mortgage",
+      "definition": "The middle yearly real estate tax paid by owners still paying off a mortgage.",
+      "unit": "dollars",
+      "universe": "owner-occupied housing units with a mortgage",
+      "kind": "median",
+      "caveat": "Yearly real estate taxes the owners report paying, in the survey year's dollars, with a margin of error.",
+      "intended_use": "Describe what owners in a place pay in property tax, beside its containing places and beside its home values.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Taxes paid on the home and its lot, as owners report them; where a tax is collected is not who bears it, and a place's levy also falls on businesses this measure does not see."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25103",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-2",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25103_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25103_003",
+        "CENSUS_ACS:acs1:B25103_003"
+      ],
+      "name": "Median property tax paid, homes without a mortgage",
+      "definition": "The middle yearly real estate tax paid by owners with no mortgage.",
+      "unit": "dollars",
+      "universe": "owner-occupied housing units without a mortgage",
+      "kind": "median",
+      "caveat": "Yearly real estate taxes the owners report paying, in the survey year's dollars, with a margin of error.",
+      "intended_use": "Describe what owners in a place pay in property tax, beside its containing places and beside its home values.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Taxes paid on the home and its lot, as owners report them; where a tax is collected is not who bears it, and a place's levy also falls on businesses this measure does not see."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25103",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-2",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
       "metric_id": "CENSUS_ACS:B27010_017",
       "metric_codes": [
         "CENSUS_ACS:acs5:B27010_017",

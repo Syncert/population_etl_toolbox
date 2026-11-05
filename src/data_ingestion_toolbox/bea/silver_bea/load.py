@@ -5,7 +5,8 @@ transaction per run: the line dimension, the parsed revisions and
 quarantine, the geography resolution ledger and the conformed facts land
 together or not at all, and the run is only marked ready when the counts
 reconcile. A county table's run also adds each metro area summed from its
-counties (``metro.py``), marked as derived, in the same transaction.
+counties (``metro.py``), marked as derived, in the same transaction. A run
+the capture found ``unchanged`` replays nothing.
 """
 
 from __future__ import annotations
@@ -99,13 +100,19 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT table_code, capture_id::TEXT FROM control.bea_table_capture WHERE run_id = %s",
+                """
+                SELECT table_code, capture_id::TEXT, status
+                FROM control.bea_table_capture WHERE run_id = %s
+                """,
                 (str(run_id),),
             )
             row = cursor.fetchone()
             if row is None:
                 raise BeaReconciliationError("run has no captured BEA table")
-            table_code, capture_id = row
+            table_code, capture_id, status = row
+            if status == "unchanged":
+                connection.commit()
+                return 0
             table = get_table(table_code)
             parsed = parse_table(
                 load_captured_payload(connection_factory, UUID(capture_id)), table=table

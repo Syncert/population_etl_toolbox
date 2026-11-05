@@ -11,6 +11,11 @@ An ACS entry is written once with a ``{dataset}`` placeholder in both codes
 and expands to one pairing per listed dataset, ``<ratio_id>:<dataset>``, so a
 5-year count is only ever divided by a 5-year total.
 
+A ``ratio`` entry divides one measure by another of the same release that
+it is not a part of -- median real estate taxes over median home value --
+with the Bureau's ratio formula for its margin; it is neither a share of a
+universe nor a value per resident.
+
 An ``agency_rate`` entry (ADR-0012) is a county crime rate computed the
 FBI's way, in gold, from agency reports: it names the count it divides, the
 FBI rate it reads beside (``reads_beside``, published only for states and the
@@ -31,7 +36,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-KINDS = frozenset({"share", "per_capita", "provider_rate", "agency_rate"})
+KINDS = frozenset({"share", "per_capita", "ratio", "provider_rate", "agency_rate"})
 STATUSES = frozenset({"draft", "approved", "deprecated", "needs_review"})
 SCALES = frozenset({1, 100, 1000, 100000})
 DATASET_PLACEHOLDER = "{dataset}"
@@ -172,6 +177,11 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
             raise RatioRegistryError(
                 f"{rid}: a share's numerator is a subset of its universe and "
                 "it is stated in percent (ADR-0009 rule 3)"
+            )
+        if kind == "ratio" and entry.get("numerator_is_subset"):
+            raise RatioRegistryError(
+                f"{rid}: a ratio divides one measure by another it is not a "
+                "part of; a part of its denominator is a share"
             )
         if entry["status"] == "approved" and "pending" in entry["reviewer"].lower():
             raise RatioRegistryError(f"{rid} is approved without a reviewer")

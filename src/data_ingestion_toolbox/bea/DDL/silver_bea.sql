@@ -4,7 +4,8 @@
 
 CREATE SCHEMA IF NOT EXISTS silver_bea;
 
--- One row per captured table zip.
+-- One row per captured table zip. A read whose bytes equal the table's last
+-- published capture is `unchanged` and replays nothing (capture.py).
 CREATE TABLE IF NOT EXISTS control.bea_table_capture (
     run_id UUID PRIMARY KEY REFERENCES control.ingestion_run(run_id),
     table_code TEXT NOT NULL CONSTRAINT bea_table_capture_table_code_check
@@ -14,7 +15,8 @@ CREATE TABLE IF NOT EXISTS control.bea_table_capture (
     release_date DATE,
     captured_row_count INTEGER NOT NULL DEFAULT 0 CHECK (captured_row_count >= 0),
     in_scope_row_count INTEGER NOT NULL DEFAULT 0 CHECK (in_scope_row_count >= 0),
-    status TEXT NOT NULL CHECK (status IN ('captured', 'silver_ready', 'quarantined', 'published')),
+    status TEXT NOT NULL CONSTRAINT bea_table_capture_status_check
+        CHECK (status IN ('captured', 'unchanged', 'silver_ready', 'quarantined', 'published')),
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -139,6 +141,19 @@ BEGIN
         ALTER TABLE control.bea_table_capture DROP CONSTRAINT bea_table_capture_table_code_check;
         ALTER TABLE control.bea_table_capture ADD CONSTRAINT bea_table_capture_table_code_check
             CHECK (table_code ~ '^(CA|SA|MA|PA)[A-Z0-9]+$');
+    END IF;
+    -- A weekly read of an unchanged file is recorded `unchanged` instead of
+    -- being replayed again. The table holds one row per run (hundreds), so
+    -- revalidating the CHECK is instant.
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'control.bea_table_capture'::regclass
+          AND conname = 'bea_table_capture_status_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%unchanged%'
+    ) THEN
+        ALTER TABLE control.bea_table_capture DROP CONSTRAINT bea_table_capture_status_check;
+        ALTER TABLE control.bea_table_capture ADD CONSTRAINT bea_table_capture_status_check
+            CHECK (status IN ('captured', 'unchanged', 'silver_ready', 'quarantined', 'published'));
     END IF;
     -- The implicit regional price deflator adds `price_index`.
     IF EXISTS (

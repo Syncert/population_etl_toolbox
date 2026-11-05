@@ -3,7 +3,7 @@
 The reviewed CAINC35, SAINC35, SAINC50 and SAINC51 rows are played through
 the adapter's own capture path (taxes-and-public-money, T-1).
 
-Covers: ETL-114
+Covers: ETL-115
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def tax_warehouse(
 def test_programs_taxes_and_income_are_served_with_their_own_release(
     tax_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-114 — each new line is a metric; the nation's 2025 figures as BEA wrote them."""
+    """Covers: ETL-115 — each new line is a metric; the nation's 2025 figures as BEA wrote them."""
     reader = tax_warehouse()
     try:
         with reader.cursor() as cursor:
@@ -114,7 +114,7 @@ def test_programs_taxes_and_income_are_served_with_their_own_release(
 def test_component_sums_pass_on_bea_rows_and_warn_on_a_broken_part(
     tax_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-114 — DQ-BEA-006 passes BEA's own rows and warns past 0.5 percent."""
+    """Covers: ETL-115 — DQ-BEA-006 passes BEA's own rows and warns past 0.5 percent."""
     outcome = _outcome(tax_warehouse, bea_component_sums)
     assert outcome.result == "pass", outcome.evidence
 
@@ -137,7 +137,7 @@ def test_component_sums_pass_on_bea_rows_and_warn_on_a_broken_part(
 def test_the_county_total_is_compared_only_within_a_shared_release(
     tax_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-114 — DQ-BEA-007: different releases are not compared; one shared release is."""
+    """Covers: ETL-115 — DQ-BEA-007: different releases are not compared; one shared release is."""
     # CAINC35 (November 2023) and CAINC4 (February 2026) share no release.
     assert _outcome(tax_warehouse, bea_transfer_total_agreement).result == (
         "not_applicable"
@@ -165,7 +165,7 @@ def test_the_county_total_is_compared_only_within_a_shared_release(
 def test_disposable_income_is_deflated_by_national_and_state_prices(
     tax_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-114 — 2017 dollars by PCE, and by PCE and parity; no index, no figure."""
+    """Covers: ETL-115 — 2017 dollars by PCE, and by PCE and parity; no index, no figure."""
     database_connection = tax_warehouse()
     try:
         with database_connection.cursor() as db:

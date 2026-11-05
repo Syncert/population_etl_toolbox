@@ -84,9 +84,10 @@ with its run ids:
 The ACS, BLS, and FRED slice ledgers are not finalized: they carry no run
 linkage and are declarative registries of configured work, so a `planned` row
 there means the warehouse genuinely still owes that slice. A red DQ-BLS-002
-after a quota-deferred day is therefore correct — the BLS DAG's designed 23h
-retry ingests the deferred chunks on its next run, and the rule goes green
-once the work exists.
+after a quota-deferred day is therefore correct — the BLS DAG parks the
+stopped batch until 1:00am US/Eastern the next day (an Airflow reschedule,
+DAG-022), ingests the deferred chunks then, and the rule goes green once the
+work exists.
 
 Run the same repair by hand with
 `data_ingestion_toolbox.quality.finalization.finalize_aborted_runs`, which
