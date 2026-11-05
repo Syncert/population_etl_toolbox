@@ -72,10 +72,11 @@ BEGIN
     FOREACH _schema IN ARRAY ARRAY[
         'gold', 'gold_glossary', 'gold_bea', 'gold_bls', 'gold_bls_qcew',
         'gold_cdc', 'gold_census', 'gold_census_bps', 'gold_census_cbp',
+        'gold_census_govfin',
         'gold_census_lodes', 'gold_census_sae', 'gold_eia', 'gold_elections',
         'gold_epa_aqs',
         'gold_fbi', 'gold_fcc_bdc', 'gold_fema_nri', 'gold_fhfa_hpi',
-        'gold_fred', 'gold_hud_fmr_il', 'gold_irs_migration', 'gold_nass',
+        'gold_fred', 'gold_hud_fmr_il', 'gold_irs_migration', 'gold_irs_soi', 'gold_nass',
         'gold_nces_ccd', 'gold_noaa_normals', 'gold_pep', 'gold_usda_ers'
     ]
     LOOP

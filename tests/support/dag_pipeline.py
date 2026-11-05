@@ -970,6 +970,47 @@ def stub_census_saipe_sahie(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sae_capture, "fetch_slice", fetch)
 
 
+def stub_census_govfin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed government finance answers; other periods answer 204.
+
+    The fixtures are the 2022 unit-file excerpts, the 2022 annual finance
+    answers and the 2024 QTAX answers. A period without a fixture is the
+    provider's own "nothing here", a recorded empty slice rather than a
+    failure, so the first run's sweep of every registered period completes.
+    """
+    from data_ingestion_toolbox.census_govfin import capture as govfin_capture
+    from data_ingestion_toolbox.census_govfin.client import GovFinResponse
+    from tests.support import census_govfin
+
+    archives = census_govfin.unit_archives()
+    answers = census_govfin.api_responses()
+    periods = {"asslgf": 2022, "qtax": 2024, "cog_units": census_govfin.UNIT_YEAR}
+
+    def fetch(
+        dataset_id: str, period: int, slice_key: str, **_kwargs: Any
+    ) -> GovFinResponse:
+        endpoint, parameters = govfin_capture._request_identity(
+            dataset_id, period, slice_key
+        )
+        payload = (
+            archives.get(endpoint)
+            if dataset_id == "cog_units"
+            else answers.get(f"{endpoint}|{slice_key}")
+        )
+        if periods[dataset_id] != period or payload is None:
+            return GovFinResponse(
+                endpoint, parameters, b"", {}, 204, "application/json"
+            )
+        media_type = (
+            "application/zip" if dataset_id == "cog_units" else "application/json"
+        )
+        return GovFinResponse(
+            endpoint, parameters, payload, {"content-type": media_type}, 200, media_type
+        )
+
+    monkeypatch.setattr(govfin_capture, "_fetch", fetch)
+
+
 def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed Delaware SOI files.
 
@@ -1003,6 +1044,43 @@ def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(irs_capture, "fetch_file", fetch)
+
+
+def stub_irs_soi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware SOI income files.
+
+    Eleven of the registered files have fixtures. The others answer with a
+    reviewed file of the same layout -- the 1989 workbook zip for a workbook
+    year, the 2023 files for a later CSV year -- so every registered file
+    captures, replays and publishes without a network call.
+    """
+    from data_ingestion_toolbox.irs_soi import capture as soi_capture
+    from data_ingestion_toolbox.irs_soi.client import SoiResponse
+    from data_ingestion_toolbox.irs_soi.registry import CSV, ZIP_XLS
+
+    def fetch(item: Any, **_kwargs: Any) -> SoiResponse:
+        directory = FIXTURE_ROOT / "irs_soi"
+        reviewed = directory / item.path.lstrip("/")
+        if reviewed.is_file():
+            path = reviewed
+        elif item.container == ZIP_XLS:
+            path = directory / "1989countyincome.zip"
+        else:
+            assert item.container == CSV, item.key
+            path = directory / ("23" + item.csv_name[2:])
+        return SoiResponse(
+            item.path,
+            {"kind": item.kind, "tax_year": str(item.tax_year)},
+            path.read_bytes(),
+            {
+                "content-type": "text/csv"
+                if item.container == CSV
+                else "application/zip"
+            },
+            200,
+        )
+
+    monkeypatch.setattr(soi_capture, "fetch_file", fetch)
 
 
 def stub_census_cbp(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1689,7 +1767,9 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("bls", stub_bls),
         ("fred", stub_fred),
         ("irs_migration", stub_irs_migration),
+        ("irs_soi", stub_irs_soi),
         ("census_saipe_sahie", stub_census_saipe_sahie),
+        ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),
         ("cdc", stub_cdc_socrata),

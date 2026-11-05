@@ -66,6 +66,10 @@ from __future__ import annotations
 #: * ``ELECTIONS`` -- MEDSL's state and county presidential vote; House
 #:   districts are not yet a shared geography, so they are not published as
 #:   observations.
+#: * ``CENSUS_GOVFIN`` -- the nation and states from the annual finance and
+#:   QTAX answers, and county areas rolled up from the Census of Governments
+#:   unit files; single governments, cities and special districts are kept
+#:   in silver and not published as places.
 #: * ``FHFA_HPI`` -- the annual county workbook only; the ZIP and tract
 #:   files wait on sub-county identities.
 #: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
@@ -106,6 +110,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "HUD_FMR_IL": frozenset({"COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),
     "FEMA_NRI": frozenset({"COUNTY"}),
+    "CENSUS_GOVFIN": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "ELECTIONS": frozenset({"STATE", "COUNTY"}),
     "FCC_BDC": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "NOAA_NORMALS": frozenset({"COUNTY"}),
@@ -113,5 +118,6 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
     "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),
+    "IRS_SOI": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
 }

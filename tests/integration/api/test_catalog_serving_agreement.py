@@ -36,6 +36,7 @@ from tests.support import census_cbp as cbp_support
 from tests.support import bea as bea_support
 from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
+from tests.support import irs_soi as soi_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
@@ -44,6 +45,7 @@ from tests.support import epa_aqs as aqs_support
 from tests.support import noaa_normals as normals_support
 from tests.support import fcc_bdc as bdc_support
 from tests.support import elections as elections_support
+from tests.support import census_govfin as govfin_support
 from tests.support import fema_nri as fema_support
 from tests.support import fhfa_hpi as hpi_support
 from tests.support import hud_fmr_il as hud_support
@@ -969,6 +971,19 @@ def published_irs_migration_metric(
 
 
 @pytest.fixture
+def published_irs_soi_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish SOI county and state income through their real pipeline."""
+    factory = soi_support.reviewed_warehouse(postgres_connection_factory, request)
+    soi_support.run_to_gold(factory, "county_total:2023")
+    soi_support.run_to_gold(factory, "state:2023")
+    harvest_publisher(factory, Publisher("gold_irs_soi"))
+    return _one_published_code(factory, "IRS_SOI")
+
+
+@pytest.fixture
 def published_cbp_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1051,6 +1066,22 @@ def published_elections_metric(
     elections_support.run_all(factory)
     harvest_publisher(factory, Publisher("gold_elections"))
     return _one_published_code(factory, "ELECTIONS")
+
+
+@pytest.fixture
+def published_govfin_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the 2022 unit-file roll-ups and the 2022 annual finances."""
+    factory = govfin_support.reviewed_warehouse(postgres_connection_factory, request)
+    client = govfin_support.FixtureClient(
+        {**govfin_support.unit_archives(), **govfin_support.api_responses()}
+    )
+    govfin_support.run_to_gold(factory, "cog_units", govfin_support.UNIT_YEAR, client)
+    govfin_support.run_to_gold(factory, "asslgf", 2022, client)
+    harvest_publisher(factory, Publisher("gold_census_govfin"))
+    return _one_published_code(factory, "CENSUS_GOVFIN")
 
 
 @pytest.fixture
@@ -1162,12 +1193,14 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_hud_metric: str,
     published_fema_metric: str,
     published_elections_metric: str,
+    published_govfin_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,
     published_lodes_metric: str,
     published_cbp_metric: str,
     published_irs_migration_metric: str,
+    published_irs_soi_metric: str,
     published_sae_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
@@ -1231,6 +1264,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CDC", published_cdc_metric),
         ("FRED", published_fred_metric),
         ("IRS_MIGRATION", published_irs_migration_metric),
+        ("IRS_SOI", published_irs_soi_metric),
         ("CENSUS_PEP", published_pep_metric),
         ("CENSUS_SAIPE_SAHIE", published_sae_metric),
         ("BLS", published_bls_metric),
@@ -1244,6 +1278,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("HUD_FMR_IL", published_hud_metric),
         ("FEMA_NRI", published_fema_metric),
         ("ELECTIONS", published_elections_metric),
+        ("CENSUS_GOVFIN", published_govfin_metric),
         ("FCC_BDC", published_bdc_metric),
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
@@ -1385,6 +1420,7 @@ def _published_grains(client: TestClient, source_code: str) -> dict[str, list[st
 def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     api_client: TestClient,
     published_irs_migration_metric: str,
+    published_irs_soi_metric: str,
     published_acs_grain_metric: str,
     published_cdc_metric: str,
     published_sae_metric: str,
@@ -1398,6 +1434,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_nass_metric: str,
     published_fema_metric: str,
     published_elections_metric: str,
+    published_govfin_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,

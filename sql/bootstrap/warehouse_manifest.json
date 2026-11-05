@@ -152,6 +152,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql"
     },
     {
+      "id": "silver-irs-soi",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/irs_soi/DDL/silver_irs_soi.sql"
+    },
+    {
       "id": "silver-census-cbp",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql"
@@ -195,6 +200,11 @@
       "id": "silver-elections",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/elections/DDL/silver_elections.sql"
+    },
+    {
+      "id": "silver-census-govfin",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_govfin/DDL/silver_census_govfin.sql"
     },
     {
       "id": "migration-030",
@@ -337,6 +347,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
     },
     {
+      "id": "gold-irs-soi",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/irs_soi/gold_irs_soi/DDL/gold_irs_soi.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -385,6 +400,16 @@
       "id": "gold-elections-lean-groups",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/elections/gold_elections/DDL/lean_groups.sql"
+    },
+    {
+      "id": "gold-census-govfin",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_census_govfin.sql"
+    },
+    {
+      "id": "gold-census-govfin-tax-burden",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_tax_burden.sql"
     },
     {
       "id": "gold-epa-aqs",
@@ -462,6 +487,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql"
     },
     {
+      "id": "publisher-irs-soi",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/irs_soi/gold_irs_soi/DDL/publisher.sql"
+    },
+    {
       "id": "publisher-census-cbp",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql"
@@ -510,6 +540,11 @@
       "id": "publisher-elections",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/elections/gold_elections/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-govfin",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/publisher.sql"
     },
     {
       "id": "publisher-epa-aqs",

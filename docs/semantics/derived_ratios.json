@@ -1809,6 +1809,60 @@
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-income-by-state"
       ]
+    },
+    {
+      "ratio_id": "income_tax_share_of_agi",
+      "kind": "per_capita",
+      "label": "Federal income tax as a share of adjusted gross income",
+      "numerator": "IRS_SOI:income_tax_amount",
+      "denominator": "IRS_SOI:agi",
+      "denominator_label": "adjusted gross income",
+      "universe": "individual income tax returns filed",
+      "scale": 100,
+      "unit": "percent of adjusted gross income",
+      "rationale": "Income tax after credits (SOI item A06500) over adjusted gross income (A00100), both from the same SOI file, tax year and place; the plan's federal tax rate, approved with plan option B on 2026-11-05 (ADR-0009 rules 2-4). Not a rate SOI publishes, so rule 5 is not at stake.",
+      "limitations": [
+        "Describes returns filed by residents of the place, not every resident: people who file no return are in neither side.",
+        "Income tax after credits; refundable credits paid beyond the tax owed, such as most of the EITC, are not subtracted.",
+        "County files carry income tax from tax year 2010; the 1989-2009 county files publish no tax item, so the series starts in 2010 for counties and in 2020 for the nation."
+      ],
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data",
+        "https://www.irs.gov/statistics/soi-tax-stats-historic-table-2"
+      ],
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "status": "approved",
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "version": 1
+    },
+    {
+      "ratio_id": "eitc_share_of_returns",
+      "kind": "share",
+      "label": "Share of returns claiming the earned income tax credit",
+      "numerator": "IRS_SOI:eitc_returns",
+      "denominator": "IRS_SOI:returns",
+      "numerator_is_subset": true,
+      "denominator_label": "individual income tax returns filed",
+      "universe": "individual income tax returns filed",
+      "scale": 100,
+      "unit": "percent",
+      "rationale": "Returns with the earned income credit (N59660) are a subset of all returns (N1) in the same SOI file, tax year and place; approved with plan option B on 2026-11-05 (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Counts returns, not people or households: a joint return is one return.",
+        "Available from tax year 2010 for counties; the 1989-2009 county files publish no credit items."
+      ],
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data",
+        "https://www.irs.gov/statistics/soi-tax-stats-historic-table-2"
+      ],
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "status": "approved",
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "version": 1
     }
   ]
 }

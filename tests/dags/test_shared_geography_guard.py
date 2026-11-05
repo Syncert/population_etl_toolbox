@@ -43,10 +43,12 @@ GUARDED = {
     "census_lodes_ingest": "require_shared_geography",
     "census_cbp_ingest": "require_shared_geography",
     "irs_migration_ingest": "require_shared_geography",
+    "irs_soi_ingest": "require_shared_geography",
     "bea_regional_ingest": "require_shared_geography",
     "bls_qcew_ingest": "require_shared_geography",
     "census_building_permits_ingest": "require_shared_geography",
     "census_saipe_sahie_ingest": "require_shared_geography",
+    "census_govfin_ingest": "require_shared_geography",
     "eia_retail_gasoline_ingest": "require_shared_geography",
 }
 
