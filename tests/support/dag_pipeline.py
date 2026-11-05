@@ -1049,14 +1049,14 @@ def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_irs_soi(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed Delaware SOI income files.
 
-    Eleven of the registered files have fixtures. The others answer with a
+    Some registered files have fixtures of their own. The others answer with a
     reviewed file of the same layout -- the 1989 workbook zip for a workbook
     year, the 2023 files for a later CSV year -- so every registered file
     captures, replays and publishes without a network call.
     """
     from data_ingestion_toolbox.irs_soi import capture as soi_capture
     from data_ingestion_toolbox.irs_soi.client import SoiResponse
-    from data_ingestion_toolbox.irs_soi.registry import CSV, ZIP_XLS
+    from data_ingestion_toolbox.irs_soi.registry import CSV, ZIP_XLS, SoiFile
 
     def fetch(item: Any, **_kwargs: Any) -> SoiResponse:
         directory = FIXTURE_ROOT / "irs_soi"
@@ -1067,7 +1067,9 @@ def stub_irs_soi(monkeypatch: pytest.MonkeyPatch) -> None:
             path = directory / "1989countyincome.zip"
         else:
             assert item.container == CSV, item.key
-            path = directory / ("23" + item.csv_name[2:])
+            # The 2023 file of the same kind (2012's names differ, so the
+            # name is taken from the registry rather than rewritten).
+            path = directory / SoiFile(item.kind, 2023).csv_name
         return SoiResponse(
             item.path,
             {"kind": item.kind, "tax_year": str(item.tax_year)},

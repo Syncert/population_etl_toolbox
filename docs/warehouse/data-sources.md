@@ -137,7 +137,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Publisher releases:** One new tax year a year, about three years after it ends
 - **Credential:** none
 - **Years:** County files for tax years 1989–2023, each state's total included (1989–2009 carry six items with no bands and no tax; by size of AGI from 2010); Historic Table 2 state files, with the nation, for 2020–2023
-- **Datasets:** YYYYcountyincome.zip (1989–2009); 2010countydata.zip; YYincyallnoagi.csv; YYincyallagi.csv; YYin55cmcsv.csv
+- **Datasets:** YYYYcountyincome.zip (1989–2009); 2010countydata.zip; YYincyallnoagi.csv; YYincyallagi.csv (2012: 12cyallnoagi.csv, 12cyallagi.csv); YYin55cmcsv.csv
 - **Measures:** Returns, individuals, adjusted gross income, wages, interest, dividends, business income, capital gains, pensions, Social Security, unemployment compensation, taxable income, income tax, total tax liability, earned income tax credit, additional child tax credit, and itemized state and local income and real estate taxes, for all returns and by size of adjusted gross income. Derived: income tax as a share of AGI; share of returns claiming the EITC.
 - **Capture and control:** `control.irs_soi_file`
 - **Silver:** `silver_irs_soi.observation_revision`, `silver_irs_soi.fact_observation`, `silver_irs_soi.observation_quarantine`
