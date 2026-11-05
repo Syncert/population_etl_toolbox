@@ -21,7 +21,7 @@ _PACKAGE = Path(__file__).resolve().parent
 DDL_FILES = [
     _PACKAGE / "DDL" / "silver_census_govfin.sql",
     _PACKAGE / "gold_census_govfin" / "DDL" / "gold_census_govfin.sql",
-    _PACKAGE / "gold_census_govfin" / "DDL" / "tax_burden.sql",
+    _PACKAGE / "gold_census_govfin" / "DDL" / "gold_tax_burden.sql",
     _PACKAGE / "gold_census_govfin" / "DDL" / "publisher.sql",
 ]
 

@@ -18,6 +18,10 @@ from data_ingestion_toolbox.census_govfin.schema import (
     REQUIRED_RELATIONS,
     ensure_census_govfin_schema,
 )
+from data_ingestion_toolbox.quality.sources import (
+    govfin_slice_reconciliation,
+    govfin_unit_totals,
+)
 from tests.support import bea, census_govfin
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -31,7 +35,9 @@ def govfin_warehouse(
     return census_govfin.reviewed_warehouse(postgres_connection_factory, request)
 
 
-def _rows(factory: Callable[[], connection], sql: str, parameters: tuple = ()) -> list[tuple]:
+def _rows(
+    factory: Callable[[], connection], sql: str, parameters: tuple = ()
+) -> list[tuple]:
     reader = factory()
     try:
         with reader.cursor() as cursor:
@@ -242,7 +248,9 @@ def _fixture_value(name: str, **match: str) -> Decimal:
         if all(row[header.index(key)] == value for key, value in match.items())
     ]  # fmt: skip
     assert len(hits) == 1, match
-    return Decimal(hits[0][header.index("AMOUNT" if "AMOUNT" in header else "CELL_VALUE")])
+    return Decimal(
+        hits[0][header.index("AMOUNT" if "AMOUNT" in header else "CELL_VALUE")]
+    )
 
 
 def test_annual_survey_and_qtax_replay_census_published_totals(
@@ -250,7 +258,9 @@ def test_annual_survey_and_qtax_replay_census_published_totals(
 ) -> None:
     """Covers: ETL-114 -- Census's own state and national figures reach gold unchanged."""
     client = census_govfin.FixtureClient(census_govfin.api_responses())
-    _run, facts, published = census_govfin.run_to_gold(govfin_warehouse, "asslgf", 2022, client)
+    _run, facts, published = census_govfin.run_to_gold(
+        govfin_warehouse, "asslgf", 2022, client
+    )
     assert published == 2
     # 14 registered aggregates (tax_other has none) at three levels for the
     # nation and Wisconsin, less LF0005 and LF0006 where a level has none.
@@ -278,7 +288,9 @@ def test_annual_survey_and_qtax_replay_census_published_totals(
         )
     )
 
-    _run, _facts, published = census_govfin.run_to_gold(govfin_warehouse, "qtax", 2024, client)
+    _run, _facts, published = census_govfin.run_to_gold(
+        govfin_warehouse, "qtax", 2024, client
+    )
     assert published == 2
     quarters = _rows(
         govfin_warehouse,
@@ -305,7 +317,7 @@ def test_state_and_local_tax_burden_matches_census_over_bea(
     census_govfin.run_to_gold(govfin_warehouse, "asslgf", 2022, client)
 
     taxes = _fixture_value("asslgf_2022_us.json", AGG_DESC="LF0008", GOVTYPE="001")
-    (income, population), = _rows(
+    ((income, population),) = _rows(
         govfin_warehouse,
         """
         SELECT MAX(value) FILTER (WHERE metric_key = 'CAINC1:1'),
@@ -336,3 +348,56 @@ def test_state_and_local_tax_burden_matches_census_over_bea(
     # A sanity bound, not a fixture echo: US state and local taxes ran near
     # a tenth of personal income in fiscal 2022.
     assert Decimal(8) < burden[1][1] < Decimal(13)
+
+
+def _outcome(factory: Callable[[], connection], executor):  # noqa: ANN001, ANN202
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            return executor(cursor, {})[0]
+    finally:
+        reader.close()
+
+
+def _write(factory: Callable[[], connection], sql: str, parameters: tuple = ()) -> None:
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(sql, parameters)
+        writer.commit()
+    finally:
+        writer.close()
+
+
+def test_quality_rules_pass_on_the_fixture_then_catch_a_fault(
+    govfin_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-114 -- DQ-GOVFIN-003 and -004 pass on a clean load, then fail and warn."""
+    factory = govfin_warehouse
+    assert _outcome(factory, govfin_slice_reconciliation).result == "not_applicable"
+    assert _outcome(factory, govfin_unit_totals).result == "not_applicable"
+
+    _load_units(factory)
+    assert _outcome(factory, govfin_slice_reconciliation).result == "pass"
+    # The fixture's Wisconsin lines sum, item by item, to its state totals.
+    assert _outcome(factory, govfin_unit_totals).result == "pass"
+
+    # Madison's property tax read 10 percent high no longer matches Census's
+    # local total for Wisconsin.
+    _write(
+        factory,
+        """
+        UPDATE silver_census_govfin.unit_amount SET amount = amount * 1.1
+         WHERE government_code = '552025000002' AND item_code = 'T01'
+        """,
+    )
+    totals = _outcome(factory, govfin_unit_totals)
+    assert (totals.result, totals.observed_count) == ("warn", 1)
+
+    # A slice captured and never replayed is a lost load.
+    _write(
+        factory,
+        "UPDATE control.census_govfin_slice SET status = 'captured'",
+    )
+    lost = _outcome(factory, govfin_slice_reconciliation)
+    assert (lost.result, lost.observed_count) == ("fail", 1)

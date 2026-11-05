@@ -473,6 +473,42 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="census_govfin.taxes_and_revenue",
+        source="CENSUS_GOVFIN",
+        publisher_schema="gold_census_govfin",
+        datasets=("cog_units", "asslgf", "qtax"),
+        fixtures=(
+            "tests/fixtures/census_govfin/finestdat_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/fin_pid_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/statetypepu_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/asslgf_2022_us.json",
+            "tests/fixtures/census_govfin/asslgf_2022_state.json",
+            "tests/fixtures/census_govfin/qtax_2024_us.json",
+            "tests/fixtures/census_govfin/qtax_2024_state.json",
+        ),
+        serving_relations=(
+            "gold_census_govfin.observation_revision",
+            "gold_census_govfin.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_govfin_pipeline.py::"
+            "test_county_area_and_state_taxes_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "Census government finance publishes no source-specific HTTP route: "
+            "each figure is the neutral observation shape with its government "
+            "level, derivation and record coverage as declared dimensions, so "
+            "`/api/v1/observations` serves it. The tax mix and tax burden views "
+            "get routes in the taxes API step."
+        ),
+    ),
+    DataProductE2E(
         product_id="irs_migration.county_flows",
         source="IRS_MIGRATION",
         publisher_schema="gold_irs_migration",

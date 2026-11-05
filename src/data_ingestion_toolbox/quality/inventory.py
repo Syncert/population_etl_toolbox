@@ -79,6 +79,7 @@ SOURCES: tuple[str, ...] = (
     "CENSUS_CBP",
     "IRS_MIGRATION",
     "CENSUS_SAIPE_SAHIE",
+    "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
     "BEA",
@@ -2521,6 +2522,178 @@ _SAE_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Census state and local government finance.
+# ---------------------------------------------------------------------------
+
+_GOVFIN_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_govfin_slice",
+        "control",
+        "CENSUS_GOVFIN",
+        grain="run_id, slice_key (one run per dataset and period)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method=(
+            "Census of Governments editions x their archives; annual finance years and "
+            "QTAX years x us/state"
+        ),
+        cadence="monthly; periods never answered are captured on the next run",
+        empty_behavior="a grain the API does not publish (HTTP 204) is status empty",
+    ),
+    _obj(
+        "silver_census_govfin.dim_measure",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, measure_id",
+        scope_method="registered measures in census_govfin/registry.py",
+        cadence="per government finance replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_govfin.measure_item",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="measure_id, item_code",
+        lineage="silver_census_govfin.unit_amount, silver_census_govfin.state_type_total",
+        scope_method="each Census item code read, mapped to the measures it counts toward",
+        cadence="per unit-file replay",
+        empty_behavior="empty only before the first unit-file replay",
+    ),
+    _obj(
+        "silver_census_govfin.unit_government",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every government of an edition's directory file",
+        cadence="per unit-file replay",
+        empty_behavior="empty only before the first unit-file replay",
+    ),
+    _obj(
+        "silver_census_govfin.unit_amount",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every (government, item, amount) record of an edition's unit file",
+        cadence="per unit-file replay",
+        empty_behavior="a non-numeric amount is kept with status missing, never zero",
+    ),
+    _obj(
+        "silver_census_govfin.state_type_total",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="Census's state totals at the state-and-local, state and local levels",
+        cadence="per unit-file replay",
+        empty_behavior="empty for 2002, whose public files carry no state totals",
+    ),
+    _obj(
+        "silver_census_govfin.api_revision",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="registered annual finance and QTAX rows of each captured slice",
+        cadence="per government finance replay",
+        empty_behavior="empty only before the first API capture",
+    ),
+    _obj(
+        "silver_census_govfin.quarantine",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, member, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable record; populated only on failure",
+        cadence="per government finance replay",
+        empty_behavior="empty when every record conformed",
+    ),
+    _obj(
+        "silver_census_govfin.fact_observation",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id",
+        lineage=(
+            "silver_census_govfin.api_revision, silver_census_govfin.unit_amount, "
+            "silver_census_govfin.unit_government, silver_ref.geography_resolution"
+        ),
+        scope_method="registered measures x periods x nation, states and county areas",
+        cadence="per government finance replay",
+        empty_behavior="a missing figure is retained with status missing, never zero",
+    ),
+    _obj(
+        "gold_census_govfin.observation_revision",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="metric_key, geo_id, fiscal_year, quarter, capture_id (published slices only)",
+        lineage="silver_census_govfin.fact_observation, control.census_govfin_slice",
+        scope_method="published slices; every capture of a figure kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_govfin.observation_latest",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="metric_key, geo_id, fiscal_year, quarter (newest capture)",
+        lineage="gold_census_govfin.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_govfin.county_area_government",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="census_year, government_code",
+        lineage="silver_census_govfin.unit_government, control.census_govfin_slice",
+        scope_method="local governments of each edition's newest published directory",
+        cadence="per publication",
+        empty_behavior="empty only before the first published unit file",
+    ),
+    _obj(
+        "gold_census_govfin.tax_mix",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, government_level, measure_id, fiscal_year, quarter, geo_id",
+        lineage="gold_census_govfin.observation_latest",
+        scope_method="each tax type's share of taxes in the same dataset, level, period and place",
+        cadence="per publication",
+        empty_behavior="no share where the total is missing or zero, with the reason",
+    ),
+    _obj(
+        "gold_census_govfin.tax_burden",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="geo_id, fiscal_year",
+        lineage="gold_census_govfin.observation_latest, gold_bea.observation_latest",
+        scope_method="taxes against BEA personal income and population for the same place and year",
+        cadence="per publication",
+        empty_behavior="no ratio where the BEA denominator is not loaded, with the reason",
+    ),
+    _obj(
+        "gold_census_govfin.measure_export",
+        "publisher",
+        "CENSUS_GOVFIN",
+        grain="source_object_key (dataset:measure:government level)",
+        lineage="silver_census_govfin.dim_measure",
+        scope_method="registered measures x government levels",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_govfin.metric_publisher",
+        "publisher",
+        "CENSUS_GOVFIN",
+        grain="source_object_key (dataset:measure:government level)",
+        lineage="gold_census_govfin.observation_latest, gold_census_govfin.measure_export",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # IRS Statistics of Income county-to-county migration.
 # ---------------------------------------------------------------------------
 
@@ -4061,6 +4234,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _HPI_OBJECTS
     + _HUD_OBJECTS
     + _FEMA_OBJECTS
+    + _GOVFIN_OBJECTS
     + _ELECTIONS_OBJECTS
     + _BDC_OBJECTS
     + _AQS_OBJECTS
@@ -4455,6 +4629,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_irs_migration.metric_publisher",
             "gold_pep.metric_publisher",
             "gold_census_sae.metric_publisher",
+            "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
             "gold_fbi.metric_publisher",
@@ -6908,6 +7083,120 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.lean_measure_definition",
             "gold_elections.lean_band_definition",
             "gold_elections.lean_peer_definition",
+        ),
+    ),
+    # -- Census state and local government finance -------------------------
+    _rule(
+        "DQ-GOVFIN-001",
+        "BLOCK",
+        "uniqueness",
+        "A government finance figure is unique per (dataset, measure, government "
+        "level, fiscal year, quarter, place, capture), and a unit-file record per "
+        "(capture, row): a revised publication is a second row, never an overwrite.",
+        (
+            "silver_census_govfin.fact_observation",
+            "silver_census_govfin.unit_amount",
+            "silver_census_govfin.unit_government",
+            "silver_census_govfin.state_type_total",
+            "silver_census_govfin.api_revision",
+            "silver_census_govfin.dim_measure",
+            "silver_census_govfin.measure_item",
+            "gold_census_govfin.observation_revision",
+            "gold_census_govfin.observation_latest",
+            "gold_census_govfin.county_area_government",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the tables' primary keys; "
+            "the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                (
+                    "dataset_id",
+                    "measure_id",
+                    "government_level",
+                    "fiscal_year",
+                    "quarter",
+                    "geo_id",
+                    "capture_id",
+                ),
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.unit_amount", ("capture_id", "source_row_index")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-GOVFIN-002",
+        "BLOCK",
+        "conformance",
+        "A valid figure carries a number and a missing one carries none; only "
+        "Census of Governments figures are warehouse roll-ups, and each roll-up "
+        "states which records it sums.",
+        (
+            "silver_census_govfin.fact_observation",
+            "silver_census_govfin.unit_amount",
+            "gold_census_govfin.tax_mix",
+            "gold_census_govfin.tax_burden",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value and a roll-up outside the unit files."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="govfin_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="govfin_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                ("derivation", "dataset_id"),
+                kind="check",
+                constraint_name="govfin_fact_rollup_is_unit_file",
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.unit_amount",
+                ("value_status", "amount"),
+                kind="check",
+                constraint_name="unit_amount_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-GOVFIN-003",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured government finance slice is left unreplayed, and every "
+        "replayed run with readable records reached the fact.",
+        (
+            "control.census_govfin_slice",
+            "silver_census_govfin.quarantine",
+            "silver_census_govfin.fact_observation",
+        ),
+    ),
+    _rule(
+        "DQ-GOVFIN-004",
+        "WARN",
+        "reconciliation",
+        "Each published unit file's state government records and local "
+        "government records sum, item by item, to within 1 percent of Census's "
+        "own state and local totals for that state.",
+        (
+            "silver_census_govfin.unit_amount",
+            "silver_census_govfin.state_type_total",
+            "gold_census_govfin.measure_export",
+            "gold_census_govfin.metric_publisher",
         ),
     ),
     # -- FHFA annual House Price Index ----------------------------------------

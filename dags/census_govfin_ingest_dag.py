@@ -10,8 +10,9 @@ a fresh warehouse loads every registered year and edition without a manual
 history run, and later runs are the window again. ``{"history": true}``
 re-sweeps every registered period, answered or not.
 
-The API requests share the ``census_api`` pool with the ACS and SAIPE: one
-host, one key, one rate limit.
+Every capture task shares the ``census_api`` pool with the ACS and SAIPE:
+the unit files come from www2.census.gov rather than the API host, but it is
+one agency's servers, and an edition is captured at most once a run.
 """
 
 from __future__ import annotations
@@ -43,9 +44,6 @@ DEFAULT_ARGS = {
     "retries": 2,
     "retry_delay": timedelta(minutes=10),
 }
-
-#: The unit files come from www2.census.gov, not the API host.
-POOLS = {"asslgf": "census_api", "qtax": "census_api", "cog_units": "default_pool"}
 
 
 def _get_postgres_hook():
@@ -132,7 +130,7 @@ with DAG(
             task_id=f"ingest_batch_{dataset_id}",
             python_callable=_capture,
             op_kwargs={"dataset_id": dataset_id},
-            pool=POOLS[dataset_id],
+            pool="census_api",
         )
         replay = PythonOperator(
             task_id=f"replay_{dataset_id}",

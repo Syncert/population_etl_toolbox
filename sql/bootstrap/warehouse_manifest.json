@@ -394,7 +394,7 @@
     {
       "id": "gold-census-govfin-tax-burden",
       "phase": "gold",
-      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/tax_burden.sql"
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_tax_burden.sql"
     },
     {
       "id": "gold-epa-aqs",

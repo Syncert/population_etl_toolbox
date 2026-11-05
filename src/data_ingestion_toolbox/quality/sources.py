@@ -2108,6 +2108,100 @@ def elections_lean_group_arithmetic(
     ]
 
 
+def govfin_slice_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-GOVFIN-003 — no slice left unreplayed; every readable run reached the fact."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.census_govfin_slice")
+    if total == 0:
+        return [RuleOutcome("control.census_govfin_slice", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT slice.run_id, slice.dataset_id, slice.period, slice.slice_key, slice.status
+          FROM control.census_govfin_slice AS slice
+         WHERE slice.status = 'captured'
+            OR (slice.status IN ('silver_ready', 'published')
+                AND slice.captured_row_count > slice.quarantined_row_count
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_census_govfin.fact_observation AS fact
+                     WHERE fact.run_id = slice.run_id
+                ))
+        """,
+        order_by="2, 3, 4",
+    )
+    return [
+        RuleOutcome(
+            "control.census_govfin_slice",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def govfin_unit_totals(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-GOVFIN-004 — unit records sum to Census's state totals within 1 percent."""
+    del scope
+    total = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM silver_census_govfin.state_type_total AS census
+         WHERE EXISTS (
+             SELECT 1 FROM control.census_govfin_slice AS slice
+              WHERE slice.run_id = census.run_id AND slice.status = 'published'
+         )
+        """,
+    )
+    if total == 0:
+        return [RuleOutcome("silver_census_govfin.unit_amount", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH published AS (
+            SELECT DISTINCT run_id FROM control.census_govfin_slice
+             WHERE dataset_id = 'cog_units' AND status = 'published'
+        ), units AS (
+            SELECT amount.run_id, amount.fips_state,
+                   CASE WHEN amount.type_code = '0' THEN '2' ELSE '3' END AS level_code,
+                   amount.item_code, SUM(amount.amount) AS amount
+              FROM silver_census_govfin.unit_amount AS amount
+              JOIN published USING (run_id)
+             WHERE amount.item_code IN (SELECT item_code FROM silver_census_govfin.measure_item)
+             GROUP BY 1, 2, 3, 4
+        ), census AS (
+            SELECT total.run_id, total.census_year, total.fips_state, total.level_code,
+                   total.item_code, total.amount
+              FROM silver_census_govfin.state_type_total AS total
+              JOIN published USING (run_id)
+             WHERE total.level_code IN ('2', '3') AND total.fips_state <> '00'
+               AND total.amount IS NOT NULL
+               AND total.item_code IN (SELECT item_code FROM silver_census_govfin.measure_item)
+        )
+        SELECT census.census_year::TEXT AS year,
+               census.fips_state || ' level ' || census.level_code || ' ' || census.item_code
+                   AS item,
+               'units ' || COALESCE(units.amount, 0) || ' against Census ' || census.amount
+                   AS detail
+          FROM census
+          LEFT JOIN units USING (run_id, fips_state, level_code, item_code)
+         WHERE ABS(COALESCE(units.amount, 0) - census.amount) > 0.01 * ABS(census.amount)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_census_govfin.unit_amount",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def hpi_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-HPI-002 — no workbook left unreplayed; every readable one reached silver."""
     del scope
@@ -4111,6 +4205,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-HUD-004": hud_value_plausibility,
     "DQ-FEMA-002": fema_run_reconciliation,
     "DQ-FEMA-004": fema_value_and_geography,
+    "DQ-GOVFIN-003": govfin_slice_reconciliation,
+    "DQ-GOVFIN-004": govfin_unit_totals,
     "DQ-ELEC-002": elections_run_reconciliation,
     "DQ-ELEC-003": elections_seat_overlap,
     "DQ-ELEC-004": elections_totals_and_geography,

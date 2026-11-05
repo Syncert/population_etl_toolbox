@@ -30,6 +30,7 @@ from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
+from data_ingestion_toolbox.census_govfin import schema as govfin_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
 from data_ingestion_toolbox.eia import schema as eia_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
@@ -74,6 +75,13 @@ SOURCES = [
         "ingest_batch_",
         sae_schema,
         "CENSUS_SAIPE_SAHIE",
+    ),
+    (
+        "census_govfin_ingest",
+        "ensure_census_govfin_schema",
+        "ingest_batch_",
+        govfin_schema,
+        "CENSUS_GOVFIN",
     ),
     (
         "irs_migration_ingest",

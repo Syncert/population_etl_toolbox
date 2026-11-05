@@ -223,6 +223,7 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "HUD_FMR_IL",
         "NCES_CCD",
         "ELECTIONS",
+        "CENSUS_GOVFIN",
     }
 
 

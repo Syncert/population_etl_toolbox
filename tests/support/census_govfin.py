@@ -100,14 +100,17 @@ def zipped(members: dict[str, bytes]) -> bytes:
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         documentation = "2022_Individual_Unit_files/2022 S&L Public Use Files Technical Documentation.pdf"
         for name, payload in {documentation: b"%PDF-1.4 layout", **members}.items():
-            bundle.writestr(zipfile.ZipInfo(name, date_time=(2026, 7, 15, 0, 0, 0)), payload)
+            bundle.writestr(
+                zipfile.ZipInfo(name, date_time=(2026, 7, 15, 0, 0, 0)), payload
+            )
     return buffer.getvalue()
 
 
 def unit_bundle(overrides: dict[str, bytes] | None = None) -> bytes:
     """The 2022 edition's zip built from the fixture excerpts."""
     members = {
-        name: (FIXTURE_DIR / fixture).read_bytes() for name, fixture in UNIT_MEMBERS.items()
+        name: (FIXTURE_DIR / fixture).read_bytes()
+        for name, fixture in UNIT_MEMBERS.items()
     }
     members.update(overrides or {})
     return zipped(members)
@@ -129,7 +132,9 @@ API_FIXTURES: dict[str, str] = {
 
 
 def api_responses() -> dict[str, bytes]:
-    return {key: (FIXTURE_DIR / name).read_bytes() for key, name in API_FIXTURES.items()}
+    return {
+        key: (FIXTURE_DIR / name).read_bytes() for key, name in API_FIXTURES.items()
+    }
 
 
 class FixtureClient:

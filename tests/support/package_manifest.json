@@ -70,7 +70,7 @@
     "data_ingestion_toolbox/census_govfin/DDL/silver_census_govfin.sql",
     "data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_census_govfin.sql",
     "data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/publisher.sql",
-    "data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/tax_burden.sql",
+    "data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_tax_burden.sql",
     "data_ingestion_toolbox/census_pep/DDL/silver_pep.sql",
     "data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql",
     "data_ingestion_toolbox/census_saipe_sahie/DDL/silver_census_sae.sql",

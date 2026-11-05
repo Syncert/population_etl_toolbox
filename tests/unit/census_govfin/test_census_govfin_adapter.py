@@ -76,7 +76,9 @@ def _config(**overrides: object) -> GovFinConfig:
     return GovFinConfig(**values)
 
 
-def test_configuration_and_registry_import_without_io(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configuration_and_registry_import_without_io(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Covers: ETL-114 -- importing reads no key, file or network."""
     monkeypatch.delenv("CENSUS_API_KEY", raising=False)
     for name in list(sys.modules):
@@ -110,8 +112,8 @@ def test_census_state_codes_are_alphabetical_not_fips() -> None:
         ("C21", {"intergovernmental_state", "intergovernmental_total"}),
         ("D21", {"intergovernmental_local", "intergovernmental_total"}),
         ("44T", {"debt_outstanding"}),
-            ("49U", {"debt_outstanding"}),
-            ("44X", set()),
+        ("49U", {"debt_outstanding"}),
+        ("44X", set()),
         ("41A", set()),
         ("64V", {"debt_outstanding"}),
         ("19T", set()),
@@ -139,7 +141,9 @@ def test_tax_types_partition_total_taxes() -> None:
 
 def test_registered_periods_and_slices() -> None:
     """Covers: ETL-114 -- editions declare their zips, the API its grains, QTAX runs to this year."""
-    assert registered_periods("cog_units") == tuple(e.census_year for e in CENSUS_EDITIONS)
+    assert registered_periods("cog_units") == tuple(
+        e.census_year for e in CENSUS_EDITIONS
+    )
     assert slice_keys("cog_units", 2002) == ("units", "directory")
     assert slice_keys("asslgf", 2020) == ("us", "state")
     assert registered_periods("qtax", date(2027, 3, 1))[-1] == 2027
@@ -151,12 +155,23 @@ def test_first_run_plans_everything_then_only_the_window() -> None:
     today = date(2026, 11, 5)
     years = list(registered_periods("qtax", today))
     assert plan.periods_to_capture("qtax", {}, set(), today=today) == years
-    assert plan.periods_to_capture("qtax", None, set(years), today=today) == [2025, 2026]
+    assert plan.periods_to_capture("qtax", None, set(years), today=today) == [
+        2025,
+        2026,
+    ]
     gap = set(years) - {2001, 2002}
-    assert plan.periods_to_capture("qtax", None, gap, today=today) == [2001, 2002, 2025, 2026]
+    assert plan.periods_to_capture("qtax", None, gap, today=today) == [
+        2001,
+        2002,
+        2025,
+        2026,
+    ]
     editions = list(registered_periods("cog_units"))
     assert plan.periods_to_capture("cog_units", None, set(editions)) == []
-    assert plan.periods_to_capture("cog_units", {"history": True}, set(editions)) == editions
+    assert (
+        plan.periods_to_capture("cog_units", {"history": True}, set(editions))
+        == editions
+    )
 
 
 def test_answered_needs_every_declared_slice() -> None:
@@ -187,7 +202,9 @@ def test_answered_needs_every_declared_slice() -> None:
             return _Cursor(self.rows)
 
     assert plan.answered(_Connection([(2002, "units")]), "cog_units") == set()
-    assert plan.answered(_Connection([(2002, "units"), (2002, "directory")]), "cog_units") == {2002}
+    assert plan.answered(
+        _Connection([(2002, "units"), (2002, "directory")]), "cog_units"
+    ) == {2002}
 
 
 def test_key_rides_only_on_the_request_and_never_in_the_slice_or_error() -> None:
@@ -211,7 +228,11 @@ def test_key_rides_only_on_the_request_and_never_in_the_slice_or_error() -> None
 def test_no_content_is_an_empty_slice_and_a_client_error_is_not_retried() -> None:
     """Covers: ETL-114 -- 204 is a published absence; 400 fails at once."""
     empty = fetch_api_slice(
-        "qtax", 1994, "us", config=_config(), client=_ScriptedClient([httpx.Response(204)])
+        "qtax",
+        1994,
+        "us",
+        config=_config(),
+        client=_ScriptedClient([httpx.Response(204)]),
     )
     assert not empty.published and empty.raw_bytes == b""
     client = _ScriptedClient([httpx.Response(400), httpx.Response(200)])
@@ -242,11 +263,17 @@ def test_archive_must_be_a_zip_holding_the_registered_member() -> None:
     assert raised.value.code == "missing_member"
     good = census_govfin.unit_archives()[archive.path]
     response = fetch_archive(
-        archive, 2022, config=_config(), client=_ScriptedClient([httpx.Response(200, content=good)])
+        archive,
+        2022,
+        config=_config(),
+        client=_ScriptedClient([httpx.Response(200, content=good)]),
     )
     assert response.raw_bytes == good
     assert response.media_type == "application/zip"
-    assert dict(response.request_parameters) == {"census_year": "2022", "slice": "bundle"}
+    assert dict(response.request_parameters) == {
+        "census_year": "2022",
+        "slice": "bundle",
+    }
 
 
 def test_unit_fixture_parses_with_quarantine_reasons() -> None:
@@ -323,7 +350,9 @@ def test_2012_alphabetical_records_map_to_fips() -> None:
 
     state_line = _fixed(32, state=(1, "50"), level=(3, "3"), item=(5, "T01"),
                         amount=(9, "      795000"))  # fmt: skip
-    totals, quarantined, _ = parse_state_total_lines([state_line], edition.state_total_layout)
+    totals, quarantined, _ = parse_state_total_lines(
+        [state_line], edition.state_total_layout
+    )
     assert not quarantined
     assert (totals[0].fips_state, totals[0].level_code, totals[0].amount) == (
         "55", "3", Decimal(795000),
@@ -353,7 +382,10 @@ def test_2002_is_reported_only_and_reads_its_longer_directory() -> None:
         [directory_line], edition.directory_layout, edition.data_layout.state_scheme
     )
     assert not quarantined
-    assert (governments[0].fips_county, governments[0].fiscal_year_ending) == ("001", "0930")
+    assert (governments[0].fips_county, governments[0].fiscal_year_ending) == (
+        "001",
+        "0930",
+    )
 
 
 def test_a_non_numeric_amount_is_missing_never_zero() -> None:

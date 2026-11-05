@@ -215,12 +215,13 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # meaning any constraint that refuses the violation outright -- a foreign
     # key and a CHECK refuse a row as completely as a unique index does.
     # DQ-FBI-009 (derived calendar rollups, ADR-0007) and the new sources' rules
-    # made it forty-five, and the elections source's grain rule (DQ-ELEC-001)
-    # forty-six.
+    # made it forty-five, the elections source's grain rule (DQ-ELEC-001)
+    # forty-six, and government finance's grain and conformance rules
+    # (DQ-GOVFIN-001 and -002) forty-eight.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 46, enforced
+    assert len(enforced) == 48, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -464,6 +465,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "NCES_CCD",
         "USDA_ERS",
         "ELECTIONS",
+        "CENSUS_GOVFIN",
     }, (
         "every source that publishes gold declares the component its DDL is "
         "recorded under; CDC, FBI and USDA NASS joined the four when their "

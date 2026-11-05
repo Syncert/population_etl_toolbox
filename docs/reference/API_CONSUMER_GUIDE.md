@@ -1342,6 +1342,31 @@ warehouse read the Bureau's response, because the API names no release; a
 changed response is a new release beside the old one, readable with
 `scope=as_released`.
 
+### Government finance: Census figures, county-area sums and fiscal years
+
+`CENSUS_GOVFIN` serves the Census Bureau's state and local government
+finances: taxes by type, charges, own-source revenue, aid between
+governments and debt, in thousands of dollars (QTAX in millions). A metric
+code is `CENSUS_GOVFIN:<dataset>:<measure>:<government level>` -- for
+example `CENSUS_GOVFIN:asslgf:taxes_total:state_and_local` for a state's
+state and local taxes, or `CENSUS_GOVFIN:cog_units:taxes_total:local` for a
+county area's local government taxes.
+
+- `dimensions.derivation` says whose figure it is: `census_published` for
+  Census's own state and national figures, `county_area_rollup` for the
+  warehouse's sum of the local governments Census places in a county, and
+  `state_local_rollup` or `state_government_units` for a state summed from
+  its unit records. `government_count` is how many governments a sum holds.
+- A government spanning counties is counted whole in its Census home county,
+  so a county area's taxes were collected in that county, not necessarily
+  paid by its residents.
+- County areas exist only for Census of Governments years (2002, 2012, 2017,
+  2022). `record_coverage = reported_only` marks 2002, whose file left out
+  the governments Census imputed; it reads low beside later years.
+- `period_start` is January 1 of the year a fiscal year ends in, and
+  `dimensions.period_label` says "fiscal year ending in 2022". Most states'
+  fiscal 2022 ran from July 2021 to June 2022.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published

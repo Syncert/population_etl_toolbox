@@ -186,7 +186,9 @@ def parse_unit_lines(
         count += 1
         if len(line.rstrip("\r\n")) < layout.min_length:
             quarantined.append(
-                Quarantined(index, "short_record", "record is shorter than the layout", member)
+                Quarantined(
+                    index, "short_record", "record is shorter than the layout", member
+                )
             )
             continue
         government = layout.government_code.read(line)
@@ -204,7 +206,12 @@ def parse_unit_lines(
         item = layout.item_code.read(line).upper()
         if not _ITEM_CODE.match(item):
             quarantined.append(
-                Quarantined(index, "unreadable_item", "item code is not three characters", member)
+                Quarantined(
+                    index,
+                    "unreadable_item",
+                    "item code is not three characters",
+                    member,
+                )
             )
             continue
         type_code, fips_state, fips_county = placed
@@ -243,7 +250,9 @@ def parse_directory_lines(
         count += 1
         if len(line.rstrip("\r\n")) < layout.min_length:
             quarantined.append(
-                Quarantined(index, "short_record", "record is shorter than the layout", member)
+                Quarantined(
+                    index, "short_record", "record is shorter than the layout", member
+                )
             )
             continue
         government = layout.government_code.read(line)
@@ -275,7 +284,9 @@ def parse_directory_lines(
             stated_county = layout.fips_county.read(line)
             fips_county = (
                 stated_county
-                if len(stated_county) == 3 and stated_county.isdigit() and stated_county != "000"
+                if len(stated_county) == 3
+                and stated_county.isdigit()
+                and stated_county != "000"
                 else None
             )
         if type_code == "0":
@@ -314,7 +325,9 @@ def parse_state_total_lines(
         count += 1
         if len(line.rstrip("\r\n")) < layout.min_length:
             quarantined.append(
-                Quarantined(index, "short_record", "record is shorter than the layout", member)
+                Quarantined(
+                    index, "short_record", "record is shorter than the layout", member
+                )
             )
             continue
         state = layout.state_code.read(line)
@@ -324,12 +337,22 @@ def parse_state_total_lines(
         item = layout.item_code.read(line).upper()
         if state != "00" and state not in _FIPS_STATES:
             quarantined.append(
-                Quarantined(index, "unreadable_geography", "state code is not a FIPS state", member)
+                Quarantined(
+                    index,
+                    "unreadable_geography",
+                    "state code is not a FIPS state",
+                    member,
+                )
             )
             continue
         if not _ITEM_CODE.match(item):
             quarantined.append(
-                Quarantined(index, "unreadable_item", "item code is not three characters", member)
+                Quarantined(
+                    index,
+                    "unreadable_item",
+                    "item code is not three characters",
+                    member,
+                )
             )
             continue
         if level not in STATE_TOTAL_LEVELS:
@@ -347,13 +370,20 @@ def parse_state_total_lines(
     return totals, quarantined, count
 
 
-def parse_archive(edition: CensusEdition, archive: UnitArchive, payload: bytes) -> ParsedArchive:
+def parse_archive(
+    edition: CensusEdition, archive: UnitArchive, payload: bytes
+) -> ParsedArchive:
     """Read every registered member of one captured unit-file zip."""
     try:
         bundle = zipfile.ZipFile(io.BytesIO(payload))
     except zipfile.BadZipFile:
         return ParsedArchive(
-            (), (), (), (), (Quarantined(0, "not_a_zip", "capture is not a zip archive"),), 0
+            (),
+            (),
+            (),
+            (),
+            (Quarantined(0, "not_a_zip", "capture is not a zip archive"),),
+            0,
         )
     with bundle:
         names = bundle.namelist()
@@ -369,21 +399,28 @@ def parse_archive(edition: CensusEdition, archive: UnitArchive, payload: bytes) 
                 return None
             member = member_matching(names, pattern)
             if member is None:
-                quarantined.append(Quarantined(0, "missing_member", f"zip lacks the {what} file"))
+                quarantined.append(
+                    Quarantined(0, "missing_member", f"zip lacks the {what} file")
+                )
                 return None
             members.append(member)
             return member, bundle.read(member).decode("latin-1").splitlines()
 
         read = lines_of(archive.data_member, "unit")
         if read:
-            found, bad, count = parse_unit_lines(read[1], edition.data_layout, member=read[0])
+            found, bad, count = parse_unit_lines(
+                read[1], edition.data_layout, member=read[0]
+            )
             amounts.extend(found)
             quarantined.extend(bad)
             rows += count
         read = lines_of(archive.directory_member, "directory")
         if read:
             found_g, bad, count = parse_directory_lines(
-                read[1], edition.directory_layout, edition.data_layout.state_scheme, member=read[0]
+                read[1],
+                edition.directory_layout,
+                edition.data_layout.state_scheme,
+                member=read[0],
             )
             governments.extend(found_g)
             quarantined.extend(bad)
@@ -405,11 +442,15 @@ def parse_archive(edition: CensusEdition, archive: UnitArchive, payload: bytes) 
     )
 
 
-def _api_rows(payload: bytes, dataset_id: str) -> tuple[list[str], list[list[Any]]] | Quarantined:
+def _api_rows(
+    payload: bytes, dataset_id: str
+) -> tuple[list[str], list[list[Any]]] | Quarantined:
     from ..client import GovFinPayloadError, validate_api_payload
 
     try:
-        rows = validate_api_payload(payload, dataset_id, api_expected_header(dataset_id))
+        rows = validate_api_payload(
+            payload, dataset_id, api_expected_header(dataset_id)
+        )
     except GovFinPayloadError as exc:
         return Quarantined(0, exc.code, str(exc))
     return [str(name).lower() for name in rows[0]], rows[1:]
@@ -445,7 +486,9 @@ def parse_govs(payload: bytes, *, period: int, slice_key: str) -> ParsedApiSlice
         year = str(record.get("time") or record.get("year") or "")
         if year != str(period):
             quarantined.append(
-                Quarantined(index, "unexpected_year", f"row is for {year}, not {period}")
+                Quarantined(
+                    index, "unexpected_year", f"row is for {year}, not {period}"
+                )
             )
             continue
         place = _geography(record, slice_key)
@@ -471,7 +514,11 @@ def parse_govs(payload: bytes, *, period: int, slice_key: str) -> ParsedApiSlice
                 value,
                 "valid" if value is not None else "missing",
                 _record_id(
-                    "asslgf", measure_id, level, period, geo_id,
+                    "asslgf",
+                    measure_id,
+                    level,
+                    period,
+                    geo_id,
                     json.dumps(record, sort_keys=True),
                 ),  # fmt: skip
                 record,
@@ -506,7 +553,9 @@ def parse_qtax(payload: bytes, *, period: int, slice_key: str) -> ParsedApiSlice
         if quarter_match is None or int(quarter_match.group(1)) != period:
             quarantined.append(
                 Quarantined(
-                    index, "unexpected_quarter", f"row is for {quarter_text!r}, not {period}"
+                    index,
+                    "unexpected_quarter",
+                    f"row is for {quarter_text!r}, not {period}",
                 )
             )
             continue
@@ -516,7 +565,9 @@ def parse_qtax(payload: bytes, *, period: int, slice_key: str) -> ParsedApiSlice
             slice_key == "state" and USPS_TO_FIPS.get(geo_level_code) != place[1]
         ):
             quarantined.append(
-                Quarantined(index, "unreadable_geography", "state code and name disagree")
+                Quarantined(
+                    index, "unreadable_geography", "state code and name disagree"
+                )
             )
             continue
         geo_type, code, geo_id = place
@@ -535,7 +586,13 @@ def parse_qtax(payload: bytes, *, period: int, slice_key: str) -> ParsedApiSlice
                 None if source is None else str(source),
                 value,
                 "valid" if value is not None else "missing",
-                _record_id("qtax", measure_id, quarter_text, geo_id, json.dumps(record, sort_keys=True)),
+                _record_id(
+                    "qtax",
+                    measure_id,
+                    quarter_text,
+                    geo_id,
+                    json.dumps(record, sort_keys=True),
+                ),
                 record,
             )
         )

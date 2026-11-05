@@ -227,6 +227,32 @@ r control.census_cbp_file
     index census_cbp_file_capture_idx CREATE INDEX census_cbp_file_capture_idx ON control.census_cbp_file USING btree (capture_id)
     index census_cbp_file_pkey CREATE UNIQUE INDEX census_cbp_file_pkey ON control.census_cbp_file USING btree (run_id)
 
+r control.census_govfin_slice
+    column run_id uuid NOT NULL
+    column dataset_id text NOT NULL
+    column period integer NOT NULL
+    column slice_key text NOT NULL
+    column capture_id uuid NOT NULL
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column quarantined_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint census_govfin_slice_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint census_govfin_slice_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint census_govfin_slice_check CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint census_govfin_slice_dataset_id_check CHECK ((dataset_id = ANY (ARRAY['cog_units'::text, 'asslgf'::text, 'qtax'::text])))
+    constraint census_govfin_slice_period_check CHECK (((period >= 1950) AND (period <= 2100)))
+    constraint census_govfin_slice_pkey PRIMARY KEY (run_id, slice_key)
+    constraint census_govfin_slice_quarantined_row_count_check CHECK ((quarantined_row_count >= 0))
+    constraint census_govfin_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint census_govfin_slice_slice_key_check CHECK ((slice_key ~ '^[a-z_]+$'::text))
+    constraint census_govfin_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'quarantined'::text, 'silver_ready'::text, 'published'::text])))
+    index census_govfin_slice_capture_idx CREATE INDEX census_govfin_slice_capture_idx ON control.census_govfin_slice USING btree (capture_id)
+    index census_govfin_slice_period_idx CREATE INDEX census_govfin_slice_period_idx ON control.census_govfin_slice USING btree (dataset_id, period, slice_key, created_at DESC)
+    index census_govfin_slice_pkey CREATE UNIQUE INDEX census_govfin_slice_pkey ON control.census_govfin_slice USING btree (run_id, slice_key)
+
 r control.census_lodes_file
     column run_id uuid NOT NULL
     column family text NOT NULL
@@ -4149,6 +4175,334 @@ v gold_census_cbp.sector_definition
     body SELECT naics_key,
     body     naics_label
     body    FROM ( VALUES ('total'::text,'Total for all sectors'::text), ('11'::text,'Forestry, fishing, hunting, and agriculture support'::text), ('21'::text,'Mining, quarrying, and oil and gas extraction'::text), ('22'::text,'Utilities'::text), ('23'::text,'Construction'::text), ('31'::text,'Manufacturing'::text), ('42'::text,'Wholesale trade'::text), ('44'::text,'Retail trade'::text), ('48'::text,'Transportation and warehousing'::text), ('51'::text,'Information'::text), ('52'::text,'Finance and insurance'::text), ('53'::text,'Real estate and rental and leasing'::text), ('54'::text,'Professional, scientific, and technical services'::text), ('55'::text,'Management of companies and enterprises'::text), ('56'::text,'Administrative and support and waste management and remediation services'::text), ('61'::text,'Educational services'::text), ('62'::text,'Health care and social assistance'::text), ('71'::text,'Arts, entertainment, and recreation'::text), ('72'::text,'Accommodation and food services'::text), ('81'::text,'Other services (except public administration)'::text), ('99'::text,'Industries not classified'::text)) sector(naics_key, naics_label);
+
+v gold_census_govfin.county_area_government
+    column census_year integer
+    column government_code text
+    column government_name text
+    column government_type text
+    column county_name text
+    column geo_id text
+    column population bigint
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (government.census_year, government.government_code) government.census_year,
+    body     government.government_code,
+    body     government.government_name,
+    body     government.government_type,
+    body     government.county_name,
+    body     (('state:'::text || government.fips_state) || '|county:'::text) || government.fips_county AS geo_id,
+    body     government.population,
+    body     government.capture_id,
+    body     government.run_id
+    body    FROM silver_census_govfin.unit_government government
+    body      JOIN control.census_govfin_slice slice ON slice.capture_id = government.capture_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = government.capture_id
+    body   WHERE slice.status = 'published'::text AND government.type_code <> '0'::text AND government.fips_county IS NOT NULL
+    body   ORDER BY government.census_year, government.government_code, capture.retrieved_at DESC, government.capture_id DESC;
+
+v gold_census_govfin.measure_export
+    column source_object_key text
+    column source_dataset text
+    column source_measure_code text
+    column government_level text
+    column display_name text
+    column definition text
+    column unit text
+    column cadence text
+    column methodology_url text
+    column schema_version text
+    body SELECT (((measure.dataset_id || ':'::text) || measure.measure_id) || ':'::text) || level.government_level AS source_object_key,
+    body     measure.dataset_id AS source_dataset,
+    body     measure.measure_id AS source_measure_code,
+    body     level.government_level,
+    body     measure.measure_label AS display_name,
+    body     measure.definition,
+    body     measure.unit,
+    body     measure.cadence,
+    body     measure.methodology_url,
+    body     measure.parser_contract_version AS schema_version
+    body    FROM silver_census_govfin.dim_measure measure
+    body      CROSS JOIN ( VALUES ('state_and_local'::text), ('state'::text), ('local'::text)) level(government_level)
+    body   WHERE measure.dataset_id <> 'qtax'::text OR level.government_level = 'state'::text;
+
+v gold_census_govfin.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CENSUS_GOVFIN'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     export.source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     ((export.display_name || ', '::text) || replace(export.government_level, '_'::text, ' '::text)) || ' government'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body         CASE export.cadence
+    body             WHEN 'quarterly'::text THEN ARRAY['QUARTERLY'::text]
+    body             ELSE ARRAY['ANNUAL'::text]
+    body         END AS valid_time_grains,
+    body     'additive_within_subject'::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_census_govfin', 'relation', 'observation_revision', 'key', export.source_object_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'Census Bureau State and Local Government Finances, Census of Governments and Quarterly Summary of State and Local Tax Revenue'::text AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body     export.methodology_url AS reference_url
+    body    FROM gold_census_govfin.measure_export export
+    body      JOIN LATERAL ( SELECT max(latest.fiscal_year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(slice.published_at) AS publication_time
+    body            FROM gold_census_govfin.observation_latest latest
+    body              JOIN control.census_govfin_slice slice ON slice.capture_id = latest.capture_id
+    body           WHERE latest.metric_key = export.source_object_key) served ON served.publication_time IS NOT NULL;
+
+v gold_census_govfin.observation_latest
+    column metric_key text
+    column dataset_id text
+    column measure_id text
+    column government_level text
+    column measure_label text
+    column definition text
+    column unit text
+    column cadence text
+    column methodology_url text
+    column fiscal_year integer
+    column year integer
+    column quarter smallint
+    column period_start date
+    column period_end date
+    column period_label text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column government_count integer
+    column derivation text
+    column record_coverage text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, fiscal_year, quarter) metric_key,
+    body     dataset_id,
+    body     measure_id,
+    body     government_level,
+    body     measure_label,
+    body     definition,
+    body     unit,
+    body     cadence,
+    body     methodology_url,
+    body     fiscal_year,
+    body     year,
+    body     quarter,
+    body     period_start,
+    body     period_end,
+    body     period_label,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     government_count,
+    body     derivation,
+    body     record_coverage,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_census_govfin.observation_revision revision
+    body   ORDER BY metric_key, geo_id, fiscal_year, quarter, retrieved_at DESC, capture_id DESC;
+
+v gold_census_govfin.observation_revision
+    column metric_key text
+    column dataset_id text
+    column measure_id text
+    column government_level text
+    column measure_label text
+    column definition text
+    column unit text
+    column cadence text
+    column methodology_url text
+    column fiscal_year integer
+    column year integer
+    column quarter smallint
+    column period_start date
+    column period_end date
+    column period_label text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value_source text
+    column value numeric
+    column value_status text
+    column government_count integer
+    column derivation text
+    column record_coverage text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT (((fact.dataset_id || ':'::text) || fact.measure_id) || ':'::text) || fact.government_level AS metric_key,
+    body     fact.dataset_id,
+    body     fact.measure_id,
+    body     fact.government_level,
+    body     measure.measure_label,
+    body     measure.definition,
+    body     measure.unit,
+    body     measure.cadence,
+    body     measure.methodology_url,
+    body     fact.fiscal_year,
+    body     fact.fiscal_year AS year,
+    body     fact.quarter,
+    body         CASE
+    body             WHEN fact.quarter = 0 THEN make_date(fact.fiscal_year, 1, 1)
+    body             ELSE make_date(fact.fiscal_year, fact.quarter * 3 - 2, 1)
+    body         END AS period_start,
+    body         CASE
+    body             WHEN fact.quarter = 0 THEN make_date(fact.fiscal_year, 12, 31)
+    body             ELSE (make_date(fact.fiscal_year, fact.quarter * 3 - 2, 1) + '3 mons'::interval - '1 day'::interval)::date
+    body         END AS period_end,
+    body         CASE
+    body             WHEN fact.quarter = 0 THEN 'fiscal year ending in '::text || fact.fiscal_year
+    body             ELSE (fact.fiscal_year || ' Q'::text) || fact.quarter
+    body         END AS period_label,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.government_count,
+    body     fact.derivation,
+    body     fact.record_coverage,
+    body     fact.retrieved_at,
+    body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_census_govfin.fact_observation fact
+    body      JOIN silver_census_govfin.dim_measure measure ON measure.dataset_id = fact.dataset_id AND measure.measure_id = fact.measure_id
+    body      JOIN control.census_govfin_slice slice ON slice.capture_id = fact.capture_id
+    body   WHERE slice.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_census_govfin.tax_burden
+    column dataset_id text
+    column government_level text
+    column geo_id text
+    column geo_type text
+    column geo_level text
+    column fiscal_year integer
+    column income_year integer
+    column taxes_thousands numeric
+    column personal_income_thousands numeric
+    column population numeric
+    column taxes_pct_of_personal_income numeric
+    column taxes_per_person_dollars numeric
+    column unavailable_reason text
+    column denominator_source text
+    column taxes_release_key text
+    column income_release_key text
+    column derived boolean
+    body SELECT taxes.dataset_id,
+    body     taxes.government_level,
+    body     taxes.geo_id,
+    body     taxes.geo_type,
+    body     taxes.geo_level,
+    body     taxes.fiscal_year,
+    body     taxes.fiscal_year AS income_year,
+    body     taxes.value AS taxes_thousands,
+    body     income.value AS personal_income_thousands,
+    body     population.value AS population,
+    body         CASE
+    body             WHEN income.value > 0::numeric THEN round(taxes.value / income.value * 100::numeric, 3)
+    body             ELSE NULL::numeric
+    body         END AS taxes_pct_of_personal_income,
+    body         CASE
+    body             WHEN population.value > 0::numeric THEN round(taxes.value * 1000::numeric / population.value, 2)
+    body             ELSE NULL::numeric
+    body         END AS taxes_per_person_dollars,
+    body         CASE
+    body             WHEN income.value IS NULL THEN 'denominator_missing'::text
+    body             WHEN income.value <= 0::numeric THEN 'denominator_zero'::text
+    body             ELSE NULL::text
+    body         END AS unavailable_reason,
+    body     'BEA CAINC1 line 1 personal income and line 2 population, calendar year '::text || taxes.fiscal_year AS denominator_source,
+    body     taxes.release_key AS taxes_release_key,
+    body     income.release_key AS income_release_key,
+    body     true AS derived
+    body    FROM gold_census_govfin.observation_latest taxes
+    body      LEFT JOIN gold_bea.observation_latest income ON income.metric_key = 'CAINC1:1'::text AND income.geo_id = taxes.geo_id AND income.year = taxes.fiscal_year AND income.value_status = 'valid'::text
+    body      LEFT JOIN gold_bea.observation_latest population ON population.metric_key = 'CAINC1:2'::text AND population.geo_id = taxes.geo_id AND population.year = taxes.fiscal_year AND population.value_status = 'valid'::text
+    body   WHERE taxes.measure_id = 'taxes_total'::text AND taxes.quarter = 0 AND taxes.value_status = 'valid'::text AND (taxes.dataset_id = 'asslgf'::text AND taxes.government_level = 'state_and_local'::text OR taxes.dataset_id = 'cog_units'::text AND taxes.derivation = 'county_area_rollup'::text);
+
+v gold_census_govfin.tax_mix
+    column dataset_id text
+    column government_level text
+    column measure_id text
+    column measure_label text
+    column fiscal_year integer
+    column quarter smallint
+    column geo_id text
+    column geo_type text
+    column tax_amount numeric
+    column taxes_total numeric
+    column share_of_taxes_pct numeric
+    column unavailable_reason text
+    column release_key text
+    body SELECT part.dataset_id,
+    body     part.government_level,
+    body     part.measure_id,
+    body     part.measure_label,
+    body     part.fiscal_year,
+    body     part.quarter,
+    body     part.geo_id,
+    body     part.geo_type,
+    body     part.value AS tax_amount,
+    body     total.value AS taxes_total,
+    body         CASE
+    body             WHEN part.value_status = 'valid'::text AND total.value_status = 'valid'::text AND total.value <> 0::numeric THEN round(part.value / total.value * 100::numeric, 2)
+    body             ELSE NULL::numeric
+    body         END AS share_of_taxes_pct,
+    body         CASE
+    body             WHEN part.value_status <> 'valid'::text OR total.value_status <> 'valid'::text THEN 'suppressed_input'::text
+    body             WHEN total.value = 0::numeric THEN 'denominator_zero'::text
+    body             ELSE NULL::text
+    body         END AS unavailable_reason,
+    body     part.release_key
+    body    FROM gold_census_govfin.observation_latest part
+    body      JOIN gold_census_govfin.observation_latest total ON total.dataset_id = part.dataset_id AND total.government_level = part.government_level AND total.measure_id = 'taxes_total'::text AND total.fiscal_year = part.fiscal_year AND total.quarter = part.quarter AND total.geo_id = part.geo_id
+    body   WHERE part.measure_id = ANY (ARRAY['tax_property'::text, 'tax_general_sales'::text, 'tax_selective_sales'::text, 'tax_individual_income'::text, 'tax_corporate_income'::text, 'tax_other'::text]);
 
 r gold_census_lodes.coverage_gap
     column run_id uuid NOT NULL
@@ -10981,6 +11335,202 @@ r silver_census_cbp.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text, 'suppressed'::text])))
     index census_cbp_revision_run_idx CREATE INDEX census_cbp_revision_run_idx ON silver_census_cbp.observation_revision USING btree (run_id)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_cbp.observation_revision USING btree (capture_id, source_row_index, measure)
+
+r silver_census_govfin.api_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column dataset_id text NOT NULL
+    column measure_id text NOT NULL
+    column government_level text NOT NULL
+    column fiscal_year integer NOT NULL
+    column quarter smallint NOT NULL
+    column geo_type text NOT NULL
+    column geo_source_code text NOT NULL
+    column geo_id text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column source_record_id text NOT NULL
+    column source_record jsonb NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint api_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint api_revision_dataset_id_check CHECK ((dataset_id = ANY (ARRAY['asslgf'::text, 'qtax'::text])))
+    constraint api_revision_dataset_id_measure_id_fkey FOREIGN KEY (dataset_id, measure_id) REFERENCES silver_census_govfin.dim_measure(dataset_id, measure_id)
+    constraint api_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text])))
+    constraint api_revision_government_level_check CHECK ((government_level = ANY (ARRAY['state_and_local'::text, 'state'::text, 'local'::text])))
+    constraint api_revision_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (value IS NULL)))
+    constraint api_revision_pkey PRIMARY KEY (capture_id, source_row_index)
+    constraint api_revision_quarter_check CHECK (((quarter >= 0) AND (quarter <= 4)))
+    constraint api_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint api_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint api_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint api_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint api_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index api_revision_pkey CREATE UNIQUE INDEX api_revision_pkey ON silver_census_govfin.api_revision USING btree (capture_id, source_row_index)
+    index census_govfin_api_revision_run_idx CREATE INDEX census_govfin_api_revision_run_idx ON silver_census_govfin.api_revision USING btree (run_id)
+
+r silver_census_govfin.dim_measure
+    column dataset_id text NOT NULL
+    column measure_id text NOT NULL
+    column measure_label text NOT NULL
+    column definition text NOT NULL
+    column unit text NOT NULL
+    column cadence text NOT NULL
+    column methodology_url text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_cadence_check CHECK ((cadence = ANY (ARRAY['annual'::text, 'quarterly'::text])))
+    constraint dim_measure_dataset_id_check CHECK ((dataset_id = ANY (ARRAY['cog_units'::text, 'asslgf'::text, 'qtax'::text])))
+    constraint dim_measure_measure_id_check CHECK ((measure_id ~ '^[a-z_]+$'::text))
+    constraint dim_measure_pkey PRIMARY KEY (dataset_id, measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_census_govfin.dim_measure USING btree (dataset_id, measure_id)
+
+r silver_census_govfin.fact_observation
+    column dataset_id text NOT NULL
+    column measure_id text NOT NULL
+    column government_level text NOT NULL
+    column fiscal_year integer NOT NULL
+    column quarter smallint NOT NULL
+    column geo_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column government_count integer
+    column derivation text
+    column record_coverage text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_observation_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_observation_dataset_id_measure_id_fkey FOREIGN KEY (dataset_id, measure_id) REFERENCES silver_census_govfin.dim_measure(dataset_id, measure_id)
+    constraint fact_observation_derivation_check CHECK ((derivation = ANY (ARRAY['county_area_rollup'::text, 'state_local_rollup'::text, 'state_government_units'::text])))
+    constraint fact_observation_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint fact_observation_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_observation_government_count_check CHECK ((government_count >= 0))
+    constraint fact_observation_government_level_check CHECK ((government_level = ANY (ARRAY['state_and_local'::text, 'state'::text, 'local'::text])))
+    constraint fact_observation_pkey PRIMARY KEY (dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id)
+    constraint fact_observation_quarter_check CHECK (((quarter >= 0) AND (quarter <= 4)))
+    constraint fact_observation_record_coverage_check CHECK ((record_coverage = ANY (ARRAY['reported_and_imputed'::text, 'reported_only'::text])))
+    constraint fact_observation_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_observation_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint govfin_fact_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (value IS NULL)))
+    constraint govfin_fact_rollup_is_unit_file CHECK (((derivation IS NULL) OR (dataset_id = 'cog_units'::text)))
+    constraint govfin_fact_rollup_states_coverage CHECK (((derivation IS NULL) = (record_coverage IS NULL)))
+    constraint govfin_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index census_govfin_fact_metric_geo_idx CREATE INDEX census_govfin_fact_metric_geo_idx ON silver_census_govfin.fact_observation USING btree (measure_id, geo_id, fiscal_year)
+    index census_govfin_fact_run_idx CREATE INDEX census_govfin_fact_run_idx ON silver_census_govfin.fact_observation USING btree (run_id)
+    index fact_observation_pkey CREATE UNIQUE INDEX fact_observation_pkey ON silver_census_govfin.fact_observation USING btree (dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id)
+
+r silver_census_govfin.measure_item
+    column measure_id text NOT NULL
+    column item_code text NOT NULL
+    constraint measure_item_item_code_check CHECK ((item_code ~ '^[0-9A-Z]{3}$'::text))
+    constraint measure_item_measure_id_check CHECK ((measure_id ~ '^[a-z_]+$'::text))
+    constraint measure_item_pkey PRIMARY KEY (measure_id, item_code)
+    index census_govfin_measure_item_item_idx CREATE INDEX census_govfin_measure_item_item_idx ON silver_census_govfin.measure_item USING btree (item_code)
+    index measure_item_pkey CREATE UNIQUE INDEX measure_item_pkey ON silver_census_govfin.measure_item USING btree (measure_id, item_code)
+
+r silver_census_govfin.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_census_govfin.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column member text NOT NULL DEFAULT ''::text
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_member_source_row_index_error_code_key UNIQUE (capture_id, member, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_member_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_member_source_row_index_error_code_key ON silver_census_govfin.quarantine USING btree (capture_id, member, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_census_govfin.quarantine USING btree (quarantine_sk)
+
+r silver_census_govfin.state_type_total
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column census_year integer NOT NULL
+    column fips_state text NOT NULL
+    column level_code text NOT NULL
+    column item_code text NOT NULL
+    column amount numeric
+    column coefficient_of_variation numeric
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint state_type_total_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint state_type_total_fips_state_check CHECK ((fips_state ~ '^[0-9]{2}$'::text))
+    constraint state_type_total_item_code_check CHECK ((item_code ~ '^[0-9A-Z]{3}$'::text))
+    constraint state_type_total_level_code_check CHECK ((level_code = ANY (ARRAY['1'::text, '2'::text, '3'::text])))
+    constraint state_type_total_pkey PRIMARY KEY (capture_id, source_row_index)
+    constraint state_type_total_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint state_type_total_source_row_index_check CHECK ((source_row_index >= 1))
+    index census_govfin_state_type_total_run_idx CREATE INDEX census_govfin_state_type_total_run_idx ON silver_census_govfin.state_type_total USING btree (run_id, fips_state, level_code)
+    index state_type_total_pkey CREATE UNIQUE INDEX state_type_total_pkey ON silver_census_govfin.state_type_total USING btree (capture_id, source_row_index)
+
+r silver_census_govfin.unit_amount
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column census_year integer NOT NULL
+    column government_code text NOT NULL
+    column type_code text NOT NULL
+    column fips_state text NOT NULL
+    column fips_county text
+    column item_code text NOT NULL
+    column amount_source text NOT NULL
+    column amount numeric
+    column value_status text NOT NULL
+    column data_year integer
+    column imputation_flag text
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint unit_amount_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint unit_amount_fips_county_check CHECK ((fips_county ~ '^[0-9]{3}$'::text))
+    constraint unit_amount_fips_state_check CHECK ((fips_state ~ '^[0-9]{2}$'::text))
+    constraint unit_amount_government_code_check CHECK ((government_code ~ '^([0-9]{12}|[0-9]{14})$'::text))
+    constraint unit_amount_item_code_check CHECK ((item_code ~ '^[0-9A-Z]{3}$'::text))
+    constraint unit_amount_missing_value_absent CHECK (((value_status <> 'missing'::text) OR (amount IS NULL)))
+    constraint unit_amount_pkey PRIMARY KEY (capture_id, source_row_index)
+    constraint unit_amount_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint unit_amount_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint unit_amount_type_code_check CHECK ((type_code = ANY (ARRAY['0'::text, '1'::text, '2'::text, '3'::text, '4'::text, '5'::text])))
+    constraint unit_amount_valid_value_present CHECK (((value_status <> 'valid'::text) OR (amount IS NOT NULL)))
+    constraint unit_amount_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index census_govfin_unit_amount_run_idx CREATE INDEX census_govfin_unit_amount_run_idx ON silver_census_govfin.unit_amount USING btree (run_id, government_code)
+    index unit_amount_pkey CREATE UNIQUE INDEX unit_amount_pkey ON silver_census_govfin.unit_amount USING btree (capture_id, source_row_index)
+
+r silver_census_govfin.unit_government
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column census_year integer NOT NULL
+    column government_code text NOT NULL
+    column type_code text NOT NULL
+    column government_type text NOT NULL
+    column government_name text NOT NULL
+    column county_name text
+    column fips_state text NOT NULL
+    column fips_county text
+    column population bigint
+    column fiscal_year_ending text
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint unit_government_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint unit_government_fips_county_check CHECK ((fips_county ~ '^[0-9]{3}$'::text))
+    constraint unit_government_fips_state_check CHECK ((fips_state ~ '^[0-9]{2}$'::text))
+    constraint unit_government_government_code_check CHECK ((government_code ~ '^([0-9]{12}|[0-9]{14})$'::text))
+    constraint unit_government_pkey PRIMARY KEY (capture_id, source_row_index)
+    constraint unit_government_population_check CHECK ((population >= 0))
+    constraint unit_government_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint unit_government_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint unit_government_type_code_check CHECK ((type_code = ANY (ARRAY['0'::text, '1'::text, '2'::text, '3'::text, '4'::text, '5'::text])))
+    index census_govfin_unit_government_run_idx CREATE INDEX census_govfin_unit_government_run_idx ON silver_census_govfin.unit_government USING btree (run_id, government_code)
+    index unit_government_pkey CREATE UNIQUE INDEX unit_government_pkey ON silver_census_govfin.unit_government USING btree (capture_id, source_row_index)
 
 r silver_census_lodes.fact_area
     column run_id uuid NOT NULL

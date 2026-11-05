@@ -70,6 +70,7 @@ CENSUS_STATE_TO_FIPS: dict[str, str] = {
     "49": "54", "50": "55", "51": "56",
 }  # fmt: skip
 
+
 def _code_number(item_code: str) -> int | None:
     digits = item_code[1:]
     return int(digits) if digits.isdigit() else None
@@ -252,6 +253,7 @@ MEASURES: tuple[GovFinMeasure, ...] = (
     ),
 )
 
+
 def get_measure(measure_id: str) -> GovFinMeasure:
     for measure in MEASURES:
         if measure.measure_id == measure_id:
@@ -264,8 +266,6 @@ def measures_for_item(item_code: str) -> tuple[str, ...]:
     return tuple(
         measure.measure_id for measure in MEASURES if measure.includes(item_code)
     )
-
-
 
 
 # -- Census of Governments Individual Unit Files -------------------------

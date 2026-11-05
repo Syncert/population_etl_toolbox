@@ -422,6 +422,55 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="CENSUS_SAIPE_SAHIE",
     ),
     WarehouseSource(
+        code="CENSUS_GOVFIN",
+        name="State and local government finances",
+        publisher="U.S. Census Bureau",
+        topic="Elections and government",
+        module="census_govfin",
+        dag="census_govfin_ingest",
+        cadence="Monthly, 18th 07:00 UTC",
+        release=(
+            "Annual finances each autumn; Census of Governments unit files every five years; "
+            "quarterly state tax about three months after each quarter"
+        ),
+        grains={"nation": "n", "state": "n", "county": "n"},
+        years=[(1994, 2026)],
+        years_note=(
+            "Annual state and local finances 2017-2024; county areas from the Census of "
+            "Governments 2002, 2012, 2017 and 2022 (2007 not published as a unit file); "
+            "quarterly state tax 1994 on"
+        ),
+        datasets=[
+            "asslgf (/timeseries/govslocalfin)",
+            "qtax (/timeseries/eits/qtax)",
+            "cog_units (Census of Governments individual unit files)",
+        ],
+        measures=(
+            "Taxes by type (property, general sales, selective sales, individual and corporate "
+            "income), current charges, own-source revenue, aid from federal, state and local "
+            "governments, and debt outstanding; tax mix shares; taxes as a share of personal "
+            "income and per person."
+        ),
+        raw=[],
+        control=["control.census_govfin_slice"],
+        silver=[
+            "silver_census_govfin.fact_observation",
+            "silver_census_govfin.unit_amount",
+            "silver_census_govfin.unit_government",
+            "silver_census_govfin.state_type_total",
+            "silver_census_govfin.api_revision",
+            "silver_census_govfin.dim_measure",
+        ],
+        gold=[
+            "gold_census_govfin.observation_revision",
+            "gold_census_govfin.observation_latest",
+            "gold_census_govfin.tax_mix",
+            "gold_census_govfin.tax_burden",
+        ],
+        credential="CENSUS_API_KEY",
+        catalog_source_code="CENSUS_GOVFIN",
+    ),
+    WarehouseSource(
         code="CENSUS_LODES",
         name="LEHD Origin-Destination Employment Statistics",
         publisher="U.S. Census Bureau",
