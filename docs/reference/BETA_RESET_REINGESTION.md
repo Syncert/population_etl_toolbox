@@ -337,9 +337,12 @@ WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
 BLS now requests its own annual averages (`M13`, ADR-0007). A warehouse
-built before migration `033` gets the new key from the `source-fix` phase;
-re-run `bls_ingest` afterwards so each series' annual averages are captured
-beside its months.
+built before migration `033` gets the new key from the `source-fix` phase.
+The request options are part of each slice's fingerprint (ETL-113), so the
+next `bls_ingest` run -- the monthly schedule or a plain trigger, no conf --
+plans every history slice captured without them again and captures each
+series' annual averages beside its months. Before ETL-113 a re-run fetched
+only the rolling window and the 1990 history never gained its averages.
 
 `acs_ingest` requests five levels per dataset and year: the nation, all
 states, each county parent's counties, and -- for the newest year only, by
