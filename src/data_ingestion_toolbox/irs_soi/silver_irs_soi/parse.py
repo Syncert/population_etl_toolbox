@@ -14,7 +14,11 @@ Pure functions over the captured bytes: no network and no database.
   (row 0): a band read against the wrong scheme would be served under the
   wrong dollar range.
 * A row whose geography cannot be read, or that repeats a place and band
-  already read, is quarantined with a reason.
+  already read, is quarantined with a reason: ``repeated_row`` when its
+  figures equal the first row's (SOI printed the same row twice),
+  ``duplicate_row`` when they differ.
+* In a 1989-2009 zip, a revised ``cir`` workbook replaces the original of
+  the same state, which is skipped unread rather than set aside row by row.
 * A value that is not a number is kept as ``missing`` with SOI's own text,
   never coerced to zero. Thousands separators (the state file writes
   ``"2,324,150"``) are removed before reading.
@@ -175,6 +179,27 @@ def _is_county_row(cells: list[object]) -> list[int] | None:
     return None
 
 
+def _is_unnamed_county_row(cells: list[object]) -> list[int] | None:
+    """A row of state code, county code and the six items, with no name.
+
+    1997's Alaska workbook prints its boroughs by code alone (``'02'``,
+    ``'013'``, then the numbers). Only a two-digit state code and a
+    three-digit county code, both written as text, followed by at least the
+    six numbers, is read this way, so a title or a footnote never is.
+    """
+    filled = [i for i, cell in enumerate(cells) if _cell_text(cell)]
+    if len(filled) < 2 + len(_XLS_LABELS):
+        return None
+    a, b = (cells[i] for i in filled[:2])
+    if not (isinstance(a, str) and isinstance(b, str)):
+        return None
+    if len(a.strip()) != 2 or len(b.strip()) != 3 or not (_code(a) and _code(b)):
+        return None
+    if any(read_number(_cell_text(cells[i])) is None for i in filled[2:]):
+        return None
+    return filled
+
+
 def _sheet_rows(book_bytes: bytes, member: str) -> list[list[str]]:
     import xlrd
 
@@ -186,9 +211,21 @@ def _sheet_rows(book_bytes: bytes, member: str) -> list[list[str]]:
         ) from exc
     sheet = book.sheet_by_index(0)
     grid = [sheet.row_values(index) for index in range(sheet.nrows)]
+    named = True
     first_data = next(
         (index for index, cells in enumerate(grid) if _is_county_row(cells)), None
     )
+    if first_data is None:
+        # Only a sheet with no named county row at all is read by codes.
+        named = False
+        first_data = next(
+            (
+                index
+                for index, cells in enumerate(grid)
+                if _is_unnamed_county_row(cells)
+            ),
+            None,
+        )
     if first_data is None:
         raise SoiLayoutError("no_county_rows", f"{member} has no county rows")
     width = max(len(cells) for cells in grid)
@@ -213,11 +250,12 @@ def _sheet_rows(book_bytes: bytes, member: str) -> list[list[str]]:
         columns[item_column] = found[0]
     rows: list[list[str]] = []
     for cells in grid[first_data:]:
-        filled = _is_county_row(cells)
+        filled = _is_county_row(cells) if named else _is_unnamed_county_row(cells)
         if filled is None:
             continue  # a footnote or a repeated title, not a county
-        a, b, c = (cells[i] for i in filled[:3])
-        row = [_cell_text(a), _cell_text(b), _cell_text(c), "0"]
+        a, b = (cells[i] for i in filled[:2])
+        name = _cell_text(cells[filled[2]]) if named else ""
+        row = [_cell_text(a), _cell_text(b), name, "0"]
         for item_column, _pattern in _XLS_LABELS:
             index = columns[item_column]
             row.append(_cell_text(cells[index]) if index < len(cells) else "")
@@ -228,7 +266,7 @@ def _sheet_rows(book_bytes: bytes, member: str) -> list[list[str]]:
 def _zip_workbooks(payload: bytes) -> list[list[str]]:
     archive = _zip(payload)
     # A revised workbook (2000's ``Iowa00cir.xls`` beside ``IOWA00ci.xls``)
-    # is read first, so the original's rows are the repeats set aside.
+    # is read first, and the original of the same state is then skipped.
     members = sorted(
         (name for name in archive.namelist() if name.lower().endswith(".xls")),
         key=lambda name: (not name.lower().endswith("cir.xls"), name.lower()),
@@ -236,8 +274,17 @@ def _zip_workbooks(payload: bytes) -> list[list[str]]:
     if not members:
         raise SoiLayoutError("member_not_found", "the zip holds no .xls workbook")
     rows: list[list[str]] = [list(XLS_HEADER)]
+    revised_states: set[str] = set()
     for member in members:
-        rows.extend(_sheet_rows(archive.read(member), member))
+        member_rows = _sheet_rows(archive.read(member), member)
+        states = {row[0] for row in member_rows}
+        if member.lower().endswith("cir.xls"):
+            revised_states |= states
+        elif states <= revised_states:
+            # The original a revised workbook replaces: not read at all, so
+            # its rows are neither served nor reported as repeats.
+            continue
+        rows.extend(member_rows)
     return rows
 
 
@@ -342,7 +389,7 @@ def parse_file(item: SoiFile, payload: bytes) -> ParsedFile:
         )
     observations: list[SoiObservation] = []
     quarantined: list[SoiQuarantine] = []
-    seen: set[tuple[str, int]] = set()
+    seen: dict[tuple[str, int], tuple[int, tuple[str, ...]]] = {}
     for index, values in enumerate(body, start=1):
         if len(values) < len(header):
             quarantined.append(
@@ -361,16 +408,32 @@ def parse_file(item: SoiFile, payload: bytes) -> ParsedFile:
             continue
         stub = int(record["AGI_STUB"].strip())
         band = scheme[stub]
+        figures = tuple(record[measure.column].strip() for measure in measures)
         if (geo_id, stub) in seen:
-            quarantined.append(
-                SoiQuarantine(
-                    index,
-                    "duplicate_row",
-                    f"{geo_code} AGI stub {stub} was already read in this file",
+            first_index, first_figures = seen[(geo_id, stub)]
+            if figures == first_figures:
+                # SOI's own repeat (2003's Missouri workbook ends with a copy
+                # of a Georgia row; 2008's zip holds Delaware twice): set
+                # aside under its own code, so it never reads as a conflict.
+                quarantined.append(
+                    SoiQuarantine(
+                        index,
+                        "repeated_row",
+                        f"{geo_code} AGI stub {stub} repeats row {first_index} "
+                        "figure for figure",
+                    )
                 )
-            )
+            else:
+                quarantined.append(
+                    SoiQuarantine(
+                        index,
+                        "duplicate_row",
+                        f"{geo_code} AGI stub {stub} was already read in this file "
+                        f"(row {first_index}) with different figures",
+                    )
+                )
             continue
-        seen.add((geo_id, stub))
+        seen[(geo_id, stub)] = (index, figures)
         canonical = ",".join(cell.strip() for cell in values)
         for measure in measures:
             text = record[measure.column]

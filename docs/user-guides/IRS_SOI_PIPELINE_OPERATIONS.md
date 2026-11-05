@@ -17,8 +17,8 @@ needed.
 | --- | --- | --- | --- |
 | 1989–2009 | County totals | `YYYYcountyincome.zip` | One `.xls` workbook per state: the state and its counties, six items, all returns only |
 | 2010 | County totals and by AGI | `2010countydata.zip` | The two CSVs below, zipped |
-| 2011–2023 | County totals | `YYincyallnoagi.csv` | Every county and each state's total (county code `000`), all returns |
-| 2011–2023 | County by AGI | `YYincyallagi.csv` | The same places, one row per AGI band |
+| 2011–2023 | County totals | `YYincyallnoagi.csv` (2012: `12cyallnoagi.csv`) | Every county and each state's total (county code `000`), all returns |
+| 2011–2023 | County by AGI | `YYincyallagi.csv` (2012: `12cyallagi.csv`) | The same places, one row per AGI band |
 | 2020–2023 | State (Historic Table 2) | `YYin55cmcsv.csv` | Every state and the nation, all returns and by AGI band |
 
 The items (`MEASURES`), each by SOI's column name:
@@ -47,8 +47,10 @@ AGI band, such as `IRS_SOI:returns:agi_200k_plus`.
   so it is loaded as its own item, `interest_received_amount`, not as
   taxable interest. Columns are found by their labels, not their positions.
   Where SOI posted a revised workbook beside the original (2000's
-  `Iowa00cir.xls`), the revision is read first and the original's repeated
-  rows are set aside as duplicates.
+  `Iowa00cir.xls`), the revision is read and the original for that state
+  is skipped unread. 1997's Alaska workbook prints its boroughs by code with
+  no name column; such a sheet is read by its codes (only when it has no
+  named county row at all), and its places carry no label.
 - **County files from 2010.** These have every item, by AGI band. 2010 and 2011 use
   seven bands (under $1, $1–25k, 25–50k, 50–75k, 75–100k, 100–200k, 200k
   and over), and 2012 onwards use eight (the $1–25k band split at $10k).
@@ -111,6 +113,11 @@ the `airflow` extra.
 2. Replays each capture into `silver_irs_soi.observation_revision`, one row
    per place, band and item. Rows whose geography cannot be read, that are
    short, or that repeat a place and band go to `observation_quarantine`. A
+   repeat whose figures equal the first row's is `repeated_row` (SOI printed
+   the row twice: 2003's Missouri workbook ends with a Georgia row, 2008's
+   zip holds Delaware twice, 2020's by-AGI file repeats one Loving County,
+   TX row); one with different figures is `duplicate_row`, and the first
+   reading is served either way. A
    file whose header, member or band scheme is not the registered one is
    refused whole and marked `quarantined` with no values, so the next run asks
    for it again. Each place is recorded in `silver_ref.geography_resolution`,
