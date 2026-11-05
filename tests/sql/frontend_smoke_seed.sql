@@ -114,7 +114,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
     ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
     ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
-    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success')
+    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success'),
+    ('00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -166,7 +167,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000ce5', '00000000-0000-4000-8000-000000000ce5',
      'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured'),
     ('00000000-0000-4000-9000-000000000e45', '00000000-0000-4000-8000-000000000e45',
-     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured')
+     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured'),
+    ('00000000-0000-4000-9000-000000000501', '00000000-0000-4000-8000-000000000501',
+     'IRS_SOI', 'smoke://seed', '{}'::JSONB, '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -257,6 +260,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-9000-000000000e45',
      '00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'smoke://seed', '{}'::JSONB,
      '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000501', '00000000-0000-4000-9000-000000000501',
+     '00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'smoke://seed', '{}'::JSONB,
+     '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'text/csv',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -803,6 +810,38 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- IRS SOI income -- one county's returns from a county totals file. COUNTY
+-- only, like the migration rows above.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.irs_soi_file (
+    run_id, file_kind, tax_year, capture_id, captured_row_count,
+    quarantined_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000501', 'county_total', 2098, '00000000-0000-4000-a000-000000000501', 1, 0, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.dim_measure (measure_id, soi_column, measure_label, unit, parser_contract_version)
+VALUES ('returns', 'N1', 'Number of returns', 'returns', 'irs_soi_income:v1')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.dim_agi_band (agi_band, band_label, lower_dollars, upper_dollars)
+VALUES ('all', 'All returns', NULL, NULL)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.fact_observation (
+    file_kind, metric_key, tax_year, geo_id, capture_id, run_id, measure_id,
+    agi_band, agi_stub, retrieved_at, geo_sk, geo_type, geography_status,
+    value_source, value, value_status, source_record_id
+)
+SELECT 'county_total', 'returns', 2098, 'state:55|county:025', '00000000-0000-4000-a000-000000000501',
+       '00000000-0000-4000-8000-000000000501', 'returns', 'all', 0, '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved',
+       '289000.0000', 289000, 'valid',
+       '9b0c1d2e3f405162738495a6b7c8d9eafb0c1d2e3f405162738495a6b7c8d9ea'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- EIA weekly retail gasoline -- a state's regular-grade price for one week.
 -- EIA publishes no county, so this is the STATE exception to rule 2. EIA
 -- does not publish Wisconsin; the state is a fixture, like every value here.
@@ -1209,6 +1248,7 @@ UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher
 UNION ALL SELECT * FROM gold_census_bps.metric_publisher
 UNION ALL SELECT * FROM gold_census_sae.metric_publisher
 UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
+UNION ALL SELECT * FROM gold_irs_soi.metric_publisher
 UNION ALL SELECT * FROM gold_eia.metric_publisher
 UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
 UNION ALL SELECT * FROM gold_census_lodes.metric_publisher

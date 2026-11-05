@@ -36,6 +36,7 @@ from tests.support import census_cbp as cbp_support
 from tests.support import bea as bea_support
 from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
+from tests.support import irs_soi as soi_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
@@ -969,6 +970,19 @@ def published_irs_migration_metric(
 
 
 @pytest.fixture
+def published_irs_soi_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish SOI county and state income through their real pipeline."""
+    factory = soi_support.reviewed_warehouse(postgres_connection_factory, request)
+    soi_support.run_to_gold(factory, "county_total:2023")
+    soi_support.run_to_gold(factory, "state:2023")
+    harvest_publisher(factory, Publisher("gold_irs_soi"))
+    return _one_published_code(factory, "IRS_SOI")
+
+
+@pytest.fixture
 def published_cbp_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1168,6 +1182,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_lodes_metric: str,
     published_cbp_metric: str,
     published_irs_migration_metric: str,
+    published_irs_soi_metric: str,
     published_sae_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
@@ -1231,6 +1246,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CDC", published_cdc_metric),
         ("FRED", published_fred_metric),
         ("IRS_MIGRATION", published_irs_migration_metric),
+        ("IRS_SOI", published_irs_soi_metric),
         ("CENSUS_PEP", published_pep_metric),
         ("CENSUS_SAIPE_SAHIE", published_sae_metric),
         ("BLS", published_bls_metric),
@@ -1385,6 +1401,7 @@ def _published_grains(client: TestClient, source_code: str) -> dict[str, list[st
 def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     api_client: TestClient,
     published_irs_migration_metric: str,
+    published_irs_soi_metric: str,
     published_acs_grain_metric: str,
     published_cdc_metric: str,
     published_sae_metric: str,
