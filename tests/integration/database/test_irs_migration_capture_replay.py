@@ -157,7 +157,7 @@ def test_a_withheld_category_has_no_value_and_the_publisher_harvests_totals(
 def test_a_rerun_adds_nothing_and_a_revised_file_is_kept_beside_the_old(
     irs_warehouse,
 ) -> None:
-    """Covers: ETL-059 — the same bytes change nothing; a changed file keeps both checksums."""
+    """Covers: ETL-059, ETL-115 — the same bytes store nothing; a changed file keeps both checksums."""
     factory = irs_warehouse
     first, _f, _p = irs.run_to_gold(factory, "outflow", "2022-2023")
     second, _f, _p = irs.run_to_gold(factory, "outflow", "2022-2023")
@@ -185,9 +185,16 @@ def test_a_rerun_adds_nothing_and_a_revised_file_is_kept_beside_the_old(
         """,
         (irs.KENT,),
     )
-    assert [row[2] for row in history] == [str(first), str(second), str(third)]
-    assert [row[0] for row in history] == [91, 91, 92]
-    assert history[0][1] == history[1][1] != history[2][1]
+    assert [row[2] for row in history] == [str(first), str(third)]
+    assert [row[0] for row in history] == [91, 92]
+    assert history[0][1] != history[1][1]
+    # The second read repeats the first byte for byte: recorded, not stored again.
+    assert _rows(
+        factory, "SELECT DISTINCT status FROM control.irs_migration_file WHERE run_id = %s", (str(second),)
+    ) == [("unchanged",)]
+    assert _rows(
+        factory, "SELECT COUNT(*) FROM silver_irs_migration.fact_flow WHERE run_id = %s", (str(second),)
+    ) == [(0,)]
     assert _rows(
         factory,
         "SELECT returns FROM gold_irs_migration.flow_latest WHERE subject_geo_id = %s AND counterpart_code = '42:101'",

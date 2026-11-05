@@ -171,7 +171,7 @@ def test_the_publish_event_finds_its_publisher_without_a_prior_harvest(
 def test_rerun_is_idempotent_and_a_changed_response_keeps_both_checksums(
     sae_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-054 -- the same bytes add no estimate; a revision is a second row."""
+    """Covers: ETL-054, ETL-115 -- the same bytes store nothing; a revision is a second row."""
     first_run, _facts, _published = census_sae.run_to_gold(sae_warehouse, SAIPE)
     second_run, _facts, _published = census_sae.run_to_gold(sae_warehouse, SAIPE)
     latest = _rows(
@@ -200,13 +200,16 @@ def test_rerun_is_idempotent_and_a_changed_response_keeps_both_checksums(
         """,
         (geo_id,),
     )
-    assert [row[2] for row in history] == [
-        str(first_run),
-        str(second_run),
-        str(third_run),
-    ]
-    assert history[0][1] == history[1][1] != history[2][1]
-    assert history[2][0] == "1"
+    assert [row[2] for row in history] == [str(first_run), str(third_run)]
+    assert history[0][1] != history[1][1]
+    assert history[1][0] == "1"
+    # The second read repeats the first byte for byte: recorded, not stored again.
+    assert _rows(
+        sae_warehouse, "SELECT DISTINCT status FROM control.census_sae_slice WHERE run_id = %s", (str(second_run),)
+    ) == [("unchanged",)]
+    assert _rows(
+        sae_warehouse, "SELECT COUNT(*) FROM silver_census_sae.fact_estimate WHERE run_id = %s", (str(second_run),)
+    ) == [(0,)]
     current = _rows(
         sae_warehouse,
         "SELECT value::TEXT FROM gold_census_sae.estimate_latest WHERE metric_key = 'saipe:SAEMHI' AND geo_id = %s",

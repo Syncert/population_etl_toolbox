@@ -20,12 +20,24 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_file
 from .config import BPS_BASE_URL, SOURCE_CODE, BpsConfig
 from .registry import BpsSlice, slices_for
 
 PARSER_CONTRACT_VERSION = "census_bps_text:v1"
+
+#: The file's newest published capture.
+LATEST_PUBLISHED_SQL = """
+    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at
+    FROM control.census_bps_slice AS slice
+    JOIN raw_capture.response_capture AS response ON response.capture_id = slice.capture_id
+    WHERE slice.slice_key = %s AND slice.frequency = %s AND slice.year = %s
+      AND slice.month IS NOT DISTINCT FROM %s AND slice.status = 'published'
+    ORDER BY slice.published_at DESC
+    LIMIT 1
+"""
 
 
 def pause(seconds: float) -> None:
@@ -39,6 +51,15 @@ class CapturedFile:
     item: BpsSlice
     capture_id: UUID
     published: bool
+    #: The bytes repeat the file's last published capture (utility.unchanged).
+    unchanged: bool = False
+
+
+def file_status(captured: CapturedFile) -> str:
+    """The control status a freshly captured file is recorded with."""
+    if not captured.published:
+        return "empty"
+    return "unchanged" if captured.unchanged else "captured"
 
 
 def record_file(connection_factory: Callable[[], Any], captured: CapturedFile) -> None:
@@ -59,7 +80,7 @@ def record_file(connection_factory: Callable[[], Any], captured: CapturedFile) -
                     captured.item.year,
                     captured.item.month,
                     str(captured.capture_id),
-                    "captured" if captured.published else "empty",
+                    file_status(captured),
                 ),
             )
         connection.commit()
@@ -144,7 +165,18 @@ def capture_period(
             )
             active_request = None
             captured_file = CapturedFile(
-                run_id, item, receipt.capture_id, response.published
+                run_id,
+                item,
+                receipt.capture_id,
+                response.published,
+                unchanged=response.published
+                and repeats_last_publication(
+                    connection_factory,
+                    LATEST_PUBLISHED_SQL,
+                    (item.slice_key, item.frequency, item.year, item.month),
+                    payload_checksum=receipt.payload_checksum,
+                    parser_contract=PARSER_CONTRACT_VERSION,
+                ),
             )
             record_file(connection_factory, captured_file)
             captured.append(captured_file)
