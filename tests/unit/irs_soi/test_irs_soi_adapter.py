@@ -116,6 +116,9 @@ def test_the_registry_names_every_file_band_and_item() -> None:
     assert get_file("county_agi:2010").csv_name == "10incyallagi.csv"
     assert get_file("county_total:2023").path == "/23incyallnoagi.csv"
     assert get_file("county_agi:2011").path == "/11incyallagi.csv"
+    # 2012 alone is named without the "in" (12incy... answers 404).
+    assert get_file("county_total:2012").path == "/12cyallnoagi.csv"
+    assert get_file("county_agi:2012").path == "/12cyallagi.csv"
     assert get_file("state:2020").path == "/20in55cmcsv.csv"
     assert "state:2019" not in {item.key for item in files}
     assert len({item.key for item in files}) == len(files)
@@ -266,13 +269,13 @@ def test_unreadable_rows_and_a_wrong_header_are_quarantined() -> None:
     """Covers: ETL-117 — a short row, a bad code and a repeated place are set aside; no N1 refuses the file."""
     payload = _fixture("23incyallnoagi.csv").decode()
     lines = payload.splitlines()
-    lines.append(lines[2])  # Kent again
+    lines.append(lines[2])  # Kent again, figure for figure
     lines.append("10,DE,0X1,Nowhere,0" + ",1" * (len(lines[0].split(",")) - 5))
     lines.append("10,DE,007")
     parsed = parse_file(TOTAL_2023, ("\n".join(lines) + "\n").encode())
     codes = {(item.source_row_index, item.error_code) for item in parsed.quarantined}
     assert codes == {
-        (5, "duplicate_row"),
+        (5, "repeated_row"),
         (6, "unreadable_geography"),
         (7, "short_row"),
     }
@@ -283,6 +286,58 @@ def test_unreadable_rows_and_a_wrong_header_are_quarantined() -> None:
     assert refused.rejected
     assert refused.quarantined[0].error_code == "unexpected_header"
     assert "N1" in refused.quarantined[0].error_summary
+
+
+def test_a_repeat_with_other_figures_is_a_duplicate_and_an_exact_repeat_is_not() -> (
+    None
+):
+    """Covers: ETL-117 — SOI's own exact repeats read as ``repeated_row``; a conflicting repeat stays ``duplicate_row``."""
+    lines = _fixture("23incyallnoagi.csv").decode().splitlines()
+    header = lines[0].split(",")
+    kent = lines[2].split(",")
+    changed = list(kent)
+    changed[header.index("N1")] = "1"
+    parsed = parse_file(
+        TOTAL_2023,
+        ("\n".join([*lines, lines[2], ",".join(changed)]) + "\n").encode(),
+    )
+    by_row = {item.source_row_index: item for item in parsed.quarantined}
+    assert by_row[5].error_code == "repeated_row"
+    assert "repeats row 2" in by_row[5].error_summary
+    assert by_row[6].error_code == "duplicate_row"
+    assert "different figures" in by_row[6].error_summary
+    # The first reading is the one served.
+    assert _values(parsed, KENT)["returns"] == Decimal(kent[header.index("N1")])
+
+
+def test_the_2012_county_file_reads_its_decimals_and_uppercase_stub() -> None:
+    """Covers: ETL-117 — 2012's ``12cyallnoagi.csv`` (SOI's header and two Alabama rows) reads like the other years."""
+    item = get_file("county_total:2012")
+    parsed = parse_file(item, _fixture("12cyallnoagi.csv"))
+    assert parsed.quarantined == ()
+    assert parsed.row_count == 2
+    alabama = _values(parsed, "state:01")
+    assert alabama["returns"] == Decimal("2050090")
+    assert alabama["agi"] == Decimal("104129915")
+    assert _values(parsed, "state:01|county:001")["returns"] == Decimal("23700")
+
+
+def test_the_1997_alaska_workbook_reads_boroughs_printed_without_names() -> None:
+    """Covers: ETL-117 — 1997's Alaska sheet prints codes and figures with no name column; its boroughs sum to the state."""
+    parsed = parse_file(SoiFile(COUNTY_TOTAL, 1997), _fixture("1997countyincome.zip"))
+    assert parsed.quarantined == ()
+    assert parsed.measures_read == WORKBOOK_ITEMS
+    assert parsed.row_count == 28
+    state = _values(parsed, "state:02")
+    assert state["returns"] == Decimal("233249")
+    assert state["agi"] == Decimal("10762251")
+    boroughs = {obs.geo_id for obs in parsed.observations} - {"state:02"}
+    assert len(boroughs) == 27
+    assert sum(_values(parsed, geo)["returns"] for geo in boroughs) == state["returns"]
+    anchorage = _values(parsed, "state:02|county:020")
+    assert anchorage["interest_received_amount"] == Decimal("136108")
+    assert anchorage["ordinary_dividends_amount"] == Decimal("97303")
+    assert {obs.geo_source_label for obs in parsed.observations} == {None}
 
 
 def test_a_scheduled_run_plans_every_year_never_answered_and_the_window() -> None:
@@ -346,7 +401,7 @@ def test_the_1989_workbook_matches_its_published_county_values() -> None:
 
 
 def test_a_revised_workbook_is_read_before_the_original_it_replaces() -> None:
-    """Covers: ETL-117 — a ``cir`` workbook wins; the original's repeated rows are set aside."""
+    """Covers: ETL-117 — a ``cir`` workbook wins; the original it replaces is skipped, not quarantined."""
     original = zipfile.ZipFile(io.BytesIO(_fixture("1989countyincome.zip"))).read(
         "delaware89ci.xls"
     )
@@ -359,9 +414,8 @@ def test_a_revised_workbook_is_read_before_the_original_it_replaces() -> None:
         archive.writestr("Delaware89cir.xls", revised)
     parsed = parse_file(SoiFile(COUNTY_TOTAL, 1989), buffer.getvalue())
     assert _values(parsed, "state:10")["returns"] == Decimal("371587")
-    assert parsed.row_count == 8
-    assert {q.error_code for q in parsed.quarantined} == {"duplicate_row"}
-    assert sorted(q.source_row_index for q in parsed.quarantined) == [5, 6, 7, 8]
+    assert parsed.row_count == 4
+    assert parsed.quarantined == ()
 
 
 def test_the_2010_zip_reads_both_county_files_and_a_missing_member_is_refused() -> None:

@@ -9,6 +9,9 @@ pages, and the files themselves on OFFICE_LAB, on 2026-11-05):
   ``0``).
 * ``county_agi`` -- ``<yy>incyallagi.csv``: the same rows split by size of
   adjusted gross income (``agi_stub`` 1 and up).
+* 2012 alone drops the ``in``: SOI's 2012 page links ``12cyallnoagi.csv``
+  and ``12cyallagi.csv`` (``12incy...`` answers 404; confirmed on OFFICE_LAB
+  2026-11-05).
 * ``state`` -- ``<yy>in55cmcsv.csv`` (SOI's Historic Table 2): every state,
   Other Areas and the United States (``STATE`` ``US``), all returns
   (``AGI_STUB`` ``0``) and by size of AGI. Numbers are written with
@@ -57,6 +60,9 @@ COUNTY_XLS_YEARS: tuple[int, ...] = tuple(range(1989, 2010))
 #: (the page links ``in55cmcsv.csv`` for 2020-2023; earlier years are
 #: per-state workbooks only).
 STATE_CSV_YEARS: tuple[int, ...] = (2020, 2021, 2022, 2023)
+
+#: County CSV names that break the ``<yy>incy...`` pattern, by tax year.
+COUNTY_CSV_PREFIX_EXCEPTIONS: dict[int, str] = {2012: "12cy"}
 
 #: The band every all-returns row (``agi_stub`` 0) belongs to.
 ALL_RETURNS = "all"
@@ -267,10 +273,11 @@ class SoiFile:
     def csv_name(self) -> str:
         """The CSV's own name, on the site or inside the year's zip."""
         yy = f"{self.tax_year % 100:02d}"
+        county = COUNTY_CSV_PREFIX_EXCEPTIONS.get(self.tax_year, f"{yy}incy")
         if self.kind == COUNTY_TOTAL:
-            return f"{yy}incyallnoagi.csv"
+            return f"{county}allnoagi.csv"
         if self.kind == COUNTY_AGI:
-            return f"{yy}incyallagi.csv"
+            return f"{county}allagi.csv"
         return f"{yy}in55cmcsv.csv"
 
     @property
