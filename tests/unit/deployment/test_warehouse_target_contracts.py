@@ -42,8 +42,13 @@ def _compose_files() -> list[Path]:
 
 
 def _connection_flags(source: str) -> dict[str, str] | None:
-    """The `airflow connections add public_data` flags, as written."""
-    marker = f"airflow connections add {WAREHOUSE_CONNECTION_ID} "
+    """The flags `airflow-init` writes the `public_data` connection with, as written.
+
+    `scripts/airflow_upsert_connection.py` (DAG-024) takes `--host`/`--schema`
+    where `airflow connections add` took `--conn-host`/`--conn-schema`; both
+    spellings are read under the latter names.
+    """
+    marker = f"scripts/airflow_upsert_connection.py {WAREHOUSE_CONNECTION_ID} "
     if marker not in source:
         return None
     command = source[source.index(marker) + len(marker) :].split(";", 1)[0]
@@ -51,7 +56,10 @@ def _connection_flags(source: str) -> dict[str, str] | None:
     flags = {}
     for position, token in enumerate(tokens):
         if token.startswith("--") and position + 1 < len(tokens):
-            flags[token[2:]] = tokens[position + 1]
+            name = token[2:]
+            if name in {"host", "port", "login", "password", "schema"}:
+                name = f"conn-{name}"
+            flags[name] = tokens[position + 1]
     return flags
 
 

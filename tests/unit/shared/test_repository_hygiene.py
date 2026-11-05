@@ -25,6 +25,10 @@ GENERATED_PROBES = (
     "generated.egg-info/PKG-INFO",
 )
 OPERATIONAL_SCRIPTS = {
+    # Writes an Airflow connection over its existing row in one transaction;
+    # airflow-init uses it for `public_data` so a deploy never deletes the
+    # connection a running task is about to open (DAG-024).
+    "airflow_upsert_connection.py",
     # Exports, re-applies, and expires the account deletion log (ADR-0005 s5).
     # It is an operator tool rather than a scheduled job because the step that
     # matters runs between restoring a database and letting it serve traffic,
