@@ -27,7 +27,8 @@ Discovery proposal with sources, options, indicators, caveats and mockups
 (invented values): <https://claude.ai/artifact/BJ5y3sdnDkRPhDVvickfUx>
 (private to Nick). Mockup images: `/mnt/project-files/taxes/01-03*.png`.
 
-This lands after the dev-to-main release (#166). It is not part of v1. The
+It is not part of v1. Build PRs go through the dev merge queue as the
+elections and display PRs did (merged into dev 2026-11-04). The
 governor-term columns (T-6) join `gold_elections.seat_term`, so T-6 follows
 E-2 of [`ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md`](../in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md)
 (PR #287). T-1 to T-5 do not depend on it and may run in parallel.
