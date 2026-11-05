@@ -255,12 +255,19 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         cadence="Monthly, 7th 15:00 UTC",
         release="One new tax year a year, about three years after it ends",
         grains={"nation": "n", "state": "n", "county": "n"},
-        years=[(2011, 2023)],
+        years=[(1989, 2023)],
         years_note=(
-            "County files for tax years 2011-2023 (each state's total included); "
-            "Historic Table 2 state files for 2021-2023"
+            "County files for tax years 1989-2023, each state's total included "
+            "(1989-2009 carry six items with no bands or tax; by AGI size from "
+            "2010); Historic Table 2 state files, with the nation, for 2020-2023"
         ),
-        datasets=["YYincyallnoagi.csv", "YYincyallagi.csv", "YYin55cmcsv.csv"],
+        datasets=[
+            "YYYYcountyincome.zip",
+            "2010countydata.zip",
+            "YYincyallnoagi.csv",
+            "YYincyallagi.csv",
+            "YYin55cmcsv.csv",
+        ],
         measures=(
             "Returns, individuals, adjusted gross income, wages, interest, dividends, business "
             "income, capital gains, pensions, Social Security, unemployment compensation, taxable "

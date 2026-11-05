@@ -6,7 +6,9 @@ Covers: ETL-114
 from __future__ import annotations
 
 import importlib
+import io
 import sys
+import zipfile
 from decimal import Decimal
 from pathlib import Path
 
@@ -292,3 +294,86 @@ def test_a_scheduled_run_plans_every_year_never_answered_and_the_window() -> Non
 
     history = files_to_capture({"history": True}, loaded)
     assert len(history) == len(registered_files())
+
+
+#: The six items the 1989-2009 state workbooks carry.
+WORKBOOK_ITEMS = (
+    "returns",
+    "individuals",
+    "agi",
+    "wages_amount",
+    "interest_received_amount",
+    "ordinary_dividends_amount",
+)
+
+
+@pytest.mark.parametrize(
+    ("year", "state_returns"),
+    [(1989, "308166"), (1996, None), (2003, None), (2009, "371587")],
+)
+def test_each_era_workbook_reads_its_six_items_by_label(year, state_returns) -> None:
+    """Covers: ETL-114 — every 1989-2009 workbook layout reads the state, its counties and six items."""
+    item = SoiFile(COUNTY_TOTAL, year)
+    assert item.path == f"/{year}countyincome.zip"
+    parsed = parse_file(item, _fixture(f"{year}countyincome.zip"))
+    assert parsed.quarantined == ()
+    assert parsed.row_count == 4
+    assert parsed.measures_read == WORKBOOK_ITEMS
+    assert len(parsed.observations) == 4 * len(WORKBOOK_ITEMS)
+    geos = {obs.geo_id for obs in parsed.observations}
+    assert geos == {"state:10", KENT, "state:10|county:003", "state:10|county:005"}
+    state = _values(parsed, "state:10")
+    assert all(value is not None for value in state.values())
+    if state_returns is not None:
+        assert state["returns"] == Decimal(state_returns)
+    counties = sum(_values(parsed, geo)["returns"] for geo in geos if geo != "state:10")
+    assert abs(counties - state["returns"]) <= state["returns"] / 100
+
+
+def test_the_1989_workbook_matches_its_published_county_values() -> None:
+    """Covers: ETL-114 — Delaware's 1989 counties as SOI printed them."""
+    parsed = parse_file(SoiFile(COUNTY_TOTAL, 1989), _fixture("1989countyincome.zip"))
+    assert _values(parsed, KENT)["returns"] == Decimal("48600")
+    assert _values(parsed, "state:10|county:003")["returns"] == Decimal("205299")
+    assert _values(parsed, "state:10|county:005")["returns"] == Decimal("54267")
+    assert _values(parsed, "state:10")["agi"] == Decimal("9567700")
+
+
+def test_a_revised_workbook_is_read_before_the_original_it_replaces() -> None:
+    """Covers: ETL-114 — a ``cir`` workbook wins; the original's repeated rows are set aside."""
+    original = zipfile.ZipFile(io.BytesIO(_fixture("1989countyincome.zip"))).read(
+        "delaware89ci.xls"
+    )
+    revised = zipfile.ZipFile(io.BytesIO(_fixture("2009countyincome.zip"))).read(
+        "2009 County Income/county income 2009 DE.xls"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("delaware89ci.xls", original)
+        archive.writestr("Delaware89cir.xls", revised)
+    parsed = parse_file(SoiFile(COUNTY_TOTAL, 1989), buffer.getvalue())
+    assert _values(parsed, "state:10")["returns"] == Decimal("371587")
+    assert parsed.row_count == 8
+    assert {q.error_code for q in parsed.quarantined} == {"duplicate_row"}
+    assert sorted(q.source_row_index for q in parsed.quarantined) == [5, 6, 7, 8]
+
+
+def test_the_2010_zip_reads_both_county_files_and_a_missing_member_is_refused() -> None:
+    """Covers: ETL-114 — 2010's zip holds the two CSVs; a zip without the named member is refused whole."""
+    payload = _fixture("2010countydata.zip")
+    totals = parse_file(SoiFile(COUNTY_TOTAL, 2010), payload)
+    assert totals.quarantined == ()
+    assert _values(totals, "state:10")["returns"] == Decimal("427479")
+    bands = parse_file(SoiFile(COUNTY_AGI, 2010), payload)
+    assert bands.quarantined == ()
+    assert {obs.agi_band for obs in bands.observations} == set(
+        band_scheme(COUNTY_AGI, 2010).values()
+    ) - {ALL_RETURNS}
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("readme.txt", b"no county data here")
+    refused = parse_file(SoiFile(COUNTY_TOTAL, 2010), buffer.getvalue())
+    assert refused.rejected and refused.observations == ()
+    assert [q.error_code for q in refused.quarantined] == ["member_not_found"]
+    no_workbook = parse_file(SoiFile(COUNTY_TOTAL, 2009), buffer.getvalue())
+    assert [q.error_code for q in no_workbook.quarantined] == ["member_not_found"]

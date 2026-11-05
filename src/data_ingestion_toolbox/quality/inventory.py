@@ -4555,6 +4555,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.metric_publisher",
             "gold_fred.metric_publisher",
             "gold_irs_migration.metric_publisher",
+            "gold_irs_soi.metric_publisher",
             "gold_pep.metric_publisher",
             "gold_census_sae.metric_publisher",
             "gold_cdc.metric_publisher",

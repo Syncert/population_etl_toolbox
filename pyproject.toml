@@ -54,6 +54,9 @@ dev = [
   "pytest==8.3.4",
   "pytest-cov==5.0.0",
   "ruff==0.15.16",
+  # The IRS SOI workbook fixtures are parsed by the unit and database tiers,
+  # which install `dev` without the Airflow extra.
+  "xlrd==2.0.2",
 ]
 martin-test = [
   "mapbox-vector-tile==2.2.0",

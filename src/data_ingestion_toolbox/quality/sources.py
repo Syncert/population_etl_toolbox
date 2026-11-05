@@ -1215,14 +1215,24 @@ def irs_migration_total_reconciliation(
 
 
 #: The newest published capture of each SOI income file (product, tax year).
+#: Written as "no later published capture" because an offender query may
+#: not carry an ORDER BY (``_offenders``).
 _SOI_NEWEST_FILES = """
-    newest AS (
-        SELECT DISTINCT ON (file.file_kind, file.tax_year)
-               file.capture_id, file.file_kind, file.tax_year
+    published AS (
+        SELECT file.capture_id, file.file_kind, file.tax_year, capture.retrieved_at
           FROM control.irs_soi_file AS file
           JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
          WHERE file.status = 'published'
-         ORDER BY file.file_kind, file.tax_year, capture.retrieved_at DESC, file.capture_id DESC
+    ), newest AS (
+        SELECT published.capture_id, published.file_kind, published.tax_year
+          FROM published
+         WHERE NOT EXISTS (
+                SELECT 1 FROM published AS later
+                 WHERE later.file_kind = published.file_kind
+                   AND later.tax_year = published.tax_year
+                   AND (later.retrieved_at, later.capture_id::TEXT)
+                       > (published.retrieved_at, published.capture_id::TEXT)
+         )
     )
 """
 

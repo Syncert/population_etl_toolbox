@@ -169,3 +169,20 @@ measures and term-table columns with fixtures under `tests/frontend/support/`.
 
 Next pickup: T-1. Read `bea/registry.py` table definitions, add CAINC35 with
 its line codes, and write the failing parser test for one county row.
+
+T-4 done (ETL-114, EXT-032): `irs_soi` loads county files 1989–2023 and
+Historic Table 2 state files 2020–2023 through DAG `irs_soi_ingest`; guide
+`docs/user-guides/IRS_SOI_PIPELINE_OPERATIONS.md`. Found while building it:
+
+- The 1989–2009 county files carry six items only (returns, exemptions,
+  AGI, wages, dividends, interest received) and no income tax, credits or
+  AGI bands. The county federal tax rate and EITC share therefore start in
+  2010. The acceptance criterion "federal tax rate series 1989–2023" holds
+  for AGI and returns only; T-6 should show the rate from 2010 and say why.
+- Historic Table 2 is CSV only from tax year 2020; 1996–2019 are Excel
+  workbooks with their own layouts and are not registered. The nation's
+  series starts in 2020 until they are.
+- The 2012–2021 county band schemes are registered as eight stubs from the
+  2023 guide and checked only by the parser's exact-stub rule; the first
+  OFFICE_LAB run confirms them (a mismatch is refused, never served).
+
