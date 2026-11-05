@@ -4,7 +4,8 @@ Everything here reads the committed capture, never the network. One
 transaction per run: the parsed rows, the quarantine, the conformed flows
 and the geography resolution ledger land together or not at all, and the
 run is only marked ready when every captured row is accounted for as a
-flow, a refusal or a quarantined row.
+flow, a refusal, a quarantined row or a state summary row (counted, not
+loaded).
 """
 
 from __future__ import annotations
@@ -255,11 +256,13 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 or facts + len(refused) != revisions
                 or revisions
                 + len([q for q in parsed.quarantined if q.source_row_index > 0])
+                + parsed.summary_row_count
                 != parsed.row_count
             ):
                 raise IrsMigrationReconciliationError(
-                    f"run {run_id} reconciles {revisions} rows, {facts} flows and "
-                    f"{len(refused)} refusals against {parsed.row_count} captured"
+                    f"run {run_id} reconciles {revisions} rows, {facts} flows, "
+                    f"{len(refused)} refusals and {parsed.summary_row_count} state "
+                    f"summary rows against {parsed.row_count} captured"
                 )
         connection.commit()
     except BaseException:

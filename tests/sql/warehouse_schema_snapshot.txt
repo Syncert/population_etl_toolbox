@@ -8273,6 +8273,7 @@ v gold_irs_migration.flow_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT DISTINCT ON (direction, year_pair, subject_geo_id, counterpart_code) direction,
     body     year_pair,
     body     year1,
@@ -8297,7 +8298,8 @@ v gold_irs_migration.flow_latest
     body     release_key,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     people_basis
     body    FROM gold_irs_migration.flow_revision revision
     body   ORDER BY direction, year_pair, subject_geo_id, counterpart_code, retrieved_at DESC, capture_id DESC;
 
@@ -8327,6 +8329,7 @@ v gold_irs_migration.flow_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT fact.direction,
     body     fact.year_pair,
     body     fact.year1,
@@ -8351,7 +8354,11 @@ v gold_irs_migration.flow_revision
     body     to_char((fact.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
     body     fact.source_record_id,
     body     fact.capture_id,
-    body     fact.run_id
+    body     fact.run_id,
+    body         CASE
+    body             WHEN fact.year2 >= 2019 THEN 'individuals'::text
+    body             ELSE 'exemptions'::text
+    body         END AS people_basis
     body    FROM silver_irs_migration.fact_flow fact
     body      JOIN control.irs_migration_file file ON file.capture_id = fact.capture_id
     body   WHERE file.status = 'published'::text;
@@ -8442,6 +8449,7 @@ v gold_irs_migration.total_observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT DISTINCT ON (metric_key, geo_id, year_pair) metric_key,
     body     direction,
     body     category,
@@ -8461,7 +8469,8 @@ v gold_irs_migration.total_observation_latest
     body     release_key,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     people_basis
     body    FROM gold_irs_migration.total_observation_revision revision
     body   ORDER BY metric_key, geo_id, year_pair, retrieved_at DESC, capture_id DESC;
 
@@ -8486,6 +8495,7 @@ v gold_irs_migration.total_observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column people_basis text
     body SELECT (((revision.direction || ':'::text) || revision.category) || ':'::text) || measure.measure AS metric_key,
     body     revision.direction,
     body     revision.category,
@@ -8509,7 +8519,8 @@ v gold_irs_migration.total_observation_revision
     body     revision.release_key,
     body     revision.source_record_id,
     body     revision.capture_id,
-    body     revision.run_id
+    body     revision.run_id,
+    body     revision.people_basis
     body    FROM gold_irs_migration.flow_revision revision
     body      CROSS JOIN ( VALUES ('returns'::text,'returns'::text), ('individuals'::text,'individuals'::text), ('agi'::text,'thousands of dollars'::text)) measure(measure, unit)
     body   WHERE revision.category = ANY (ARRAY['total_us_and_foreign'::text, 'total_us'::text, 'total_same_state'::text, 'total_different_state'::text, 'total_foreign'::text, 'non_migrants'::text]);
