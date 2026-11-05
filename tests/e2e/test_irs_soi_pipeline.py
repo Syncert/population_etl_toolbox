@@ -46,7 +46,7 @@ def _rows(factory: Callable[[], connection], sql: str, parameters: tuple) -> lis
 def test_county_and_state_income_reach_the_neutral_api_by_agi_band(
     soi_warehouse,
 ) -> None:
-    """Covers: ETL-114 — county returns from 1989 and 2023, a 2023 AGI band and the
+    """Covers: ETL-115 — county returns from 1989 and 2023, a 2023 AGI band and the
     nation reach `/api/v1/observations` with the fixture's values.
 
     Covers: E2E-014 — a glossary-discovered SOI metric answers through the

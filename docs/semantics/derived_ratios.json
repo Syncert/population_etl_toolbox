@@ -974,6 +974,40 @@
       ]
     },
     {
+      "ratio_id": "property_tax_to_home_value",
+      "kind": "ratio",
+      "scale": 100,
+      "unit": "percent of median home value",
+      "label": "Median property tax as a percent of median home value",
+      "numerator": "CENSUS_ACS:{dataset}:B25103_001",
+      "denominator": "CENSUS_ACS:{dataset}:B25077_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "median home value, owner-occupied homes",
+      "universe": "owner-occupied housing units",
+      "numerator_is_subset": false,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-2",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Both medians describe the same owner-occupied homes in the same ACS dataset, release and period, so their ratio is the Bureau's derived ratio of two estimates (ADR-0009 rules 2 and 4). The taxes are not a part of the value, so it is a ratio, not a share. Named in deliverable T-2 of the taxes-and-public-money plan, which Nick approved as option B on 2026-11-05.",
+      "limitations": [
+        "A ratio of two medians, not the median of each home's own tax rate: the homes paying the median tax need not be the homes of median value.",
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Home value is the owner's own estimate; where values have risen faster than assessments, the ratio falls without any change in tax law.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year ratio describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25103",
+        "https://data.census.gov/table/ACSDT5Y2023.B25077",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
+    },
+    {
       "ratio_id": "violent_crime_rate",
       "kind": "provider_rate",
       "scale": 100000,

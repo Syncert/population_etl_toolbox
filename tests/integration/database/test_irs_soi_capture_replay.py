@@ -1,6 +1,6 @@
 """Real PostgreSQL IRS SOI county and state income capture-to-gold contract.
 
-Covers: ETL-114
+Covers: ETL-115
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def _latest(factory, metric_key: str, geo_id: str, tax_year: int):
 def test_every_era_reaches_gold_with_delaware_resolved_and_other_areas_held_back(
     soi_warehouse,
 ) -> None:
-    """Covers: ETL-114 — workbooks, zipped CSVs, CSVs and the state file all publish; SOI's other areas are never served."""
+    """Covers: ETL-115 — workbooks, zipped CSVs, CSVs and the state file all publish; SOI's other areas are never served."""
     factory = soi_warehouse
     soi.run_all(factory)
     statuses = _rows(
@@ -172,7 +172,7 @@ def _answered(factory) -> set[int]:
 def test_a_rerun_stores_nothing_and_a_revised_file_is_kept_beside_the_old(
     soi_warehouse,
 ) -> None:
-    """Covers: ETL-114 — the same bytes are recorded `unchanged` and store no row; a changed file keeps both captures."""
+    """Covers: ETL-115 — the same bytes are recorded `unchanged` and store no row; a changed file keeps both captures."""
     factory = soi_warehouse
     first, facts, _p = soi.run_to_gold(factory, "county_total:2023")
     assert facts > 0
@@ -230,7 +230,7 @@ def test_a_rerun_stores_nothing_and_a_revised_file_is_kept_beside_the_old(
 
 
 def test_quality_rules_pass_the_fixtures_and_catch_a_loss(soi_warehouse) -> None:
-    """Covers: ETL-114 — DQ-SOI-002, 003 and 004 pass, then fail or warn on a lost row and a broken sum."""
+    """Covers: ETL-115 — DQ-SOI-002, 003 and 004 pass, then fail or warn on a lost row and a broken sum."""
     factory = soi_warehouse
     assert _outcome(factory, irs_soi_file_reconciliation).result == "not_applicable"
     assert _outcome(factory, irs_soi_county_sum).result == "not_applicable"
@@ -298,7 +298,7 @@ def test_quality_rules_pass_the_fixtures_and_catch_a_loss(soi_warehouse) -> None
 def test_a_refused_file_is_quarantined_with_no_facts_and_asked_for_again(
     soi_warehouse,
 ) -> None:
-    """Covers: ETL-114 — a layout SOI did not register is refused whole, never served, and stays unanswered."""
+    """Covers: ETL-115 — a layout SOI did not register is refused whole, never served, and stays unanswered."""
     factory = soi_warehouse
     shifted = soi.fixture_bytes("23incyallagi.csv").replace(
         b"10,DE,001,Kent County,8,", b"10,DE,001,Kent County,9,"
@@ -328,7 +328,7 @@ def test_a_refused_file_is_quarantined_with_no_facts_and_asked_for_again(
 
 
 def test_the_publisher_harvests_and_the_schema_reapplies(soi_warehouse) -> None:
-    """Covers: ETL-114 — the publisher names served metrics by grain; the CHECK refuses a resolved row without a key."""
+    """Covers: ETL-115 — the publisher names served metrics by grain; the CHECK refuses a resolved row without a key."""
     factory = soi_warehouse
     run_id, _f, _p = soi.run_to_gold(factory, "state:2023")
     soi.run_to_gold(factory, "county_total:2023")
