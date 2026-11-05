@@ -2563,7 +2563,7 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
         lineage="silver_irs_migration.flow_revision, silver_ref.dim_geo_entity",
         scope_method="registered files; county flows with both ends resolved and SOI's own categories",
         cadence="per SOI migration replay",
-        empty_behavior="a deleted category is withheld with no value, never zero; a flow under 20 returns is in its Other flows category",
+        empty_behavior="a deleted category is withheld with no value, never zero; a flow under SOI's threshold (20 returns; 10 or 20 before 2018-2019) is in its Other flows category",
     ),
     _obj(
         "gold_irs_migration.flow_revision",

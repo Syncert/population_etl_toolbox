@@ -15,9 +15,23 @@ The counterpart code says what a row is. A real state and county is a flow
 between two counties; every other code is one of SOI's own categories,
 labelled here and never redistributed into counties.
 
-Files from 2018-2019 follow the rules above; before that, small flows were
-moved into another county's category and the files carried state totals,
-so earlier years are not registered.
+Files from 2011-2012 to 2017-2018 have the same columns and counterpart
+codes (SOI users guides 2011-2012 and 2017-2018, read 2026-11-05), with
+three differences the parser and the gold views keep:
+
+* each state's block opens with five rows whose subject county is ``000``:
+  the state's own totals. They are not a county, so they are counted and
+  not loaded (:data:`STATE_SUMMARY_COUNTY`);
+* ``n2`` counts exemptions, not individuals: personal exemptions ended
+  with tax year 2018, so the 2018-2019 file is the first whose year-2
+  returns count people directly (:func:`people_basis`);
+* the 2011-2012 guide shows a county-to-county flow from 10 returns, the
+  2017-2018 guide from 20; either way a smaller flow is in an "Other flows"
+  row and nothing is moved into a county.
+
+Before 2011-2012 SOI matched returns on the primary filer only and counted
+returns filed by late September, and it published each pair as a zip of
+per-state workbooks, not these CSVs; those years are not registered here.
 """
 
 from __future__ import annotations
@@ -30,12 +44,31 @@ DIRECTIONS = (INFLOW, OUTFLOW)
 
 #: (year 1, year 2): returns filed in calendar year 1 matched to year 2.
 YEAR_PAIRS: tuple[tuple[int, int], ...] = (
+    (2011, 2012),
+    (2012, 2013),
+    (2013, 2014),
+    (2014, 2015),
+    (2015, 2016),
+    (2016, 2017),
+    (2017, 2018),
     (2018, 2019),
     (2019, 2020),
     (2020, 2021),
     (2021, 2022),
     (2022, 2023),
 )
+
+#: How many of the newest pairs a scheduled run captures again, answered or
+#: not: SOI publishes one pair a year and seldom revises an older one.
+REVISION_WINDOW_PAIRS = 2
+
+#: The first year 2 whose returns count individuals; before it ``n2`` counts
+#: exemptions (personal exemptions ended with tax year 2018).
+FIRST_INDIVIDUALS_YEAR2 = 2019
+
+#: The subject county code of a state's own summary rows (files before
+#: 2018-2019): counted, never loaded as a county.
+STATE_SUMMARY_COUNTY = "000"
 
 #: Counterpart (state code, county code) -> category, for SOI's own rows.
 CATEGORY_CODES: dict[tuple[str, str], str] = {
@@ -109,6 +142,10 @@ class MigrationFile:
         return f"{self.year1}-{self.year2}"
 
     @property
+    def people_basis(self) -> str:
+        return people_basis(self.year2)
+
+    @property
     def path(self) -> str:
         return (
             f"/county{self.direction}{self.year1 % 100:02d}{self.year2 % 100:02d}.csv"
@@ -129,6 +166,18 @@ def registered_files() -> tuple[MigrationFile, ...]:
         MigrationFile(direction, year1, year2)
         for year1, year2 in YEAR_PAIRS
         for direction in DIRECTIONS
+    )
+
+
+def people_basis(year2: int) -> str:
+    """What ``n2`` counts in a pair ending ``year2``: exemptions or individuals."""
+    return "individuals" if year2 >= FIRST_INDIVIDUALS_YEAR2 else "exemptions"
+
+
+def recent_year_pairs() -> tuple[str, ...]:
+    """The pairs every scheduled run captures again: the newest registered."""
+    return tuple(
+        f"{year1}-{year2}" for year1, year2 in YEAR_PAIRS[-REVISION_WINDOW_PAIRS:]
     )
 
 

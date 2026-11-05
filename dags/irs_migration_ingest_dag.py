@@ -1,10 +1,12 @@
 """Capture-first IRS SOI county migration pipeline (irs-county-migration).
 
-Each run captures every registered county inflow and outflow file -- one
-per direction and pair of filing years -- replays it into silver and
-publishes it. SOI publishes a new pair of years about once a year and
-seldom revises an old one; a run that finds the same bytes adds a capture
-and no flow, and a revised file is kept beside the one it revised.
+Each run captures the county inflow and outflow files -- one per direction
+and pair of filing years -- of the newest two registered pairs and of every
+registered pair never published, replays them into silver and publishes
+them (``irs_migration.plan``). SOI publishes a new pair of years about once
+a year and seldom revises an old one; a run that finds the same bytes adds
+a capture and no flow, and a revised file is kept beside the one it
+revised. ``{"history": true}`` in the conf re-captures every pair.
 
 One mapped task per file, through the one-slot ``irs_soi_files`` pool:
 each file is about 4.5 MB.
@@ -21,7 +23,11 @@ from airflow.decorators import dag, task
 
 from data_ingestion_toolbox.irs_migration.capture import capture_file
 from data_ingestion_toolbox.irs_migration.config import IrsMigrationConfig
-from data_ingestion_toolbox.irs_migration.registry import get_file, registered_files
+from data_ingestion_toolbox.irs_migration.plan import (
+    answered_year_pairs,
+    file_keys_to_capture,
+)
+from data_ingestion_toolbox.irs_migration.registry import get_file
 from data_ingestion_toolbox.irs_migration.schema import ensure_irs_migration_schema
 from data_ingestion_toolbox.irs_migration.silver_irs_migration.load import (
     publish_run,
@@ -72,8 +78,19 @@ def irs_migration_ingest():
         )
 
     @task()
-    def plan_files() -> list[str]:
-        return [f"{item.direction}:{item.year_pair}" for item in registered_files()]
+    def plan_files(**context: Any) -> list[str]:
+        dag_run = context.get("dag_run")
+        conf = dict(getattr(dag_run, "conf", None) or {})
+        with _get_postgres_hook().get_conn() as connection:
+            answered = answered_year_pairs(connection)
+        keys = file_keys_to_capture(conf, answered)
+        logging.getLogger("airflow.task").info(
+            "capturing %d file(s) (%s); %d pair(s) already published",
+            len(keys),
+            ", ".join(keys),
+            len(answered),
+        )
+        return keys
 
     @task(pool="irs_soi_files")
     def ingest_batch_file(file_key: str) -> dict[str, Any]:

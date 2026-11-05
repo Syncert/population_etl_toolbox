@@ -258,6 +258,62 @@ def test_quality_rules_pass_the_fixtures_and_catch_a_loss(irs_warehouse) -> None
     assert (short.result, short.observed_count) == ("warn", 1)
 
 
+def test_a_2011_layout_file_counts_state_rows_and_serves_exemptions(
+    irs_warehouse,
+) -> None:
+    """Covers: ETL-059 — a pre-2018 file's state summary rows are counted, not loaded; its individuals are exemptions."""
+    factory = irs_warehouse
+    # The 2011-2012 to 2017-2018 files open each state with five rows for
+    # subject county 000 (tests/fixtures/irs_migration/csv_2011_2018). Put
+    # such a block in front of the reviewed Delaware rows.
+    header, rows = irs.fixture_bytes("countyinflow2223.csv").split(b"\n", 1)
+    state_block = b"\n".join(
+        b"10,000," + code + b",DE,State total,100,200,300"
+        for code in (b"96,000", b"97,000", b"97,001", b"97,003", b"98,000")
+    )
+    payload = header + b"\n" + state_block + b"\n" + rows
+    run_id, flows, published = irs.run_to_gold(
+        factory,
+        "inflow",
+        "2011-2012",
+        client=irs.FixtureClient(
+            {"countyinflow1112.csv": httpx.Response(200, content=payload)}
+        ),
+    )
+    assert flows > 0 and published == 1
+    ((captured, parsed, refused),) = _rows(
+        factory,
+        "SELECT captured_row_count, parsed_row_count, refused_row_count FROM control.irs_migration_file WHERE run_id = %s",
+        (str(run_id),),
+    )
+    assert captured == parsed + 5 and flows + refused == parsed
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_irs_migration.flow_quarantine WHERE run_id = %s AND error_code NOT LIKE '%%_unresolved'",
+        (str(run_id),),
+    ) == [(0,)]
+    assert _rows(
+        factory,
+        "SELECT DISTINCT people_basis FROM gold_irs_migration.flow_latest WHERE year_pair = '2011-2012'",
+    ) == [("exemptions",)]
+    assert _rows(
+        factory,
+        "SELECT DISTINCT people_basis FROM gold_irs_migration.total_observation_latest WHERE year_pair = '2011-2012'",
+    ) == [("exemptions",)]
+    irs.run_to_gold(factory, "inflow", "2022-2023")
+    assert _rows(
+        factory,
+        "SELECT DISTINCT people_basis FROM gold_irs_migration.flow_latest WHERE year_pair = '2022-2023'",
+    ) == [("individuals",)]
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            outcome = irs_migration_file_reconciliation(cursor, {})[0]
+    finally:
+        reader.close()
+    assert (outcome.result, outcome.observed_count) == ("pass", 0)
+
+
 def test_the_fact_refuses_a_flow_with_a_missing_end_and_the_schema_reapplies(
     irs_warehouse,
 ) -> None:
