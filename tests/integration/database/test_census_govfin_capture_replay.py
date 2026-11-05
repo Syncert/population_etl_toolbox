@@ -401,3 +401,79 @@ def test_quality_rules_pass_on_the_fixture_then_catch_a_fault(
     )
     lost = _outcome(factory, govfin_slice_reconciliation)
     assert (lost.result, lost.observed_count) == ("fail", 1)
+
+
+def test_a_reread_that_repeats_the_last_publication_stores_nothing(
+    govfin_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-114 -- unchanged bytes are recorded, never replayed again."""
+    factory = govfin_warehouse
+    api = census_govfin.api_responses()
+    _load_units(factory)
+    census_govfin.run_to_gold(factory, "asslgf", 2022, census_govfin.FixtureClient(api))
+    stored = _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_census_govfin.fact_observation",
+    )[0][0]
+
+    units_run, units_facts, _ = census_govfin.run_to_gold(
+        factory,
+        "cog_units",
+        census_govfin.UNIT_YEAR,
+        census_govfin.FixtureClient(census_govfin.unit_archives()),
+    )
+    api_run, api_facts, _ = census_govfin.run_to_gold(
+        factory, "asslgf", 2022, census_govfin.FixtureClient(api)
+    )
+    assert (units_facts, api_facts) == (0, 0)
+    assert _rows(
+        factory,
+        "SELECT DISTINCT status FROM control.census_govfin_slice WHERE run_id = ANY(%s::UUID[])",
+        ([str(units_run), str(api_run)],),
+    ) == [("unchanged",)]
+    assert _rows(
+        factory, "SELECT COUNT(*) FROM silver_census_govfin.fact_observation"
+    ) == [(stored,)]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_census_govfin.unit_amount WHERE run_id = %s",
+        (str(units_run),),
+    ) == [(0,)]
+    # The edition stays answered: the loader rule does not ask for it again.
+    reader = factory()
+    try:
+        assert plan.answered(reader, "cog_units") == {census_govfin.UNIT_YEAR}
+    finally:
+        reader.close()
+
+    # A revised state answer is replayed; the unchanged nation answer is not.
+    state = json.loads(api["/timeseries/govslocalfin|state"])
+    revised = [state[0]] + [
+        [row[0], str(int(row[1]) + 1), *row[2:]] if row[0] == "LF0008" else row
+        for row in state[1:]
+    ]
+    changed = {**api, "/timeseries/govslocalfin|state": json.dumps(revised).encode()}
+    run, facts, published = census_govfin.run_to_gold(
+        factory, "asslgf", 2022, census_govfin.FixtureClient(changed)
+    )
+    assert facts > 0 and published == 1
+    assert dict(
+        _rows(
+            factory,
+            "SELECT slice_key, status FROM control.census_govfin_slice WHERE run_id = %s",
+            (str(run),),
+        )
+    ) == {"us": "unchanged", "state": "published"}
+    assert _rows(
+        factory,
+        """
+        SELECT value FROM gold_census_govfin.observation_latest
+        WHERE dataset_id = 'asslgf' AND measure_id = 'taxes_total'
+          AND government_level = 'state_and_local' AND geo_id = 'state:55'
+        """,
+    ) == [
+        (
+            _fixture_value("asslgf_2022_state.json", AGG_DESC="LF0008", GOVTYPE="001")
+            + 1,
+        )
+    ]

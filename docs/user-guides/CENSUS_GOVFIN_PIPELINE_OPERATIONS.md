@@ -116,6 +116,12 @@ need no key.
    government into `fact_observation` with `derivation`,
    `government_count` and `record_coverage`. API rows land in
    `api_revision` and then `fact_observation`.
+   A slice whose bytes and parser contract repeat its last published
+   capture, with no geography added to `silver_ref.dim_geo_entity` since,
+   is recorded `unchanged` and replayed into nothing, so a monthly re-read
+   of the revision window stores no second copy (`utility/unchanged.py`).
+   If any member of a unit-file edition changed, the whole edition is
+   replayed, because its county areas sum the unit file over the directory.
 3. `publish_<dataset>` marks reconciled slices `published`, which exposes
    them in `gold_census_govfin.observation_revision` (every capture) and
    `observation_latest` (the newest), and signals the glossary harvest.

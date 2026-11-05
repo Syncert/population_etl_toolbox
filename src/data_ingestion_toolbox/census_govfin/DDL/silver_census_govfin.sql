@@ -22,8 +22,10 @@ CREATE TABLE IF NOT EXISTS control.census_govfin_slice (
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     captured_row_count INTEGER NOT NULL DEFAULT 0 CHECK (captured_row_count >= 0),
     quarantined_row_count INTEGER NOT NULL DEFAULT 0 CHECK (quarantined_row_count >= 0),
+    -- `unchanged`: the bytes repeat the slice's last published capture
+    -- (utility/unchanged.py), so the replay writes nothing for it.
     status TEXT NOT NULL CHECK (status IN (
-        'captured', 'empty', 'quarantined', 'silver_ready', 'published'
+        'captured', 'empty', 'unchanged', 'quarantined', 'silver_ready', 'published'
     )),
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -248,7 +248,7 @@ r control.census_govfin_slice
     constraint census_govfin_slice_quarantined_row_count_check CHECK ((quarantined_row_count >= 0))
     constraint census_govfin_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint census_govfin_slice_slice_key_check CHECK ((slice_key ~ '^[a-z_]+$'::text))
-    constraint census_govfin_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'quarantined'::text, 'silver_ready'::text, 'published'::text])))
+    constraint census_govfin_slice_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'empty'::text, 'unchanged'::text, 'quarantined'::text, 'silver_ready'::text, 'published'::text])))
     index census_govfin_slice_capture_idx CREATE INDEX census_govfin_slice_capture_idx ON control.census_govfin_slice USING btree (capture_id)
     index census_govfin_slice_period_idx CREATE INDEX census_govfin_slice_period_idx ON control.census_govfin_slice USING btree (dataset_id, period, slice_key, created_at DESC)
     index census_govfin_slice_pkey CREATE UNIQUE INDEX census_govfin_slice_pkey ON control.census_govfin_slice USING btree (run_id, slice_key)

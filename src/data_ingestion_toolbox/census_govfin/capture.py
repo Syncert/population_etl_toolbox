@@ -8,7 +8,7 @@ them, and the control row for each slice records whether Census published it.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -19,6 +19,8 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+
+from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import GovFinResponse, fetch_api_slice, fetch_archive
 from .config import SOURCE_CODE, GovFinConfig
@@ -33,6 +35,27 @@ class CapturedSlice:
     slice_key: str
     capture_id: UUID
     published: bool
+    #: The bytes repeat the slice's last published capture (utility.unchanged).
+    unchanged: bool = False
+
+
+#: The slice's newest published capture.
+LATEST_PUBLISHED_SQL = """
+    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at
+    FROM control.census_govfin_slice AS slice
+    JOIN raw_capture.response_capture AS response ON response.capture_id = slice.capture_id
+    WHERE slice.dataset_id = %s AND slice.period = %s AND slice.slice_key = %s
+      AND slice.status = 'published'
+    ORDER BY slice.published_at DESC
+    LIMIT 1
+"""
+
+
+def slice_status(captured: CapturedSlice) -> str:
+    """The control status a freshly captured slice is recorded with."""
+    if not captured.published:
+        return "empty"
+    return "unchanged" if captured.unchanged else "captured"
 
 
 def parser_contract_version(dataset_id: str, period: int) -> str:
@@ -60,7 +83,7 @@ def record_slice(
                     captured.period,
                     captured.slice_key,
                     str(captured.capture_id),
-                    "captured" if captured.published else "empty",
+                    slice_status(captured),
                 ),
             )
         connection.commit()
@@ -165,18 +188,34 @@ def capture_period(
             )
             capture_control.finish_request(request.request_id, status="captured")
             active_request = None
-            item = CapturedSlice(
-                run_id,
-                dataset_id,
-                period,
-                slice_key,
-                receipt.capture_id,
-                response.published,
+            captured.append(
+                CapturedSlice(
+                    run_id,
+                    dataset_id,
+                    period,
+                    slice_key,
+                    receipt.capture_id,
+                    response.published,
+                    unchanged=response.published
+                    and repeats_last_publication(
+                        connection_factory,
+                        LATEST_PUBLISHED_SQL,
+                        (dataset_id, period, slice_key),
+                        payload_checksum=receipt.payload_checksum,
+                        parser_contract=parser_contract_version(dataset_id, period),
+                    ),
+                )
             )
-            # Recorded before anything parses the bytes; the replay counts
-            # the rows and moves the status on.
+        if dataset_id == "cog_units" and not all(
+            item.unchanged for item in captured if item.published
+        ):
+            # An edition's county areas sum its unit file over its directory:
+            # one changed member is a replay of all of them.
+            captured = [replace(item, unchanged=False) for item in captured]
+        # Recorded before anything parses the bytes; the replay counts the
+        # rows and moves the status on.
+        for item in captured:
             record_slice(connection_factory, item)
-            captured.append(item)
         capture_control.finish_run(run_id, status="success")
         return run_id, captured
     except BaseException as exc:

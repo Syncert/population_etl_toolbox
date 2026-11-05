@@ -197,7 +197,7 @@ def _replay_units(
     archives = {archive.slice_key: archive for archive in edition.archives}
     kept = 0
     for _dataset, _period, slice_key, capture_id, status in slices:
-        if status == "empty":
+        if status in ("empty", "unchanged"):
             continue
         payload = load_captured_payload(connection_factory, UUID(capture_id))
         parsed = parse_archive(edition, archives[slice_key], payload)
@@ -455,7 +455,7 @@ def _replay_api(
 ) -> int:
     expected = 0
     for _dataset, _period, slice_key, capture_id, status in slices:
-        if status == "empty":
+        if status in ("empty", "unchanged"):
             continue
         payload = load_captured_payload(connection_factory, UUID(capture_id))
         parsed = (
@@ -592,6 +592,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     "run has no captured government finance slices"
                 )
             dataset_id, period = slices[0][0], int(slices[0][1])
+            if all(status in ("empty", "unchanged") for *_rest, status in slices):
+                # Nothing new: every slice repeats its last publication or
+                # holds nothing, so the run writes no row (utility.unchanged).
+                connection.commit()
+                return 0
             _measure_dimension(cursor, dataset_id, period)
             if dataset_id == "cog_units":
                 kept = _replay_units(connection_factory, cursor, run_id, period, slices)
