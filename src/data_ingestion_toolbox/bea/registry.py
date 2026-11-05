@@ -75,6 +75,68 @@ _GDP_SECTOR_LINES = (
 #: services: other.
 _RPP_LINES = ("1", "2", "3", "4", "5")
 
+#: Personal current transfer receipts by program (CAINC35), read from the
+#: bulk file on 2026-11-05. The total (1000) is government (2000), nonprofit
+#: (3000) and business (4000) receipts; government receipts are the seven
+#: program groups 2100-2700. Medicaid is "public assistance medical care"
+#: (2220). Refundable tax credits (5000) overlap the programs -- the EITC is
+#: both 2320 and inside 5000 -- and are never added to them.
+_TRANSFER_LINES = (
+    "1000",
+    "2000",
+    "2100",
+    "2110",
+    "2120",
+    "2200",
+    "2210",
+    "2220",
+    "2230",
+    "2300",
+    "2310",
+    "2320",
+    "2330",
+    "2340",
+    "2400",
+    "2410",
+    "2420",
+    "2500",
+    "2600",
+    "2700",
+    "3000",
+    "4000",
+    "5000",
+)
+
+#: The state table (SAINC35) carries the county lines and a finer split of a
+#: few: Medicaid itself (2221) inside public assistance medical care, and the
+#: Additional Child Tax Credit (5200) inside refundable tax credits.
+_STATE_TRANSFER_LINES = (*_TRANSFER_LINES, "2221", "5200")
+
+#: Personal current taxes (SAINC50): personal income (10), the taxes in all
+#: (60), and who levies them -- federal (70: income taxes net of refunds 80,
+#: gross 81, refunds 82), state (120: income 130, motor vehicle licences 150,
+#: other 160), local (180: income 190, licences 200, other 210) -- and state
+#: and local personal property taxes (230). The table's disposable income and
+#: population lines repeat SAINC51 and CAINC1 and are not loaded twice; line
+#: 15 repeats line 60.
+_TAX_LINES = (
+    "10",
+    "60",
+    "70",
+    "80",
+    "81",
+    "82",
+    "120",
+    "130",
+    "150",
+    "160",
+    "180",
+    "190",
+    "200",
+    "210",
+    "230",
+)
+
 
 #: Metro areas are summed from these bases only: a current-dollar or persons
 #: line adds across counties. A chained-dollar line does not (BEA chains each
@@ -161,7 +223,21 @@ TABLES: tuple[BeaTable, ...] = (
     BeaTable(
         "CAINC4",
         "Personal income by major component",
-        {"35": "current_dollars", "47": "current_dollars", "50": "current_dollars"},
+        {
+            "35": "current_dollars",
+            # Dividends, interest and rent: income from what residents own.
+            "46": "current_dollars",
+            "47": "current_dollars",
+            "50": "current_dollars",
+        },
+    ),
+    # What residents receive from government, by program (taxes-and-public-
+    # money, T-1). BEA publishes the county detail about a year after the
+    # county totals; the file read on 2026-11-05 ended in 2022.
+    BeaTable(
+        "CAINC35",
+        "Personal current transfer receipts",
+        {line: "current_dollars" for line in _TRANSFER_LINES},
     ),
     BeaTable(
         "CAINC5N",
@@ -202,6 +278,29 @@ TABLES: tuple[BeaTable, ...] = (
         geography="portion",
         member="PARPP_PORT_",
         absent_area_value="0.000",
+    ),
+    # States' transfer receipts, personal current taxes and disposable
+    # income. All three are members of the one state zip, SAINC.zip.
+    BeaTable(
+        "SAINC35",
+        "Personal current transfer receipts by state",
+        {line: "current_dollars" for line in _STATE_TRANSFER_LINES},
+        geography="state",
+        archive="SAINC",
+    ),
+    BeaTable(
+        "SAINC50",
+        "Personal current taxes by state",
+        {line: "current_dollars" for line in _TAX_LINES},
+        geography="state",
+        archive="SAINC",
+    ),
+    BeaTable(
+        "SAINC51",
+        "Disposable personal income summary by state",
+        {"51": "current_dollars", "53": "per_capita_current_dollars"},
+        geography="state",
+        archive="SAINC",
     ),
     # The implicit regional price deflator: an area's price index (2017 = 100)
     # that turns its current-dollar income into real income. Published in the

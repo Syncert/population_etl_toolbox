@@ -81,12 +81,16 @@ def test_the_registry_names_every_table_and_line() -> None:
     assert [table.code for table in TABLES] == [
         "CAINC1",
         "CAINC4",
+        "CAINC35",
         "CAINC5N",
         "CAGDP1",
         "CAGDP2",
         "SARPP",
         "MARPP",
         "PARPP",
+        "SAINC35",
+        "SAINC50",
+        "SAINC51",
         "MAIRPD",
     ]
     gdp = get_table("CAGDP1")

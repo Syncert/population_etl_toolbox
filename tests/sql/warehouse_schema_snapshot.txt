@@ -1755,6 +1755,69 @@ v gold.v_metric_timeseries_by_geo
     body     v_metric_timeseries_by_geo.margin_of_error_pct
     body    FROM gold_fred.v_metric_timeseries_by_geo;
 
+v gold_bea.disposable_income_real
+    column geo_id text
+    column geo_type text
+    column geo_level text
+    column year integer
+    column current_dollars numeric
+    column value_status text
+    column income_release_date date
+    column national_prices_2017_dollars numeric
+    column regional_price_parity numeric
+    column parity_release_date date
+    column regional_prices_2017_dollars numeric
+    column sources text
+    body WITH income AS (
+    body          SELECT DISTINCT ON (revision.geo_id, revision.year) revision.geo_id,
+    body             revision.geo_type,
+    body             revision.geo_level,
+    body             revision.year,
+    body             revision.value,
+    body             revision.value_status,
+    body             revision.release_date
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE revision.table_code = 'SAINC51'::text AND revision.line_code = '53'::text
+    body           ORDER BY revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    body         ), parity AS (
+    body          SELECT DISTINCT ON (revision.geo_id, revision.year) revision.geo_id,
+    body             revision.year,
+    body             revision.value,
+    body             revision.release_date
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE revision.table_code = 'SARPP'::text AND revision.line_code = '1'::text AND revision.value_status = 'valid'::text
+    body           ORDER BY revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    body         ), price_level AS (
+    body          SELECT EXTRACT(year FROM observation.observation_date)::integer AS year,
+    body             avg(observation.value) AS level
+    body            FROM gold_fred.fact_fred_observation observation
+    body              JOIN gold_fred.dim_fred_series series ON series.fred_series_sk = observation.fred_series_sk
+    body           WHERE series.series_id = 'PCEPI'::text AND observation.value IS NOT NULL
+    body           GROUP BY (EXTRACT(year FROM observation.observation_date)::integer)
+    body          HAVING count(DISTINCT EXTRACT(month FROM observation.observation_date)) = 12
+    body         )
+    body  SELECT income.geo_id,
+    body     income.geo_type,
+    body     income.geo_level,
+    body     income.year,
+    body     income.value AS current_dollars,
+    body     income.value_status,
+    body     income.release_date AS income_release_date,
+    body         CASE
+    body             WHEN income.value_status = 'valid'::text AND price_level.level > 0::numeric THEN round(income.value * 100::numeric / price_level.level)
+    body             ELSE NULL::numeric
+    body         END AS national_prices_2017_dollars,
+    body     parity.value AS regional_price_parity,
+    body     parity.release_date AS parity_release_date,
+    body         CASE
+    body             WHEN income.value_status = 'valid'::text AND price_level.level > 0::numeric AND parity.value > 0::numeric THEN round(income.value * 100::numeric / price_level.level * 100::numeric / parity.value)
+    body             ELSE NULL::numeric
+    body         END AS regional_prices_2017_dollars,
+    body     'BEA SAINC51 line 53 (per capita disposable personal income); FRED PCEPI; BEA SARPP line 1'::text AS sources
+    body    FROM income
+    body      LEFT JOIN price_level ON price_level.year = income.year
+    body      LEFT JOIN parity ON parity.geo_id = income.geo_id AND parity.year = income.year;
+
 v gold_bea.measure_export
     column source_object_key text
     column table_code text
