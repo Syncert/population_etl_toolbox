@@ -360,7 +360,24 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
         raise
     finally:
         connection.close()
+    _analyze(connection_factory)
     return facts
+
+
+#: Refreshed after every replay, so a table's first load (millions of rows for
+#: CAINC35 or CAINC5N) is planned from real counts, not empty-table estimates.
+ANALYZED_RELATIONS = ("silver_bea.fact_observation", "silver_bea.observation_revision")
+
+
+def _analyze(connection_factory: Callable[[], Any]) -> None:
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            for relation in ANALYZED_RELATIONS:
+                cursor.execute(f"ANALYZE {relation}")
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
