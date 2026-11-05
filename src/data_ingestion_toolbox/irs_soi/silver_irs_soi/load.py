@@ -5,7 +5,8 @@ transaction per file: the dimensions, the parsed revisions and quarantine,
 the geography resolution ledger and the conformed facts land together or
 not at all, and the file is only marked ready when the counts reconcile.
 A file the parser refused whole is marked ``quarantined`` with no facts, so
-the next scheduled run asks for it again.
+the next scheduled run asks for it again. A read recorded ``unchanged``
+repeats the last published file and replays and publishes nothing.
 """
 
 from __future__ import annotations
@@ -100,6 +101,10 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     try:
         with connection.cursor() as cursor:
             item, capture_id, status = _file(cursor, run_id)
+            if status == "unchanged":
+                # The bytes repeat the last published file (utility.unchanged).
+                connection.commit()
+                return 0
             if status == "published":
                 cursor.execute(
                     "SELECT COUNT(*) FROM silver_irs_soi.fact_observation WHERE run_id = %s",

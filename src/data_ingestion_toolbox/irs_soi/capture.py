@@ -2,7 +2,10 @@
 
 One ingestion run per registered file (product and tax year): one request
 and one committed capture. The bytes are committed before anything parses
-them, and the control row records the capture before replay counts it.
+them, and the control row records the capture before replay counts it. A
+read whose bytes repeat the file's last published capture is recorded
+``unchanged`` and replays nothing (``utility.unchanged``), so a monthly run
+over files SOI has not changed stores no second copy of their rows.
 """
 
 from __future__ import annotations
@@ -18,12 +21,23 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_file
 from .config import IRS_SOI_BASE_URL, SOURCE_CODE, IrsSoiConfig
 from .registry import CSV, SoiFile
 
 PARSER_CONTRACT_VERSION = "irs_soi_income:v1"
+
+#: The file's newest published capture.
+LATEST_PUBLISHED_SQL = """
+    SELECT response.payload_checksum, response.payload_schema_version, file.published_at
+    FROM control.irs_soi_file AS file
+    JOIN raw_capture.response_capture AS response ON response.capture_id = file.capture_id
+    WHERE file.file_kind = %s AND file.tax_year = %s AND file.status = 'published'
+    ORDER BY file.published_at DESC
+    LIMIT 1
+"""
 
 
 def capture_file(
@@ -79,6 +93,17 @@ def capture_file(
             ),
         )
         capture_control.finish_request(request.request_id, status="captured")
+        status = (
+            "unchanged"
+            if repeats_last_publication(
+                connection_factory,
+                LATEST_PUBLISHED_SQL,
+                (item.kind, item.tax_year),
+                payload_checksum=receipt.payload_checksum,
+                parser_contract=PARSER_CONTRACT_VERSION,
+            )
+            else "captured"
+        )
         connection = connection_factory()
         try:
             with connection.cursor() as cursor:
@@ -86,13 +111,14 @@ def capture_file(
                     """
                     INSERT INTO control.irs_soi_file (
                         run_id, file_kind, tax_year, capture_id, status
-                    ) VALUES (%s, %s, %s, %s, 'captured')
+                    ) VALUES (%s, %s, %s, %s, %s)
                     """,
                     (
                         str(run_id),
                         item.kind,
                         item.tax_year,
                         str(receipt.capture_id),
+                        status,
                     ),
                 )
             connection.commit()

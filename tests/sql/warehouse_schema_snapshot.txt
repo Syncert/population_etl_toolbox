@@ -865,7 +865,7 @@ r control.irs_soi_file
     constraint irs_soi_file_quarantine_within_rows CHECK ((quarantined_row_count <= captured_row_count))
     constraint irs_soi_file_quarantined_row_count_check CHECK ((quarantined_row_count >= 0))
     constraint irs_soi_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
-    constraint irs_soi_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint irs_soi_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
     constraint irs_soi_file_tax_year_check CHECK (((tax_year >= 1989) AND (tax_year <= 2100)))
     index irs_soi_file_capture_idx CREATE INDEX irs_soi_file_capture_idx ON control.irs_soi_file USING btree (capture_id)
     index irs_soi_file_period_idx CREATE INDEX irs_soi_file_period_idx ON control.irs_soi_file USING btree (file_kind, tax_year, status)

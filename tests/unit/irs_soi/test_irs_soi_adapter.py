@@ -9,12 +9,17 @@ import importlib
 import io
 import sys
 import zipfile
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
 
+from data_ingestion_toolbox.capture import CaptureReceipt
+from data_ingestion_toolbox.irs_soi.capture import PARSER_CONTRACT_VERSION, capture_file
 from data_ingestion_toolbox.irs_soi.client import (
     IrsSoiFetchError,
     IrsSoiPayloadError,
@@ -37,6 +42,7 @@ from data_ingestion_toolbox.irs_soi.registry import (
     registered_files,
     registered_years,
 )
+from data_ingestion_toolbox.irs_soi.silver_irs_soi.load import replay_run
 from data_ingestion_toolbox.irs_soi.silver_irs_soi.parse import parse_file, read_number
 
 pytestmark = pytest.mark.unit
@@ -377,3 +383,107 @@ def test_the_2010_zip_reads_both_county_files_and_a_missing_member_is_refused() 
     assert [q.error_code for q in refused.quarantined] == ["member_not_found"]
     no_workbook = parse_file(SoiFile(COUNTY_TOTAL, 2009), buffer.getvalue())
     assert [q.error_code for q in no_workbook.quarantined] == ["member_not_found"]
+
+
+class _UnchangedDatabase:
+    """A connection whose last publication of the file is ``published``."""
+
+    def __init__(self, published: tuple | None) -> None:
+        self.published = published
+        self.control_rows: list[tuple] = []
+
+    def connect(self) -> _UnchangedDatabase:
+        return self
+
+    def cursor(self) -> _UnchangedDatabase:
+        return self
+
+    def __enter__(self) -> _UnchangedDatabase:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, sql: str, parameters: tuple = ()) -> None:
+        text = " ".join(sql.split())
+        if "FROM silver_ref.dim_geo_entity WHERE created_at" in text:
+            self._result = (False,)
+        elif "status = 'published'" in text and "LIMIT 1" in text:
+            assert parameters == (COUNTY_TOTAL, 2023)
+            self._result = self.published
+        elif text.startswith("INSERT INTO control.irs_soi_file"):
+            self.control_rows.append(parameters)
+            self._result = None
+        elif "FROM control.irs_soi_file" in text:
+            row = self.control_rows[-1]
+            self._result = (row[1], row[2], row[3], row[4])
+        else:
+            raise AssertionError(f"unexpected statement: {text}")
+
+    def fetchone(self):
+        return self._result
+
+    def commit(self) -> None:
+        return None
+
+    def rollback(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+class _Control:
+    def start_run(self, **_kwargs):
+        return uuid4()
+
+    def start_request(self, **_kwargs):
+        return SimpleNamespace(request_id=uuid4())
+
+    def record_request_retry(self, *_args, **_kwargs) -> None:
+        return None
+
+    def finish_request(self, *_args, **_kwargs) -> None:
+        return None
+
+    def finish_run(self, *_args, **_kwargs) -> None:
+        return None
+
+
+@pytest.mark.parametrize(
+    ("published", "expected"),
+    [
+        (None, "captured"),
+        (
+            ("a" * 64, PARSER_CONTRACT_VERSION, datetime(2026, 10, 7, tzinfo=UTC)),
+            "unchanged",
+        ),
+        (
+            ("b" * 64, PARSER_CONTRACT_VERSION, datetime(2026, 10, 7, tzinfo=UTC)),
+            "captured",
+        ),
+        (
+            ("a" * 64, "irs_soi_income:v0", datetime(2026, 10, 7, tzinfo=UTC)),
+            "captured",
+        ),
+    ],
+    ids=["never-published", "same-bytes", "new-bytes", "new-parser"],
+)
+def test_a_read_that_repeats_the_last_publication_is_unchanged_and_replays_nothing(
+    published, expected
+) -> None:
+    """Covers: ETL-114 — the monthly read of an unchanged SOI file stores no second copy of its rows."""
+    database = _UnchangedDatabase(published)
+    run_id, _capture = capture_file(
+        database.connect,
+        TOTAL_2023,
+        config=IrsSoiConfig(min_spacing_seconds=0, max_attempts=1),
+        client=_Client([_response(200, _fixture("23incyallnoagi.csv"))]),
+        control=_Control(),
+        persist_capture=lambda _factory, capture: CaptureReceipt(
+            capture.capture_id, "a" * 64
+        ),
+    )
+    assert database.control_rows[-1][-1] == expected
+    if expected == "unchanged":
+        assert replay_run(database.connect, run_id=run_id) == 0

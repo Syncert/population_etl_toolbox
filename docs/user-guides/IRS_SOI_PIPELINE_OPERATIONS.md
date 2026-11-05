@@ -104,6 +104,10 @@ the `airflow` extra.
 ## What a run does
 
 1. Commits one capture per file and records it in `control.irs_soi_file`.
+   A file whose bytes and parser version repeat its last published capture,
+   with no geography added since, is recorded `unchanged` and replays and
+   stores nothing (`utility/unchanged.py`); the payload store keeps one copy
+   of the bytes. A monthly run over files SOI has not changed adds no rows.
 2. Replays each capture into `silver_irs_soi.observation_revision`, one row
    per place, band and item. Rows whose geography cannot be read, that are
    short, or that repeat a place and band go to `observation_quarantine`. A

@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS control.irs_soi_file (
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     captured_row_count INTEGER NOT NULL DEFAULT 0 CHECK (captured_row_count >= 0),
     quarantined_row_count INTEGER NOT NULL DEFAULT 0 CHECK (quarantined_row_count >= 0),
-    status TEXT NOT NULL CHECK (status IN ('captured', 'silver_ready', 'quarantined', 'published')),
+    -- `unchanged`: the bytes repeat the file's last published capture, so the
+    -- read is recorded and replays nothing (utility/unchanged.py).
+    status TEXT NOT NULL CONSTRAINT irs_soi_file_status_check
+        CHECK (status IN ('captured', 'unchanged', 'silver_ready', 'quarantined', 'published')),
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -169,27 +169,49 @@ def _answered(factory) -> set[int]:
         reader.close()
 
 
-def test_a_rerun_adds_nothing_and_a_revised_file_is_kept_beside_the_old(
+def test_a_rerun_stores_nothing_and_a_revised_file_is_kept_beside_the_old(
     soi_warehouse,
 ) -> None:
-    """Covers: ETL-114 — the same bytes change nothing in latest; a changed file keeps both captures."""
+    """Covers: ETL-114 — the same bytes are recorded `unchanged` and store no row; a changed file keeps both captures."""
     factory = soi_warehouse
     first, facts, _p = soi.run_to_gold(factory, "county_total:2023")
-    second, again, _p = soi.run_to_gold(factory, "county_total:2023")
-    assert facts == again > 0
+    assert facts > 0
+    stored = _rows(factory, "SELECT COUNT(*) FROM silver_irs_soi.fact_observation")
+    second, again, published = soi.run_to_gold(factory, "county_total:2023")
+    # The second read repeats the first byte for byte: recorded, not stored again.
+    assert (again, published) == (0, 0)
+    assert _rows(
+        factory,
+        "SELECT status FROM control.irs_soi_file WHERE run_id = %s",
+        (str(second),),
+    ) == [("unchanged",)]
+    assert (
+        _rows(factory, "SELECT COUNT(*) FROM silver_irs_soi.fact_observation") == stored
+    )
+    assert 2023 in {
+        row[0]
+        for row in _rows(
+            factory,
+            "SELECT tax_year FROM control.irs_soi_file WHERE status = 'published'",
+        )
+    }
+    assert _outcome(factory, irs_soi_file_reconciliation).result == "pass"
     count = _rows(factory, "SELECT COUNT(*) FROM gold_irs_soi.observation_latest")
     revised = soi.fixture_bytes("23incyallnoagi.csv").replace(
         b"10,DE,001,Kent County,0,89390.0000",
         b"10,DE,001,Kent County,0,89391.0000",
     )
     assert revised != soi.fixture_bytes("23incyallnoagi.csv")
-    third, _f, _p = soi.run_to_gold(
-        factory,
-        "county_total:2023",
-        client=soi.FixtureClient(
-            {"23incyallnoagi.csv": httpx.Response(200, content=revised)}
-        ),
+    client = soi.FixtureClient(
+        {"23incyallnoagi.csv": httpx.Response(200, content=revised)}
     )
+    third, revised_facts, _p = soi.run_to_gold(
+        factory, "county_total:2023", client=client
+    )
+    assert revised_facts == facts
+    # The revised bytes, read again, repeat the newest publication.
+    _fourth, repeated, _p = soi.run_to_gold(factory, "county_total:2023", client=client)
+    assert repeated == 0
     history = _rows(
         factory,
         """
@@ -199,12 +221,8 @@ def test_a_rerun_adds_nothing_and_a_revised_file_is_kept_beside_the_old(
         """,
         (soi.KENT,),
     )
-    assert [row[1] for row in history] == [str(first), str(second), str(third)]
-    assert [row[0] for row in history] == [
-        Decimal("89390"),
-        Decimal("89390"),
-        Decimal("89391"),
-    ]
+    assert [row[1] for row in history] == [str(first), str(third)]
+    assert [row[0] for row in history] == [Decimal("89390"), Decimal("89391")]
     assert _latest(factory, "returns", soi.KENT, 2023) == (Decimal("89391"), "county")
     assert (
         _rows(factory, "SELECT COUNT(*) FROM gold_irs_soi.observation_latest") == count
