@@ -44,6 +44,7 @@ from apps.api.routers import (
     observations,
     place,
     population,
+    public_money,
     saved_analysis,
     usda_nass,
 )
@@ -76,6 +77,9 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     # IRS SOI county-to-county flows (ADR-0008): provider-published rows with
     # two geographies, cacheable like every other public warehouse read.
     migration.router,
+    # Taxes and public money (taxes-and-public-money T-6): derived reads over
+    # gold relations and approved pairings, scoped to one place.
+    public_money.router,
     place.router,
     population.router,
     # Age and sex structure (ADR-0013): sums of one provider table, cacheable

@@ -52,6 +52,9 @@ def _seed_inputs(db: cursor) -> None:
         CREATE TEMP TABLE lean_peer (
             geo_id TEXT, rural_urban_group TEXT, industry_group TEXT, industry_label TEXT
         ) ON COMMIT DROP;
+        CREATE TEMP TABLE lean_tax_burden (
+            state_fips TEXT, year INTEGER, tax_burden_group TEXT
+        ) ON COMMIT DROP;
         CREATE TEMP TABLE lean_state_name (state_fips TEXT, state_name TEXT) ON COMMIT DROP;
         """
     )
@@ -121,6 +124,11 @@ def _seed_inputs(db: cursor) -> None:
         "INSERT INTO lean_peer VALUES (%s, 'large_metro', '3', 'Manufacturing'), "
         "(%s, 'nonmetro_remote', NULL, NULL)",
         (ALPHA, GAMMA),
+    )
+    # Delaware's tax burden in fiscal 2016 is in the states' highest quarter;
+    # 2020's quarter never reaches a window that starts in 2016.
+    db.execute(
+        "INSERT INTO lean_tax_burden VALUES ('10', 2016, '4'), ('10', 2020, '1')"
     )
     db.execute("INSERT INTO lean_state_name VALUES ('10', 'Delaware')")
 
@@ -214,6 +222,13 @@ def test_lean_groups_are_change_net_of_the_nation_by_window_start_lean(
         }
         assert {(g[1], g[2]) for g in groups if g[0] == "industry"} == {
             ("3", "Manufacturing")
+        }
+        # The state's tax-burden quarter at the window's start (T-6), never a later one.
+        highest = "States in the highest quarter of tax burden at the start"
+        assert {(g[1], g[2], g[3], g[4]) for g in groups if g[0] == "tax_burden"} == {
+            ("4", highest, "R20_plus", 1),
+            ("4", highest, "R0_20", 1),
+            ("4", highest, "D20_plus", 1),
         }
         assert {g[0] for g in groups} == set(PEER_TYPES)
 

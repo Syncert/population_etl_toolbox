@@ -1863,6 +1863,58 @@
       "effective_date": "2026-11-05",
       "last_reviewed_date": "2026-11-05",
       "version": 1
+    },
+    {
+      "ratio_id": "dividends_interest_rent_share",
+      "label": "Share of personal income from dividends, interest and rent",
+      "numerator": "BEA:CAINC4:46",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-6",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Dividends, interest and rent (CAINC4 line 46) are a component of personal income (CAINC1 line 1); both are BEA's, for the same place, year and release (ADR-0009 rule 2). Named in deliverable T-6 of the taxes-and-public-money plan (the \"where income comes from\" bar), which Nick approved as option B on 2026-11-05.",
+      "limitations": [
+        "Income from what residents own, counted where they live; retirees' savings and landlords' rents both count.",
+        "Rent includes the rental value of owner-occupied homes, which BEA imputes."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_receipts_share",
+      "label": "Share of personal income from payments from government and others",
+      "numerator": "BEA:CAINC4:47",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-6",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current transfer receipts (CAINC4 line 47) are a component of personal income (CAINC1 line 1), published with it in the same county release, so the share has the same year as the dividends share beside it (ADR-0009 rule 2). CAINC35's program detail is published about a year later. Named in deliverable T-6 of the taxes-and-public-money plan, approved as option B on 2026-11-05.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts"
+      ]
     }
   ]
 }

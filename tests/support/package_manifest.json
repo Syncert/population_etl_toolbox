@@ -24,6 +24,7 @@
     "data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/publisher.sql",
     "data_ingestion_toolbox/elections/DDL/silver_elections.sql",
     "data_ingestion_toolbox/elections/gold_elections/DDL/gold_elections.sql",
+    "data_ingestion_toolbox/elections/gold_elections/DDL/governor_fiscal.sql",
     "data_ingestion_toolbox/elections/gold_elections/DDL/lean_groups.sql",
     "data_ingestion_toolbox/elections/gold_elections/DDL/publisher.sql",
     "data_ingestion_toolbox/fcc_bdc/DDL/silver_fcc_bdc.sql",

@@ -2503,6 +2503,56 @@ def elections_lean_group_arithmetic(
     ]
 
 
+def elections_governor_fiscal_arithmetic(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-006 — governor fiscal change is net of the nation, tenures do not overlap, mixes add up."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_elections.governor_tenure")
+    if total == 0:
+        return [RuleOutcome("gold_elections.governor_term_fiscal", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fiscal.tenure_key AS item,
+               fiscal.measure AS window,
+               'net ' || COALESCE(fiscal.net_change::TEXT, 'null') || ' from place '
+                   || COALESCE(fiscal.place_change::TEXT, 'null') || ' and nation '
+                   || COALESCE(fiscal.nation_change::TEXT, 'null') AS detail
+          FROM gold_elections.governor_term_fiscal AS fiscal
+         WHERE (fiscal.net_change IS NOT NULL
+                AND ABS(fiscal.net_change - (fiscal.place_change - fiscal.nation_change)) > 0.002)
+            OR (fiscal.net_change IS NULL) = (fiscal.unavailable_reason IS NULL)
+        UNION ALL
+        SELECT later.tenure_key, 'state ' || later.state_fips,
+               'starts ' || later.start_date || ' before ' || earlier.tenure_key || ' ends '
+                   || earlier.end_date
+          FROM gold_elections.governor_tenure AS later
+          JOIN gold_elections.governor_tenure AS earlier
+            ON earlier.state_fips = later.state_fips
+           AND earlier.start_date < later.start_date
+           AND earlier.tenure_key <> later.tenure_key
+           AND COALESCE(earlier.end_date, 'infinity'::DATE) > later.start_date
+        UNION ALL
+        SELECT mix.tenure_key, 'tax mix ' || mix.fiscal_year,
+               'shares add to ' || SUM(mix.share_of_taxes_pct)
+          FROM gold_elections.governor_term_tax_mix AS mix
+         GROUP BY mix.tenure_key, mix.fiscal_year
+        HAVING ABS(SUM(mix.share_of_taxes_pct) - 100) > 0.5
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "gold_elections.governor_term_fiscal",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def govfin_slice_reconciliation(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -4606,6 +4656,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ELEC-003": elections_seat_overlap,
     "DQ-ELEC-004": elections_totals_and_geography,
     "DQ-ELEC-005": elections_lean_group_arithmetic,
+    "DQ-ELEC-006": elections_governor_fiscal_arithmetic,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

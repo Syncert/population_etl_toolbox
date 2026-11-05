@@ -103,6 +103,11 @@ import {
 import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+/** The grains `/public-money` answers (taxes-and-public-money T-6). */
+const PUBLIC_MONEY_LEVELS: ReadonlySet<PlaceLevel> = new Set<PlaceLevel>(["NATIONAL", "STATE", "COUNTY"]);
+function levelNames(levels: LevelPlace[]): Record<string, string> {
+  return Object.fromEntries(levels.map((level) => [level.geoId, level.name]));
+}
 const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
 const PlaceDepth = dynamic(() => import("./PlaceDepth"));
 const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
@@ -110,6 +115,10 @@ const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
+// Taxes and public money (taxes-and-public-money T-6): own chunks, so a place
+// page carries none of it until the Work and Money chapter renders.
+const PublicMoney = dynamic(() => import("./PublicMoney"));
+const GovernorTerms = dynamic(() => import("./GovernorTerms"));
 
 /**
  * Said where the catalog serves no row of a chapter's measure. Every measure
@@ -1253,6 +1262,14 @@ function Chapter({
           state while the address is still resolving, and a state is the
           API's 422 (two refused reads on every county page load). */}
       {chapter.id === "people" && pageLevel === "COUNTY" && county ? <MigrationFlows geoId={county.geo_id} /> : null}
+      {/* Taxes and public money for the nation, a state or a county, beside
+          its state and the nation; only once the page's own place resolved. */}
+      {chapter.id === "work-money" && own && own.level === pageLevel && own.role === "this place" && PUBLIC_MONEY_LEVELS.has(pageLevel) ? (
+        <PublicMoney geoId={own.geoId} names={levelNames(levels)} />
+      ) : null}
+      {chapter.id === "work-money" && pageLevel === "STATE" && own && own.level === "STATE" && own.role === "this place" ? (
+        <GovernorTerms geoId={own.geoId} stateName={own.name} />
+      ) : null}
       {chapter.id === "change" && pageLevel === "COUNTY" ? (
         <p className="subtle" data-testid="change-migration-note">
           <a className="text-link" href="#people">Where people came from and went</a>, from IRS tax returns, is in People.{" "}

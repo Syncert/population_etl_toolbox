@@ -31,6 +31,7 @@ PEER_TYPES: tuple[str, ...] = (
     "state",
     "starting_level",
     "industry",
+    "tax_burden",
 )
 
 

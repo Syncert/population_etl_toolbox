@@ -51,6 +51,12 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # values beside the derived comparable series, read from gold views the
     # ACS pipeline publishes; a reading owned by the platform.
     "/api/v1/place/tract-history",
+    # Taxes and public money (taxes-and-public-money T-6): shares of BEA, IRS
+    # SOI and ACS figures under approved pairings, the Census tax burden view,
+    # and governor tenures from the elections source joined to them; a
+    # derived reading across five sources, owned by the platform.
+    "/api/v1/public-money",
+    "/api/v1/governor-terms",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:
