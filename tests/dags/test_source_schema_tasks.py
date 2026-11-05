@@ -28,6 +28,7 @@ from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
 from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
 from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
+from data_ingestion_toolbox.irs_soi import schema as irs_soi_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
 from data_ingestion_toolbox.census_govfin import schema as govfin_schema
@@ -89,6 +90,13 @@ SOURCES = [
         "ingest_batch_",
         irs_migration_schema,
         "IRS_MIGRATION",
+    ),
+    (
+        "irs_soi_ingest",
+        "ensure_irs_soi_schema",
+        "ingest_batch_",
+        irs_soi_schema,
+        "IRS_SOI",
     ),
     (
         "eia_retail_gasoline_ingest",

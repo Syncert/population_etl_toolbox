@@ -118,5 +118,6 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
     "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),
+    "IRS_SOI": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
 }

@@ -4,7 +4,8 @@ Everything here reads the committed capture, never the network. One
 transaction per run: the parsed rows, the quarantine, the conformed flows
 and the geography resolution ledger land together or not at all, and the
 run is only marked ready when every captured row is accounted for as a
-flow, a refusal or a quarantined row.
+flow, a refusal, a quarantined row or a state summary row (counted, not
+loaded).
 """
 
 from __future__ import annotations
@@ -48,7 +49,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT file.direction, file.year_pair, file.capture_id::TEXT, capture.retrieved_at
+                SELECT file.direction, file.year_pair, file.capture_id::TEXT, capture.retrieved_at,
+                       file.status
                 FROM control.irs_migration_file AS file
                 JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
                 WHERE file.run_id = %s
@@ -60,7 +62,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 raise IrsMigrationReconciliationError(
                     "run has no captured SOI migration file"
                 )
-            direction, year_pair, capture_id, retrieved_at = row
+            direction, year_pair, capture_id, retrieved_at, status = row
+            if status == "unchanged":
+                # The bytes repeat the last published file (utility.unchanged).
+                connection.commit()
+                return 0
             item = get_file(direction, year_pair)
             parsed = parse_file(
                 load_captured_payload(connection_factory, UUID(capture_id)), item=item
@@ -250,11 +256,13 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 or facts + len(refused) != revisions
                 or revisions
                 + len([q for q in parsed.quarantined if q.source_row_index > 0])
+                + parsed.summary_row_count
                 != parsed.row_count
             ):
                 raise IrsMigrationReconciliationError(
-                    f"run {run_id} reconciles {revisions} rows, {facts} flows and "
-                    f"{len(refused)} refusals against {parsed.row_count} captured"
+                    f"run {run_id} reconciles {revisions} rows, {facts} flows, "
+                    f"{len(refused)} refusals and {parsed.summary_row_count} state "
+                    f"summary rows against {parsed.row_count} captured"
                 )
         connection.commit()
     except BaseException:

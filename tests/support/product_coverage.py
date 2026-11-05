@@ -535,6 +535,45 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="irs_soi.income",
+        source="IRS_SOI",
+        publisher_schema="gold_irs_soi",
+        datasets=(
+            "county_total:1989",
+            "county_total:2010",
+            "county_agi:2010",
+            "county_total:2023",
+            "county_agi:2023",
+            "state:2023",
+        ),
+        fixtures=(
+            "tests/fixtures/irs_soi/1989countyincome.zip",
+            "tests/fixtures/irs_soi/2010countydata.zip",
+            "tests/fixtures/irs_soi/23incyallnoagi.csv",
+            "tests/fixtures/irs_soi/23incyallagi.csv",
+            "tests/fixtures/irs_soi/23in55cmcsv.csv",
+        ),
+        serving_relations=(
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_irs_soi_pipeline.py::"
+            "test_county_and_state_income_reach_the_neutral_api_by_agi_band"
+        ),
+        api_absence_reason=(
+            "IRS SOI income publishes no source-specific HTTP route: its rows "
+            "are the neutral observation shape with an AGI band dimension, so "
+            "`/api/v1/observations` serves them through the dispatch registry "
+            "and a source route would repeat it."
+        ),
+    ),
+    DataProductE2E(
         product_id="eia.retail_gasoline",
         source="EIA",
         publisher_schema="gold_eia",

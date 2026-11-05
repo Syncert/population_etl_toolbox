@@ -1214,6 +1214,187 @@ def irs_migration_total_reconciliation(
     ]
 
 
+#: The newest published capture of each SOI income file (product, tax year).
+#: Written as "no later published capture" because an offender query may
+#: not carry an ORDER BY (``_offenders``).
+_SOI_NEWEST_FILES = """
+    published AS (
+        SELECT file.capture_id, file.file_kind, file.tax_year, capture.retrieved_at
+          FROM control.irs_soi_file AS file
+          JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+         WHERE file.status = 'published'
+    ), newest AS (
+        SELECT published.capture_id, published.file_kind, published.tax_year
+          FROM published
+         WHERE NOT EXISTS (
+                SELECT 1 FROM published AS later
+                 WHERE later.file_kind = published.file_kind
+                   AND later.tax_year = published.tax_year
+                   AND (later.retrieved_at, later.capture_id::TEXT)
+                       > (published.retrieved_at, published.capture_id::TEXT)
+         )
+    )
+"""
+
+
+def irs_soi_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-SOI-002 — every captured row is values or quarantined; no file left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.irs_soi_file")
+    if total == 0:
+        return [RuleOutcome("control.irs_soi_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.file_kind, file.tax_year, file.status
+          FROM control.irs_soi_file AS file
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS revisions,
+                       COUNT(DISTINCT revision.source_row_index) AS rows_read
+                  FROM silver_irs_soi.observation_revision AS revision
+                 WHERE revision.capture_id = file.capture_id
+          ) AS parsed ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS facts
+                  FROM silver_irs_soi.fact_observation AS fact
+                 WHERE fact.capture_id = file.capture_id
+          ) AS conformed ON TRUE
+         WHERE file.status = 'captured'
+            OR (file.status = 'quarantined' AND conformed.facts <> 0)
+            OR (file.status IN ('silver_ready', 'published')
+                AND (conformed.facts <> parsed.revisions
+                     OR parsed.rows_read + file.quarantined_row_count
+                        <> file.captured_row_count))
+        """,
+        order_by="2, 3, 1",
+    )
+    return [
+        RuleOutcome(
+            "control.irs_soi_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def irs_soi_county_sum(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-SOI-003 — a state's counties sum to its total within 1 percent.
+
+    Read from the newest published county totals file of each tax year, in
+    returns and adjusted gross income; a state with a county whose value is
+    missing is not compared.
+    """
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.irs_soi_file "
+        "WHERE status = 'published' AND file_kind = 'county_total'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_irs_soi.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH {_SOI_NEWEST_FILES},
+        rows AS (
+            SELECT fact.tax_year, fact.metric_key, fact.geo_type, fact.value,
+                   SPLIT_PART(SPLIT_PART(fact.geo_id, '|', 1), ':', 2) AS state_fips
+              FROM silver_irs_soi.fact_observation AS fact
+              JOIN newest ON newest.capture_id = fact.capture_id
+             WHERE newest.file_kind = 'county_total'
+               AND fact.metric_key IN ('returns', 'agi')
+               AND fact.geo_type IN ('state', 'county')
+        ), compared AS (
+            SELECT tax_year, metric_key, state_fips,
+                   MAX(value) FILTER (WHERE geo_type = 'state') AS state_total,
+                   SUM(value) FILTER (WHERE geo_type = 'county') AS county_sum,
+                   COUNT(*) FILTER (WHERE geo_type = 'county' AND value IS NULL) AS missing
+              FROM rows
+             GROUP BY tax_year, metric_key, state_fips
+        )
+        SELECT tax_year, metric_key, state_fips, state_total, county_sum
+          FROM compared
+         WHERE state_total IS NOT NULL AND county_sum IS NOT NULL AND missing = 0
+           AND ABS(county_sum - state_total) > 0.01 * ABS(state_total)
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_irs_soi.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def irs_soi_band_sum(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-SOI-004 — returns across AGI bands sum to all returns within 1 percent.
+
+    The county band file is checked against the county totals file of the
+    same tax year, the state file against its own all-returns row; a place
+    with a band whose count is missing is not compared.
+    """
+    del scope
+    from data_ingestion_toolbox.irs_soi.registry import AGI_BANDS, ALL_RETURNS
+
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.irs_soi_file "
+        "WHERE status = 'published' AND file_kind IN ('county_agi', 'state')",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_irs_soi.fact_observation", "not_applicable")]
+    band_keys = sorted(f"returns:{code}" for code in AGI_BANDS if code != ALL_RETURNS)
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH {_SOI_NEWEST_FILES},
+        bands AS (
+            SELECT newest.file_kind, fact.tax_year, fact.geo_id,
+                   SUM(fact.value) AS band_sum,
+                   COUNT(*) FILTER (WHERE fact.value IS NULL) AS missing
+              FROM silver_irs_soi.fact_observation AS fact
+              JOIN newest ON newest.capture_id = fact.capture_id
+             WHERE newest.file_kind IN ('county_agi', 'state')
+               AND fact.metric_key = ANY(%s)
+             GROUP BY newest.file_kind, fact.tax_year, fact.geo_id
+        ), totals AS (
+            SELECT CASE WHEN newest.file_kind = 'county_total' THEN 'county_agi'
+                        ELSE 'state' END AS file_kind,
+                   fact.tax_year, fact.geo_id, fact.value AS all_returns
+              FROM silver_irs_soi.fact_observation AS fact
+              JOIN newest ON newest.capture_id = fact.capture_id
+             WHERE newest.file_kind IN ('county_total', 'state')
+               AND fact.metric_key = 'returns'
+        )
+        SELECT bands.file_kind, bands.tax_year, bands.geo_id,
+               totals.all_returns, bands.band_sum
+          FROM bands
+          JOIN totals USING (file_kind, tax_year, geo_id)
+         WHERE bands.missing = 0 AND totals.all_returns IS NOT NULL
+           AND ABS(bands.band_sum - totals.all_returns) > 0.01 * ABS(totals.all_returns)
+        """,
+        order_by="1, 2, 3",
+        params=(band_keys,),
+    )
+    return [
+        RuleOutcome(
+            "silver_irs_soi.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def bls_bimonthly_cadence(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-BLS-009 — an every-other-month CPI metro has no two consecutive months."""
     del scope
@@ -1335,6 +1516,210 @@ def bea_price_parity_reference(
         RuleOutcome(
             "silver_bea.fact_observation",
             "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+#: (table, total line, part lines) -- each total and the lines that make it.
+#: Refundable tax credits (5000) overlap the programs and are in no sum.
+_BEA_PROGRAM_GROUPS = ("2100", "2200", "2300", "2400", "2500", "2600", "2700")
+BEA_COMPONENT_SUMS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("CAINC35", "1000", ("2000", "3000", "4000")),
+    ("CAINC35", "2000", _BEA_PROGRAM_GROUPS),
+    ("SAINC35", "1000", ("2000", "3000", "4000")),
+    ("SAINC35", "2000", _BEA_PROGRAM_GROUPS),
+    ("SAINC50", "60", ("70", "120", "180", "230")),
+)
+
+
+def _without_nested_loops(cursor: Any) -> str:
+    """Refuse nested loops for this transaction; return the setting to restore.
+
+    The BEA rules join the newest capture's facts to the capture ledger and to
+    each other. Planned while a table is new, the estimates are a row or two
+    and a nested loop is chosen; after a first load of millions of rows that
+    plan would be ruinous, so the join is hashed or merged instead.
+    """
+    cursor.execute("SELECT current_setting('enable_nestloop')")
+    previous = cursor.fetchone()[0]
+    cursor.execute("SELECT set_config('enable_nestloop', 'off', true)")
+    cursor.fetchone()
+    return previous
+
+
+def _restore_nested_loops(cursor: Any, previous: str) -> None:
+    cursor.execute("SELECT set_config('enable_nestloop', %s, true)", (previous,))
+    cursor.fetchone()
+
+
+def bea_component_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-BEA-006 — transfer receipts and personal taxes add up within a release."""
+    del scope
+    tables = sorted({table for table, _total, _parts in BEA_COMPONENT_SUMS})
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.bea_table_capture "
+        "WHERE status = 'published' AND table_code = ANY(%s)",
+        (tables,),
+    )
+    if total == 0:
+        return [RuleOutcome("silver_bea.fact_observation", "not_applicable")]
+    groups = [
+        (table, total_line, list(parts))
+        for table, total_line, parts in BEA_COMPONENT_SUMS
+    ]
+    previous = _without_nested_loops(cursor)
+    try:
+        offenders, offenders_total = _offenders(
+            cursor,
+            """
+            WITH rule (table_code, total_line, parts) AS (
+                SELECT * FROM UNNEST(%s::TEXT[], %s::TEXT[], %s::TEXT[])
+            ),
+            newest AS (
+                -- Each table's newest published capture: one file holds every
+                -- line, so its parts and totals share one release.
+                SELECT capture.table_code, capture.run_id
+                  FROM control.bea_table_capture AS capture
+                 WHERE capture.status = 'published'
+                   AND capture.table_code = ANY(%s)
+                   AND NOT EXISTS (
+                        SELECT 1 FROM control.bea_table_capture AS newer
+                         WHERE newer.table_code = capture.table_code
+                           AND newer.status = 'published'
+                           AND (newer.release_date, newer.updated_at, newer.run_id)
+                               > (capture.release_date, capture.updated_at, capture.run_id)
+                   )
+            ),
+            sums AS (
+                SELECT fact.table_code, rule.total_line, fact.geo_id, fact.year,
+                       MAX(fact.value) FILTER (
+                           WHERE fact.line_code = rule.total_line AND fact.value_status = 'valid'
+                       ) AS total_value,
+                       SUM(fact.value) FILTER (
+                           WHERE fact.line_code = ANY(STRING_TO_ARRAY(rule.parts, ','))
+                       ) AS parts_value,
+                       COUNT(*) FILTER (
+                           WHERE fact.line_code = ANY(STRING_TO_ARRAY(rule.parts, ','))
+                             AND fact.value_status = 'valid'
+                       ) AS valid_parts,
+                       CARDINALITY(STRING_TO_ARRAY(rule.parts, ',')) AS part_count
+                  FROM newest
+                  JOIN silver_bea.fact_observation AS fact
+                    -- `bea_fact_run_idx`: one run is one capture of one table.
+                    ON fact.run_id = newest.run_id
+                   AND fact.table_code = newest.table_code
+                  JOIN rule ON rule.table_code = fact.table_code
+                   AND (fact.line_code = rule.total_line
+                        OR fact.line_code = ANY(STRING_TO_ARRAY(rule.parts, ',')))
+                 GROUP BY fact.table_code, rule.total_line, rule.parts, fact.geo_id, fact.year
+            )
+            SELECT sums.table_code, sums.total_line, sums.geo_id, sums.year,
+                   sums.total_value, sums.parts_value
+              FROM sums
+             WHERE sums.total_value IS NOT NULL
+               AND sums.valid_parts = sums.part_count
+               AND ABS(sums.parts_value - sums.total_value)
+                   > GREATEST(0.005 * ABS(sums.total_value), 3)
+            """,
+            order_by="1, 2, 3, 4",
+            params=(
+                [group[0] for group in groups],
+                [group[1] for group in groups],
+                [",".join(group[2]) for group in groups],
+                tables,
+            ),
+        )
+    finally:
+        _restore_nested_loops(cursor, previous)
+    return [
+        RuleOutcome(
+            "silver_bea.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bea_transfer_total_agreement(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BEA-007 — CAINC35's total agrees with CAINC4 line 47 in a shared release."""
+    del scope
+    shared = _count(
+        cursor,
+        """
+        SELECT COUNT(*)
+          FROM (
+                SELECT release_date FROM control.bea_table_capture
+                 WHERE status = 'published' AND table_code = 'CAINC35'
+                INTERSECT
+                SELECT release_date FROM control.bea_table_capture
+                 WHERE status = 'published' AND table_code = 'CAINC4'
+          ) AS releases
+        """,
+    )
+    if shared == 0:
+        return [RuleOutcome("silver_bea.fact_observation", "not_applicable")]
+    previous = _without_nested_loops(cursor)
+    try:
+        offenders, offenders_total = _offenders(
+            cursor,
+            """
+            WITH newest AS (
+                -- The newest capture of each table's each release.
+                SELECT capture.table_code, capture.release_date, capture.run_id
+                  FROM control.bea_table_capture AS capture
+                 WHERE capture.status = 'published'
+                   AND capture.table_code IN ('CAINC35', 'CAINC4')
+                   AND NOT EXISTS (
+                        SELECT 1 FROM control.bea_table_capture AS newer
+                         WHERE newer.table_code = capture.table_code
+                           AND newer.release_date = capture.release_date
+                           AND newer.status = 'published'
+                           AND (newer.updated_at, newer.run_id)
+                               > (capture.updated_at, capture.run_id)
+                   )
+            ),
+            programs AS (
+                SELECT newest.release_date, fact.geo_id, fact.year, fact.value
+                  FROM newest
+                  JOIN silver_bea.fact_observation AS fact
+                    ON fact.run_id = newest.run_id
+                   AND fact.table_code = 'CAINC35' AND fact.line_code = '1000'
+                 WHERE newest.table_code = 'CAINC35' AND fact.value_status = 'valid'
+            ),
+            totals AS (
+                SELECT newest.release_date, fact.geo_id, fact.year, fact.value
+                  FROM newest
+                  JOIN silver_bea.fact_observation AS fact
+                    ON fact.run_id = newest.run_id
+                   AND fact.table_code = 'CAINC4' AND fact.line_code = '47'
+                 WHERE newest.table_code = 'CAINC4' AND fact.value_status = 'valid'
+            )
+            SELECT programs.release_date, programs.geo_id, programs.year,
+                   programs.value AS programs_total, totals.value AS income_line_47
+              FROM programs
+              JOIN totals
+                ON totals.release_date = programs.release_date
+               AND totals.geo_id = programs.geo_id
+               AND totals.year = programs.year
+             WHERE ABS(programs.value - totals.value)
+                   > GREATEST(0.005 * ABS(totals.value), 3)
+            """,
+            order_by="1, 2, 3",
+        )
+    finally:
+        _restore_nested_loops(cursor, previous)
+    return [
+        RuleOutcome(
+            "silver_bea.fact_observation",
+            "warn" if offenders else "pass",
             observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
@@ -4225,6 +4610,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BEA-002": bea_table_reconciliation,
     "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-BEA-005": bea_price_parity_reference,
+    "DQ-BEA-006": bea_component_sums,
+    "DQ-BEA-007": bea_transfer_total_agreement,
     "DQ-EIA-002": eia_read_reconciliation,
     "DQ-CBP-002": cbp_file_reconciliation,
     "DQ-CBP-004": cbp_sector_sum,
@@ -4234,4 +4621,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BPS-002": bps_file_reconciliation,
     "DQ-IRS-002": irs_migration_file_reconciliation,
     "DQ-IRS-004": irs_migration_total_reconciliation,
+    "DQ-SOI-002": irs_soi_file_reconciliation,
+    "DQ-SOI-003": irs_soi_county_sum,
+    "DQ-SOI-004": irs_soi_band_sum,
 }

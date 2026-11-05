@@ -1,6 +1,6 @@
 """Real PostgreSQL Census government finance capture-to-gold contract.
 
-Covers: ETL-115
+Covers: ETL-118
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _load_units(factory: Callable[[], connection]) -> tuple[int, int]:
 def test_unit_files_roll_up_to_county_areas_and_states(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- a county area is the sum of its home governments' unit records."""
+    """Covers: ETL-118 -- a county area is the sum of its home governments' unit records."""
     facts, published = _load_units(govfin_warehouse)
     # Dane, Milwaukee; Wisconsin's local governments; Wisconsin's and
     # Alabama's state governments (the real Alabama lines carry only debt
@@ -163,7 +163,7 @@ def test_unit_files_roll_up_to_county_areas_and_states(
 def test_tax_burden_divides_by_bea_personal_income_of_the_same_year(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- the county burden is its local taxes over BEA income, labelled derived."""
+    """Covers: ETL-118 -- the county burden is its local taxes over BEA income, labelled derived."""
     _load_units(govfin_warehouse)
     burden = _rows(
         govfin_warehouse,
@@ -182,7 +182,7 @@ def test_tax_burden_divides_by_bea_personal_income_of_the_same_year(
 def test_a_loaded_edition_is_answered_and_a_rerun_plans_nothing(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- the loader rule: an edition never loaded is planned until it is published."""
+    """Covers: ETL-118 -- the loader rule: an edition never loaded is planned until it is published."""
     reader = govfin_warehouse()
     try:
         assert plan.answered(reader, "cog_units") == set()
@@ -208,7 +208,7 @@ def test_a_loaded_edition_is_answered_and_a_rerun_plans_nothing(
 def test_publisher_harvests_and_the_schema_task_is_idempotent(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- one publisher row per served measure and level; the DDL reapplies."""
+    """Covers: ETL-118 -- one publisher row per served measure and level; the DDL reapplies."""
 
     class _Hook:
         def get_conn(self) -> connection:
@@ -256,7 +256,7 @@ def _fixture_value(name: str, **match: str) -> Decimal:
 def test_annual_survey_and_qtax_replay_census_published_totals(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- Census's own state and national figures reach gold unchanged."""
+    """Covers: ETL-118 -- Census's own state and national figures reach gold unchanged."""
     client = census_govfin.FixtureClient(census_govfin.api_responses())
     _run, facts, published = census_govfin.run_to_gold(
         govfin_warehouse, "asslgf", 2022, client
@@ -310,7 +310,7 @@ def test_state_and_local_tax_burden_matches_census_over_bea(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
 ) -> None:
-    """Covers: ETL-115 -- the nation's fiscal 2022 burden is Census's taxes over BEA's income."""
+    """Covers: ETL-118 -- the nation's fiscal 2022 burden is Census's taxes over BEA's income."""
     bea_warehouse = bea.reviewed_warehouse(postgres_connection_factory, request)
     bea.run_to_gold(bea_warehouse, "CAINC1")
     client = census_govfin.FixtureClient(census_govfin.api_responses())
@@ -372,7 +372,7 @@ def _write(factory: Callable[[], connection], sql: str, parameters: tuple = ()) 
 def test_quality_rules_pass_on_the_fixture_then_catch_a_fault(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- DQ-GOVFIN-003 and -004 pass on a clean load, then fail and warn."""
+    """Covers: ETL-118 -- DQ-GOVFIN-003 and -004 pass on a clean load, then fail and warn."""
     factory = govfin_warehouse
     assert _outcome(factory, govfin_slice_reconciliation).result == "not_applicable"
     assert _outcome(factory, govfin_unit_totals).result == "not_applicable"
@@ -406,7 +406,7 @@ def test_quality_rules_pass_on_the_fixture_then_catch_a_fault(
 def test_a_reread_that_repeats_the_last_publication_stores_nothing(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 -- unchanged bytes are recorded, never replayed again."""
+    """Covers: ETL-118 -- unchanged bytes are recorded, never replayed again."""
     factory = govfin_warehouse
     api = census_govfin.api_responses()
     _load_units(factory)

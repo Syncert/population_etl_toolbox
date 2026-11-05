@@ -78,6 +78,7 @@ SOURCES: tuple[str, ...] = (
     "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
+    "IRS_SOI",
     "CENSUS_SAIPE_SAHIE",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
@@ -2201,6 +2202,23 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published table",
     ),
     _obj(
+        "gold_bea.disposable_income_real",
+        "gold",
+        "BEA",
+        grain="geo_id, year (newest release of SAINC51 line 53)",
+        lineage="gold_bea.observation_revision, gold_fred.fact_fred_observation",
+        scope_method=(
+            "SAINC51 line 53 deflated by FRED PCEPI and SARPP line 1: the "
+            "nation and states BEA publishes disposable income for; the "
+            "regional-prices column only for years with a price parity (2008 on)"
+        ),
+        cadence="per publication",
+        empty_behavior=(
+            "empty only before SAINC51 is published; a year without twelve PCE "
+            "months or without a parity has no deflated figure, never zero"
+        ),
+    ),
+    _obj(
         "gold_bea.measure_export",
         "publisher",
         "BEA",
@@ -2736,7 +2754,7 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
         lineage="silver_irs_migration.flow_revision, silver_ref.dim_geo_entity",
         scope_method="registered files; county flows with both ends resolved and SOI's own categories",
         cadence="per SOI migration replay",
-        empty_behavior="a deleted category is withheld with no value, never zero; a flow under 20 returns is in its Other flows category",
+        empty_behavior="a deleted category is withheld with no value, never zero; a flow under SOI's threshold (20 returns; 10 or 20 before 2018-2019) is in its Other flows category",
     ),
     _obj(
         "gold_irs_migration.flow_revision",
@@ -2793,6 +2811,106 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
         "IRS_MIGRATION",
         grain="source_object_key (direction:category:measure)",
         lineage="gold_irs_migration.total_observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+_IRS_SOI_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.irs_soi_file",
+        "control",
+        "IRS_SOI",
+        grain="run_id (one run per product and tax year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in irs_soi/registry.py; the newest two years and every year never published",
+        cadence="monthly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_soi.dim_measure",
+        "silver",
+        "IRS_SOI",
+        grain="measure_id",
+        scope_method="the curated items in irs_soi/registry.py, written at replay",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_irs_soi.dim_agi_band",
+        "silver",
+        "IRS_SOI",
+        grain="agi_band",
+        scope_method="the AGI bands in irs_soi/registry.py, written at replay",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_irs_soi.observation_revision",
+        "silver",
+        "IRS_SOI",
+        grain="capture_id, source_row_index, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_soi.observation_quarantine",
+        "silver",
+        "IRS_SOI",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable row; row 0 for a file refused whole",
+        cadence="per SOI income replay",
+        empty_behavior="empty when every row was read",
+    ),
+    _obj(
+        "silver_irs_soi.fact_observation",
+        "silver",
+        "IRS_SOI",
+        grain="file_kind, metric_key, tax_year, geo_id, capture_id",
+        lineage="silver_irs_soi.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="registered files; every row read, resolved or unmapped",
+        cadence="per SOI income replay",
+        empty_behavior="a cell that is not a number is missing with SOI's text, never zero",
+    ),
+    _obj(
+        "gold_irs_soi.observation_revision",
+        "gold",
+        "IRS_SOI",
+        grain="file_kind, metric_key, tax_year, geo_id, capture_id (published files, resolved places)",
+        lineage="silver_irs_soi.fact_observation, control.irs_soi_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_soi.observation_latest",
+        "gold",
+        "IRS_SOI",
+        grain="metric_key, geo_id, tax_year (county files first, newest capture)",
+        lineage="gold_irs_soi.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_soi.measure_export",
+        "publisher",
+        "IRS_SOI",
+        grain="source_object_key (measure or measure:agi band)",
+        scope_method="registered items x AGI bands",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay writes the dimensions",
+    ),
+    _obj(
+        "gold_irs_soi.metric_publisher",
+        "publisher",
+        "IRS_SOI",
+        grain="source_object_key (measure or measure:agi band)",
+        lineage="gold_irs_soi.observation_latest",
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published file",
@@ -4242,6 +4360,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
+    + _IRS_SOI_OBJECTS
     + _SAE_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
@@ -4627,6 +4746,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.metric_publisher",
             "gold_fred.metric_publisher",
             "gold_irs_migration.metric_publisher",
+            "gold_irs_soi.metric_publisher",
             "gold_pep.metric_publisher",
             "gold_census_sae.metric_publisher",
             "gold_census_govfin.metric_publisher",
@@ -5950,11 +6070,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_bea.fact_observation",
             "gold_bea.observation_revision",
             "gold_bea.observation_latest",
+            "gold_bea.disposable_income_real",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: the grain is the fact table's primary key; "
-            "the gold relations are views over it."
+            "the gold relations are views over it, and "
+            "`disposable_income_real` keeps one row per geography and year by "
+            "its DISTINCT ON over the newest release."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -6449,6 +6572,62 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "when none is withheld, and never exceed it when one is.",
         ("silver_irs_migration.flow_revision", "control.irs_migration_file"),
     ),
+    # -- IRS SOI county and state income ------------------------------------
+    _rule(
+        "DQ-SOI-001",
+        "BLOCK",
+        "uniqueness",
+        "SOI income values are unique per (file, metric, tax year, place, "
+        "capture): a revised file is a second row beside the one it revised.",
+        (
+            "silver_irs_soi.fact_observation",
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+            "gold_irs_soi.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_soi.fact_observation",
+                ("file_kind", "metric_key", "tax_year", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-SOI-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed SOI file accounts for every captured row as values or "
+        "a quarantined row, and no captured file is left unreplayed.",
+        (
+            "control.irs_soi_file",
+            "silver_irs_soi.observation_revision",
+            "silver_irs_soi.observation_quarantine",
+            "silver_irs_soi.fact_observation",
+        ),
+    ),
+    _rule(
+        "DQ-SOI-003",
+        "WARN",
+        "reconciliation",
+        "In the newest published county totals file, a state's counties sum "
+        "to the file's own state total within 1 percent, in returns and in "
+        "adjusted gross income.",
+        ("silver_irs_soi.fact_observation", "control.irs_soi_file"),
+    ),
+    _rule(
+        "DQ-SOI-004",
+        "WARN",
+        "reconciliation",
+        "A place's returns in the AGI bands of the newest published band file "
+        "sum to its all-returns count within 1 percent, so the band shares sum "
+        "to 100.",
+        ("silver_irs_soi.fact_observation", "control.irs_soi_file"),
+    ),
     _rule(
         "DQ-BEA-005",
         "BLOCK",
@@ -6459,6 +6638,44 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation="automated",
         automation_note=(
             "`quality.sources.bea_price_parity_reference` reads the newest published release of line 1 (all items) for `us:1` in SARPP, MARPP and PARPP and fails any year whose value is not exactly 100 -- a parity table whose national row is not 100 is not relative to the nation, and every area's level in it would be misread (grocery-and-gasoline-prices)."
+        ),
+    ),
+    _rule(
+        "DQ-BEA-006",
+        "WARN",
+        "reconciliation",
+        "Transfer receipts and personal current taxes add up within one "
+        "release: government, nonprofit and business receipts make the total "
+        "(line 1000), the seven program groups make government receipts (line "
+        "2000), and federal, state, local and property taxes make personal "
+        "current taxes (SAINC50 line 60), each within 0.5 percent.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_component_sums` reads the newest published "
+            "release of each CAINC35, SAINC35 and SAINC50 geography-year and "
+            "warns where every part is a valid figure and the parts differ from "
+            "their total by more than 0.5 percent (or three thousand dollars, "
+            "BEA's rounding). Refundable tax credits (line 5000) overlap the "
+            "programs and are never added to them (taxes-and-public-money, T-1)."
+        ),
+    ),
+    _rule(
+        "DQ-BEA-007",
+        "WARN",
+        "reconciliation",
+        "A county's transfer receipts by program (CAINC35 line 1000) agree with "
+        "the transfer line of its personal income (CAINC4 line 47) in the same "
+        "release, within 0.5 percent.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_transfer_total_agreement` pairs each CAINC35 "
+            "line 1000 figure with the CAINC4 line 47 figure for the same "
+            "geography, year and release date, and warns past 0.5 percent. BEA "
+            "publishes the program detail later than the totals, so a release of "
+            "one with no release of the other is not compared, and the result is "
+            "`not_applicable` when no release date is shared."
         ),
     ),
     # -- Census County Business Patterns ------------------------------------

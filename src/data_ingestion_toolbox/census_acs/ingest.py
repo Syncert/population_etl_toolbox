@@ -30,6 +30,7 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import stored_copy_of_capture
 from data_ingestion_toolbox.census_acs.silver_census.replay import (
     replay_census_capture,
 )
@@ -80,6 +81,25 @@ class CensusFetchedResponse(list):
 
 # initialize logger
 logger = logging.getLogger(__name__)
+
+_PARSER_CONTRACT = "census-acs-array-v1"
+_REVISION_TABLE = "silver_census.observation_revision"
+
+
+def _stored_revision_rows(capture_id: object) -> int:
+    """How many revision rows an earlier capture already stored."""
+    connection = _get_pg_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_census.observation_revision "
+                "WHERE capture_id = %s",
+                (str(capture_id),),
+            )
+            return int(cursor.fetchone()[0])
+    finally:
+        connection.close()
+
 
 # Which database inside the Postgres instance do you want?
 # If you want this configurable, put it in CONFIG (recommended).
@@ -541,7 +561,7 @@ def _ingest_capture_chunks(
                         ensure_ascii=False,
                     ).encode("utf-8")
                 capture_id = uuid.uuid4()
-                persist_response_capture(
+                receipt = persist_response_capture(
                     _get_pg_connection,
                     ResponseCapture(
                         capture_id=capture_id,
@@ -555,7 +575,7 @@ def _ingest_capture_chunks(
                         response_headers=getattr(raw, "response_headers", {}),
                         media_type="application/json",
                         payload=payload,
-                        payload_schema_version="census-acs-array-v1",
+                        payload_schema_version=_PARSER_CONTRACT,
                         source_revision=str(year),
                     ),
                 )
@@ -565,6 +585,36 @@ def _ingest_capture_chunks(
 
             if not raw:
                 control.finish_request(request.request_id, status="empty")
+                continue
+            # A retried or re-planned slice asks again for chunks it already
+            # stored; identical bytes would store every cell a second time
+            # (9,542 captures, 77M revision rows on OFFICE_LAB, 2026-11-05).
+            stored = stored_copy_of_capture(
+                _get_pg_connection,
+                revision_table=_REVISION_TABLE,
+                source_code="CENSUS_ACS",
+                request_fingerprint=request.request_fingerprint,
+                capture_id=capture_id,
+                payload_checksum=receipt.payload_checksum,
+                parser_contract=_PARSER_CONTRACT,
+            )
+            if stored is not None:
+                rows = _stored_revision_rows(stored)
+                logger.info(
+                    "Census ACS unchanged: %s %s %s %s repeats capture %s; "
+                    "replay skipped",
+                    dataset,
+                    year,
+                    geo_level,
+                    state_fips or "",
+                    stored,
+                )
+                control.finish_request(
+                    request.request_id,
+                    status="captured" if rows else "empty",
+                )
+                total_rows += rows
+                time.sleep(0.2 + random.random() * 0.3)
                 continue
             try:
                 rows = replay_census_capture(
@@ -578,7 +628,7 @@ def _ingest_capture_chunks(
                 control.quarantine(
                     capture_id=capture_id,
                     run_id=run_id,
-                    parser_version="census-acs-array-v1",
+                    parser_version=_PARSER_CONTRACT,
                     error_code="INVALID_CENSUS_ACS_ARRAY",
                     error=error,
                 )

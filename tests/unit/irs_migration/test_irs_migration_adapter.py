@@ -20,10 +20,16 @@ from data_ingestion_toolbox.irs_migration.client import (
     fetch_file,
 )
 from data_ingestion_toolbox.irs_migration.config import IrsMigrationConfig
+from data_ingestion_toolbox.irs_migration.plan import (
+    answered_year_pairs,
+    file_keys_to_capture,
+)
 from data_ingestion_toolbox.irs_migration.registry import (
     CATEGORY_LABELS,
     get_file,
     metric_key,
+    people_basis,
+    recent_year_pairs,
     registered_files,
 )
 from data_ingestion_toolbox.irs_migration.silver_irs_migration.conform import (
@@ -79,13 +85,104 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
 def test_the_registry_names_every_file_and_labels_every_category() -> None:
     """Covers: ETL-059 — one inflow and one outflow per pair of filing years, labelled as SOI does."""
     files = registered_files()
-    assert len(files) == 10
+    assert len(files) == 24
+    assert {item.year_pair for item in files} == {
+        f"{year}-{year + 1}" for year in range(2011, 2023)
+    }
     assert INFLOW_2223.path == "/countyinflow2223.csv"
+    assert get_file("outflow", "2011-2012").path == "/countyoutflow1112.csv"
     assert OUTFLOW_2223.year_pair == "2022-2023"
     assert metric_key("inflow", "total_us", "returns") == "inflow:total_us:returns"
     assert CATEGORY_LABELS["other_flows_same_state"] == "Other flows, same state"
     with pytest.raises(KeyError):
-        get_file("inflow", "2017-2018")
+        get_file("inflow", "2010-2011")
+
+
+def test_n2_counts_exemptions_until_exemptions_ended() -> None:
+    """Covers: ETL-059 — before 2018-2019 the individuals count is exemptions claimed."""
+    assert get_file("inflow", "2017-2018").people_basis == "exemptions"
+    assert INFLOW_2223.people_basis == "individuals"
+    assert people_basis(2018) == "exemptions" and people_basis(2019) == "individuals"
+
+
+def test_a_scheduled_run_captures_the_newest_pairs_and_every_pair_never_published() -> (
+    None
+):
+    """Covers: ETL-059 — loader rule: a pair never published is captured on a scheduled run."""
+    assert recent_year_pairs() == ("2021-2022", "2022-2023")
+    fresh = file_keys_to_capture(None)
+    assert len(fresh) == 24 and fresh[:2] == ["inflow:2011-2012", "outflow:2011-2012"]
+    loaded = {f"{year}-{year + 1}" for year in range(2018, 2023)}
+    assert file_keys_to_capture({}, loaded) == [
+        f"{direction}:{year}-{year + 1}"
+        for year in [*range(2011, 2018), 2021, 2022]
+        for direction in ("inflow", "outflow")
+    ]
+    everything = loaded | {f"{year}-{year + 1}" for year in range(2011, 2018)}
+    assert file_keys_to_capture({}, everything) == [
+        "inflow:2021-2022",
+        "outflow:2021-2022",
+        "inflow:2022-2023",
+        "outflow:2022-2023",
+    ]
+    assert len(file_keys_to_capture({"history": True}, everything)) == 24
+
+
+def test_a_pair_is_answered_only_when_both_files_are_published() -> None:
+    """Covers: ETL-059 — a published inflow without its outflow is captured again."""
+
+    class _Cursor:
+        def __enter__(self) -> _Cursor:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def execute(self, query: str, params: tuple) -> None:
+            assert "control.irs_migration_file" in query
+            assert params == (["published", "empty"],)
+
+        def fetchall(self) -> list[tuple[str, str]]:
+            return [
+                ("2018-2019", "inflow"),
+                ("2018-2019", "outflow"),
+                ("2017-2018", "inflow"),
+            ]
+
+    class _Connection:
+        def cursor(self) -> _Cursor:
+            return _Cursor()
+
+    assert answered_year_pairs(_Connection()) == {"2018-2019"}
+
+
+def test_a_2011_layout_file_counts_state_summary_rows_and_loads_its_counties() -> None:
+    """Covers: ETL-059 — subject county 000 is the state's own total: counted, never a county."""
+    item = get_file("inflow", "2011-2012")
+    parsed = parse_file(
+        (FIXTURES / "csv_2011_2018" / "countyinflow1112.csv").read_bytes(), item=item
+    )
+    assert parsed.quarantined == ()
+    assert (parsed.row_count, parsed.summary_row_count, len(parsed.flows)) == (
+        11,
+        5,
+        6,
+    )
+    assert parsed.subject_count == 1
+    autauga = {flow.counterpart_code: flow for flow in parsed.flows}
+    assert autauga["96:000"].returns == 2006
+    assert autauga["01:001"].category == "non_migrants"
+    assert autauga["01:001"].individuals == 41757
+
+
+def test_a_repeated_row_is_quarantined_not_replaced() -> None:
+    """Covers: ETL-059 — a second row for the same subject and counterpart is a duplicate_row."""
+    lines = _fixture("countyinflow2223.csv").rstrip(b"\n").split(b"\n")
+    payload = b"\n".join([*lines, lines[1]]) + b"\n"
+    parsed = parse_file(payload, item=INFLOW_2223)
+    assert [item.error_code for item in parsed.quarantined] == ["duplicate_row"]
+    assert parsed.quarantined[0].source_row_index == len(lines)
+    assert len(parsed.flows) + 1 == parsed.row_count
 
 
 def test_a_client_error_fails_once_and_a_wrong_header_is_refused() -> None:

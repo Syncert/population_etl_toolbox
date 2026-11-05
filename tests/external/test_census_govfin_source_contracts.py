@@ -7,7 +7,7 @@ aggregate codes the registry matched by hand (Census publishes no labels
 for ``AGG_DESC``), and the zip members. They never write to a warehouse and
 are never a pull-request gate.
 
-Covers: EXT-032
+Covers: EXT-033
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def _live_config() -> GovFinConfig:
 
 
 def test_annual_finance_answers_every_registered_aggregate_for_every_state() -> None:
-    """Covers: EXT-032 — govslocalfin answers each registered LF code for 51 states."""
+    """Covers: EXT-033 — govslocalfin answers each registered LF code for 51 states."""
     config = _live_config()
     response, _result = observe_external_call(
         f"census_govfin:asslgf:{GOVS_LAST_YEAR}",
@@ -94,7 +94,7 @@ def test_annual_finance_answers_every_registered_aggregate_for_every_state() -> 
 
 
 def test_qtax_answers_the_registered_tax_types_for_every_state() -> None:
-    """Covers: EXT-032 — QTAX's state tax category answers four quarters."""
+    """Covers: EXT-033 — QTAX's state tax category answers four quarters."""
     config = _live_config()
     response, _result = observe_external_call(
         f"census_govfin:qtax:{QTAX_YEAR}",
@@ -114,7 +114,7 @@ def test_qtax_answers_the_registered_tax_types_for_every_state() -> None:
 
 
 def test_newest_unit_file_zip_holds_its_registered_members() -> None:
-    """Covers: EXT-032 — the newest edition's zip parses with its state totals."""
+    """Covers: EXT-033 — the newest edition's zip parses with its state totals."""
     edition = CENSUS_EDITIONS[-1]
     archive = edition.archives[0]
     config = _live_config()
@@ -151,7 +151,7 @@ def test_newest_unit_file_zip_holds_its_registered_members() -> None:
 def test_outages_classify_apart_from_contract_changes(
     error: BaseException, expected: str
 ) -> None:
-    """Covers: EXT-032 — a provider outage is not reported as a regression."""
+    """Covers: EXT-033 — a provider outage is not reported as a regression."""
     assert classify_external_failure(error) == expected
     assert SENTINEL_KEY not in str(error)
 
@@ -159,7 +159,7 @@ def test_outages_classify_apart_from_contract_changes(
 def test_missing_key_refuses_before_any_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: EXT-032 — an absent key refuses at request time, never at import."""
+    """Covers: EXT-033 — an absent key refuses at request time, never at import."""
     monkeypatch.delenv(API_KEY_ENVIRONMENT_VARIABLE, raising=False)
 
     class _Refusing:

@@ -133,6 +133,12 @@ FACTS = [
         value_column="returns",
     ),
     FactContract(
+        "IRS_SOI",
+        SRC / "irs_soi/DDL/silver_irs_soi.sql",
+        "silver_irs_soi.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "BEA",
         SRC / "bea/DDL/silver_bea.sql",
         "silver_bea.fact_observation",

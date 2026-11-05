@@ -20,12 +20,24 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_slice
 from .config import QCEW_API_BASE_URL, SOURCE_CODE, QcewConfig
 from .registry import INDUSTRIES, QcewIndustry
 
 PARSER_CONTRACT_VERSION = "bls_qcew_csv:v1"
+
+#: The slice's newest published capture.
+LATEST_PUBLISHED_SQL = """
+    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at
+    FROM control.bls_qcew_slice AS slice
+    JOIN raw_capture.response_capture AS response ON response.capture_id = slice.capture_id
+    WHERE slice.year = %s AND slice.period = %s AND slice.industry_code = %s
+      AND slice.status = 'published'
+    ORDER BY slice.published_at DESC
+    LIMIT 1
+"""
 
 
 def pause(seconds: float) -> None:
@@ -41,6 +53,15 @@ class CapturedSlice:
     industry_code: str
     capture_id: UUID
     published: bool
+    #: The bytes repeat the slice's last published capture (utility.unchanged).
+    unchanged: bool = False
+
+
+def slice_status(captured: CapturedSlice) -> str:
+    """The control status a freshly captured slice is recorded with."""
+    if not captured.published:
+        return "empty"
+    return "unchanged" if captured.unchanged else "captured"
 
 
 def record_slice(
@@ -62,7 +83,7 @@ def record_slice(
                     captured.period,
                     captured.industry_code,
                     str(captured.capture_id),
-                    "captured" if captured.published else "empty",
+                    slice_status(captured),
                 ),
             )
         connection.commit()
@@ -151,6 +172,14 @@ def capture_period(
                 industry.code,
                 receipt.capture_id,
                 response.published,
+                unchanged=response.published
+                and repeats_last_publication(
+                    connection_factory,
+                    LATEST_PUBLISHED_SQL,
+                    (year, period, industry.code),
+                    payload_checksum=receipt.payload_checksum,
+                    parser_contract=PARSER_CONTRACT_VERSION,
+                ),
             )
             record_slice(connection_factory, slice_capture)
             captured.append(slice_capture)

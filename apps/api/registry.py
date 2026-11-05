@@ -1225,6 +1225,51 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="IRS_SOI",
+            latest_relation="gold_irs_soi.observation_latest",
+            released_relation="gold_irs_soi.observation_revision",
+            lineage_schema="gold_irs_soi",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>` for all returns and
+            # `<measure>:<agi band>` for one band, the text the relations
+            # carry (and the fact stores) as `metric_key`.
+            lineage_key_column="metric_key",
+            # SOI names no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # SOI's item code: `A06500` is income tax after credits.
+                ("soi_column", "soi_column"),
+                ("agi_band", "agi_band"),
+                ("band_label", "band_label"),
+                # `county` (the county files, which also hold each state's
+                # total) or `state` (Historic Table 2).
+                ("product", "product"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "tax_year >= :year_from"),
+                ("year_to", "tax_year <= :year_to"),
+            ),
+            # One row per (metric, geography, tax year) in the latest view,
+            # and the metric is pinned by every query.
+            latest_order=("geo_id", "tax_year"),
+            released_order=("tax_year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="EIA",
             latest_relation="gold_eia.observation_latest",
             released_relation="gold_eia.observation_revision",
@@ -1983,6 +2028,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         SourceDiscovery(
             source_code="IRS_MIGRATION",
             display_name="IRS Statistics of Income county-to-county migration",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="IRS_SOI",
+            display_name="IRS Statistics of Income county and state income",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),

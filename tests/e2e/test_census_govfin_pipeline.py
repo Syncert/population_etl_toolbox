@@ -44,7 +44,7 @@ def govfin_warehouse(
 def test_county_area_and_state_taxes_reach_the_neutral_api(
     govfin_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-115 — a glossary-discovered county-area roll-up and a state
+    """Covers: ETL-118 — a glossary-discovered county-area roll-up and a state
     figure answer through `/api/v1/observations` with their derivation, and a
     replay of the same captures leaves the answer unchanged.
     """

@@ -2,7 +2,9 @@
 
 One ingestion run per file (direction and pair of filing years): one
 request and one committed capture of the CSV. The bytes are committed
-before anything parses them.
+before anything parses them. A read whose bytes repeat the file's last
+published capture is recorded ``unchanged`` and replays nothing
+(``utility.unchanged``).
 """
 
 from __future__ import annotations
@@ -18,12 +20,23 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_file
 from .config import IRS_SOI_BASE_URL, SOURCE_CODE, IrsMigrationConfig
 from .registry import MigrationFile
 
 PARSER_CONTRACT_VERSION = "irs_soi_county_migration_csv:v1"
+
+#: The file's newest published capture.
+LATEST_PUBLISHED_SQL = """
+    SELECT response.payload_checksum, response.payload_schema_version, file.published_at
+    FROM control.irs_migration_file AS file
+    JOIN raw_capture.response_capture AS response ON response.capture_id = file.capture_id
+    WHERE file.direction = %s AND file.year_pair = %s AND file.status = 'published'
+    ORDER BY file.published_at DESC
+    LIMIT 1
+"""
 
 
 def capture_file(
@@ -80,6 +93,17 @@ def capture_file(
             ),
         )
         capture_control.finish_request(request.request_id, status="captured")
+        status = (
+            "unchanged"
+            if repeats_last_publication(
+                connection_factory,
+                LATEST_PUBLISHED_SQL,
+                (item.direction, item.year_pair),
+                payload_checksum=receipt.payload_checksum,
+                parser_contract=PARSER_CONTRACT_VERSION,
+            )
+            else "captured"
+        )
         connection = connection_factory()
         try:
             with connection.cursor() as cursor:
@@ -87,7 +111,7 @@ def capture_file(
                     """
                     INSERT INTO control.irs_migration_file (
                         run_id, direction, year_pair, year1, year2, capture_id, status
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'captured')
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         str(run_id),
@@ -96,6 +120,7 @@ def capture_file(
                         item.year1,
                         item.year2,
                         str(receipt.capture_id),
+                        status,
                     ),
                 )
             connection.commit()

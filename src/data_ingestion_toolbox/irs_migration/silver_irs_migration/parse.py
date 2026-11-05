@@ -5,6 +5,11 @@ numbers and zero-padded, because some years write ``10,1`` where others
 write ``10,001``. Every row keeps what it is -- a county-to-county flow, a
 county's non-migrants, or one of SOI's totals and "Other flows"
 categories -- and nothing is redistributed between them.
+
+Files before 2018-2019 open each state with its own totals (subject county
+``000``); those rows are counted in ``summary_row_count`` and not loaded.
+A second row for the same subject and counterpart is quarantined as
+``duplicate_row`` rather than replacing the first.
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from ..client import expected_header, read_header
-from ..registry import CATEGORY_CODES, INFLOW, MigrationFile
+from ..registry import CATEGORY_CODES, INFLOW, STATE_SUMMARY_COUNTY, MigrationFile
 
 #: State FIPS codes that name a state or the District of Columbia.
 _STATE_CODES = frozenset(f"{code:02d}" for code in range(1, 57))
@@ -59,6 +64,8 @@ class ParsedFile:
     quarantined: tuple[FlowQuarantine, ...]
     row_count: int
     subject_count: int
+    #: State summary rows (subject county ``000``): counted, not loaded.
+    summary_row_count: int = 0
 
 
 def county_geo_id(state: str, county: str) -> str:
@@ -114,7 +121,9 @@ def parse_file(payload: bytes, *, item: MigrationFile) -> ParsedFile:
     flows: list[FlowRow] = []
     quarantined: list[FlowQuarantine] = []
     subjects: set[str] = set()
+    seen: set[tuple[tuple[str, str], tuple[str, str]]] = set()
     data_rows = 0
+    summary_rows = 0
     for index, row in enumerate(rows[1:], start=1):
         if not any(cell.strip() for cell in row):
             continue
@@ -132,7 +141,10 @@ def parse_file(payload: bytes, *, item: MigrationFile) -> ParsedFile:
         except ValueError as exc:
             quarantined.append(FlowQuarantine(index, "unreadable_code", str(exc)))
             continue
-        if subject[0] not in _STATE_CODES or subject[1] == "000":
+        if subject[0] in _STATE_CODES and subject[1] == STATE_SUMMARY_COUNTY:
+            summary_rows += 1
+            continue
+        if subject[0] not in _STATE_CODES:
             quarantined.append(
                 FlowQuarantine(
                     index, "subject_not_county", f"{subject} is not a county"
@@ -154,6 +166,16 @@ def parse_file(payload: bytes, *, item: MigrationFile) -> ParsedFile:
         except ValueError as exc:
             quarantined.append(FlowQuarantine(index, "unreadable_value", str(exc)))
             continue
+        if (subject, counterpart) in seen:
+            quarantined.append(
+                FlowQuarantine(
+                    index,
+                    "duplicate_row",
+                    f"{subject} and {counterpart} already have a row in this file",
+                )
+            )
+            continue
+        seen.add((subject, counterpart))
         subject_geo_id = county_geo_id(*subject)
         subjects.add(subject_geo_id)
         counterpart_geo_id = (
@@ -190,4 +212,6 @@ def parse_file(payload: bytes, *, item: MigrationFile) -> ParsedFile:
                 source_record_id=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
             )
         )
-    return ParsedFile(tuple(flows), tuple(quarantined), data_rows, len(subjects))
+    return ParsedFile(
+        tuple(flows), tuple(quarantined), data_rows, len(subjects), summary_rows
+    )

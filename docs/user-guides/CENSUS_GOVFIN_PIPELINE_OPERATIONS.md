@@ -33,7 +33,7 @@ selective sales, `LF0023` individual income, `LF0024` corporate income,
 `LF0041` current charges, `LF0059` miscellaneous, `LF0007` own source,
 `LF0003` to `LF0006` intergovernmental, `LF0231` debt) was matched against
 the published Wisconsin and national tables on 2026-11-05. The live
-contract test (EXT-032) checks that each registered code still answers and
+contract test (EXT-033) checks that each registered code still answers and
 that each state's tax parts do not exceed its total.
 
 Derived, in gold, labelled as derived (ADR-0009):
