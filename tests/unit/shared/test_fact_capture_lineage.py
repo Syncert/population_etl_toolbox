@@ -86,6 +86,12 @@ FACTS = [
         value_column="candidate_votes",
     ),
     FactContract(
+        "CENSUS_GOVFIN",
+        SRC / "census_govfin/DDL/silver_census_govfin.sql",
+        "silver_census_govfin.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "FCC_BDC",
         SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
         "silver_fcc_bdc.availability_row",

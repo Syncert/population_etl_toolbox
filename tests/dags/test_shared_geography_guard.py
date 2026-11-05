@@ -48,6 +48,7 @@ GUARDED = {
     "bls_qcew_ingest": "require_shared_geography",
     "census_building_permits_ingest": "require_shared_geography",
     "census_saipe_sahie_ingest": "require_shared_geography",
+    "census_govfin_ingest": "require_shared_geography",
     "eia_retail_gasoline_ingest": "require_shared_geography",
 }
 

@@ -37,6 +37,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Loaded |
 | [Crime Data Explorer summarized offenses](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2023 | Weekly | Loaded |
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
+| [State and local government finances](#census_govfin) | U.S. Census Bureau | ● | ● | ◐ |  |  |  |  | 1994–2026 | Monthly | Not yet loaded |
 | [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly | Not yet loaded |
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
@@ -330,6 +331,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Status (live count 2026-10-31):** Loaded. County 1959–2026.
 
 ## Elections and government
+
+<a id="census_govfin"></a>
+### State and local government finances (`CENSUS_GOVFIN`)
+
+- **Publisher:** U.S. Census Bureau
+- **Code:** `src/data_ingestion_toolbox/census_govfin` · DAG `census_govfin_ingest` · Monthly, 18th 07:00 UTC
+- **Publisher releases:** Annual finances each autumn; Census of Governments unit files every five years; QTAX about three months after each quarter
+- **Credential:** CENSUS_API_KEY (the unit files need none)
+- **Years:** annual state and local finances, fiscal years 2017-2024; QTAX state taxes, quarters from 1994; county areas from the Census of Governments 2002, 2012, 2017 and 2022 (2007 is published only in the 1967-2012 historical database and is not loaded)
+- **Datasets:** asslgf (/timeseries/govslocalfin); qtax (/timeseries/eits/qtax, category QTAXCAT3); cog_units (Individual Unit Files)
+- **Measures:** Taxes in total and by type (property, general sales, selective sales, individual and corporate income, other), current charges, miscellaneous and own-source general revenue, aid from federal, state and local governments, debt outstanding; each for state and local combined, state, or local governments. Derived: each tax type's share of taxes, and taxes as a share of BEA personal income and per person.
+- **Capture and control:** `control.census_govfin_slice`
+- **Silver:** `silver_census_govfin.fact_observation`, `silver_census_govfin.unit_amount`, `silver_census_govfin.unit_government`, `silver_census_govfin.state_type_total`, `silver_census_govfin.api_revision`, `silver_census_govfin.dim_measure`
+- **Gold:** `gold_census_govfin.observation_revision`, `gold_census_govfin.observation_latest`, `gold_census_govfin.county_area_government`, `gold_census_govfin.tax_mix`, `gold_census_govfin.tax_burden`
+- **Status:** Not yet loaded (added 2026-11-05). County areas are sums of each county's governments, a government spanning counties counted whole in its Census home county ([operations](../user-guides/CENSUS_GOVFIN_PIPELINE_OPERATIONS.md)).
 
 <a id="elections"></a>
 ### Election results and seat holders (`ELECTIONS`)

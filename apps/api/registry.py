@@ -1094,6 +1094,48 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="CENSUS_GOVFIN",
+            latest_relation="gold_census_govfin.observation_latest",
+            released_relation="gold_census_govfin.observation_revision",
+            lineage_schema="gold_census_govfin",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<dataset>:<measure>:<government
+            # level>`, the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("government_level", "government_level"),
+                # A fiscal year is dated by the calendar year it ends in.
+                ("period_label", "period_label"),
+                # Census's figure, or the warehouse's sum of Census's
+                # government records (county areas, Census of Governments).
+                ("derivation", "COALESCE(derivation, 'census_published')"),
+                ("record_coverage", "record_coverage"),
+                ("government_count", "government_count::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="CENSUS_SAIPE_SAHIE",
             latest_relation="gold_census_sae.estimate_latest",
             released_relation="gold_census_sae.estimate_revision",
@@ -1946,6 +1988,12 @@ def _sae_datasets() -> tuple[str, ...]:
     return tuple(dataset.dataset_id for dataset in DATASETS)
 
 
+def _govfin_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_govfin.registry import DATASET_IDS
+
+    return DATASET_IDS
+
+
 def _fbi_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
 
@@ -2009,6 +2057,13 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_NEUTRAL_PATHS,
             dataset_provider=_fbi_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_GOVFIN",
+            display_name="Census Bureau State and Local Government Finances",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_govfin_datasets,
         ),
         SourceDiscovery(
             source_code="CENSUS_SAIPE_SAHIE",

@@ -464,7 +464,11 @@ Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 reference succeeds. Trigger `census_saipe_sahie_ingest`; since ETL-110 a plain run captures every
 registered year not yet answered as well as the two newest, so the first run
 loads the whole history (`--conf '{"history": true}'` re-asks for every year)
-([operations](../user-guides/CENSUS_SAIPE_SAHIE_PIPELINE_OPERATIONS.md)). A USDA NASS run whose logical date falls on the first of
+([operations](../user-guides/CENSUS_SAIPE_SAHIE_PIPELINE_OPERATIONS.md)). Trigger
+`census_govfin_ingest` once after BEA loads: a plain run captures every
+registered annual finance year, QTAX year and Census of Governments edition
+not yet answered, so there is no history run
+([operations](../user-guides/CENSUS_GOVFIN_PIPELINE_OPERATIONS.md)). A USDA NASS run whose logical date falls on the first of
 the month sweeps the whole registered year range, so a bootstrap should be
 triggered on that date, or with that logical date, to reproduce the reviewed
 history in one run. The schedule reaches that date whatever day of the week

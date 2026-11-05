@@ -50,6 +50,7 @@ BEGIN
             ('CDC',                'gold_cdc',           'latest_release_observation'),
             ('CENSUS_BPS',         'gold_census_bps',    'observation_latest'),
             ('CENSUS_CBP',         'gold_census_cbp',    'observation_latest'),
+            ('CENSUS_GOVFIN',      'gold_census_govfin', 'observation_latest'),
             ('CENSUS_LODES',       'gold_census_lodes',  'observation_latest'),
             ('CENSUS_SAIPE_SAHIE', 'gold_census_sae',    'estimate_latest'),
             ('EIA',                'gold_eia',           'observation_latest'),

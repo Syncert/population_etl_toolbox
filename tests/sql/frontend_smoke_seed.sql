@@ -111,6 +111,7 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
     ('00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'success'),
+    ('00000000-0000-4000-8000-0000000006f1', 'CENSUS_GOVFIN', 'success'),
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
     ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
     ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
@@ -160,6 +161,8 @@ INSERT INTO control.ingestion_request (
      'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured'),
     ('00000000-0000-4000-9000-000000000e1e', '00000000-0000-4000-8000-000000000e1e',
      'ELECTIONS', 'smoke://seed', '{}'::JSONB, '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', 'captured'),
+    ('00000000-0000-4000-9000-0000000006f1', '00000000-0000-4000-8000-0000000006f1',
+     'CENSUS_GOVFIN', 'smoke://seed', '{}'::JSONB, '0d22fc01bcebc964591c62614b2c4e51ec6f5811014a45817ce6709b42902eb9', 'captured'),
     ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
      'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
     ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
@@ -244,6 +247,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e1e', '00000000-0000-4000-9000-000000000e1e',
      '00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'smoke://seed', '{}'::JSONB,
      '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000006f1', '00000000-0000-4000-9000-0000000006f1',
+     '00000000-0000-4000-8000-0000000006f1', 'CENSUS_GOVFIN', 'smoke://seed', '{}'::JSONB,
+     '0d22fc01bcebc964591c62614b2c4e51ec6f5811014a45817ce6709b42902eb9', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/zip',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
      '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
@@ -1097,6 +1104,40 @@ WHERE entity.geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Census government finance -- one county area's local government taxes
+-- from a published Census of Governments unit file. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_govfin_slice (
+    run_id, dataset_id, period, slice_key, capture_id, captured_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000006f1', 'cog_units', 2097, 'bundle',
+    '00000000-0000-4000-a000-0000000006f1', 3, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_govfin.dim_measure (
+    dataset_id, measure_id, measure_label, definition, unit, cadence, methodology_url,
+    parser_contract_version
+) VALUES (
+    'cog_units', 'taxes_total', 'Taxes (smoke fixture)', 'All taxes collected.',
+    'thousands of dollars', 'annual',
+    'https://www.census.gov/programs-surveys/cog/technical-documentation.html', 'smoke:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_govfin.fact_observation (
+    dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id, run_id,
+    retrieved_at, geo_sk, geo_type, geography_status, value_source, value, value_status,
+    government_count, derivation, record_coverage, source_record_id
+)
+SELECT 'cog_units', 'taxes_total', 'local', 2097, 0, 'state:55|county:025',
+       '00000000-0000-4000-a000-0000000006f1', '00000000-0000-4000-8000-0000000006f1',
+       '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved', '746500', 746500, 'valid',
+       3, 'county_area_rollup', 'reported_and_imputed',
+       '6f10000000000000000000000000000000000000000000000000000000000001'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- FHFA House Price Index -- one county's annual index from a published
 -- county workbook. COUNTY only.
 -- ---------------------------------------------------------------------------
@@ -1257,6 +1298,7 @@ UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
 UNION ALL SELECT * FROM gold_elections.metric_publisher
+UNION ALL SELECT * FROM gold_census_govfin.metric_publisher
 UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
 UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
 UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher

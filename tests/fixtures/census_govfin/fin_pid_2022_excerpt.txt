@@ -1,0 +1,8 @@
+010000226085ALABAMA                                                                                                   492153222             093022
+011001100001AUTAUGA COUNTY                                                  Autauga                            99001    5614522             093022
+550000000001WISCONSIN                                                                                                 589253922             062222
+551025000001DANE COUNTY                                                     Dane                                       56859322             062222
+552025000002MADISON CITY                                                    Dane                               48000   27290322             062222
+555025000003MADISON METROPOLITAN SCHOOL DISTRICT                            Dane                                            022             062222
+554079000004MILWAUKEE METROPOLITAN SEWERAGE DISTRICT                        Milwaukee                                       022             062222
+554000000005WISCONSIN STATEWIDE DRAINAGE BOARD                                                                              022             062222

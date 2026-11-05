@@ -45,6 +45,7 @@ EXPECTED_DAG_IDS = {
     "bls_qcew_ingest",
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
+    "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
     "eia_retail_gasoline_ingest",
@@ -92,6 +93,10 @@ EXPECTED_SCHEDULES = {
     "census_building_permits_ingest": "0 13 25 * *",
     # Monthly: SAIPE publishes each December and SAHIE each spring.
     "census_saipe_sahie_ingest": "0 6 15 * *",
+    # Monthly: annual finances publish each autumn, QTAX a quarter after the
+    # quarter, the unit files every five years; a run captures its revision
+    # window and every registered period never answered.
+    "census_govfin_ingest": "0 7 18 * *",
     # Monthly: SOI publishes a new pair of filing years about once a year.
     "irs_migration_ingest": "0 15 5 * *",
     # Monthly: SOI posts a tax year about once a year; a run past the
@@ -164,6 +169,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "bls_qcew_ingest": 2,
     "census_building_permits_ingest": 2,
     "census_saipe_sahie_ingest": 2,
+    "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,
     "eia_retail_gasoline_ingest": 2,
@@ -194,6 +200,7 @@ EXPECTED_INGEST_POOLS = {
     "census_building_permits_ingest": "census_bps_files",
     # One host and one key with the ACS, so one rate limit.
     "census_saipe_sahie_ingest": "census_api",
+    "census_govfin_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
     "irs_soi_ingest": "irs_soi_files",
     "eia_retail_gasoline_ingest": "eia_api",
