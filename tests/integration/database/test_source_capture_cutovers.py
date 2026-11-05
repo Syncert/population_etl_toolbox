@@ -90,6 +90,63 @@ def test_census_ingest_captures_array_and_bypasses_legacy_raw(
         reader.close()
 
 
+def test_census_ingest_asked_again_for_identical_bytes_stores_no_second_copy(
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+    capture_cutover_cleanup: list[str],
+) -> None:
+    """Covers: DB-020 — a retried slice stores each identical chunk once."""
+    token = uuid4().hex[:8].upper()
+    variable = f"B{token[:5]}_001E"
+    capture_cutover_cleanup.append(variable)
+    answers = {"payload": [[variable, "state", "county"], ["123", "55", "001"]]}
+    monkeypatch.setattr(
+        census_ingest, "_get_pg_connection", postgres_connection_factory
+    )
+    monkeypatch.setattr(
+        census_ingest, "get_curated_variables", lambda _year, _dataset: [variable]
+    )
+    monkeypatch.setattr(
+        census_ingest, "fetch_acs_api", lambda **_kwargs: answers["payload"]
+    )
+    monkeypatch.setattr(census_ingest.time, "sleep", lambda _delay: None)
+
+    def stored() -> list[tuple[str, int]]:
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT revision.value_source, COUNT(*)::INTEGER
+                    FROM silver_census.observation_revision AS revision
+                    JOIN raw_capture.response_capture AS capture
+                      USING (capture_id)
+                    WHERE revision.variable_name = %s
+                    GROUP BY revision.capture_id, revision.value_source,
+                             capture.retrieved_at
+                    ORDER BY capture.retrieved_at
+                    """,
+                    (variable,),
+                )
+                return cursor.fetchall()
+        finally:
+            reader.close()
+
+    assert census_ingest.ingest_slice(2099, "acs5", "county", "55") == 1
+    # The same answer again: captured, but its cells are already stored. The
+    # slice still reports its row so the ledger does not call it empty.
+    assert census_ingest.ingest_slice(2099, "acs5", "county", "55") == 1
+    assert stored() == [("123", 1)]
+
+    # A revised answer is stored; the first answer coming back after it is
+    # stored again too, because it is no longer the newest stored copy.
+    answers["payload"] = [[variable, "state", "county"], ["124", "55", "001"]]
+    assert census_ingest.ingest_slice(2099, "acs5", "county", "55") == 1
+    answers["payload"] = [[variable, "state", "county"], ["123", "55", "001"]]
+    assert census_ingest.ingest_slice(2099, "acs5", "county", "55") == 1
+    assert stored() == [("123", 1), ("124", 1), ("123", 1)]
+
+
 def test_bls_ingest_captures_complete_response_and_bypasses_legacy_raw(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],

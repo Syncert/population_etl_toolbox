@@ -48,7 +48,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT file.direction, file.year_pair, file.capture_id::TEXT, capture.retrieved_at
+                SELECT file.direction, file.year_pair, file.capture_id::TEXT, capture.retrieved_at,
+                       file.status
                 FROM control.irs_migration_file AS file
                 JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
                 WHERE file.run_id = %s
@@ -60,7 +61,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 raise IrsMigrationReconciliationError(
                     "run has no captured SOI migration file"
                 )
-            direction, year_pair, capture_id, retrieved_at = row
+            direction, year_pair, capture_id, retrieved_at, status = row
+            if status == "unchanged":
+                # The bytes repeat the last published file (utility.unchanged).
+                connection.commit()
+                return 0
             item = get_file(direction, year_pair)
             parsed = parse_file(
                 load_captured_payload(connection_factory, UUID(capture_id)), item=item

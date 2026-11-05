@@ -106,7 +106,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             _upsert_dimension(cursor)
             expected = 0
             for slice_key, frequency, year, month, capture_id, status in slices:
-                if status == "empty":
+                if status in ("empty", "unchanged"):
                     continue
                 item = slice_from_row(slice_key, frequency, year, month)
                 parsed = parse_file(
