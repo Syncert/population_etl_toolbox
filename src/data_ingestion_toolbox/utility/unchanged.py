@@ -55,3 +55,61 @@ def repeats_last_publication(
             return not bool(cursor.fetchone()[0])
     finally:
         connection.close()
+
+
+#: The newest earlier capture of the same request that was replayed (it has
+#: revision rows). ``{revision_table}`` is a module constant of the caller,
+#: never user input. The request-identity index on ``response_capture``
+#: (source_code, request_fingerprint, ...) and the revision table's primary
+#: key (capture_id first) make this two index probes.
+_STORED_COPY_SQL = """
+    SELECT capture.capture_id, capture.payload_checksum,
+           capture.payload_schema_version
+    FROM raw_capture.response_capture AS capture
+    WHERE capture.source_code = %s
+      AND capture.request_fingerprint = %s
+      AND capture.capture_id <> %s
+      AND EXISTS (
+          SELECT 1 FROM {revision_table} AS revision
+          WHERE revision.capture_id = capture.capture_id
+      )
+    ORDER BY capture.retrieved_at DESC, capture.capture_id DESC
+    LIMIT 1
+"""
+
+
+def stored_copy_of_capture(
+    connection_factory: Callable[[], Any],
+    *,
+    revision_table: str,
+    source_code: str,
+    request_fingerprint: str,
+    capture_id: Any,
+    payload_checksum: str,
+    parser_contract: str | None,
+) -> Any | None:
+    """The earlier capture whose stored revision rows these bytes repeat.
+
+    For a loader whose revision rows are source-shaped (provider codes, not
+    resolved geography) and whose transform reads the newest revision of each
+    cell, replaying a capture byte-identical to the newest replayed capture of
+    the same request stores a second copy and changes nothing served. Returns
+    that earlier capture's id, or ``None`` when the bytes or parser contract
+    differ from the newest replayed capture, or when none was replayed.
+    """
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                _STORED_COPY_SQL.format(revision_table=revision_table),
+                (source_code, request_fingerprint, str(capture_id)),
+            )
+            previous = cursor.fetchone()
+    finally:
+        connection.close()
+    if previous is None:
+        return None
+    previous_id, checksum, contract = previous
+    if checksum != payload_checksum or contract != parser_contract:
+        return None
+    return previous_id

@@ -7,7 +7,10 @@ from collections.abc import Callable
 import pytest
 from psycopg2.extensions import connection
 
+import json
+
 from data_ingestion_toolbox.bls.silver_bls import transform
+from data_ingestion_toolbox.bls.silver_bls.replay import replay_bls_capture
 from data_ingestion_toolbox.quality.sources import (
     bls_geography_accountability,
 )
@@ -316,6 +319,103 @@ def test_a_later_read_revising_a_value_wins_over_an_earlier_latest_flag(
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+def test_a_bls_read_repeating_the_stored_revision_stores_no_second_copy(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-009 — an observation is stored again only when it changed.
+
+    Every BLS answer carries its own response time, so each read is new
+    bytes; the observations inside mostly repeat the last read.
+    """
+    series_id = "LAUST960000000000003"
+
+    def answer(response_time: int, value: str) -> bytes:
+        return json.dumps(
+            {
+                "status": "REQUEST_SUCCEEDED",
+                "responseTime": response_time,
+                "Results": {
+                    "series": [
+                        {
+                            "seriesID": series_id,
+                            "data": [
+                                {
+                                    "year": "2096",
+                                    "period": "M11",
+                                    "periodName": "November",
+                                    "value": "3.9",
+                                    "footnotes": [{}],
+                                },
+                                {
+                                    "year": "2096",
+                                    "period": "M12",
+                                    "periodName": "December",
+                                    "latest": "true",
+                                    "value": value,
+                                    "footnotes": [{}],
+                                },
+                            ],
+                        }
+                    ]
+                },
+            }
+        ).encode()
+
+    def stored() -> list[tuple[str, str]]:
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT revision.period, revision.value_source
+                    FROM silver_bls.observation_revision AS revision
+                    JOIN raw_capture.response_capture AS capture
+                      USING (capture_id)
+                    WHERE revision.series_id = %s
+                    ORDER BY capture.retrieved_at, revision.period
+                    """,
+                    (series_id,),
+                )
+                return cursor.fetchall()
+        finally:
+            reader.close()
+
+    writer = postgres_connection_factory()
+    try:
+        # One transaction per read, so each capture has its own retrieved_at.
+        for response_time, value in ((101, "4.1"), (102, "4.1"), (103, "4.3")):
+            with writer.cursor() as cursor:
+                capture_id = seed_capture(
+                    cursor, "BLS", payload=answer(response_time, value)
+                )
+            writer.commit()
+            assert (
+                replay_bls_capture(
+                    postgres_connection_factory, capture_id=capture_id, program="la"
+                )
+                == 2
+            )
+            # Replaying the same capture again stays idempotent.
+            replay_bls_capture(
+                postgres_connection_factory, capture_id=capture_id, program="la"
+            )
+        # The second read repeated both observations; the third revised
+        # December only.
+        assert stored() == [
+            ("M11", "3.9"),
+            ("M12", "4.1"),
+            ("M12", "4.3"),
+        ]
+    finally:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM silver_bls.observation_revision WHERE series_id = %s",
+                (series_id,),
+            )
+        writer.commit()
+        writer.close()
 
 
 def test_a_bls_geography_the_reference_cannot_resolve_reaches_the_ledger(
