@@ -1,0 +1,170 @@
+---
+id: taxes-and-public-money
+depends_on:
+  - elections-and-economic-performance
+parallel_safe: true
+complexity: high
+verify:
+  - python -m pytest tests/unit/bea tests/unit/census_acs tests/unit/irs_migration tests/unit/irs_soi tests/unit/census_govfin tests/unit/api tests/unit/shared -q
+  - ruff format --check . ; ruff check .
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "bea or irs or govfin" -q
+  - npm --prefix apps/web run test:unit
+  - npm --prefix apps/web run lint
+  - npm --prefix apps/web run typecheck
+  - npm --prefix apps/web run build
+  - npm --prefix apps/web run test:browser
+---
+
+# Every place shows what it pays in tax, what it receives from government, and how that compares with the nation
+
+## Status
+
+To do. Written 2026-11-05 after Nick's request ("more information on the
+taxes of different county states and national levels ... economic
+ramifications of policies") and his choice of **option B** the same day.
+
+Discovery proposal with sources, options, indicators, caveats and mockups
+(invented values): <https://claude.ai/artifact/BJ5y3sdnDkRPhDVvickfUx>
+(private to Nick). Mockup images: `/mnt/project-files/taxes/01-03*.png`.
+
+This lands after the dev-to-main release (#166). It is not part of v1. The
+governor-term columns (T-6) join `gold_elections.seat_term`, so T-6 follows
+E-2 of [`ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md`](../in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md)
+(PR #287). T-1 to T-5 do not depend on it and may run in parallel.
+
+## Rules
+
+[ADR-0014](../../decisions/0014-economic-performance-by-party-and-seat.md)
+applies unchanged: each measure on its own, a place's change net of the
+nation's, peer groups, no composite score or rank, comparisons not causes.
+T-6 adds a short fiscal section to it:
+
+- Fiscal years are mapped to the calendar year they end in, and pages say so
+  (46 states end June 30).
+- County-area government finance is shown only for Census of Governments
+  years (ending in 2 and 7); between them Census surveys a sample.
+- Where a tax is collected is not who bears it (tourist sales taxes,
+  severance taxes, business property tax); the wording says "collected in".
+- Transfer reliance reads one way round: payments respond to age and income,
+  they do not cause them.
+- Tax and transfer changes are drawn in neutral grey, never good or bad
+  colours.
+
+## Sources
+
+| Source | Holds | Grain | Years | Licence |
+| --- | --- | --- | --- | --- |
+| BEA CAINC35 (formerly CA35) | Transfer receipts by program: Social Security, Medicare, public assistance medical care (mostly Medicaid), SSI, EITC, SNAP, unemployment insurance, veterans | County, metro, state | 1969–2024 | Public domain |
+| BEA SAINC50, SAINC51 | Personal current taxes, disposable personal income | State | 1948 onward | Public domain |
+| BEA CAINC4 line 46 | Dividends, interest and rent | County | 1969–2024 | Public domain |
+| ACS B25103 | Median real estate taxes paid | Tract, place, county, state | 5-year 2009 onward | Public domain |
+| IRS SOI migration (existing source) | County-to-county returns, people, AGI | County pair | 1990–2023 | US government work |
+| [IRS SOI county and state income](https://www.irs.gov/statistics/soi-tax-stats-county-data) | Returns, AGI, wages, income tax, EITC, by AGI band | County (1989–2023), state (1996–2023) | Yearly, late February, 3-year lag | US government work |
+| [Census of Governments, finance](https://www.census.gov/data/datasets/2022/econ/local/public-use-datasets.html) | Revenue by tax type, spending, debt per government (Individual Unit Files) | Each government, rolled up to county area | 2002, 2007, 2012, 2017, 2022 | Public domain |
+| Census Annual Survey of State and Local Government Finances | Same items | State, state and local combined | Yearly | Public domain |
+| [Census QTAX](https://www.census.gov/programs-surveys/qtax/about.html) | State tax revenue by more than 25 types | State, quarterly | 1962 onward | Public domain (Census API `timeseries/eits/qtax`) |
+
+Tax Foundation (CC BY-NC 4.0) and Lincoln Institute FiSC are cross-checks
+only, never loaded.
+
+## Deliverables
+
+Each item is one PR, merged in order through the merge queue.
+
+- **T-1. BEA additions.** Add CAINC35, SAINC50, SAINC51 and CAINC4 line 46
+  to `src/data_ingestion_toolbox/bea/registry.py`. Derived rates approved as
+  provider-first products (ADR-0009): transfer receipts ÷ personal income,
+  per program; personal current taxes ÷ personal income; disposable income
+  per person, deflated by the national PCE index and, as a second view, by
+  SARPP regional price parities. DQ: CAINC35 programs sum to CAINC4 line 47
+  within 0.5 percent. Catalog ids; `warehouse_inventory.py` entry updated.
+- **T-2. ACS property tax.** Add B25103 to `census_acs/config.py`; derived
+  rate median real estate taxes ÷ median home value (B25077). Backfill run on
+  OFFICE_LAB across tract partitions (ACS slice rules: >5M-row slices split).
+- **T-3. IRS migration back to 1990.** Register year pairs 1990–1991 to
+  2017–2018 so the scheduled run loads them (loader rule). DQ unchanged.
+- **T-4. IRS SOI income source.** `src/data_ingestion_toolbox/irs_soi/` on
+  the source-adapter template: registry of county files 1989–2023 (zips
+  before 2011, per-year pages after) and state files 1996–2023; about 20
+  curated items by AGI band; capture, silver, gold in the neutral
+  observation shape; DAG `irs_soi_ingest`, monthly, loading any registered
+  year not yet loaded. Derived rates: income tax ÷ AGI; EITC returns ÷ all
+  returns. DQ: county sums within 1 percent of the state total; AGI-band
+  shares sum to 100. User guide under `docs/user-guides/`.
+- **T-5. Census government finance source.**
+  `src/data_ingestion_toolbox/census_govfin/`: annual state finance, Census
+  of Governments Individual Unit Files 2002–2022 rolled up to county area
+  (a government spanning counties sits in its home county, and the page says
+  so), QTAX from the Census API. Measures: tax revenue by type, own-source
+  revenue, intergovernmental aid, debt. Derived: state and local tax ÷
+  personal income, per person; revenue mix shares. DQ: unit roll-ups within
+  1 percent of Census's published state totals. Loader rule as T-4.
+- **T-6. API, web and ADR.** Fiscal measures served as ordinary metrics and
+  map measures (reads scoped to one place or one grain-year; EXPLAIN on
+  OFFICE_LAB before merge; OpenAPI snapshot). Web: a "Taxes and public money"
+  group in the Work and money chapter (stacked payments-by-program bar
+  against state and nation; federal tax rate trend against the nation;
+  property tax load; a "where income comes from" bar of wages,
+  dividends-interest-rent and payments), loaded as its own chunk; the
+  governor-term table gains tax burden, payments share and tax mix columns
+  joined on `gold_elections.seat_term`; transfer reliance and the federal
+  tax rate on `/map` with the one-hue scale (#286); tax burden offered as a
+  peer group on the lean page (E-3). Glossary entries for adjusted gross
+  income, transfer receipts, fiscal year and effective tax rate. ADR-0014
+  fiscal section.
+
+## Sizing
+
+| Item | Size |
+| --- | --- |
+| T-1 | 1–2 days |
+| T-2 | 1 day plus the backfill run |
+| T-3 | 1 day |
+| T-4 | 3–4 days |
+| T-5 | 4–5 days |
+| T-6 | 5–6 days |
+
+About 3.5 weeks of build. Backfills run on OFFICE_LAB alongside and are not
+counted. Data size: curated SOI items about 25 million rows; Census unit
+files about 20 million rows before roll-up; BEA and ACS additions under 2
+million. Under 10 GB in all.
+
+## Performance (prevention list applied)
+
+- New silver facts get `(metric_code, geo_id)` indexes; ANALYZE after loads.
+- County-area roll-ups and derived rates are pre-computed at publish, never
+  per request.
+- Index DDL pre-built CONCURRENTLY on OFFICE_LAB before deploy.
+
+## Acceptance criteria
+
+- Dane County shows payments by program for 2023 summing to the CAINC4 total,
+  and a federal tax rate series 1989–2023 against the nation.
+- Wisconsin's state and local tax burden for fiscal 2022 matches Census's
+  published state total divided by BEA personal income, within rounding.
+- Dane County's 2022 county-area tax revenue equals the sum of its
+  governments' unit-file amounts, and the page names the census-year rule.
+- The governor-term table shows the three fiscal columns in neutral grey with
+  the ADR-0014 wording.
+- No view combines measures into a score or rank.
+
+## Tests
+
+Unit tests for registries, parsers, the unit-file county roll-up, derived
+rates and fiscal-year mapping; database integration for the new gold
+relations; API contract tests; browser tests for the new group, map
+measures and term-table columns with fixtures under `tests/frontend/support/`.
+
+## Open questions
+
+- QCEW history back to 2014 should be loaded before T-6 (the term table's jobs
+  column uses it); it is scheduled on the 20th.
+- Option C (federal spending, SNAP and Medicaid enrolment, opportunity zones,
+  minimum wage, policy-event marks, border-county pairs) is recorded for
+  later; if taken, start with the Medicaid expansion and minimum wage event
+  files.
+
+## Checkpoint
+
+Next pickup: T-1. Read `bea/registry.py` table definitions, add CAINC35 with
+its line codes, and write the failing parser test for one county row.
