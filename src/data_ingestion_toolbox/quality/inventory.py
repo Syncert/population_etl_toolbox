@@ -3893,7 +3893,7 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         lineage="gold_elections.observation_latest, gold_bea.observation_latest, "
         "gold_bls_qcew.observation_latest, gold_census_sae.estimate_latest, "
         "gold_bls.provider_annual_average, gold_fred.fact_fred_observation, "
-        "gold_usda_ers.observation_latest",
+        "gold_usda_ers.observation_latest, gold_census_govfin.tax_burden",
         scope_method="every county with a presidential vote at the window's start and the "
         "measure at both ends, windows between election years from 2000",
         cadence="rebuilt daily when an input published",
@@ -3908,6 +3908,49 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="every lean band within every peer group that holds a county",
         cadence="rebuilt with gold_elections.lean_place_change",
         empty_behavior="empty when gold_elections.lean_place_change is",
+    ),
+    # Governor tenures with taxes and public money (taxes-and-public-money T-6).
+    _obj(
+        "gold_elections.governor_fiscal_measure_definition",
+        "gold",
+        "ELECTIONS",
+        grain="measure",
+        scope_method="the fiscal measures the governor table compares",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_elections.governor_tenure",
+        "gold",
+        "ELECTIONS",
+        grain="state_fips, tenure_number",
+        lineage="gold_elections.seat_term",
+        scope_method="every governor term, consecutive terms of one holder and party joined",
+        cadence="with gold_elections.seat_term",
+        empty_behavior="empty until the governor stream is loaded",
+    ),
+    _obj(
+        "gold_elections.governor_term_fiscal",
+        "gold",
+        "ELECTIONS",
+        grain="tenure_key, measure",
+        lineage="gold_elections.governor_tenure, gold_census_govfin.tax_burden, "
+        "gold_bea.observation_latest",
+        scope_method="every governor tenure and fiscal measure; a value only where both "
+        "window years are published for the state and the nation",
+        cadence="with its inputs (views)",
+        empty_behavior="empty until the governor stream is loaded; values null until "
+        "Census government finance and BEA state tables are",
+    ),
+    _obj(
+        "gold_elections.governor_term_tax_mix",
+        "gold",
+        "ELECTIONS",
+        grain="tenure_key, tax_group",
+        lineage="gold_elections.governor_term_fiscal, gold_census_govfin.tax_mix",
+        scope_method="every governor tenure whose window's last fiscal year Census publishes",
+        cadence="with its inputs (views)",
+        empty_behavior="empty until Census government finance is loaded",
     ),
 )
 
@@ -7300,6 +7343,21 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.lean_measure_definition",
             "gold_elections.lean_band_definition",
             "gold_elections.lean_peer_definition",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-006",
+        "BLOCK",
+        "reconciliation",
+        "Every governor tenure's fiscal change is the state's change minus the "
+        "nation's over the same window, a value only where both ends are "
+        "published, no two tenures of one state overlap, and each tenure's tax "
+        "mix adds to 100 within half a point (ADR-0014 fiscal section).",
+        (
+            "gold_elections.governor_term_fiscal",
+            "gold_elections.governor_term_tax_mix",
+            "gold_elections.governor_tenure",
+            "gold_elections.governor_fiscal_measure_definition",
         ),
     ),
     # -- Census state and local government finance -------------------------

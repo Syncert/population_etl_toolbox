@@ -3751,6 +3751,32 @@
       "last_reviewed_date": "2026-11-05"
     },
     {
+      "metric_id": "BEA:CAINC4:47",
+      "metric_codes": [
+        "BEA:CAINC4:47"
+      ],
+      "name": "Payments to residents from government and others (personal income component)",
+      "definition": "Personal current transfer receipts as a component of personal income: benefits from government programs and payments from nonprofits and businesses, published with the county income totals.",
+      "unit": "thousands of dollars",
+      "universe": "residents",
+      "kind": "count",
+      "caveat": "Current dollars, in thousands, by where recipients live; the same total CAINC35 splits by program a year later.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "limitations": [
+        "Current dollars, in thousands, by where recipients live; the same total CAINC35 splits by program a year later.",
+        "Medical benefits are counted as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts"
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money T-6",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05"
+    },
+    {
       "metric_id": "IRS_SOI:returns",
       "metric_codes": [
         "IRS_SOI:returns"

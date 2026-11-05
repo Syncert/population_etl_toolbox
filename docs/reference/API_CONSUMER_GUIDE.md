@@ -1367,6 +1367,46 @@ county area's local government taxes.
   `dimensions.period_label` says "fiscal year ending in 2022". Most states'
   fiscal 2022 ran from July 2021 to June 2022.
 
+### Taxes and public money for one place, and governors' fiscal change
+
+Two derived reads (taxes-and-public-money T-6) answer the place pages'
+"Taxes and public money" group and the state pages' governor table. Both are
+scoped to one place and follow ADR-0014's fiscal section: each measure on its
+own, no score or rank, fiscal years dated by the calendar year they end in,
+taxes "collected in" a place, payments read one way round. Every value is
+text; null is missing, with `unavailable_reason`, never zero.
+
+`GET /api/v1/public-money?geo_id=` takes the nation (`us:1`), a state
+(`state:NN`) or a county (`state:NN|county:NNN`), anything else is 422, and
+answers for the place, its state and the nation (`levels`):
+
+- `payments`: BEA CAINC35 program receipts as shares of CAINC1 personal
+  income for the newest year the place publishes, the same year for every
+  level. Programs are grouped in six; `other` is BEA's total less the named
+  programs, and is null rather than negative when their releases differ.
+- `income_sources`: earnings and the rest, dividends-interest-rent and
+  payments as shares of personal income (CAINC4 lines 46 and 47 over CAINC1
+  line 1); earnings is 100 less the other two, BEA's line 45 in effect.
+- `federal_tax_rate`: the `income_tax_share_of_agi` pairing over every year
+  each level publishes (counties from 2010, the nation from 2020).
+- `tax_burden`: `gold_census_govfin.tax_burden` -- state and local taxes for a
+  state and the nation every fiscal year, a county area's local governments
+  in Census of Governments years only. The two are different measures and a
+  reader should not draw them on one line.
+- `property_tax`: the `property_tax_to_home_value:acs5` pairing for the
+  place's newest five-year period, with its derived margin.
+
+`GET /api/v1/governor-terms?geo_id=state:NN` serves
+`gold_elections.governor_term_fiscal`: one item per governor tenure
+(consecutive terms of one holder and party joined), newest first. Each
+`fiscal` entry is one measure's window -- the last full year before the
+tenure to its last full year, or "so far" to the newest year the state and
+nation both publish -- with the state's change, the nation's, and
+`net_change` (state minus nation, in points). A completed tenure whose end
+year is unpublished says `end_year_not_published` and is never moved to a
+nearby year. `tax_mix` holds the shares of state and local taxes from
+property, general sales, income and other taxes in the window's last year.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -2507,6 +2547,7 @@ status code on the one class of error the API can explain.
 | `/catalog/geographies/search` | Match tier (`exact`, `prefix`, `word_prefix`, `fuzzy` by closeness), then population (largest first, none last), then grain, then `geo_id`; each of the three best city matches followed by its county and metro. Not paged: `limit` caps it at 25 |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
+| `/governor-terms` | Tenures by `start_date`, newest first, then `tenure_key`; each tenure's `fiscal` entries in the measures' display order; `tax_mix` property, general sales, income, other |
 | `/migration-flows` | `items` by the chosen measure, largest first, then `counterpart_geo_id`; `totals` in SOI's header order; `categories` by SOI's counterpart code |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
 | `/crime/county-rollup` | `product_id`, `measure_id`, `geo_id`, `period_start`, then `release_key` — the roll-up's own grain, so no two rows can tie |

@@ -8,7 +8,8 @@
   the discovery proposal <https://claude.ai/artifact/NJW5bJZ8RXiURwkZuGSBPH>
   (private to Nick); the tax and policy proposal
   <https://claude.ai/artifact/BJ5y3sdnDkRPhDVvickfUx>, which adds fiscal
-  measures to the same views and may add a fiscal section to this ADR.
+  measures to the same views; its rules are the fiscal section below
+  ([`TAXES_AND_PUBLIC_MONEY_PLAN.md`](../plans/to_do/TAXES_AND_PUBLIC_MONEY_PLAN.md), T-6).
 - **Builds on:** [ADR-0001](0001-data-layer-boundaries.md) (derived products
   are labelled, never written over provider facts),
   [ADR-0009](0009-per-capita-and-share-views.md) (provider rates first,
@@ -74,6 +75,43 @@ comparison misleading:
 8. **Party colours are fixed.** Red for Republican, blue for Democratic, grey
    for others, used only for party identity, never for good or bad. Better
    and worse than the nation use a separate, party-neutral pair.
+
+## Fiscal section (taxes and public money)
+
+Added 2026-11-05 with item T-6 of the taxes and public money plan (Nick's
+option B). Rules 1 to 8 apply unchanged to tax and payment measures; these
+add what is particular to them.
+
+9. **Fiscal years are dated by the year they end in.** A government's fiscal
+   year is matched to the calendar year it ends in (46 states end theirs on
+   June 30), against that calendar year's personal income, and pages say so.
+10. **County-area government finance only in census years.** A county area's
+    local government taxes come from the Census of Governments, which counts
+    every government only in years ending in 2 and 7; between them Census
+    surveys a sample, so no county figure is shown. A government spanning
+    counties sits in its home county, and the page says so. A county area's
+    local taxes and a state's state-and-local taxes are different measures and
+    are never drawn on one line.
+11. **"Collected in", not "paid by".** Where a tax is collected is not who
+    bears it: tourists pay sales taxes, severance and business property taxes
+    reach owners and buyers elsewhere. The wording is "taxes collected in".
+12. **Payments read one way round.** Payments from government respond to a
+    place's age and income; they do not cause them. A high share describes
+    who lives there.
+13. **Tax and payment changes are neutral.** On the governor table and
+    anywhere a fiscal change is drawn, the marks are neutral grey, never the
+    better/worse pair of rule 8: whether higher taxes or payments are good is
+    the reader's call. Party colours stay on party identity only.
+14. **The governor table's window.** A governor's tenure (consecutive terms of
+    one holder and party) is compared from the last full year before it to
+    the last full year inside it; a tenure still serving ends on the newest
+    year the state and the nation both publish and is labelled "so far". A
+    finished tenure whose first or last year is unpublished has no figure and
+    says which end is missing; it is never moved to a nearby year.
+15. **Tax burden as a peer group.** A lean comparison may be narrowed to
+    counties in states of a similar state and local tax burden (quarters of
+    the 50 states and DC in the fiscal year ending in the window's first
+    year), named on the chart like every other peer group.
 
 ## Consequences
 
