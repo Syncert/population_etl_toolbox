@@ -20,9 +20,9 @@ _PACKAGE = Path(__file__).resolve().parent
 DDL_FILES = [
     _PACKAGE / "DDL" / "silver_bea.sql",
     _PACKAGE / "gold_bea" / "DDL" / "gold_bea.sql",
+    _PACKAGE / "gold_bea" / "DDL" / "publisher.sql",
     # Reads gold_fred's PCE price index, which the manifest applies first.
     _PACKAGE / "gold_bea" / "DDL" / "real_income.sql",
-    _PACKAGE / "gold_bea" / "DDL" / "publisher.sql",
 ]
 
 REQUIRED_RELATIONS = (
