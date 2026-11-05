@@ -1188,12 +1188,15 @@ def irs_migration_total_reconciliation(
                    COALESCE(SUM(revision.returns) FILTER (
                        WHERE revision.category = 'county'
                           OR LEFT(revision.category, 8) = 'foreign_'
-                          OR revision.category IN ('other_flows_same_state', 'other_flows_different_state')
+                          OR (LEFT(revision.category, 12) = 'other_flows_'
+                              AND revision.category NOT IN ('other_flows_northeast', 'other_flows_midwest',
+                                                            'other_flows_south', 'other_flows_west'))
                    ), 0)
-                   -- Before 1995-1996 the remaining flows are only the four
-                   -- regions; later the regions split "different state".
+                   -- From 1995-1996 the four regions split "different
+                   -- state"; before it they are the remaining different-state
+                   -- flows themselves, beside "same state".
                    + CASE WHEN COUNT(*) FILTER (
-                              WHERE revision.category IN ('other_flows_same_state', 'other_flows_different_state')
+                              WHERE revision.category = 'other_flows_different_state'
                           ) = 0
                           THEN COALESCE(SUM(revision.returns) FILTER (
                               WHERE revision.category IN ('other_flows_northeast', 'other_flows_midwest',

@@ -51,3 +51,13 @@ def test_bytes_that_are_not_a_workbook_are_refused() -> None:
         read_first_sheet(b"not a workbook")
     with pytest.raises(XlsFormatError):
         read_first_sheet((MEMBERS / "co0304DEi.xls").read_bytes()[:4096])
+
+
+def test_a_bare_excel4_worksheet_file_is_read_like_a_workbook() -> None:
+    """Covers: ETL-059 — co989usi.xls (1998-1999) is a BIFF4 worksheet with no OLE2 container; its cells read as stored."""
+    payload = (MEMBERS / "co989usi.xls").read_bytes()
+    assert payload[:2] == b"\x09\x04"  # BOF of an Excel 4.0 worksheet
+    rows = read_first_sheet(payload)
+    assert rows[1][:3] == ["To", "To", "From"]
+    assert rows[6][:6] == ["00", "000", "96", "000", "US", "Total Mig - US & For"]
+    assert rows[6][6:] == [6916177.0, 13132561.0, 272835496.0, 22735.0]

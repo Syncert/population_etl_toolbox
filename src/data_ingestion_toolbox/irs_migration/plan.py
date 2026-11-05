@@ -3,7 +3,9 @@
 A scheduled run captures the newest registered pairs of filing years again
 -- SOI publishes one pair a year and seldom revises an older one -- and
 every registered pair whose inflow or outflow file has never been
-published. On a fresh warehouse that is every registered pair; once all
+published under its current parser contract (``registry.PARSE_REVISIONS``:
+a file the parser now reads differently is captured and replayed once
+more; the bytes are kept once). On a fresh warehouse that is every registered pair; once all
 are in it is the newest two again. ``{"history": true}`` in the run's conf
 re-captures every registered pair.
 """
@@ -15,6 +17,7 @@ from typing import Any
 from data_ingestion_toolbox.irs_migration.registry import (
     DIRECTIONS,
     YEAR_PAIRS,
+    get_file,
     recent_year_pairs,
 )
 from data_ingestion_toolbox.utility.backfill import (
@@ -23,12 +26,21 @@ from data_ingestion_toolbox.utility.backfill import (
     plan_capture,
 )
 
-#: A file answers its pair once it is published; SOI has no "empty" file.
+#: A file answers its pair once it is published under the contract that
+#: reads it now; SOI has no "empty" file.
 ANSWERED_SLICES_SQL = """
-    SELECT DISTINCT year_pair, direction
-    FROM control.irs_migration_file
-    WHERE status = ANY(%s)
+    SELECT DISTINCT file.year_pair, file.direction, capture.payload_schema_version
+    FROM control.irs_migration_file AS file
+    JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+    WHERE file.status = ANY(%s)
 """
+
+
+def _current(year_pair: str, direction: str, contract: str) -> bool:
+    try:
+        return get_file(direction, year_pair).parser_contract == contract
+    except KeyError:
+        return False
 
 
 def registered_year_pairs() -> tuple[str, ...]:
@@ -39,7 +51,11 @@ def answered_year_pairs(connection: Any) -> set[str]:
     """The pairs whose inflow and outflow files have both been published."""
     rows = fetch_answered_slices(connection, ANSWERED_SLICES_SQL, ())
     return answered_periods(
-        ((str(pair), str(direction)) for pair, direction in rows),
+        (
+            (str(pair), str(direction))
+            for pair, direction, contract in rows
+            if _current(str(pair), str(direction), str(contract))
+        ),
         lambda _pair: DIRECTIONS,
     )
 

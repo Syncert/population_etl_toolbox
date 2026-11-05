@@ -47,9 +47,17 @@ older pair.
 A zip member's name does not say reliably what it holds (`co0304OH0.xls`
 beside `co0304OHo.xls`; `co1011ohi.xls` is Hawaii's outflow), so a
 workbook's direction is read from its title row and a member whose bytes
-repeat another's is read once. A workbook whose title names no direction,
-or bytes that are not a workbook, refuse the whole file (`quarantined`).
-Workbooks are read by `utility/xls.py`, with the standard library only.
+or cells repeat another's is read once (`co0304OH0.xls` and
+`co0304OHo.xls` differ in bytes only). The US-level members of 1998-1999
+to 2001-2002 (`co989usi.xls`, `co990usi.xls`, `co001usir.xls`,
+`co102usi.xls` and their outflow twins) are bare Excel 4.0 worksheet
+files with no title row and a tenth "Median AGI" column: they are read
+too, their direction comes from their folder (`...CountyMigrationInflow/`),
+the median is not loaded, and their five US rows (subject `00 000`) are
+quarantined as `subject_not_county`. A workbook whose direction cannot be
+read, or bytes that are not a workbook, refuse the whole file
+(`quarantined`). Workbooks are read by `utility/xls.py`, with the standard
+library only.
 
 SOI labels a pair by the calendar years the returns were filed (2022-2023
 is returns filed in 2022 matched to returns filed in 2023); the warehouse
@@ -72,18 +80,36 @@ Before 1995-1996 the same rows carry other codes, kept as written:
 | `00001` | The county's total migration | `total_us_and_foreign` |
 | a state and county | A county-to-county flow (10 returns or more) | `county` |
 | `57001`-`57009` | Foreign, as above | `foreign_*` |
-| `63011`-`63014` | Region 1 to 4: every remaining flow, by region | `other_flows_northeast` ... `other_flows_west` |
+| `63010` | Remaining flows within the state, beside the four regions | `other_flows_same_state` |
+| `63011`-`63014` | Region 1 to 4: the remaining flows to other states, by region | `other_flows_northeast` ... `other_flows_west` |
+| `63020` | Remaining flows within the state, beside `63021` and `63022` | `other_flows_same_state` |
+| `63021` | Remaining flows, same region, different state | `other_flows_same_region_different_state` |
+| `63022` | Remaining flows, different region | `other_flows_different_region` |
+| `63030` | "Suppress All Flows": every remaining flow in one row, when any smaller group would disclose a filer | `other_flows_all` |
 | `63015` | Remaining foreign flows | `foreign_other_flows` |
 | `63050` | Non-migrants | `non_migrants` |
 
-The 1990-1991 and 1991-1992 text files write these as lines (a county's
-`Total Migration` line, its flows, `Region` lines, `County Non-Migrants`)
-and are stored under the same codes. Those years have only the total and
-non-migrants as file totals.
+A county uses one of three groupings: `63010` with the four regions,
+`63020` to `63022`, or `63030` alone.
+
+The 1990-1991 and 1991-1992 text files write these as lines and are stored
+under the same codes: a county's total is its one unindented line (the
+label is cut at 25 characters, so "Anchorage Borough Total" never says
+"Total Migration"); then its flows, then `Same State`, `Region n:`,
+`Same Region, Diff. State`, `Different Region`, `All Migration Flows`
+(`63030`) and `Foreign` lines, and `County Non-Migrants`. Those years have
+only the total and non-migrants as file totals. Each state's text and
+workbook files also hold a foreign "state" (`57 001`, `57 003`, ...) as a
+subject: its rows are quarantined as `subject_not_county`, because the same
+flows are already in each county's rows as counterparts `57xxx`.
 
 A category SOI deleted is `-1` in the CSVs and `d` in the workbooks, in
 all three measures, and is loaded as `withheld` with no value. Nothing is
-moved from a category into counties.
+moved from a category into counties. The 1998-1999 Idaho workbooks mark a
+revised figure `r  128`; it loads as 128 (`value_source` keeps the mark).
+In 2009-2010 and 2010-2011, 81 rows carry `d` before an AGI figure
+(`d36`) with returns and exemptions shown: they stay quarantined as
+`unreadable_value`, because a valid row from 1995-1996 needs its AGI.
 
 ## Schedule and scope
 
@@ -91,13 +117,30 @@ The DAG runs at 15:00 UTC on the 5th of each month. SOI publishes a new
 pair of years about once a year and seldom revises an older one. Each
 scheduled run (`irs_migration.plan`) captures the newest two registered
 pairs again, and every registered pair whose inflow or outflow file has
-never been published. On a fresh warehouse that is every pair: 66 files
+never been published under the parser contract that reads it now
+(`registry.PARSE_REVISIONS`). On a fresh warehouse that is every pair: 66 files
 through the one-slot `irs_soi_files` pool (24 CSVs of about 4.5 MB and,
 before 2011-2012, each pair's zip of 2.5 to 15 MB fetched once per
 direction and stored once). Once all are in it is four files a run. A file that failed or was quarantined is
 not published, so its pair is asked for again on the next run. No manual
-history run is needed; `{"history": true}` in the run's conf re-captures
-every registered pair:
+history run is needed.
+
+When the parser changes how it reads a published file, the pair goes into
+`PARSE_REVISIONS` with the next contract version (`...:v2`). The next
+scheduled run captures that pair again; the bytes are the same, so
+nothing new is stored in `raw_capture.payload_blob`, but the newer
+contract makes the capture `captured`, not `unchanged`, and it replays and
+publishes. Gold's `*_latest` views then read the newer capture. The older
+capture's silver rows stay as history until they are cleaned up.
+
+A task that fails after its capture is committed (a deadlock, a lost
+worker) leaves the file `captured`. Its retry, or the next run, replays
+that capture instead of fetching the file again (`capture.pending_run`).
+Each run's `plan_files` task marks `unchanged` any `captured` row that a
+later published capture of the same bytes has superseded
+(`capture.settle_superseded_captures`), so `DQ-IRS-002` stops counting it.
+
+`{"history": true}` in the run's conf re-captures every registered pair:
 
 ```text
 airflow dags trigger irs_migration_ingest --conf '{"history": true}'
@@ -118,6 +161,13 @@ automation has not:
 airflow pools set irs_soi_files 1 'IRS SOI migration files (serialized)'
 ```
 
+Apply DDL, or run a pre-merge DDL check, only while the DAG is idle. A
+replay locks its `control.irs_migration_file` row before it writes to
+silver, in the order the DDL file takes its locks, so a DDL session that
+arrives mid-replay waits for it rather than deadlocking it; the
+2019-2020 outflow replay of 2026-11-05 15:01Z was deadlocked by a DDL
+check before this ordering.
+
 ## What a run does
 
 1. Commits one capture per file and records it in
@@ -125,7 +175,8 @@ airflow pools set irs_soi_files 1 'IRS SOI migration files (serialized)'
 2. Replays each capture into `silver_irs_migration.flow_revision`, one row
    per file row. Rows whose column count, codes or measures cannot be read
    go to `flow_quarantine`, as does a second row for the same subject and
-   counterpart (`duplicate_row`). State summary rows (subject county `000`,
+   counterpart (`duplicate_row`, or `repeated_row` when SOI repeats the row
+word for word, as in the 2013-2014 CSVs, so nothing is lost). State summary rows (subject county `000`,
    files before 2018-2019) are counted and not loaded. Each row is then
    conformed: a county flow whose
    subject, origin or destination is not in `silver_ref.dim_geo_entity` is
@@ -147,7 +198,7 @@ FROM control.irs_migration_file ORDER BY created_at DESC;
 
 SELECT error_code, COUNT(*) FROM silver_irs_migration.flow_quarantine GROUP BY error_code;
 
--- Every registered pair published in both directions (24 rows, 2011-2012 on):
+-- Every registered pair published in both directions (33 rows, 1990-1991 on):
 SELECT year_pair, COUNT(DISTINCT direction) AS directions
 FROM control.irs_migration_file WHERE status = 'published'
 GROUP BY year_pair ORDER BY year_pair;
@@ -169,6 +220,7 @@ it as a parser fault.
 - `DQ-IRS-002` is the file-ledger reconciliation and runs in the daily
   sweep.
 - `DQ-IRS-004` warns when, in the newest published file, a county's flows,
-  Other flows (or, before 1995-1996, Region rows) and foreign rows do not
+  Other flows (before 1995-1996, every remaining-flow group, Region rows
+  included) and foreign rows do not
   sum to the file's own total
   migration (exactly when nothing is withheld, at most when something is).
