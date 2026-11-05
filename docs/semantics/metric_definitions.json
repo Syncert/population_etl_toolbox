@@ -3749,6 +3749,106 @@
       "version": 1,
       "effective_date": "2026-11-05",
       "last_reviewed_date": "2026-11-05"
+    },
+    {
+      "metric_id": "IRS_SOI:returns",
+      "metric_codes": [
+        "IRS_SOI:returns"
+      ],
+      "name": "Individual income tax returns",
+      "definition": "The number of individual income tax returns filed by residents of the place for one tax year, as IRS Statistics of Income counts them.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "kind": "count",
+      "unit": "returns",
+      "universe": "individual income tax returns filed",
+      "caveat": "Counts returns filed by residents of the place for the tax year; people who file no return are not counted.",
+      "limitations": [
+        "Counts returns filed by residents of the place for the tax year; people who file no return are not counted."
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data"
+      ]
+    },
+    {
+      "metric_id": "IRS_SOI:agi",
+      "metric_codes": [
+        "IRS_SOI:agi"
+      ],
+      "name": "Adjusted gross income",
+      "definition": "The total adjusted gross income reported on returns filed by residents of the place for one tax year.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "kind": "count",
+      "unit": "thousands of dollars",
+      "universe": "individual income tax returns filed",
+      "caveat": "In thousands of current dollars, not adjusted for inflation. Counts returns filed by residents of the place for the tax year; people who file no return are not counted.",
+      "limitations": [
+        "In thousands of current dollars, not adjusted for inflation. Counts returns filed by residents of the place for the tax year; people who file no return are not counted."
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data"
+      ]
+    },
+    {
+      "metric_id": "IRS_SOI:income_tax_amount",
+      "metric_codes": [
+        "IRS_SOI:income_tax_amount"
+      ],
+      "name": "Federal income tax",
+      "definition": "The federal income tax after credits reported on returns filed by residents of the place for one tax year.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "kind": "count",
+      "unit": "thousands of dollars",
+      "universe": "individual income tax returns filed",
+      "caveat": "In thousands of current dollars; county files carry it from tax year 2010.",
+      "limitations": [
+        "In thousands of current dollars; county files carry it from tax year 2010."
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data"
+      ]
+    },
+    {
+      "metric_id": "IRS_SOI:eitc_returns",
+      "metric_codes": [
+        "IRS_SOI:eitc_returns"
+      ],
+      "name": "Returns claiming the earned income tax credit",
+      "definition": "The number of returns filed by residents of the place that claimed the earned income tax credit for one tax year.",
+      "intended_use": "Describe a place as its provider publishes it.",
+      "kind": "count",
+      "unit": "returns",
+      "universe": "individual income tax returns filed",
+      "caveat": "Counts returns, not people; county files carry it from tax year 2010.",
+      "limitations": [
+        "Counts returns, not people; county files carry it from tax year 2010."
+      ],
+      "status": "draft",
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data"
+      ]
     }
   ]
 }

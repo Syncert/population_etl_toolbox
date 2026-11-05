@@ -42,6 +42,7 @@ services:
       - ../../src/data_ingestion_toolbox/bea/DDL/silver_bea.sql:/docker-entrypoint-initdb.d/114_silver_bea.sql:ro
       - ../../sql/migrations/019_stratum_shape_contract.sql:/docker-entrypoint-initdb.d/115_migration_019.sql:ro
       - ../../src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql:/docker-entrypoint-initdb.d/115_silver_irs_migration.sql:ro
+      - ../../src/data_ingestion_toolbox/irs_soi/DDL/silver_irs_soi.sql:/docker-entrypoint-initdb.d/115a_silver_irs_soi.sql:ro
       - ../../src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql:/docker-entrypoint-initdb.d/116_silver_census_cbp.sql:ro
       - ../../src/data_ingestion_toolbox/eia/DDL/silver_eia.sql:/docker-entrypoint-initdb.d/116_silver_eia.sql:ro
       - ../../src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql:/docker-entrypoint-initdb.d/117_silver_census_lodes.sql:ro
@@ -79,6 +80,7 @@ services:
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql:/docker-entrypoint-initdb.d/164_gold_bea.sql:ro
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea_real_income.sql:/docker-entrypoint-initdb.d/164_gold_bea_real_income.sql:ro
       - ../../src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql:/docker-entrypoint-initdb.d/165_gold_irs_migration.sql:ro
+      - ../../src/data_ingestion_toolbox/irs_soi/gold_irs_soi/DDL/gold_irs_soi.sql:/docker-entrypoint-initdb.d/165a_gold_irs_soi.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/165_publisher_census.sql:ro
       - ../../src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/gold_census_cbp.sql:/docker-entrypoint-initdb.d/166_gold_census_cbp.sql:ro
       - ../../src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/gold_census_lodes.sql:/docker-entrypoint-initdb.d/167_gold_census_lodes.sql:ro
@@ -104,6 +106,7 @@ services:
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/publisher.sql:/docker-entrypoint-initdb.d/194_publisher_bea.sql:ro
       - ../../sql/migrations/028_serving_publishes_a_withheld_value.sql:/docker-entrypoint-initdb.d/195_migration_028.sql:ro
       - ../../src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql:/docker-entrypoint-initdb.d/195_publisher_irs_migration.sql:ro
+      - ../../src/data_ingestion_toolbox/irs_soi/gold_irs_soi/DDL/publisher.sql:/docker-entrypoint-initdb.d/195a_publisher_irs_soi.sql:ro
       - ../../src/data_ingestion_toolbox/census_cbp/gold_census_cbp/DDL/publisher.sql:/docker-entrypoint-initdb.d/196_publisher_census_cbp.sql:ro
       - ../../sql/migrations/029_nass_combined_counties_are_not_counties.sql:/docker-entrypoint-initdb.d/197_migration_029.sql:ro
       - ../../src/data_ingestion_toolbox/census_lodes/gold_census_lodes/DDL/publisher.sql:/docker-entrypoint-initdb.d/197_publisher_census_lodes.sql:ro

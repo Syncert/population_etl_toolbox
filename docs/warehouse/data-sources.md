@@ -24,6 +24,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Population Estimates Program](#census_pep) | U.S. Census Bureau | ● | ● | ● |  | ● |  | ● | 1970–2025 | Monthly check | Loaded |
 | [SOI county-to-county migration](#irs_migration) | IRS Statistics of Income |  |  | ● |  |  |  |  | 2019–2023 | Monthly | Loaded |
 | [BLS labor and prices (LAUS, CPS, CES, CPI, JOLTS, average prices)](#bls) | Bureau of Labor Statistics | ● | ● | ● | ● | ◌ |  | ◌ | 1990–2026 | Monthly | Loaded |
+| [SOI individual income tax statistics by county and state](#irs_soi) | IRS Statistics of Income | ● | ● | ● |  |  |  |  | 1989–2023 | Monthly | Not yet loaded |
 | [Quarterly Census of Employment and Wages](#bls_qcew) | Bureau of Labor Statistics | ● | ● | ● |  |  |  |  | 2014–2025 | Monthly | Partly loaded |
 | [County Business Patterns](#census_cbp) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 2016–2023 | Monthly | Loaded |
 | [Regional economic accounts](#bea) | Bureau of Economic Analysis | ● | ● | ● | ◐ |  |  | ● | 1969–2024 | Weekly | Loaded |
@@ -126,6 +127,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_bls.observation_revision`, `silver_bls.fact_labor_statistics`
 - **Gold:** `gold_bls.rpt_bls_observations`, `gold_bls.mv_bls_latest`, `gold_bls.fact_bls_observation`, `gold_bls.provider_annual_average`, `gold_bls.calendar_window_observation`, `gold_bls.derived_calendar_rollup`, `gold_bls.dim_bls_series / measure / survey`
 - **Status (live count 2026-10-31):** Loaded. 1990–2026 at county, metro, state and nation, plus BLS's own areas (regions from 1990, divisions from 2017). No place-level rows were seen.
+
+<a id="irs_soi"></a>
+### SOI individual income tax statistics by county and state (`IRS_SOI`)
+
+- **Publisher:** IRS Statistics of Income
+- **Code:** `src/data_ingestion_toolbox/irs_soi` · DAG `irs_soi_ingest` · Monthly, 7th 15:00 UTC
+- **Publisher releases:** One new tax year a year, about three years after it ends
+- **Credential:** none
+- **Years:** County files for tax years 1989–2023, each state's total included (1989–2009 carry six items with no bands and no tax; by size of AGI from 2010); Historic Table 2 state files, with the nation, for 2020–2023
+- **Datasets:** YYYYcountyincome.zip (1989–2009); 2010countydata.zip; YYincyallnoagi.csv; YYincyallagi.csv; YYin55cmcsv.csv
+- **Measures:** Returns, individuals, adjusted gross income, wages, interest, dividends, business income, capital gains, pensions, Social Security, unemployment compensation, taxable income, income tax, total tax liability, earned income tax credit, additional child tax credit, and itemized state and local income and real estate taxes, for all returns and by size of adjusted gross income. Derived: income tax as a share of AGI; share of returns claiming the EITC.
+- **Capture and control:** `control.irs_soi_file`
+- **Silver:** `silver_irs_soi.observation_revision`, `silver_irs_soi.fact_observation`, `silver_irs_soi.observation_quarantine`
+- **Gold:** `gold_irs_soi.observation_revision`, `gold_irs_soi.observation_latest`, `gold_irs_soi.measure_export`, `gold_irs_soi.metric_publisher`
+- **Status:** Not yet loaded; the first scheduled run loads every registered year.
 
 <a id="bls_qcew"></a>
 ### Quarterly Census of Employment and Wages (`BLS_QCEW`)
