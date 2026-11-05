@@ -1342,6 +1342,182 @@ def bea_price_parity_reference(
     ]
 
 
+#: (table, total line, part lines) -- each total and the lines that make it.
+#: Refundable tax credits (5000) overlap the programs and are in no sum.
+_BEA_PROGRAM_GROUPS = ("2100", "2200", "2300", "2400", "2500", "2600", "2700")
+BEA_COMPONENT_SUMS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("CAINC35", "1000", ("2000", "3000", "4000")),
+    ("CAINC35", "2000", _BEA_PROGRAM_GROUPS),
+    ("SAINC35", "1000", ("2000", "3000", "4000")),
+    ("SAINC35", "2000", _BEA_PROGRAM_GROUPS),
+    ("SAINC50", "60", ("70", "120", "180", "230")),
+)
+
+
+def bea_component_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-BEA-006 — transfer receipts and personal taxes add up within a release."""
+    del scope
+    tables = sorted({table for table, _total, _parts in BEA_COMPONENT_SUMS})
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.bea_table_capture "
+        "WHERE status = 'published' AND table_code = ANY(%s)",
+        (tables,),
+    )
+    if total == 0:
+        return [RuleOutcome("silver_bea.fact_observation", "not_applicable")]
+    groups = [
+        (table, total_line, list(parts))
+        for table, total_line, parts in BEA_COMPONENT_SUMS
+    ]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH rule (table_code, total_line, parts) AS (
+            SELECT * FROM UNNEST(%s::TEXT[], %s::TEXT[], %s::TEXT[])
+        ),
+        newest AS (
+            -- Each table's newest published capture: one file holds every
+            -- line, so its parts and totals share one release.
+            SELECT capture.table_code, capture.run_id
+              FROM control.bea_table_capture AS capture
+             WHERE capture.status = 'published'
+               AND capture.table_code = ANY(%s)
+               AND NOT EXISTS (
+                    SELECT 1 FROM control.bea_table_capture AS newer
+                     WHERE newer.table_code = capture.table_code
+                       AND newer.status = 'published'
+                       AND (newer.release_date, newer.updated_at, newer.run_id)
+                           > (capture.release_date, capture.updated_at, capture.run_id)
+               )
+        ),
+        sums AS (
+            SELECT fact.table_code, rule.total_line, fact.geo_id, fact.year,
+                   MAX(fact.value) FILTER (
+                       WHERE fact.line_code = rule.total_line AND fact.value_status = 'valid'
+                   ) AS total_value,
+                   SUM(fact.value) FILTER (
+                       WHERE fact.line_code = ANY(STRING_TO_ARRAY(rule.parts, ','))
+                   ) AS parts_value,
+                   COUNT(*) FILTER (
+                       WHERE fact.line_code = ANY(STRING_TO_ARRAY(rule.parts, ','))
+                         AND fact.value_status = 'valid'
+                   ) AS valid_parts,
+                   CARDINALITY(STRING_TO_ARRAY(rule.parts, ',')) AS part_count
+              FROM newest
+              JOIN silver_bea.fact_observation AS fact
+                -- `bea_fact_run_idx`: one run is one capture of one table.
+                ON fact.run_id = newest.run_id
+               AND fact.table_code = newest.table_code
+              JOIN rule ON rule.table_code = fact.table_code
+               AND (fact.line_code = rule.total_line
+                    OR fact.line_code = ANY(STRING_TO_ARRAY(rule.parts, ',')))
+             GROUP BY fact.table_code, rule.total_line, rule.parts, fact.geo_id, fact.year
+        )
+        SELECT sums.table_code, sums.total_line, sums.geo_id, sums.year,
+               sums.total_value, sums.parts_value
+          FROM sums
+         WHERE sums.total_value IS NOT NULL
+           AND sums.valid_parts = sums.part_count
+           AND ABS(sums.parts_value - sums.total_value)
+               > GREATEST(0.005 * ABS(sums.total_value), 3)
+        """,
+        order_by="1, 2, 3, 4",
+        params=(
+            [group[0] for group in groups],
+            [group[1] for group in groups],
+            [",".join(group[2]) for group in groups],
+            tables,
+        ),
+    )
+    return [
+        RuleOutcome(
+            "silver_bea.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def bea_transfer_total_agreement(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BEA-007 — CAINC35's total agrees with CAINC4 line 47 in a shared release."""
+    del scope
+    shared = _count(
+        cursor,
+        """
+        SELECT COUNT(*)
+          FROM (
+                SELECT release_date FROM control.bea_table_capture
+                 WHERE status = 'published' AND table_code = 'CAINC35'
+                INTERSECT
+                SELECT release_date FROM control.bea_table_capture
+                 WHERE status = 'published' AND table_code = 'CAINC4'
+          ) AS releases
+        """,
+    )
+    if shared == 0:
+        return [RuleOutcome("silver_bea.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH newest AS (
+            -- The newest capture of each table's each release.
+            SELECT capture.table_code, capture.release_date, capture.run_id
+              FROM control.bea_table_capture AS capture
+             WHERE capture.status = 'published'
+               AND capture.table_code IN ('CAINC35', 'CAINC4')
+               AND NOT EXISTS (
+                    SELECT 1 FROM control.bea_table_capture AS newer
+                     WHERE newer.table_code = capture.table_code
+                       AND newer.release_date = capture.release_date
+                       AND newer.status = 'published'
+                       AND (newer.updated_at, newer.run_id)
+                           > (capture.updated_at, capture.run_id)
+               )
+        ),
+        programs AS (
+            SELECT newest.release_date, fact.geo_id, fact.year, fact.value
+              FROM newest
+              JOIN silver_bea.fact_observation AS fact
+                ON fact.run_id = newest.run_id
+               AND fact.table_code = 'CAINC35' AND fact.line_code = '1000'
+             WHERE newest.table_code = 'CAINC35' AND fact.value_status = 'valid'
+        ),
+        totals AS (
+            SELECT newest.release_date, fact.geo_id, fact.year, fact.value
+              FROM newest
+              JOIN silver_bea.fact_observation AS fact
+                ON fact.run_id = newest.run_id
+               AND fact.table_code = 'CAINC4' AND fact.line_code = '47'
+             WHERE newest.table_code = 'CAINC4' AND fact.value_status = 'valid'
+        )
+        SELECT programs.release_date, programs.geo_id, programs.year,
+               programs.value AS programs_total, totals.value AS income_line_47
+          FROM programs
+          JOIN totals
+            ON totals.release_date = programs.release_date
+           AND totals.geo_id = programs.geo_id
+           AND totals.year = programs.year
+         WHERE ABS(programs.value - totals.value)
+               > GREATEST(0.005 * ABS(totals.value), 3)
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_bea.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def cbp_file_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-CBP-002 — every in-scope captured row is replayed; no file is left unreplayed."""
     del scope
@@ -4129,6 +4305,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BEA-002": bea_table_reconciliation,
     "DQ-QCEW-002": qcew_slice_reconciliation,
     "DQ-BEA-005": bea_price_parity_reference,
+    "DQ-BEA-006": bea_component_sums,
+    "DQ-BEA-007": bea_transfer_total_agreement,
     "DQ-EIA-002": eia_read_reconciliation,
     "DQ-CBP-002": cbp_file_reconciliation,
     "DQ-CBP-004": cbp_sector_sum,
