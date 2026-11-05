@@ -1189,7 +1189,17 @@ def irs_migration_total_reconciliation(
                        WHERE revision.category = 'county'
                           OR LEFT(revision.category, 8) = 'foreign_'
                           OR revision.category IN ('other_flows_same_state', 'other_flows_different_state')
-                   ), 0) AS part_returns,
+                   ), 0)
+                   -- Before 1995-1996 the remaining flows are only the four
+                   -- regions; later the regions split "different state".
+                   + CASE WHEN COUNT(*) FILTER (
+                              WHERE revision.category IN ('other_flows_same_state', 'other_flows_different_state')
+                          ) = 0
+                          THEN COALESCE(SUM(revision.returns) FILTER (
+                              WHERE revision.category IN ('other_flows_northeast', 'other_flows_midwest',
+                                                          'other_flows_south', 'other_flows_west')
+                          ), 0)
+                          ELSE 0 END AS part_returns,
                    COUNT(*) FILTER (WHERE revision.value_status = 'withheld') AS withheld_parts
               FROM silver_irs_migration.flow_revision AS revision
               JOIN newest ON newest.capture_id = revision.capture_id

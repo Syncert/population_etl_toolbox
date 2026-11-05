@@ -8902,7 +8902,7 @@ v gold_irs_migration.total_observation_revision
     body     revision.people_basis
     body    FROM gold_irs_migration.flow_revision revision
     body      CROSS JOIN ( VALUES ('returns'::text,'returns'::text), ('individuals'::text,'individuals'::text), ('agi'::text,'thousands of dollars'::text)) measure(measure, unit)
-    body   WHERE revision.category = ANY (ARRAY['total_us_and_foreign'::text, 'total_us'::text, 'total_same_state'::text, 'total_different_state'::text, 'total_foreign'::text, 'non_migrants'::text]);
+    body   WHERE (revision.category = ANY (ARRAY['total_us_and_foreign'::text, 'total_us'::text, 'total_same_state'::text, 'total_different_state'::text, 'total_foreign'::text, 'non_migrants'::text])) AND NOT (measure.measure = 'agi'::text AND revision.value_status = 'valid'::text AND revision.agi IS NULL);
 
 v gold_irs_soi.measure_export
     column source_object_key text
@@ -13010,7 +13010,8 @@ r silver_irs_migration.fact_flow
     constraint fact_flow_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text])))
     constraint irs_flow_category_names_no_county CHECK (((category = ANY (ARRAY['county'::text, 'non_migrants'::text])) OR ((origin_geo_id IS NULL) AND (origin_geo_sk IS NULL) AND (destination_geo_id IS NULL) AND (destination_geo_sk IS NULL))))
     constraint irs_flow_endpoints_resolved CHECK (((category <> ALL (ARRAY['county'::text, 'non_migrants'::text])) OR ((origin_geo_id IS NOT NULL) AND (origin_geo_sk IS NOT NULL) AND (destination_geo_id IS NOT NULL) AND (destination_geo_sk IS NOT NULL))))
-    constraint irs_flow_valid_measures_present CHECK (((value_status <> 'valid'::text) OR ((individuals IS NOT NULL) AND (agi IS NOT NULL))))
+    constraint irs_flow_valid_agi_from_1995 CHECK (((value_status <> 'valid'::text) OR (agi IS NOT NULL) OR (year1 < 1995)))
+    constraint irs_flow_valid_individuals_present CHECK (((value_status <> 'valid'::text) OR (individuals IS NOT NULL)))
     constraint irs_flow_valid_value_present CHECK (((value_status <> 'valid'::text) OR (returns IS NOT NULL)))
     constraint irs_flow_withheld_value_absent CHECK (((value_status <> 'withheld'::text) OR ((returns IS NULL) AND (individuals IS NULL) AND (agi IS NULL))))
     index fact_flow_pkey CREATE UNIQUE INDEX fact_flow_pkey ON silver_irs_migration.fact_flow USING btree (direction, year_pair, subject_geo_id, counterpart_code, capture_id)
@@ -13062,7 +13063,8 @@ r silver_irs_migration.flow_revision
     constraint flow_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
     constraint flow_revision_source_row_index_check CHECK ((source_row_index >= 1))
     constraint flow_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'withheld'::text])))
-    constraint irs_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR ((returns IS NOT NULL) AND (individuals IS NOT NULL) AND (agi IS NOT NULL))))
+    constraint irs_revision_valid_agi_from_1995 CHECK (((value_status <> 'valid'::text) OR (agi IS NOT NULL) OR (("left"(year_pair, 4))::integer < 1995)))
+    constraint irs_revision_valid_counts_present CHECK (((value_status <> 'valid'::text) OR ((returns IS NOT NULL) AND (individuals IS NOT NULL))))
     constraint irs_revision_withheld_value_absent CHECK (((value_status <> 'withheld'::text) OR ((returns IS NULL) AND (individuals IS NULL) AND (agi IS NULL))))
     index flow_revision_pkey CREATE UNIQUE INDEX flow_revision_pkey ON silver_irs_migration.flow_revision USING btree (capture_id, source_row_index)
     index irs_flow_revision_run_idx CREATE INDEX irs_flow_revision_run_idx ON silver_irs_migration.flow_revision USING btree (run_id)

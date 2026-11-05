@@ -86,7 +86,10 @@ CROSS JOIN (VALUES ('returns', 'returns'), ('individuals', 'individuals'), ('agi
 WHERE revision.category IN (
     'total_us_and_foreign', 'total_us', 'total_same_state', 'total_different_state',
     'total_foreign', 'non_migrants'
-);
+)
+  -- Files before 1995-1996 publish no AGI: no AGI row, rather than a
+  -- valid row without a number.
+  AND NOT (measure.measure = 'agi' AND revision.value_status = 'valid' AND revision.agi IS NULL);
 
 CREATE OR REPLACE VIEW gold_irs_migration.total_observation_latest AS
 SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.year_pair)

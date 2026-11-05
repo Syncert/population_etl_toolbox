@@ -85,17 +85,28 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
 def test_the_registry_names_every_file_and_labels_every_category() -> None:
     """Covers: ETL-059 — one inflow and one outflow per pair of filing years, labelled as SOI does."""
     files = registered_files()
-    assert len(files) == 24
+    assert len(files) == 66
     assert {item.year_pair for item in files} == {
-        f"{year}-{year + 1}" for year in range(2011, 2023)
+        f"{year}-{year + 1}" for year in range(1990, 2023)
     }
     assert INFLOW_2223.path == "/countyinflow2223.csv"
     assert get_file("outflow", "2011-2012").path == "/countyoutflow1112.csv"
+    assert get_file("inflow", "2010-2011").path == "/county1011.zip"
+    assert get_file("outflow", "2004-2005").path == "/county0405.zip"
+    assert get_file("inflow", "2003-2004").path == "/2003to2004countymigration.zip"
+    assert get_file("inflow", "1990-1991").path == "/1990to1991countymigration.zip"
+    assert [get_file("inflow", f"{y}-{y + 1}").layout for y in (1991, 1992, 2010)] == [
+        "text",
+        "workbooks",
+        "workbooks",
+    ]
+    assert not get_file("inflow", "1994-1995").has_agi
+    assert get_file("inflow", "1995-1996").has_agi
     assert OUTFLOW_2223.year_pair == "2022-2023"
     assert metric_key("inflow", "total_us", "returns") == "inflow:total_us:returns"
     assert CATEGORY_LABELS["other_flows_same_state"] == "Other flows, same state"
     with pytest.raises(KeyError):
-        get_file("inflow", "2010-2011")
+        get_file("inflow", "1989-1990")
 
 
 def test_n2_counts_exemptions_until_exemptions_ended() -> None:
@@ -111,21 +122,21 @@ def test_a_scheduled_run_captures_the_newest_pairs_and_every_pair_never_publishe
     """Covers: ETL-059 — loader rule: a pair never published is captured on a scheduled run."""
     assert recent_year_pairs() == ("2021-2022", "2022-2023")
     fresh = file_keys_to_capture(None)
-    assert len(fresh) == 24 and fresh[:2] == ["inflow:2011-2012", "outflow:2011-2012"]
+    assert len(fresh) == 66 and fresh[:2] == ["inflow:1990-1991", "outflow:1990-1991"]
     loaded = {f"{year}-{year + 1}" for year in range(2018, 2023)}
     assert file_keys_to_capture({}, loaded) == [
         f"{direction}:{year}-{year + 1}"
-        for year in [*range(2011, 2018), 2021, 2022]
+        for year in [*range(1990, 2018), 2021, 2022]
         for direction in ("inflow", "outflow")
     ]
-    everything = loaded | {f"{year}-{year + 1}" for year in range(2011, 2018)}
+    everything = loaded | {f"{year}-{year + 1}" for year in range(1990, 2018)}
     assert file_keys_to_capture({}, everything) == [
         "inflow:2021-2022",
         "outflow:2021-2022",
         "inflow:2022-2023",
         "outflow:2022-2023",
     ]
-    assert len(file_keys_to_capture({"history": True}, everything)) == 24
+    assert len(file_keys_to_capture({"history": True}, everything)) == 66
 
 
 def test_a_pair_is_answered_only_when_both_files_are_published() -> None:
@@ -332,3 +343,130 @@ def test_a_flow_whose_origin_or_destination_does_not_resolve_is_refused() -> Non
     assert {item.error_code for item in refused_out} == {"destination_unresolved"}
     _none, unknown_subject = conform_flows(kent[:1], {})
     assert [item.error_code for item in unknown_subject] == ["subject_unresolved"]
+
+
+def _zip(source_pair: str, extra: dict[str, bytes] | None = None) -> bytes:
+    import io
+    import zipfile
+
+    from tests.support.irs_migration_zips import state_member_zip
+
+    payload = state_member_zip(source_pair)
+    if not extra:
+        return payload
+    buffer = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(payload)) as source,
+        zipfile.ZipFile(buffer, "w") as target,
+    ):
+        for name in source.namelist():
+            target.writestr(name, source.read(name))
+        for name, data in extra.items():
+            target.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _parts_sum_to_total(parsed) -> None:  # noqa: ANN001
+    """Every subject's flows, foreign rows and remaining flows sum to its total."""
+    by_subject: dict[str, list] = {}
+    for flow in parsed.flows:
+        by_subject.setdefault(flow.subject_geo_id, []).append(flow)
+    regions = {
+        "other_flows_northeast",
+        "other_flows_midwest",
+        "other_flows_south",
+        "other_flows_west",
+    }
+    for flows in by_subject.values():
+        total = next(f.returns for f in flows if f.category == "total_us_and_foreign")
+        split = any(
+            f.category in {"other_flows_same_state", "other_flows_different_state"}
+            for f in flows
+        )
+        parts = sum(
+            f.returns or 0
+            for f in flows
+            if f.category == "county"
+            or f.category.startswith("foreign_")
+            or f.category in {"other_flows_same_state", "other_flows_different_state"}
+            or (not split and f.category in regions)
+        )
+        assert parts == total
+
+
+def test_a_workbook_zip_reads_each_direction_from_its_title_with_agi() -> None:
+    """Covers: ETL-059 — 2003-2004 workbooks: state rows counted, AGI read, parts sum to the total."""
+    payload = _zip("2003-2004")
+    inflow = parse_file(payload, item=get_file("inflow", "2003-2004"))
+    outflow = parse_file(payload, item=get_file("outflow", "2003-2004"))
+    assert inflow.quarantined == () and outflow.quarantined == ()
+    assert (inflow.summary_row_count, inflow.subject_count) == (5, 3)
+    kent = {f.counterpart_code: f for f in inflow.flows if f.subject_geo_id == KENT}
+    assert (kent["96:000"].returns, kent["96:000"].agi) == (4395, Decimal("162859"))
+    assert kent["10:001"].category == "non_migrants"
+    assert kent["10:001"].counterpart_geo_id == KENT
+    assert all(
+        f.origin_geo_id == KENT
+        for f in outflow.flows
+        if f.category == "county" and f.subject_geo_id == KENT
+    )
+    _parts_sum_to_total(inflow)
+    _parts_sum_to_total(outflow)
+
+
+def test_a_1993_workbook_uses_the_early_codes_and_loads_no_agi() -> None:
+    """Covers: ETL-059 — 00 001 is the total, 63 0xx are regions and non-migrants; money income is not AGI."""
+    parsed = parse_file(_zip("1993-1994"), item=get_file("inflow", "1993-1994"))
+    assert parsed.quarantined == () and parsed.summary_row_count == 0
+    kent = {f.counterpart_code: f for f in parsed.flows if f.subject_geo_id == KENT}
+    total = kent["00:001"]
+    assert (total.category, total.returns, total.agi) == (
+        "total_us_and_foreign",
+        2943,
+        None,
+    )
+    assert total.value_source == "2943,6161,72934"
+    assert kent["63:011"].category == "other_flows_northeast"
+    assert kent["63:050"].category == "non_migrants"
+    assert kent["63:050"].counterpart_geo_id == KENT
+    assert all(flow.agi is None for flow in parsed.flows)
+    _parts_sum_to_total(parsed)
+
+
+def test_a_1990_text_zip_reads_its_lines_as_the_early_codes() -> None:
+    """Covers: ETL-059 — fixed-width text: total, flows, foreign, regions and non-migrants per county."""
+    payload = _zip("1990-1991")
+    inflow = parse_file(payload, item=get_file("inflow", "1990-1991"))
+    outflow = parse_file(payload, item=get_file("outflow", "1990-1991"))
+    assert inflow.quarantined == () and outflow.quarantined == ()
+    assert inflow.subject_count == 3 and inflow.row_count == len(inflow.flows)
+    kent = {f.counterpart_code: f for f in inflow.flows if f.subject_geo_id == KENT}
+    assert (kent["00:001"].returns, kent["00:001"].individuals) == (3094, 6483)
+    new_castle = kent["10:003"]
+    assert (new_castle.category, new_castle.returns, new_castle.individuals) == (
+        "county",
+        449,
+        910,
+    )
+    assert new_castle.origin_geo_id == "state:10|county:003"
+    assert kent["57:001"].category == "foreign_overseas"
+    assert kent["63:013"].category == "other_flows_south"
+    assert kent["63:050"].returns == 38904
+    _parts_sum_to_total(inflow)
+    _parts_sum_to_total(outflow)
+
+
+def test_a_repeated_member_is_read_once_and_an_unreadable_zip_is_refused() -> None:
+    """Covers: ETL-059 — co0304OH0.xls beside co0304OHo.xls; a workbook naming no direction refuses the file."""
+    item = get_file("inflow", "2003-2004")
+    once = parse_file(_zip("2003-2004"), item=item)
+    copy = _fixture("state_members/co0304DEi.xls")
+    twice = parse_file(_zip("2003-2004", {"co0304DE0.xls": copy}), item=item)
+    assert twice.row_count == once.row_count and twice.quarantined == ()
+    broken = parse_file(
+        _zip("2003-2004", {"co0304XXi.xls": b"not a workbook"}), item=item
+    )
+    assert [q.error_code for q in broken.quarantined] == ["unexpected_header"]
+    assert broken.flows == ()
+    with pytest.raises(IrsMigrationPayloadError, match="not_a_zip"):
+        check_header(b"<html>", item.path, item)

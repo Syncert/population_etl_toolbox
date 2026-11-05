@@ -18,6 +18,7 @@ from data_ingestion_toolbox.glossary.harvest import (
     process_pending_events,
 )
 from data_ingestion_toolbox.irs_migration.schema import (
+    DDL_FILES,
     REQUIRED_RELATIONS,
     ensure_irs_migration_schema,
 )
@@ -323,6 +324,114 @@ def test_a_2011_layout_file_counts_state_rows_and_serves_exemptions(
     finally:
         reader.close()
     assert (outcome.result, outcome.observed_count) == ("pass", 0)
+
+
+def test_zip_layouts_publish_with_no_agi_before_1995_and_reconcile(
+    irs_warehouse,
+) -> None:
+    """Covers: ETL-059 — 1990 text and 1993 and 2003 workbooks replay, publish and reconcile; no AGI before 1995."""
+    factory = irs_warehouse
+    published = {}
+    for direction in ("inflow", "outflow"):
+        for pair in ("1990-1991", "1993-1994", "2003-2004"):
+            run_id, flows, count = irs.run_to_gold(factory, direction, pair)
+            assert flows > 0 and count == 1
+            published[(direction, pair)] = run_id
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_irs_migration.flow_quarantine WHERE error_code NOT LIKE '%%_unresolved'",
+    ) == [(0,)]
+    assert _rows(
+        factory,
+        """
+        SELECT year_pair, COUNT(*) FILTER (WHERE agi IS NOT NULL), COUNT(*) FILTER (WHERE agi IS NULL)
+        FROM gold_irs_migration.flow_latest
+        WHERE subject_geo_id = %s AND direction = 'inflow' AND value_status = 'valid'
+        GROUP BY year_pair ORDER BY year_pair
+        """,
+        (irs.KENT,),
+    )[0][1:] == (
+        0,
+        _rows(
+            factory,
+            "SELECT COUNT(*) FROM gold_irs_migration.flow_latest WHERE subject_geo_id = %s AND direction = 'inflow' AND year_pair = '1990-1991' AND value_status = 'valid'",
+            (irs.KENT,),
+        )[0][0],
+    )
+    measures = _rows(
+        factory,
+        """
+        SELECT year_pair, ARRAY_AGG(DISTINCT measure ORDER BY measure)
+        FROM gold_irs_migration.total_observation_latest
+        WHERE geo_id = %s AND direction = 'inflow' GROUP BY year_pair ORDER BY year_pair
+        """,
+        (irs.KENT,),
+    )
+    assert measures == [
+        ("1990-1991", ["individuals", "returns"]),
+        ("1993-1994", ["individuals", "returns"]),
+        ("2003-2004", ["agi", "individuals", "returns"]),
+    ]
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            ledger = irs_migration_file_reconciliation(cursor, {})[0]
+            totals = irs_migration_total_reconciliation(cursor, {})[0]
+    finally:
+        reader.close()
+    assert (ledger.result, ledger.observed_count) == ("pass", 0)
+    assert (totals.result, totals.observed_count) == ("pass", 0)
+
+
+def test_the_older_agi_checks_are_replaced_once(irs_warehouse) -> None:
+    """Covers: ETL-059 — a warehouse with the pre-1990 checks gets the new ones; a valid 1995 row still needs AGI."""
+    factory = irs_warehouse
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                ALTER TABLE silver_irs_migration.fact_flow
+                    DROP CONSTRAINT irs_flow_valid_individuals_present,
+                    DROP CONSTRAINT irs_flow_valid_agi_from_1995,
+                    ADD CONSTRAINT irs_flow_valid_measures_present CHECK (
+                        value_status <> 'valid' OR (individuals IS NOT NULL AND agi IS NOT NULL)
+                    )
+                """
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    # Re-apply the silver DDL as an upgrade would (the file hash changed).
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(DDL_FILES[0].read_text(encoding="utf-8"))
+        writer.commit()
+    finally:
+        writer.close()
+    names = {
+        row[0]
+        for row in _rows(
+            factory,
+            "SELECT conname FROM pg_constraint WHERE conrelid = 'silver_irs_migration.fact_flow'::REGCLASS",
+        )
+    }
+    assert "irs_flow_valid_measures_present" not in names
+    assert {
+        "irs_flow_valid_individuals_present",
+        "irs_flow_valid_agi_from_1995",
+    } <= names
+    irs.run_to_gold(factory, "inflow", "1990-1991")
+    writer = factory()
+    try:
+        with writer.cursor() as cursor, pytest.raises(psycopg2.errors.CheckViolation):
+            cursor.execute(
+                "UPDATE silver_irs_migration.fact_flow SET year1 = 1995, year2 = 1996 WHERE year_pair = '1990-1991' AND value_status = 'valid'"
+            )
+        writer.rollback()
+    finally:
+        writer.close()
 
 
 def test_the_fact_refuses_a_flow_with_a_missing_end_and_the_schema_reapplies(

@@ -55,8 +55,12 @@ CREATE TABLE IF NOT EXISTS silver_irs_migration.flow_revision (
     CONSTRAINT irs_revision_withheld_value_absent CHECK (
         value_status <> 'withheld' OR (returns IS NULL AND individuals IS NULL AND agi IS NULL)
     ),
-    CONSTRAINT irs_revision_valid_value_present CHECK (
-        value_status <> 'valid' OR (returns IS NOT NULL AND individuals IS NOT NULL AND agi IS NOT NULL)
+    -- Files before 1995-1996 carry no adjusted gross income.
+    CONSTRAINT irs_revision_valid_counts_present CHECK (
+        value_status <> 'valid' OR (returns IS NOT NULL AND individuals IS NOT NULL)
+    ),
+    CONSTRAINT irs_revision_valid_agi_from_1995 CHECK (
+        value_status <> 'valid' OR agi IS NOT NULL OR LEFT(year_pair, 4)::INTEGER < 1995
     )
 );
 
@@ -116,8 +120,11 @@ CREATE TABLE IF NOT EXISTS silver_irs_migration.fact_flow (
         value_status <> 'withheld' OR (returns IS NULL AND individuals IS NULL AND agi IS NULL)
     ),
     CONSTRAINT irs_flow_valid_value_present CHECK (value_status <> 'valid' OR returns IS NOT NULL),
-    CONSTRAINT irs_flow_valid_measures_present CHECK (
-        value_status <> 'valid' OR (individuals IS NOT NULL AND agi IS NOT NULL)
+    CONSTRAINT irs_flow_valid_individuals_present CHECK (
+        value_status <> 'valid' OR individuals IS NOT NULL
+    ),
+    CONSTRAINT irs_flow_valid_agi_from_1995 CHECK (
+        value_status <> 'valid' OR agi IS NOT NULL OR year1 < 1995
     )
 );
 
@@ -150,3 +157,39 @@ BEGIN
             CHECK (status IN ('captured', 'unchanged', 'silver_ready', 'quarantined', 'published'));
     END IF;
 END $$;
+
+-- Warehouses built before the 1990-1994 files were registered hold the
+-- older checks, which require AGI on every valid row. Replace them once;
+-- the replacement checks are no weaker from 1995-1996 on.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'irs_revision_valid_value_present'
+          AND conrelid = 'silver_irs_migration.flow_revision'::REGCLASS
+    ) THEN
+        ALTER TABLE silver_irs_migration.flow_revision
+            DROP CONSTRAINT irs_revision_valid_value_present,
+            ADD CONSTRAINT irs_revision_valid_counts_present CHECK (
+                value_status <> 'valid' OR (returns IS NOT NULL AND individuals IS NOT NULL)
+            ),
+            ADD CONSTRAINT irs_revision_valid_agi_from_1995 CHECK (
+                value_status <> 'valid' OR agi IS NOT NULL OR LEFT(year_pair, 4)::INTEGER < 1995
+            );
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'irs_flow_valid_measures_present'
+          AND conrelid = 'silver_irs_migration.fact_flow'::REGCLASS
+    ) THEN
+        ALTER TABLE silver_irs_migration.fact_flow
+            DROP CONSTRAINT irs_flow_valid_measures_present,
+            ADD CONSTRAINT irs_flow_valid_individuals_present CHECK (
+                value_status <> 'valid' OR individuals IS NOT NULL
+            ),
+            ADD CONSTRAINT irs_flow_valid_agi_from_1995 CHECK (
+                value_status <> 'valid' OR agi IS NOT NULL OR year1 < 1995
+            );
+    END IF;
+END
+$$;
