@@ -76,7 +76,12 @@ SCOPE = "latest"
 #: Kinds that describe a population whatever its size (ADR-0010 rule 2).
 COMPARABLE_KINDS = frozenset({"median", "mean", "rate", "share", "index"})
 #: An ADR-0009 pairing's kind, as a measure kind.
-RATIO_KINDS = {"share": "share", "per_capita": "rate", "provider_rate": "rate"}
+RATIO_KINDS = {
+    "share": "share",
+    "per_capita": "rate",
+    "ratio": "rate",
+    "provider_rate": "rate",
+}
 VALID_STATUSES = frozenset({None, "", "valid"})
 
 #: Finest to coarsest, for reading containment from the finer side, whose
