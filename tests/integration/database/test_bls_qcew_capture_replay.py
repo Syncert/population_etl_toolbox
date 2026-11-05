@@ -139,7 +139,7 @@ def test_the_publisher_states_the_establishment_basis_and_harvests(
 def test_a_rerun_is_idempotent_and_a_changed_file_keeps_both_checksums(
     qcew_warehouse,
 ) -> None:
-    """Covers: ETL-056, ETL-115 — the same bytes store nothing; a revised file is a second row."""
+    """Covers: ETL-056, ETL-116 — the same bytes store nothing; a revised file is a second row."""
     factory = qcew_warehouse
     first, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))
     second, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))

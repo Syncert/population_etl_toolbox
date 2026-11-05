@@ -142,7 +142,7 @@ def test_a_withheld_cell_has_no_value_and_the_publisher_harvests(cbp_warehouse) 
 def test_a_rerun_adds_nothing_and_a_corrected_file_is_kept_beside_the_old(
     cbp_warehouse,
 ) -> None:
-    """Covers: ETL-062, ETL-115 — the same bytes store nothing; a changed file keeps both checksums."""
+    """Covers: ETL-062, ETL-116 — the same bytes store nothing; a changed file keeps both checksums."""
     factory = cbp_warehouse
     first, _f, _p = cbp.run_to_gold(factory, "county", 2023)
     second, _f, _p = cbp.run_to_gold(factory, "county", 2023)

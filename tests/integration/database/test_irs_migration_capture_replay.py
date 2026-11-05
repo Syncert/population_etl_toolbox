@@ -157,7 +157,7 @@ def test_a_withheld_category_has_no_value_and_the_publisher_harvests_totals(
 def test_a_rerun_adds_nothing_and_a_revised_file_is_kept_beside_the_old(
     irs_warehouse,
 ) -> None:
-    """Covers: ETL-059, ETL-115 — the same bytes store nothing; a changed file keeps both checksums."""
+    """Covers: ETL-059, ETL-116 — the same bytes store nothing; a changed file keeps both checksums."""
     factory = irs_warehouse
     first, _f, _p = irs.run_to_gold(factory, "outflow", "2022-2023")
     second, _f, _p = irs.run_to_gold(factory, "outflow", "2022-2023")

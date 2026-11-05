@@ -171,7 +171,7 @@ def test_the_publish_event_finds_its_publisher_without_a_prior_harvest(
 def test_rerun_is_idempotent_and_a_changed_response_keeps_both_checksums(
     sae_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-054, ETL-115 -- the same bytes store nothing; a revision is a second row."""
+    """Covers: ETL-054, ETL-116 -- the same bytes store nothing; a revision is a second row."""
     first_run, _facts, _published = census_sae.run_to_gold(sae_warehouse, SAIPE)
     second_run, _facts, _published = census_sae.run_to_gold(sae_warehouse, SAIPE)
     latest = _rows(

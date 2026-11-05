@@ -5,7 +5,7 @@ and PEP read the same files again on every scheduled run. Their silver rows
 are keyed by capture, so a replay of identical bytes stored a second copy of
 every row (the pattern PR #296 removed from BEA).
 
-Covers: ETL-115
+Covers: ETL-116
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ def _receipt(_factory: Any, capture: Any) -> CaptureReceipt:
 def test_only_identical_bytes_under_the_same_parser_and_geography_repeat(
     published: tuple | None, geography_since: bool, expected: bool
 ) -> None:
-    """Covers: ETL-115 — never published, new bytes, a new parser or a new geography replay."""
+    """Covers: ETL-116 — never published, new bytes, a new parser or a new geography replay."""
     database = _Database(published, geography_since=geography_since)
     assert (
         repeats_last_publication(
@@ -182,7 +182,7 @@ def test_only_identical_bytes_under_the_same_parser_and_geography_repeat(
 def test_a_repeated_county_business_patterns_file_is_unchanged_and_replays_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-115 — CBP's monthly read of every file adds no rows for the same bytes."""
+    """Covers: ETL-116 — CBP's monthly read of every file adds no rows for the same bytes."""
     monkeypatch.setattr(cbp_capture, "fetch_file", lambda *a, **k: _response())
     database = _Database((CHECKSUM, cbp_capture.PARSER_CONTRACT_VERSION, PUBLISHED_AT))
     run_id, _ = cbp_capture.capture_file(
@@ -200,7 +200,7 @@ def test_a_repeated_county_business_patterns_file_is_unchanged_and_replays_nothi
 def test_a_new_county_business_patterns_file_is_captured_for_replay(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-115 — a corrected CBP file is replayed beside the one it corrects."""
+    """Covers: ETL-116 — a corrected CBP file is replayed beside the one it corrects."""
     monkeypatch.setattr(cbp_capture, "fetch_file", lambda *a, **k: _response())
     database = _Database(("b" * 64, cbp_capture.PARSER_CONTRACT_VERSION, PUBLISHED_AT))
     cbp_capture.capture_file(
@@ -216,7 +216,7 @@ def test_a_new_county_business_patterns_file_is_captured_for_replay(
 def test_a_repeated_migration_file_is_unchanged_and_replays_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-115 — an SOI migration file read again adds no flows."""
+    """Covers: ETL-116 — an SOI migration file read again adds no flows."""
     monkeypatch.setattr(irs_capture, "fetch_file", lambda *a, **k: _response())
     item = registered_files()[-1]
     database = _Database((CHECKSUM, irs_capture.PARSER_CONTRACT_VERSION, PUBLISHED_AT))
@@ -238,7 +238,7 @@ def test_a_repeated_migration_file_is_unchanged_and_replays_nothing(
 def test_a_repeated_qcew_slice_is_unchanged_and_an_unpublished_one_stays_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Covers: ETL-115 — the six-quarter QCEW window re-reads without re-storing."""
+    """Covers: ETL-116 — the six-quarter QCEW window re-reads without re-storing."""
     monkeypatch.setattr(
         qcew_capture, "fetch_slice", lambda *a, **k: _response(published=True)
     )
@@ -260,7 +260,7 @@ def test_a_repeated_qcew_slice_is_unchanged_and_an_unpublished_one_stays_empty(
 
 
 def test_a_repeated_permits_file_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: ETL-115 — the six-month permits window re-reads without re-storing."""
+    """Covers: ETL-116 — the six-month permits window re-reads without re-storing."""
     monkeypatch.setattr(
         bps_capture, "fetch_file", lambda *a, **k: _response(published=True)
     )
@@ -284,7 +284,7 @@ def test_a_repeated_permits_file_is_unchanged(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_a_repeated_saipe_slice_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: ETL-115 — the two newest SAIPE/SAHIE years re-read without re-storing."""
+    """Covers: ETL-116 — the two newest SAIPE/SAHIE years re-read without re-storing."""
     monkeypatch.setattr(
         sae_capture, "fetch_slice", lambda *a, **k: _response(published=True)
     )
@@ -318,7 +318,7 @@ def test_a_repeated_saipe_slice_is_unchanged(monkeypatch: pytest.MonkeyPatch) ->
 def test_a_pep_release_read_again_with_the_same_bytes_is_not_replayed(
     previous: tuple | None, expected: bool
 ) -> None:
-    """Covers: ETL-115 — PEP's monthly read of each current release adds nothing unchanged."""
+    """Covers: ETL-116 — PEP's monthly read of each current release adds nothing unchanged."""
     database = _Database(previous)
     release = SimpleNamespace(
         dataset_code="county", vintage_year=2025, schema_version="v"
