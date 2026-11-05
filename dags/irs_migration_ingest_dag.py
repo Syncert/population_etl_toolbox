@@ -21,7 +21,11 @@ from uuid import UUID
 
 from airflow.decorators import dag, task
 
-from data_ingestion_toolbox.irs_migration.capture import capture_file
+from data_ingestion_toolbox.irs_migration.capture import (
+    capture_file,
+    pending_run,
+    settle_superseded_captures,
+)
 from data_ingestion_toolbox.irs_migration.config import IrsMigrationConfig
 from data_ingestion_toolbox.irs_migration.plan import (
     answered_year_pairs,
@@ -81,6 +85,16 @@ def irs_migration_ingest():
     def plan_files(**context: Any) -> list[str]:
         dag_run = context.get("dag_run")
         conf = dict(getattr(dag_run, "conf", None) or {})
+        for direction, year_pair, run_id in settle_superseded_captures(
+            _get_postgres_hook().get_conn
+        ):
+            logging.getLogger("airflow.task").info(
+                "%s %s run %s: never replayed, and a later identical capture is "
+                "published; marked unchanged",
+                direction,
+                year_pair,
+                run_id,
+            )
         with _get_postgres_hook().get_conn() as connection:
             answered = answered_year_pairs(connection)
         keys = file_keys_to_capture(conf, answered)
@@ -96,11 +110,13 @@ def irs_migration_ingest():
     def ingest_batch_file(file_key: str) -> dict[str, Any]:
         direction, year_pair = file_key.split(":")
         connection_factory = _get_postgres_hook().get_conn
-        run_id, _capture = capture_file(
-            connection_factory,
-            get_file(direction, year_pair),
-            config=IrsMigrationConfig(),
-        )
+        item = get_file(direction, year_pair)
+        # A retry replays the capture its failed attempt committed.
+        run_id = pending_run(connection_factory, item)
+        if run_id is None:
+            run_id, _capture = capture_file(
+                connection_factory, item, config=IrsMigrationConfig()
+            )
         flows = replay_run(connection_factory, run_id=UUID(str(run_id)))
         published = publish_run(connection_factory, run_id=UUID(str(run_id)))
         return {

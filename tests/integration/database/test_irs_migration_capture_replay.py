@@ -464,3 +464,104 @@ def test_the_fact_refuses_a_flow_with_a_missing_end_and_the_schema_reapplies(
         "SELECT COUNT(*) FROM unnest(%s::TEXT[]) AS name WHERE to_regclass(name) IS NOT NULL",
         (list(REQUIRED_RELATIONS),),
     ) == [(len(REQUIRED_RELATIONS),)]
+
+
+def test_a_revised_parser_replays_the_same_bytes_once_and_serves_the_new_rows(
+    irs_warehouse, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-059 — a file published under an older contract is planned again, replayed from the same stored bytes, and gold reads the newer capture."""
+    from data_ingestion_toolbox.irs_migration import registry
+    from data_ingestion_toolbox.irs_migration.plan import answered_year_pairs
+
+    factory = irs_warehouse
+    monkeypatch.setattr(registry, "PARSE_REVISIONS", {})
+    for direction in ("inflow", "outflow"):
+        irs.run_to_gold(factory, direction, "1990-1991")
+
+    def answered() -> set[str]:
+        reader = factory()
+        try:
+            return answered_year_pairs(reader)
+        finally:
+            reader.close()
+
+    assert "1990-1991" in answered()
+    blobs = _rows(factory, "SELECT COUNT(*) FROM raw_capture.payload_blob")
+    monkeypatch.setattr(registry, "PARSE_REVISIONS", {"1990-1991": 2})
+    assert "1990-1991" not in answered()
+    rerun, flows, published = irs.run_to_gold(factory, "inflow", "1990-1991")
+    assert flows > 0 and published == 1
+    irs.run_to_gold(factory, "outflow", "1990-1991")
+    assert "1990-1991" in answered()
+    # The bytes are stored once; only the contract differs.
+    assert _rows(factory, "SELECT COUNT(*) FROM raw_capture.payload_blob") == blobs
+    assert _rows(
+        factory,
+        """
+        SELECT DISTINCT run_id::TEXT FROM gold_irs_migration.flow_latest
+        WHERE direction = 'inflow' AND year_pair = '1990-1991'
+        """,
+    ) == [(str(rerun),)]
+
+
+def test_a_capture_left_unreplayed_is_resumed_or_settled(
+    irs_warehouse, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-059 — a retry resumes its failed attempt's capture; an orphan whose bytes a later run published is marked unchanged."""
+    from data_ingestion_toolbox.irs_migration import registry
+    from data_ingestion_toolbox.irs_migration.capture import (
+        capture_file,
+        pending_run,
+        settle_superseded_captures,
+    )
+    from data_ingestion_toolbox.irs_migration.config import IrsMigrationConfig
+    from data_ingestion_toolbox.irs_migration.silver_irs_migration.load import (
+        publish_run,
+        replay_run,
+    )
+
+    factory = irs_warehouse
+    item = registry.get_file("outflow", "2022-2023")
+
+    def capture_only():  # noqa: ANN202
+        run_id, _capture = capture_file(
+            factory,
+            item,
+            config=IrsMigrationConfig(min_spacing_seconds=0, max_attempts=1),
+            client=irs.FixtureClient(),
+        )
+        return run_id
+
+    # An attempt that failed after its capture: the retry finds and replays it.
+    stopped = capture_only()
+    assert pending_run(factory, item) == stopped
+    replay_run(factory, run_id=stopped)
+    assert publish_run(factory, run_id=stopped) == 1
+    assert pending_run(factory, item) is None
+
+    # The 11-05 case: a capture never replayed, then a later run that
+    # published the same bytes. Settling marks the orphan unchanged.
+    orphan = capture_only()  # same bytes and contract: recorded unchanged
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "UPDATE control.irs_migration_file SET status = 'captured' WHERE run_id = %s",
+                (str(orphan),),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    assert settle_superseded_captures(factory) == []  # nothing later yet
+    monkeypatch.setattr(registry, "PARSE_REVISIONS", {"2022-2023": 2})
+    later, flows, published = irs.run_to_gold(factory, "outflow", "2022-2023")
+    assert flows > 0 and published == 1
+    assert settle_superseded_captures(factory) == [
+        ("outflow", "2022-2023", str(orphan))
+    ]
+    assert _rows(
+        factory,
+        "SELECT status FROM control.irs_migration_file WHERE run_id = %s",
+        (str(orphan),),
+    ) == [("unchanged",)]
+    assert settle_superseded_captures(factory) == []

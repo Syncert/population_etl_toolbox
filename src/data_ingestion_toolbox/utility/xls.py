@@ -7,7 +7,10 @@ carries no spreadsheet library (see ``utility/workbook.py`` for the
 
 * the OLE2 compound file, to find the ``Workbook`` (BIFF8) or ``Book``
   (BIFF5) stream;
-* the BIFF records of that stream's first worksheet: numbers (``NUMBER``,
+* the BIFF records of that stream's first worksheet. SOI's US-level
+  members of 1998-1999 to 2001-2002 (``co989usi.xls`` and the like) are
+  no compound file at all: they are bare Excel 4.0 (BIFF4) worksheet
+  files, one BOF-to-EOF worksheet stream, read the same way: numbers (``NUMBER``,
   ``RK``, ``MULRK``, a ``FORMULA``'s cached result) and text (``LABELSST``
   through the shared string table, ``LABEL``, ``RSTRING``).
 
@@ -236,21 +239,42 @@ def _biff5_string(data: bytes, offset: int, encoding: str) -> str:
     return data[offset + 2 : offset + 2 + count].decode(encoding, errors="replace")
 
 
+#: BOF records of the Excel 2.x, 3.0 and 4.0 worksheet files.
+_BARE_WORKSHEET_BOFS = (0x0009, 0x0209, 0x0409)
+#: The worksheet type in a bare worksheet file's BOF record.
+_BOF_WORKSHEET = 0x0010
+
+
+def _bare_worksheet(payload: bytes) -> bool:
+    """A BIFF2-4 worksheet file: no compound file, one worksheet stream."""
+    if len(payload) < 8 or payload[:8] == _SIGNATURE:
+        return False
+    kind, length = struct.unpack_from("<HH", payload, 0)
+    return (
+        kind in _BARE_WORKSHEET_BOFS
+        and length >= 4
+        and _u16(payload, 6) == _BOF_WORKSHEET
+    )
+
+
 def read_first_sheet(payload: bytes) -> list[list[Cell]]:
     """Every row of the first worksheet, as stored; an empty cell is ``""``."""
-    stream = _stream(payload, ("Workbook", "Book"))
+    bare = _bare_worksheet(payload)
+    stream = payload if bare else _stream(payload, ("Workbook", "Book"))
     records = list(_records(stream))
     if not records or records[0][0] not in (_BOF, _BOF_BIFF5, 0x0209, 0x0409):
         raise XlsFormatError("the stream does not open with a BOF record")
-    biff8 = _u16(records[0][1], 0) == 0x0600
+    biff8 = not bare and _u16(records[0][1], 0) == 0x0600
     encoding = "cp1252"
     sst_parts: list[bytes] = []
     cells: dict[tuple[int, int], Cell] = {}
-    substream = 0
+    # A bare worksheet file is the worksheet substream itself, with no
+    # workbook globals before it.
+    substream = 1 if bare else 0
     in_sst = False
     pending_string: tuple[int, int] | None = None
     for kind, data in records:
-        if kind in (_BOF, 0x0209, 0x0409):
+        if kind in (_BOF, *_BARE_WORKSHEET_BOFS):
             substream += 1
             in_sst = False
             if substream > 2:
@@ -272,6 +296,10 @@ def read_first_sheet(payload: bytes) -> list[list[Cell]]:
             continue
         if kind == _EOF:
             break
+        if kind == _CODEPAGE and bare and len(data) >= 2:
+            page = _u16(data, 0)
+            encoding = "cp1252" if page in (1200, 0x8000, 0x8001) else f"cp{page}"
+            continue
         if kind == _NUMBER:
             row, col = _u16(data, 0), _u16(data, 2)
             cells[(row, col)] = struct.unpack_from("<d", data, 6)[0]

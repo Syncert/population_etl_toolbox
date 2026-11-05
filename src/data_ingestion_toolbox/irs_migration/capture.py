@@ -24,9 +24,9 @@ from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_file, media_type
 from .config import IRS_SOI_BASE_URL, SOURCE_CODE, IrsMigrationConfig
-from .registry import MigrationFile
+from .registry import CSV, PARSER_CONTRACTS, TEXT, WORKBOOKS, MigrationFile
 
-PARSER_CONTRACT_VERSION = "irs_soi_county_migration_csv:v1"
+PARSER_CONTRACT_VERSION = f"{PARSER_CONTRACTS[CSV]}:v1"
 
 #: The file's newest published capture.
 LATEST_PUBLISHED_SQL = """
@@ -38,12 +38,87 @@ LATEST_PUBLISHED_SQL = """
     LIMIT 1
 """
 
-#: The contract each layout's capture is parsed under.
+#: Each layout's first contract; a file the parser revised carries a newer
+#: one (``MigrationFile.parser_contract``, ``registry.PARSE_REVISIONS``).
 PARSER_CONTRACT_VERSIONS = {
-    "csv": PARSER_CONTRACT_VERSION,
-    "workbooks": "irs_soi_county_migration_state_workbooks:v1",
-    "text": "irs_soi_county_migration_state_text:v1",
+    layout: f"{PARSER_CONTRACTS[layout]}:v1" for layout in (CSV, WORKBOOKS, TEXT)
 }
+
+
+#: The file's newest control row, when it was captured and never replayed:
+#: an attempt that failed after its capture (a deadlock, a lost worker).
+PENDING_CAPTURE_SQL = """
+    SELECT file.run_id::TEXT, file.status, capture.payload_schema_version
+    FROM control.irs_migration_file AS file
+    JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+    WHERE file.direction = %s AND file.year_pair = %s
+    ORDER BY file.created_at DESC
+    LIMIT 1
+"""
+
+#: Captures never replayed that a later capture of the same file, with the
+#: same bytes, has since published: nothing in them is left to load.
+SETTLE_SUPERSEDED_SQL = """
+    UPDATE control.irs_migration_file AS stale
+       SET status = 'unchanged', updated_at = NOW()
+      FROM raw_capture.response_capture AS stale_capture
+     WHERE stale.status = 'captured'
+       AND stale_capture.capture_id = stale.capture_id
+       AND EXISTS (
+           SELECT 1
+             FROM control.irs_migration_file AS later
+             JOIN raw_capture.response_capture AS later_capture
+               ON later_capture.capture_id = later.capture_id
+            WHERE later.direction = stale.direction
+              AND later.year_pair = stale.year_pair
+              AND later.status = 'published'
+              AND later.created_at > stale.created_at
+              AND later_capture.payload_checksum = stale_capture.payload_checksum
+       )
+    RETURNING stale.direction, stale.year_pair, stale.run_id::TEXT
+"""
+
+
+def pending_run(
+    connection_factory: Callable[[], Any], item: MigrationFile
+) -> UUID | None:
+    """The run to resume instead of capturing again, if the last attempt stopped.
+
+    A retried task finds the capture its failed attempt committed and
+    replays it, so a retry neither fetches the file again nor leaves a
+    ``captured`` row behind.
+    """
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(PENDING_CAPTURE_SQL, (item.direction, item.year_pair))
+            row = cursor.fetchone()
+    finally:
+        connection.close()
+    if row is None or row[1] != "captured" or row[2] != item.parser_contract:
+        return None
+    return UUID(str(row[0]))
+
+
+def settle_superseded_captures(
+    connection_factory: Callable[[], Any],
+) -> list[tuple[str, str, str]]:
+    """Mark ``unchanged`` every unreplayed capture a later identical one published."""
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(SETTLE_SUPERSEDED_SQL)
+            settled = [
+                (str(direction), str(year_pair), str(run_id))
+                for direction, year_pair, run_id in cursor.fetchall()
+            ]
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    return settled
 
 
 def capture_file(
@@ -95,7 +170,7 @@ def capture_file(
                 response_headers=dict(response.response_headers),
                 media_type=media_type(item),
                 payload=response.raw_bytes,
-                payload_schema_version=PARSER_CONTRACT_VERSIONS[item.layout],
+                payload_schema_version=item.parser_contract,
                 source_revision=f"{item.direction}:{item.year_pair}",
             ),
         )
@@ -107,7 +182,7 @@ def capture_file(
                 LATEST_PUBLISHED_SQL,
                 (item.direction, item.year_pair),
                 payload_checksum=receipt.payload_checksum,
-                parser_contract=PARSER_CONTRACT_VERSIONS[item.layout],
+                parser_contract=item.parser_contract,
             )
             else "captured"
         )

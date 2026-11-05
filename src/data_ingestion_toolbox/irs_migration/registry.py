@@ -47,6 +47,17 @@ returns), and it published each pair as a zip, not one CSV per direction
   "aggregate total money income", not adjusted gross income, so no AGI is
   loaded for those years (:data:`FIRST_AGI_YEAR1`); the stored figure stays
   in ``value_source``.
+* Before 1995-1996 a county's remaining flows are grouped one of three
+  ways (read 2026-11-05 from the 1990-1991 to 1994-1995 files): "Same
+  State" (``63 010``) beside the four regions; "Same State" (``63 020``),
+  "Same Region, Diff. State" (``63 021``) and "Different Region"
+  (``63 022``); or one "Suppress All Flows" row (``63 030``) when every
+  smaller group would disclose a taxpayer. The text files write the same
+  rows as labelled lines ("All Migration Flows" for ``63 030``).
+
+A file whose parser changed after it was published carries a newer parser
+contract (:data:`PARSE_REVISIONS`); a scheduled run captures it again, and
+the bytes replay under the new contract (``irs_migration.plan``).
 """
 
 from __future__ import annotations
@@ -123,6 +134,11 @@ EARLY_CATEGORY_CODES: dict[tuple[str, str], str] = {
     ("63", "013"): "other_flows_south",
     ("63", "014"): "other_flows_west",
     ("63", "015"): "foreign_other_flows",
+    ("63", "010"): "other_flows_same_state",
+    ("63", "020"): "other_flows_same_state",
+    ("63", "021"): "other_flows_same_region_different_state",
+    ("63", "022"): "other_flows_different_region",
+    ("63", "030"): "other_flows_all",
     ("63", "050"): "non_migrants",
 }
 
@@ -146,6 +162,11 @@ CATEGORY_LABELS: dict[str, str] = {
     "other_flows_midwest": "Other flows, Midwest",
     "other_flows_south": "Other flows, South",
     "other_flows_west": "Other flows, West",
+    "other_flows_same_region_different_state": (
+        "Other flows, same region, different state"
+    ),
+    "other_flows_different_region": "Other flows, different region",
+    "other_flows_all": "Other flows, all combined",
 }
 
 #: The six header rows: the file's own totals for its subject county.
@@ -164,6 +185,35 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
     ("individuals", "n2", "individuals"),
     ("agi", "agi", "thousands of dollars"),
 )
+
+
+#: Each layout's parser contract, stored with every capture as its
+#: ``payload_schema_version``.
+PARSER_CONTRACTS = {
+    CSV: "irs_soi_county_migration_csv",
+    WORKBOOKS: "irs_soi_county_migration_state_workbooks",
+    TEXT: "irs_soi_county_migration_state_text",
+}
+
+#: Pairs whose published rows the parser now reads differently, and the
+#: contract version that reads them (every other file is ``v1``):
+#:
+#: * 1990-1991, 1991-1992: a subject's total line is any unindented line
+#:   (the truncated "...Borough T" labels were read as the previous
+#:   county's flows), and the "Same State", "Same Region, Diff. State",
+#:   "Different Region", "All Migration Flows" and "Foreign" lines load;
+#: * 1992-1993 to 1994-1995: counterparts ``63 010`` to ``63 030`` load;
+#: * 1995-1996, 2002-2003: a row followed by a stray state name in a later
+#:   column loads (the North Dakota workbook's first county total).
+PARSE_REVISIONS: dict[str, int] = {
+    "1990-1991": 2,
+    "1991-1992": 2,
+    "1992-1993": 2,
+    "1993-1994": 2,
+    "1994-1995": 2,
+    "1995-1996": 2,
+    "2002-2003": 2,
+}
 
 
 @dataclass(frozen=True)
@@ -186,6 +236,12 @@ class MigrationFile:
         if self.year1 >= 2011:
             return CSV
         return TEXT if self.year1 <= 1991 else WORKBOOKS
+
+    @property
+    def parser_contract(self) -> str:
+        """The contract this file's capture is parsed under."""
+        version = PARSE_REVISIONS.get(self.year_pair, 1)
+        return f"{PARSER_CONTRACTS[self.layout]}:v{version}"
 
     @property
     def has_agi(self) -> bool:

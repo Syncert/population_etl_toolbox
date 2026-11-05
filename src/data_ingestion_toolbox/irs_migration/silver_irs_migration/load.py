@@ -67,6 +67,14 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 # The bytes repeat the last published file (utility.unchanged).
                 connection.commit()
                 return 0
+            # Take the control row's lock first. Schema DDL locks the
+            # control table before the silver tables (silver_irs_migration.sql);
+            # writing silver first and the control row last let a concurrent
+            # DDL check deadlock a replay (11-05 15:01Z, 2019-2020 outflow).
+            cursor.execute(
+                "UPDATE control.irs_migration_file SET updated_at = NOW() WHERE run_id = %s",
+                (str(run_id),),
+            )
             item = get_file(direction, year_pair)
             parsed = parse_file(
                 load_captured_payload(connection_factory, UUID(capture_id)), item=item

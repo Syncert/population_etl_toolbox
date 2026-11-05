@@ -19,9 +19,17 @@ rules, so one row-reading path serves every year:
   heading and footnote rows are layout and not counted. A workbook's
   direction is read from its title, never its name, and a member whose
   bytes repeat an earlier member's is read once;
-* text files: a state block is a subject's ``Total Migration`` line, its
-  counterpart lines, four ``Region`` lines and ``County Non-Migrants``;
-  each is written as the code the workbooks of the next years use for it.
+* text files: a state block is a subject's total line (its one unindented
+  line), its counterpart lines, its remaining-flow lines (``Same State``,
+  ``Region n:``, ``Same Region, Diff. State``, ``Different Region``,
+  ``All Migration Flows``, ``Foreign``) and ``County Non-Migrants``; each
+  is written as the code the workbooks of the next years use for it.
+
+A workbook with no title (the bare Excel 4.0 US members of 1998-2002)
+takes its direction from its folder; a tenth "Median" column is not
+loaded; a member whose cells repeat an earlier member's is read once; a
+state name trailing a row is layout; SOI's revised mark ``r  128`` reads
+128. A row repeated word for word is ``repeated_row``, not ``duplicate_row``.
 
 A suppressed cell is ``-1`` in the CSVs and ``d`` in the workbooks. Before
 1995-1996 the third measure is money income, not AGI: ``agi`` is ``None``
@@ -63,7 +71,9 @@ SUPPRESSED_MARKS = frozenset({"-1", "d", "D"})
 #: Every counterpart code a file writes for one of SOI's own categories.
 _CATEGORIES = {**CATEGORY_CODES, **EARLY_CATEGORY_CODES}
 
-#: The text files' lines (1990-1991, 1991-1992).
+#: The text files' lines (1990-1991, 1991-1992). A subject's total line is
+#: the only unindented one; its label is cut at 25 characters, so it need
+#: not say "Total Migration" ("02 020   Anchorage Borough Total  Ak").
 _TEXT_TOTAL = re.compile(
     r"^(\d{2}) (\d{3})\s+(.+?)\s+([A-Za-z]{2})\s+(\S+)\s+(\S+)\s*$"
 )
@@ -74,6 +84,22 @@ _TEXT_REGION = re.compile(r"^\s+Region (\d):\s+(\S+)\s+(\S+)\s+\S+\s+(\S+)\s+\S+
 _TEXT_NON_MIGRANTS = re.compile(
     r"^\s+(\d{2}) (\d{3})\s+County Non-Migrants\s+(\S+)\s+(\S+)\s*$"
 )
+_TEXT_GROUP = re.compile(
+    r"^\s+(Same State|Same Region, Diff\. State|Different Region|All Migration Flows"
+    r"|Foreign)\s+(\S+)\s+\S+\s+(\S+)\s+\S+\s*$"
+)
+#: The text files' remaining-flow lines, as the workbooks' codes. "Same
+#: State" is ``63 020`` when "Same Region, Diff. State" follows it and
+#: ``63 010`` beside the four regions, as in the workbooks.
+_TEXT_GROUP_CODES = {
+    "Same Region, Diff. State": "021",
+    "Different Region": "022",
+    "All Migration Flows": "030",
+    "Foreign": "015",
+}
+
+#: SOI's mark for a revised figure in the 1998-1999 workbooks: ``r  128``.
+_REVISED = re.compile(r"^r\s+(\d+)$")
 
 
 @dataclass(frozen=True)
@@ -139,6 +165,9 @@ def _measures(
 ) -> tuple[int | None, int | None, Decimal | None, str]:
     """(returns, individuals, AGI, status), or ValueError for an unreadable row."""
     words = [cell.strip() for cell in cells]
+    words = [
+        match.group(1) if (match := _REVISED.match(word)) else word for word in words
+    ]
     suppressed = [word in SUPPRESSED_MARKS for word in words]
     if suppressed[0]:
         if not all(suppressed[:2]) or (has_agi and not suppressed[2]):
@@ -159,6 +188,11 @@ def _cell_text(value: str | float) -> str:
     if isinstance(value, float):
         return str(int(value)) if value.is_integer() else repr(value)
     return value.strip()
+
+
+def _has_number(text: str) -> bool:
+    """Whether a cell beyond the nine holds a figure, not a stray label."""
+    return any(character.isdigit() for character in text)
 
 
 def _is_code(value: str | float) -> bool:
@@ -190,6 +224,17 @@ def _direction_of(title: str) -> str | None:
     return INFLOW if inflow else "outflow"
 
 
+def _folder_direction(name: str) -> str | None:
+    """The direction a member's folder names: ``...CountyMigrationOutflow/``.
+
+    Only asked when the title names none: the US-level members of
+    1998-1999 to 2001-2002 (``co989usi.xls``) have no title row, and the
+    outflow member repeats the inflow member's column headings.
+    """
+    folders = name.lower().rsplit("/", 1)[0] if "/" in name else ""
+    return _direction_of(folders)
+
+
 class LayoutError(ValueError):
     """A zip member that is not the registered layout: the file is refused."""
 
@@ -218,18 +263,32 @@ def _workbook_rows(payload: bytes, item: MigrationFile) -> Iterator[_Row]:
             title = " ".join(
                 _cell_text(cell) for row in sheet[:3] for cell in row if cell != ""
             )
-            direction = _direction_of(title)
+            direction = _direction_of(title) or _folder_direction(name)
             if direction is None:
                 raise LayoutError(f"{name}: the title names no single direction")
             if direction != item.direction:
                 continue
-            found += 1
+            width = 9
+            data: list[list[str]] = []
             for row in sheet:
                 cells = [_cell_text(cell) for cell in row]
                 if len(cells) < 4 or not all(_is_code(cell) for cell in cells[:4]):
+                    if len(cells) > 9 and cells[9].lower().startswith("median"):
+                        width = 10
                     continue
+                data.append(cells)
+            # A second member with the same cells under another name
+            # (2003-2004 has co0304OH0.xls and co0304OHo.xls) is read once.
+            cell_digest = hashlib.sha256(repr(data).encode("utf-8")).hexdigest()
+            if cell_digest in seen:
+                continue
+            seen.add(cell_digest)
+            found += 1
+            for cells in data:
                 index += 1
-                if len(cells) < 9 or any(cell for cell in cells[9:]):
+                extra = cells[width:]
+                # A trailing state name (2002-2003 North Dakota) is layout.
+                if len(cells) < 9 or any(_has_number(cell) for cell in extra):
                     yield index, None, f"{name}: row has {len(cells)} cells, expected 9"
                     continue
                 yield index, cells[:9], None
@@ -262,9 +321,8 @@ def _text_rows(payload: bytes, item: MigrationFile) -> Iterator[_Row]:
         for name in members:
             subject: tuple[str, str] | None = None
             text = archive.read(name).decode("latin-1")
-            for line in text.splitlines():
-                if not line.strip():
-                    continue
+            lines = [line for line in text.splitlines() if line.strip()]
+            for position, line in enumerate(lines):
                 index += 1
                 if match := _TEXT_NON_MIGRANTS.match(line):
                     state, county, returns, people = match.groups()
@@ -281,11 +339,21 @@ def _text_rows(payload: bytes, item: MigrationFile) -> Iterator[_Row]:
                         f"Region {number}: {label}",
                     ]
                     measures = [returns, people, ""]
+                elif match := _TEXT_GROUP.match(line):
+                    label, returns, people = match.groups()
+                    code = _TEXT_GROUP_CODES.get(label)
+                    if code is None:  # "Same State"
+                        following = (
+                            lines[position + 1] if position + 1 < len(lines) else ""
+                        )
+                        code = "020" if "Same Region, Diff" in following else "010"
+                    cells = ["", "", "63", code, "XX", label]
+                    measures = [returns, people, ""]
                 elif match := _TEXT_FLOW.match(line):
                     state, county, label, abbr, returns, people = match.groups()
                     cells = ["", "", state, county, abbr, label.strip()]
                     measures = [returns, people, ""]
-                elif (match := _TEXT_TOTAL.match(line)) and "Total Migra" in line:
+                elif match := _TEXT_TOTAL.match(line):
                     state, county, label, abbr, returns, people = match.groups()
                     subject = (state, county)
                     cells = [state, county, "00", "001", abbr, label.strip()]
@@ -309,6 +377,10 @@ def _rows(payload: bytes, item: MigrationFile) -> Iterator[_Row]:
     return _workbook_rows(payload, item)
 
 
+def _figures(row: list[str]) -> tuple[str, ...]:
+    return tuple(cell.strip() for cell in row[4:9])
+
+
 def _rejected(summary: str) -> ParsedFile:
     return ParsedFile((), (FlowQuarantine(0, "unexpected_header", summary),), 0, 0)
 
@@ -326,7 +398,7 @@ def parse_file(payload: bytes, *, item: MigrationFile) -> ParsedFile:
     flows: list[FlowRow] = []
     quarantined: list[FlowQuarantine] = []
     subjects: set[str] = set()
-    seen: set[tuple[tuple[str, str], tuple[str, str]]] = set()
+    seen: dict[tuple[tuple[str, str], tuple[str, str]], tuple[str, ...]] = {}
     data_rows = 0
     summary_rows = 0
     for index, row, error in rows:
@@ -368,15 +440,19 @@ def parse_file(payload: bytes, *, item: MigrationFile) -> ParsedFile:
             quarantined.append(FlowQuarantine(index, "unreadable_value", str(exc)))
             continue
         if (subject, counterpart) in seen:
+            # SOI repeats some rows word for word (2013-2014 CSVs): nothing
+            # is lost. A second row with other figures is a conflict.
+            repeated = seen[(subject, counterpart)] == _figures(row)
             quarantined.append(
                 FlowQuarantine(
                     index,
-                    "duplicate_row",
-                    f"{subject} and {counterpart} already have a row in this file",
+                    "repeated_row" if repeated else "duplicate_row",
+                    f"{subject} and {counterpart} already have "
+                    f"{'this' if repeated else 'a'} row in this file",
                 )
             )
             continue
-        seen.add((subject, counterpart))
+        seen[(subject, counterpart)] = _figures(row)
         subject_geo_id = county_geo_id(*subject)
         subjects.add(subject_geo_id)
         if category == "county":
