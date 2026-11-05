@@ -74,8 +74,7 @@ services:
       --lastname Admin
       --role Admin
       --email admin@example.com || true;
-      airflow connections delete public_data >/dev/null 2>&1 || true;
-      airflow connections add public_data --conn-type postgres --conn-host postgres --conn-port 5432 --conn-login airflow --conn-password airflow --conn-schema ${PUBLIC_DATA_DB_NAME:-population_etl};
+      python /opt/data_ingestion_toolbox/scripts/airflow_upsert_connection.py public_data --conn-type postgres --host postgres --port 5432 --login airflow --password airflow --schema ${PUBLIC_DATA_DB_NAME:-population_etl};
       airflow pools set census_api 6 'Census Bureau API limit';
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';

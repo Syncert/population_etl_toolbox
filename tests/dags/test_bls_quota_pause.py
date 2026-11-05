@@ -202,20 +202,82 @@ def test_done_check_counts_only_slices_finished_since_the_run_started(
     assert check(unit, since=since) is False
     rows.append(("planned", "h", None))
     assert check(unit, since=since) is False
+    # A slice left 'running' by a killed or rescheduled attempt is fetched again.
+    rows.append(("running", "h", None))
+    assert check(unit, since=since) is False
 
 
-def test_ingest_batch_is_mapped_so_the_scheduler_honours_the_reschedule(dagbag) -> None:
-    """Covers: DAG-022 — Airflow 2.9 enforces a non-sensor's reschedule only when mapped.
-
-    ``ReadyToRescheduleDep`` passes an unmapped task that is not a sensor in
-    reschedule mode straight through, which would rerun a paused batch at once.
-    ``ingest_batch`` is expanded over the plan, so the dependency reads the
-    ``task_reschedule`` row and waits.
-    """
-    from airflow.models.mappedoperator import MappedOperator
-
+def test_ingest_batch_retries_real_failures_promptly(dagbag) -> None:
+    """Covers: DAG-022 — quota pauses no longer ride on ``retry_delay``."""
     task = dagbag.dags["bls_ingest"].get_task("ingest_batch")
-    assert isinstance(task, MappedOperator)
     assert task.partial_kwargs.get("retry_delay", task.retry_delay) <= timedelta(
         hours=1
-    ), "real failures retry promptly; quota pauses no longer ride on retry_delay"
+    )
+
+
+def _scheduler_copy_of_ingest_batch(dagbag):
+    """The task as the scheduler sees it: serialized and read back."""
+    from airflow.serialization.serialized_objects import SerializedDAG
+
+    dag = dagbag.dags["bls_ingest"]
+    return SerializedDAG.from_dict(SerializedDAG.to_dict(dag)).get_task("ingest_batch")
+
+
+def test_scheduler_copy_of_ingest_batch_waits_for_its_reschedule(dagbag) -> None:
+    """Covers: DAG-023 — the scheduler's copy of the task carries the reschedule gate.
+
+    Airflow evaluates a stored reschedule date only through
+    ``ReadyToRescheduleDep``, which only sensors carry by default. #294 relied
+    on the task being mapped and was wrong: on OFFICE_LAB (2026-11-05 15:43 UTC)
+    the paused batches were re-queued every few seconds. The dependency must
+    survive DAG serialization, because the scheduler never imports the DAG file.
+    """
+    from airflow.ti_deps.deps.ready_to_reschedule import ReadyToRescheduleDep
+
+    task = _scheduler_copy_of_ingest_batch(dagbag)
+    assert any(isinstance(dep, ReadyToRescheduleDep) for dep in task.deps)
+
+    # The other BLS tasks are untouched.
+    other = dagbag.dags["bls_ingest"].get_task("mark_slices_planned")
+    assert not any(isinstance(dep, ReadyToRescheduleDep) for dep in other.deps)
+
+
+@pytest.mark.parametrize(
+    ("minutes_until_resume", "runnable"), [(60, False), (-1, True)]
+)
+def test_paused_batch_is_not_runnable_before_its_resume_time(
+    dagbag, monkeypatch: pytest.MonkeyPatch, minutes_until_resume: int, runnable: bool
+) -> None:
+    """Covers: DAG-023 — the gate holds a parked batch until the stored resume time.
+
+    Evaluates the scheduler copy's own dependencies against a task instance in
+    ``up_for_reschedule`` whose latest ``task_reschedule`` row says when to
+    resume, as the scheduler does on every loop.
+    """
+    from airflow.ti_deps.dep_context import DepContext
+    from airflow.ti_deps.deps.ready_to_reschedule import ReadyToRescheduleDep
+    from airflow.utils.state import TaskInstanceState
+
+    task = _scheduler_copy_of_ingest_batch(dagbag)
+    gate = next(dep for dep in task.deps if isinstance(dep, ReadyToRescheduleDep))
+    resume_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_until_resume)
+
+    class _Session:
+        def scalar(self, statement: Any) -> datetime:
+            return resume_at
+
+    class _TaskInstance:
+        state = TaskInstanceState.UP_FOR_RESCHEDULE
+        dag_id = "bls_ingest"
+        task_id = "ingest_batch"
+        run_id = "backfill"
+        map_index = 3
+        try_number = 3
+
+        def __init__(self, task: Any) -> None:
+            self.task = task
+
+    statuses = list(
+        gate._get_dep_statuses(_TaskInstance(task), _Session(), DepContext())
+    )
+    assert statuses and all(s.passed is runnable for s in statuses)

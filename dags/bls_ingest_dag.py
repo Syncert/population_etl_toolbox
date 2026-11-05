@@ -36,9 +36,12 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from airflow.decorators import dag, task
+from airflow.decorators.base import task_decorator_factory
+from airflow.decorators.python import _PythonDecoratedOperator
 from airflow.exceptions import AirflowRescheduleException
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.ti_deps.deps.ready_to_reschedule import ReadyToRescheduleDep
 from data_ingestion_toolbox.silver_ref.geography_guard import (
     require_shared_geography_loaded,
 )
@@ -149,6 +152,30 @@ def chunk_list(items: list, chunk_size: int) -> list[list]:
 _EST = ZoneInfo("America/New_York")
 
 
+class _ReschedulablePythonDecoratedOperator(_PythonDecoratedOperator):
+    """
+    A ``@task`` whose ``AirflowRescheduleException`` the scheduler waits out.
+
+    Airflow 2.9 records any task's reschedule request in ``task_reschedule``,
+    but only evaluates it through ``ReadyToRescheduleDep``, and only sensors
+    carry that dependency (``BaseSensorOperator.deps``). A plain ``@task`` that
+    raised the exception was queued again on the next scheduler loop: after #294
+    deployed, the quota-paused BLS batches were re-run every few seconds, each
+    spending a request BLS refused. Adding the dependency here is what sensors
+    do; it is serialized with the DAG (its module is under
+    ``airflow.ti_deps.deps``), so the scheduler's copy carries it.
+    """
+
+    deps = _PythonDecoratedOperator.deps | {ReadyToRescheduleDep()}
+
+
+def reschedulable_task(**kwargs):
+    """``@task`` for a callable that may park itself with ``AirflowRescheduleException``."""
+    return task_decorator_factory(
+        decorated_operator_class=_ReschedulablePythonDecoratedOperator, **kwargs
+    )
+
+
 def _next_quota_resume_utc(now: Optional[datetime] = None) -> datetime:
     """
     Return the next 1:00am US/Eastern after a daily-quota stop, as a UTC datetime.
@@ -183,7 +210,9 @@ def _quota_pause(
     pause waited the static 23-hour fallback instead. An
     ``AirflowRescheduleException`` carries the resume time itself: Airflow
     stores it in ``task_reschedule`` and the scheduler leaves the mapped task
-    instance ``up_for_reschedule`` (releasing its pool slot) until then. A
+    instance ``up_for_reschedule`` (releasing its pool slot) until then --
+    provided the task carries ``ReadyToRescheduleDep``, which only sensors do by
+    default; ``ingest_batch`` is declared with ``reschedulable_task`` for that. A
     reschedule also does not spend one of the task's retries, so a long
     backfill can pause as many nights as it needs while real failures keep
     their own retry budget.
@@ -870,7 +899,7 @@ def bls_ingest():
     # -----------------------------
     # Task 4: Ingest batch (mapped)
     # -----------------------------
-    @task(
+    @reschedulable_task(
         pool=BLS_API_POOL,
         # A BLS daily-quota stop (REQUEST_NOT_PROCESSED) is not a retry: the
         # batch raises AirflowRescheduleException for 1:00am US/Eastern the next
