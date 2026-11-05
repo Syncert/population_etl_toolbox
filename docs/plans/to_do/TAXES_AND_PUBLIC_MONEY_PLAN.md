@@ -186,3 +186,25 @@ Historic Table 2 state files 2020–2023 through DAG `irs_soi_ingest`; guide
   2023 guide and checked only by the parser's exact-stub rule; the first
   OFFICE_LAB run confirms them (a mismatch is refused, never served).
 
+
+T-6 built (ETL-119, API-194, WEB-168; rule DQ-ELEC-006), pending live
+checks on OFFICE_LAB:
+
+- Gold views `gold_elections.governor_tenure`, `governor_term_fiscal`,
+  `governor_term_tax_mix` and `governor_fiscal_measure_definition`
+  (`gold_elections/DDL/governor_fiscal.sql`). Consecutive terms of one
+  holder and party are one tenure; each measure's change runs from the year
+  before the start to the last full year, minus the nation's change over
+  the same years; a tenure still serving ends on the newest year both
+  publish. A missing year is a stated reason, never a zero.
+- Lean groups gain the peer type `tax_burden` (state quarter of state and
+  local tax burden in the election year).
+- Routes `GET /public-money` (one nation, state or county with its state
+  and the nation) and `GET /governor-terms` (one state). The Work and Money
+  chapter shows them on county, state and nation pages; state pages add
+  the governor table. Two ratios added: `dividends_interest_rent_share` and
+  `transfer_receipts_share`.
+- The governor table carries tax and payment columns only. The economy
+  columns from the ADR-0014 mockup belong to E-4/E-5, which are not built.
+- Live check: `/mnt/project-files/taxes/t6/t6_explain_check.sql` (rolls
+  back) times every new read and the forced lean-group refresh.

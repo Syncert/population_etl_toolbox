@@ -14,14 +14,16 @@
 --   3. The lean is the presidential vote cast in the window's first year (an
 --      election year), never a later one.
 --   4. Peer groups are named rows: the same state, rural-urban type,
---      starting level or ERS industry dependence.
+--      starting level, ERS industry dependence or a similar state and local
+--      tax burden (taxes-and-public-money T-6).
 --   5. A group is its middle county and the middle half of its counties,
 --      with the count; no population weighting.
 --
 -- The rebuild is a function rather than views so this file does not depend
 -- on the order the other sources' gold DDL is applied in: PL/pgSQL resolves
--- `gold_bea`, `gold_bls`, `gold_bls_qcew`, `gold_census_sae`, `gold_fred` and
--- `gold_usda_ers` when it runs, not when it is created.
+-- `gold_bea`, `gold_bls`, `gold_bls_qcew`, `gold_census_govfin`,
+-- `gold_census_sae`, `gold_fred` and `gold_usda_ers` when it runs, not when
+-- it is created.
 --
 -- The annual PCE price level is internal to this rebuild (the mean of the
 -- twelve monthly PCEPI values of a complete year). It deflates, and is never
@@ -83,7 +85,12 @@ FROM (VALUES
     ('starting_level', 'Similar starting level',
      'Quarter of all counties by the measure''s value in the window''s first year.', 4),
     ('industry', 'Same industry dependence',
-     'USDA ERS County Typology Codes, 2025 edition: the industry a county depends on, or none.', 5)
+     'USDA ERS County Typology Codes, 2025 edition: the industry a county depends on, or none.', 5),
+    ('tax_burden', 'Similar state and local tax burden',
+     'Quarter of the 50 states and DC by state and local taxes collected as a share of personal '
+     || 'income (Census Annual Survey of State and Local Government Finances over BEA personal '
+     || 'income) in the fiscal year ending in the window''s first year; each county takes its '
+     || 'state''s quarter. Where a tax is collected is not who bears it.', 6)
 ) AS peer(peer_type, peer_label, peer_basis, display_order);
 
 -- One row per completed or skipped rebuild; the fingerprint is what the
@@ -122,6 +129,11 @@ CREATE TABLE IF NOT EXISTS gold_elections.lean_place_change (
     CHECK (lean_band IN ('R20_plus', 'R0_20', 'D0_20', 'D20_plus'))
 );
 
+-- The state's tax-burden quarter at the window's start (taxes-and-public-
+-- money T-6). Added after the table first shipped, so it is the last column
+-- and every insert names its columns.
+ALTER TABLE gold_elections.lean_place_change ADD COLUMN IF NOT EXISTS tax_burden_group TEXT;
+
 CREATE INDEX IF NOT EXISTS lean_place_change_geo_idx
     ON gold_elections.lean_place_change (geo_id, measure);
 
@@ -148,7 +160,8 @@ CREATE TABLE IF NOT EXISTS gold_elections.lean_group_change (
 -- Read the inputs into temporary tables dropped at commit: `lean_input`
 -- (measure, geo_id, year, value, deflate), `lean_pce` (year, price level),
 -- `lean_vote` (county, election year, margin), `lean_peer` (county's
--- rural-urban type and industry dependence) and `lean_state_name`.
+-- rural-urban type and industry dependence), `lean_tax_burden` (state's
+-- tax-burden quarter by year) and `lean_state_name`.
 -- Counties and the nation only; valid values only.
 -- An argument-less first draft would make the call ambiguous.
 DROP FUNCTION IF EXISTS gold_elections.load_lean_inputs();
@@ -164,6 +177,7 @@ BEGIN
     DROP TABLE IF EXISTS pg_temp.lean_pce;
     DROP TABLE IF EXISTS pg_temp.lean_vote;
     DROP TABLE IF EXISTS pg_temp.lean_peer;
+    DROP TABLE IF EXISTS pg_temp.lean_tax_burden;
     DROP TABLE IF EXISTS pg_temp.lean_state_name;
 
     -- The lean: each county's presidential two-party margin, 2000 onward.
@@ -196,6 +210,12 @@ BEGIN
         rural_urban_group TEXT,
         industry_group TEXT,
         industry_label TEXT
+    ) ON COMMIT DROP;
+    CREATE TEMP TABLE lean_tax_burden (
+        state_fips TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        tax_burden_group TEXT NOT NULL,
+        PRIMARY KEY (state_fips, year)
     ) ON COMMIT DROP;
     CREATE TEMP TABLE lean_state_name (state_fips TEXT, state_name TEXT) ON COMMIT DROP;
 
@@ -233,6 +253,20 @@ BEGIN
            rucc.rural_urban_group, industry.industry_group, industry.industry_label
     FROM rucc
     FULL JOIN industry ON industry.geo_id = rucc.geo_id;
+
+    -- Each state's quarter of state and local taxes over personal income,
+    -- for the fiscal year ending in an election year: 50 states and DC only.
+    INSERT INTO lean_tax_burden
+    SELECT SUBSTRING(burden.geo_id FROM '^state:([0-9]{2})$'), burden.fiscal_year,
+           NTILE(4) OVER (PARTITION BY burden.fiscal_year
+                          ORDER BY burden.taxes_pct_of_personal_income, burden.geo_id)::TEXT
+    FROM gold_census_govfin.tax_burden AS burden
+    WHERE burden.dataset_id = 'asslgf'
+      AND burden.government_level = 'state_and_local'
+      AND burden.geo_id ~ '^state:[0-9]{2}$'
+      AND burden.geo_id <> 'state:72'
+      AND burden.fiscal_year = ANY(_years)
+      AND burden.taxes_pct_of_personal_income IS NOT NULL;
 
     INSERT INTO lean_state_name
     SELECT geo.state_fips, MIN(geo.state_name) AS state_name
@@ -336,7 +370,11 @@ BEGIN
     DELETE FROM gold_elections.lean_group_change;
     DELETE FROM gold_elections.lean_place_change;
 
-    INSERT INTO gold_elections.lean_place_change
+    INSERT INTO gold_elections.lean_place_change (
+        window_start_year, window_end_year, measure, geo_id, state_fips, lean_margin, lean_band,
+        start_value, end_value, place_change, nation_change, net_change, rural_urban_group,
+        starting_level_group, industry_group, industry_label, refresh_id, tax_burden_group
+    )
     WITH election_year AS (
         SELECT DISTINCT year FROM pg_temp.lean_vote
     ),
@@ -392,7 +430,8 @@ BEGIN
                           ORDER BY changed.start_value, changed.geo_id)::TEXT,
            peer.industry_group,
            peer.industry_label,
-           p_refresh_id
+           p_refresh_id,
+           burden.tax_burden_group
     FROM changed
     JOIN changed AS nation
       ON nation.start_year = changed.start_year
@@ -401,6 +440,9 @@ BEGIN
      AND nation.geo_id = 'us:1'
     JOIN pg_temp.lean_vote AS lean ON lean.geo_id = changed.geo_id AND lean.year = changed.start_year
     LEFT JOIN pg_temp.lean_peer AS peer ON peer.geo_id = changed.geo_id
+    LEFT JOIN pg_temp.lean_tax_burden AS burden
+      ON burden.state_fips = SUBSTRING(changed.geo_id FROM '^state:([0-9]{2})\|')
+     AND burden.year = changed.start_year
     WHERE changed.geo_id LIKE 'state:%|county:%'
       AND lean.margin <> 0;
 
@@ -437,6 +479,15 @@ BEGIN
         SELECT place.*, 'industry', place.industry_group, place.industry_label
         FROM gold_elections.lean_place_change AS place
         WHERE place.industry_group IS NOT NULL
+        UNION ALL
+        SELECT place.*, 'tax_burden', place.tax_burden_group,
+               CASE place.tax_burden_group
+                   WHEN '1' THEN 'States in the lowest quarter of tax burden at the start'
+                   WHEN '2' THEN 'States in the second quarter of tax burden at the start'
+                   WHEN '3' THEN 'States in the third quarter of tax burden at the start'
+                   ELSE 'States in the highest quarter of tax burden at the start' END
+        FROM gold_elections.lean_place_change AS place
+        WHERE place.tax_burden_group IS NOT NULL
     )
     SELECT membership.window_start_year, membership.window_end_year, membership.measure,
            membership.peer_type, membership.peer_group, MIN(membership.peer_group_label),
@@ -472,6 +523,7 @@ BEGIN
         (SELECT COUNT(*) || '@' || COALESCE(MAX(published_at)::TEXT, '') FROM control.bls_qcew_slice WHERE status = 'published'),
         (SELECT COUNT(*) || '@' || COALESCE(MAX(published_at)::TEXT, '') FROM control.census_sae_slice WHERE status = 'published'),
         (SELECT COUNT(*) || '@' || COALESCE(MAX(published_at)::TEXT, '') FROM control.usda_ers_file WHERE status = 'published'),
+        (SELECT COUNT(*) || '@' || COALESCE(MAX(published_at)::TEXT, '') FROM control.census_govfin_slice WHERE status = 'published'),
         (SELECT COALESCE(MAX(ingested_at)::TEXT, '') FROM silver_bls.fact_labor_statistics),
         (SELECT COALESCE(MAX(ingested_at)::TEXT, '') FROM silver_fred.fact_economic_indicators WHERE series_id = 'PCEPI'),
         -- The definitions are part of the input: a change to this file
@@ -533,6 +585,7 @@ BEGIN
     DROP TABLE IF EXISTS pg_temp.lean_pce;
     DROP TABLE IF EXISTS pg_temp.lean_vote;
     DROP TABLE IF EXISTS pg_temp.lean_peer;
+    DROP TABLE IF EXISTS pg_temp.lean_tax_burden;
     DROP TABLE IF EXISTS pg_temp.lean_state_name;
 
     RETURN QUERY SELECT _refresh_id, 'rebuilt'::TEXT, _place_rows, _group_rows;

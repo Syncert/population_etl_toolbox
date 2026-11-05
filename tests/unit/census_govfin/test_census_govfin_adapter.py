@@ -397,3 +397,41 @@ def test_a_non_numeric_amount_is_missing_never_zero() -> None:
     assert amounts[0].amount_source == "(X)"
     assert decimal_or_none("1,234") == Decimal(1234)
     assert decimal_or_none("NaN") is None
+
+
+def test_rollup_is_planned_from_the_runs_own_statistics_with_nested_loops_off() -> None:
+    """Covers: ETL-118 -- the roll-up analyses the run's uncommitted records first.
+
+    The first live 2002 replay was planned from statistics that could not see
+    the run's records (rows=1), and its directory join scanned every
+    government for each of 1.4 million records for hours.
+    """
+    from uuid import uuid4
+
+    from data_ingestion_toolbox.census_govfin.silver_census_govfin import load
+
+    class _Cursor:
+        def __init__(self) -> None:
+            self.statements: list[tuple[str, object]] = []
+            self.rowcount = 0
+
+        def execute(self, sql, params=None):
+            self.statements.append((sql, params))
+            if sql is load._ROLLUP_SQL:
+                self.rowcount = 42
+
+        def fetchone(self):
+            return ("on",)
+
+    cursor = _Cursor()
+    assert load._rollup(cursor, uuid4(), 2002) == 42
+    sqls = [sql for sql, _params in cursor.statements]
+    rollup_at = sqls.index(load._ROLLUP_SQL)
+    analysed = [sql for sql in sqls[:rollup_at] if sql.startswith("ANALYZE ")]
+    assert analysed == [f"ANALYZE {name}" for name in load.ROLLUP_ANALYZED_RELATIONS]
+    assert "silver_census_govfin.unit_amount" in load.ROLLUP_ANALYZED_RELATIONS
+    assert "silver_census_govfin.unit_government" in load.ROLLUP_ANALYZED_RELATIONS
+    assert "SELECT set_config('enable_nestloop', 'off', true)" in sqls[:rollup_at]
+    restore_sql, restore_params = cursor.statements[rollup_at + 1]
+    assert restore_sql == "SELECT set_config('enable_nestloop', %s, true)"
+    assert restore_params == ("on",)

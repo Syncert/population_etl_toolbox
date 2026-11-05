@@ -923,3 +923,256 @@
   margin: 4px 0 0;
   font-size: 0.92rem;
 }
+
+/* Taxes and public money (taxes-and-public-money T-6): dot strips on one
+   shared scale per group, the level colours of the chapter's trends, lines
+   labelled at their ends, and a governor table whose changes are grey. */
+.public-money {
+  margin: 20px 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.public-money h3 {
+  margin: 0 0 4px;
+}
+.public-money-group {
+  margin: 16px 0;
+}
+.public-money-group h4,
+.governor-terms h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.public-money-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+.public-money-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.public-money-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.public-money-strips {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.public-money-strips th {
+  width: 38%;
+  padding: 3px 12px 3px 0;
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.public-money-strips td {
+  padding: 3px 0;
+}
+.public-money-strips .public-money-value {
+  width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.public-money-emphasis th,
+.public-money-emphasis .public-money-value {
+  font-weight: 700;
+}
+.public-money-track {
+  position: relative;
+  display: block;
+  height: 18px;
+  margin-right: 10px;
+  background: linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat;
+}
+.public-money-dot {
+  position: absolute;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.public-money-dot[data-index="0"] {
+  z-index: 1;
+}
+.public-money-axis small {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-sentence {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+}
+.public-money-lines {
+  margin: 0;
+}
+.public-money-lines svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 680px;
+}
+.public-money-readout {
+  margin: 0 0 2px;
+  min-height: 1.2em;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.public-money-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.public-money-tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-end-label {
+  fill: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-table {
+  margin-top: 4px;
+  font-size: 0.82rem;
+}
+.public-money-table table {
+  border-collapse: collapse;
+}
+.public-money-table th,
+.public-money-table td {
+  padding: 2px 10px 2px 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.governor-terms {
+  min-width: 0;
+  margin: 18px 0 8px;
+}
+.governor-table-wrap {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.governor-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.governor-table th,
+.governor-table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+.governor-table thead th {
+  min-width: 7rem;
+  max-width: 13rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: normal;
+  vertical-align: bottom;
+}
+.governor-table tbody th {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.governor-table tbody th small {
+  display: block;
+  font-weight: 400;
+}
+.governor-change.subtle {
+  max-width: 11rem;
+  white-space: normal;
+}
+.governor-change {
+  white-space: nowrap;
+}
+.governor-change-value {
+  display: inline-block;
+  width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.governor-change-track {
+  position: relative;
+  display: inline-block;
+  width: 6rem;
+  height: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+  background: linear-gradient(var(--muted), var(--muted)) 50% 0 / 1px 100% no-repeat;
+}
+.governor-change-bar {
+  position: absolute;
+  top: 1px;
+  height: 8px;
+  border-radius: 2px;
+}
+.governor-mix-bar {
+  display: flex;
+  gap: 2px;
+  width: 9rem;
+  height: 12px;
+}
+.governor-mix-bar span {
+  flex-basis: 0;
+  border-radius: 2px;
+}
+.party-chip {
+  display: inline-block;
+  min-width: 1.3em;
+  padding: 0 4px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+/* Party colours mark party identity only (ADR-0014 rule 8). */
+.party-R { background: #b4302c; }
+.party-D { background: #22589e; }
+.party-I,
+.party-O { background: #6b6b66; }
+.public-money-words {
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+.public-money-words dt {
+  margin-top: 8px;
+  font-weight: 700;
+}
+.public-money-words dd {
+  margin: 2px 0 0;
+}

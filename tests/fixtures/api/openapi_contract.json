@@ -2017,6 +2017,28 @@
         "fred"
       ]
     },
+    "GET /api/v1/governor-terms": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GovernorTermsResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "public-money"
+      ]
+    },
     "GET /api/v1/health": {
       "parameters": [],
       "responses": {
@@ -3032,6 +3054,28 @@
       },
       "tags": [
         "population"
+      ]
+    },
+    "GET /api/v1/public-money": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:PublicMoneyResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "public-money"
       ]
     },
     "GET /api/v1/usda-nass/measures": {
@@ -4842,6 +4886,22 @@
         "name"
       ]
     },
+    "FiscalMeasureDefinition": {
+      "properties": {
+        "basis": "string",
+        "change_unit": "string",
+        "label": "string",
+        "measure": "string",
+        "source": "string"
+      },
+      "required": [
+        "basis",
+        "change_unit",
+        "label",
+        "measure",
+        "source"
+      ]
+    },
     "FreshnessListResponse": {
       "properties": {
         "items": "array<SourceFreshness>",
@@ -4983,6 +5043,47 @@
         "geo_name"
       ]
     },
+    "GovernorTenure": {
+      "properties": {
+        "end_date": "string | null",
+        "fiscal": "array<TenureFiscalChange>",
+        "holder_name": "string",
+        "party_code": "string",
+        "party_text": "string | null",
+        "so_far": "boolean",
+        "start_date": "string",
+        "tax_mix": "array<TaxMixShare>",
+        "tax_mix_year": "integer | null",
+        "tenure_key": "string",
+        "term_count": "integer"
+      },
+      "required": [
+        "fiscal",
+        "holder_name",
+        "party_code",
+        "so_far",
+        "start_date",
+        "tax_mix",
+        "tenure_key",
+        "term_count"
+      ]
+    },
+    "GovernorTermsResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "derived": "boolean",
+        "geo_id": "string",
+        "items": "array<GovernorTenure>",
+        "measures": "array<FiscalMeasureDefinition>",
+        "state_code": "string | null"
+      },
+      "required": [
+        "caveats",
+        "geo_id",
+        "items",
+        "measures"
+      ]
+    },
     "GrainCoverage": {
       "properties": {
         "column": "string",
@@ -5053,6 +5154,40 @@
         "metric_codes"
       ]
     },
+    "IncomeSource": {
+      "properties": {
+        "label": "string",
+        "share_pct": "string | null",
+        "source": "string"
+      },
+      "required": [
+        "label",
+        "source"
+      ]
+    },
+    "IncomeSources": {
+      "properties": {
+        "geo_id": "string",
+        "parts": "array<IncomeSource>",
+        "unavailable_reason": "string | null",
+        "year": "integer"
+      },
+      "required": [
+        "geo_id",
+        "parts",
+        "year"
+      ]
+    },
+    "LevelSeries": {
+      "properties": {
+        "geo_id": "string",
+        "points": "array<SeriesPoint>"
+      },
+      "required": [
+        "geo_id",
+        "points"
+      ]
+    },
     "LocatedGeography": {
       "properties": {
         "boundary_vintage": "integer | null",
@@ -5121,6 +5256,26 @@
         "values": "array<MatrixCell>"
       },
       "required": []
+    },
+    "MeasureSeries": {
+      "properties": {
+        "caveats": "array<string>",
+        "derived_from": "string",
+        "label": "string",
+        "measure": "string",
+        "series": "array<LevelSeries>",
+        "source": "string",
+        "unit": "string"
+      },
+      "required": [
+        "caveats",
+        "derived_from",
+        "label",
+        "measure",
+        "series",
+        "source",
+        "unit"
+      ]
     },
     "MedianAge": {
       "properties": {
@@ -5909,6 +6064,39 @@
         "valid"
       ]
     },
+    "PaymentsByProgram": {
+      "properties": {
+        "geo_id": "string",
+        "programs": "array<ProgramShare>",
+        "total_pct": "string | null",
+        "unavailable_reason": "string | null",
+        "year": "integer"
+      },
+      "required": [
+        "geo_id",
+        "programs",
+        "year"
+      ]
+    },
+    "PeriodValues": {
+      "properties": {
+        "caveats": "array<string>",
+        "label": "string",
+        "measure": "string",
+        "period": "string | null",
+        "source": "string",
+        "unit": "string",
+        "values": "array<PointValue>"
+      },
+      "required": [
+        "caveats",
+        "label",
+        "measure",
+        "source",
+        "unit",
+        "values"
+      ]
+    },
     "PlacesBatchItem": {
       "properties": {
         "answer": "PlacesComparisonResponse | null",
@@ -6023,6 +6211,17 @@
         "metric_code"
       ]
     },
+    "PointValue": {
+      "properties": {
+        "geo_id": "string",
+        "margin_of_error": "string | null",
+        "unavailable_reason": "string | null",
+        "value": "string | null"
+      },
+      "required": [
+        "geo_id"
+      ]
+    },
     "PopulationScenarioPoint": {
       "properties": {
         "value": "number",
@@ -6061,12 +6260,58 @@
         "type"
       ]
     },
+    "ProgramShare": {
+      "properties": {
+        "label": "string",
+        "program": "string",
+        "share_pct": "string | null"
+      },
+      "required": [
+        "label",
+        "program"
+      ]
+    },
     "PublicDisplayNameRequest": {
       "properties": {
         "public_display_name": "string"
       },
       "required": [
         "public_display_name"
+      ]
+    },
+    "PublicMoneyLevel": {
+      "properties": {
+        "geo_id": "string",
+        "role": "string"
+      },
+      "required": [
+        "geo_id",
+        "role"
+      ]
+    },
+    "PublicMoneyResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "derived": "boolean",
+        "federal_tax_rate": "MeasureSeries",
+        "geo_id": "string",
+        "income_sources": "array<IncomeSources>",
+        "levels": "array<PublicMoneyLevel>",
+        "payments": "array<PaymentsByProgram>",
+        "payments_source": "string",
+        "property_tax": "PeriodValues",
+        "tax_burden": "MeasureSeries"
+      },
+      "required": [
+        "caveats",
+        "federal_tax_rate",
+        "geo_id",
+        "income_sources",
+        "levels",
+        "payments",
+        "payments_source",
+        "property_tax",
+        "tax_burden"
       ]
     },
     "ReadinessResponse": {
@@ -6186,6 +6431,15 @@
       },
       "required": [
         "metric_code"
+      ]
+    },
+    "SeriesPoint": {
+      "properties": {
+        "value": "string | null",
+        "year": "integer"
+      },
+      "required": [
+        "year"
       ]
     },
     "SessionResponse": {
@@ -6332,6 +6586,34 @@
       "required": [
         "source_code",
         "source_name"
+      ]
+    },
+    "TaxMixShare": {
+      "properties": {
+        "label": "string",
+        "share_pct": "string | null",
+        "tax_group": "string"
+      },
+      "required": [
+        "label",
+        "tax_group"
+      ]
+    },
+    "TenureFiscalChange": {
+      "properties": {
+        "label": "string",
+        "measure": "string",
+        "nation_change": "string | null",
+        "net_change": "string | null",
+        "place_change": "string | null",
+        "unavailable_reason": "string | null",
+        "window_end_year": "integer | null",
+        "window_start_year": "integer"
+      },
+      "required": [
+        "label",
+        "measure",
+        "window_start_year"
       ]
     },
     "TileLayer": {
