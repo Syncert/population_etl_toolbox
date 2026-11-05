@@ -1209,6 +1209,7 @@ UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher
 UNION ALL SELECT * FROM gold_census_bps.metric_publisher
 UNION ALL SELECT * FROM gold_census_sae.metric_publisher
 UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
+UNION ALL SELECT * FROM gold_irs_soi.metric_publisher
 UNION ALL SELECT * FROM gold_eia.metric_publisher
 UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
 UNION ALL SELECT * FROM gold_census_lodes.metric_publisher

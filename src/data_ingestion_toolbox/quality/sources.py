@@ -1214,6 +1214,177 @@ def irs_migration_total_reconciliation(
     ]
 
 
+#: The newest published capture of each SOI income file (product, tax year).
+_SOI_NEWEST_FILES = """
+    newest AS (
+        SELECT DISTINCT ON (file.file_kind, file.tax_year)
+               file.capture_id, file.file_kind, file.tax_year
+          FROM control.irs_soi_file AS file
+          JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+         WHERE file.status = 'published'
+         ORDER BY file.file_kind, file.tax_year, capture.retrieved_at DESC, file.capture_id DESC
+    )
+"""
+
+
+def irs_soi_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-SOI-002 — every captured row is values or quarantined; no file left unreplayed."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.irs_soi_file")
+    if total == 0:
+        return [RuleOutcome("control.irs_soi_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.file_kind, file.tax_year, file.status
+          FROM control.irs_soi_file AS file
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS revisions,
+                       COUNT(DISTINCT revision.source_row_index) AS rows_read
+                  FROM silver_irs_soi.observation_revision AS revision
+                 WHERE revision.capture_id = file.capture_id
+          ) AS parsed ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS facts
+                  FROM silver_irs_soi.fact_observation AS fact
+                 WHERE fact.capture_id = file.capture_id
+          ) AS conformed ON TRUE
+         WHERE file.status = 'captured'
+            OR (file.status = 'quarantined' AND conformed.facts <> 0)
+            OR (file.status IN ('silver_ready', 'published')
+                AND (conformed.facts <> parsed.revisions
+                     OR parsed.rows_read + file.quarantined_row_count
+                        <> file.captured_row_count))
+        """,
+        order_by="2, 3, 1",
+    )
+    return [
+        RuleOutcome(
+            "control.irs_soi_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def irs_soi_county_sum(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-SOI-003 — a state's counties sum to its total within 1 percent.
+
+    Read from the newest published county totals file of each tax year, in
+    returns and adjusted gross income; a state with a county whose value is
+    missing is not compared.
+    """
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.irs_soi_file "
+        "WHERE status = 'published' AND file_kind = 'county_total'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_irs_soi.fact_observation", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH {_SOI_NEWEST_FILES},
+        rows AS (
+            SELECT fact.tax_year, fact.metric_key, fact.geo_type, fact.value,
+                   SPLIT_PART(SPLIT_PART(fact.geo_id, '|', 1), ':', 2) AS state_fips
+              FROM silver_irs_soi.fact_observation AS fact
+              JOIN newest ON newest.capture_id = fact.capture_id
+             WHERE newest.file_kind = 'county_total'
+               AND fact.metric_key IN ('returns', 'agi')
+               AND fact.geo_type IN ('state', 'county')
+        ), compared AS (
+            SELECT tax_year, metric_key, state_fips,
+                   MAX(value) FILTER (WHERE geo_type = 'state') AS state_total,
+                   SUM(value) FILTER (WHERE geo_type = 'county') AS county_sum,
+                   COUNT(*) FILTER (WHERE geo_type = 'county' AND value IS NULL) AS missing
+              FROM rows
+             GROUP BY tax_year, metric_key, state_fips
+        )
+        SELECT tax_year, metric_key, state_fips, state_total, county_sum
+          FROM compared
+         WHERE state_total IS NOT NULL AND county_sum IS NOT NULL AND missing = 0
+           AND ABS(county_sum - state_total) > 0.01 * ABS(state_total)
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_irs_soi.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def irs_soi_band_sum(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-SOI-004 — returns across AGI bands sum to all returns within 1 percent.
+
+    The county band file is checked against the county totals file of the
+    same tax year, the state file against its own all-returns row; a place
+    with a band whose count is missing is not compared.
+    """
+    del scope
+    from data_ingestion_toolbox.irs_soi.registry import AGI_BANDS, ALL_RETURNS
+
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.irs_soi_file "
+        "WHERE status = 'published' AND file_kind IN ('county_agi', 'state')",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_irs_soi.fact_observation", "not_applicable")]
+    band_keys = sorted(f"returns:{code}" for code in AGI_BANDS if code != ALL_RETURNS)
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH {_SOI_NEWEST_FILES},
+        bands AS (
+            SELECT newest.file_kind, fact.tax_year, fact.geo_id,
+                   SUM(fact.value) AS band_sum,
+                   COUNT(*) FILTER (WHERE fact.value IS NULL) AS missing
+              FROM silver_irs_soi.fact_observation AS fact
+              JOIN newest ON newest.capture_id = fact.capture_id
+             WHERE newest.file_kind IN ('county_agi', 'state')
+               AND fact.metric_key = ANY(%s)
+             GROUP BY newest.file_kind, fact.tax_year, fact.geo_id
+        ), totals AS (
+            SELECT CASE WHEN newest.file_kind = 'county_total' THEN 'county_agi'
+                        ELSE 'state' END AS file_kind,
+                   fact.tax_year, fact.geo_id, fact.value AS all_returns
+              FROM silver_irs_soi.fact_observation AS fact
+              JOIN newest ON newest.capture_id = fact.capture_id
+             WHERE newest.file_kind IN ('county_total', 'state')
+               AND fact.metric_key = 'returns'
+        )
+        SELECT bands.file_kind, bands.tax_year, bands.geo_id,
+               totals.all_returns, bands.band_sum
+          FROM bands
+          JOIN totals USING (file_kind, tax_year, geo_id)
+         WHERE bands.missing = 0 AND totals.all_returns IS NOT NULL
+           AND ABS(bands.band_sum - totals.all_returns) > 0.01 * ABS(totals.all_returns)
+        """,
+        order_by="1, 2, 3",
+        params=(band_keys,),
+    )
+    return [
+        RuleOutcome(
+            "silver_irs_soi.fact_observation",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def bls_bimonthly_cadence(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-BLS-009 — an every-other-month CPI metro has no two consecutive months."""
     del scope
@@ -4138,4 +4309,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BPS-002": bps_file_reconciliation,
     "DQ-IRS-002": irs_migration_file_reconciliation,
     "DQ-IRS-004": irs_migration_total_reconciliation,
+    "DQ-SOI-002": irs_soi_file_reconciliation,
+    "DQ-SOI-003": irs_soi_county_sum,
+    "DQ-SOI-004": irs_soi_band_sum,
 }

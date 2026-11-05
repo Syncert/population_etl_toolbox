@@ -57,6 +57,7 @@ DAILY_LEDGER_RULES: frozenset[str] = frozenset(
         "DQ-LODES-002",
         "DQ-CBP-002",
         "DQ-IRS-002",
+        "DQ-SOI-002",
         "DQ-BPS-002",
         "DQ-QCEW-002",
         "DQ-BEA-002",

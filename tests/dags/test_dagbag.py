@@ -46,6 +46,7 @@ EXPECTED_DAG_IDS = {
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
     "irs_migration_ingest",
+    "irs_soi_ingest",
     "eia_retail_gasoline_ingest",
     "census_cbp_ingest",
     "census_lodes_ingest",
@@ -93,6 +94,9 @@ EXPECTED_SCHEDULES = {
     "census_saipe_sahie_ingest": "0 6 15 * *",
     # Monthly: SOI publishes a new pair of filing years about once a year.
     "irs_migration_ingest": "0 15 5 * *",
+    # Monthly: SOI posts a tax year about once a year; a run past the
+    # history reads the two newest years again.
+    "irs_soi_ingest": "0 15 7 * *",
     # Weekly: county income lands in November and county GDP in December.
     # Tuesdays: EIA publishes Monday's prices on Monday afternoon.
     "eia_retail_gasoline_ingest": "0 15 * * 2",
@@ -161,6 +165,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_building_permits_ingest": 2,
     "census_saipe_sahie_ingest": 2,
     "irs_migration_ingest": 2,
+    "irs_soi_ingest": 2,
     "eia_retail_gasoline_ingest": 2,
     "census_cbp_ingest": 2,
     "census_lodes_ingest": 2,
@@ -190,6 +195,7 @@ EXPECTED_INGEST_POOLS = {
     # One host and one key with the ACS, so one rate limit.
     "census_saipe_sahie_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
+    "irs_soi_ingest": "irs_soi_files",
     "eia_retail_gasoline_ingest": "eia_api",
     "census_cbp_ingest": "census_cbp_files",
     "census_lodes_ingest": "census_lodes_files",

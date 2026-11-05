@@ -78,6 +78,7 @@ SOURCES: tuple[str, ...] = (
     "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
+    "IRS_SOI",
     "CENSUS_SAIPE_SAHIE",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -2626,6 +2627,106 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+_IRS_SOI_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.irs_soi_file",
+        "control",
+        "IRS_SOI",
+        grain="run_id (one run per product and tax year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in irs_soi/registry.py; the newest two years and every year never published",
+        cadence="monthly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_soi.dim_measure",
+        "silver",
+        "IRS_SOI",
+        grain="measure_id",
+        scope_method="the curated items in irs_soi/registry.py, written at replay",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_irs_soi.dim_agi_band",
+        "silver",
+        "IRS_SOI",
+        grain="agi_band",
+        scope_method="the AGI bands in irs_soi/registry.py, written at replay",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_irs_soi.observation_revision",
+        "silver",
+        "IRS_SOI",
+        grain="capture_id, source_row_index, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_soi.observation_quarantine",
+        "silver",
+        "IRS_SOI",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable row; row 0 for a file refused whole",
+        cadence="per SOI income replay",
+        empty_behavior="empty when every row was read",
+    ),
+    _obj(
+        "silver_irs_soi.fact_observation",
+        "silver",
+        "IRS_SOI",
+        grain="file_kind, metric_key, tax_year, geo_id, capture_id",
+        lineage="silver_irs_soi.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="registered files; every row read, resolved or unmapped",
+        cadence="per SOI income replay",
+        empty_behavior="a cell that is not a number is missing with SOI's text, never zero",
+    ),
+    _obj(
+        "gold_irs_soi.observation_revision",
+        "gold",
+        "IRS_SOI",
+        grain="file_kind, metric_key, tax_year, geo_id, capture_id (published files, resolved places)",
+        lineage="silver_irs_soi.fact_observation, control.irs_soi_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_soi.observation_latest",
+        "gold",
+        "IRS_SOI",
+        grain="metric_key, geo_id, tax_year (county files first, newest capture)",
+        lineage="gold_irs_soi.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_soi.measure_export",
+        "publisher",
+        "IRS_SOI",
+        grain="source_object_key (measure or measure:agi band)",
+        scope_method="registered items x AGI bands",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay writes the dimensions",
+    ),
+    _obj(
+        "gold_irs_soi.metric_publisher",
+        "publisher",
+        "IRS_SOI",
+        grain="source_object_key (measure or measure:agi band)",
+        lineage="gold_irs_soi.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
 _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
     _obj(
         "control.eia_read",
@@ -4068,6 +4169,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
+    + _IRS_SOI_OBJECTS
     + _SAE_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
@@ -6273,6 +6375,62 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "foreign categories sum to the file's own total migration exactly "
         "when none is withheld, and never exceed it when one is.",
         ("silver_irs_migration.flow_revision", "control.irs_migration_file"),
+    ),
+    # -- IRS SOI county and state income ------------------------------------
+    _rule(
+        "DQ-SOI-001",
+        "BLOCK",
+        "uniqueness",
+        "SOI income values are unique per (file, metric, tax year, place, "
+        "capture): a revised file is a second row beside the one it revised.",
+        (
+            "silver_irs_soi.fact_observation",
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+            "gold_irs_soi.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_soi.fact_observation",
+                ("file_kind", "metric_key", "tax_year", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-SOI-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed SOI file accounts for every captured row as values or "
+        "a quarantined row, and no captured file is left unreplayed.",
+        (
+            "control.irs_soi_file",
+            "silver_irs_soi.observation_revision",
+            "silver_irs_soi.observation_quarantine",
+            "silver_irs_soi.fact_observation",
+        ),
+    ),
+    _rule(
+        "DQ-SOI-003",
+        "WARN",
+        "reconciliation",
+        "In the newest published county totals file, a state's counties sum "
+        "to the file's own state total within 1 percent, in returns and in "
+        "adjusted gross income.",
+        ("silver_irs_soi.fact_observation", "control.irs_soi_file"),
+    ),
+    _rule(
+        "DQ-SOI-004",
+        "WARN",
+        "reconciliation",
+        "A place's returns in the AGI bands of the newest published band file "
+        "sum to its all-returns count within 1 percent, so the band shares sum "
+        "to 100.",
+        ("silver_irs_soi.fact_observation", "control.irs_soi_file"),
     ),
     _rule(
         "DQ-BEA-005",

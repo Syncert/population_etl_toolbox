@@ -28,6 +28,11 @@ dependencies = [
 airflow = [
   "apache-airflow==2.9.3",
   "apache-airflow-providers-postgres==5.11.2",
+  # IRS SOI county income for tax years 1989-2009 is one legacy Excel (.xls,
+  # BIFF) workbook per state; the OOXML reader in utility.workbook cannot
+  # read BIFF. Only the scheduler parses those files, so it is not a base
+  # dependency the API image would carry.
+  "xlrd>=2.0.1,<3.0",
 ]
 api = [
   "fastapi>=0.111,<1.0",

@@ -246,6 +246,43 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="IRS_MIGRATION",
     ),
     WarehouseSource(
+        code="IRS_SOI",
+        name="SOI individual income tax statistics by county and state",
+        publisher="IRS Statistics of Income",
+        topic="Work, income and business",
+        module="irs_soi",
+        dag="irs_soi_ingest",
+        cadence="Monthly, 7th 15:00 UTC",
+        release="One new tax year a year, about three years after it ends",
+        grains={"nation": "n", "state": "n", "county": "n"},
+        years=[(2011, 2023)],
+        years_note=(
+            "County files for tax years 2011-2023 (each state's total included); "
+            "Historic Table 2 state files for 2021-2023"
+        ),
+        datasets=["YYincyallnoagi.csv", "YYincyallagi.csv", "YYin55cmcsv.csv"],
+        measures=(
+            "Returns, individuals, adjusted gross income, wages, interest, dividends, business "
+            "income, capital gains, pensions, Social Security, unemployment compensation, taxable "
+            "income, income tax, total tax liability, earned income tax credit, additional child "
+            "tax credit, and itemized state and local income and real estate taxes, for all returns "
+            "and by size of adjusted gross income."
+        ),
+        raw=[],
+        control=["control.irs_soi_file"],
+        silver=[
+            "silver_irs_soi.observation_revision",
+            "silver_irs_soi.fact_observation",
+            "silver_irs_soi.observation_quarantine",
+        ],
+        gold=[
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+        ],
+        credential="none",
+        catalog_source_code="IRS_SOI",
+    ),
+    WarehouseSource(
         code="BLS",
         name="BLS labor and prices (LAUS, CPS, CES, CPI, JOLTS, average prices)",
         publisher="Bureau of Labor Statistics",
