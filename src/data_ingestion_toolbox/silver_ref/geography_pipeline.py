@@ -723,6 +723,17 @@ class GeographyRepository:
                     silver_ref.dim_geo_entity.last_seen_version,
                     EXCLUDED.last_seen_version
                 ), updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.dim_geo_entity.first_seen_version, silver_ref.dim_geo_entity.last_seen_version)
+                      IS DISTINCT FROM
+                      (LEAST(
+                    silver_ref.dim_geo_entity.first_seen_version,
+                    EXCLUDED.first_seen_version
+                ), GREATEST(
+                    silver_ref.dim_geo_entity.last_seen_version,
+                    EXCLUDED.last_seen_version
+                ))
             """,
             list(merged.values()),
             template=(
@@ -1178,6 +1189,11 @@ class GeographyRepository:
                     ON CONFLICT (provider_source, provider_dataset, source_geo_type, source_code, source_vintage)
                     DO UPDATE SET status = EXCLUDED.status, reason_code = EXCLUDED.reason_code,
                                   evidence_capture_id = EXCLUDED.evidence_capture_id, resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.status, EXCLUDED.reason_code)
                     """,
                     [
                         (

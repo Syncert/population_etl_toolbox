@@ -201,7 +201,7 @@ def _published_states(hook: _Hook, grain: str) -> list[str]:
 
 
 def test_a_state_no_slice_changed_is_not_published(monkeypatch) -> None:
-    """Covers: DB-069 -- the ledger names Wisconsin changed and Delaware unchanged."""
+    """Covers: DB-070 -- the ledger names Wisconsin changed and Delaware unchanged."""
     monkeypatch.setitem(STATE_ANSWER, "answer", (["55"], ["10", "55"]))
     hook = _Hook(changed={"TRACT"})
     refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
@@ -209,7 +209,7 @@ def test_a_state_no_slice_changed_is_not_published(monkeypatch) -> None:
 
 
 def test_a_state_the_ledger_does_not_know_is_published(monkeypatch) -> None:
-    """Covers: DB-069 -- only evidence of no change skips a state."""
+    """Covers: DB-070 -- only evidence of no change skips a state."""
     monkeypatch.setitem(STATE_ANSWER, "answer", ([], ["55"]))
     hook = _Hook(changed={"TRACT"})
     refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
@@ -217,7 +217,7 @@ def test_a_state_the_ledger_does_not_know_is_published(monkeypatch) -> None:
 
 
 def test_a_forced_re_serve_publishes_every_state(monkeypatch) -> None:
-    """Covers: DB-069 -- a forced run never asks which states changed."""
+    """Covers: DB-070 -- a forced run never asks which states changed."""
     monkeypatch.setitem(STATE_ANSWER, "answer", ([], ["10", "55"]))
     hook = _Hook(changed=set())
     refresh_serving_layer_in_year_chunks(

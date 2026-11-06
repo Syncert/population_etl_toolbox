@@ -1465,6 +1465,8 @@ def eia_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleO
                          WHERE revision.run_id = read.run_id)
                      + (SELECT COUNT(*) FROM silver_eia.observation_quarantine AS rejected
                          WHERE rejected.run_id = read.run_id AND rejected.row_index >= 0)
+                     -- Repeats of a stored week are accounted for, not stored.
+                     + read.repeated_row_count
                        AS rows_kept
           ) AS replayed ON TRUE
          WHERE read.status = 'captured'

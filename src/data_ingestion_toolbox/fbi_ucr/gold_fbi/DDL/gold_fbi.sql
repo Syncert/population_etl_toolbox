@@ -507,18 +507,40 @@ LANGUAGE plpgsql AS $count$
 DECLARE
     refreshed BIGINT;
 BEGIN
-    DELETE FROM gold_fbi.release_fact_count AS counted
-     WHERE counted.product_id = p_product_id;
-    INSERT INTO gold_fbi.release_fact_count (
-        product_id, release_key, subject_type, period_start, row_count
-    )
+    -- Counted into staging and compared, so a count that did not change is
+    -- not rewritten (refresh-churn audit, 2026-11-06).
+    DROP TABLE IF EXISTS pg_temp.release_fact_count_candidate;
+    CREATE TEMP TABLE release_fact_count_candidate ON COMMIT DROP AS
     SELECT fact.product_id, fact.release_key, fact.subject_type,
-           fact.period_start, COUNT(*)
+           fact.period_start, COUNT(*) AS row_count
       FROM gold_fbi.latest_release_fact AS fact
      WHERE fact.product_id = p_product_id
        AND fact.period_start IS NOT NULL
      GROUP BY 1, 2, 3, 4;
     GET DIAGNOSTICS refreshed = ROW_COUNT;
+
+    DELETE FROM gold_fbi.release_fact_count AS counted
+     WHERE counted.product_id = p_product_id
+       AND NOT EXISTS (
+           SELECT 1 FROM pg_temp.release_fact_count_candidate AS staged
+            WHERE staged.release_key = counted.release_key
+              AND staged.subject_type = counted.subject_type
+              AND staged.period_start = counted.period_start
+              AND staged.row_count = counted.row_count
+       );
+    INSERT INTO gold_fbi.release_fact_count (
+        product_id, release_key, subject_type, period_start, row_count
+    )
+    SELECT staged.product_id, staged.release_key, staged.subject_type,
+           staged.period_start, staged.row_count
+      FROM pg_temp.release_fact_count_candidate AS staged
+     WHERE NOT EXISTS (
+           SELECT 1 FROM gold_fbi.release_fact_count AS counted
+            WHERE counted.product_id = staged.product_id
+              AND counted.release_key = staged.release_key
+              AND counted.subject_type = staged.subject_type
+              AND counted.period_start = staged.period_start
+       );
     RETURN refreshed;
 END
 $count$;
@@ -529,17 +551,33 @@ LANGUAGE plpgsql AS $refresh$
 DECLARE
     refreshed BIGINT;
 BEGIN
-    DELETE FROM gold_fbi.county_agency_rate_month AS served
-     WHERE served.product_id = p_product_id;
-    INSERT INTO gold_fbi.county_agency_rate_month (
-        product_id, release_key, measure_id, geo_id, state_fips, county_fips,
-        county_name, period, period_start, period_end, rate,
-        unavailable_reason, offenses, covered_population, linked_population,
-        coverage_share, contributing_oris, excluded_multi_county_oris,
-        non_reporting_oris, unknown_population_oris, not_loaded_oris
-    )
+    -- Computed into staging and compared, so only rate rows that changed
+    -- are rewritten: a new release used to rewrite every earlier release's
+    -- rows too, 389,808 per Return A product (refresh-churn audit,
+    -- 2026-11-06).
+    DROP TABLE IF EXISTS pg_temp.county_agency_rate_candidate;
+    CREATE TEMP TABLE county_agency_rate_candidate ON COMMIT DROP AS
     SELECT * FROM gold_fbi.county_agency_rate_rows(p_product_id);
     GET DIAGNOSTICS refreshed = ROW_COUNT;
+    ANALYZE pg_temp.county_agency_rate_candidate;
+
+    DELETE FROM gold_fbi.county_agency_rate_month AS served
+     WHERE served.product_id = p_product_id
+       AND NOT EXISTS (
+           SELECT 1 FROM pg_temp.county_agency_rate_candidate AS staged
+            WHERE staged.product_id = served.product_id AND staged.release_key = served.release_key AND staged.measure_id = served.measure_id AND staged.geo_id = served.geo_id AND staged.period = served.period
+              AND (staged.product_id, staged.release_key, staged.measure_id, staged.geo_id, staged.state_fips, staged.county_fips, staged.county_name, staged.period, staged.period_start, staged.period_end, staged.rate, staged.unavailable_reason, staged.offenses, staged.covered_population, staged.linked_population, staged.coverage_share, staged.contributing_oris, staged.excluded_multi_county_oris, staged.non_reporting_oris, staged.unknown_population_oris, staged.not_loaded_oris)
+                  IS NOT DISTINCT FROM (served.product_id, served.release_key, served.measure_id, served.geo_id, served.state_fips, served.county_fips, served.county_name, served.period, served.period_start, served.period_end, served.rate, served.unavailable_reason, served.offenses, served.covered_population, served.linked_population, served.coverage_share, served.contributing_oris, served.excluded_multi_county_oris, served.non_reporting_oris, served.unknown_population_oris, served.not_loaded_oris)
+       );
+    INSERT INTO gold_fbi.county_agency_rate_month (
+        product_id, release_key, measure_id, geo_id, state_fips, county_fips, county_name, period, period_start, period_end, rate, unavailable_reason, offenses, covered_population, linked_population, coverage_share, contributing_oris, excluded_multi_county_oris, non_reporting_oris, unknown_population_oris, not_loaded_oris
+    )
+    SELECT staged.product_id, staged.release_key, staged.measure_id, staged.geo_id, staged.state_fips, staged.county_fips, staged.county_name, staged.period, staged.period_start, staged.period_end, staged.rate, staged.unavailable_reason, staged.offenses, staged.covered_population, staged.linked_population, staged.coverage_share, staged.contributing_oris, staged.excluded_multi_county_oris, staged.non_reporting_oris, staged.unknown_population_oris, staged.not_loaded_oris
+      FROM pg_temp.county_agency_rate_candidate AS staged
+     WHERE NOT EXISTS (
+           SELECT 1 FROM gold_fbi.county_agency_rate_month AS served
+            WHERE served.product_id = staged.product_id AND served.release_key = staged.release_key AND served.measure_id = staged.measure_id AND served.geo_id = staged.geo_id AND served.period = staged.period
+       );
     -- The product's other precomputed read, in the same transaction, so the
     -- publish paths and the one-time fill after a deploy refresh both.
     PERFORM gold_fbi.refresh_release_fact_count(p_product_id);

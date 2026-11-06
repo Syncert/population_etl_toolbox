@@ -418,11 +418,11 @@ CREATE INDEX IF NOT EXISTS ix_gold_glossary_geo_search_short_trgm
 CREATE INDEX IF NOT EXISTS ix_gold_glossary_geo_search_state
     ON gold_glossary.geo_search (state_fips, geo_level);
 
--- Rebuilt whole from the geography projection, the relationship view and the
--- served ACS population. A delete and an insert in one transaction rather than
--- a truncate: a truncate takes ACCESS EXCLUSIVE and every search would wait
--- behind the rebuild, where this way readers keep the previous rows until it
--- commits. Called by the `glossary_reconciliation` DAG directly after
+-- Derived whole from the geography projection, the relationship view and the
+-- served ACS population, then brought in line row by row in one transaction:
+-- only rows that changed are deleted and inserted, and readers keep the
+-- previous rows until it commits (never a truncate, which takes ACCESS
+-- EXCLUSIVE and makes every search wait). Called by the `glossary_reconciliation` DAG directly after
 -- `refresh_dim_geo_latest`.
 DROP PROCEDURE IF EXISTS gold_glossary.refresh_geo_search();
 CREATE OR REPLACE PROCEDURE gold_glossary.refresh_geo_search()
@@ -453,9 +453,14 @@ BEGIN
         ORDER BY served.geo_id, served.vintage_year DESC;
     END IF;
 
-    DELETE FROM gold_glossary.geo_search;
+    -- Built into staging and compared, so only a row that changed is
+    -- rewritten: the whole-table delete and insert rewrote all ~70,000 rows
+    -- and both trigram indexes every night (refresh-churn audit, 2026-11-06).
+    DROP TABLE IF EXISTS pg_temp.geo_search_candidate;
+    CREATE TEMP TABLE geo_search_candidate
+        (LIKE gold_glossary.geo_search INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    INSERT INTO gold_glossary.geo_search (
+    INSERT INTO pg_temp.geo_search_candidate (
         geo_id, geo_level, geo_name, short_name, name_words,
         short_words, state_fips, county_fips, place_fips, state_name,
         county_geo_id, county_name, population, population_year,
@@ -550,6 +555,26 @@ BEGIN
         AND state.state_fips = COALESCE(named.state_fips, metro_state.state_fips)
     LEFT JOIN pg_temp.geo_search_population AS pop
          ON pop.geo_id = named.geo_id;
+    ANALYZE pg_temp.geo_search_candidate;
+
+    -- Gone, or changed: `refreshed_at` is when a row was written, not what
+    -- it says, so it is not compared.
+    DELETE FROM gold_glossary.geo_search AS served
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_temp.geo_search_candidate AS staged
+        WHERE staged.geo_id = served.geo_id
+          AND (staged.geo_id, staged.geo_level, staged.geo_name, staged.short_name, staged.name_words, staged.short_words, staged.state_fips, staged.county_fips, staged.place_fips, staged.state_name, staged.county_geo_id, staged.county_name, staged.population, staged.population_year, staged.population_metric_code, staged.boundary_vintage)
+              IS NOT DISTINCT FROM
+              (served.geo_id, served.geo_level, served.geo_name, served.short_name, served.name_words, served.short_words, served.state_fips, served.county_fips, served.place_fips, served.state_name, served.county_geo_id, served.county_name, served.population, served.population_year, served.population_metric_code, served.boundary_vintage)
+    );
+
+    INSERT INTO gold_glossary.geo_search
+    SELECT staged.*
+    FROM pg_temp.geo_search_candidate AS staged
+    WHERE NOT EXISTS (
+        SELECT 1 FROM gold_glossary.geo_search AS served
+        WHERE served.geo_id = staged.geo_id
+    );
 END;
 $$;
 

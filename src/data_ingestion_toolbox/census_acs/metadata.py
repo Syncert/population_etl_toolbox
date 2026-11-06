@@ -179,7 +179,12 @@ def sync_acs_dataset_table() -> int:
                     census_id = EXCLUDED.census_id,
                     title = EXCLUDED.title,
                     is_available = TRUE,
-                    last_checked_at = EXCLUDED.last_checked_at;
+                    last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_census.acs_datasets.census_id, raw_census.acs_datasets.title, raw_census.acs_datasets.is_available)
+                      IS DISTINCT FROM
+                      (EXCLUDED.census_id, EXCLUDED.title, TRUE);
                 """,
                 (dataset, year, census_id, title, now, now),
             )
@@ -261,7 +266,12 @@ def _sync_census_variable_metadata(year: int, dataset: str, variables: Dict) -> 
                         label = EXCLUDED.label,
                         concept = EXCLUDED.concept,
                         predicate_type = EXCLUDED.predicate_type,
-                        group_name = EXCLUDED.group_name;
+                        group_name = EXCLUDED.group_name
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_census.acs_variables.table_id, raw_census.acs_variables.label, raw_census.acs_variables.concept, raw_census.acs_variables.predicate_type, raw_census.acs_variables.group_name)
+                      IS DISTINCT FROM
+                      (EXCLUDED.table_id, EXCLUDED.label, EXCLUDED.concept, EXCLUDED.predicate_type, EXCLUDED.group_name);
                     """,
                     row,
                 )
@@ -275,7 +285,12 @@ def _sync_census_variable_metadata(year: int, dataset: str, variables: Dict) -> 
                     ON CONFLICT (dataset, table_id)
                     DO UPDATE SET
                         concept = EXCLUDED.concept,
-                        product = EXCLUDED.product;
+                        product = EXCLUDED.product
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_census.acs_tables.concept, raw_census.acs_tables.product)
+                      IS DISTINCT FROM
+                      (EXCLUDED.concept, EXCLUDED.product);
                     """,
                     (dataset, table_id, concept, dataset),
                 )
@@ -335,7 +350,12 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                     label = EXCLUDED.label,
                     concept = EXCLUDED.concept,
                     predicate_type = EXCLUDED.predicate_type,
-                    group_name = EXCLUDED.group_name;
+                    group_name = EXCLUDED.group_name
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_census.acs_variables.table_id, raw_census.acs_variables.label, raw_census.acs_variables.concept, raw_census.acs_variables.predicate_type, raw_census.acs_variables.group_name)
+                      IS DISTINCT FROM
+                      (EXCLUDED.table_id, EXCLUDED.label, EXCLUDED.concept, EXCLUDED.predicate_type, EXCLUDED.group_name);
                 """,
                 (
                     dataset,
@@ -377,7 +397,12 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                         label = EXCLUDED.label,
                         concept = EXCLUDED.concept,
                         predicate_type = EXCLUDED.predicate_type,
-                        group_name = EXCLUDED.group_name;
+                        group_name = EXCLUDED.group_name
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_census.acs_variables.table_id, raw_census.acs_variables.label, raw_census.acs_variables.concept, raw_census.acs_variables.predicate_type, raw_census.acs_variables.group_name)
+                      IS DISTINCT FROM
+                      (EXCLUDED.table_id, EXCLUDED.label, EXCLUDED.concept, EXCLUDED.predicate_type, EXCLUDED.group_name);
                     """,
                     (
                         dataset,
@@ -408,7 +433,12 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                 ON CONFLICT (dataset, table_id)
                 DO UPDATE SET
                     concept = EXCLUDED.concept,
-                    product = EXCLUDED.product;
+                    product = EXCLUDED.product
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_census.acs_tables.concept, raw_census.acs_tables.product)
+                      IS DISTINCT FROM
+                      (EXCLUDED.concept, EXCLUDED.product);
                 """,
                 (dataset, table_id, info["concept"], dataset),
             )

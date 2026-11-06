@@ -219,7 +219,12 @@ def sync_bls_series_metadata(program: str) -> int:
                         area_code = EXCLUDED.area_code,
                         area_text = EXCLUDED.area_text,
                         raw_metadata = EXCLUDED.raw_metadata,
-                        last_checked_at = EXCLUDED.last_checked_at;
+                        last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_bls.bls_series.title, raw_bls.bls_series.seasonal, raw_bls.bls_series.measure, raw_bls.bls_series.area_code, raw_bls.bls_series.area_text, raw_bls.bls_series.raw_metadata)
+                      IS DISTINCT FROM
+                      (EXCLUDED.title, EXCLUDED.seasonal, EXCLUDED.measure, EXCLUDED.area_code, EXCLUDED.area_text, EXCLUDED.raw_metadata);
                 """
 
                 now = datetime.now(timezone.utc)
@@ -316,7 +321,12 @@ def sync_bls_datasets_table() -> int:
                     DO UPDATE SET
                         title = EXCLUDED.title,
                         is_available = EXCLUDED.is_available,
-                        last_checked_at = EXCLUDED.last_checked_at;
+                        last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_bls.bls_datasets.title, raw_bls.bls_datasets.is_available)
+                      IS DISTINCT FROM
+                      (EXCLUDED.title, EXCLUDED.is_available);
                 """
 
                 cur.execute(sql, (program, year, title, True, now, now))

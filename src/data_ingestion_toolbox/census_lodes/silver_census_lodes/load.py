@@ -195,6 +195,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                               evidence_capture_id = EXCLUDED.evidence_capture_id,
                               status = EXCLUDED.status, reason_code = EXCLUDED.reason_code,
                               resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (SOURCE_CODE, str(run_id)),
             )

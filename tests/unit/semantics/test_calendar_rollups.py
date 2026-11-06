@@ -10,8 +10,10 @@ import pytest
 from data_ingestion_toolbox.semantics.rollups import (
     ROLLUP_SOURCES,
     approved_methods,
+    STAGING_RELATION,
     refresh_calendar_rollups,
     rollup_sql,
+    sync_sql,
 )
 from data_ingestion_toolbox.semantics.time_aggregation import TimeMethod
 
@@ -98,8 +100,13 @@ def test_a_refresh_replaces_the_derivation_in_one_transaction() -> None:
     """Covers: ETL-074 — old rows go and new rows arrive in one commit, with bound methods."""
     connection = _Connection()
     assert refresh_calendar_rollups(connection, "BLS", REGISTRY) == 3
-    (delete, _), (insert, params) = connection.log
-    assert delete.strip() == "DELETE FROM gold_bls.derived_calendar_rollup"
+    drop, create, (derive, params), analyze, delete, insert = connection.log
+    assert drop[0] == f"DROP TABLE IF EXISTS {STAGING_RELATION}"
+    assert "LIKE gold_bls.derived_calendar_rollup" in create[0]
+    # Derived into staging, then only the difference reaches the served table.
+    assert f"INSERT INTO {STAGING_RELATION}" in derive
+    assert analyze[0] == f"ANALYZE {STAGING_RELATION}"
+    assert (delete[0], insert[0]) == sync_sql(ROLLUP_SOURCES["BLS"])
     assert params == {
         "metric_codes": ["BLS:CUUR0000SA0"],
         "methods": ["mean"],
@@ -112,7 +119,21 @@ def test_a_source_with_nothing_approved_is_left_with_no_derived_rows() -> None:
     """Covers: ETL-074 — withdrawing every approval clears the source's rollups."""
     connection = _Connection()
     assert refresh_calendar_rollups(connection, "BLS", {}) == 0
-    assert [sql.strip() for sql, _ in connection.log] == [
-        "DELETE FROM gold_bls.derived_calendar_rollup"
-    ]
+    statements = [sql.strip() for sql, _ in connection.log]
+    # Nothing is staged, so the sync deletes every served row and adds none.
+    assert statements[-2:] == list(sync_sql(ROLLUP_SOURCES["BLS"]))
+    assert not any("INSERT INTO pg_temp" in sql for sql in statements)
     assert connection.commits == 1
+
+
+def test_the_sync_writes_only_rows_that_differ() -> None:
+    """Covers: ETL-074 — an unchanged rollup row is compared, not rewritten."""
+    delete, insert = sync_sql(ROLLUP_SOURCES["FBI_UCR"])
+    assert delete.startswith(
+        "DELETE FROM gold_fbi.derived_calendar_rollup AS served WHERE NOT EXISTS"
+    )
+    assert insert.startswith("INSERT INTO gold_fbi.derived_calendar_rollup (")
+    for statement in (delete, insert):
+        assert "IS NOT DISTINCT FROM" in statement
+        # When a row was written is not part of what it says.
+        assert "refreshed_at" not in statement

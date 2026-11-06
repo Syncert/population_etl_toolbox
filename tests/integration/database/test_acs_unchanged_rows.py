@@ -1,6 +1,6 @@
 """A grain step rewrites only the served rows silver changed.
 
-Covers: DB-069 -- `gold_census.refresh_rpt_acs_observations` called for a
+Covers: DB-070 -- `gold_census.refresh_rpt_acs_observations` called for a
         grain (and a state) used to delete every served row of its window and
         insert them all again, and hand every key to
         `gold_census.refresh_mv_acs_latest`, which rewrote those too. On the
@@ -245,7 +245,7 @@ def seed(postgres_connection_factory: Callable[[], connection]) -> Iterator[_See
 
 
 def test_a_replay_with_nothing_changed_rewrites_no_row(seed: _Seed) -> None:
-    """Covers: DB-069 -- no delete, no insert, no latest key; the rows keep their versions."""
+    """Covers: DB-070 -- no delete, no insert, no latest key; the rows keep their versions."""
     for code, value in (("000100", 1), ("000200", 2), ("000300", 3)):
         seed.put(code, value)
     first = seed.serve()
@@ -267,7 +267,7 @@ def test_a_replay_with_nothing_changed_rewrites_no_row(seed: _Seed) -> None:
 
 
 def test_only_changed_added_and_removed_rows_are_written(seed: _Seed) -> None:
-    """Covers: DB-069 -- a changed value, a new tract and a withdrawn tract; the untouched row stays."""
+    """Covers: DB-070 -- a changed value, a new tract and a withdrawn tract; the untouched row stays."""
     for code, value in (("000100", 1), ("000200", 2), ("000300", 3)):
         seed.put(code, value)
     seed.serve()
@@ -360,7 +360,7 @@ def _states(factory, since: datetime | None, states: list[str]) -> list[str]:
 def test_only_the_states_whose_slices_changed_publish(
     postgres_connection_factory: Callable[[], connection], ledger
 ) -> None:
-    """Covers: DB-069 -- Delaware's tracts changed; Wisconsin's replayed with none; Ohio is unknown."""
+    """Covers: DB-070 -- Delaware's tracts changed; Wisconsin's replayed with none; Ohio is unknown."""
     ledger("acs5/tract/10", 4)
     ledger("acs5/tract/55/[,550250001)", 6)
     ledger("acs5/tract/55/[550250001,)", 6)
@@ -379,7 +379,7 @@ def test_only_the_states_whose_slices_changed_publish(
 def test_every_state_publishes_when_the_ledger_cannot_say(
     postgres_connection_factory: Callable[[], connection], ledger
 ) -> None:
-    """Covers: DB-069 -- no ledger row, a never-served chunk, or a changed whole-year slice."""
+    """Covers: DB-070 -- no ledger row, a never-served chunk, or a changed whole-year slice."""
     everyone = ["10", "55"]
     served = datetime.now(timezone.utc)
     assert _states(postgres_connection_factory, served, everyone) == everyone

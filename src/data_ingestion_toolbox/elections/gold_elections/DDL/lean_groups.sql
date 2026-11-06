@@ -359,7 +359,8 @@ END;
 $$;
 
 -- Rebuild both tables from the temporary tables `load_lean_inputs` fills
--- (a test fills them by hand). Returns the number of county rows written.
+-- (a test fills them by hand), writing only the rows that changed. Returns
+-- the number of county rows the tables hold after the rebuild.
 CREATE OR REPLACE FUNCTION gold_elections.build_lean_groups(p_refresh_id BIGINT)
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -367,10 +368,18 @@ AS $$
 DECLARE
     _rows INTEGER;
 BEGIN
-    DELETE FROM gold_elections.lean_group_change;
-    DELETE FROM gold_elections.lean_place_change;
+    -- Built into staging and compared, so only rows whose figures changed are
+    -- rewritten: a whole rebuild rewrote all ~189,000 rows whenever any input
+    -- published (refresh-churn audit, 2026-11-06). An unchanged row keeps the
+    -- `refresh_id` of the rebuild that last changed it.
+    DROP TABLE IF EXISTS pg_temp.lean_place_candidate;
+    CREATE TEMP TABLE lean_place_candidate
+        (LIKE gold_elections.lean_place_change INCLUDING DEFAULTS) ON COMMIT DROP;
+    DROP TABLE IF EXISTS pg_temp.lean_group_candidate;
+    CREATE TEMP TABLE lean_group_candidate
+        (LIKE gold_elections.lean_group_change INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    INSERT INTO gold_elections.lean_place_change (
+    INSERT INTO pg_temp.lean_place_candidate (
         window_start_year, window_end_year, measure, geo_id, state_fips, lean_margin, lean_band,
         start_value, end_value, place_change, nation_change, net_change, rural_urban_group,
         starting_level_group, industry_group, industry_label, refresh_id, tax_burden_group
@@ -448,15 +457,15 @@ BEGIN
 
     GET DIAGNOSTICS _rows = ROW_COUNT;
 
-    INSERT INTO gold_elections.lean_group_change
+    INSERT INTO pg_temp.lean_group_candidate
     WITH membership AS (
         SELECT place.*, 'all'::TEXT AS peer_type, 'all'::TEXT AS peer_group,
                'All counties'::TEXT AS peer_group_label
-        FROM gold_elections.lean_place_change AS place
+        FROM pg_temp.lean_place_candidate AS place
         UNION ALL
         SELECT place.*, 'state', place.state_fips,
                COALESCE(state_name.state_name, 'State ' || place.state_fips)
-        FROM gold_elections.lean_place_change AS place
+        FROM pg_temp.lean_place_candidate AS place
         LEFT JOIN pg_temp.lean_state_name AS state_name ON state_name.state_fips = place.state_fips
         UNION ALL
         SELECT place.*, 'rural_urban', place.rural_urban_group,
@@ -465,7 +474,7 @@ BEGIN
                    WHEN 'other_metro' THEN 'Other metro'
                    WHEN 'nonmetro_adjacent' THEN 'Nonmetro next to a metro'
                    ELSE 'Remote nonmetro' END
-        FROM gold_elections.lean_place_change AS place
+        FROM pg_temp.lean_place_candidate AS place
         WHERE place.rural_urban_group IS NOT NULL
         UNION ALL
         SELECT place.*, 'starting_level', place.starting_level_group,
@@ -474,10 +483,10 @@ BEGIN
                    WHEN '2' THEN 'Second quarter at the start'
                    WHEN '3' THEN 'Third quarter at the start'
                    ELSE 'Highest quarter at the start' END
-        FROM gold_elections.lean_place_change AS place
+        FROM pg_temp.lean_place_candidate AS place
         UNION ALL
         SELECT place.*, 'industry', place.industry_group, place.industry_label
-        FROM gold_elections.lean_place_change AS place
+        FROM pg_temp.lean_place_candidate AS place
         WHERE place.industry_group IS NOT NULL
         UNION ALL
         SELECT place.*, 'tax_burden', place.tax_burden_group,
@@ -486,7 +495,7 @@ BEGIN
                    WHEN '2' THEN 'States in the second quarter of tax burden at the start'
                    WHEN '3' THEN 'States in the third quarter of tax burden at the start'
                    ELSE 'States in the highest quarter of tax burden at the start' END
-        FROM gold_elections.lean_place_change AS place
+        FROM pg_temp.lean_place_candidate AS place
         WHERE place.tax_burden_group IS NOT NULL
     )
     SELECT membership.window_start_year, membership.window_end_year, membership.measure,
@@ -501,6 +510,37 @@ BEGIN
     FROM membership
     GROUP BY membership.window_start_year, membership.window_end_year, membership.measure,
              membership.peer_type, membership.peer_group, membership.lean_band;
+
+    ANALYZE pg_temp.lean_place_candidate;
+    ANALYZE pg_temp.lean_group_candidate;
+
+    DELETE FROM gold_elections.lean_group_change AS served
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_temp.lean_group_candidate AS staged
+        WHERE staged.window_start_year = served.window_start_year AND staged.window_end_year = served.window_end_year AND staged.measure = served.measure AND staged.peer_type = served.peer_type AND staged.peer_group = served.peer_group AND staged.lean_band = served.lean_band
+          AND (staged.window_start_year, staged.window_end_year, staged.measure, staged.peer_type, staged.peer_group, staged.peer_group_label, staged.lean_band, staged.place_count, staged.net_change_p25, staged.net_change_median, staged.net_change_p75, staged.nation_change)
+              IS NOT DISTINCT FROM (served.window_start_year, served.window_end_year, served.measure, served.peer_type, served.peer_group, served.peer_group_label, served.lean_band, served.place_count, served.net_change_p25, served.net_change_median, served.net_change_p75, served.nation_change)
+    );
+    INSERT INTO gold_elections.lean_group_change
+    SELECT staged.* FROM pg_temp.lean_group_candidate AS staged
+    WHERE NOT EXISTS (
+        SELECT 1 FROM gold_elections.lean_group_change AS served
+        WHERE served.window_start_year = staged.window_start_year AND served.window_end_year = staged.window_end_year AND served.measure = staged.measure AND served.peer_type = staged.peer_type AND served.peer_group = staged.peer_group AND served.lean_band = staged.lean_band
+    );
+
+    DELETE FROM gold_elections.lean_place_change AS served
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_temp.lean_place_candidate AS staged
+        WHERE staged.window_start_year = served.window_start_year AND staged.window_end_year = served.window_end_year AND staged.measure = served.measure AND staged.geo_id = served.geo_id
+          AND (staged.window_start_year, staged.window_end_year, staged.measure, staged.geo_id, staged.state_fips, staged.lean_margin, staged.lean_band, staged.start_value, staged.end_value, staged.place_change, staged.nation_change, staged.net_change, staged.rural_urban_group, staged.starting_level_group, staged.industry_group, staged.industry_label, staged.tax_burden_group)
+              IS NOT DISTINCT FROM (served.window_start_year, served.window_end_year, served.measure, served.geo_id, served.state_fips, served.lean_margin, served.lean_band, served.start_value, served.end_value, served.place_change, served.nation_change, served.net_change, served.rural_urban_group, served.starting_level_group, served.industry_group, served.industry_label, served.tax_burden_group)
+    );
+    INSERT INTO gold_elections.lean_place_change
+    SELECT staged.* FROM pg_temp.lean_place_candidate AS staged
+    WHERE NOT EXISTS (
+        SELECT 1 FROM gold_elections.lean_place_change AS served
+        WHERE served.window_start_year = staged.window_start_year AND served.window_end_year = staged.window_end_year AND served.measure = staged.measure AND served.geo_id = staged.geo_id
+    );
 
     RETURN _rows;
 END;

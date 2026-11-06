@@ -135,17 +135,57 @@ def test_weekly_prices_reach_gold_at_the_nation_states_padds_and_cities(
     assert sorted(catalog["EIA:EPMR"]) == ["NATIONAL", "PROVIDER_AREA", "STATE"]
 
 
-def test_a_second_reading_of_a_week_is_kept_beside_the_first(eia_warehouse) -> None:
-    """Covers: ETL-080 — a reread adds readings, the latest view still has one per week."""
+def test_a_second_reading_stores_only_the_weeks_it_revises(eia_warehouse) -> None:
+    """Covers: ETL-080, DB-069 — a reread stores only a week whose price moved.
+
+    A repeat of the newest stored reading of a week is counted on the read and
+    not stored again; a revised price is kept beside the first reading and the
+    latest view serves it.
+    """
     factory = eia_warehouse
     eia.run_to_gold(factory)
-    eia.run_to_gold(factory)
+    repeat_run, repeat_facts, _ = eia.run_to_gold(factory)
+    assert repeat_facts == 0
     assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_revision") == [
-        (352,)
+        (176,)
+    ]
+    assert _rows(
+        factory,
+        "SELECT repeated_row_count FROM control.eia_read WHERE run_id = %s",
+        (str(repeat_run),),
+    ) == [(232,)]
+
+    revised = eia.WINDOW_FIXTURE.read_bytes().replace(
+        b'"series":"EMM_EPM0_PTE_NUS_DPG","series-description":'
+        b'"U.S. All Grades All Formulations Retail Gasoline Prices '
+        b'(Dollars per Gallon)","value":"4.207"',
+        b'"series":"EMM_EPM0_PTE_NUS_DPG","series-description":'
+        b'"U.S. All Grades All Formulations Retail Gasoline Prices '
+        b'(Dollars per Gallon)","value":"4.215"',
+        1,
+    )
+    assert revised != eia.WINDOW_FIXTURE.read_bytes()
+    client = eia.FixtureClient(
+        httpx.Response(
+            200, content=revised, headers={"content-type": "application/json"}
+        )
+    )
+    _, revised_facts, _ = eia.run_to_gold(factory, client=client)
+    assert revised_facts == 1
+    assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_revision") == [
+        (177,)
     ]
     assert _rows(factory, "SELECT COUNT(*) FROM gold_eia.observation_latest") == [
         (176,)
     ]
+
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            (outcome,) = eia_read_reconciliation(cursor, {})
+    finally:
+        reader.close()
+    assert outcome.result == "pass"
 
 
 def test_a_malformed_answer_is_kept_as_evidence_and_publishes_nothing(

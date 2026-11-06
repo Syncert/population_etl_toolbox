@@ -64,6 +64,11 @@ def _write_dimensions(cursor: Any) -> None:
             unit = EXCLUDED.unit,
             parser_contract_version = EXCLUDED.parser_contract_version,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_irs_soi.dim_measure.soi_column, silver_irs_soi.dim_measure.measure_label, silver_irs_soi.dim_measure.unit, silver_irs_soi.dim_measure.parser_contract_version)
+                      IS DISTINCT FROM
+                      (EXCLUDED.soi_column, EXCLUDED.measure_label, EXCLUDED.unit, EXCLUDED.parser_contract_version)
         """,
         [
             (
@@ -87,6 +92,11 @@ def _write_dimensions(cursor: Any) -> None:
             lower_dollars = EXCLUDED.lower_dollars,
             upper_dollars = EXCLUDED.upper_dollars,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_irs_soi.dim_agi_band.band_label, silver_irs_soi.dim_agi_band.lower_dollars, silver_irs_soi.dim_agi_band.upper_dollars)
+                      IS DISTINCT FROM
+                      (EXCLUDED.band_label, EXCLUDED.lower_dollars, EXCLUDED.upper_dollars)
         """,
         [
             (band.code, band.label, band.lower_dollars, band.upper_dollars)
@@ -221,6 +231,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (SOURCE_CODE, str(run_id)),
             )
