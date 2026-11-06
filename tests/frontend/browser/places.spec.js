@@ -550,7 +550,11 @@ test("a county's groceries and gas card names the area behind every figure", asy
   await expect(eggs).toContainText("$3.18 a dozen");
   await expect(eggs).toContainText("up 6.0% over the year");
   await expect(page.getByTestId("place-cost-eggs-spark")).toBeVisible();
-  await expect(page.getByTestId("place-cost-electricity")).toContainText("17.0\u00a2 a kilowatt-hour");
+  // Electricity is EIA's Wisconsin price, named on its row; the others BLS's region.
+  const electricity = page.getByTestId("place-cost-electricity");
+  await expect(electricity).toHaveAttribute("data-area", "state:55");
+  await expect(electricity).toContainText("18.0\u00a2 a kilowatt-hour");
+  await expect(electricity).toContainText("Wisconsin figure, U.S. Energy Information Administration");
   const chicken = page.getByTestId("place-cost-chicken");
   await expect(chicken).toHaveAttribute("data-area", "us:1");
   await expect(chicken).toContainText("United States figure");
@@ -567,7 +571,9 @@ test("a county's groceries and gas card names the area behind every figure", asy
   await view.getByRole("button", { name: "Minutes of work" }).click();
   await expect(page.getByTestId("place-cost-eggs-minutes")).toContainText("6 minutes");
   await expect(page.getByTestId("place-cost-eggs-minutes")).toContainText("for $3.18 a dozen");
+  // Minutes of work divide BLS's region price, which has a wage pairing.
   await expect(page.getByTestId("place-cost-electricity-minutes")).toContainText("20 seconds");
+  await expect(page.getByTestId("place-cost-electricity-minutes")).toContainText("for 17.0\u00a2 a kilowatt-hour");
   await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("9 minutes");
   await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("United States figure");
   await expect(page.getByTestId("place-cost-wage")).toContainText("Dane County's average wage, $1,200 a week in 2025, the newest year published");
@@ -576,6 +582,35 @@ test("a county's groceries and gas card names the area behind every figure", asy
   expect(minutesReads.map((url) => url.searchParams.get("ratio_id")).sort()).toEqual([
     "minutes_of_work_chicken:0000", "minutes_of_work_eggs:0200", "minutes_of_work_electricity:0200",
   ]);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-170 — home-heating-fuel-prices: natural gas is the state's own
+// price restated a therm, heating oil falls back to EIA's petroleum region
+// with its season said, propane not published says so, and diesel is a
+// second figure on the gasoline line.
+test("a county's home heating fuels name the area, season and unit behind each price", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const heat = page.getByTestId("place-cost-heat_gas");
+  await expect(heat).toHaveAttribute("data-area", "state:55");
+  await expect(heat).toContainText("$12.72 per thousand cubic feet ($1.23 a therm)");
+  await expect(heat).toContainText("Wisconsin figure");
+  await expect(heat).toContainText("up 6.0% over the year");
+  await expect(heat).toContainText("10.37 therms");
+  const oil = page.getByTestId("place-cost-heating_oil");
+  await expect(oil).toHaveAttribute("data-area", "area:eia:R20");
+  await expect(oil).toContainText("$3.64 a gallon");
+  await expect(oil).toContainText("Midwest (PADD 2) figure");
+  await expect(oil).toContainText("up 4.0% over the year");
+  await expect(oil).toContainText("October to March");
+  await expect(oil).toContainText("Wisconsin (EIA): no value published for this area.");
+  await expect(page.getByTestId("place-cost-propane")).toContainText("Not published for this place or any area containing it.");
+  const diesel = page.getByTestId("place-cost-diesel");
+  await expect(diesel).toHaveAttribute("data-area", "us:1");
+  await expect(diesel).toContainText("Diesel $3.71 a gallon");
+  await expect(diesel).toContainText("United States figure");
   await noViolations(page);
   await noHorizontalScroll(page);
 });

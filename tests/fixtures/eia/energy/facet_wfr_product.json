@@ -1,0 +1,1 @@
+{"response":{"totalFacets":2,"facets":[{"id":"EPD2F","name":"No 2 Fuel Oil \/ Heating Oil"},{"id":"EPLLPA","name":"Propane"}]},"request":{"command":"\/v2\/petroleum\/pri\/wfr\/facet\/product\/","params":[]},"apiVersion":"2.1.14","ExcelAddInVersion":"2.1.0"}

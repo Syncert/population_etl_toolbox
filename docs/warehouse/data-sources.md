@@ -33,7 +33,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Partly loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
 | [Fair Market Rents and income limits](#hud_fmr_il) | HUD |  |  | ● |  |  |  |  | 2026–2027 | Monthly | Loaded |
-| [Weekly retail gasoline prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 2015–2026 | Weekly | Loaded |
+| [Gasoline, diesel and home energy prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 2015–2026 | Weekly | Loaded |
 | [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Loaded |
 | [Crime Data Explorer summarized offenses](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2023 | Weekly | Loaded |
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
@@ -269,19 +269,19 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 ## Prices and the national economy
 
 <a id="eia"></a>
-### Weekly retail gasoline prices (`EIA`)
+### Gasoline, diesel and home energy prices (`EIA`)
 
 - **Publisher:** Energy Information Administration
 - **Code:** `src/data_ingestion_toolbox/eia` · DAG `eia_retail_gasoline_ingest` · Weekly, Tuesday 15:00 UTC
 - **Publisher releases:** Every Monday
 - **Credential:** EIA_API_KEY
-- **Years:** Every week from 2015-01-05
-- **Datasets:** petroleum/pri/gnd (EPMR, EPMM, EPMP, EPM0)
-- **Measures:** Regular, midgrade, premium and all-grades gasoline, dollars per gallon.
+- **Years:** Gasoline and diesel every week from 2015-01-05; residential electricity monthly from 2001, natural gas monthly from 1973; heating oil and propane weekly October to March from 1990
+- **Datasets:** petroleum/pri/gnd (EPMR, EPMM, EPMP, EPM0, EPD2D); electricity/retail-sales (RES); natural-gas/pri/sum (PRS); petroleum/pri/wfr (EPD2F, EPLLPA)
+- **Measures:** Regular, midgrade, premium and all-grades gasoline and diesel, dollars per gallon; residential electricity, cents per kilowatt-hour; residential natural gas, dollars per thousand cubic feet; residential heating oil and propane, dollars per gallon.
 - **Capture and control:** `control.eia_read`, `control.eia_page`
-- **Silver:** `silver_eia.price_revision`, `silver_eia.fact_retail_price`
+- **Silver:** `silver_eia.price_revision`, `silver_eia.fact_retail_price`, `silver_eia.energy_price_revision`, `silver_eia.fact_energy_price`
 - **Gold:** `gold_eia.observation_revision`, `gold_eia.observation_latest`
-- **Status (live count 2026-10-31):** Loaded. 2015–2026.
+- **Status (live count 2026-10-31):** Gasoline loaded, 2015–2026. Diesel and home energy routes added by home-heating-fuel-prices; loaded on their first scheduled run.
 
 <a id="fred"></a>
 ### FRED national indicators (`FRED`)

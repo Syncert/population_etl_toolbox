@@ -14,7 +14,7 @@ import type { PlaceLevel } from "./placeChapters";
 
 export interface Area {
   geoId: string;
-  level: "NATIONAL" | "STATE" | "METRO" | "CENSUS_DIVISION" | "CENSUS_REGION" | "COUNTY" | "PLACE";
+  level: "NATIONAL" | "STATE" | "METRO" | "CENSUS_DIVISION" | "CENSUS_REGION" | "COUNTY" | "PLACE" | "PROVIDER_AREA";
   name: string;
 }
 
@@ -26,7 +26,14 @@ export interface ContainingAreas {
   region: Area | null;
 }
 
-export type CostMeasure = "gas" | "food" | "parity" | PriceItem;
+export type CostMeasure = "gas" | "food" | "parity" | HeatMeasure | "diesel" | PriceItem;
+
+/**
+ * Home heating fuels (home-heating-fuel-prices), each EIA's residential price:
+ * natural gas monthly by state; heating oil and propane weekly, October to
+ * March, by state where EIA surveys it, else by EIA's own petroleum region.
+ */
+export type HeatMeasure = "heat_gas" | "heating_oil" | "propane";
 
 /**
  * Everyday items with a dollar price (BLS Average Price, `ap`), in the order
@@ -61,6 +68,8 @@ export interface Reading {
   metricCode: string;
   area: Area;
   source: string;
+  /** What one published unit is in the line's unit: EIA's electricity is cents, the line dollars. */
+  scale?: number;
 }
 
 export const SOURCE_NAMES: Record<string, string> = {
@@ -122,6 +131,28 @@ export function containingAreas(
 const code = (area: Area | null) => (area ? area.geoId.split(":")[1] : "");
 
 /**
+ * EIA's petroleum regions (PADDs), by the state FIPS codes EIA assigns to
+ * each; the East Coast is read by its three sub-districts. EIA's own
+ * definition, not a Census geography.
+ */
+const PADDS: readonly [string, string, readonly string[]][] = [
+  ["R1X", "New England (PADD 1A)", ["09", "23", "25", "33", "44", "50"]],
+  ["R1Y", "Central Atlantic (PADD 1B)", ["10", "11", "24", "34", "36", "42"]],
+  ["R1Z", "Lower Atlantic (PADD 1C)", ["12", "13", "37", "45", "51", "54"]],
+  ["R20", "Midwest (PADD 2)", ["17", "18", "19", "20", "21", "26", "27", "29", "31", "38", "39", "40", "46", "47", "55"]],
+  ["R30", "Gulf Coast (PADD 3)", ["01", "05", "22", "28", "35", "48"]],
+  ["R40", "Rocky Mountain (PADD 4)", ["08", "16", "30", "49", "56"]],
+  ["R50", "West Coast (PADD 5)", ["02", "04", "06", "15", "32", "41", "53"]],
+];
+
+/** The EIA petroleum region a state lies in, as the provider area EIA publishes. */
+export function paddOf(state: Area | null): Area | null {
+  const fips = code(state) || "";
+  const padd = PADDS.find(([, , states]) => states.includes(fips));
+  return padd ? { geoId: `area:eia:${padd[0]}`, level: "PROVIDER_AREA", name: padd[1] } : null;
+}
+
+/**
  * What to ask for each line, most local first. Each list is tried in order
  * and the first area that publishes a value answers.
  *
@@ -148,14 +179,55 @@ export function readingsFor(areas: ContainingAreas): Record<CostMeasure, Reading
   if (areas.nation) food.push({ measure: "food", metricCode: "BLS:CUUR0000SAF11", area: areas.nation, source: "BLS" });
   if (areas.metro) parity.push({ measure: "parity", metricCode: "BEA:MARPP:1", area: areas.metro, source: "BEA" });
   if (areas.state) parity.push({ measure: "parity", metricCode: "BEA:SARPP:1", area: areas.state, source: "BEA" });
+  const padd = paddOf(areas.state);
+  const eia = (measure: CostMeasure, metricCode: string, within: (Area | null)[]): Reading[] =>
+    within.filter((area): area is Area => Boolean(area)).map((area) => ({ measure, metricCode, area, source: "EIA" }));
+  const heat = {
+    heat_gas: eia("heat_gas", "EIA:NG_RES", [areas.state, areas.nation]),
+    heating_oil: eia("heating_oil", "EIA:EPD2F", [areas.state, padd, areas.nation]),
+    propane: eia("propane", "EIA:EPLLPA", [areas.state, padd, areas.nation]),
+  };
+  const diesel = eia("diesel", "EIA:EPD2D", [areas.state, padd, areas.nation]);
   const prices = {} as Record<PriceItem, Reading[]>;
   for (const spec of PRICE_ITEMS) {
     const readings: Reading[] = [];
+    // EIA publishes each state's own residential electricity price (cents a
+    // kilowatt-hour); BLS only the region's urban average.
+    if (spec.item === "electricity" && areas.state) {
+      readings.push({ measure: spec.item, metricCode: "EIA:ELEC_RES", area: areas.state, source: "EIA", scale: 0.01 });
+    }
     if (areas.region) readings.push({ measure: spec.item, metricCode: `BLS:APU0${region}00${spec.code}`, area: areas.region, source: "BLS" });
     if (areas.nation) readings.push({ measure: spec.item, metricCode: `BLS:APU0000${spec.code}`, area: areas.nation, source: "BLS" });
     prices[spec.item] = readings;
   }
-  return { gas, food, parity, ...prices };
+  return { gas, food, parity, diesel, ...heat, ...prices };
+}
+
+/** Therms in a thousand cubic feet: EIA's average heat content, 1,037 Btu a cubic foot. */
+export const THERMS_PER_MCF = 10.37;
+
+export const HEATING_SEASON = "EIA surveys heating oil and propane prices weekly from October to March.";
+
+/** "$15.20 per thousand cubic feet ($1.47 a therm)". */
+export function formatGasHeat(value: number): string {
+  return `$${value.toFixed(2)} per thousand cubic feet ($${(value / THERMS_PER_MCF).toFixed(2)} a therm)`;
+}
+
+/**
+ * A weekly price's change from the same week a year earlier (EIA's weeks
+ * are Mondays, so 364 days back). An unpublished week is said, not filled.
+ */
+export function changeFromYearEarlierWeek(rows: readonly ObservationRow[]): YearChange {
+  const dated = rows.filter((row) => /^\d{4}-\d{2}-\d{2}/.test(String(row.period_start || "")) && numberOf(row) !== null);
+  const newest = [...dated].sort((left, right) => String(right.period_start).localeCompare(String(left.period_start)))[0];
+  if (!newest) return { percent: null, period: "", reason: "No week is published for this area." };
+  const week = String(newest.period_start).slice(0, 10);
+  const back = new Date(`${week}T00:00:00Z`);
+  back.setUTCDate(back.getUTCDate() - 364);
+  const earlierWeek = back.toISOString().slice(0, 10);
+  const then = numberOf(dated.find((row) => String(row.period_start).slice(0, 10) === earlierWeek));
+  if (then === null || then === 0) return { percent: null, period: week, reason: `The week of ${earlierWeek} is not published for this area.` };
+  return { percent: Math.round((numberOf(newest)! / then - 1) * 1000) / 10, period: `${earlierWeek} to ${week}`, reason: "" };
 }
 
 /** "$3.12 a dozen", "17.9\u00a2 a kilowatt-hour". */

@@ -2969,11 +2969,38 @@ _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="a week with no reported price keeps the row as missing, never zero",
     ),
     _obj(
+        "silver_eia.energy_price_revision",
+        "silver",
+        "EIA",
+        grain="capture_id, row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures of the energy routes",
+        cadence="per EIA replay",
+        empty_behavior="empty only before the first energy capture",
+    ),
+    _obj(
+        "silver_eia.fact_energy_price",
+        "silver",
+        "EIA",
+        grain="series_id, period_start, capture_id",
+        lineage="silver_eia.energy_price_revision, silver_ref.geography_resolution",
+        scope_method=(
+            "registered energy routes (residential electricity, natural gas, "
+            "heating oil and propane, diesel) x every nation and state area EIA "
+            "publishes them for"
+        ),
+        cadence="per EIA replay",
+        empty_behavior=(
+            "a period with no reported price keeps the row as missing, never "
+            "zero; a summer heating fuel week has no row (not surveyed)"
+        ),
+    ),
+    _obj(
         "gold_eia.observation_revision",
         "gold",
         "EIA",
         grain="series_id, week_start, capture_id (published reads only)",
-        lineage="silver_eia.fact_retail_price, control.eia_read",
+        lineage="silver_eia.fact_retail_price, silver_eia.fact_energy_price, control.eia_read",
         scope_method="published reads; every reading of a week kept",
         cadence="per publication",
         empty_behavior="empty only before the first published read",
@@ -2993,8 +3020,8 @@ _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
         "publisher",
         "EIA",
         grain="source_object_key (EIA product code)",
-        lineage="silver_eia.fact_retail_price",
-        scope_method="registered gasoline grades",
+        lineage="silver_eia.fact_retail_price, silver_eia.fact_energy_price",
+        scope_method="registered gasoline grades and energy metrics",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first replay",
     ),
@@ -6037,6 +6064,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "is a second reading beside the first.",
         (
             "silver_eia.fact_retail_price",
+            "silver_eia.fact_energy_price",
             "gold_eia.observation_revision",
             "gold_eia.observation_latest",
         ),
@@ -6050,6 +6078,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 "silver_eia.fact_retail_price",
                 ("series_id", "week_start", "capture_id"),
             ),
+            EnforcedGrain(
+                "silver_eia.fact_energy_price",
+                ("series_id", "period_start", "capture_id"),
+            ),
         ),
     ),
     _rule(
@@ -6062,6 +6094,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "control.eia_read",
             "control.eia_page",
             "silver_eia.price_revision",
+            "silver_eia.energy_price_revision",
             "silver_eia.observation_quarantine",
         ),
     ),
@@ -6069,10 +6102,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-EIA-003",
         "BLOCK",
         "conformance",
-        "A price is a positive number of dollars per gallon or a missing week "
-        "with no number; a missing week is never zero.",
+        "A price is a positive number in its route's stated unit or a missing "
+        "period with no number; a missing period is never zero.",
         (
             "silver_eia.fact_retail_price",
+            "silver_eia.fact_energy_price",
             "silver_eia.price_revision",
             "gold_eia.measure_export",
         ),
@@ -6095,6 +6129,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 kind="check",
                 constraint_name="eia_fact_valid_value_present",
             ),
+            EnforcedGrain(
+                "silver_eia.fact_energy_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="eia_energy_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_eia.fact_energy_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="eia_energy_fact_valid_value_present",
+            ),
         ),
     ),
     _rule(
@@ -6110,6 +6156,23 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "`silver_ref.geography_resolution` and the shared DQ-SHARED geography "
             "rules read that ledger, but no EIA-specific rule fails on an "
             "unmapped area."
+        ),
+    ),
+    _rule(
+        "DQ-EIA-005",
+        "WARN",
+        "temporal_integrity",
+        "A heating oil or propane price falls in a month EIA surveys (October "
+        "to March): a value outside the season is kept as published and "
+        "reported, never dropped.",
+        ("silver_eia.fact_energy_price",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.eia_outside_survey_season` reports every valid "
+            "energy price the replay flagged `outside_survey_season` (a month "
+            "the route's registry entry does not survey) in a published read "
+            "(home-heating-fuel-prices). A summer week EIA does not publish has "
+            "no row and is not a finding."
         ),
     ),
     # -- BEA regional economic accounts --------------------------------------

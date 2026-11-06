@@ -54,9 +54,31 @@ STATES = (
     GeographyRecord(
         "state", "state:48", "48", "48", None, None, "Texas", 2024, usps="TX"
     ),
+    # The state every energy fixture reads beside the nation; gasoline
+    # publishes no Wisconsin price, so its counts are unchanged.
+    GeographyRecord(
+        "state", "state:55", "55", "55", None, None, "Wisconsin", 2024, usps="WI"
+    ),
 )
 
+#: Real EIA answers for the energy routes (home-heating-fuel-prices): the
+#: nation and Wisconsin, and a summer heating fuel window that holds no row.
+ENERGY_FIXTURE_DIR = FIXTURE_DIR / "energy"
+ENERGY_WINDOWS = {
+    "res_electricity": ("data_electricity.json", date(2025, 1, 1), date(2025, 3, 1)),
+    "res_natural_gas": ("data_natgas.json", date(2025, 1, 1), date(2025, 3, 1)),
+    "heating_fuels": ("data_wfr_winter.json", date(2025, 1, 6), date(2025, 1, 20)),
+    "heating_fuels_summer": (
+        "data_wfr_summer.json",
+        date(2025, 7, 7),
+        date(2025, 7, 21),
+    ),
+    "diesel": ("data_diesel.json", date(2025, 1, 6), date(2025, 1, 20)),
+}
+
 SILVER_TABLES = (
+    "silver_eia.fact_energy_price",
+    "silver_eia.energy_price_revision",
     "silver_eia.fact_retail_price",
     "silver_eia.price_revision",
     "silver_eia.observation_quarantine",
@@ -107,6 +129,33 @@ def run_to_gold(
         *WINDOW,
         config=fixture_config(),
         client=client or FixtureClient(),
+    )
+    facts = replay_run(connection_factory, run_id=run_id)
+    published = publish_run(connection_factory, run_id=run_id)
+    return run_id, facts, published
+
+
+def energy_run_to_gold(
+    connection_factory: Callable[[], connection],
+    window: str,
+    *,
+    body: bytes | None = None,
+) -> tuple[UUID, int, int]:
+    """Capture, replay and publish one energy fixture window."""
+    name, start, end = ENERGY_WINDOWS[window]
+    route = window.removesuffix("_summer")
+    content = body if body is not None else (ENERGY_FIXTURE_DIR / name).read_bytes()
+    run_id = capture_window(
+        connection_factory,
+        start,
+        end,
+        config=fixture_config(),
+        client=FixtureClient(
+            httpx.Response(
+                200, content=content, headers={"content-type": "application/json"}
+            )
+        ),
+        route=route,
     )
     facts = replay_run(connection_factory, run_id=run_id)
     published = publish_run(connection_factory, run_id=run_id)
