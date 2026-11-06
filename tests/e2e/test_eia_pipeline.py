@@ -82,3 +82,35 @@ def test_weekly_gasoline_reaches_the_neutral_api_at_every_area_kind(
             "R1X",
             "YBOS",
         }
+
+
+def test_home_energy_prices_reach_the_neutral_api_in_their_own_units(
+    eia_warehouse,
+) -> None:
+    """Covers: ETL-120 — each energy metric answers at the nation and a state,
+    month by month or week by week, in the unit EIA states.
+    """
+    factory = eia_warehouse
+    for window in ("res_electricity", "res_natural_gas", "heating_fuels"):
+        eia.energy_run_to_gold(factory, window)
+    assert harvest_publisher(factory, Publisher("gold_eia")) > 0
+
+    with real_api_client() as client:
+        for code, unit, periods in (
+            ("EIA:ELEC_RES", "cents per kilowatt-hour", 3),
+            ("EIA:NG_RES", "U.S. dollars per thousand cubic feet", 3),
+            ("EIA:EPD2F", "U.S. dollars per gallon", 3),
+        ):
+            metric = client.get(f"/api/v1/catalog/metrics/{code}").json()
+            assert sorted(metric["valid_geo_grains"]) == ["NATIONAL", "STATE"]
+            for geo_id, geo_level in (("us:1", "NATIONAL"), ("state:55", "STATE")):
+                response = client.get(
+                    "/api/v1/observations",
+                    params={"metric_code": code, "geo_id": geo_id},
+                )
+                assert response.status_code == 200, response.text
+                rows = response.json()["items"]
+                assert len(rows) == periods
+                assert all(row["geo_level"] == geo_level for row in rows)
+                assert all(row["unit"] == unit for row in rows)
+                assert all(Decimal(row["value"]) > 0 for row in rows)

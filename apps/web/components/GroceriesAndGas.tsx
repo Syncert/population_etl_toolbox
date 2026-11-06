@@ -5,7 +5,8 @@
 // Every number names the area it describes; the rules for choosing the area
 // are `lib/groceriesAndGas.ts`. Loaded as its own chunk. "Minutes of work"
 // asks the API for each price over the page's own area's hourly wage, only
-// when the reader chooses it, so the page's own reads are unchanged.
+// when the reader chooses it, so the page's own reads are unchanged. Home
+// heating fuels and diesel are EIA's (home-heating-fuel-prices).
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
@@ -20,6 +21,7 @@ import { buildUseCaseHistory } from "../lib/useCaseAnalysis";
 import type { PlaceLevel } from "../lib/placeChapters";
 import type { RelatedResponse } from "../lib/placeRelationships";
 import {
+  HEATING_SEASON,
   NO_LOCAL_PRICES,
   NO_METRO_PRICES,
   NO_METRO_WAGE,
@@ -27,10 +29,12 @@ import {
   SOURCE_NAMES,
   WAGE_LEVELS,
   areaLabel,
+  changeFromYearEarlierWeek,
   changeOverYear,
   containingAreas,
   formatChange,
   formatGas,
+  formatGasHeat,
   formatParity,
   formatPrice,
   minutesRatioId,
@@ -40,7 +44,7 @@ import {
   wageText,
   withheldReason,
 } from "../lib/groceriesAndGas";
-import type { CostMeasure, PriceItem, Reading } from "../lib/groceriesAndGas";
+import type { CostMeasure, HeatMeasure, PriceItem, Reading } from "../lib/groceriesAndGas";
 
 const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
 
@@ -58,17 +62,24 @@ interface Answer {
   notes: string[];
 }
 
-const TITLES: Record<"gas" | "food" | "parity", string> = {
+type Line = "gas" | HeatMeasure | "food" | "parity";
+
+const TITLES: Record<Line, string> = {
   gas: "Regular gasoline",
+  heat_gas: "Natural gas for heating",
+  heating_oil: "Heating oil",
+  propane: "Propane",
   food: "Groceries overall (food at home)",
   parity: "Overall price level",
 };
 
-const LINES: ("gas" | "food" | "parity")[] = ["gas", "food", "parity"];
+const LINES: Line[] = ["gas", "heat_gas", "heating_oil", "propane", "food", "parity"];
+const HEAT: readonly CostMeasure[] = ["heat_gas", "heating_oil", "propane"];
 const ITEMS = PRICE_ITEMS.map((spec) => spec.item);
-const ORDER: CostMeasure[] = [...ITEMS, ...LINES];
+const ORDER: CostMeasure[] = [...ITEMS, ...LINES, "diesel"];
 
 const isItem = (measure: CostMeasure): measure is PriceItem => ITEMS.includes(measure as PriceItem);
+const isValued = (row: ObservationRow) => row.value !== null && row.value !== undefined && row.value !== "";
 
 async function answer(
   readings: Reading[],
@@ -85,7 +96,7 @@ async function answer(
         notes.push(`${where}: not published.`);
         continue;
       }
-      if (reading.measure === "food" || isItem(reading.measure)) {
+      if (reading.measure === "food" || isItem(reading.measure) || HEAT.includes(reading.measure)) {
         const history = buildUseCaseHistory(source, metric, reading.area.geoId, reading.area.level);
         if (!history.request) {
           notes.push(`${where}: ${history.reason}`);
@@ -94,7 +105,8 @@ async function answer(
         const result = await fetchCollectionPages<Observation>(history.request.resource, {
           params: history.request.params,
           pageSize: 500,
-          maxPages: 2,
+          // Weekly heating fuel seasons since 1990 run past a thousand weeks.
+          maxPages: 4,
           signal,
         });
         const rows = normalizeObservationRows(source, result.items).filter((row) => row.geo_id === reading.area.geoId);
@@ -106,9 +118,29 @@ async function answer(
           }
           return { reading, text: formatChange(change.percent), period: change.period, notes };
         }
+        if (!isItem(reading.measure)) {
+          // A heating fuel: the newest published period, never a summer week
+          // filled in. Heating oil and propane are weekly, natural gas monthly.
+          const newest = [...rows].reverse().find(isValued);
+          if (!newest) {
+            notes.push(`${where}: ${rows.length ? withheldReason(rows.at(-1)) : "no value published for this area."}`);
+            continue;
+          }
+          const value = Number(newest.value);
+          const weekly = reading.measure !== "heat_gas";
+          const yearChange = weekly ? changeFromYearEarlierWeek(rows) : change;
+          return {
+            reading,
+            text: weekly ? formatGas(value) : formatGasHeat(value),
+            period: observationPeriodLabel(newest),
+            change: yearChange.percent === null ? "" : formatChange(yearChange.percent),
+            notes,
+          };
+        }
         const spec = PRICE_ITEMS.find((item) => item.item === reading.measure)!;
-        const newest = [...rows].reverse().find((row) => row.value !== null && row.value !== undefined && row.value !== "");
-        const value = newest ? Number(newest.value) : NaN;
+        const newest = [...rows].reverse().find(isValued);
+        // EIA's electricity is cents a kilowatt-hour; the line is in dollars.
+        const value = newest ? Number(newest.value) * (reading.scale ?? 1) : NaN;
         if (!newest || !Number.isFinite(value)) {
           notes.push(`${where}: ${rows.length ? withheldReason(rows.at(-1)) : "no value published for this area."}`);
           continue;
@@ -144,7 +176,7 @@ async function answer(
         notes.push(`${where}: ${withheldReason(row)}`);
         continue;
       }
-      const text = reading.measure === "gas" ? formatGas(value) : formatParity(value);
+      const text = reading.measure === "parity" ? formatParity(value) : formatGas(value);
       return { reading, text, period: observationPeriodLabel(row), notes };
     } catch (error) {
       if (signal.aborted) throw error;
@@ -179,6 +211,9 @@ export default function GroceriesAndGas({
   const [answers, setAnswers] = useState<Partial<Record<CostMeasure, Answer>>>({});
   const [view, setView] = useState<View>("price");
   const [minutes, setMinutes] = useState<Partial<Record<PriceItem, Minutes>>>({});
+  // The price minutes of work divide where the shown price has no pairing:
+  // electricity's state price is EIA's, minutes are of BLS's region price.
+  const [basis, setBasis] = useState<Partial<Record<PriceItem, Answer>>>({});
 
   useEffect(() => {
     if (!sources.length) return;
@@ -199,26 +234,36 @@ export default function GroceriesAndGas({
   useEffect(() => {
     setView("price");
     setMinutes({});
+    setBasis({});
   }, [place.geo_id]);
 
   // Minutes of work: read only once chosen, one row per answered price.
   useEffect(() => {
     if (view !== "minutes") return;
     const controller = new AbortController();
+    const readings = readingsFor(containingAreas(level, place, related));
     for (const item of ITEMS) {
-      const result = answers[item];
-      const ratioId = result?.reading ? minutesRatioId(result.reading) : null;
-      if (!result?.reading || !ratioId || minutes[item]) continue;
-      getDerivedObservations(
-        {
-          ratio_id: ratioId,
-          geo_id: result.reading.area.geoId,
-          wage_geo_id: place.geo_id,
-          ...(/^\d{4}-\d{2}-\d{2}$/.test(result.periodStart || "") ? { period_start: result.periodStart } : { newest_per_geography: true }),
-          limit: 1,
-        },
-        { signal: controller.signal },
-      )
+      const shown = answers[item];
+      if (!shown?.reading || minutes[item]) continue;
+      const paired = minutesRatioId(shown.reading)
+        ? Promise.resolve(shown)
+        : answer(readings[item].filter((reading) => minutesRatioId(reading)), sources, controller.signal);
+      paired
+        .then((result) => {
+          const ratioId = result.reading ? minutesRatioId(result.reading) : null;
+          if (!result.reading || !ratioId) throw new Error("no pairing");
+          if (result !== shown && !controller.signal.aborted) setBasis((current) => ({ ...current, [item]: result }));
+          return getDerivedObservations(
+            {
+              ratio_id: ratioId,
+              geo_id: result.reading.area.geoId,
+              wage_geo_id: place.geo_id,
+              ...(/^\d{4}-\d{2}-\d{2}$/.test(result.periodStart || "") ? { period_start: result.periodStart } : { newest_per_geography: true }),
+              limit: 1,
+            },
+            { signal: controller.signal },
+          );
+        })
         .then((page) => {
           if (!controller.signal.aborted) setMinutes((current) => ({ ...current, [item]: page.items[0] || "failed" }));
         })
@@ -287,6 +332,9 @@ export default function GroceriesAndGas({
             const result = answers[spec.item];
             const other = result?.reading && common && result.reading.area.geoId !== common.geoId;
             const work = minutes[spec.item];
+            const divided = basis[spec.item] || result;
+            const dividedOther = divided?.reading && common && divided.reading.area.geoId !== common.geoId;
+            const ownSource = result?.reading && result.reading.source !== "BLS" ? `, ${SOURCE_NAMES[result.reading.source]}` : "";
             return (
               <tr key={spec.item} data-testid={`place-cost-${spec.item}`} data-area={result?.reading?.area.geoId || ""}>
                 <th scope="row">{spec.title}</th>
@@ -297,8 +345,8 @@ export default function GroceriesAndGas({
                     <span data-testid={`place-cost-${spec.item}-minutes`}>
                       {!work ? "Reading…" : work === "failed" ? "Not computed for this place." : <strong>{minutesText(work)}</strong>}
                       <span className="subtle block">
-                        for {result.text}, {result.period}
-                        {other ? ` · ${areaLabel(result.reading.area, place.geo_id)}` : ""}
+                        for {divided!.text}, {divided!.period}
+                        {dividedOther ? ` · ${areaLabel(divided!.reading!.area, place.geo_id)}` : ""}
                       </span>
                     </span>
                   ) : result.reading ? (
@@ -306,7 +354,7 @@ export default function GroceriesAndGas({
                       <strong>{result.text}</strong>
                       <span className="subtle block">
                         {result.period}
-                        {other ? ` · ${areaLabel(result.reading.area, place.geo_id)}` : ""}
+                        {other ? ` · ${areaLabel(result.reading.area, place.geo_id)}${ownSource}` : ""}
                       </span>
                     </>
                   ) : (
@@ -334,14 +382,27 @@ export default function GroceriesAndGas({
                   <>
                     <strong>{result.text}</strong>
                     <span className="subtle">
-                      {" "}· {areaLabel(result.reading.area, place.geo_id)}, {result.period}. Source: {SOURCE_NAMES[result.reading.source]}.
+                      {" "}· {areaLabel(result.reading.area, place.geo_id)}, {result.period}
+                      {result.change ? `, ${result.change}` : ""}. Source: {SOURCE_NAMES[result.reading.source]}.
                     </span>
+                    {measure === "gas" && answers.diesel?.reading ? (
+                      <span className="block" data-testid="place-cost-diesel" data-area={answers.diesel.reading.area.geoId}>
+                        Diesel <strong>{answers.diesel.text}</strong>
+                        <span className="subtle">
+                          {" "}· {areaLabel(answers.diesel.reading.area, place.geo_id)}, {answers.diesel.period}. Source: {SOURCE_NAMES.EIA}.
+                        </span>
+                      </span>
+                    ) : null}
                   </>
                 ) : measure === "parity" && level === "NATIONAL" ? (
                   <span>100 by definition: BEA measures every area&apos;s price level against the nation&apos;s.</span>
                 ) : (
                   <span>Not published for this place or any area containing it.</span>
                 )}
+                {measure === "heating_oil" || measure === "propane" ? <span className="subtle block">{HEATING_SEASON}</span> : null}
+                {result?.reading && measure === "heat_gas" ? (
+                  <span className="subtle block"> A thousand cubic feet is about 10.37 therms at EIA&apos;s average heat content.</span>
+                ) : null}
                 {result?.reading && measure === "food" ? (
                   <span className="subtle block"> Each area&apos;s index has its own base, so only its change over a year is shown.</span>
                 ) : null}

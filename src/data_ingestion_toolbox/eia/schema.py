@@ -29,6 +29,8 @@ REQUIRED_RELATIONS = (
     "silver_eia.price_revision",
     "silver_eia.observation_quarantine",
     "silver_eia.fact_retail_price",
+    "silver_eia.energy_price_revision",
+    "silver_eia.fact_energy_price",
     "gold_eia.observation_revision",
     "gold_eia.observation_latest",
     "gold_eia.measure_export",

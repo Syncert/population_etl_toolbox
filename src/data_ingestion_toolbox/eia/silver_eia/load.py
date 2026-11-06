@@ -19,6 +19,7 @@ from psycopg2.extras import execute_values
 from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..config import SOURCE_CODE
+from ..routes import GASOLINE, route_for
 from .parse import parse_page
 
 
@@ -71,8 +72,32 @@ class EiaPublicationError(RuntimeError):
     """A read has not reached the silver publication gate."""
 
 
+def _route_of(connection_factory: Callable[[], Any], run_id: UUID) -> str:
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT route FROM control.eia_read WHERE run_id = %s", (str(run_id),)
+            )
+            row = cursor.fetchone()
+    finally:
+        connection.close()
+    return row[0] if row else GASOLINE
+
+
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
-    """Parse and conform one captured read; return the fact count."""
+    """Parse and conform one captured read of any route; return the fact count.
+
+    Gasoline replays exactly as before the route registry; every other
+    route replays into ``silver_eia.fact_energy_price``.
+    """
+    route = _route_of(connection_factory, run_id)
+    if route != GASOLINE:
+        from .energy_load import replay_energy_run
+
+        return replay_energy_run(
+            connection_factory, run_id=run_id, route=route_for(route)
+        )
     connection = connection_factory()
     try:
         with connection.cursor() as cursor:

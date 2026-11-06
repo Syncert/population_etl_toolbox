@@ -487,12 +487,14 @@ r control.eia_read
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
     column repeated_row_count integer NOT NULL DEFAULT 0
+    column route text NOT NULL DEFAULT 'gasoline'::text
     constraint eia_read_page_count_check CHECK ((page_count >= 1))
     constraint eia_read_parsed_row_count_check CHECK ((parsed_row_count >= 0))
     constraint eia_read_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
     constraint eia_read_pkey PRIMARY KEY (run_id)
     constraint eia_read_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
     constraint eia_read_repeated_row_count_check CHECK ((repeated_row_count >= 0))
+    constraint eia_read_route_registered CHECK ((route = ANY (ARRAY['gasoline'::text, 'diesel'::text, 'res_electricity'::text, 'res_natural_gas'::text, 'heating_fuels'::text])))
     constraint eia_read_row_total_check CHECK ((row_total >= 0))
     constraint eia_read_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint eia_read_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
@@ -4990,10 +4992,19 @@ v gold_eia.measure_export
     column source_object_key text
     column product text
     column unit text
-    body SELECT DISTINCT product AS source_object_key,
-    body     product,
+    body SELECT DISTINCT fact.product AS source_object_key,
+    body     fact.product,
     body     'U.S. dollars per gallon'::text AS unit
-    body    FROM silver_eia.fact_retail_price fact;
+    body    FROM silver_eia.fact_retail_price fact
+    body UNION
+    body  SELECT DISTINCT fact.metric_key AS source_object_key,
+    body     fact.metric_key AS product,
+    body         CASE fact.metric_key
+    body             WHEN 'ELEC_RES'::text THEN 'cents per kilowatt-hour'::text
+    body             WHEN 'NG_RES'::text THEN 'U.S. dollars per thousand cubic feet'::text
+    body             ELSE 'U.S. dollars per gallon'::text
+    body         END AS unit
+    body    FROM silver_eia.fact_energy_price fact;
 
 v gold_eia.metric_publisher
     column source_code text
@@ -5018,22 +5029,43 @@ v gold_eia.metric_publisher
     body     '1.0'::text AS publisher_contract_version,
     body     metric_key AS source_object_key,
     body     'measure'::text AS source_object_type,
-    body     grade || ' retail price, weekly (EIA-878, U.S. dollars per gallon)'::text AS metric_display_name,
-    body     'U.S. dollars per gallon'::text AS units,
+    body         CASE metric_key
+    body             WHEN 'ELEC_RES'::text THEN 'Residential electricity price, monthly (EIA-861M, cents per kilowatt-hour)'::text
+    body             WHEN 'NG_RES'::text THEN 'Residential natural gas price, monthly (EIA Natural Gas Monthly, U.S. dollars per thousand cubic feet)'::text
+    body             WHEN 'EPD2F'::text THEN 'Residential heating oil price, weekly October to March (EIA-877, U.S. dollars per gallon)'::text
+    body             WHEN 'EPLLPA'::text THEN 'Residential propane price, weekly October to March (EIA-877, U.S. dollars per gallon)'::text
+    body             WHEN 'EPD2D'::text THEN 'On-highway diesel fuel retail price, weekly (EIA-888, U.S. dollars per gallon)'::text
+    body             ELSE grade || ' retail price, weekly (EIA-878, U.S. dollars per gallon)'::text
+    body         END AS metric_display_name,
+    body     unit AS units,
     body     'source_fact'::text AS measure_kind,
     body     valid_geo_grains,
-    body     ARRAY['WEEKLY'::text] AS valid_time_grains,
+    body     ARRAY[upper(frequency)] AS valid_time_grains,
     body     NULL::text AS aggregation_characteristic,
     body     jsonb_build_object('schema', 'gold_eia', 'relation', 'observation_revision', 'key', metric_key) AS physical_lineage,
     body     source_watermark,
     body     source_run_id,
     body     publication_time,
-    body     'U.S. Energy Information Administration, Gasoline and Diesel Fuel Update (EIA-878)'::text AS source_name,
+    body         CASE route
+    body             WHEN 'res_electricity'::text THEN 'U.S. Energy Information Administration, Electric Power Monthly (EIA-861M)'::text
+    body             WHEN 'res_natural_gas'::text THEN 'U.S. Energy Information Administration, Natural Gas Monthly'::text
+    body             WHEN 'heating_fuels'::text THEN 'U.S. Energy Information Administration, State Heating Oil and Propane Program (EIA-877)'::text
+    body             WHEN 'diesel'::text THEN 'U.S. Energy Information Administration, Gasoline and Diesel Fuel Update (EIA-888)'::text
+    body             ELSE 'U.S. Energy Information Administration, Gasoline and Diesel Fuel Update (EIA-878)'::text
+    body         END AS source_name,
     body     'government-energy-statistics'::text AS source_type,
-    body     'https://www.eia.gov/petroleum/gasdiesel/'::text AS reference_url,
+    body         CASE route
+    body             WHEN 'res_electricity'::text THEN 'https://www.eia.gov/electricity/monthly/'::text
+    body             WHEN 'res_natural_gas'::text THEN 'https://www.eia.gov/naturalgas/monthly/'::text
+    body             WHEN 'heating_fuels'::text THEN 'https://www.eia.gov/petroleum/heatingoilpropane/'::text
+    body             ELSE 'https://www.eia.gov/petroleum/gasdiesel/'::text
+    body         END AS reference_url,
     body     last_value_date
     body    FROM ( SELECT latest.metric_key,
     body             min(latest.grade) AS grade,
+    body             min(latest.unit) AS unit,
+    body             min(latest.route) AS route,
+    body             min(latest.frequency) AS frequency,
     body             max(latest.week_start)::text AS source_watermark,
     body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
     body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
@@ -5069,7 +5101,10 @@ v gold_eia.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body SELECT DISTINCT ON (series_id, week_start) metric_key,
+    column route text
+    column frequency text
+    column outside_survey_season boolean
+    body SELECT metric_key,
     body     product,
     body     grade,
     body     series_id,
@@ -5092,9 +5127,18 @@ v gold_eia.observation_latest
     body     release_key,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     route,
+    body     frequency,
+    body     outside_survey_season
     body    FROM gold_eia.observation_revision revision
-    body   ORDER BY series_id, week_start, retrieved_at DESC, capture_id DESC;
+    body   WHERE NOT (EXISTS ( SELECT 1
+    body            FROM silver_eia.fact_retail_price newer
+    body              JOIN control.eia_read read ON read.run_id = newer.run_id
+    body           WHERE revision.route = 'gasoline'::text AND read.status = 'published'::text AND newer.series_id = revision.series_id AND newer.week_start = revision.week_start AND (newer.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND newer.geo_id IS NOT NULL AND ((ROW(newer.retrieved_at, newer.capture_id) > ROW(revision.retrieved_at, revision.capture_id))))) AND NOT (EXISTS ( SELECT 1
+    body            FROM silver_eia.fact_energy_price newer
+    body              JOIN control.eia_read read ON read.run_id = newer.run_id
+    body           WHERE revision.route <> 'gasoline'::text AND read.status = 'published'::text AND newer.series_id = revision.series_id AND newer.period_start = revision.period_start AND (newer.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND newer.geo_id IS NOT NULL AND ((ROW(newer.retrieved_at, newer.capture_id) > ROW(revision.retrieved_at, revision.capture_id)))));
 
 v gold_eia.observation_revision
     column metric_key text
@@ -5121,6 +5165,9 @@ v gold_eia.observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column route text
+    column frequency text
+    column outside_survey_season boolean
     body SELECT fact.product AS metric_key,
     body     fact.product,
     body         CASE fact.product
@@ -5150,8 +5197,53 @@ v gold_eia.observation_revision
     body     fact.retrieved_at::date::text AS release_key,
     body     fact.source_record_id,
     body     fact.capture_id,
-    body     fact.run_id
+    body     fact.run_id,
+    body     'gasoline'::text AS route,
+    body     'weekly'::text AS frequency,
+    body     false AS outside_survey_season
     body    FROM silver_eia.fact_retail_price fact
+    body      JOIN control.eia_read read ON read.run_id = fact.run_id
+    body   WHERE read.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND fact.geo_id IS NOT NULL
+    body UNION ALL
+    body  SELECT fact.metric_key,
+    body     fact.metric_key AS product,
+    body         CASE fact.metric_key
+    body             WHEN 'ELEC_RES'::text THEN 'Residential electricity'::text
+    body             WHEN 'NG_RES'::text THEN 'Residential natural gas'::text
+    body             WHEN 'EPD2F'::text THEN 'Residential heating oil'::text
+    body             WHEN 'EPLLPA'::text THEN 'Residential propane'::text
+    body             WHEN 'EPD2D'::text THEN 'On-highway diesel fuel'::text
+    body             ELSE NULL::text
+    body         END AS grade,
+    body     fact.series_id,
+    body     fact.period_start AS week_start,
+    body     fact.period_start,
+    body     fact.period_end,
+    body     fact.area_code AS duoarea,
+    body     fact.area_name,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.geography_status,
+    body         CASE fact.metric_key
+    body             WHEN 'ELEC_RES'::text THEN 'cents per kilowatt-hour'::text
+    body             WHEN 'NG_RES'::text THEN 'U.S. dollars per thousand cubic feet'::text
+    body             ELSE 'U.S. dollars per gallon'::text
+    body         END AS unit,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.retrieved_at,
+    body     fact.retrieved_at::date AS release_date,
+    body     fact.retrieved_at::date::text AS release_key,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id,
+    body     fact.route,
+    body     fact.frequency,
+    body     fact.outside_survey_season
+    body    FROM silver_eia.fact_energy_price fact
     body      JOIN control.eia_read read ON read.run_id = fact.run_id
     body   WHERE read.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND fact.geo_id IS NOT NULL;
 
@@ -12362,6 +12454,87 @@ r silver_census_sae.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index census_sae_revision_run_idx CREATE INDEX census_sae_revision_run_idx ON silver_census_sae.observation_revision USING btree (run_id)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_sae.observation_revision USING btree (capture_id, source_row_index, measure_id)
+
+r silver_eia.energy_price_revision
+    column capture_id uuid NOT NULL
+    column row_index integer NOT NULL
+    column run_id uuid NOT NULL
+    column route text NOT NULL
+    column series_id text NOT NULL
+    column period_start date NOT NULL
+    column period_end date NOT NULL
+    column frequency text NOT NULL
+    column area_code text NOT NULL
+    column area_name text
+    column metric_key text NOT NULL
+    column product text NOT NULL
+    column process text
+    column units text NOT NULL
+    column geo_type text NOT NULL
+    column geo_id text
+    column state_usps text
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column outside_survey_season boolean NOT NULL DEFAULT false
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint eia_energy_revision_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint eia_energy_revision_period_ordered CHECK ((period_end >= period_start))
+    constraint eia_energy_revision_state_named CHECK (((geo_type = 'state'::text) = (state_usps IS NOT NULL)))
+    constraint eia_energy_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint energy_price_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint energy_price_revision_frequency_check CHECK ((frequency = ANY (ARRAY['weekly'::text, 'monthly'::text])))
+    constraint energy_price_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'provider_area'::text])))
+    constraint energy_price_revision_pkey PRIMARY KEY (capture_id, row_index)
+    constraint energy_price_revision_row_index_check CHECK ((row_index >= 0))
+    constraint energy_price_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint energy_price_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint energy_price_revision_state_usps_check CHECK (((state_usps IS NULL) OR (state_usps ~ '^[A-Z]{2}$'::text)))
+    constraint energy_price_revision_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
+    constraint energy_price_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index eia_energy_revision_period_idx CREATE INDEX eia_energy_revision_period_idx ON silver_eia.energy_price_revision USING btree (series_id, period_start, created_at DESC)
+    index eia_energy_revision_run_idx CREATE INDEX eia_energy_revision_run_idx ON silver_eia.energy_price_revision USING btree (run_id)
+    index energy_price_revision_pkey CREATE UNIQUE INDEX energy_price_revision_pkey ON silver_eia.energy_price_revision USING btree (capture_id, row_index)
+
+r silver_eia.fact_energy_price
+    column series_id text NOT NULL
+    column period_start date NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column route text NOT NULL
+    column frequency text NOT NULL
+    column period_end date NOT NULL
+    column metric_key text NOT NULL
+    column area_code text NOT NULL
+    column area_name text
+    column geo_type text NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column units text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column outside_survey_season boolean NOT NULL DEFAULT false
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint eia_energy_fact_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint eia_energy_fact_resolved_has_geography CHECK (((geography_status = 'resolved'::text) = ((geo_sk IS NOT NULL) AND (geo_id IS NOT NULL))))
+    constraint eia_energy_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint fact_energy_price_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_energy_price_frequency_check CHECK ((frequency = ANY (ARRAY['weekly'::text, 'monthly'::text])))
+    constraint fact_energy_price_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'provider_area'::text])))
+    constraint fact_energy_price_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_energy_price_pkey PRIMARY KEY (series_id, period_start, capture_id)
+    constraint fact_energy_price_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_energy_price_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
+    constraint fact_energy_price_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index eia_energy_fact_metric_geo_idx CREATE INDEX eia_energy_fact_metric_geo_idx ON silver_eia.fact_energy_price USING btree (metric_key, geo_id, period_start)
+    index eia_energy_fact_route_period_idx CREATE INDEX eia_energy_fact_route_period_idx ON silver_eia.fact_energy_price USING btree (route, period_start)
+    index eia_energy_fact_run_idx CREATE INDEX eia_energy_fact_run_idx ON silver_eia.fact_energy_price USING btree (run_id)
+    index fact_energy_price_pkey CREATE UNIQUE INDEX fact_energy_price_pkey ON silver_eia.fact_energy_price USING btree (series_id, period_start, capture_id)
 
 r silver_eia.fact_retail_price
     column series_id text NOT NULL

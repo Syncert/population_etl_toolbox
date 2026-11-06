@@ -647,7 +647,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
     ),
     WarehouseSource(
         code="EIA",
-        name="Weekly retail gasoline prices",
+        name="Gasoline, diesel and home energy prices",
         publisher="Energy Information Administration",
         topic="Prices and the national economy",
         module="eia",
@@ -656,12 +656,31 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         release="Every Monday",
         grains={"nation": "n", "state": "p", "other": "n"},
         years=[(2015, 2026)],
-        years_note="Every week from 2015-01-05",
-        datasets=["petroleum/pri/gnd (EPMR, EPMM, EPMP, EPM0)"],
-        measures="Regular, midgrade, premium and all-grades gasoline, dollars per gallon.",
+        years_note=(
+            "Gasoline and diesel every week from 2015-01-05; residential electricity "
+            "monthly from 2001, natural gas monthly from 1973; heating oil and propane "
+            "weekly October to March from 1990"
+        ),
+        datasets=[
+            "petroleum/pri/gnd (EPMR, EPMM, EPMP, EPM0, EPD2D)",
+            "electricity/retail-sales (RES)",
+            "natural-gas/pri/sum (PRS)",
+            "petroleum/pri/wfr (EPD2F, EPLLPA)",
+        ],
+        measures=(
+            "Regular, midgrade, premium and all-grades gasoline and diesel, dollars per "
+            "gallon; residential electricity, cents per kilowatt-hour; residential "
+            "natural gas, dollars per thousand cubic feet; residential heating oil and "
+            "propane, dollars per gallon."
+        ),
         raw=[],
         control=["control.eia_read", "control.eia_page"],
-        silver=["silver_eia.price_revision", "silver_eia.fact_retail_price"],
+        silver=[
+            "silver_eia.price_revision",
+            "silver_eia.fact_retail_price",
+            "silver_eia.energy_price_revision",
+            "silver_eia.fact_energy_price",
+        ],
         gold=["gold_eia.observation_revision", "gold_eia.observation_latest"],
         credential="EIA_API_KEY",
         catalog_source_code="EIA",

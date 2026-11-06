@@ -841,14 +841,29 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed EIA answers: the gasoline window and the area facet."""
+    """Serve the reviewed EIA answers: the gasoline window, the area facet,
+    and each home energy route's answer (home-heating-fuel-prices)."""
     from data_ingestion_toolbox.eia import client as eia_client
 
     window = (FIXTURE_ROOT / "eia" / "weekly_2026-08-31_2026-09-07.json").read_bytes()
     facet = (FIXTURE_ROOT / "eia" / "duoarea_facet.json").read_bytes()
+    energy = FIXTURE_ROOT / "eia" / "energy"
+    by_route = {
+        "electricity/retail-sales/data/": energy / "data_electricity.json",
+        "natural-gas/pri/sum/data/": energy / "data_natgas.json",
+        "petroleum/pri/wfr/data/": energy / "data_wfr_winter.json",
+    }
 
     def get(self: Any, route: str, params: Any, **_kwargs: Any) -> Any:
-        payload = facet if route.endswith("facet/duoarea/") else window
+        diesel = ("facets[product][]", "EPD2D") in list(params)
+        if route.endswith("facet/duoarea/"):
+            payload = facet
+        elif diesel:
+            payload = (energy / "data_diesel.json").read_bytes()
+        elif route in by_route:
+            payload = by_route[route].read_bytes()
+        else:
+            payload = window
         return eia_client.EiaResponse(
             route, payload, {"content-type": "application/json"}, 200
         )
