@@ -257,7 +257,7 @@ export default function GroceriesAndGas({
           Everyday prices
           {common ? (
             <span className="subtle" data-testid="place-cost-items-area">
-              {" "}· {areaLabel(common, place.geo_id)}, urban average. Source: {SOURCE_NAMES.BLS}, average prices.
+              {" "}· {areaLabel(common, place.geo_id)}, urban average{answered.some((area) => area!.geoId !== common.geoId) ? ", except where a row names another area" : ""}. Source: {SOURCE_NAMES.BLS}, average prices.
             </span>
           ) : null}
           {view === "minutes" ? (

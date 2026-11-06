@@ -544,7 +544,7 @@ test("a county's groceries and gas card names the area behind every figure", asy
   // the region named once, an item only the nation publishes named on its
   // row, an item not loaded said so, and rent linked to Housing.
   await expect(card.getByRole("heading", { level: 2 })).toHaveText("Cost of living");
-  await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average");
+  await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average, except where a row names another area");
   const eggs = page.getByTestId("place-cost-eggs");
   await expect(eggs).toHaveAttribute("data-area", "region:2");
   await expect(eggs).toContainText("$3.18 a dozen");
