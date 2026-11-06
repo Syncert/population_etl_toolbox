@@ -184,8 +184,16 @@ FROM valued;
 
 -- Each tenure's tax mix in its window's last year: the share of state and
 -- local taxes from property, general sales, income (individual and
--- corporate) and everything else, as Census publishes them. Shares of one
--- total in one year; never a score.
+-- corporate) and everything else. Shares of one total in one year; never a
+-- score.
+--
+-- "Everything else" is the total less the three named groups, not a sum of
+-- published parts. Census's annual survey publishes selective sales but no
+-- "other taxes" aggregate (licences, severance, estate and the rest are only
+-- in the unit files), so summing the parts left Alaska at 72 percent and
+-- Alabama at 94 on OFFICE_LAB on 2026-11-06. A year missing the total or any
+-- named part has no mix ("Not published"), never a partial one; a remainder
+-- below -0.5 points means the parts and total disagree and is not served.
 CREATE OR REPLACE VIEW gold_elections.governor_term_tax_mix AS
 WITH tenure AS (
     SELECT DISTINCT fiscal.state_fips, fiscal.geo_id, fiscal.tenure_key, fiscal.so_far,
@@ -193,21 +201,37 @@ WITH tenure AS (
     FROM gold_elections.governor_term_fiscal AS fiscal
     WHERE fiscal.measure = 'tax_burden'
 ),
-mix AS (
+named AS (
     SELECT tax_mix.geo_id, tax_mix.fiscal_year,
-           CASE tax_mix.measure_id
-               WHEN 'tax_property' THEN 'property'
-               WHEN 'tax_general_sales' THEN 'general_sales'
-               WHEN 'tax_individual_income' THEN 'income'
-               WHEN 'tax_corporate_income' THEN 'income'
-               ELSE 'other'
-           END AS tax_group,
-           tax_mix.share_of_taxes_pct
+           SUM(tax_mix.share_of_taxes_pct) FILTER (WHERE tax_mix.measure_id = 'tax_property') AS property,
+           SUM(tax_mix.share_of_taxes_pct) FILTER (WHERE tax_mix.measure_id = 'tax_general_sales') AS general_sales,
+           SUM(tax_mix.share_of_taxes_pct) FILTER (
+               WHERE tax_mix.measure_id IN ('tax_individual_income', 'tax_corporate_income')) AS income,
+           COUNT(DISTINCT tax_mix.measure_id) FILTER (WHERE tax_mix.measure_id IN (
+               'tax_property', 'tax_general_sales', 'tax_individual_income', 'tax_corporate_income')
+           ) AS named_parts
     FROM gold_census_govfin.tax_mix AS tax_mix
     WHERE tax_mix.dataset_id = 'asslgf'
       AND tax_mix.government_level = 'state_and_local'
       AND tax_mix.quarter = 0
       AND tax_mix.share_of_taxes_pct IS NOT NULL
+    GROUP BY tax_mix.geo_id, tax_mix.fiscal_year
+),
+complete AS (
+    SELECT named.*, 100 - (named.property + named.general_sales + named.income) AS remainder
+    FROM named
+    WHERE named.named_parts = 4
+),
+mix AS (
+    SELECT complete.geo_id, complete.fiscal_year, part.tax_group, part.share_of_taxes_pct
+    FROM complete
+    CROSS JOIN LATERAL (VALUES
+        ('property'::TEXT, complete.property),
+        ('general_sales'::TEXT, complete.general_sales),
+        ('income'::TEXT, complete.income),
+        ('other'::TEXT, GREATEST(complete.remainder, 0))
+    ) AS part(tax_group, share_of_taxes_pct)
+    WHERE complete.remainder >= -0.5
 )
 SELECT tenure.state_fips,
        tenure.geo_id,
@@ -215,11 +239,9 @@ SELECT tenure.state_fips,
        tenure.so_far,
        tenure.window_end_year AS fiscal_year,
        mix.tax_group,
-       ROUND(SUM(mix.share_of_taxes_pct), 2) AS share_of_taxes_pct
+       ROUND(mix.share_of_taxes_pct, 2) AS share_of_taxes_pct
 FROM tenure
-JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year
-GROUP BY tenure.state_fips, tenure.geo_id, tenure.tenure_key, tenure.so_far,
-         tenure.window_end_year, mix.tax_group;
+JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year;
 
 COMMENT ON VIEW gold_elections.governor_tenure IS
     'Each governor''s tenure: consecutive terms of one holder and party, a month or less apart, as one span.';
@@ -228,4 +250,4 @@ COMMENT ON VIEW gold_elections.governor_term_fiscal IS
     'payments share of income, net of the nation''s change over the same years, one measure per row.';
 COMMENT ON VIEW gold_elections.governor_term_tax_mix IS
     'Derived (ADR-0014 fiscal section): the shares of state and local taxes by type in the last year of each '
-    'governor tenure''s window, as Census publishes the types.';
+    'governor tenure''s window; other taxes are the total less property, general sales and income.';

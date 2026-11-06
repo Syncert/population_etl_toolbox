@@ -133,6 +133,7 @@ services:
       - ../../sql/migrations/026_released_date_is_not_the_refresh_clock.sql:/docker-entrypoint-initdb.d/225_migration_026.sql:ro
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/230_migration_003.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/235_contract_views.sql:ro
+      - ../../sql/bootstrap/001_api_readonly.sql:/docker-entrypoint-initdb.d/240_api_readonly_grants.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/900_martin_seed.sql:ro
       # `tests/sql/frontend_smoke_seed.sql` is deliberately NOT mounted here.
       # It belongs to the frontend smoke tier and is mounted by

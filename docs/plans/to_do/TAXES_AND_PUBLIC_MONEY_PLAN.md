@@ -208,3 +208,17 @@ checks on OFFICE_LAB:
   columns from the ADR-0014 mockup belong to E-4/E-5, which are not built.
 - Live check: `/mnt/project-files/taxes/t6/t6_explain_check.sql` (rolls
   back) times every new read and the forced lean-group refresh.
+
+T-6 live follow-up (2026-11-06, OFFICE_LAB deploy of dev 8ec6ca90):
+
+- `/public-money` and `/governor-terms` answered 503: `api_reader` had no
+  USAGE on `gold_elections`, `gold_census_govfin` or `gold_irs_soi`, created
+  after the read-only grants last ran at initdb. The grants are now the
+  manifest's last asset, re-applied on every `--only-flagged` deploy, and
+  `--check` fails on any ungranted gold schema (DB-071).
+- Tax mix totals read 72 to 97 percent: the annual survey has no "other
+  taxes" aggregate, so "other" is now the total less property, general sales
+  and income, and a year missing a named group has no mix.
+- Walker and Doyle tax burden (`start_year_not_published`) and every
+  payments share: read-only diagnostics in
+  `/mnt/project-files/taxes/t6/t6_followup_diagnostics.sql`.

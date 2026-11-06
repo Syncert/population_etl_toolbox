@@ -86,6 +86,12 @@ class ManifestAsset:
     phase: str
     relative_path: str
     root: Path = REPOSITORY_ROOT
+    #: Applied on every deploy, not only when the ledger lacks it. For a step
+    #: whose effect depends on what the warehouse holds rather than on its own
+    #: text: the read-only grants name every gold schema that exists when they
+    #: run, so a schema created after they last ran is unreadable by the API
+    #: until they run again, while their hash says nothing changed.
+    reapply: bool = False
 
     @property
     def path(self) -> Path:
@@ -131,6 +137,7 @@ def manifest_assets(
             phase=entry["phase"],
             relative_path=entry["path"],
             root=base,
+            reapply=bool(entry.get("reapply", False)),
         )
         for entry in assets
     )
@@ -223,6 +230,44 @@ def compare_to_manifest(
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """`compare_recorded` for a caller that holds a connection."""
     return compare_recorded(recorded_assets(database_connection))
+
+
+def assets_to_bring_current(
+    assets: Sequence[ManifestAsset],
+    missing: Iterable[str],
+    drifted: Iterable[str],
+) -> list[ManifestAsset]:
+    """What a deploy applies to a populated warehouse, in manifest order.
+
+    The assets the ledger lacks or holds at another hash, and every asset
+    marked `reapply` whatever the ledger says.
+    """
+    flagged = set(missing) | set(drifted)
+    return [asset for asset in assets if asset.id in flagged or asset.reapply]
+
+
+#: The gold schemas the public serving role cannot use. Empty on a warehouse
+#: whose grants are current; a row is a schema the API answers 503 for.
+_UNGRANTED_SERVING_SCHEMAS = """
+SELECT namespace.nspname
+FROM pg_catalog.pg_namespace AS namespace
+WHERE namespace.nspname LIKE 'gold%%'
+  AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = %s)
+  AND NOT pg_catalog.has_schema_privilege(%s, namespace.oid, 'USAGE')
+ORDER BY namespace.nspname
+"""
+
+
+def ungranted_serving_schemas(cursor: Any, role: str = "api_reader") -> tuple[str, ...]:
+    """Gold schemas `role` has no USAGE on. Empty when the role does not exist.
+
+    A deploy that creates a gold schema and does not re-run the grants leaves
+    every route over it failing with a permission error the API reports as
+    "Database service is temporarily unavailable" -- which is what happened
+    to `gold_elections`, `gold_census_govfin` and `gold_irs_soi` on 2026-11-06.
+    """
+    cursor.execute(_UNGRANTED_SERVING_SCHEMAS, (role, role))
+    return tuple(row[0] for row in cursor.fetchall())
 
 
 def asset_paths(assets: Iterable[ManifestAsset] | None = None) -> tuple[Path, ...]:

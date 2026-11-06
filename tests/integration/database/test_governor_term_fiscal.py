@@ -255,11 +255,38 @@ def test_a_missing_end_year_is_said_and_the_tax_mix_is_the_window_end(
             ("property", Decimal("35.00")),
         ]
 
+        # Census's annual survey has no "other taxes" aggregate: without it,
+        # and without selective sales, "other" is still the total less the
+        # named groups, so the mix adds to 100 (Alaska read 72 when it was a
+        # sum of the published parts).
+        db.execute(
+            "DELETE FROM t6_stub.gold_census_govfin__tax_mix "
+            "WHERE measure_id IN ('tax_other', 'tax_selective_sales')"
+        )
+        db.execute(
+            """
+            SELECT tax_group, share_of_taxes_pct
+            FROM gold_elections.governor_term_tax_mix
+            WHERE geo_id = %s AND tenure_key = 'walker-1' AND tax_group = 'other'
+            """,
+            (WISCONSIN,),
+        )
+        assert db.fetchall() == [("other", Decimal("10.00"))]
+
+        # A named group missing leaves no mix at all, never a partial one.
+        db.execute(
+            "DELETE FROM t6_stub.gold_census_govfin__tax_mix WHERE measure_id = 'tax_general_sales'"
+        )
+        db.execute(
+            "SELECT COUNT(*) FROM gold_elections.governor_term_tax_mix WHERE tenure_key = 'walker-1'"
+        )
+        assert db.fetchone()[0] == 0
+
 
 def test_dq_elec_006_passes_the_seed_and_fails_an_overlap_or_a_broken_mix(
     postgres_connection: connection,
 ) -> None:
-    """Covers: ETL-119 — DQ-ELEC-006 checks net arithmetic, tenure overlap and the mix's sum."""
+    """Covers: ETL-119 — DQ-ELEC-006 passes the seed and fails a tenure overlap."""
     from data_ingestion_toolbox.quality.sources import (
         elections_governor_fiscal_arithmetic,
     )
@@ -269,16 +296,14 @@ def test_dq_elec_006_passes_the_seed_and_fails_an_overlap_or_a_broken_mix(
         (outcome,) = elections_governor_fiscal_arithmetic(db, {})
         assert (outcome.result, outcome.observed_count) == ("pass", 0)
 
-        # A second holder starting inside Walker's tenure, and a mix that no
-        # longer adds to 100.
+        # A second holder starting inside Walker's tenure. The mix's own sum
+        # cannot break through the view (other is the remainder), so the rule
+        # keeps that arm as a guard and is driven here by the overlap.
         _insert(
             db,
             "t6_stub.gold_elections__seat_term",
             [_term("overlap-1", "overlap", "DEM", date(2016, 6, 1), date(2017, 6, 1))],
         )
-        db.execute(
-            "DELETE FROM t6_stub.gold_census_govfin__tax_mix WHERE measure_id = 'tax_property'"
-        )
         (outcome,) = elections_governor_fiscal_arithmetic(db, {})
         assert outcome.result == "fail"
-        assert outcome.observed_count == 2
+        assert outcome.observed_count == 1
