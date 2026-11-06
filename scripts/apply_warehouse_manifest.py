@@ -19,7 +19,10 @@ upsert.
     python -m scripts.apply_warehouse_manifest --only-flagged
 
 On a populated warehouse, prefer `--only-flagged`: it applies just the assets
-`--check` reports missing or drifted. A full re-apply re-runs every step, and
+`--check` reports missing or drifted, plus the read-only grants, which are
+re-applied on every run because a schema created since they last ran is
+otherwise unreadable by the API. `--check` also fails on any gold schema the
+API role cannot use. A full re-apply re-runs every step, and
 some are costly on a large warehouse even when they change nothing -- 027
 re-validates its constraints over every ACS silver fact under an exclusive
 lock, which held `silver_census.fact_demographics` until it was cancelled on
@@ -41,16 +44,18 @@ import psycopg2
 from data_ingestion_toolbox.utility.warehouse_manifest import (
     ManifestApplicationError,
     apply_manifest,
+    assets_to_bring_current,
     compare_to_manifest,
     manifest_assets,
+    ungranted_serving_schemas,
 )
 
 
 def flagged_assets(database_connection) -> list:
-    """The manifest assets this warehouse is missing or carries at another hash."""
+    """The assets this warehouse is missing or carries at another hash, and
+    every asset the manifest marks `reapply` (the read-only grants)."""
     missing, drifted = compare_to_manifest(database_connection)
-    flagged = set(missing) | set(drifted)
-    return [asset for asset in manifest_assets() if asset.id in flagged]
+    return assets_to_bring_current(manifest_assets(), missing, drifted)
 
 
 def connect(dsn: str | None):
@@ -85,7 +90,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="report assets this warehouse is missing or carries at another hash",
+        help=(
+            "report assets this warehouse is missing or carries at another hash, "
+            "and gold schemas the API role cannot use"
+        ),
     )
     parser.add_argument(
         "--only-flagged",
@@ -109,11 +117,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.check:
             missing, drifted = compare_to_manifest(database)
+            with database.cursor() as cursor:
+                ungranted = ungranted_serving_schemas(cursor)
             for asset_id in missing:
                 print(f"missing\t{asset_id}")
             for asset_id in drifted:
                 print(f"drifted\t{asset_id}")
-            if not missing and not drifted:
+            for schema in ungranted:
+                print(f"ungranted\t{schema}")
+            if not missing and not drifted and not ungranted:
                 print(f"all {len(assets)} manifest assets recorded and current")
                 return 0
             return 1
@@ -127,6 +139,14 @@ def main(argv: list[str] | None = None) -> int:
             print(str(error), file=sys.stderr)
             return 1
         print(f"applied and recorded {len(applied)} manifest assets")
+        with database.cursor() as cursor:
+            ungranted = ungranted_serving_schemas(cursor)
+        if ungranted:
+            # The grants ran last; a schema still ungranted is one the policy
+            # in sql/bootstrap/001_api_readonly.sql does not name.
+            for schema in ungranted:
+                print(f"ungranted\t{schema}", file=sys.stderr)
+            return 1
         return 0
     finally:
         database.close()

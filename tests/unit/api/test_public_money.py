@@ -380,6 +380,11 @@ def test_governor_terms_serve_each_tenure_with_its_measures_and_tax_mix() -> Non
         call for call in session.calls if "governor_term_fiscal" in call[0]
     )
     assert params == {"fips": "55"}
+    statements = [call[0] for call in session.calls]
+    jit_off = statements.index("SET LOCAL jit = off")
+    assert jit_off < next(
+        i for i, sql in enumerate(statements) if "governor_term_fiscal" in sql
+    ), "JIT is off before the governor reads, inside the request's transaction"
     assert any("comparisons, not causes" in caveat for caveat in body["caveats"])
 
 

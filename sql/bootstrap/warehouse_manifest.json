@@ -615,6 +615,12 @@
       "id": "contract-views",
       "phase": "contract",
       "path": "sql/gold_contract/001_gold_contract_views.sql"
+    },
+    {
+      "id": "api-readonly-grants",
+      "phase": "grants",
+      "path": "sql/bootstrap/001_api_readonly.sql",
+      "reapply": true
     }
   ]
 }

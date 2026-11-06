@@ -36,16 +36,33 @@ SELECT taxes.dataset_id,
        income.release_key AS income_release_key,
        TRUE AS derived
 FROM gold_census_govfin.observation_latest AS taxes
-LEFT JOIN gold_bea.observation_latest AS income
-  ON income.metric_key = 'CAINC1:1'
- AND income.geo_id = taxes.geo_id
- AND income.year = taxes.fiscal_year
- AND income.value_status = 'valid'
-LEFT JOIN gold_bea.observation_latest AS population
-  ON population.metric_key = 'CAINC1:2'
- AND population.geo_id = taxes.geo_id
- AND population.year = taxes.fiscal_year
- AND population.value_status = 'valid'
+-- Each denominator is the newest release of one BEA figure for this place and
+-- year, read by `bea_fact_lookup_idx` (table, line, place, year). Joining
+-- `gold_bea.observation_latest` on `metric_key` instead ranked every CAINC1
+-- line 1 and 2 row in the country (228,592 each) on every read, because a
+-- filter on the concatenated key reaches no index: 3.6 s for one county on
+-- OFFICE_LAB on 2026-11-06. The newest release is chosen first and then
+-- required to be valid, as the DISTINCT ON view did.
+LEFT JOIN LATERAL (
+    SELECT revision.value, revision.value_status, revision.release_key
+    FROM gold_bea.observation_revision AS revision
+    WHERE revision.table_code = 'CAINC1'
+      AND revision.line_code = '1'
+      AND revision.geo_id = taxes.geo_id
+      AND revision.year = taxes.fiscal_year
+    ORDER BY revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    LIMIT 1
+) AS income ON income.value_status = 'valid'
+LEFT JOIN LATERAL (
+    SELECT revision.value, revision.value_status
+    FROM gold_bea.observation_revision AS revision
+    WHERE revision.table_code = 'CAINC1'
+      AND revision.line_code = '2'
+      AND revision.geo_id = taxes.geo_id
+      AND revision.year = taxes.fiscal_year
+    ORDER BY revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    LIMIT 1
+) AS population ON population.value_status = 'valid'
 WHERE taxes.measure_id = 'taxes_total'
   AND taxes.quarter = 0
   AND taxes.value_status = 'valid'

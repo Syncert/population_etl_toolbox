@@ -9,7 +9,8 @@ Covers: ETL-119
 
 from __future__ import annotations
 
-from datetime import date
+import uuid
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -60,8 +61,8 @@ def _term(key: str, holder: str, party: str, start: date, end: date | None) -> d
 def _seed(db: cursor) -> None:
     seat = _stub(db, "gold_elections.seat_term")
     burden = _stub(db, "gold_census_govfin.tax_burden")
-    bea = _stub(db, "gold_bea.observation_latest")
-    mix = _stub(db, "gold_census_govfin.tax_mix")
+    bea = _stub(db, "gold_bea.observation_revision")
+    census = _stub(db, "gold_census_govfin.observation_revision")
     _insert(
         db,
         seat,
@@ -110,7 +111,10 @@ def _seed(db: cursor) -> None:
     ):
         bea_rows.append(
             {
-                "metric_key": "SAINC35:1000",
+                "table_code": "SAINC35",
+                "line_code": "1000",
+                "geo_type": "nation" if geo_id == NATION else "state",
+                "release_date": date(2025, 9, 1),
                 "geo_id": geo_id,
                 "year": year,
                 "value": Decimal(payments),
@@ -119,7 +123,10 @@ def _seed(db: cursor) -> None:
         )
         bea_rows.append(
             {
-                "metric_key": "SAINC50:10",
+                "table_code": "SAINC50",
+                "line_code": "10",
+                "geo_type": "nation" if geo_id == NATION else "state",
+                "release_date": date(2025, 9, 1),
                 "geo_id": geo_id,
                 "year": year,
                 "value": Decimal("100"),
@@ -127,9 +134,26 @@ def _seed(db: cursor) -> None:
             }
         )
     _insert(db, bea, bea_rows)
+    # Census taxes for Wisconsin's fiscal 2018, in thousands of dollars: the
+    # total and its parts. The view takes each figure's newest capture, so an
+    # older property figure is ignored.
+    newest = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    older = datetime(2025, 10, 1, tzinfo=timezone.utc)
+    census_rows = [
+        (measure, value, newest)
+        for measure, value in (
+            ("taxes_total", "1000"),
+            ("tax_property", "350"),
+            ("tax_general_sales", "220"),
+            ("tax_individual_income", "280"),
+            ("tax_corporate_income", "50"),
+            ("tax_selective_sales", "70"),
+            ("tax_other", "30"),
+        )
+    ] + [("tax_property", "999", older)]
     _insert(
         db,
-        mix,
+        census,
         [
             {
                 "dataset_id": "asslgf",
@@ -138,16 +162,12 @@ def _seed(db: cursor) -> None:
                 "fiscal_year": 2018,
                 "quarter": 0,
                 "measure_id": measure,
-                "share_of_taxes_pct": Decimal(share),
+                "value": Decimal(value),
+                "value_status": "valid",
+                "retrieved_at": retrieved_at,
+                "capture_id": str(uuid.uuid4()),
             }
-            for measure, share in (
-                ("tax_property", "35.00"),
-                ("tax_general_sales", "22.00"),
-                ("tax_individual_income", "28.00"),
-                ("tax_corporate_income", "5.00"),
-                ("tax_selective_sales", "7.00"),
-                ("tax_other", "3.00"),
-            )
+            for measure, value, retrieved_at in census_rows
         ],
     )
 
@@ -255,11 +275,39 @@ def test_a_missing_end_year_is_said_and_the_tax_mix_is_the_window_end(
             ("property", Decimal("35.00")),
         ]
 
+        # Census's annual survey has no "other taxes" aggregate: without it,
+        # and without selective sales, "other" is still the total less the
+        # named groups, so the mix adds to 100 (Alaska read 72 when it was a
+        # sum of the published parts).
+        db.execute(
+            "DELETE FROM t6_stub.gold_census_govfin__observation_revision "
+            "WHERE measure_id IN ('tax_other', 'tax_selective_sales')"
+        )
+        db.execute(
+            """
+            SELECT tax_group, share_of_taxes_pct
+            FROM gold_elections.governor_term_tax_mix
+            WHERE geo_id = %s AND tenure_key = 'walker-1' AND tax_group = 'other'
+            """,
+            (WISCONSIN,),
+        )
+        assert db.fetchall() == [("other", Decimal("10.00"))]
+
+        # A named group missing leaves no mix at all, never a partial one.
+        db.execute(
+            "DELETE FROM t6_stub.gold_census_govfin__observation_revision "
+            "WHERE measure_id = 'tax_general_sales'"
+        )
+        db.execute(
+            "SELECT COUNT(*) FROM gold_elections.governor_term_tax_mix WHERE tenure_key = 'walker-1'"
+        )
+        assert db.fetchone()[0] == 0
+
 
 def test_dq_elec_006_passes_the_seed_and_fails_an_overlap_or_a_broken_mix(
     postgres_connection: connection,
 ) -> None:
-    """Covers: ETL-119 — DQ-ELEC-006 checks net arithmetic, tenure overlap and the mix's sum."""
+    """Covers: ETL-119 — DQ-ELEC-006 passes the seed and fails a tenure overlap."""
     from data_ingestion_toolbox.quality.sources import (
         elections_governor_fiscal_arithmetic,
     )
@@ -269,16 +317,14 @@ def test_dq_elec_006_passes_the_seed_and_fails_an_overlap_or_a_broken_mix(
         (outcome,) = elections_governor_fiscal_arithmetic(db, {})
         assert (outcome.result, outcome.observed_count) == ("pass", 0)
 
-        # A second holder starting inside Walker's tenure, and a mix that no
-        # longer adds to 100.
+        # A second holder starting inside Walker's tenure. The mix's own sum
+        # cannot break through the view (other is the remainder), so the rule
+        # keeps that arm as a guard and is driven here by the overlap.
         _insert(
             db,
             "t6_stub.gold_elections__seat_term",
             [_term("overlap-1", "overlap", "DEM", date(2016, 6, 1), date(2017, 6, 1))],
         )
-        db.execute(
-            "DELETE FROM t6_stub.gold_census_govfin__tax_mix WHERE measure_id = 'tax_property'"
-        )
         (outcome,) = elections_governor_fiscal_arithmetic(db, {})
         assert outcome.result == "fail"
-        assert outcome.observed_count == 2
+        assert outcome.observed_count == 1

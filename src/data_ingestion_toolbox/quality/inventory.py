@@ -3930,12 +3930,21 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty until the governor stream is loaded",
     ),
     _obj(
+        "gold_elections.governor_fiscal_series",
+        "gold",
+        "ELECTIONS",
+        grain="measure, geo_id, year",
+        lineage="gold_census_govfin.tax_burden, gold_bea.observation_revision",
+        scope_method="every state and the nation in every year both inputs publish",
+        cadence="with its inputs (views)",
+        empty_behavior="empty until Census government finance or the BEA state tables are loaded",
+    ),
+    _obj(
         "gold_elections.governor_term_fiscal",
         "gold",
         "ELECTIONS",
         grain="tenure_key, measure",
-        lineage="gold_elections.governor_tenure, gold_census_govfin.tax_burden, "
-        "gold_bea.observation_latest",
+        lineage="gold_elections.governor_tenure, gold_elections.governor_fiscal_series",
         scope_method="every governor tenure and fiscal measure; a value only where both "
         "window years are published for the state and the nation",
         cadence="with its inputs (views)",
@@ -3947,7 +3956,8 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold",
         "ELECTIONS",
         grain="tenure_key, tax_group",
-        lineage="gold_elections.governor_term_fiscal, gold_census_govfin.tax_mix",
+        lineage="gold_elections.governor_tenure, gold_elections.governor_fiscal_series, "
+        "gold_census_govfin.observation_revision",
         scope_method="every governor tenure whose window's last fiscal year Census publishes",
         cadence="with its inputs (views)",
         empty_behavior="empty until Census government finance is loaded",
@@ -7358,6 +7368,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.governor_term_tax_mix",
             "gold_elections.governor_tenure",
             "gold_elections.governor_fiscal_measure_definition",
+            "gold_elections.governor_fiscal_series",
         ),
     ),
     # -- Census state and local government finance -------------------------

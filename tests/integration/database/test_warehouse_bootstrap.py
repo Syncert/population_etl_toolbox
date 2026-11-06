@@ -541,17 +541,25 @@ def test_only_flagged_applies_just_what_the_ledger_lacks(
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
 
-    removed = manifest_assets()[-1].id
+    # The read-only grants are re-applied on every run whatever the ledger
+    # says (DB-072), so they are always selected and never count as a gap.
+    always = [asset.id for asset in manifest_assets() if asset.reapply]
+    removed = next(
+        asset.id for asset in reversed(manifest_assets()) if not asset.reapply
+    )
     database = postgres_connection_factory()
     try:
         apply_warehouse_manifest(database)
-        assert script.flagged_assets(database) == []
+        assert [asset.id for asset in script.flagged_assets(database)] == always
         with database.cursor() as cursor:
             cursor.execute(
                 "DELETE FROM control.schema_migration_state WHERE component_name = %s",
                 (removed,),
             )
-        assert [asset.id for asset in script.flagged_assets(database)] == [removed]
+        assert [asset.id for asset in script.flagged_assets(database)] == [
+            removed,
+            *always,
+        ]
         assert script.parse_args(["--only-flagged"]).only_flagged is True
     finally:
         database.rollback()

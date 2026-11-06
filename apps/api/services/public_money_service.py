@@ -485,6 +485,12 @@ def governor_terms(db: Session, geo_id: str) -> GovernorTermsResponse:
         "gold_elections.governor_fiscal_measure_definition",
     ):
         require_relation(db, relation)
+    # The governor views plan as many small index lookups whose summed cost
+    # estimate crosses jit_above_cost, so Postgres JIT-compiled about 3,900
+    # functions per read: 1.1 s of a 1.17 s read on OFFICE_LAB on
+    # 2026-11-06, for a query that runs in about 60 ms. SET LOCAL ends with
+    # this request's read-only transaction.
+    db.execute(text("SET LOCAL jit = off"))
     definitions = (
         db.execute(
             text(
