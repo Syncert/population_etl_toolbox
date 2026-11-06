@@ -116,8 +116,8 @@ AS $$
         OR metric_key IN ('live_and_work', 'inbound', 'outbound_in_state')
 $$;
 
--- Rebuild the coverage gaps from the published state totals. Returns the
--- gaps written.
+-- Rebuild the coverage gaps from the published state totals, writing only
+-- the gaps that changed. Returns the gaps found.
 CREATE OR REPLACE FUNCTION gold_census_lodes.refresh_coverage_gap()
 RETURNS BIGINT
 LANGUAGE plpgsql
@@ -125,7 +125,11 @@ AS $$
 DECLARE
     v_written BIGINT;
 BEGIN
-    DELETE FROM gold_census_lodes.coverage_gap;
+    -- Found into staging and compared, so an unchanged gap is not rewritten
+    -- (refresh-churn audit, 2026-11-06).
+    DROP TABLE IF EXISTS pg_temp.lodes_coverage_gap_candidate;
+    CREATE TEMP TABLE lodes_coverage_gap_candidate
+        (LIKE gold_census_lodes.coverage_gap INCLUDING DEFAULTS) ON COMMIT DROP;
 
     WITH state_total AS (
         SELECT fact.run_id, fact.metric_key, fact.geo_id, fact.year, fact.value
@@ -139,7 +143,7 @@ BEGIN
         FROM state_total
         GROUP BY geo_id, metric_key
     )
-    INSERT INTO gold_census_lodes.coverage_gap (
+    INSERT INTO pg_temp.lodes_coverage_gap_candidate (
         run_id, metric_key, state_geo_id, year, state_value, typical_value
     )
     SELECT state_total.run_id, state_total.metric_key, state_total.geo_id,
@@ -160,6 +164,29 @@ BEGIN
                  AND workplace.metric_key = 'jobs'
            ));
     GET DIAGNOSTICS v_written = ROW_COUNT;
+
+    DELETE FROM gold_census_lodes.coverage_gap AS served
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_temp.lodes_coverage_gap_candidate AS staged
+        WHERE staged.run_id = served.run_id
+          AND staged.metric_key = served.metric_key
+          AND (staged.state_geo_id, staged.year, staged.state_value,
+               staged.typical_value, staged.reason)
+              IS NOT DISTINCT FROM
+              (served.state_geo_id, served.year, served.state_value,
+               served.typical_value, served.reason)
+    );
+    INSERT INTO gold_census_lodes.coverage_gap (
+        run_id, metric_key, state_geo_id, year, state_value, typical_value
+    )
+    SELECT staged.run_id, staged.metric_key, staged.state_geo_id, staged.year,
+           staged.state_value, staged.typical_value
+    FROM pg_temp.lodes_coverage_gap_candidate AS staged
+    WHERE NOT EXISTS (
+        SELECT 1 FROM gold_census_lodes.coverage_gap AS served
+        WHERE served.run_id = staged.run_id
+          AND served.metric_key = staged.metric_key
+    );
     RETURN v_written;
 END;
 $$;

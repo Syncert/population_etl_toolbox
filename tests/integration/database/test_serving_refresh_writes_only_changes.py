@@ -435,3 +435,76 @@ def test_an_idle_calendar_rollup_refresh_writes_nothing(
     after = _versions(postgres_connection_factory, version_sql, (ROLLUP_METRIC,))
     changed = {key for key in first if after[key] != first[key]}
     assert changed == {f"quarter:{YEAR}-10-01", f"year:{YEAR}-01-01"}
+
+
+def test_a_lean_group_rebuild_rewrites_only_rows_whose_figures_changed(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DB-069 — an unchanged lean row keeps its place and refresh id; a changed input rewrites only its rows."""
+    from tests.integration.database.test_elections_lean_groups import (
+        ALPHA,
+        BETA,
+        _seed_inputs,
+    )
+
+    place_sql = (
+        "SELECT measure || ':' || geo_id, ctid::TEXT, refresh_id "
+        "FROM gold_elections.lean_place_change"
+    )
+    group_sql = (
+        "SELECT measure || ':' || peer_type || ':' || peer_group || ':' || lean_band, "
+        "ctid::TEXT, refresh_id FROM gold_elections.lean_group_change"
+    )
+
+    def rows(db, sql: str) -> dict:
+        db.execute(sql)
+        return {key: (ctid, refresh_id) for key, ctid, refresh_id in db.fetchall()}
+
+    with postgres_connection.cursor() as db:
+        _seed_inputs(db)
+        db.execute("SELECT gold_elections.build_lean_groups(1)")
+        places, groups = rows(db, place_sql), rows(db, group_sql)
+        assert places and groups
+
+        # Same inputs, a later rebuild: nothing is rewritten, and every row
+        # still names the rebuild that wrote it.
+        db.execute("SELECT gold_elections.build_lean_groups(2)")
+        assert db.fetchone()[0] == len(places)
+        assert rows(db, place_sql) == places
+        assert rows(db, group_sql) == groups
+
+        # Beta's 2020 poverty moves: Beta's poverty row and the poverty groups
+        # it belongs to are rewritten under the new rebuild, nothing else.
+        db.execute(
+            "UPDATE lean_input SET value = 13.0 "
+            "WHERE measure = 'poverty_rate' AND geo_id = %s AND year = 2020",
+            (BETA,),
+        )
+        db.execute("SELECT gold_elections.build_lean_groups(3)")
+        after = rows(db, place_sql)
+        changed = {key for key in places if after.get(key) != places[key]}
+        assert changed == {f"poverty_rate:{BETA}"}
+        assert after[f"poverty_rate:{BETA}"][1] == 3
+        assert after[f"poverty_rate:{ALPHA}"] == places[f"poverty_rate:{ALPHA}"]
+        group_after = rows(db, group_sql)
+        changed_groups = {key for key in groups if group_after.get(key) != groups[key]}
+        assert changed_groups and all(
+            key.startswith("poverty_rate:") for key in changed_groups
+        )
+
+
+def test_an_idle_place_search_refresh_writes_nothing(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-069 — the nightly place-search refresh leaves unchanged rows in place."""
+    version_sql = "SELECT geo_id, xmin::TEXT, ctid::TEXT FROM gold_glossary.geo_search"
+    _run(
+        postgres_connection_factory,
+        ("CALL gold_glossary.refresh_dim_geo_latest()", ()),
+        ("CALL gold_glossary.refresh_geo_search()", ()),
+    )
+    first = _versions(postgres_connection_factory, version_sql, ())
+    if not first:
+        pytest.skip("the test warehouse holds no searchable geography")
+    _run(postgres_connection_factory, ("CALL gold_glossary.refresh_geo_search()", ()))
+    assert _versions(postgres_connection_factory, version_sql, ()) == first
