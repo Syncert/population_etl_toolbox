@@ -486,11 +486,13 @@ r control.eia_read
     column published_at timestamp with time zone
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    column repeated_row_count integer NOT NULL DEFAULT 0
     constraint eia_read_page_count_check CHECK ((page_count >= 1))
     constraint eia_read_parsed_row_count_check CHECK ((parsed_row_count >= 0))
     constraint eia_read_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
     constraint eia_read_pkey PRIMARY KEY (run_id)
     constraint eia_read_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint eia_read_repeated_row_count_check CHECK ((repeated_row_count >= 0))
     constraint eia_read_row_total_check CHECK ((row_total >= 0))
     constraint eia_read_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint eia_read_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
@@ -12380,6 +12382,7 @@ r silver_eia.price_revision
     constraint price_revision_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
     constraint price_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index eia_revision_run_idx CREATE INDEX eia_revision_run_idx ON silver_eia.price_revision USING btree (run_id)
+    index eia_revision_week_idx CREATE INDEX eia_revision_week_idx ON silver_eia.price_revision USING btree (series_id, week_start, created_at DESC)
     index price_revision_pkey CREATE UNIQUE INDEX price_revision_pkey ON silver_eia.price_revision USING btree (capture_id, row_index)
 
 r silver_elections.candidate_result

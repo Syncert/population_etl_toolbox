@@ -68,6 +68,11 @@ def _upsert_dimension(cursor: Any) -> None:
             methodology_url = EXCLUDED.methodology_url,
             parser_contract_version = EXCLUDED.parser_contract_version,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_census_bps.dim_measure.measure_label, silver_census_bps.dim_measure.structure_label, silver_census_bps.dim_measure.unit, silver_census_bps.dim_measure.observation_basis, silver_census_bps.dim_measure.methodology_url, silver_census_bps.dim_measure.parser_contract_version)
+                      IS DISTINCT FROM
+                      (EXCLUDED.measure_label, EXCLUDED.structure_label, EXCLUDED.unit, EXCLUDED.observation_basis, EXCLUDED.methodology_url, EXCLUDED.parser_contract_version)
         """,
         [
             (
@@ -219,6 +224,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (SOURCE_CODE, str(run_id)),
             )

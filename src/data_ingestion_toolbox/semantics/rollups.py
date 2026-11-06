@@ -16,13 +16,15 @@ those values for one source at a time:
 * every row records the method, its version, and the releases its components
   came from, and ``derived`` is true by construction.
 
-A refresh replaces the source's derived rows in one transaction, so replaying
-it over the same served rows writes the same rows, and a method that is no
-longer approved leaves no derived value behind.
+A refresh brings the source's derived rows in line in one transaction: it
+derives every window into a staging table and writes only the rows that
+differ, so replaying it over the same served rows writes nothing, and a method
+that is no longer approved leaves no derived value behind.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -51,6 +53,32 @@ class RollupSource:
     #: provider value: each source spells its value states differently.
     components_sql: str
 
+
+logger = logging.getLogger(__name__)
+
+#: The columns a rollup row is compared on: everything it publishes except
+#: `refreshed_at` (when it was written) and `derived` (always true).
+ROLLUP_COLUMNS = (
+    "metric_code",
+    "geo_id",
+    "geo_level",
+    "subject_code",
+    "unit",
+    "grain",
+    "window_start",
+    "window_end",
+    "method",
+    "method_version",
+    "expected_periods",
+    "present_periods",
+    "value",
+    "refusal_reason",
+    "component_releases",
+)
+
+#: Where a refresh stages the derivation before comparing it with what is
+#: served. Session-local and dropped at commit.
+STAGING_RELATION = "pg_temp.calendar_rollup_candidate"
 
 _COMPONENT_COLUMNS = (
     "metric_code, geo_id, geo_level, subject_code, unit, period_start, "
@@ -107,8 +135,16 @@ def approved_methods(
     }
 
 
-def rollup_sql(source: RollupSource, methods: Mapping[str, TimeMethod]) -> str:
+def rollup_sql(
+    source: RollupSource,
+    methods: Mapping[str, TimeMethod],
+    *,
+    target_relation: str | None = None,
+) -> str:
     """The INSERT that derives every calendar window for the given methods.
+
+    It writes into ``target_relation``, the source's own table unless named:
+    a refresh stages it in ``STAGING_RELATION`` and copies only what differs.
 
     The metric codes, methods and versions are bound parameters; the only
     text composed into the statement is this module's own constants (the
@@ -127,7 +163,7 @@ def rollup_sql(source: RollupSource, methods: Mapping[str, TimeMethod]) -> str:
         for grain, span, expected in GRAINS
     )
     return f"""
-        INSERT INTO {source.target_relation} (
+        INSERT INTO {target_relation or source.target_relation} (
             metric_code, geo_id, geo_level, subject_code, unit, grain,
             window_start, window_end, method, method_version,
             expected_periods, present_periods, value, refusal_reason,
@@ -272,29 +308,87 @@ def window_sql(source: RollupSource, method: TimeMethod, *, filters_sql: str) ->
     """
 
 
+def _same_row(left: str, right: str) -> str:
+    """A rollup row of `left` identical to one of `right`, NULLs included."""
+    columns = ", ".join(f"{{alias}}.{column}" for column in ROLLUP_COLUMNS)
+    return (
+        f"{left}.metric_code = {right}.metric_code "
+        f"AND {left}.grain = {right}.grain "
+        f"AND {left}.window_start = {right}.window_start "
+        f"AND ({columns.format(alias=left)}) "
+        f"IS NOT DISTINCT FROM ({columns.format(alias=right)})"
+    )
+
+
+def sync_sql(source: RollupSource) -> tuple[str, str]:
+    """The DELETE and INSERT that bring the source's rows in line with staging.
+
+    The DELETE removes served rows with no identical staged row (withdrawn,
+    or changed); the INSERT adds staged rows with no identical served row
+    (new, or the changed rows just removed). A row that did not change is
+    left physically in place, so an idle refresh writes nothing.
+    """
+    target = source.target_relation
+    columns = ", ".join(ROLLUP_COLUMNS)
+    delete = (
+        f"DELETE FROM {target} AS served WHERE NOT EXISTS ("
+        f"SELECT 1 FROM {STAGING_RELATION} AS staged "
+        f"WHERE {_same_row('staged', 'served')})"
+    )
+    insert = (
+        f"INSERT INTO {target} ({columns}) "
+        f"SELECT {columns} FROM {STAGING_RELATION} AS staged "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {target} AS served "
+        f"WHERE {_same_row('served', 'staged')})"
+    )
+    return delete, insert
+
+
 def refresh_calendar_rollups(
     conn, source_code: str, registry: Mapping[str, TimeMethod] | None = None
 ) -> int:
-    """Replace one source's derived calendar rollups; returns the rows written.
+    """Bring one source's derived calendar rollups in line; returns the rows held.
 
-    One transaction: the old rows go and the new ones arrive together, so a
-    reader sees either the previous derivation or this one.
+    One transaction: readers see either the previous derivation or this one.
+    Only rows whose values changed are deleted or inserted (refresh-churn
+    audit, 2026-11-06: the FBI rollups alone rewrote 212,400 unchanged rows
+    every weekly run). The count returned is every row the derivation holds,
+    changed or not, so a replay over the same served rows returns the same
+    number; how many were written is logged.
     """
     source = ROLLUP_SOURCES[source_code]
     methods = approved_methods(source_code, registry)
     codes = sorted(methods)
     with conn.cursor() as cursor:
-        cursor.execute(f"DELETE FROM {source.target_relation}")
-        written = 0
+        cursor.execute(f"DROP TABLE IF EXISTS {STAGING_RELATION}")
+        cursor.execute(
+            f"CREATE TEMP TABLE {STAGING_RELATION.split('.')[-1]} "
+            f"(LIKE {source.target_relation} INCLUDING DEFAULTS) ON COMMIT DROP"
+        )
+        held = 0
         if codes:
             cursor.execute(
-                rollup_sql(source, methods),
+                rollup_sql(source, methods, target_relation=STAGING_RELATION),
                 {
                     "metric_codes": codes,
                     "methods": [methods[code].method for code in codes],
                     "versions": [methods[code].version for code in codes],
                 },
             )
-            written = cursor.rowcount
+            held = cursor.rowcount
+            cursor.execute(f"ANALYZE {STAGING_RELATION}")
+        delete, insert = sync_sql(source)
+        cursor.execute(delete)
+        deleted = cursor.rowcount
+        cursor.execute(insert)
+        inserted = cursor.rowcount
     conn.commit()
-    return written
+    logger.info(
+        "calendar rollups %s: held=%d deleted=%d inserted=%d unchanged=%d",
+        source_code,
+        held,
+        deleted,
+        inserted,
+        held - inserted,
+    )
+    return held

@@ -140,6 +140,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                         methodology_url = EXCLUDED.methodology_url,
                         parser_contract_version = EXCLUDED.parser_contract_version,
                         updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_bea.dim_line.table_title, silver_bea.dim_line.description, silver_bea.dim_line.unit, silver_bea.dim_line.dollar_basis, silver_bea.dim_line.observation_basis, silver_bea.dim_line.methodology_url, silver_bea.dim_line.parser_contract_version)
+                      IS DISTINCT FROM
+                      (EXCLUDED.table_title, EXCLUDED.description, EXCLUDED.unit, EXCLUDED.dollar_basis, EXCLUDED.observation_basis, EXCLUDED.methodology_url, EXCLUDED.parser_contract_version)
                     """,
                     [
                         (
@@ -256,6 +261,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (
                     SOURCE_CODE,

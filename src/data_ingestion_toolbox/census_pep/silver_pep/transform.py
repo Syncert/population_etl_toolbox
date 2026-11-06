@@ -50,6 +50,11 @@ def transform_pep_to_silver(hook: PostgresHook | None = None) -> int:
                         is_component = EXCLUDED.is_component,
                         allows_negative = EXCLUDED.allows_negative,
                         updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_pep.dim_measure.display_name, silver_pep.dim_measure.unit, silver_pep.dim_measure.is_component, silver_pep.dim_measure.allows_negative)
+                      IS DISTINCT FROM
+                      (EXCLUDED.display_name, EXCLUDED.unit, EXCLUDED.is_component, EXCLUDED.allows_negative)
                     """
                 )
                 cursor.execute(
@@ -147,6 +152,11 @@ def transform_pep_to_silver(hook: PostgresHook | None = None) -> int:
                         status = EXCLUDED.status,
                         reason_code = EXCLUDED.reason_code,
                         resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                     """
                 )
                 cursor.execute(

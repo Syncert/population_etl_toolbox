@@ -301,6 +301,11 @@ def publish_area_snapshot(
                     reason_code = EXCLUDED.reason_code,
                     evidence_capture_id = EXCLUDED.evidence_capture_id,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (
                     SOURCE_CODE,
@@ -362,6 +367,11 @@ def publish_metro_boundaries(
                     reason_code = EXCLUDED.reason_code,
                     evidence_capture_id = EXCLUDED.evidence_capture_id,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (
                     SOURCE_CODE,

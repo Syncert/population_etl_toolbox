@@ -246,6 +246,11 @@ def publish_crosswalk(
                 earlier_population_share = EXCLUDED.earlier_population_share,
                 source_snapshot_id = EXCLUDED.source_snapshot_id,
                 ingested_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.tract_decade_crosswalk.land_area_part_m2, silver_ref.tract_decade_crosswalk.total_area_part_m2, silver_ref.tract_decade_crosswalk.earlier_land_share, silver_ref.tract_decade_crosswalk.later_land_share, silver_ref.tract_decade_crosswalk.later_population_part, silver_ref.tract_decade_crosswalk.later_housing_units_part, silver_ref.tract_decade_crosswalk.earlier_population_share)
+                      IS DISTINCT FROM
+                      (EXCLUDED.land_area_part_m2, EXCLUDED.total_area_part_m2, EXCLUDED.earlier_land_share, EXCLUDED.later_land_share, EXCLUDED.later_population_part, EXCLUDED.later_housing_units_part, EXCLUDED.earlier_population_share)
             """,
             (
                 *DECADE_VINTAGES[earlier],
@@ -285,6 +290,11 @@ def publish_crosswalk(
                           reason_code = EXCLUDED.reason_code,
                           evidence_capture_id = EXCLUDED.evidence_capture_id,
                           resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.status, EXCLUDED.reason_code)
             """,
             (
                 *DECADE_VINTAGES[earlier],

@@ -357,6 +357,11 @@ def transform_release(
                     additive_behavior = EXCLUDED.additive_behavior,
                     additive_behavior_known = EXCLUDED.additive_behavior_known,
                     updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_nass.dim_statistic.value_kind, silver_nass.dim_statistic.calculation_basis, silver_nass.dim_statistic.additive_behavior, silver_nass.dim_statistic.additive_behavior_known)
+                      IS DISTINCT FROM
+                      (EXCLUDED.value_kind, EXCLUDED.calculation_basis, EXCLUDED.additive_behavior, EXCLUDED.additive_behavior_known)
                 """,
                 (str(run_id),),
             )
@@ -411,6 +416,11 @@ def transform_release(
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (str(run_id),),
             )
