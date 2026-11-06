@@ -2356,6 +2356,7 @@ v gold_bls.measure_export
     column value_type text
     column valid_geo_grains text[]
     column publication_time timestamp with time zone
+    column last_value_date date
     body SELECT measure.bls_measure_sk,
     body     measure.program_code,
     body     measure.metric_key AS source_object_key,
@@ -2363,15 +2364,17 @@ v gold_bls.measure_export
     body     measure.unit_of_measure,
     body     measure.value_type,
     body     COALESCE(served.valid_geo_grains, ARRAY[]::text[]) AS valid_geo_grains,
-    body     COALESCE(served.publication_time, max(fact.updated_at)) AS publication_time
+    body     COALESCE(served.publication_time, max(fact.updated_at)) AS publication_time,
+    body     served.last_value_date
     body    FROM gold_bls.dim_bls_measure measure
     body      JOIN gold_bls.fact_bls_observation fact ON fact.program_code = measure.program_code AND fact.measure_code::text = measure.measure_code
     body      LEFT JOIN ( SELECT latest.metric_code,
     body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
-    body             max(latest.updated_at) AS publication_time
+    body             max(latest.updated_at) AS publication_time,
+    body             max(latest.observation_date) FILTER (WHERE latest.value IS NOT NULL) AS last_value_date
     body            FROM gold_bls.mv_bls_latest latest
     body           GROUP BY latest.metric_code) served ON served.metric_code = ('BLS:'::text || measure.metric_key)
-    body   GROUP BY measure.bls_measure_sk, served.valid_geo_grains, served.publication_time;
+    body   GROUP BY measure.bls_measure_sk, served.valid_geo_grains, served.publication_time, served.last_value_date;
 
 v gold_bls.metric_publisher
     column source_code text
@@ -2391,6 +2394,7 @@ v gold_bls.metric_publisher
     column source_name text
     column source_type text
     column reference_url text
+    column last_value_date date
     body SELECT 'BLS'::text AS source_code,
     body     '1.0'::text AS publisher_contract_version,
     body     series.series_id AS source_object_key,
@@ -2407,12 +2411,14 @@ v gold_bls.metric_publisher
     body     COALESCE(served.publication_time, series.updated_at) AS publication_time,
     body     'U.S. Bureau of Labor Statistics'::text AS source_name,
     body     'official-statistics'::text AS source_type,
-    body     survey.reference_url
+    body     survey.reference_url,
+    body     served.last_value_date
     body    FROM gold_bls.dim_bls_series series
     body      JOIN gold_bls.dim_bls_survey survey USING (bls_survey_sk)
     body      LEFT JOIN ( SELECT latest.series_id,
     body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
-    body             max(latest.updated_at) AS publication_time
+    body             max(latest.updated_at) AS publication_time,
+    body             max(latest.observation_date) FILTER (WHERE latest.value IS NOT NULL) AS last_value_date
     body            FROM gold_bls.mv_bls_latest latest
     body           WHERE latest.metric_code = ('BLS:'::text || latest.series_id)
     body           GROUP BY latest.series_id) served ON served.series_id = series.series_id
@@ -2423,7 +2429,7 @@ v gold_bls.metric_publisher
     body            FROM gold_bls.fact_bls_observation fact
     body           WHERE fact.bls_series_sk = series.bls_series_sk)) OR NOT (series.program_code IN ( SELECT DISTINCT dim_bls_measure.program_code
     body            FROM gold_bls.dim_bls_measure)))
-    body   GROUP BY series.bls_series_sk, survey.bls_survey_sk, served.valid_geo_grains, served.publication_time
+    body   GROUP BY series.bls_series_sk, survey.bls_survey_sk, served.valid_geo_grains, served.publication_time, served.last_value_date
     body UNION ALL
     body  SELECT 'BLS'::text AS source_code,
     body     '1.0'::text AS publisher_contract_version,
@@ -2441,7 +2447,8 @@ v gold_bls.metric_publisher
     body     export.publication_time,
     body     'U.S. Bureau of Labor Statistics'::text AS source_name,
     body     'official-statistics'::text AS source_type,
-    body     survey.reference_url
+    body     survey.reference_url,
+    body     export.last_value_date
     body    FROM gold_bls.measure_export export
     body      JOIN gold_bls.dim_bls_survey survey ON survey.program_code = export.program_code;
 
@@ -4995,6 +5002,7 @@ v gold_eia.metric_publisher
     column source_name text
     column source_type text
     column reference_url text
+    column last_value_date date
     body SELECT 'EIA'::text AS source_code,
     body     '1.0'::text AS publisher_contract_version,
     body     metric_key AS source_object_key,
@@ -5011,13 +5019,15 @@ v gold_eia.metric_publisher
     body     publication_time,
     body     'U.S. Energy Information Administration, Gasoline and Diesel Fuel Update (EIA-878)'::text AS source_name,
     body     'government-energy-statistics'::text AS source_type,
-    body     'https://www.eia.gov/petroleum/gasdiesel/'::text AS reference_url
+    body     'https://www.eia.gov/petroleum/gasdiesel/'::text AS reference_url,
+    body     last_value_date
     body    FROM ( SELECT latest.metric_key,
     body             min(latest.grade) AS grade,
     body             max(latest.week_start)::text AS source_watermark,
     body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
     body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
-    body             max(read.published_at) AS publication_time
+    body             max(read.published_at) AS publication_time,
+    body             max(latest.week_start) FILTER (WHERE latest.value IS NOT NULL) AS last_value_date
     body            FROM gold_eia.observation_latest latest
     body              JOIN control.eia_read read ON read.run_id = latest.run_id
     body           GROUP BY latest.metric_key) served
@@ -8218,6 +8228,7 @@ v gold_fred.metric_publisher
     column source_name text
     column source_type text
     column reference_url text
+    column last_value_date date
     body SELECT 'FRED'::text AS source_code,
     body     '1.0'::text AS publisher_contract_version,
     body     series.series_id AS source_object_key,
@@ -8240,14 +8251,16 @@ v gold_fred.metric_publisher
     body     COALESCE(max(fact.updated_at), series.updated_at) AS publication_time,
     body     'Federal Reserve Economic Data'::text AS source_name,
     body     'economic-data-aggregator'::text AS source_type,
-    body     series.reference_url
+    body     series.reference_url,
+    body     served.last_value_date
     body    FROM gold_fred.dim_fred_series series
     body      LEFT JOIN gold_fred.fact_fred_observation fact ON fact.fred_series_sk = series.fred_series_sk
     body      LEFT JOIN ( SELECT latest.metric_code,
-    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_level) ORDER BY (gold_glossary.geo_grain(latest.geo_level))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             max(latest.observation_date) FILTER (WHERE latest.value IS NOT NULL) AS last_value_date
     body            FROM gold_fred.mv_fred_latest latest
     body           GROUP BY latest.metric_code) served ON served.metric_code = ('FRED:'::text || series.series_id)
-    body   GROUP BY series.fred_series_sk, served.valid_geo_grains;
+    body   GROUP BY series.fred_series_sk, served.valid_geo_grains, served.last_value_date;
 
 r gold_fred.mv_fred_latest
     column source_code text NOT NULL DEFAULT 'FRED'::text
@@ -8584,7 +8597,7 @@ r gold_glossary.dim_metric_catalog
     column harvested_at timestamp with time zone NOT NULL DEFAULT now()
     column freshness_state text NOT NULL DEFAULT 'current'::text
     column missing_harvest_count integer NOT NULL DEFAULT 0
-    constraint dim_metric_catalog_freshness_state_check CHECK ((freshness_state = ANY (ARRAY['current'::text, 'stale'::text, 'retired'::text])))
+    constraint dim_metric_catalog_freshness_state_check CHECK ((freshness_state = ANY (ARRAY['current'::text, 'ended'::text, 'stale'::text, 'retired'::text])))
     constraint dim_metric_catalog_metric_code_key UNIQUE (metric_code)
     constraint dim_metric_catalog_missing_harvest_count_check CHECK ((missing_harvest_count >= 0))
     constraint dim_metric_catalog_pkey PRIMARY KEY (metric_catalog_sk)

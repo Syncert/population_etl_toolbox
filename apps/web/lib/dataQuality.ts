@@ -7,8 +7,8 @@
 // wearing the appearance of a published fact.
 //
 // The second rule is that the distinct states stay distinct. "Current",
-// "stale", "retired", and "never published" are four different facts about a
-// source, and none of them is zero. Where the API publishes no dedicated
+// "ended", "stale", "retired", and "never published" are five different facts
+// about a source, and none of them is zero. Where the API publishes no dedicated
 // quality resource for a kind of evidence, this module says where that
 // evidence actually lives rather than inventing a surface for it.
 
@@ -24,10 +24,12 @@ export interface FreshnessRow {
   sourceCode: string;
   metricCount: number;
   currentCount: number;
+  /** Still listed by the provider, but its newest real value is old. */
+  endedCount: number;
   staleCount: number;
   retiredCount: number;
   /**
-   * Metrics the rollup counts but places in none of the three published
+   * Metrics the rollup counts but places in none of the published
    * states. Surfaced rather than folded into one of them, because a metric
    * whose state the warehouse did not publish is not thereby current.
    */
@@ -59,11 +61,12 @@ function text(value: unknown): string {
 export function freshnessRow(source: SourceFreshness | null | undefined): FreshnessRow {
   const metricCount = count(source?.metric_count);
   const currentCount = count(source?.current_count);
+  const endedCount = count(source?.ended_count);
   const staleCount = count(source?.stale_count);
   const retiredCount = count(source?.retired_count);
   const unclassifiedCount = Math.max(
     0,
-    metricCount - currentCount - staleCount - retiredCount,
+    metricCount - currentCount - endedCount - staleCount - retiredCount,
   );
   const publishedAt = text(source?.latest_publication_time);
   const harvestedAt = text(source?.latest_harvested_at);
@@ -90,6 +93,7 @@ export function freshnessRow(source: SourceFreshness | null | undefined): Freshn
     sourceCode: text(source?.source_code),
     metricCount,
     currentCount,
+    endedCount,
     staleCount,
     retiredCount,
     unclassifiedCount,
@@ -129,6 +133,7 @@ export function coverageSegments(row: FreshnessRow | null | undefined): Coverage
   }
   const segments = [
     { label: "current", count: row.currentCount },
+    { label: "ended", count: row.endedCount },
     { label: "stale", count: row.staleCount },
     { label: "retired", count: row.retiredCount },
     { label: "no published state", count: row.unclassifiedCount },
@@ -175,11 +180,11 @@ export interface MetricQualityRow {
  * this list does not know keeps its place at the end with its own value
  * intact rather than being folded into a known one.
  */
-const FRESHNESS_ATTENTION_ORDER = ["stale", "", "retired", "current"];
+const FRESHNESS_ATTENTION_ORDER = ["stale", "", "ended", "retired", "current"];
 
 export const QUALITY_SAMPLE_ORDER =
   "Ordered by published freshness: stale first, then measures the publisher " +
-  "published no state for, then retired, then current.";
+  "published no state for, then ended, then retired, then current.";
 
 function attentionRank(freshness: string): number {
   const index = FRESHNESS_ATTENTION_ORDER.indexOf(freshness.toLowerCase());

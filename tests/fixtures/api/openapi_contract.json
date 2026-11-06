@@ -6524,6 +6524,7 @@
         "counts_are_complete": "boolean",
         "last_publication_time": "string | null",
         "metrics_current": "integer",
+        "metrics_ended": "integer",
         "metrics_retired": "integer",
         "metrics_stale": "integer",
         "metrics_total": "integer",
@@ -6575,6 +6576,7 @@
     "SourceFreshness": {
       "properties": {
         "current_count": "integer",
+        "ended_count": "integer",
         "geo_grains": "array<string>",
         "latest_harvested_at": "string(date-time) | null",
         "latest_publication_time": "string(date-time) | null",

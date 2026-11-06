@@ -170,7 +170,9 @@ export default function DataQualityExplorer({ embedded = false }: { embedded?: b
             <div className="section-kicker">Per source</div>
             <h2>Published freshness rollup</h2>
             <p className="subtle">
-              Current, stale, and retired are the warehouse&apos;s own published counts. A metric
+              Current, ended, stale, and retired are the warehouse&apos;s own published counts.
+              Ended means the provider still lists the measure but stopped publishing new values. A
+              metric
               carrying none of those states is counted separately as unknown — it is not
               thereby current.
             </p>
@@ -184,6 +186,7 @@ export default function DataQualityExplorer({ embedded = false }: { embedded?: b
                 <th>State</th>
                 <th>Metrics</th>
                 <th>Current</th>
+                <th>Ended</th>
                 <th>Stale</th>
                 <th>Retired</th>
                 <th>No published state</th>
@@ -215,6 +218,7 @@ export default function DataQualityExplorer({ embedded = false }: { embedded?: b
                   </td>
                   <td>{row.metricCount}</td>
                   <td>{row.currentCount}</td>
+                  <td>{row.endedCount}</td>
                   <td>{row.staleCount}</td>
                   <td>{row.retiredCount}</td>
                   <td>{row.unclassifiedCount}</td>

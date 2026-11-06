@@ -12,14 +12,14 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d{3}")
 AUDITED_COUNTS = {
     "ENV": 25,
-    "ARC": 7,
+    "ARC": 8,
     "PLAN": 8,
     "DQ": 24,
     "DAG": 24,
     "ETL": 119,
-    "DB": 70,
-    "API": 194,
-    "WEB": 168,
+    "DB": 71,
+    "API": 195,
+    "WEB": 169,
     "DEPLOY": 13,
     "MARTIN": 13,
     "EXT": 33,

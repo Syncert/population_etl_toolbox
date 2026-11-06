@@ -533,8 +533,16 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END IF;
 
-    -- Each affected key's newest row, staged so a latest row that did not
-    -- change is left in place (refresh-churn audit, 2026-11-06).
+    -- Each affected key's newest row *with a value*, staged so a latest row
+    -- that did not change is left in place (refresh-churn audit, 2026-11-06).
+    --
+    -- `(d.value IS NULL)` sorts first so a withheld month never stands in for
+    -- the newest published value. BLS keeps answering a discontinued Average
+    -- Price series with a `-` for every month after its last price: the
+    -- Midwest whole-milk series (APU0200709112) last priced April 2020 and
+    -- still served an empty October 2025 as its "latest" (2026-11-06). The
+    -- withheld rows stay in `rpt_bls_observations` with their status; only a
+    -- key whose every row is withheld serves a withheld row as its latest.
     DROP TABLE IF EXISTS pg_temp.gold_bls_latest_candidate;
     CREATE TEMP TABLE gold_bls_latest_candidate
         (LIKE gold_bls.mv_bls_latest INCLUDING DEFAULTS) ON COMMIT DROP;
@@ -551,6 +559,7 @@ BEGIN
         d.geo_id,
         d.series_id,
         d.metric_code,
+        (d.value IS NULL),
         d.observation_date DESC,
         d.updated_at DESC;
     ANALYZE gold_bls_latest_candidate;
