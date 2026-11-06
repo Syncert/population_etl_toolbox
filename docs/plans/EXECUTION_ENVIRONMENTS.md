@@ -100,18 +100,22 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**9 plans.**
+**13 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`age-and-sex-structure-views`](to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md) | high | `browser`, `postgres` | `place-pages`, `api-per-capita-and-shares`, `web-cross-level-compare` |
+| [`cost-of-living-section`](to_do/COST_OF_LIVING_SECTION_AND_HOME_ELECTRICITY_PLAN.md) | high | `browser`, `postgres` | `groceries-and-gas-cards` |
+| [`county-childcare-prices`](to_do/COUNTY_CHILDCARE_PRICES_PLAN.md) | high | `browser`, `postgres` | `cost-of-living-section` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
 | [`elections-and-economic-performance`](in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md) | high | `browser`, `postgres` | -- |
 | [`fbi-return-a-bulk-load`](to_do/FBI_RETURN_A_BULK_LOAD_PLAN.md) | high | `postgres` | -- |
+| [`home-heating-fuel-prices`](to_do/HOME_HEATING_FUEL_PRICES_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
 | [`taxes-and-public-money`](to_do/TAXES_AND_PUBLIC_MONEY_PLAN.md) | high | `browser`, `postgres` | `elections-and-economic-performance` |
+| [`thrifty-food-plan-grocery-cost`](to_do/THRIFTY_FOOD_PLAN_GROCERY_COST_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
 | [`tiles-places-and-metros`](in_progress/PLACE_AND_METRO_MAP_TILES_PLAN.md) | medium | `postgres` | `sub-county-geography`, `grocery-and-gasoline-prices`, `api-place-search` |
 
 
