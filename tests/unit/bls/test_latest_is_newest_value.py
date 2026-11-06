@@ -18,7 +18,7 @@ pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GOLD_BLS = REPO_ROOT / "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql"
-MIGRATION = REPO_ROOT / "sql/migrations/041_bls_latest_is_the_newest_value.sql"
+MIGRATION = REPO_ROOT / "sql/migrations/041_bls_serves_its_newest_published_value.sql"
 
 
 def _latest_procedure() -> str:

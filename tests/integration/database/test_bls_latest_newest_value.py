@@ -27,7 +27,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 MIGRATION = (
     Path(__file__).resolve().parents[3]
-    / "sql/migrations/041_bls_latest_is_the_newest_value.sql"
+    / "sql/migrations/041_bls_serves_its_newest_published_value.sql"
 )
 REFRESH = (
     ("CALL gold_bls.refresh_rpt_bls_observations(%s, %s)", WINDOW),

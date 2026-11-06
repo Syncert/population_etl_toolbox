@@ -599,7 +599,7 @@
     {
       "id": "migration-041",
       "phase": "glossary",
-      "path": "sql/migrations/041_bls_latest_is_the_newest_value.sql"
+      "path": "sql/migrations/041_bls_serves_its_newest_published_value.sql"
     },
     {
       "id": "migration-042",
