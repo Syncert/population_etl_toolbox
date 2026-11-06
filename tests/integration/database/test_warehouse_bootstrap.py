@@ -542,7 +542,7 @@ def test_only_flagged_applies_just_what_the_ledger_lacks(
     spec.loader.exec_module(script)
 
     # The read-only grants are re-applied on every run whatever the ledger
-    # says (DB-071), so they are always selected and never count as a gap.
+    # says (DB-072), so they are always selected and never count as a gap.
     always = [asset.id for asset in manifest_assets() if asset.reapply]
     removed = next(
         asset.id for asset in reversed(manifest_assets()) if not asset.reapply

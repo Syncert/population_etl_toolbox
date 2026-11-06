@@ -50,8 +50,11 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     source_run_id          UUID,
     publication_time       TIMESTAMPTZ,
     harvested_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- `ended`: still emitted, but its newest real value is older than its
+    -- time grain allows (migration 042, glossary/harvest.py).
     freshness_state        TEXT NOT NULL DEFAULT 'current'
-        CHECK (freshness_state IN ('current', 'stale', 'retired')),
+        CONSTRAINT dim_metric_catalog_freshness_state_check
+        CHECK (freshness_state IN ('current', 'ended', 'stale', 'retired')),
     missing_harvest_count  INTEGER NOT NULL DEFAULT 0
         CHECK (missing_harvest_count >= 0),
     UNIQUE (source_code, source_object_type, source_object_key)

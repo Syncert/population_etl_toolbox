@@ -1,6 +1,6 @@
 """A deploy re-applies the serving role's grants to schemas created since.
 
-Covers: DB-071 -- the serving role's grants follow the gold schemas a deploy
+Covers: DB-072 -- the serving role's grants follow the gold schemas a deploy
         creates, and a gold schema the policy does not name fails the check.
 
 Runs against the manifest-built warehouse with no separate application of
@@ -45,7 +45,7 @@ def _redeploy(database: connection) -> tuple[str, ...]:
 def test_the_manifest_alone_grants_every_gold_schema(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: DB-071 — no gold schema is ungranted and the public-money reads are allowed."""
+    """Covers: DB-072 — no gold schema is ungranted and the public-money reads are allowed."""
     database = postgres_connection_factory()
     try:
         with database.cursor() as cursor:
@@ -64,7 +64,7 @@ def test_the_manifest_alone_grants_every_gold_schema(
 def test_a_redeploy_grants_a_schema_created_after_the_grants_last_ran(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: DB-071 — the OFFICE_LAB 503: USAGE missing, then restored by the deploy alone."""
+    """Covers: DB-072 — the OFFICE_LAB 503: USAGE missing, then restored by the deploy alone."""
     database = postgres_connection_factory()
     try:
         with database.cursor() as cursor:
@@ -94,7 +94,7 @@ def test_a_redeploy_grants_a_schema_created_after_the_grants_last_ran(
 def test_a_gold_schema_the_policy_does_not_name_is_reported(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: DB-071 — the check names a gold schema the grants do not cover."""
+    """Covers: DB-072 — the check names a gold schema the grants do not cover."""
     database = postgres_connection_factory()
     try:
         with database.cursor() as cursor:

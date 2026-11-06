@@ -215,7 +215,7 @@ T-6 live follow-up (2026-11-06, OFFICE_LAB deploy of dev 8ec6ca90):
   USAGE on `gold_elections`, `gold_census_govfin` or `gold_irs_soi`, created
   after the read-only grants last ran at initdb. The grants are now the
   manifest's last asset, re-applied on every `--only-flagged` deploy, and
-  `--check` fails on any ungranted gold schema (DB-071).
+  `--check` fails on any ungranted gold schema (DB-072).
 - Tax mix totals read 72 to 97 percent: the annual survey has no "other
   taxes" aggregate, so "other" is now the total less property, general sales
   and income, and a year missing a named group has no mix.

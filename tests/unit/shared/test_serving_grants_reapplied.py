@@ -1,6 +1,6 @@
 """The read-only grants are re-applied on every deploy and name every gold schema.
 
-Covers: DB-071 -- the serving role's grants follow the gold schemas a deploy
+Covers: DB-072 -- the serving role's grants follow the gold schemas a deploy
         creates, and a gold schema the policy does not name fails the build.
 
 On 2026-11-06 `/public-money` and `/governor-terms` answered 503 on OFFICE_LAB:
@@ -50,7 +50,7 @@ def _created_gold_schemas() -> dict[str, Path]:
 def test_every_gold_schema_the_repository_creates_is_granted_to_the_serving_role() -> (
     None
 ):
-    """Covers: DB-071 — a new gold schema without a grant fails here, not in production."""
+    """Covers: DB-072 — a new gold schema without a grant fails here, not in production."""
     created = _created_gold_schemas()
     assert "gold_elections" in created, "the schema scan found nothing it should"
     ungranted = {
@@ -65,7 +65,7 @@ def test_every_gold_schema_the_repository_creates_is_granted_to_the_serving_role
 
 
 def test_the_grants_are_the_last_manifest_asset_and_are_reapplied() -> None:
-    """Covers: DB-071 — the grants run after every schema exists, on every deploy."""
+    """Covers: DB-072 — the grants run after every schema exists, on every deploy."""
     assets = manifest_assets()
     last = assets[-1]
     assert last.id == "api-readonly-grants"
@@ -77,7 +77,7 @@ def test_the_grants_are_the_last_manifest_asset_and_are_reapplied() -> None:
 def test_a_deploy_applies_what_the_ledger_lacks_and_every_reapplied_asset_in_order() -> (
     None
 ):
-    """Covers: DB-071 — `--only-flagged` keeps the grants even when nothing is flagged."""
+    """Covers: DB-072 — `--only-flagged` keeps the grants even when nothing is flagged."""
     assets = (
         ManifestAsset("first", "foundation", "a.sql"),
         ManifestAsset("second", "gold", "b.sql"),

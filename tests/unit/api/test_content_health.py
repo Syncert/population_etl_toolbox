@@ -335,3 +335,40 @@ def test_the_content_resource_is_metered_and_never_cached() -> None:
     # The versioned liveness resource keeps its exemption: the web
     # application calls it on every page load (API-101).
     assert "/api/v1/health" in EXEMPT_PATHS
+
+
+def test_an_ended_measure_is_counted_apart_and_not_as_current() -> None:
+    """Covers: API-195 — `ended` is its own published count.
+
+    BLS still lists the Midwest whole-milk Average Price it last priced in
+    April 2020; the harvest publishes it `ended`. It must not be counted as
+    current, must not leave the tally incomplete, and is not drift.
+    """
+    graded = grade_source(
+        _row(
+            "BLS",
+            metrics_total=5,
+            metrics_current=3,
+            metrics_ended=1,
+            metrics_retired=1,
+        )
+    )
+    assert graded["metrics_current"] == 3
+    assert graded["metrics_ended"] == 1
+    assert graded["counts_are_complete"] is True
+    assert graded["status"] == SERVING
+    report = grade_content(["BLS"], [_row("BLS", metrics_total=1, metrics_ended=1)])
+    assert report["stale_sources"] == []
+    assert report["silent_sources"] == ["BLS"]
+
+
+def test_the_content_query_counts_ended() -> None:
+    """Covers: API-195 — the statement and the vocabulary carry the state."""
+    from apps.api.services.content_health import CONTENT_QUERY, CONTENT_QUERY_PARAMETERS
+    from apps.api.services.metric_freshness import PUBLISHED_FRESHNESS_STATES
+    from data_ingestion_toolbox.sql.catalog_queries import SOURCE_FRESHNESS_QUERY
+
+    assert "metrics_ended" in str(CONTENT_QUERY)
+    assert CONTENT_QUERY_PARAMETERS["ended"] == "ended"
+    assert "ended" in PUBLISHED_FRESHNESS_STATES
+    assert "AS ended_count" in str(SOURCE_FRESHNESS_QUERY)
