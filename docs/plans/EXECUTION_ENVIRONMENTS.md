@@ -105,7 +105,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`age-and-sex-structure-views`](to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md) | high | `browser`, `postgres` | `place-pages`, `api-per-capita-and-shares`, `web-cross-level-compare` |
-| [`cost-of-living-section`](to_do/COST_OF_LIVING_SECTION_AND_HOME_ELECTRICITY_PLAN.md) | high | `browser`, `postgres` | `groceries-and-gas-cards` |
+| [`cost-of-living-section`](in_progress/COST_OF_LIVING_SECTION_PLAN.md) | high | `browser`, `postgres` | `groceries-and-gas-cards` |
 | [`county-childcare-prices`](to_do/COUNTY_CHILDCARE_PRICES_PLAN.md) | high | `browser`, `postgres` | `cost-of-living-section` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
 | [`elections-and-economic-performance`](in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md) | high | `browser`, `postgres` | -- |

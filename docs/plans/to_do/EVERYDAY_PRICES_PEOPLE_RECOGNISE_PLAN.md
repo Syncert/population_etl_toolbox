@@ -26,7 +26,7 @@ This plan scopes the sources. **Nick approved all four slices and the
 minutes-of-work measure on 2026-11-06 18:15Z**, with the display as a new
 section on the existing profiles. Each slice is its own plan and PR:
 
-1. [`COST_OF_LIVING_SECTION_AND_HOME_ELECTRICITY_PLAN.md`](COST_OF_LIVING_SECTION_AND_HOME_ELECTRICITY_PLAN.md) (`cost-of-living-section`)
+1. [`COST_OF_LIVING_SECTION_PLAN.md`](../in_progress/COST_OF_LIVING_SECTION_PLAN.md) (`cost-of-living-section`)
 2. [`HOME_HEATING_FUEL_PRICES_PLAN.md`](HOME_HEATING_FUEL_PRICES_PLAN.md) (`home-heating-fuel-prices`)
 3. [`THRIFTY_FOOD_PLAN_GROCERY_COST_PLAN.md`](THRIFTY_FOOD_PLAN_GROCERY_COST_PLAN.md) (`thrifty-food-plan-grocery-cost`)
 4. [`COUNTY_CHILDCARE_PRICES_PLAN.md`](COUNTY_CHILDCARE_PRICES_PLAN.md) (`county-childcare-prices`)

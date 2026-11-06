@@ -241,10 +241,12 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                         THEN 'Index 1982-1984=100'
                     WHEN f.program = 'cu'
                         THEN 'Index ' || TRIM(bs.raw_metadata ->> 'base_period')
-                    -- The unit is the one BLS names in the item's title.
+                    -- The unit is the one BLS names in the item's title:
+                    -- "Eggs, grade A, large, per doz. in ..." and, with no
+                    -- comma before it, "Electricity per KWH in ...".
                     WHEN f.program = 'ap'
                         THEN 'U.S. dollars ' || COALESCE(
-                            SUBSTRING(bs.title FROM ', (per .+?) in '), 'per unit'
+                            SUBSTRING(bs.title FROM '\\m(per .+?) in '), 'per unit'
                         )
                     WHEN f.series_id IN ('CES0000000001', 'CES0500000001') THEN 'Thousands of Persons'
                     WHEN f.series_id = 'CES0500000002' THEN 'Hours'

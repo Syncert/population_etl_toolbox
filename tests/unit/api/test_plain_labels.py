@@ -44,9 +44,19 @@ def _groceries_and_gas_codes() -> set[str]:
     codes; each template is expanded over every region and division.
     """
     text = GROCERIES_AND_GAS.read_text(encoding="utf-8")
+    # The everyday items' BLS item codes (cost-of-living-section).
+    block = text[text.index("PRICE_ITEMS: readonly") :]
+    items = re.findall(r'code: "(\w+)"', block[: block.index("];")])
+    assert items, "the everyday items were not found"
     codes: set[str] = set()
     for template in re.findall(r'metricCode: [`"]([^`"]+)[`"]', text):
-        if "${" not in template:
+        if "${spec.code}" in template:
+            codes |= {
+                template.replace("${region}", str(r)).replace("${spec.code}", item)
+                for item in items
+                for r in range(1, 5)
+            }
+        elif "${" not in template:
             codes.add(template)
         elif "${division}" in template:
             codes |= {

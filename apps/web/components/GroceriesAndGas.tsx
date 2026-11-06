@@ -1,9 +1,11 @@
 "use client";
 
-// The "Groceries and gas" card on a county, state or nation page
-// (groceries-and-gas-cards). Every number names the area it describes and
-// its source; the rules for choosing the area are `lib/groceriesAndGas.ts`.
+// The "Cost of living" section on a county, metro, state or nation page
+// (groceries-and-gas-cards; everyday prices from cost-of-living-section).
+// Every number names the area it describes; the rules for choosing the area
+// are `lib/groceriesAndGas.ts`. Loaded as its own chunk.
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { ApiError, apiErrorMessage, apiFetch, fetchCollectionPages, getMetric } from "../lib/api/client";
 import type { CollectionResponse, GeographySummary, Observation } from "../lib/api/types";
@@ -16,6 +18,7 @@ import type { RelatedResponse } from "../lib/placeRelationships";
 import {
   NO_LOCAL_PRICES,
   NO_METRO_PRICES,
+  PRICE_ITEMS,
   SOURCE_NAMES,
   areaLabel,
   changeOverYear,
@@ -23,26 +26,39 @@ import {
   formatChange,
   formatGas,
   formatParity,
+  formatPrice,
+  formatRent,
   readingsFor,
   withheldReason,
 } from "../lib/groceriesAndGas";
-import type { CostMeasure, Reading } from "../lib/groceriesAndGas";
+import type { Area, CostMeasure, PriceItem, Reading } from "../lib/groceriesAndGas";
+
+const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
 
 interface Answer {
   reading: Reading | null;
   text: string;
   period: string;
+  /** "up 3.0% over the year", for a price with a monthly history. */
+  change?: string;
+  /** The published history, for the sparkline. */
+  rows?: ObservationRow[];
   /** Why no more local area answered, or why nothing did. */
   notes: string[];
 }
 
-const TITLES: Record<CostMeasure, string> = {
+const TITLES: Record<"gas" | "food" | "parity" | "rent", string> = {
   gas: "Regular gasoline",
-  food: "Groceries (food at home)",
+  rent: "Median rent",
+  food: "Groceries overall (food at home)",
   parity: "Overall price level",
 };
 
-const ORDER: CostMeasure[] = ["gas", "food", "parity"];
+const LINES: ("gas" | "rent" | "food" | "parity")[] = ["gas", "rent", "food", "parity"];
+const ITEMS = PRICE_ITEMS.map((spec) => spec.item);
+const ORDER: CostMeasure[] = [...ITEMS, ...LINES];
+
+const isItem = (measure: CostMeasure): measure is PriceItem => ITEMS.includes(measure as PriceItem);
 
 async function answer(
   readings: Reading[],
@@ -59,7 +75,7 @@ async function answer(
         notes.push(`${where}: not published.`);
         continue;
       }
-      if (reading.measure === "food") {
+      if (reading.measure === "food" || isItem(reading.measure)) {
         const history = buildUseCaseHistory(source, metric, reading.area.geoId, reading.area.level);
         if (!history.request) {
           notes.push(`${where}: ${history.reason}`);
@@ -73,11 +89,28 @@ async function answer(
         });
         const rows = normalizeObservationRows(source, result.items).filter((row) => row.geo_id === reading.area.geoId);
         const change = changeOverYear(rows);
-        if (change.percent === null) {
-          notes.push(`${where}: ${change.reason}`);
+        if (reading.measure === "food") {
+          if (change.percent === null) {
+            notes.push(`${where}: ${change.reason}`);
+            continue;
+          }
+          return { reading, text: formatChange(change.percent), period: change.period, notes };
+        }
+        const spec = PRICE_ITEMS.find((item) => item.item === reading.measure)!;
+        const newest = [...rows].reverse().find((row) => row.value !== null && row.value !== undefined && row.value !== "");
+        const value = newest ? Number(newest.value) : NaN;
+        if (!newest || !Number.isFinite(value)) {
+          notes.push(`${where}: ${rows.length ? withheldReason(rows.at(-1)) : "no value published for this area."}`);
           continue;
         }
-        return { reading, text: formatChange(change.percent), period: change.period, notes };
+        return {
+          reading,
+          text: formatPrice(value, spec),
+          period: observationPeriodLabel(newest),
+          change: change.percent === null ? "" : formatChange(change.percent),
+          rows,
+          notes,
+        };
       }
       const { resource, params } = buildNewestValueRequest(source, { metricCode: reading.metricCode, geoId: reading.area.geoId });
       const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params, signal });
@@ -93,18 +126,22 @@ async function answer(
         notes.push(`${where}: ${withheldReason(row)}`);
         continue;
       }
-      return {
-        reading,
-        text: reading.measure === "gas" ? formatGas(value) : formatParity(value),
-        period: observationPeriodLabel(row),
-        notes,
-      };
+      const text = reading.measure === "gas" ? formatGas(value) : reading.measure === "rent" ? formatRent(value) : formatParity(value);
+      return { reading, text, period: observationPeriodLabel(row), notes };
     } catch (error) {
       if (signal.aborted) throw error;
       notes.push(error instanceof ApiError && error.status === 404 ? `${where}: not published.` : `${where}: ${apiErrorMessage(error)}`);
     }
   }
   return { reading: null, text: "", period: "", notes };
+}
+
+function Notes({ notes }: { notes: string[] }) {
+  return notes.length ? (
+    <ul className="subtle place-cost-notes">
+      {notes.map((note) => <li key={note}>{note}</li>)}
+    </ul>
+  ) : null;
 }
 
 export default function GroceriesAndGas({
@@ -123,7 +160,9 @@ export default function GroceriesAndGas({
   useEffect(() => {
     if (!sources.length) return;
     const controller = new AbortController();
-    const readings = readingsFor(containingAreas(level, place, related));
+    const areas = containingAreas(level, place, related);
+    const own: Area = { geoId: place.geo_id, level, name: String(place.geo_name || place.geo_id) };
+    const readings = readingsFor(areas, own);
     setAnswers({});
     for (const measure of ORDER) {
       answer(readings[measure], sources, controller.signal)
@@ -135,12 +174,67 @@ export default function GroceriesAndGas({
     return () => controller.abort();
   }, [level, place, related, sources]);
 
+  // The area most items answered for, stated once above the table; an item
+  // answered by another area says so on its own row.
+  const answered = ITEMS.map((item) => answers[item]?.reading?.area).filter(Boolean);
+  const common = answered.length
+    ? answered.reduce((best, area) => (answered.filter((a) => a!.geoId === area!.geoId).length > answered.filter((a) => a!.geoId === best!.geoId).length ? area : best))
+    : null;
+
   return (
     <section className="analysis-panel place-cost" aria-labelledby="place-cost-heading" data-testid="place-groceries-gas">
-      <h2 id="place-cost-heading">Groceries and gas</h2>
+      <h2 id="place-cost-heading">Cost of living</h2>
       {level !== "NATIONAL" ? <p className="subtle" data-testid="place-cost-no-local">{level === "METRO" ? NO_METRO_PRICES : NO_LOCAL_PRICES}</p> : null}
+
+      <table className="place-cost-items" data-testid="place-cost-items">
+        <caption>
+          Everyday prices
+          {common ? (
+            <span className="subtle" data-testid="place-cost-items-area">
+              {" "}· {areaLabel(common, place.geo_id)}, urban average. Source: {SOURCE_NAMES.BLS}, average prices.
+            </span>
+          ) : null}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Item</th>
+            <th scope="col">Price</th>
+            <th scope="col">Over the year</th>
+            <th scope="col">Trend</th>
+          </tr>
+        </thead>
+        <tbody>
+          {PRICE_ITEMS.map((spec) => {
+            const result = answers[spec.item];
+            const other = result?.reading && common && result.reading.area.geoId !== common.geoId;
+            return (
+              <tr key={spec.item} data-testid={`place-cost-${spec.item}`} data-area={result?.reading?.area.geoId || ""}>
+                <th scope="row">{spec.title}</th>
+                <td>
+                  {!result ? (
+                    "Reading…"
+                  ) : result.reading ? (
+                    <>
+                      <strong>{result.text}</strong>
+                      <span className="subtle block">
+                        {result.period}
+                        {other ? ` · ${areaLabel(result.reading.area, place.geo_id)}` : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <span>Not loaded into this site yet.</span>
+                  )}
+                </td>
+                <td>{result?.change || ""}</td>
+                <td>{result?.rows?.length ? <PlaceSparkline rows={result.rows} testId={`place-cost-${spec.item}-spark`} name={spec.title} /> : null}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
       <dl className="place-cost-lines">
-        {ORDER.map((measure) => {
+        {LINES.map((measure) => {
           const result = answers[measure];
           return (
             <div key={measure} data-testid={`place-cost-${measure}`} data-area={result?.reading?.area.geoId || ""}>
@@ -163,11 +257,10 @@ export default function GroceriesAndGas({
                 {result?.reading && measure === "food" ? (
                   <span className="subtle block"> Each area&apos;s index has its own base, so only its change over a year is shown.</span>
                 ) : null}
-                {result?.notes.length ? (
-                  <ul className="subtle place-cost-notes">
-                    {result.notes.map((note) => <li key={note}>{note}</li>)}
-                  </ul>
+                {result?.reading && measure === "rent" ? (
+                  <span className="subtle block"> Rent plus the utilities the renter pays, from the five-year survey.</span>
                 ) : null}
+                {result ? <Notes notes={result.notes} /> : null}
               </dd>
             </div>
           );

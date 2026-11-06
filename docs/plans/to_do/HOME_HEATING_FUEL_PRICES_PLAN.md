@@ -20,15 +20,28 @@ verify:
 
 To do. Slice 2 of
 [`EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md`](EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md),
-approved by Nick 2026-11-06 18:15Z. Builds on the EIA route registry from
-`cost-of-living-section`.
+approved by Nick 2026-11-06 18:15Z. Residential electricity by state moved
+here from `cost-of-living-section` on 2026-11-06, so every new EIA route is
+built on one generalisation of the adapter.
 
 ## Data work
 
-Three entries in the EIA route registry; no new adapter.
+**EIA route registry.** Generalise `eia/config.py` and `eia/capture.py`
+from one `GASOLINE_ROUTE` to a registry of routes (route, facets, data
+column, frequency, history start, refresh window, unit, citation). Gasoline
+becomes the first entry and keeps its request parameters exactly, so its
+capture fingerprints and replay are unchanged. The monthly and seasonal
+routes land in a new `silver_eia.fact_energy_price` keyed by
+`(series_id, period_start, capture_id)` with a `frequency` column; the
+75,864 gasoline rows in `fact_retail_price` are not moved or rewritten.
+`control.eia_read` gains a `route` column (default the gasoline route), so
+each route plans its own window.
+
+Four entries beside gasoline; no new adapter.
 
 | Entry | Route | Grain | Frequency | From |
 | --- | --- | --- | --- | --- |
+| Residential electricity, cents per kWh | `electricity/retail-sales`, sector `RES`, data `price` | Every state, nation | Monthly | 2001-01 |
 | Residential natural gas, $ per thousand cubic feet | `natural-gas/pri/sum`, process `PRS` | Every state, nation | Monthly | 1989 (confirm at implementation) |
 | Residential heating oil and propane, $ per gallon | `petroleum/pri/wfr` | About 38 states, PADDs, nation | Weekly, October to March | 1990s (confirm) |
 | Retail diesel, $ per gallon | `petroleum/pri/gnd`, product diesel | As gasoline | Weekly | 2015 (warehouse start) |
@@ -43,6 +56,8 @@ Three entries in the EIA route registry; no new adapter.
 
 ## Display
 
+The electricity line switches from BLS's regional price to EIA's state
+price where EIA publishes the state (cents per kWh, the state named).
 Two more lines in the "Cost of living" section: "Natural gas for heating"
 (state) and, from October to March, "Heating oil" or "Propane" (state where
 EIA publishes it, else PADD), each with its area and same-month change.
@@ -52,7 +67,9 @@ with the conversion named in the glossary).
 
 ## Acceptance criteria
 
-- Each route replays offline for the nation and a state; a summer heating
+- Gasoline replays exactly as before the registry (same request parameters
+  and fingerprints). Each new route replays offline for the nation and a
+  state; a summer heating
   oil week has no row; the key is in no fixture, log or capture.
 - A rerun over unchanged bytes writes zero rows.
 - The section shows the new lines with their areas; unit, DAG, build and
