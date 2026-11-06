@@ -152,7 +152,22 @@ def refresh_acs_elements(
                     universe = EXCLUDED.universe,
                     survey_span_years = EXCLUDED.survey_span_years,
                     reference_url = EXCLUDED.reference_url,
-                    updated_at = NOW();
+                    updated_at = NOW()
+                -- An unchanged table is left alone: every run rewrote every
+                -- row (and its `updated_at`) whether or not anything moved.
+                WHERE (
+                    gold_census.dim_acs_table.table_title,
+                    gold_census.dim_acs_table.concept,
+                    gold_census.dim_acs_table.universe,
+                    gold_census.dim_acs_table.survey_span_years,
+                    gold_census.dim_acs_table.reference_url
+                ) IS DISTINCT FROM (
+                    EXCLUDED.table_title,
+                    EXCLUDED.concept,
+                    EXCLUDED.universe,
+                    EXCLUDED.survey_span_years,
+                    EXCLUDED.reference_url
+                );
                 """,
                 (dataset_code, vintage_year),
             )
@@ -205,7 +220,20 @@ def refresh_acs_elements(
                     concept = EXCLUDED.concept,
                     universe = EXCLUDED.universe,
                     value_role = EXCLUDED.value_role,
-                    updated_at = NOW();
+                    updated_at = NOW()
+                WHERE (
+                    gold_census.dim_acs_variable.acs_table_sk,
+                    gold_census.dim_acs_variable.variable_label,
+                    gold_census.dim_acs_variable.concept,
+                    gold_census.dim_acs_variable.universe,
+                    gold_census.dim_acs_variable.value_role
+                ) IS DISTINCT FROM (
+                    EXCLUDED.acs_table_sk,
+                    EXCLUDED.variable_label,
+                    EXCLUDED.concept,
+                    EXCLUDED.universe,
+                    EXCLUDED.value_role
+                );
                 """,
                 (dataset_code, vintage_year),
             )

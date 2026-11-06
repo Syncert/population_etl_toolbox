@@ -461,157 +461,33 @@ DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_deleted_rows BIGINT;
     v_inserted_rows BIGINT;
+    v_unchanged_rows BIGINT := 0;
+    v_candidate_rows BIGINT;
     v_affected_keys BIGINT;
     v_partitioned BOOLEAN;
     v_year INTEGER;
     v_partition TEXT;
     v_cleared_years INTEGER := 0;
     v_prev_nestloop TEXT;
-BEGIN
-    RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
-    IF p_state_fips IS NOT NULL AND p_geo_levels IS NULL THEN
-        RAISE EXCEPTION 'a state''s refresh names its grains: truncating a year '
-                        'partition for one state would clear every other state';
-    END IF;
-
-    DROP TABLE IF EXISTS pg_temp.gold_acs_affected_keys;
-    CREATE TEMP TABLE gold_acs_affected_keys (
-        geo_id        TEXT NOT NULL,
-        variable_code TEXT NOT NULL,
-        metric_code   TEXT NOT NULL,
-        PRIMARY KEY (geo_id, variable_code, metric_code)
-    ) ON COMMIT DROP;
-
-    -- Capture old keys as well as new keys so a source-side deletion removes a
-    -- now-stale latest row. The row count comes out of the same scan: the
-    -- clearing step below may be a TRUNCATE, which reports none.
-    WITH scanned AS (
-        SELECT d.geo_id, d.variable_code, d.metric_code
-        FROM gold_census.rpt_acs_observations d
-        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-          AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
-          AND (p_state_fips IS NULL OR d.state_fips = p_state_fips)
-    ), recorded AS (
-        INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
-        SELECT DISTINCT geo_id, variable_code, metric_code FROM scanned
-        ON CONFLICT DO NOTHING
-        RETURNING 1
-    )
-    SELECT count(*) INTO v_deleted_rows FROM scanned;
-
-    -- Clear the range. On a partitioned table a whole calendar year is a
-    -- partition, and truncating it leaves no dead tuples and no index entries
-    -- to clean up -- which is the entire reason this relation is partitioned.
-    -- A `DELETE` of a year left tens of millions of dead rows per chunk and an
-    -- operator rule reading "vacuum manually; do not wait for autovacuum".
-    --
-    -- Truncating takes ACCESS EXCLUSIVE on the partition, where the delete
-    -- took ROW EXCLUSIVE: a reader of *that year* waits for the chunk instead
-    -- of seeing the pre-chunk rows. Other years are untouched, which the
-    -- delete could not offer either -- it held row locks across the whole
-    -- heap's index pages. A re-serve is a maintenance window in both shapes.
-    SELECT c.relkind = 'p' INTO v_partitioned
-    FROM pg_class c
-    WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
-
-    IF p_geo_levels IS NOT NULL THEN
-        -- A grain step: row locks only, so readers of other grains (and of
-        -- this grain's previous rows) carry on.
-        DELETE FROM gold_census.rpt_acs_observations
-        WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
-          AND (p_end_date IS NULL OR observation_date <= p_end_date)
-          AND geo_level = ANY(p_geo_levels)
-          AND (p_state_fips IS NULL OR state_fips = p_state_fips);
-    ELSIF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
-        -- Every year, including the default partition.
-        TRUNCATE TABLE gold_census.rpt_acs_observations;
-        v_cleared_years := -1;
-    ELSIF v_partitioned THEN
-        FOR v_year IN
-            SELECT generate_series(
-                EXTRACT(YEAR FROM p_start_date)::INT,
-                EXTRACT(YEAR FROM p_end_date)::INT
-            )
-        LOOP
-            v_partition := format('gold_census.rpt_acs_observations_%s', v_year);
-            -- Only a year the range covers end to end may be truncated. The
-            -- serving driver's ACS chunk is always 1 January to 31 December
-            -- (`ACS_CHUNK_CONFIG`), so this is the normal path; a partial
-            -- range falls through to a delete rather than removing rows the
-            -- caller did not ask about.
-            IF to_regclass(v_partition) IS NOT NULL
-               AND p_start_date <= MAKE_DATE(v_year, 1, 1)
-               AND p_end_date >= MAKE_DATE(v_year, 12, 31) THEN
-                EXECUTE format('TRUNCATE TABLE %s', v_partition);
-                v_cleared_years := v_cleared_years + 1;
-            ELSE
-                DELETE FROM gold_census.rpt_acs_observations
-                WHERE observation_date >= GREATEST(p_start_date, MAKE_DATE(v_year, 1, 1))
-                  AND observation_date <= LEAST(p_end_date, MAKE_DATE(v_year, 12, 31));
-            END IF;
-        END LOOP;
-    ELSE
-        -- A warehouse that has not been rebuilt per BETA_RESET_REINGESTION.md
-        -- section 7 still holds a plain heap here. It is still correct; it is
-        -- only still slow.
-        RAISE WARNING '[ACS RPT CHUNK] rpt_acs_observations is not partitioned; '
-                      'deleting the range instead of truncating a partition.';
-        DELETE FROM gold_census.rpt_acs_observations
-        WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
-          AND (p_end_date IS NULL OR observation_date <= p_end_date);
-    END IF;
-
-    -- One state's read is estimated at a handful of rows (the view's computed
-    -- grain defeats the statistics), so the planner joined the geography
-    -- view by nested loop: for Delaware's 89,604 tract facts it compared
-    -- 17.4 billion row pairs, and a large state ran for over twenty minutes.
-    -- The real counts are thousands to millions; hash joins are right for
-    -- every state. Restored after the insert, and with the transaction.
-    IF p_state_fips IS NOT NULL THEN
-        v_prev_nestloop := current_setting('enable_nestloop');
-        PERFORM set_config('enable_nestloop', 'off', true);
-    END IF;
-
-    INSERT INTO gold_census.rpt_acs_observations (
-        source_code,
-        observation_date,
-        duration_start,
-        duration_end,
-        time_sk,
-        as_of_date,
-        updated_at,
-        geo_id,
-        geo_level,
-        state_fips,
-        county_fips,
-        state_name,
-        county_name,
-        place_name,
-        geo_latitude,
-        geo_longitude,
-        metric_code,
-        metric_display_name,
-        value,
-        dataset_code,
-        vintage_year,
-        table_id,
-        table_title,
-        variable_code,
-        variable_label,
-        concept,
-        universe,
-        denominator_hint,
-        is_publishable_default,
-        estimate_value,
-        value_status,
-        source_value,
-        capture_id,
-        margin_of_error,
-        margin_of_error_pct,
-        estimate_annotation,
-        moe_annotation
-    )
+    -- Every column the refresh writes, in one place: the served-row query,
+    -- the insert and the row comparison below all read this list.
+    v_cols CONSTANT TEXT[] := ARRAY[
+        'source_code', 'observation_date', 'duration_start', 'duration_end',
+        'time_sk', 'as_of_date', 'updated_at', 'geo_id', 'geo_level',
+        'state_fips', 'county_fips', 'state_name', 'county_name', 'place_name',
+        'geo_latitude', 'geo_longitude', 'metric_code', 'metric_display_name',
+        'value', 'dataset_code', 'vintage_year', 'table_id', 'table_title',
+        'variable_code', 'variable_label', 'concept', 'universe',
+        'denominator_hint', 'is_publishable_default', 'estimate_value',
+        'value_status', 'source_value', 'capture_id', 'margin_of_error',
+        'margin_of_error_pct', 'estimate_annotation', 'moe_annotation'
+    ];
+    v_columns TEXT;
+    v_new_row TEXT;
+    v_old_row TEXT;
+    -- The rows the window should hold, in `v_cols` order. Parameters: $1
+    -- start, $2 end, $3 grains, $4 state.
+    v_served_rows CONSTANT TEXT := $served$
     SELECT
         'CENSUS_ACS',
         ao.observation_date,
@@ -629,7 +505,7 @@ BEGIN
         -- A tract's own name rides in the place slot, the most specific name
         -- `gold_glossary.geo_name` reads; a tract has no place, and its
         -- `county_name` is its county's (sub-county-geography).
-        COALESCE(gl.place_name, gl.area_name) AS place_name,
+        COALESCE(gl.place_name, gl.area_name),
         gl.latitude,
         gl.longitude,
         -- The catalog is the published discovery surface, and the glossary
@@ -665,44 +541,239 @@ BEGIN
     -- gl supplies geography attributes only. Its geo_level vocabulary is
     -- 'us'/'state'/'county'; served rows promise NATIONAL/STATE/COUNTY.
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = ao.geo_id
-    WHERE (p_start_date IS NULL OR ao.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR ao.observation_date <= p_end_date)
+    WHERE ($1 IS NULL OR ao.observation_date >= $1)
+      AND ($2 IS NULL OR ao.observation_date <= $2)
       -- The same window on the fact's own year, which the year index can
       -- read: `observation_date` is computed in the view, so the date bounds
       -- alone scanned the whole fact. A date in the window implies its year.
-      AND (p_start_date IS NULL
-           OR ao.vintage_year >= EXTRACT(YEAR FROM p_start_date)::INT)
-      AND (p_end_date IS NULL
-           OR ao.vintage_year <= EXTRACT(YEAR FROM p_end_date)::INT)
-      AND (p_geo_levels IS NULL OR ao.geo_level = ANY(p_geo_levels))
-      AND (p_state_fips IS NULL OR ao.state_fips = p_state_fips);
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+      AND ($1 IS NULL OR ao.vintage_year >= EXTRACT(YEAR FROM $1)::INT)
+      AND ($2 IS NULL OR ao.vintage_year <= EXTRACT(YEAR FROM $2)::INT)
+      AND ($3 IS NULL OR ao.geo_level = ANY($3))
+      AND ($4 IS NULL OR ao.state_fips = $4)
+    $served$;
+    -- The window's served rows, as `d`. Same parameters.
+    v_window CONSTANT TEXT := $window$
+          ($1 IS NULL OR d.observation_date >= $1)
+      AND ($2 IS NULL OR d.observation_date <= $2)
+      AND ($3 IS NULL OR d.geo_level = ANY($3))
+      AND ($4 IS NULL OR d.state_fips = $4)
+    $window$;
+    -- `n` and `d` hold the same natural key (`uq_rpt_acs_observations_nk`).
+    v_same_key CONSTANT TEXT := $key$
+          n.geo_id = d.geo_id
+      AND n.observation_date = d.observation_date
+      AND n.dataset_code = d.dataset_code
+      AND n.vintage_year = d.vintage_year
+      AND n.variable_code = d.variable_code
+      AND COALESCE(n.metric_code, '') = COALESCE(d.metric_code, '')
+    $key$;
+BEGIN
+    RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
+    IF p_state_fips IS NOT NULL AND p_geo_levels IS NULL THEN
+        RAISE EXCEPTION 'a state''s refresh names its grains: truncating a year '
+                        'partition for one state would clear every other state';
+    END IF;
+
+    v_columns := array_to_string(v_cols, ', ');
+    SELECT string_agg('n.' || quote_ident(c), ', ' ORDER BY i),
+           string_agg('d.' || quote_ident(c), ', ' ORDER BY i)
+      INTO v_new_row, v_old_row
+      FROM unnest(v_cols) WITH ORDINALITY AS u(c, i);
+
+    DROP TABLE IF EXISTS pg_temp.gold_acs_affected_keys;
+    CREATE TEMP TABLE gold_acs_affected_keys (
+        geo_id        TEXT NOT NULL,
+        variable_code TEXT NOT NULL,
+        metric_code   TEXT NOT NULL,
+        PRIMARY KEY (geo_id, variable_code, metric_code)
+    ) ON COMMIT DROP;
+
+    -- One state's read is estimated at a handful of rows (the view's computed
+    -- grain defeats the statistics), so the planner joined the geography
+    -- view by nested loop: for Delaware's 89,604 tract facts it compared
+    -- 17.4 billion row pairs, and a large state ran for over twenty minutes.
+    -- The real counts are thousands to millions; hash joins are right for
+    -- every state. Restored at the end, and with the transaction.
+    IF p_state_fips IS NOT NULL THEN
+        v_prev_nestloop := current_setting('enable_nestloop');
+        PERFORM set_config('enable_nestloop', 'off', true);
+    END IF;
+
+    IF p_geo_levels IS NOT NULL THEN
+        -- A grain step writes only what changed (2026-11-06).
+        --
+        -- It used to delete every served row of its grains and insert them
+        -- all again, so a state whose tracts gained 1,368 rows deleted and
+        -- re-inserted all 155,952 -- and handed all 157,320 keys to the latest
+        -- refresh, which rewrote those too (about 450 seconds a state on the
+        -- 2024 partition). Silver only moves a row's `updated_at` when its
+        -- content changes, so an unchanged served row is identical, column for
+        -- column, to the row this query would insert; it is left in place.
+        --
+        -- The step deletes a served row that is gone from the new set or
+        -- differs from it, inserts each new row that has no identical row
+        -- left, and records only those rows' keys for the latest refresh.
+        -- Unchanged rows leave no dead tuples and no index churn.
+        DROP TABLE IF EXISTS pg_temp.gold_acs_served_rows;
+        CREATE TEMP TABLE gold_acs_served_rows
+            (LIKE gold_census.rpt_acs_observations INCLUDING DEFAULTS)
+            ON COMMIT DROP;
+        EXECUTE format(
+            'INSERT INTO pg_temp.gold_acs_served_rows (%s) %s',
+            v_columns, v_served_rows
+        ) USING p_start_date, p_end_date, p_geo_levels, p_state_fips;
+        GET DIAGNOSTICS v_candidate_rows = ROW_COUNT;
+        ANALYZE pg_temp.gold_acs_served_rows;
+
+        -- Row locks only, so readers of other grains (and of this grain's
+        -- unchanged rows) carry on.
+        EXECUTE format($diff$
+            WITH gone AS (
+                DELETE FROM gold_census.rpt_acs_observations d
+                WHERE %1$s
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pg_temp.gold_acs_served_rows n
+                      WHERE %2$s
+                        AND ROW(%3$s) IS NOT DISTINCT FROM ROW(%4$s)
+                  )
+                RETURNING d.geo_id, d.variable_code, d.metric_code
+            ), recorded AS (
+                INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+                SELECT DISTINCT geo_id, variable_code, metric_code FROM gone
+                ON CONFLICT DO NOTHING
+                RETURNING 1
+            )
+            SELECT count(*) FROM gone
+        $diff$, v_window, v_same_key, v_new_row, v_old_row)
+        INTO v_deleted_rows
+        USING p_start_date, p_end_date, p_geo_levels, p_state_fips;
+
+        -- Every served row of the window that survived is identical to a new
+        -- row, so a new row with a surviving key is already served.
+        EXECUTE format($diff$
+            WITH added AS (
+                INSERT INTO gold_census.rpt_acs_observations (%1$s)
+                SELECT %2$s
+                FROM pg_temp.gold_acs_served_rows n
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM gold_census.rpt_acs_observations d
+                    WHERE %3$s AND %4$s
+                )
+                RETURNING geo_id, variable_code, metric_code
+            ), recorded AS (
+                INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+                SELECT DISTINCT geo_id, variable_code, metric_code FROM added
+                ON CONFLICT DO NOTHING
+                RETURNING 1
+            )
+            SELECT count(*) FROM added
+        $diff$, v_columns, v_new_row, v_window, v_same_key)
+        INTO v_inserted_rows
+        USING p_start_date, p_end_date, p_geo_levels, p_state_fips;
+
+        v_unchanged_rows := v_candidate_rows - v_inserted_rows;
+    ELSE
+        -- The whole-year (dashboard) path: clear the range and refill it.
+        --
+        -- Capture old keys as well as new keys so a source-side deletion
+        -- removes a now-stale latest row. The row count comes out of the same
+        -- scan: the clearing step below may be a TRUNCATE, which reports none.
+        WITH scanned AS (
+            SELECT d.geo_id, d.variable_code, d.metric_code
+            FROM gold_census.rpt_acs_observations d
+            WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+              AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+        ), recorded AS (
+            INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+            SELECT DISTINCT geo_id, variable_code, metric_code FROM scanned
+            ON CONFLICT DO NOTHING
+            RETURNING 1
+        )
+        SELECT count(*) INTO v_deleted_rows FROM scanned;
+
+        -- On a partitioned table a whole calendar year is a partition, and
+        -- truncating it leaves no dead tuples and no index entries to clean
+        -- up -- which is the entire reason this relation is partitioned. A
+        -- `DELETE` of a year left tens of millions of dead rows per chunk and
+        -- an operator rule reading "vacuum manually; do not wait for
+        -- autovacuum".
+        --
+        -- Truncating takes ACCESS EXCLUSIVE on the partition, where the delete
+        -- took ROW EXCLUSIVE: a reader of *that year* waits for the chunk
+        -- instead of seeing the pre-chunk rows. Other years are untouched.
+        SELECT c.relkind = 'p' INTO v_partitioned
+        FROM pg_class c
+        WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
+
+        IF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
+            -- Every year, including the default partition.
+            TRUNCATE TABLE gold_census.rpt_acs_observations;
+            v_cleared_years := -1;
+        ELSIF v_partitioned THEN
+            FOR v_year IN
+                SELECT generate_series(
+                    EXTRACT(YEAR FROM p_start_date)::INT,
+                    EXTRACT(YEAR FROM p_end_date)::INT
+                )
+            LOOP
+                v_partition := format('gold_census.rpt_acs_observations_%s', v_year);
+                -- Only a year the range covers end to end may be truncated; a
+                -- partial range falls through to a delete rather than
+                -- removing rows the caller did not ask about.
+                IF to_regclass(v_partition) IS NOT NULL
+                   AND p_start_date <= MAKE_DATE(v_year, 1, 1)
+                   AND p_end_date >= MAKE_DATE(v_year, 12, 31) THEN
+                    EXECUTE format('TRUNCATE TABLE %s', v_partition);
+                    v_cleared_years := v_cleared_years + 1;
+                ELSE
+                    DELETE FROM gold_census.rpt_acs_observations
+                    WHERE observation_date >= GREATEST(p_start_date, MAKE_DATE(v_year, 1, 1))
+                      AND observation_date <= LEAST(p_end_date, MAKE_DATE(v_year, 12, 31));
+                END IF;
+            END LOOP;
+        ELSE
+            -- A warehouse that has not been rebuilt per
+            -- BETA_RESET_REINGESTION.md section 7 still holds a plain heap
+            -- here. It is still correct; it is only still slow.
+            RAISE WARNING '[ACS RPT CHUNK] rpt_acs_observations is not partitioned; '
+                          'deleting the range instead of truncating a partition.';
+            DELETE FROM gold_census.rpt_acs_observations
+            WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
+              AND (p_end_date IS NULL OR observation_date <= p_end_date);
+        END IF;
+
+        EXECUTE format(
+            'INSERT INTO gold_census.rpt_acs_observations (%s) %s',
+            v_columns, v_served_rows
+        ) USING p_start_date, p_end_date, p_geo_levels, p_state_fips;
+        GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+
+        INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+        SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
+        FROM gold_census.rpt_acs_observations d
+        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+        ON CONFLICT DO NOTHING;
+    END IF;
 
     IF p_state_fips IS NOT NULL THEN
         PERFORM set_config('enable_nestloop', v_prev_nestloop, true);
     END IF;
 
-    INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
-    SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
-    FROM gold_census.rpt_acs_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-      AND (p_geo_levels IS NULL OR d.geo_level = ANY(p_geo_levels))
-      AND (p_state_fips IS NULL OR d.state_fips = p_state_fips)
-    ON CONFLICT DO NOTHING;
-
     SELECT COUNT(*) INTO v_affected_keys FROM gold_acs_affected_keys;
     RAISE NOTICE
-        '[ACS RPT CHUNK] status=COMPLETE start=% end=% grains=% cleared_partitions=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        '[ACS RPT CHUNK] status=COMPLETE start=% end=% grains=% state=% cleared_partitions=% deleted_rows=% inserted_rows=% unchanged_rows=% affected_keys=% duration_ms=%',
         p_start_date,
         p_end_date,
         COALESCE(array_to_string(p_geo_levels, ','), 'ALL'),
+        COALESCE(p_state_fips, 'ALL'),
         -- -1 means the whole relation was truncated, 0 means the range was
         -- deleted rather than truncated. A reader watching a re-serve can tell
         -- a chunk that took the partitioned path from one that did not.
         v_cleared_years,
         v_deleted_rows,
         v_inserted_rows,
+        v_unchanged_rows,
         v_affected_keys,
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;

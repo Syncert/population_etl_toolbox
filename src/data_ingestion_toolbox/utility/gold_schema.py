@@ -100,6 +100,18 @@ class ServingRefreshChunkConfig:
     #: `%(geo_levels)s` carry no state. Any such row is outside every state's
     #: session, so the step is then published whole instead.
     stateless_rows_sql: str = ""
+    #: Which states of a `by_state` step have anything to publish: a query
+    #: taking the same named parameters as ``step_changed_sql`` and answering
+    #: one row of two columns -- the states changed since `since` (NULL when
+    #: it cannot tell per state, which publishes every state) and every state
+    #: it knows about. A state it does not know about is published, so the
+    #: answer can only ever skip a state it has evidence is unchanged. Empty
+    #: means "publish every state of a step that has changes".
+    #:
+    #: Without it a change to one state's tracts re-published every state's:
+    #: the 2024 tract step deleted and re-inserted all ~157k tract rows of each
+    #: state, and its ~157k latest rows, about 450 seconds a state (2026-11-06).
+    state_changed_sql: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -436,12 +448,46 @@ def _step_has_changes(
     return not (row is not None and row[0] is False)
 
 
+def _changed_states(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    step: GrainStep,
+    chunk: dict[str, Any],
+    states: list[str],
+) -> list[str]:
+    """The states of a `by_state` step that have silver changes to publish.
+
+    Every state, unless the source declares `state_changed_sql`, the chunk was
+    served before, and the query names the changed states. A state the query
+    does not know about is kept: only evidence of no change skips a state.
+    """
+    if not config.state_changed_sql or chunk.get("completed_at") is None:
+        return states
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            config.state_changed_sql,
+            {
+                "year": chunk["start"].year,
+                "geo_levels": list(step.geo_levels),
+                "since": chunk["completed_at"],
+                "served_through": chunk.get("completed"),
+            },
+        )
+        row = cur.fetchone()
+    if row is None or row[0] is None:
+        return states
+    changed = {str(state) for state in row[0]}
+    known = {str(state) for state in (row[1] or ())}
+    return [state for state in states if state in changed or state not in known]
+
+
 def _serve_step_by_state(
     hook: PostgresHook,
     config: ServingRefreshChunkConfig,
     step: GrainStep,
     chunk: dict[str, Any],
     log: logging.Logger,
+    force_full: bool = False,
 ) -> bool:
     """Publish one grain step state by state, several sessions at once.
 
@@ -449,7 +495,9 @@ def _serve_step_by_state(
     source declares no state list, one worker, or the year holds served rows
     of these grains with no state (which no state's session would clear).
     Each state commits on its own; a failure raises after the others finish,
-    and the chunk is not checkpointed, so a retry re-publishes every state.
+    and the chunk is not checkpointed, so a retry re-publishes every changed
+    state. Outside a forced run a state no slice changed since the chunk was
+    last served is skipped (`state_changed_sql`).
     """
     if not (step.by_state and config.state_list_sql and config.step_workers > 1):
         return False
@@ -474,6 +522,21 @@ def _serve_step_by_state(
                 return False
         cur.execute(config.state_list_sql)
         states = [str(row[0]) for row in cur.fetchall()]
+
+    listed = len(states)
+    if not force_full:
+        states = _changed_states(hook, config, step, chunk, states)
+    if len(states) < listed:
+        log.info(
+            "[%s SERVING REFRESH] start=%s step=%s states_changed=%d "
+            "states_skipped=%d reason=unchanged_since=%s",
+            config.log_label,
+            chunk["start"],
+            step.name,
+            len(states),
+            listed - len(states),
+            chunk["completed_at"],
+        )
 
     def publish(state: str) -> None:
         # A hook of its own per session: `PostgresHook.get_conn` stores the
@@ -790,7 +853,9 @@ def refresh_serving_layer_in_year_chunks(
                 # Each grain step commits on its own, so the year's small
                 # grains are served (and released) before the large one starts.
                 step_started = time.monotonic()
-                if _serve_step_by_state(hook, config, step, chunk, log):
+                if _serve_step_by_state(
+                    hook, config, step, chunk, log, force_full=force_full
+                ):
                     log.info(
                         "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=COMPLETE duration_seconds=%.2f",
                         config.log_label,
