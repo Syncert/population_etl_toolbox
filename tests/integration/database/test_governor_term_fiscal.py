@@ -60,7 +60,7 @@ def _term(key: str, holder: str, party: str, start: date, end: date | None) -> d
 def _seed(db: cursor) -> None:
     seat = _stub(db, "gold_elections.seat_term")
     burden = _stub(db, "gold_census_govfin.tax_burden")
-    bea = _stub(db, "gold_bea.observation_latest")
+    bea = _stub(db, "gold_bea.observation_revision")
     mix = _stub(db, "gold_census_govfin.tax_mix")
     _insert(
         db,
@@ -110,7 +110,10 @@ def _seed(db: cursor) -> None:
     ):
         bea_rows.append(
             {
-                "metric_key": "SAINC35:1000",
+                "table_code": "SAINC35",
+                "line_code": "1000",
+                "geo_type": "nation" if geo_id == NATION else "state",
+                "release_date": date(2025, 9, 1),
                 "geo_id": geo_id,
                 "year": year,
                 "value": Decimal(payments),
@@ -119,7 +122,10 @@ def _seed(db: cursor) -> None:
         )
         bea_rows.append(
             {
-                "metric_key": "SAINC50:10",
+                "table_code": "SAINC50",
+                "line_code": "10",
+                "geo_type": "nation" if geo_id == NATION else "state",
+                "release_date": date(2025, 9, 1),
                 "geo_id": geo_id,
                 "year": year,
                 "value": Decimal("100"),

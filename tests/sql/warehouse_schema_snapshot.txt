@@ -4552,8 +4552,19 @@ v gold_census_govfin.tax_burden
     body     income.release_key AS income_release_key,
     body     true AS derived
     body    FROM gold_census_govfin.observation_latest taxes
-    body      LEFT JOIN gold_bea.observation_latest income ON income.metric_key = 'CAINC1:1'::text AND income.geo_id = taxes.geo_id AND income.year = taxes.fiscal_year AND income.value_status = 'valid'::text
-    body      LEFT JOIN gold_bea.observation_latest population ON population.metric_key = 'CAINC1:2'::text AND population.geo_id = taxes.geo_id AND population.year = taxes.fiscal_year AND population.value_status = 'valid'::text
+    body      LEFT JOIN LATERAL ( SELECT revision.value,
+    body             revision.value_status,
+    body             revision.release_key
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE revision.table_code = 'CAINC1'::text AND revision.line_code = '1'::text AND revision.geo_id = taxes.geo_id AND revision.year = taxes.fiscal_year
+    body           ORDER BY revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    body          LIMIT 1) income ON income.value_status = 'valid'::text
+    body      LEFT JOIN LATERAL ( SELECT revision.value,
+    body             revision.value_status
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE revision.table_code = 'CAINC1'::text AND revision.line_code = '2'::text AND revision.geo_id = taxes.geo_id AND revision.year = taxes.fiscal_year
+    body           ORDER BY revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    body          LIMIT 1) population ON population.value_status = 'valid'::text
     body   WHERE taxes.measure_id = 'taxes_total'::text AND taxes.quarter = 0 AND taxes.value_status = 'valid'::text AND (taxes.dataset_id = 'asslgf'::text AND taxes.government_level = 'state_and_local'::text OR taxes.dataset_id = 'cog_units'::text AND taxes.derivation = 'county_area_rollup'::text);
 
 v gold_census_govfin.tax_mix
@@ -5498,6 +5509,16 @@ v gold_elections.governor_term_fiscal
     body                 END AS last_full_year,
     body             tenure.end_date IS NULL OR tenure.end_date > CURRENT_DATE AS so_far
     body            FROM gold_elections.governor_tenure tenure
+    body         ), bea_latest AS (
+    body          SELECT DISTINCT ON (revision.table_code, revision.line_code, revision.geo_id, revision.year) revision.table_code,
+    body             revision.line_code,
+    body             revision.geo_id,
+    body             revision.year,
+    body             revision.value,
+    body             revision.value_status
+    body            FROM gold_bea.observation_revision revision
+    body           WHERE (revision.table_code = 'SAINC35'::text AND revision.line_code = '1000'::text OR revision.table_code = 'SAINC50'::text AND revision.line_code = '10'::text) AND (revision.geo_type = ANY (ARRAY['state'::text, 'nation'::text]))
+    body           ORDER BY revision.table_code, revision.line_code, revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
     body         ), series AS (
     body          SELECT 'tax_burden'::text AS measure,
     body             burden.geo_id,
@@ -5510,9 +5531,9 @@ v gold_elections.governor_term_fiscal
     body             payments.geo_id,
     body             payments.year,
     body             round(payments.value / income.value * 100::numeric, 3) AS round
-    body            FROM gold_bea.observation_latest payments
-    body              JOIN gold_bea.observation_latest income ON income.metric_key = 'SAINC50:10'::text AND income.geo_id = payments.geo_id AND income.year = payments.year AND income.value_status = 'valid'::text AND income.value > 0::numeric
-    body           WHERE payments.metric_key = 'SAINC35:1000'::text AND payments.value_status = 'valid'::text AND payments.value IS NOT NULL
+    body            FROM bea_latest payments
+    body              JOIN bea_latest income ON income.table_code = 'SAINC50'::text AND income.line_code = '10'::text AND income.geo_id = payments.geo_id AND income.year = payments.year AND income.value_status = 'valid'::text AND income.value > 0::numeric
+    body           WHERE payments.table_code = 'SAINC35'::text AND payments.line_code = '1000'::text AND payments.value_status = 'valid'::text AND payments.value IS NOT NULL
     body         ), windowed AS (
     body          SELECT tenure.state_fips,
     body             tenure.state_code,

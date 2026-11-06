@@ -85,6 +85,19 @@ WITH tenure AS (
            (tenure.end_date IS NULL OR tenure.end_date > CURRENT_DATE) AS so_far
     FROM gold_elections.governor_tenure AS tenure
 ),
+-- The newest release of the two state BEA lines, filtered on the table and
+-- line columns so `bea_fact_lookup_idx` reads only them; a filter on
+-- `gold_bea.observation_latest.metric_key` ranked every BEA row first.
+bea_latest AS (
+    SELECT DISTINCT ON (revision.table_code, revision.line_code, revision.geo_id, revision.year)
+           revision.table_code, revision.line_code, revision.geo_id, revision.year,
+           revision.value, revision.value_status
+    FROM gold_bea.observation_revision AS revision
+    WHERE (revision.table_code, revision.line_code) IN (('SAINC35', '1000'), ('SAINC50', '10'))
+      AND revision.geo_type IN ('state', 'nation')
+    ORDER BY revision.table_code, revision.line_code, revision.geo_id, revision.year,
+             revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+),
 series AS (
     SELECT 'tax_burden'::TEXT AS measure, burden.geo_id, burden.fiscal_year AS year,
            burden.taxes_pct_of_personal_income AS value
@@ -95,14 +108,14 @@ series AS (
     UNION ALL
     SELECT 'payments_share', payments.geo_id, payments.year,
            ROUND(payments.value / income.value * 100, 3)
-    FROM gold_bea.observation_latest AS payments
-    JOIN gold_bea.observation_latest AS income
-      ON income.metric_key = 'SAINC50:10'
+    FROM bea_latest AS payments
+    JOIN bea_latest AS income
+      ON income.table_code = 'SAINC50' AND income.line_code = '10'
      AND income.geo_id = payments.geo_id
      AND income.year = payments.year
      AND income.value_status = 'valid'
      AND income.value > 0
-    WHERE payments.metric_key = 'SAINC35:1000'
+    WHERE payments.table_code = 'SAINC35' AND payments.line_code = '1000'
       AND payments.value_status = 'valid'
       AND payments.value IS NOT NULL
 ),
