@@ -214,3 +214,47 @@ def test_a_ratio_divides_one_measure_by_another_it_is_not_part_of() -> None:
     # Same program and dataset, as for every pairing (ADR-0009 rule 2).
     with pytest.raises(RatioRegistryError, match="same program"):
         _parse({**ratio, "denominator": "CENSUS_PEP:POP", "datasets": ["acs5"]})
+
+
+def test_a_time_cost_is_minutes_of_a_qcew_wage_for_each_bls_price_area() -> None:
+    """Covers: ETL-104 — minutes of work, the ADR-0009 amendment of 2026-11-06."""
+    shipped = load_registry()
+    for area in ("0000", "0100", "0200", "0300", "0400"):
+        pairing = shipped[f"minutes_of_work_electricity:{area}"]
+        assert pairing.kind == "time_cost" and pairing.derived
+        assert pairing.numerator == f"BLS:APU{area}72610"
+        assert pairing.denominator == "BLS_QCEW:annual_avg_weekly_wage:10:0"
+        assert (pairing.scale, pairing.hours_per_week, pairing.area) == (60, 40, area)
+        assert set(pairing.wage_geo_levels) == {"COUNTY", "STATE", "NATIONAL"}
+        assert pairing.status == "approved" and pairing.dataset is None
+
+    cost = _entry(
+        ratio_id="minutes_of_work_eggs",
+        kind="time_cost",
+        scale=60,
+        unit="minutes of work",
+        numerator="BLS:APU{area}708111",
+        denominator="BLS_QCEW:annual_avg_weekly_wage:10:0",
+        datasets=None,
+        areas=["0000", "0200"],
+        hours_per_week=40,
+        wage_geo_levels=["COUNTY", "STATE", "NATIONAL"],
+        numerator_is_subset=None,
+    )
+    # Two programs are the point of a time cost, so rule 2 does not refuse it.
+    assert sorted(_parse(cost)) == [
+        "minutes_of_work_eggs:0000",
+        "minutes_of_work_eggs:0200",
+    ]
+    for broken in (
+        {"scale": 100},
+        {"hours_per_week": None},
+        {"wage_geo_levels": ["METRO"]},
+        {"denominator": "CENSUS_ACS:acs5:B19013_001"},
+        {"areas": None},
+    ):
+        with pytest.raises(RatioRegistryError):
+            _parse({**cost, **broken})
+    # Only a time cost names a working week.
+    with pytest.raises(RatioRegistryError, match="hours_per_week"):
+        _parse(_entry(hours_per_week=40))

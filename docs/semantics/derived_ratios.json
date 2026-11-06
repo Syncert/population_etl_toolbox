@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it. An `agency_rate` entry (ADR-0012) is a county crime rate computed in gold from FBI agency reports: the reporting agencies' offenses over their own FBI populations, beside the FBI rate it names in `reads_beside`.",
+  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it. An `agency_rate` entry (ADR-0012) is a county crime rate computed in gold from FBI agency reports: the reporting agencies' offenses over their own FBI populations, beside the FBI rate it names in `reads_beside`. A `time_cost` entry (ADR-0009 amendment, 2026-11-06) is minutes of work: a BLS average price divided by the QCEW average weekly wage over `hours_per_week`; its `{area}` placeholder expands to each listed BLS area code, as `<ratio_id>:<area>`, and the reader names the wage's area.",
   "entries": [
     {
       "ratio_id": "poverty_share",
@@ -1914,6 +1914,252 @@
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_eggs",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a dozen eggs, grade A large",
+      "numerator": "BLS:APU{area}708111",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_milk",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a gallon of whole milk",
+      "numerator": "BLS:APU{area}709112",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_bread",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a pound of white bread",
+      "numerator": "BLS:APU{area}702111",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_beef",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a pound of ground beef",
+      "numerator": "BLS:APU{area}FC1101",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_chicken",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a pound of boneless chicken breast",
+      "numerator": "BLS:APU{area}FF1101",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_electricity",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a kilowatt-hour of electricity",
+      "numerator": "BLS:APU{area}72610",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
       ]
     }
   ]

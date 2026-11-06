@@ -6,9 +6,14 @@ import {
   containingAreas,
   formatChange,
   formatGas,
+  formatMinutes,
   formatPrice,
+  minutesRatioId,
+  minutesText,
   PRICE_ITEMS,
   readingsFor,
+  stoppedSince,
+  wageText,
 } from "../../../apps/web/lib/groceriesAndGas";
 
 // Covers: WEB-143 — groceries-and-gas-cards: a county's grocery and gas
@@ -143,5 +148,50 @@ describe("everyday prices", () => {
     const power = PRICE_ITEMS.find((spec) => spec.item === "electricity");
     expect(formatPrice(3.117, eggs)).toBe("$3.12 a dozen");
     expect(formatPrice(0.179, power)).toBe("17.9\u00a2 a kilowatt-hour");
+  });
+});
+
+// Covers: WEB-143 — cost-of-living-section CL-3: minutes of work name the
+// served pairing for the price's own area and the page's own wage, and say
+// why a figure is missing rather than show zero.
+describe("minutes of work", () => {
+  it("names the pairing for the price's BLS area", () => {
+    expect(minutesRatioId({ measure: "eggs", metricCode: "BLS:APU0200708111" })).toBe("minutes_of_work_eggs:0200");
+    expect(minutesRatioId({ measure: "electricity", metricCode: "BLS:APU000072610" })).toBe("minutes_of_work_electricity:0000");
+    expect(minutesRatioId({ measure: "gas", metricCode: "EIA:EPMR" })).toBeNull();
+  });
+
+  it("words minutes as a reader says them", () => {
+    expect(formatMinutes(6.36)).toBe("6 minutes");
+    expect(formatMinutes(1)).toBe("1 minute");
+    expect(formatMinutes(0.34)).toBe("20 seconds");
+    expect(formatMinutes(65)).toBe("1 hour 5 minutes");
+    expect(formatMinutes(120)).toBe("2 hours");
+  });
+
+  it("states the wage once, and says when it is the newest year rather than the price's", () => {
+    const row = { value: "6.00", wage_geo_name: "Dane County", wage_year: "newest_published_year", denominator: { value: "1234.4", period_start: "2024-01-01" } };
+    expect(wageText(row, "x")).toBe("Dane County's average wage, $1,234 a week in 2024, the newest year published, over a 40-hour week. Source: Bureau of Labor Statistics, QCEW, all jobs.");
+    expect(wageText({ ...row, denominator: null }, "x")).toBe("");
+  });
+
+  it("says why a figure is missing, never zero", () => {
+    expect(minutesText({ value: "6.36" })).toBe("6 minutes");
+    expect(minutesText({ value: null, unavailable_reason: "denominator_missing" })).toBe("No wage loaded for this place yet.");
+    expect(minutesText({ value: null, unavailable_reason: "different_period" })).toBe("No wage published for this price's year.");
+    expect(minutesText({ value: null, unavailable_reason: "suppressed_input" })).toBe("Not computed: an input is withheld.");
+  });
+});
+
+// Covers: WEB-143 — a series BLS lists but stopped pricing is not today's price.
+describe("a stopped price series", () => {
+  const month = (period_start, value) => ({ period_start, value });
+  it("is stopped when its last value is more than a year before its newest month", () => {
+    const rows = [month("2020-03-01", "2.6"), month("2020-04-01", "2.574"), month("2025-10-01", null)];
+    expect(stoppedSince(rows, rows[1])).toBe("2020-04");
+  });
+  it("is not stopped when only recent months are empty", () => {
+    const rows = [month("2026-05-01", "1.66"), month("2026-06-01", null), month("2026-09-01", null)];
+    expect(stoppedSince(rows, rows[0])).toBe("");
   });
 });

@@ -18,6 +18,15 @@ FBI's way from agency reports (ADR-0012): the rows are read from
 which has already divided and judged coverage, and each is served with its
 coverage. The API divides nothing for it.
 
+A ``time_cost`` pairing is minutes of work (ADR-0009 amendment,
+2026-11-06): each price row over the hourly wage of the area the reader
+names in ``wage_geo_id``, the QCEW average weekly wage over the pairing's
+``hours_per_week``. The wage is the price's own calendar year, or, for a
+price newer than QCEW's newest year, that newest year, and the row says
+which. The wage is read without the reader's release pin, which names the
+price's release. A price older than every published wage has no value
+(``different_period``).
+
 Margins of error follow the Census Bureau's formulas for derived proportions
 and ratios (*Understanding and Using American Community Survey Data*, 2020,
 chapter 8): for a proportion ``p = X / Y`` where X is a subset of Y,
@@ -28,6 +37,7 @@ Both are scaled with the value.
 
 from __future__ import annotations
 
+import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Mapping, Optional
 
@@ -81,6 +91,9 @@ def pairing_summary(pairing: RatioPairing) -> DerivedRatioPairing:
         provider_rate=pairing.provider_rate,
         reads_beside=pairing.reads_beside,
         geo_levels=list(pairing.geo_levels),
+        hours_per_week=pairing.hours_per_week,
+        wage_geo_levels=list(pairing.wage_geo_levels),
+        area=pairing.area,
         dataset=pairing.dataset,
         denominator_label=pairing.denominator_label,
         universe=pairing.universe,
@@ -252,6 +265,92 @@ def provider_row(
     )
 
 
+#: The geography ids QCEW publishes a wage for, by level.
+_WAGE_GEO_IDS = (
+    (re.compile(r"^state:\d{2}\|county:\d{3}$"), "COUNTY"),
+    (re.compile(r"^state:\d{2}$"), "STATE"),
+    (re.compile(r"^us:1$"), "NATIONAL"),
+)
+
+
+def _wage_level(geo_id: str) -> Optional[str]:
+    return next((level for shape, level in _WAGE_GEO_IDS if shape.match(geo_id)), None)
+
+
+def _year(observation: NeutralObservation) -> Optional[int]:
+    text_value = str(observation.period_start or "")
+    return int(text_value[:4]) if text_value[:4].isdigit() else None
+
+
+def time_cost_rows(
+    pairing: RatioPairing,
+    prices: list[NeutralObservation],
+    wages: list[NeutralObservation],
+    wage_geo_id: str,
+) -> list[DerivedRatioObservation]:
+    """Each price row in minutes of the named area's average hourly wage.
+
+    A wage is matched to the price's calendar year. A price newer than the
+    newest published wage year takes that newest year and says so; a price
+    older than every published wage year has no value. A wage published
+    without a usable number is never replaced by another year's.
+    """
+    by_year: dict[int, NeutralObservation] = {}
+    for wage in wages:
+        year = _year(wage)
+        if wage.geo_id == wage_geo_id and year is not None:
+            by_year.setdefault(year, wage)
+    newest = max(by_year) if by_year else None
+    hours = Decimal(pairing.hours_per_week or 0)
+    rows: list[DerivedRatioObservation] = []
+    for price in prices:
+        row: dict[str, Any] = {
+            "ratio_id": pairing.ratio_id,
+            "derived": True,
+            "pairing_status": pairing.status,
+            "pairing_version": pairing.version,
+            "geo_id": price.geo_id,
+            "geo_level": price.geo_level,
+            "geo_name": price.geo_name,
+            "period_start": price.period_start,
+            "period_end": price.period_end,
+            "release": price.release,
+            "unit": pairing.unit,
+            "scale": pairing.scale,
+            "numerator": _input(price),
+            "margin_of_error_method": "none",
+            "wage_geo_id": wage_geo_id,
+        }
+        year = _year(price)
+        wage = by_year.get(year) if year is not None else None
+        if wage is None and newest is not None and year is not None and year > newest:
+            wage = by_year[newest]
+            row["wage_year"] = "newest_published_year"
+        elif wage is not None:
+            row["wage_year"] = "same_year"
+        if wage is None:
+            reason = "different_period" if by_year else "denominator_missing"
+            rows.append(DerivedRatioObservation(**row, unavailable_reason=reason))
+            continue
+        row["denominator"] = _input(wage)
+        row["wage_geo_name"] = wage.geo_name
+        cost, weekly = _usable(price), _usable(wage)
+        if cost is None or weekly is None:
+            rows.append(
+                DerivedRatioObservation(**row, unavailable_reason="suppressed_input")
+            )
+            continue
+        if weekly == 0 or hours == 0:
+            rows.append(
+                DerivedRatioObservation(**row, unavailable_reason="denominator_zero")
+            )
+            continue
+        hourly = weekly / hours
+        row["value"] = _rounded(cost / hourly * Decimal(pairing.scale))
+        rows.append(DerivedRatioObservation(**row))
+    return rows
+
+
 def _key(observation: NeutralObservation) -> tuple:
     return (
         observation.geo_id,
@@ -296,6 +395,7 @@ def list_derived_observations(
     newest_per_geography: bool = False,
     newest_release_per_period: bool = False,
     period_start: Optional[str] = None,
+    wage_geo_id: Optional[str] = None,
 ) -> DerivedRatioListResponse:
     pairing = pairing_for(ratio_id)
     if pairing is None:
@@ -303,6 +403,13 @@ def list_derived_observations(
     refusal = pairing.refusal()
     if refusal is not None:
         raise NeutralQueryError(refusal)
+    if (pairing.kind == "time_cost") != bool(wage_geo_id):
+        raise NeutralQueryError(
+            f"pairing '{pairing.ratio_id}' is a time cost, which names the "
+            "wage's area in wage_geo_id"
+            if pairing.kind == "time_cost"
+            else "wage_geo_id applies only to a time_cost pairing"
+        )
 
     if pairing.kind == "agency_rate":
         items, total = agency_rate_rows(
@@ -350,6 +457,22 @@ def list_derived_observations(
 
     if pairing.kind == "provider_rate":
         items = [provider_row(pairing, row) for row in page.items]
+    elif pairing.kind == "time_cost":
+        if _wage_level(str(wage_geo_id)) not in pairing.wage_geo_levels:
+            raise NeutralQueryError(
+                f"pairing '{pairing.ratio_id}' reads a wage for "
+                f"{', '.join(pairing.wage_geo_levels).lower()} geographies only"
+            )
+        # The reader's release pin names the price's release, never QCEW's.
+        wages = observations_for_geographies(
+            db, str(pairing.denominator), scope, None, [str(wage_geo_id)]
+        )
+        if wages is None:
+            raise NeutralQueryError(
+                f"pairing '{pairing.ratio_id}' names the wage "
+                f"{pairing.denominator}, which the catalog does not publish"
+            )
+        items = time_cost_rows(pairing, page.items, wages, str(wage_geo_id))
     else:
         geo_ids = sorted({row.geo_id for row in page.items if row.geo_id})
         denominators = observations_for_geographies(

@@ -96,6 +96,36 @@ Bureau's ratio formula for its margin (rule 4), a unit that names the
 denominator ("percent of median home value"), and no subset flag. Rule 1
 applies unchanged: each ratio is one reviewed entry.
 
+## Amendment, 2026-11-06: minutes of work, a time cost
+
+The cost-of-living section (plan `cost-of-living-section`, CL-3) shows an
+everyday price as the minutes of work it takes to buy it. Nick approved the
+measure on 2026-11-06. No source publishes it, and rule 2 cannot hold for
+it: BLS publishes average prices only for the nation and the four Census
+regions, and QCEW publishes the average weekly wage for counties, states and
+the nation. Such a pairing has kind `time_cost`, and for it rule 2 is
+replaced by:
+
+- The numerator is one BLS average price (`BLS:APU...`), one pairing per
+  BLS price area (`minutes_of_work_eggs:0200` is the Midwest's eggs). The
+  denominator is QCEW's annual average weekly wage for all industries and
+  all ownerships, over the entry's `hours_per_week` (40), in minutes.
+- The wage's area is the reader's own county, state or nation, named in the
+  request (`wage_geo_id`) and on every row, and the price's area stays on
+  the row too. The page names both ("Midwest Region figure" beside the
+  price, "Dane County's average wage" above the table).
+- The wage is the price's own calendar year. QCEW publishes about six
+  months after a year ends, so a price newer than every published wage year
+  takes the newest year and the row says so (`wage_year:
+  newest_published_year`). A price older than every wage has no value
+  (`different_period`), and no other area's wage is ever used.
+- A time cost has no margin of error (neither input is a survey estimate
+  with one), and it is not compared across places, since each place would
+  need its own wage area.
+
+Rules 1, 6 and 7 apply unchanged: each time cost is a reviewed entry,
+labelled in every response, computed in the API over served rows.
+
 ## Alternatives considered
 
 - **Per-capita over PEP population for every count.** Rejected: it mixes

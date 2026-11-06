@@ -3,7 +3,9 @@
 // The "Cost of living" section on a county, metro, state or nation page
 // (groceries-and-gas-cards; everyday prices from cost-of-living-section).
 // Every number names the area it describes; the rules for choosing the area
-// are `lib/groceriesAndGas.ts`. Loaded as its own chunk.
+// are `lib/groceriesAndGas.ts`. Loaded as its own chunk. "Minutes of work"
+// asks the API for each price over the page's own area's hourly wage, only
+// when the reader chooses it, so the page's own reads are unchanged.
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
@@ -11,6 +13,8 @@ import { ApiError, apiErrorMessage, apiFetch, fetchCollectionPages, getMetric } 
 import type { CollectionResponse, GeographySummary, Observation } from "../lib/api/types";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
+import { getDerivedObservations } from "../lib/derivedViews";
+import type { DerivedRatioObservation } from "../lib/derivedViews";
 import { buildNewestValueRequest, normalizeObservationRows, observationPeriodLabel } from "../lib/observationAccess";
 import { buildUseCaseHistory } from "../lib/useCaseAnalysis";
 import type { PlaceLevel } from "../lib/placeChapters";
@@ -18,8 +22,10 @@ import type { RelatedResponse } from "../lib/placeRelationships";
 import {
   NO_LOCAL_PRICES,
   NO_METRO_PRICES,
+  NO_METRO_WAGE,
   PRICE_ITEMS,
   SOURCE_NAMES,
+  WAGE_LEVELS,
   areaLabel,
   changeOverYear,
   containingAreas,
@@ -27,7 +33,11 @@ import {
   formatGas,
   formatParity,
   formatPrice,
+  minutesRatioId,
+  minutesText,
   readingsFor,
+  stoppedSince,
+  wageText,
   withheldReason,
 } from "../lib/groceriesAndGas";
 import type { CostMeasure, PriceItem, Reading } from "../lib/groceriesAndGas";
@@ -42,6 +52,8 @@ interface Answer {
   change?: string;
   /** The published history, for the sparkline. */
   rows?: ObservationRow[];
+  /** The shown price's month, so minutes of work divide that same price. */
+  periodStart?: string;
   /** Why no more local area answered, or why nothing did. */
   notes: string[];
 }
@@ -101,12 +113,20 @@ async function answer(
           notes.push(`${where}: ${rows.length ? withheldReason(rows.at(-1)) : "no value published for this area."}`);
           continue;
         }
+        // A series BLS still lists but stopped pricing (Midwest milk: a value
+        // last in 2020, then empty months) is not shown as today's price.
+        const stale = stoppedSince(rows, newest);
+        if (stale) {
+          notes.push(`${where}: no value published since ${stale}.`);
+          continue;
+        }
         return {
           reading,
           text: formatPrice(value, spec),
           period: observationPeriodLabel(newest),
           change: change.percent === null ? "" : formatChange(change.percent),
           rows,
+          periodStart: String(newest.period_start || "").slice(0, 10),
           notes,
         };
       }
@@ -134,6 +154,9 @@ async function answer(
   return { reading: null, text: "", period: "", notes };
 }
 
+type View = "price" | "minutes";
+type Minutes = DerivedRatioObservation | "failed";
+
 function Notes({ notes }: { notes: string[] }) {
   return notes.length ? (
     <ul className="subtle place-cost-notes">
@@ -154,6 +177,8 @@ export default function GroceriesAndGas({
   sources: readonly ExplorerSource[];
 }) {
   const [answers, setAnswers] = useState<Partial<Record<CostMeasure, Answer>>>({});
+  const [view, setView] = useState<View>("price");
+  const [minutes, setMinutes] = useState<Partial<Record<PriceItem, Minutes>>>({});
 
   useEffect(() => {
     if (!sources.length) return;
@@ -171,6 +196,39 @@ export default function GroceriesAndGas({
     return () => controller.abort();
   }, [level, place, related, sources]);
 
+  useEffect(() => {
+    setView("price");
+    setMinutes({});
+  }, [place.geo_id]);
+
+  // Minutes of work: read only once chosen, one row per answered price.
+  useEffect(() => {
+    if (view !== "minutes") return;
+    const controller = new AbortController();
+    for (const item of ITEMS) {
+      const result = answers[item];
+      const ratioId = result?.reading ? minutesRatioId(result.reading) : null;
+      if (!result?.reading || !ratioId || minutes[item]) continue;
+      getDerivedObservations(
+        {
+          ratio_id: ratioId,
+          geo_id: result.reading.area.geoId,
+          wage_geo_id: place.geo_id,
+          ...(/^\d{4}-\d{2}-\d{2}$/.test(result.periodStart || "") ? { period_start: result.periodStart } : { newest_per_geography: true }),
+          limit: 1,
+        },
+        { signal: controller.signal },
+      )
+        .then((page) => {
+          if (!controller.signal.aborted) setMinutes((current) => ({ ...current, [item]: page.items[0] || "failed" }));
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setMinutes((current) => ({ ...current, [item]: "failed" }));
+        });
+    }
+    return () => controller.abort();
+  }, [view, answers, place.geo_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The area most items answered for, stated once above the table; an item
   // answered by another area says so on its own row.
   const answered = ITEMS.map((item) => answers[item]?.reading?.area).filter(Boolean);
@@ -178,24 +236,48 @@ export default function GroceriesAndGas({
     ? answered.reduce((best, area) => (answered.filter((a) => a!.geoId === area!.geoId).length > answered.filter((a) => a!.geoId === best!.geoId).length ? area : best))
     : null;
 
+  const wageable = WAGE_LEVELS.includes(level) && answered.length > 0;
+  const firstWage = ITEMS.map((item) => minutes[item]).find((row): row is DerivedRatioObservation => typeof row === "object" && Boolean(row?.denominator));
+  const wage = view === "minutes" && firstWage ? wageText(firstWage, String(place.geo_name || "This place")) : "";
+
   return (
     <section className="analysis-panel place-cost" aria-labelledby="place-cost-heading" data-testid="place-groceries-gas">
       <h2 id="place-cost-heading">Cost of living</h2>
       {level !== "NATIONAL" ? <p className="subtle" data-testid="place-cost-no-local">{level === "METRO" ? NO_METRO_PRICES : NO_LOCAL_PRICES}</p> : null}
+
+      {wageable ? (
+        <div className="command-row derived-toggle" data-testid="place-cost-view">
+          <strong id="place-cost-view-label">Show</strong>
+          <div className="segmented-control" role="group" aria-labelledby="place-cost-view-label">
+            {(["price", "minutes"] as const).map((choice) => (
+              <button key={choice} type="button" className={choice === view ? "selected" : undefined} aria-pressed={choice === view} data-choice={choice} onClick={() => setView(choice)}>
+                {choice === "price" ? "Price" : "Minutes of work"}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : level === "METRO" ? (
+        <p className="subtle" data-testid="place-cost-no-wage">{NO_METRO_WAGE}</p>
+      ) : null}
 
       <table className="place-cost-items" data-testid="place-cost-items">
         <caption>
           Everyday prices
           {common ? (
             <span className="subtle" data-testid="place-cost-items-area">
-              {" "}· {areaLabel(common, place.geo_id)}, urban average. Source: {SOURCE_NAMES.BLS}, average prices.
+              {" "}· {areaLabel(common, place.geo_id)}, urban average{answered.some((area) => area!.geoId !== common.geoId) ? ", except where a row names another area" : ""}. Source: {SOURCE_NAMES.BLS}, average prices.
+            </span>
+          ) : null}
+          {view === "minutes" ? (
+            <span className="subtle block" data-testid="place-cost-wage">
+              {wage ? `Minutes of work at ${wage}` : "Minutes of work at this place's own average wage."}
             </span>
           ) : null}
         </caption>
         <thead>
           <tr>
             <th scope="col">Item</th>
-            <th scope="col">Price</th>
+            <th scope="col">{view === "minutes" ? "Minutes of work" : "Price"}</th>
             <th scope="col">Over the year</th>
             <th scope="col">Trend</th>
           </tr>
@@ -204,12 +286,21 @@ export default function GroceriesAndGas({
           {PRICE_ITEMS.map((spec) => {
             const result = answers[spec.item];
             const other = result?.reading && common && result.reading.area.geoId !== common.geoId;
+            const work = minutes[spec.item];
             return (
               <tr key={spec.item} data-testid={`place-cost-${spec.item}`} data-area={result?.reading?.area.geoId || ""}>
                 <th scope="row">{spec.title}</th>
                 <td>
                   {!result ? (
                     "Reading…"
+                  ) : result.reading && view === "minutes" ? (
+                    <span data-testid={`place-cost-${spec.item}-minutes`}>
+                      {!work ? "Reading…" : work === "failed" ? "Not computed for this place." : <strong>{minutesText(work)}</strong>}
+                      <span className="subtle block">
+                        for {result.text}, {result.period}
+                        {other ? ` · ${areaLabel(result.reading.area, place.geo_id)}` : ""}
+                      </span>
+                    </span>
                   ) : result.reading ? (
                     <>
                       <strong>{result.text}</strong>

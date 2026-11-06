@@ -227,16 +227,37 @@ const RATIOS_PATH = ["../../docs/semantics/derived_ratios.json", "docs/semantics
   .map((path) => resolve(process.cwd(), path))
   .find((path) => existsSync(path));
 const REGISTRY = JSON.parse(readFileSync(RATIOS_PATH, "utf8")).entries;
-export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || [null]).map((dataset) => ({
+// A time cost (minutes of work) exists once per BLS price area.
+export const DERIVED_RATIOS = REGISTRY.flatMap((entry) => (entry.datasets || entry.areas || [null]).map((dataset) => ({
   ratio_id: dataset ? `${entry.ratio_id}:${dataset}` : entry.ratio_id, kind: entry.kind, derived: entry.kind !== "provider_rate",
   label: entry.label, unit: entry.unit, scale: entry.scale,
-  numerator: dataset ? entry.numerator.replace("{dataset}", dataset) : entry.numerator,
+  numerator: dataset ? entry.numerator.replace("{dataset}", dataset).replace("{area}", dataset) : entry.numerator,
   denominator: entry.denominator ? (dataset ? entry.denominator.replace("{dataset}", dataset) : entry.denominator) : null,
   provider_rate: entry.provider_rate || null, reads_beside: entry.reads_beside || null, geo_levels: entry.geo_levels || [],
-  dataset, denominator_label: entry.denominator_label, universe: entry.universe,
+  dataset: entry.areas ? null : dataset, area: entry.areas ? dataset : null, hours_per_week: entry.hours_per_week || null, wage_geo_levels: entry.wage_geo_levels || [],
+  denominator_label: entry.denominator_label, universe: entry.universe,
   numerator_is_subset: Boolean(entry.numerator_is_subset), status: entry.status, version: entry.version, reviewer: entry.reviewer,
   served: true, refusal_reason: null, limitations: entry.limitations || [], citations: entry.citations || [],
 })));
+
+// Minutes of work: the price's month over the named area's QCEW wage. Only
+// 2025's wage is published here, so a 2026 price takes the newest year and
+// says so; Rock County has no wage loaded.
+const WAGES = { "state:55|county:025": ["Dane County", "1200"], "state:55": ["Wisconsin", "1100"], "us:1": ["United States", "1300"] };
+function timeCostRows(ratio, priceGeo, wageGeo, periodStart) {
+  const prices = costRows(ratio.numerator, priceGeo).filter((row) => !periodStart || row.period_start === periodStart);
+  const price = prices.at(-1);
+  if (!price) return [];
+  const wage = WAGES[wageGeo];
+  const base = { ratio_id: ratio.ratio_id, derived: true, pairing_status: ratio.status, pairing_version: ratio.version,
+    geo_id: price.geo_id, geo_level: price.geo_level, geo_name: price.geo_name, period_start: price.period_start, period_end: price.period_end, release: price.release,
+    unit: ratio.unit, scale: ratio.scale, margin_of_error: null, margin_of_error_method: "none", wage_geo_id: wageGeo,
+    numerator: { metric_code: ratio.numerator, period_start: price.period_start, value: price.value, value_status: "valid" } };
+  if (!wage) return [{ ...base, value: null, unavailable_reason: "denominator_missing", denominator: null }];
+  const [name, weekly] = wage;
+  return [{ ...base, value: ((Number(price.value) * 2400) / Number(weekly)).toFixed(2), unavailable_reason: null, wage_geo_name: name, wage_year: "newest_published_year",
+    denominator: { metric_code: ratio.denominator, period_start: "2025-01-01", period_end: "2025-12-31", value: weekly, value_status: "valid" } }];
+}
 
 // Synthetic derived values. Rock County's survey count has no same-period
 // denominator in this fixture, so its shares answer `different_period`.
@@ -497,7 +518,10 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     if (path === "/api/v1/observations/derived") {
       const ratio = DERIVED_RATIOS.find((item) => item.ratio_id === params.get("ratio_id"));
       if (!ratio) return route.fulfill({ status: 404, json: { detail: "ratio_id not found" } });
-      const items = derivedRows(ratio, params.get("geo_id"), params.get("newest_release_per_period") === "true");
+      if (ratio.kind === "time_cost" && !params.get("wage_geo_id")) return route.fulfill({ status: 422, json: { detail: "wage_geo_id" } });
+      const items = ratio.kind === "time_cost"
+        ? timeCostRows(ratio, params.get("geo_id"), params.get("wage_geo_id"), params.get("period_start"))
+        : derivedRows(ratio, params.get("geo_id"), params.get("newest_release_per_period") === "true");
       return route.fulfill({ json: { ratio, scope: params.get("scope") || "latest", release: null, total: items.length, limit: Number(params.get("limit") || 100), offset: 0, items } });
     }
     if (path === "/api/v1/catalog/metrics" && params.get("metric_codes")) {
