@@ -12,6 +12,7 @@ the capture found ``unchanged`` replays nothing.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -21,7 +22,7 @@ from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..capture import PARSER_CONTRACT_VERSION
 from ..config import SOURCE_CODE
-from ..registry import get_table
+from ..registry import BeaTable, get_table
 from .metro import derive_metro_observations
 from .parse import parse_table
 
@@ -94,6 +95,41 @@ class BeaPublicationError(RuntimeError):
     """A run has not reached the silver publication gate."""
 
 
+#: The table's newest published capture, and whether a registered line has
+#: any fact at all (`bea_fact_lookup_idx` answers it from its first key).
+_PUBLISHED_CAPTURE_SQL = """
+    SELECT capture.capture_id::TEXT
+    FROM control.bea_table_capture AS capture
+    WHERE capture.table_code = %s AND capture.status = 'published'
+    ORDER BY capture.published_at DESC
+    LIMIT 1
+"""
+_LINE_LOADED_SQL = """
+    SELECT EXISTS (
+        SELECT 1 FROM silver_bea.fact_observation
+        WHERE table_code = %s AND line_code = %s
+    )
+"""
+
+
+def _unloaded_lines(cursor: Any, table: BeaTable) -> tuple[frozenset[str], str | None]:
+    """Registered lines with no fact yet, and the capture to read them from.
+
+    Lines added to the registry after the file was last read. A fact, not a
+    `dim_line` row, is the evidence: a line row can outlive its facts.
+    """
+    missing = set()
+    for line in sorted(table.lines):
+        cursor.execute(_LINE_LOADED_SQL, (table.code, line))
+        if not cursor.fetchone()[0]:
+            missing.add(line)
+    if not missing:
+        return frozenset(), None
+    cursor.execute(_PUBLISHED_CAPTURE_SQL, (table.code,))
+    row = cursor.fetchone()
+    return frozenset(missing), (row[0] if row else None)
+
+
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     """Parse and conform a captured table; return the fact count."""
     connection = connection_factory()
@@ -110,13 +146,33 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             if row is None:
                 raise BeaReconciliationError("run has no captured BEA table")
             table_code, capture_id, status = row
-            if status == "unchanged":
-                connection.commit()
-                return 0
             table = get_table(table_code)
+            backfill: frozenset[str] = frozenset()
+            if status == "unchanged":
+                backfill, published_capture = _unloaded_lines(cursor, table)
+                if not backfill or published_capture is None:
+                    connection.commit()
+                    return 0
+                # The bytes repeat the published capture, but the registry
+                # names lines that capture was never read for (CAINC4 line 46
+                # was registered after its file was first loaded). Read them
+                # from that same capture, so nothing already loaded is stored
+                # a second time and the new lines carry its release.
+                capture_id = published_capture
             parsed = parse_table(
                 load_captured_payload(connection_factory, UUID(capture_id)), table=table
             )
+            if backfill:
+                parsed = replace(
+                    parsed,
+                    observations=tuple(
+                        obs for obs in parsed.observations if obs.line_code in backfill
+                    ),
+                    quarantined=(),
+                    combined=tuple(
+                        obs for obs in parsed.combined if obs.line_code in backfill
+                    ),
+                )
             lines = {}
             for observation in parsed.observations:
                 lines.setdefault(
@@ -218,12 +274,13 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     ],
                 )
             payload_rejected = any(q.source_row_index == 0 for q in parsed.quarantined)
+            # A backfill leaves this run `unchanged`: its own bytes added nothing.
             cursor.execute(
                 """
                 UPDATE control.bea_table_capture
                    SET member_name = %s, release_date = %s, captured_row_count = %s,
                        in_scope_row_count = %s, status = %s, updated_at = NOW()
-                 WHERE run_id = %s AND status <> 'published'
+                 WHERE run_id = %s AND status NOT IN ('published', 'unchanged')
                 """,
                 (
                     parsed.member,
@@ -397,6 +454,14 @@ def _analyze(connection_factory: Callable[[], Any]) -> None:
         connection.close()
 
 
+def _run_wrote_facts(cursor: Any, run_id: UUID) -> bool:
+    cursor.execute(
+        "SELECT EXISTS (SELECT 1 FROM silver_bea.fact_observation WHERE run_id = %s)",
+        (str(run_id),),
+    )
+    return bool(cursor.fetchone()[0])
+
+
 def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     """Expose a reconciled table through the gold views."""
     connection = connection_factory()
@@ -419,13 +484,17 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             row = cursor.fetchone()
             if row is None or row[0] == "captured":
                 raise BeaPublicationError(f"run {run_id} was never replayed")
+            # An unchanged run that read newly registered lines from the
+            # published capture: those lines are served now, so the glossary
+            # must name them.
+            backfilled = row[0] == "unchanged" and _run_wrote_facts(cursor, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
     finally:
         connection.close()
-    if published:
+    if published or backfilled:
         from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
 
         emit_latest_publisher_ready(connection_factory, publisher_schema="gold_bea")

@@ -22,6 +22,9 @@ export interface ProgramShare {
 export interface PaymentsByProgram {
   geo_id: string;
   year: number;
+  /** BEA's release of the program figures and of the income they divide; a county's differ. */
+  program_release?: string | null;
+  income_release?: string | null;
   total_pct: string | null;
   programs: ProgramShare[];
   unavailable_reason?: string | null;

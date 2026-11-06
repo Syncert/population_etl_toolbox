@@ -46,17 +46,32 @@ def _obs(metric: str, geo: str, year: int, value: Optional[str]) -> NeutralObser
 
 #: Personal income 1,000 everywhere; program receipts chosen so the shares
 #: are the numbers below (Dane 2022: Social Security 4.6 percent, and so on).
+#: A county's programs are CAINC35 over CAINC1; a state's and the nation's are
+#: SAINC35 over SAINC50, BEA's state table.
 INCOME = "BEA:CAINC1:1"
-PROGRAMS = {
-    "BEA:CAINC35:1000": {DANE: "131", WISCONSIN: "184", NATION: "179"},
-    "BEA:CAINC35:2110": {DANE: "46", WISCONSIN: "64", NATION: "57"},
-    "BEA:CAINC35:2210": {DANE: "34", WISCONSIN: "49", NATION: "44"},
-    "BEA:CAINC35:2220": {DANE: "24", WISCONSIN: "34", NATION: "40"},
-    "BEA:CAINC35:2310": {DANE: "3", WISCONSIN: "4", NATION: "5"},
-    "BEA:CAINC35:2320": {DANE: "2", WISCONSIN: "3", NATION: "4"},
-    "BEA:CAINC35:2330": {DANE: "4", WISCONSIN: "6", NATION: "9"},
+STATE_INCOME = "BEA:SAINC50:10"
+_RECEIPTS = {
+    "1000": {DANE: "131", WISCONSIN: "184", NATION: "179"},
+    "2110": {DANE: "46", WISCONSIN: "64", NATION: "57"},
+    "2210": {DANE: "34", WISCONSIN: "49", NATION: "44"},
+    "2220": {DANE: "24", WISCONSIN: "34", NATION: "40"},
+    "2310": {DANE: "3", WISCONSIN: "4", NATION: "5"},
+    "2320": {DANE: "2", WISCONSIN: "3", NATION: "4"},
+    "2330": {DANE: "4", WISCONSIN: "6", NATION: "9"},
     # The nation's unemployment receipts were not published for 2022.
-    "BEA:CAINC35:2400": {DANE: "2", WISCONSIN: "3"},
+    "2400": {DANE: "2", WISCONSIN: "3"},
+}
+PROGRAMS = {
+    **{
+        f"BEA:CAINC35:{line}": {DANE: values[DANE]}
+        for line, values in _RECEIPTS.items()
+    },
+    **{
+        f"BEA:SAINC35:{line}": {
+            geo: value for geo, value in values.items() if geo != DANE
+        }
+        for line, values in _RECEIPTS.items()
+    },
     "BEA:CAINC4:46": {DANE: "200", WISCONSIN: "180", NATION: "190"},
     "BEA:CAINC4:47": {DANE: "130", WISCONSIN: "185", NATION: "180"},
 }
@@ -71,7 +86,7 @@ class _Reads:
     def __call__(self, db, metric_code, scope, release, geo_ids):  # noqa: ANN001, ANN204
         self.calls.append((metric_code, tuple(geo_ids)))
         rows: list[NeutralObservation] = []
-        if metric_code == INCOME:
+        if metric_code in (INCOME, STATE_INCOME):
             for geo in geo_ids:
                 rows += [_obs(INCOME, geo, year, "1000") for year in (2021, 2022, 2023)]
         elif metric_code in PROGRAMS:
@@ -414,3 +429,72 @@ def test_a_database_failure_is_a_503_that_names_nothing(reads: _Reads) -> None:
         response = client.get(path, params={"geo_id": geo})
         assert response.status_code == 503
         assert "tax-secret" not in response.text
+
+
+def test_each_level_reads_its_own_bea_program_table(reads: _Reads) -> None:
+    """Covers: API-194 — a county reads CAINC35/CAINC1, a state and the nation SAINC35/SAINC50."""
+    _client(_Session({})).get("/api/v1/public-money", params={"geo_id": DANE})
+    read = {}
+    for metric, geos in reads.calls:
+        read.setdefault(metric, set()).update(geos)
+    assert read["BEA:CAINC35:1000"] == {DANE}
+    assert read["BEA:CAINC1:1"] >= {DANE}
+    assert read["BEA:SAINC35:1000"] == {WISCONSIN, NATION}
+    assert read["BEA:SAINC50:10"] == {WISCONSIN, NATION}
+
+
+def test_a_county_without_program_detail_still_shows_its_state_and_nation(
+    reads: _Reads, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-194 — no county figure is null with a reason; the state and nation still answer."""
+
+    def without_county_detail(db, metric_code, scope, release, geo_ids):  # noqa: ANN001, ANN202
+        rows = reads(db, metric_code, scope, release, geo_ids)
+        return [] if metric_code.startswith("BEA:CAINC35:") else rows
+
+    monkeypatch.setattr(
+        public_money_service, "observations_for_geographies", without_county_detail
+    )
+    body = (
+        _client(_Session({}))
+        .get("/api/v1/public-money", params={"geo_id": DANE})
+        .json()
+    )
+    dane, wisconsin, nation = body["payments"]
+    assert (dane["total_pct"], dane["unavailable_reason"]) == (
+        None,
+        "not_published_that_year",
+    )
+    assert all(program["share_pct"] is None for program in dane["programs"])
+    assert (wisconsin["year"], wisconsin["total_pct"]) == (2022, "18.40")
+    assert nation["total_pct"] == "17.90"
+
+
+def test_a_county_pairs_bea_program_and_income_files_by_year_and_names_both(
+    reads: _Reads, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-194 — CAINC35 (Nov 2023) over CAINC1 (Feb 2026) by year, both releases said."""
+    released = {"BEA:CAINC35": "2023-11-16", "BEA:CAINC1": "2026-02-05"}
+
+    def bea_files(db, metric_code, scope, release, geo_ids):  # noqa: ANN001, ANN202
+        rows = reads(db, metric_code, scope, release, geo_ids)
+        file = released.get(":".join(metric_code.split(":")[:2]))
+        return [
+            row.model_copy(update={"release": file}) if file else row for row in rows
+        ]
+
+    monkeypatch.setattr(public_money_service, "observations_for_geographies", bea_files)
+    body = (
+        _client(_Session({}))
+        .get("/api/v1/public-money", params={"geo_id": DANE})
+        .json()
+    )
+    dane = body["payments"][0]
+    assert (dane["year"], dane["total_pct"]) == (2022, "13.10")
+    assert (dane["program_release"], dane["income_release"]) == (
+        "2023-11-16",
+        "2026-02-05",
+    )
+    assert "released November 16, 2023" in body["payments_source"]
+    assert "released February 5, 2026" in body["payments_source"]
+    assert "SAINC35" in body["payments_source"]
