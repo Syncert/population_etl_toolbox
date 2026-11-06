@@ -20,14 +20,13 @@ null with a reason, never zero.
 from __future__ import annotations
 
 import re
-from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.schemas.derived import DerivedRatioInput, DerivedRatioObservation
+from apps.api.schemas.derived import DerivedRatioObservation
 from apps.api.schemas.public_money import (
     FiscalMeasureDefinition,
     GovernorTenure,
@@ -46,14 +45,13 @@ from apps.api.schemas.public_money import (
     TaxMixShare,
     TenureFiscalChange,
 )
-from apps.api.schemas.observations import NeutralObservation
 from apps.api.services.contracts import require_relation
 from apps.api.services.derived_ratio_service import pair_rows
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     observations_for_geographies,
 )
-from data_ingestion_toolbox.semantics.derived_ratios import RatioPairing, pairing_for
+from data_ingestion_toolbox.semantics.derived_ratios import pairing_for
 
 NATION = "us:1"
 STATE_GEO_ID = re.compile(r"^state:(\d{2})$")
@@ -181,7 +179,7 @@ def levels_for(geo_id: str) -> list[PublicMoneyLevel]:
 
 
 def ratio_values(
-    db: Session, ratio_id: str, geo_ids: Iterable[str], by_year: bool = False
+    db: Session, ratio_id: str, geo_ids: Iterable[str]
 ) -> dict[tuple[str, int], DerivedRatioObservation]:
     """One approved pairing's values for these geographies, every period.
 
@@ -202,56 +200,10 @@ def ratio_values(
     )
     if not numerators or denominators is None:
         return {}
-    if by_year:
-        return _paired_by_year(pairing, numerators, denominators)
     return {
         (row.geo_id, _year(row)): row
         for row in pair_rows(pairing, numerators, denominators)
     }
-
-
-def _paired_by_year(
-    pairing: RatioPairing,
-    numerators: list[NeutralObservation],
-    denominators: list[NeutralObservation],
-) -> dict[tuple[str, int], DerivedRatioObservation]:
-    """Each input's newest release for the year, matched on place and year.
-
-    BEA's county program file (CAINC35) trails its income file (CAINC1) by
-    years, so the two never share a release and a county had no payments at
-    all. Each derived row keeps both inputs, each with its own release, so
-    the page can name the two files (Nick, 2026-11-06).
-    """
-    bare = {"release": None}
-    rows = pair_rows(
-        pairing,
-        [row.model_copy(update=bare) for row in numerators],
-        [row.model_copy(update=bare) for row in denominators],
-    )
-    released = {
-        (row.metric_code, row.geo_id, row.period_start, row.period_end): row.release
-        for row in [*numerators, *denominators]
-    }
-
-    def restored(
-        item: Optional[DerivedRatioInput], geo_id: str
-    ) -> Optional[DerivedRatioInput]:
-        if item is None:
-            return None
-        key = (item.metric_code, geo_id, item.period_start, item.period_end)
-        return item.model_copy(update={"release": released.get(key)})
-
-    answer = {}
-    for row in rows:
-        numerator = restored(row.numerator, row.geo_id)
-        answer[(row.geo_id, _year(row))] = row.model_copy(
-            update={
-                "release": numerator.release if numerator else None,
-                "numerator": numerator,
-                "denominator": restored(row.denominator, row.geo_id),
-            }
-        )
-    return answer
 
 
 def _value(
@@ -286,9 +238,7 @@ def program_values(
         by_ratio.setdefault(payment_ratio(program, geo_id), []).append(geo_id)
     values: dict[tuple[str, int], DerivedRatioObservation] = {}
     for ratio_id, ids in by_ratio.items():
-        values.update(
-            ratio_values(db, ratio_id, ids, by_year=ratio_id.endswith("_county"))
-        )
+        values.update(ratio_values(db, ratio_id, ids))
     return values
 
 
@@ -531,39 +481,15 @@ def _property_tax(db: Session, levels: list[PublicMoneyLevel]) -> PeriodValues:
     )
 
 
-def _release_date(release: Optional[str]) -> Optional[str]:
-    """BEA's release date, as people write it: November 16, 2023."""
-    if not release:
-        return None
-    try:
-        day = date.fromisoformat(release[:10])
-    except ValueError:
-        return release
-    return f"{day:%B} {day.day}, {day.year}"
-
-
 def payments_source(payments: list[PaymentsByProgram]) -> str:
-    """Which BEA files the payments shares divide, with their release dates.
-
-    A county's program figures (CAINC35) and its income (CAINC1) come from
-    files BEA released years apart; the reader is told both.
-    """
-    county = next(
-        (row for row in payments if COUNTY_GEO_ID.match(row.geo_id) and row.total_pct),
-        None,
-    )
+    """Which BEA files the payments shares divide, for the levels shown."""
     state_files = "SAINC35 transfer receipts over SAINC50 personal income"
-    if county is None:
+    if not any(COUNTY_GEO_ID.match(row.geo_id) for row in payments):
         return f"BEA {state_files}"
-    programs = _release_date(county.program_release)
-    income = _release_date(county.income_release)
-    county_files = (
-        f"CAINC35 transfer receipts (released {programs}) over CAINC1 personal "
-        f"income (released {income})"
-        if programs and income and programs != income
-        else "CAINC35 transfer receipts over CAINC1 personal income"
+    return (
+        "BEA: the county, CAINC35 transfer receipts over CAINC1 personal income "
+        f"of the same release; the state and nation, {state_files}"
     )
-    return f"BEA: the county, {county_files}; the state and nation, {state_files}"
 
 
 def public_money(db: Session, geo_id: str) -> PublicMoneyResponse:
