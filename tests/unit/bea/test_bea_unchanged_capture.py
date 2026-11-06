@@ -44,6 +44,9 @@ class _Cursor:
         self.database.statements.append((sql, parameters))
         if "FROM control.bea_table_capture AS capture" in sql:
             self._result = self.database.published
+        elif "FROM silver_bea.fact_observation" in sql:
+            # Every registered line already has facts.
+            self._result = (True,)
         elif "bridge_geo_relationship_version" in sql:
             self._result = (self.database.delineation_since,)
         elif sql.lstrip().startswith("INSERT INTO control.bea_table_capture"):
@@ -154,8 +157,12 @@ def test_the_same_bytes_as_the_last_publication_are_unchanged_and_replay_nothing
     assert status == "unchanged"
     before = len(database.statements)
     assert replay_run(database.connect, run_id=run_id) == 0
-    # Replay read the run's status and stopped: no parse, no insert.
-    assert len(database.statements) == before + 1
+    # Replay read the run's status, found every registered line loaded, and
+    # stopped: no parse, no insert.
+    replayed = database.statements[before:]
+    assert "WHERE run_id" in replayed[0][0]
+    assert all("fact_observation" in sql for sql, _p in replayed[1:])
+    assert not any("INSERT" in sql for sql, _p in replayed)
 
 
 @pytest.mark.parametrize(
