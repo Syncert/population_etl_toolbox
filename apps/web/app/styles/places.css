@@ -471,8 +471,70 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Groceries and gas (groceries-and-gas-cards): one line per measure, each
-   naming the larger area its figure describes. */
+/* Cost of living (groceries-and-gas-cards, cost-of-living-section): one
+   table of everyday prices, its area and source stated once in the caption,
+   then one line per remaining measure, each naming the area it describes. */
+.place-cost-items {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0 0 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.place-cost-items caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+.place-cost-items caption .subtle {
+  font-weight: 400;
+}
+.place-cost-items th,
+.place-cost-items td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-top: 1px solid var(--line);
+}
+.place-cost-items tbody th {
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: inherit;
+}
+.place-cost-items thead th {
+  font-weight: 400;
+  color: var(--muted);
+  border-top: 0;
+}
+.place-cost-items .block {
+  display: block;
+}
+.place-cost-items .place-spark {
+  margin: 0;
+  max-width: 160px;
+}
+.place-cost-items .place-spark svg {
+  width: 100%;
+  height: auto;
+}
+@media (max-width: 640px) {
+  .place-cost-items {
+    font-size: 0.9rem;
+  }
+  .place-cost-items thead th:nth-child(4),
+  .place-cost-items td:nth-child(4) {
+    display: none;
+  }
+  .place-cost-items th,
+  .place-cost-items td {
+    padding-right: 0.4rem;
+    word-break: break-word;
+  }
+}
 .place-cost-lines {
   display: grid;
   gap: 0.75rem;

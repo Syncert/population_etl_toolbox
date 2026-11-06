@@ -1,4 +1,5 @@
-// "Groceries and gas" on a place page (groceries-and-gas-cards).
+// "Cost of living" on a place page (groceries-and-gas-cards, extended by
+// cost-of-living-section with everyday prices people recognise).
 //
 // No source publishes a county's grocery or gas prices. Each figure on the
 // card is the containing area's: the area is found through the reference's
@@ -12,7 +13,7 @@ import type { PlaceLevel } from "./placeChapters";
 
 export interface Area {
   geoId: string;
-  level: "NATIONAL" | "STATE" | "METRO" | "CENSUS_DIVISION" | "CENSUS_REGION";
+  level: "NATIONAL" | "STATE" | "METRO" | "CENSUS_DIVISION" | "CENSUS_REGION" | "COUNTY" | "PLACE";
   name: string;
 }
 
@@ -24,7 +25,34 @@ export interface ContainingAreas {
   region: Area | null;
 }
 
-export type CostMeasure = "gas" | "food" | "parity";
+export type CostMeasure = "gas" | "food" | "parity" | PriceItem;
+
+/**
+ * Everyday items with a dollar price (BLS Average Price, `ap`), in the order
+ * the section lists them. BLS publishes them for the nation and the four
+ * Census regions only, so every page shows its region's price, named.
+ */
+export type PriceItem = "eggs" | "milk" | "bread" | "beef" | "chicken" | "electricity";
+
+export interface PriceItemSpec {
+  item: PriceItem;
+  /** BLS's item code in the `ap` series id. */
+  code: string;
+  title: string;
+  /** "a dozen", "a gallon": what one price buys. */
+  per: string;
+  /** Shown in cents: a price well under a dollar a unit (electricity). */
+  cents?: boolean;
+}
+
+export const PRICE_ITEMS: readonly PriceItemSpec[] = [
+  { item: "eggs", code: "708111", title: "Eggs, grade A large", per: "a dozen" },
+  { item: "milk", code: "709112", title: "Whole milk", per: "a gallon" },
+  { item: "bread", code: "702111", title: "White bread", per: "a pound" },
+  { item: "beef", code: "FC1101", title: "Ground beef", per: "a pound" },
+  { item: "chicken", code: "FF1101", title: "Chicken breast, boneless", per: "a pound" },
+  { item: "electricity", code: "72610", title: "Electricity", per: "a kilowatt-hour", cents: true },
+];
 
 /** One way to answer a card line: this metric, published for this area. */
 export interface Reading {
@@ -41,13 +69,13 @@ export const SOURCE_NAMES: Record<string, string> = {
 };
 
 export const NO_LOCAL_PRICES =
-  "No source publishes grocery or gas prices for a county or a city. Each figure here is for the larger area named beside it.";
+  "No source publishes grocery or gas prices for a county or a city. Each price here is for the larger area named beside it.";
 
 /** On a metro's page: the price level is its own, the rest a larger area's. */
 export const NO_METRO_PRICES =
   "No source publishes grocery or gas prices for a metro area as the Census Bureau draws it. The price level is BEA's figure for this metro; each other figure is for the larger area named beside it.";
 
-const LEVEL_WORDS: Record<Area["level"], string> = {
+const LEVEL_WORDS: Partial<Record<Area["level"], string>> = {
   NATIONAL: "the nation",
   STATE: "the state",
   METRO: "the metropolitan area",
@@ -119,8 +147,22 @@ export function readingsFor(areas: ContainingAreas): Record<CostMeasure, Reading
   if (areas.nation) food.push({ measure: "food", metricCode: "BLS:CUUR0000SAF11", area: areas.nation, source: "BLS" });
   if (areas.metro) parity.push({ measure: "parity", metricCode: "BEA:MARPP:1", area: areas.metro, source: "BEA" });
   if (areas.state) parity.push({ measure: "parity", metricCode: "BEA:SARPP:1", area: areas.state, source: "BEA" });
-  return { gas, food, parity };
+  const prices = {} as Record<PriceItem, Reading[]>;
+  for (const spec of PRICE_ITEMS) {
+    const readings: Reading[] = [];
+    if (areas.region) readings.push({ measure: spec.item, metricCode: `BLS:APU0${region}00${spec.code}`, area: areas.region, source: "BLS" });
+    if (areas.nation) readings.push({ measure: spec.item, metricCode: `BLS:APU0000${spec.code}`, area: areas.nation, source: "BLS" });
+    prices[spec.item] = readings;
+  }
+  return { gas, food, parity, ...prices };
 }
+
+/** "$3.12 a dozen", "17.9\u00a2 a kilowatt-hour". */
+export function formatPrice(value: number, spec: PriceItemSpec): string {
+  if (spec.cents) return `${(value * 100).toFixed(1)}\u00a2 ${spec.per}`;
+  return `$${value.toFixed(2)} ${spec.per}`;
+}
+
 
 function numberOf(row: ObservationRow | null | undefined): number | null {
   if (!row || row.value === null || row.value === undefined || row.value === "") return null;

@@ -3875,6 +3875,348 @@
       "citations": [
         "https://www.irs.gov/statistics/soi-tax-stats-county-data"
       ]
+    },
+    {
+      "metric_id": "BLS:APU_eggs_nation",
+      "metric_codes": [
+        "BLS:APU0000708111"
+      ],
+      "name": "Eggs, grade A large, average price (United States)",
+      "definition": "The average price BLS records for a dozen grade A large eggs in U.S. city average, collected for the Consumer Price Index.",
+      "unit": "dollars per dozen",
+      "universe": "urban consumers in the United States",
+      "kind": "mean",
+      "caveat": "A national urban average, not a local price.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A national urban average, not a local price.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_eggs_region",
+      "metric_codes": [
+        "BLS:APU0100708111",
+        "BLS:APU0200708111",
+        "BLS:APU0300708111",
+        "BLS:APU0400708111"
+      ],
+      "name": "Eggs, grade A large, average price (Census region)",
+      "definition": "The average price BLS records for a dozen grade A large eggs in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per dozen",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_milk_whole_nation",
+      "metric_codes": [
+        "BLS:APU0000709112"
+      ],
+      "name": "Whole milk, average price (United States)",
+      "definition": "The average price BLS records for a gallon of fresh whole fortified milk in U.S. city average, collected for the Consumer Price Index.",
+      "unit": "dollars per gallon",
+      "universe": "urban consumers in the United States",
+      "kind": "mean",
+      "caveat": "A national urban average, not a local price.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A national urban average, not a local price.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_milk_whole_region",
+      "metric_codes": [
+        "BLS:APU0100709112",
+        "BLS:APU0200709112",
+        "BLS:APU0300709112",
+        "BLS:APU0400709112"
+      ],
+      "name": "Whole milk, average price (Census region)",
+      "definition": "The average price BLS records for a gallon of fresh whole fortified milk in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per gallon",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_bread_white_nation",
+      "metric_codes": [
+        "BLS:APU0000702111"
+      ],
+      "name": "White bread, average price (United States)",
+      "definition": "The average price BLS records for a pound of white pan bread in U.S. city average, collected for the Consumer Price Index.",
+      "unit": "dollars per pound",
+      "universe": "urban consumers in the United States",
+      "kind": "mean",
+      "caveat": "A national urban average, not a local price.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A national urban average, not a local price.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_bread_white_region",
+      "metric_codes": [
+        "BLS:APU0100702111",
+        "BLS:APU0200702111",
+        "BLS:APU0300702111",
+        "BLS:APU0400702111"
+      ],
+      "name": "White bread, average price (Census region)",
+      "definition": "The average price BLS records for a pound of white pan bread in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per pound",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_ground_beef_nation",
+      "metric_codes": [
+        "BLS:APU0000FC1101"
+      ],
+      "name": "Ground beef, average price (United States)",
+      "definition": "The average price BLS records for a pound of uncooked ground beef (all types) in U.S. city average, collected for the Consumer Price Index.",
+      "unit": "dollars per pound",
+      "universe": "urban consumers in the United States",
+      "kind": "mean",
+      "caveat": "A national urban average, not a local price.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A national urban average, not a local price.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_ground_beef_region",
+      "metric_codes": [
+        "BLS:APU0100FC1101",
+        "BLS:APU0200FC1101",
+        "BLS:APU0300FC1101",
+        "BLS:APU0400FC1101"
+      ],
+      "name": "Ground beef, average price (Census region)",
+      "definition": "The average price BLS records for a pound of uncooked ground beef (all types) in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per pound",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_chicken_breast_nation",
+      "metric_codes": [
+        "BLS:APU0000FF1101"
+      ],
+      "name": "Chicken breast, boneless, average price (United States)",
+      "definition": "The average price BLS records for a pound of boneless chicken breast in U.S. city average, collected for the Consumer Price Index.",
+      "unit": "dollars per pound",
+      "universe": "urban consumers in the United States",
+      "kind": "mean",
+      "caveat": "A national urban average, not a local price.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A national urban average, not a local price.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_chicken_breast_region",
+      "metric_codes": [
+        "BLS:APU0100FF1101",
+        "BLS:APU0200FF1101",
+        "BLS:APU0300FF1101",
+        "BLS:APU0400FF1101"
+      ],
+      "name": "Chicken breast, boneless, average price (Census region)",
+      "definition": "The average price BLS records for a pound of boneless chicken breast in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per pound",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_electricity_nation",
+      "metric_codes": [
+        "BLS:APU000072610"
+      ],
+      "name": "Electricity, average price per kilowatt-hour (United States)",
+      "definition": "The average price BLS records for a kilowatt-hour of residential electricity, including fuel and other charges in U.S. city average, collected for the Consumer Price Index.",
+      "unit": "dollars per kilowatt-hour",
+      "universe": "urban consumers in the United States",
+      "kind": "mean",
+      "caveat": "A national urban average, not a local price.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A national urban average, not a local price.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "BLS:APU_electricity_region",
+      "metric_codes": [
+        "BLS:APU010072610",
+        "BLS:APU020072610",
+        "BLS:APU030072610",
+        "BLS:APU040072610"
+      ],
+      "name": "Electricity, average price per kilowatt-hour (Census region)",
+      "definition": "The average price BLS records for a kilowatt-hour of residential electricity, including fuel and other charges in urban areas of the Census region, collected for the Consumer Price Index.",
+      "unit": "dollars per kilowatt-hour",
+      "universe": "urban consumers in the Census region",
+      "kind": "mean",
+      "caveat": "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+      "intended_use": "Show what an everyday item costs, in dollars a person recognises.",
+      "limitations": [
+        "A regional urban average, not a local price; county, metro and state pages show their region's figure, named.",
+        "Estimated from the CPI sample; not every region publishes every item."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/help/hlpforma.htm#AP"
+      ],
+      "status": "draft",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
     }
   ]
 }

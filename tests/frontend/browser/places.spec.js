@@ -539,6 +539,24 @@ test("a county's groceries and gas card names the area behind every figure", asy
   await expect(parity).toContainText("97.4 (nation = 100)");
   await expect(parity).toContainText("Madison, WI figure");
   await expect(parity).toContainText("Bureau of Economic Analysis");
+
+  // Covers: WEB-143 — cost-of-living-section: everyday prices in one table,
+  // the region named once, an item only the nation publishes named on its
+  // row, an item not loaded said so, and rent linked to Housing.
+  await expect(card.getByRole("heading", { level: 2 })).toHaveText("Cost of living");
+  await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average");
+  const eggs = page.getByTestId("place-cost-eggs");
+  await expect(eggs).toHaveAttribute("data-area", "region:2");
+  await expect(eggs).toContainText("$3.18 a dozen");
+  await expect(eggs).toContainText("up 6.0% over the year");
+  await expect(page.getByTestId("place-cost-eggs-spark")).toBeVisible();
+  await expect(page.getByTestId("place-cost-electricity")).toContainText("17.0\u00a2 a kilowatt-hour");
+  const chicken = page.getByTestId("place-cost-chicken");
+  await expect(chicken).toHaveAttribute("data-area", "us:1");
+  await expect(chicken).toContainText("United States figure");
+  await expect(page.getByTestId("place-cost-milk")).toContainText("Not loaded into this site yet.");
+  // Rent is the Housing chapter's, linked, never read a second time.
+  await expect(page.getByTestId("place-cost-rent").getByRole("link")).toHaveAttribute("href", "#housing");
   await noViolations(page);
   await noHorizontalScroll(page);
 });

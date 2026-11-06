@@ -118,6 +118,11 @@ const COST_METRICS = Object.fromEntries([
   costMetric("BLS:CUUR0000SAF11", "index 1982-84=100", ["NATIONAL"]),
   costMetric("BEA:MARPP:1", "price_level_us_100", ["METRO"]),
   costMetric("BEA:SARPP:1", "price_level_us_100", ["STATE"]),
+  // Everyday prices (cost-of-living-section): the Midwest publishes eggs and
+  // electricity; chicken only the nation; the other items no fixture at all.
+  costMetric("BLS:APU0200708111", "U.S. dollars per doz.", ["CENSUS_REGION"]),
+  costMetric("BLS:APU020072610", "U.S. dollars per KWH", ["CENSUS_REGION"]),
+  costMetric("BLS:APU0000FF1101", "U.S. dollars per lb.", ["NATIONAL"]),
 ].map((metric) => [metric.metric_code, metric]));
 // Which area publishes which cost measure, and its value. The division's
 // food index skips August 2025, so its change over the year cannot be read
@@ -130,6 +135,9 @@ const COST_VALUES = {
   "BLS:CUUR0000SAF11": { "us:1": "monthly" },
   "BEA:MARPP:1": { "cbsa:31540": "97.4" },
   "BEA:SARPP:1": { "state:55": "93.2" },
+  "BLS:APU0200708111": { "region:2": "price:3.00" },
+  "BLS:APU020072610": { "region:2": "price:0.160" },
+  "BLS:APU0000FF1101": { "us:1": "price:4.20" },
 };
 function costRows(code, geo) {
   const value = COST_VALUES[code]?.[geo];
@@ -137,6 +145,14 @@ function costRows(code, geo) {
   if (!value || !area) return [];
   const base = { metric_code: code, source_code: code.split(":")[0], geo_id: geo, geo_level: area.geo_level, geo_name: area.geo_name,
     value_status: "valid", unit: COST_METRICS[code].units, release: "fixture", as_of: "2026-09-01", dimensions: {}, uncertainty: null, coverage: null };
+  if (value.startsWith("price:")) {
+    // Thirteen months, rising half a percent a month: August 2025 to 2026.
+    const start = Number(value.slice(6));
+    return Array.from({ length: 13 }, (_, index) => {
+      const month = new Date(Date.UTC(2025, 7 + index, 1)).toISOString().slice(0, 10);
+      return { ...base, value: (start * (1 + index * 0.005)).toFixed(3), period_start: month, period_end: month };
+    });
+  }
   if (value.startsWith("monthly")) {
     return Array.from({ length: 13 }, (_, index) => {
       const month = new Date(Date.UTC(2025, 7 + index, 1)).toISOString().slice(0, 10);
