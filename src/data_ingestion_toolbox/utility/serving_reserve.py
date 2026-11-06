@@ -218,6 +218,44 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
                 )
             )
     """,
+    # Within a tract or place step that has changes, the states whose slices
+    # changed since the chunk was last served. Slice keys of those grains are
+    # `dataset/level/state[/range]`, so the ledger already says which state
+    # changed. A year transformed as whole-year slices names no state; when one
+    # of those changed, or the grain has no ledger row, every state publishes
+    # (NULL). A state with no ledger row of the grain publishes too.
+    state_changed_sql="""
+        WITH grains AS (
+            SELECT CASE level
+                       WHEN 'NATIONAL' THEN 'us'
+                       ELSE LOWER(level)
+                   END AS slice_level
+            FROM UNNEST(%(geo_levels)s::TEXT[]) AS level
+        ), ledger AS (
+            SELECT split_part(s.slice_key, '/', 3) AS state_fips,
+                   s.last_changed_at
+            FROM silver_census.transform_slice_state AS s
+            JOIN grains AS g ON g.slice_level = split_part(s.slice_key, '/', 2)
+            WHERE s.year = %(year)s
+        ), whole_year AS (
+            SELECT 1
+            FROM silver_census.transform_slice_state AS s
+            WHERE s.year = %(year)s
+              AND (s.slice_key = '*' OR split_part(s.slice_key, '/', 2) = '*')
+              AND s.last_changed_at > %(since)s
+        )
+        SELECT
+            CASE
+                WHEN EXISTS (SELECT 1 FROM whole_year)
+                  OR NOT EXISTS (SELECT 1 FROM ledger)
+                    THEN NULL
+                ELSE ARRAY(
+                    SELECT DISTINCT state_fips FROM ledger
+                    WHERE last_changed_at > %(since)s
+                )
+            END AS changed_states,
+            ARRAY(SELECT DISTINCT state_fips FROM ledger) AS known_states
+    """,
     grain_steps=(
         GrainStep("area", ("NATIONAL", "STATE", "COUNTY", "METRO"), "90min"),
         GrainStep("tract", ("TRACT",), "120min", by_state=True),

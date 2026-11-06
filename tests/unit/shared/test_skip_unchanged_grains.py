@@ -18,6 +18,9 @@ pytestmark = pytest.mark.unit
 
 SERVED = datetime(2026, 10, 27, tzinfo=timezone.utc)
 
+#: What `state_changed_sql` answers in the fake warehouse; unset is "cannot tell".
+STATE_ANSWER: dict[str, tuple] = {}
+
 
 class _Cursor:
     """Answers the driver's bookkeeping as a warehouse with one served year would."""
@@ -60,6 +63,8 @@ class _Cursor:
             self._all = [("10",), ("55",)]
         elif sql is ACS_CHUNK_CONFIG.silver_rows_sql:
             self._one = (self.silver_rows,)
+        elif sql is ACS_CHUNK_CONFIG.state_changed_sql:
+            self._one = STATE_ANSWER.get("answer", (None, None))
         elif sql is ACS_CHUNK_CONFIG.step_changed_sql:
             levels = set(params["geo_levels"])
             self._one = (bool(levels & self.changed),)
@@ -184,3 +189,39 @@ def test_each_state_session_opens_its_own_connection() -> None:
     hook = RacyHook(changed={"TRACT"})
     refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
     assert all(len(threads) == 1 for threads in owners.values())
+
+
+def _published_states(hook: _Hook, grain: str) -> list[str]:
+    return sorted(
+        params[3]
+        for sql, params in hook.calls
+        if sql.startswith(f"CALL {ACS_CHUNK_CONFIG.report_procedure}")
+        and list(params[2]) == [grain]
+    )
+
+
+def test_a_state_no_slice_changed_is_not_published(monkeypatch) -> None:
+    """Covers: DB-069 -- the ledger names Wisconsin changed and Delaware unchanged."""
+    monkeypatch.setitem(STATE_ANSWER, "answer", (["55"], ["10", "55"]))
+    hook = _Hook(changed={"TRACT"})
+    refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
+    assert _published_states(hook, "TRACT") == ["55"]
+
+
+def test_a_state_the_ledger_does_not_know_is_published(monkeypatch) -> None:
+    """Covers: DB-069 -- only evidence of no change skips a state."""
+    monkeypatch.setitem(STATE_ANSWER, "answer", ([], ["55"]))
+    hook = _Hook(changed={"TRACT"})
+    refresh_serving_layer_in_year_chunks(hook=hook, config=ACS_CHUNK_CONFIG)
+    assert _published_states(hook, "TRACT") == ["10"]
+
+
+def test_a_forced_re_serve_publishes_every_state(monkeypatch) -> None:
+    """Covers: DB-069 -- a forced run never asks which states changed."""
+    monkeypatch.setitem(STATE_ANSWER, "answer", ([], ["10", "55"]))
+    hook = _Hook(changed=set())
+    refresh_serving_layer_in_year_chunks(
+        hook=hook, config=ACS_CHUNK_CONFIG, force_full=True
+    )
+    assert not any(sql is ACS_CHUNK_CONFIG.state_changed_sql for sql, _ in hook.calls)
+    assert _published_states(hook, "TRACT") == ["10", "55"]
