@@ -77,16 +77,21 @@ recognises.
   - The section says once that no source publishes county or city grocery
     prices. No CPI index level is shown across areas.
   - Plain names for every new metric in `docs/semantics/metric_definitions.json`.
-- [ ] **CL-3. Minutes of work (derived), its own PR.** A `time_cost` kind in
+- [x] **CL-3. Minutes of work (derived), its own PR.** A `time_cost` kind in
   `docs/semantics/derived_ratios.json`, `semantics/derived_ratios.py` and
-  `apps/api/services/derived_ratio_service.py`: a price divided by an
-  hourly wage, `QCEW average weekly wage / 40`, for the page's own county or
-  state (the nation: the QCEW U.S. total), matching the price's calendar
-  year to the wage's (the newest wage year when the price's year has none,
-  said so). The entry names both inputs and both areas ("Midwest price,
-  Dane County wage") and is `approved` (Nick, 2026-11-06 18:15Z). The
-  section gains one "Price / Minutes of work" toggle; where no wage is
-  loaded the toggle is absent and the section says why.
+  `apps/api/services/derived_ratio_service.py`, recorded as the ADR-0009
+  amendment of 2026-11-06: each BLS price over the hourly wage,
+  `BLS_QCEW:annual_avg_weekly_wage:10:0 / 40`, of the page's own county,
+  state or nation (`wage_geo_id`), matched to the price's calendar year (the
+  newest wage year when the price's year has none, said in `wage_year`).
+  Six entries, one per item, each expanded over the five BLS price areas
+  (`minutes_of_work_eggs:0200`), all `approved` (Nick, 2026-11-06 18:15Z).
+  The section gains a "Price / Minutes of work" choice on county, state and
+  nation pages. Minutes are read only once chosen, so the page's own reads
+  are unchanged (WEB-149). The wage is stated once above the table, and a
+  row with no wage loaded says so. A metro page has no choice and says why
+  (QCEW publishes no metro wage). Until QCEW's annual history loads (the
+  20th), every row says "No wage loaded for this place yet."
 
 ## Acceptance criteria
 
@@ -99,8 +104,13 @@ recognises.
   inside the bundle budget (`tests/frontend/unit/groceries-and-gas.test.js`,
   `tests/frontend/browser/places.spec.js`).
 - [x] No horizontal scroll at 390 px; no accessibility violations.
-- [ ] Minutes of work is served only from an `approved` `time_cost` entry and
-  names both areas (CL-3).
+- [x] Minutes of work is served only from an `approved` `time_cost` entry and
+  names both areas (CL-3; `tests/unit/api/test_derived_ratios.py`,
+  `tests/unit/semantics/test_derived_ratio_registry.py`,
+  `tests/frontend/browser/places.spec.js`).
+- [ ] After deploy and QCEW's annual load, OFFICE_LAB confirms
+  `/observations/derived?ratio_id=minutes_of_work_eggs:0200&geo_id=region:2&wage_geo_id=state:55|county:025&newest_per_geography=true`
+  answers a value with `wage_year`.
 - [ ] After deploy, OFFICE_LAB confirms `72610`/`72620` rows from the
   scheduled BLS run.
 
@@ -112,3 +122,15 @@ recognises.
   484.6 kB of 495 kB).
 - `playwright test places.spec metro`: 33 passed.
 - Database integration tiers run in CI (no PostGIS in this session).
+
+CL-3 (2026-11-06, cloud session):
+
+- `python -m pytest tests/unit -q`: 3,226 passed (time-cost registry,
+  computation and route tests added; OpenAPI snapshot regenerated for
+  `wage_geo_id` and the time-cost fields).
+- `npm --prefix apps/web run test:unit`: 1,074 passed; lint and typecheck
+  clean; `check:bundle` within every budget (place pages unchanged at
+  484.6 kB of 495 kB).
+- `playwright test places.spec place-batch metro`: 37 passed, including the
+  minutes-of-work choice, the no-wage county, the metro note, axe and no
+  horizontal scroll.
