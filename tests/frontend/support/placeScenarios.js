@@ -107,6 +107,8 @@ export const AREAS = {
   metro: { geo_id: "cbsa:31540", geo_level: "METRO", geo_name: "Madison, WI" },
   division: { geo_id: "division:3", geo_level: "CENSUS_DIVISION", geo_name: "East North Central" },
   region: { geo_id: "region:2", geo_level: "CENSUS_REGION", geo_name: "Midwest Region" },
+  // EIA's petroleum region Wisconsin lies in; never a part_of row.
+  padd: { geo_id: "area:eia:R20", geo_level: "PROVIDER_AREA", geo_name: "PADD 2" },
 };
 const costMetric = (metric_code, units, valid_geo_grains) => ({ metric_code, metric_display_name: `${metric_code} (UI fixture)`, source_code: metric_code.split(":")[0],
   units, valid_geo_grains, freshness_state: "fresh", publication_time: "2026-09-01T00:00:00Z", harvested_at: "2026-09-02T00:00:00Z", source_watermark: "fixture-2026-09", publisher_contract_version: "v1" });
@@ -123,6 +125,13 @@ const COST_METRICS = Object.fromEntries([
   costMetric("BLS:APU0200708111", "U.S. dollars per doz.", ["CENSUS_REGION"]),
   costMetric("BLS:APU020072610", "U.S. dollars per KWH", ["CENSUS_REGION"]),
   costMetric("BLS:APU0000FF1101", "U.S. dollars per lb.", ["NATIONAL"]),
+  // Home energy (home-heating-fuel-prices): Wisconsin's own electricity and
+  // natural gas; heating oil only for PADD 2; diesel only the nation; propane
+  // no fixture at all.
+  costMetric("EIA:ELEC_RES", "cents per kilowatt-hour", ["NATIONAL", "STATE"]),
+  costMetric("EIA:NG_RES", "U.S. dollars per thousand cubic feet", ["NATIONAL", "STATE"]),
+  costMetric("EIA:EPD2F", "U.S. dollars per gallon", ["NATIONAL", "STATE", "PROVIDER_AREA"]),
+  costMetric("EIA:EPD2D", "U.S. dollars per gallon", ["NATIONAL", "PROVIDER_AREA"]),
 ].map((metric) => [metric.metric_code, metric]));
 // Which area publishes which cost measure, and its value. The division's
 // food index skips August 2025, so its change over the year cannot be read
@@ -138,6 +147,10 @@ const COST_VALUES = {
   "BLS:APU0200708111": { "region:2": "price:3.00" },
   "BLS:APU020072610": { "region:2": "price:0.160" },
   "BLS:APU0000FF1101": { "us:1": "price:4.20" },
+  "EIA:ELEC_RES": { "state:55": "price:17.0" },
+  "EIA:NG_RES": { "state:55": "price:12.00" },
+  "EIA:EPD2F": { "area:eia:R20": "season:3.50" },
+  "EIA:EPD2D": { "us:1": "3.71" },
 };
 function costRows(code, geo) {
   const value = COST_VALUES[code]?.[geo];
@@ -153,13 +166,19 @@ function costRows(code, geo) {
       return { ...base, value: (start * (1 + index * 0.005)).toFixed(3), period_start: month, period_end: month };
     });
   }
+  if (value.startsWith("season:")) {
+    // The last weeks of two heating seasons, March 2025 and March 2026; no
+    // summer week, as EIA surveys October to March.
+    const start = Number(value.slice(7));
+    return [["2025-03-31", 1], ["2026-03-23", 1.03], ["2026-03-30", 1.04]].map(([week, factor]) => ({ ...base, value: (start * factor).toFixed(3), period_start: week, period_end: week }));
+  }
   if (value.startsWith("monthly")) {
     return Array.from({ length: 13 }, (_, index) => {
       const month = new Date(Date.UTC(2025, 7 + index, 1)).toISOString().slice(0, 10);
       return { ...base, value: String(300 + index * (geo === "us:1" ? 0.5 : 0.8)), period_start: month, period_end: month };
     }).filter((item) => !(value === "monthly-gap" && item.period_start === "2025-08-01"));
   }
-  const weekly = code === "EIA:EPMR" || code.startsWith("BLS:APU");
+  const weekly = code.startsWith("EIA:") || code.startsWith("BLS:APU");
   return [{ ...base, value, period_start: weekly ? "2026-09-28" : "2024-01-01", period_end: weekly ? "2026-10-04" : "2024-12-31" }];
 }
 

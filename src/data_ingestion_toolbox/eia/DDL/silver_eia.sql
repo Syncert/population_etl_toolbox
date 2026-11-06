@@ -110,3 +110,109 @@ CREATE TABLE IF NOT EXISTS silver_eia.fact_retail_price (
 
 CREATE INDEX IF NOT EXISTS eia_fact_lookup_idx ON silver_eia.fact_retail_price (series_id, week_start);
 CREATE INDEX IF NOT EXISTS eia_fact_run_idx ON silver_eia.fact_retail_price (run_id);
+
+-- ---------------------------------------------------------------------------
+-- Home energy prices (home-heating-fuel-prices): every registered EIA route
+-- beside gasoline (`eia/routes.py`). A read names its route; gasoline's reads
+-- are the default, so the 75,864 gasoline rows are neither moved nor
+-- rewritten. A monthly route's window is stored as the first day of its
+-- first and last months.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE control.eia_read
+    ADD COLUMN IF NOT EXISTS route TEXT NOT NULL DEFAULT 'gasoline';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'eia_read_route_registered'
+          AND conrelid = 'control.eia_read'::regclass
+    ) THEN
+        ALTER TABLE control.eia_read
+            ADD CONSTRAINT eia_read_route_registered CHECK (
+                route IN ('gasoline', 'diesel', 'res_electricity', 'res_natural_gas', 'heating_fuels')
+            );
+    END IF;
+END $$;
+
+-- Every parsed row of every captured page of an energy route.
+CREATE TABLE IF NOT EXISTS silver_eia.energy_price_revision (
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    row_index INTEGER NOT NULL CHECK (row_index >= 0),
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    route TEXT NOT NULL,
+    series_id TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly')),
+    area_code TEXT NOT NULL,
+    area_name TEXT,
+    metric_key TEXT NOT NULL,
+    product TEXT NOT NULL,
+    process TEXT,
+    units TEXT NOT NULL,
+    geo_type TEXT NOT NULL CHECK (geo_type IN ('nation', 'state', 'provider_area')),
+    geo_id TEXT,
+    state_usps TEXT CHECK (state_usps IS NULL OR state_usps ~ '^[A-Z]{2}$'),
+    value_source TEXT,
+    value NUMERIC CHECK (value IS NULL OR value > 0),
+    value_status TEXT NOT NULL CHECK (value_status IN ('valid', 'missing')),
+    outside_survey_season BOOLEAN NOT NULL DEFAULT FALSE,
+    source_record_id TEXT NOT NULL CHECK (source_record_id ~ '^[0-9a-f]{64}$'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (capture_id, row_index),
+    CONSTRAINT eia_energy_revision_period_ordered CHECK (period_end >= period_start),
+    CONSTRAINT eia_energy_revision_valid_value_present CHECK (value_status <> 'valid' OR value IS NOT NULL),
+    CONSTRAINT eia_energy_revision_missing_value_absent CHECK (value_status = 'valid' OR value IS NULL),
+    CONSTRAINT eia_energy_revision_state_named CHECK ((geo_type = 'state') = (state_usps IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS eia_energy_revision_run_idx ON silver_eia.energy_price_revision (run_id);
+-- The newest stored revision of a period, which a replay compares each
+-- incoming price with so a repeat is not stored again (CHURN RULE).
+CREATE INDEX IF NOT EXISTS eia_energy_revision_period_idx
+    ON silver_eia.energy_price_revision (series_id, period_start, created_at DESC);
+
+-- The conformed energy prices, keyed by what they describe and the capture
+-- they came from: a period EIA revises is a second row, never an overwrite.
+-- A summer week of heating oil or propane has no row: EIA surveys October
+-- to March, and an absent week is not published, never zero.
+CREATE TABLE IF NOT EXISTS silver_eia.fact_energy_price (
+    series_id TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    retrieved_at TIMESTAMPTZ NOT NULL,
+    route TEXT NOT NULL,
+    frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly')),
+    period_end DATE NOT NULL,
+    metric_key TEXT NOT NULL,
+    area_code TEXT NOT NULL,
+    area_name TEXT,
+    geo_type TEXT NOT NULL CHECK (geo_type IN ('nation', 'state', 'provider_area')),
+    geo_id TEXT,
+    geo_sk BIGINT,
+    geography_status TEXT NOT NULL CHECK (geography_status IN ('resolved', 'unmapped')),
+    units TEXT NOT NULL,
+    value_source TEXT,
+    value NUMERIC CHECK (value IS NULL OR value > 0),
+    value_status TEXT NOT NULL CHECK (value_status IN ('valid', 'missing')),
+    outside_survey_season BOOLEAN NOT NULL DEFAULT FALSE,
+    source_record_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (series_id, period_start, capture_id),
+    CONSTRAINT eia_energy_fact_valid_value_present CHECK (value_status <> 'valid' OR value IS NOT NULL),
+    CONSTRAINT eia_energy_fact_missing_value_absent CHECK (value_status = 'valid' OR value IS NULL),
+    CONSTRAINT eia_energy_fact_resolved_has_geography CHECK (
+        (geography_status = 'resolved') = (geo_sk IS NOT NULL AND geo_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS eia_energy_fact_run_idx ON silver_eia.fact_energy_price (run_id);
+-- The served reads: one metric at one area, every period (API reads by
+-- metric and geography; the planner reads the newest period of a route).
+CREATE INDEX IF NOT EXISTS eia_energy_fact_metric_geo_idx
+    ON silver_eia.fact_energy_price (metric_key, geo_id, period_start);
+CREATE INDEX IF NOT EXISTS eia_energy_fact_route_period_idx
+    ON silver_eia.fact_energy_price (route, period_start);

@@ -3005,6 +3005,142 @@
       "last_reviewed_date": "2026-10-31"
     },
     {
+      "metric_id": "EIA:ELEC_RES",
+      "metric_codes": [
+        "EIA:ELEC_RES"
+      ],
+      "name": "Residential electricity, average price",
+      "definition": "The average retail price of a kilowatt-hour of electricity sold to homes: utilities' residential revenue divided by their residential sales, from EIA's monthly survey of electric utilities (Form EIA-861M).",
+      "unit": "cents per kilowatt-hour",
+      "universe": "residential customers of electric utilities",
+      "kind": "mean",
+      "caveat": "Published for the nation and every state, not for counties or cities; a county page shows its state's price and names it.",
+      "intended_use": "Show what it costs to heat a home or fill a tank in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation and every state, not for counties or cities; a county page shows its state's price and names it.",
+        "An average over every rate plan and utility in the state, including fixed charges; a household's own bill depends on its utility and use.",
+        "Monthly prices are never averaged into an annual figure by this platform."
+      ],
+      "citations": [
+        "https://www.eia.gov/electricity/monthly/",
+        "https://www.eia.gov/electricity/data/eia861m/"
+      ],
+      "status": "draft",
+      "owner": "home-heating-fuel-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "EIA:NG_RES",
+      "metric_codes": [
+        "EIA:NG_RES"
+      ],
+      "name": "Residential natural gas, average price",
+      "definition": "The average price of natural gas delivered to homes, per thousand cubic feet, from EIA's Natural Gas Monthly. A thousand cubic feet is about 10.37 therms at EIA's average heat content of 1,037 Btu a cubic foot; profiles restate the price a therm with that conversion.",
+      "unit": "dollars per thousand cubic feet",
+      "universe": "residential natural gas consumers",
+      "kind": "mean",
+      "caveat": "Published for the nation and every state, not for counties or cities; a county page shows its state's price and names it.",
+      "intended_use": "Show what it costs to heat a home or fill a tank in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation and every state, not for counties or cities; a county page shows its state's price and names it.",
+        "State prices arrive about two months after the month they describe, and EIA revises recent months.",
+        "A therm figure is a conversion at the national average heat content, not a price EIA publishes."
+      ],
+      "citations": [
+        "https://www.eia.gov/naturalgas/monthly/",
+        "https://www.eia.gov/tools/faqs/faq.php?id=45&t=8"
+      ],
+      "status": "draft",
+      "owner": "home-heating-fuel-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "EIA:EPD2F",
+      "metric_codes": [
+        "EIA:EPD2F"
+      ],
+      "name": "Residential heating oil, average price",
+      "definition": "The average retail price of a gallon of No. 2 heating oil delivered to homes, from EIA's State Heating Oil and Propane Program (Form EIA-877), surveyed weekly from October to March.",
+      "unit": "dollars per gallon",
+      "universe": "residential heating oil customers",
+      "kind": "mean",
+      "caveat": "Published for the nation, about 38 states and EIA's petroleum regions (PADDs), weekly from October to March only; a summer week has no price.",
+      "intended_use": "Show what it costs to heat a home or fill a tank in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation, about 38 states and EIA's petroleum regions (PADDs), weekly from October to March only; a summer week has no price.",
+        "A state EIA does not survey shows its petroleum region's price, named.",
+        "Weekly prices are never averaged into an annual figure by this platform."
+      ],
+      "citations": [
+        "https://www.eia.gov/petroleum/heatingoilpropane/"
+      ],
+      "status": "draft",
+      "owner": "home-heating-fuel-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "EIA:EPLLPA",
+      "metric_codes": [
+        "EIA:EPLLPA"
+      ],
+      "name": "Residential propane, average price",
+      "definition": "The average retail price of a gallon of propane delivered to homes, from EIA's State Heating Oil and Propane Program (Form EIA-877), surveyed weekly from October to March.",
+      "unit": "dollars per gallon",
+      "universe": "residential propane customers",
+      "kind": "mean",
+      "caveat": "Published for the nation, about 38 states and EIA's petroleum regions (PADDs), weekly from October to March only; a summer week has no price.",
+      "intended_use": "Show what it costs to heat a home or fill a tank in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation, about 38 states and EIA's petroleum regions (PADDs), weekly from October to March only; a summer week has no price.",
+        "A state EIA does not survey shows its petroleum region's price, named.",
+        "Weekly prices are never averaged into an annual figure by this platform."
+      ],
+      "citations": [
+        "https://www.eia.gov/petroleum/heatingoilpropane/"
+      ],
+      "status": "draft",
+      "owner": "home-heating-fuel-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "EIA:EPD2D",
+      "metric_codes": [
+        "EIA:EPD2D"
+      ],
+      "name": "On-highway diesel, average retail price",
+      "definition": "The average retail price of a gallon of on-highway diesel fuel, from EIA's weekly survey of retail stations (Form EIA-888).",
+      "unit": "dollars per gallon",
+      "universe": "retail diesel stations",
+      "kind": "mean",
+      "caveat": "Published for the nation, EIA's petroleum regions and a few states, not for counties or cities; a page shows the nearest published area's price and names it.",
+      "intended_use": "Show what it costs to heat a home or fill a tank in the nearest area EIA publishes.",
+      "limitations": [
+        "Published for the nation, EIA's petroleum regions and a few states, not for counties or cities; a page shows the nearest published area's price and names it.",
+        "Weekly prices are never averaged into an annual figure by this platform."
+      ],
+      "citations": [
+        "https://www.eia.gov/petroleum/gasdiesel/"
+      ],
+      "status": "draft",
+      "owner": "home-heating-fuel-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06"
+    },
+    {
       "metric_id": "BLS:APU_gasoline_regular_region",
       "metric_codes": [
         "BLS:APU010074714",

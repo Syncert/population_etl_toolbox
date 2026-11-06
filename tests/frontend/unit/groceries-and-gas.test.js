@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   areaLabel,
+  changeFromYearEarlierWeek,
   changeOverYear,
   containingAreas,
   formatChange,
   formatGas,
+  formatGasHeat,
   formatMinutes,
   formatPrice,
   minutesRatioId,
   minutesText,
+  paddOf,
   PRICE_ITEMS,
   readingsFor,
   stoppedSince,
@@ -136,7 +139,12 @@ describe("everyday prices", () => {
       ["BLS:APU0200708111", "region:2"],
       ["BLS:APU0000708111", "us:1"],
     ]);
-    expect(readings.electricity.map((item) => item.metricCode)).toEqual(["BLS:APU020072610", "BLS:APU000072610"]);
+    // EIA's own state price first, in cents, then BLS's region and nation.
+    expect(readings.electricity.map((item) => [item.metricCode, item.area.geoId, item.scale])).toEqual([
+      ["EIA:ELEC_RES", "state:55", 0.01],
+      ["BLS:APU020072610", "region:2", undefined],
+      ["BLS:APU000072610", "us:1", undefined],
+    ]);
   });
 
   it("lists the same items in the same order on every page", () => {
@@ -193,5 +201,57 @@ describe("a stopped price series", () => {
   it("is not stopped when only recent months are empty", () => {
     const rows = [month("2026-05-01", "1.66"), month("2026-06-01", null), month("2026-09-01", null)];
     expect(stoppedSince(rows, rows[0])).toBe("");
+  });
+});
+
+// Covers: WEB-170 — home-heating-fuel-prices: each heating fuel is EIA's
+// residential price for the state, else EIA's petroleum region, else the
+// nation; natural gas is restated a therm; a weekly change compares the same
+// week a year earlier and says when that week is not published.
+describe("home heating fuels", () => {
+  const areas = containingAreas("COUNTY", { geo_id: "state:55|county:025" }, dane);
+
+  it("asks for the state, then the state's EIA petroleum region, then the nation", () => {
+    const readings = readingsFor(areas);
+    expect(readings.heating_oil.map((item) => [item.metricCode, item.area.geoId])).toEqual([
+      ["EIA:EPD2F", "state:55"],
+      ["EIA:EPD2F", "area:eia:R20"],
+      ["EIA:EPD2F", "us:1"],
+    ]);
+    expect(readings.propane.map((item) => item.metricCode)).toEqual(["EIA:EPLLPA", "EIA:EPLLPA", "EIA:EPLLPA"]);
+    expect(readings.heat_gas.map((item) => [item.metricCode, item.area.geoId])).toEqual([
+      ["EIA:NG_RES", "state:55"],
+      ["EIA:NG_RES", "us:1"],
+    ]);
+    expect(readings.diesel.map((item) => item.area.geoId)).toEqual(["state:55", "area:eia:R20", "us:1"]);
+  });
+
+  it("finds a state's petroleum region by its FIPS code, never by name", () => {
+    expect(paddOf({ geoId: "state:55", level: "STATE", name: "Wisconsin" })).toEqual({ geoId: "area:eia:R20", level: "PROVIDER_AREA", name: "Midwest (PADD 2)" });
+    expect(paddOf({ geoId: "state:25", level: "STATE", name: "Massachusetts" }).geoId).toBe("area:eia:R1X");
+    expect(paddOf({ geoId: "state:06", level: "STATE", name: "California" }).geoId).toBe("area:eia:R50");
+    expect(paddOf({ geoId: "state:72", level: "STATE", name: "Puerto Rico" })).toBeNull();
+    expect(paddOf(null)).toBeNull();
+  });
+
+  it("the nation's own page asks only for the nation", () => {
+    const nation = readingsFor(containingAreas("NATIONAL", { geo_id: "us:1", geo_name: "United States" }, null));
+    expect(nation.heating_oil.map((item) => item.area.geoId)).toEqual(["us:1"]);
+    expect(nation.electricity.map((item) => item.metricCode)).toEqual(["BLS:APU000072610"]);
+  });
+
+  it("restates natural gas a therm", () => {
+    expect(formatGasHeat(15.2)).toBe("$15.20 per thousand cubic feet ($1.47 a therm)");
+  });
+
+  it("compares a week with the same week a year earlier", () => {
+    const week = (period_start, value) => ({ period_start, value });
+    expect(changeFromYearEarlierWeek([week("2025-03-31", "3.50"), week("2026-03-23", "3.60"), week("2026-03-30", "3.64")])).toEqual({
+      percent: 4, period: "2025-03-31 to 2026-03-30", reason: "",
+    });
+    const gap = changeFromYearEarlierWeek([week("2025-03-24", "3.50"), week("2026-03-30", "3.64")]);
+    expect(gap.percent).toBeNull();
+    expect(gap.reason).toBe("The week of 2025-03-31 is not published for this area.");
+    expect(changeFromYearEarlierWeek([]).percent).toBeNull();
   });
 });

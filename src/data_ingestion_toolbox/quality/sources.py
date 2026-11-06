@@ -1463,6 +1463,9 @@ def eia_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleO
           LEFT JOIN LATERAL (
                 SELECT (SELECT COUNT(*) FROM silver_eia.price_revision AS revision
                          WHERE revision.run_id = read.run_id)
+                     -- The energy routes keep their revisions beside gasoline's.
+                     + (SELECT COUNT(*) FROM silver_eia.energy_price_revision AS energy
+                         WHERE energy.run_id = read.run_id)
                      + (SELECT COUNT(*) FROM silver_eia.observation_quarantine AS rejected
                          WHERE rejected.run_id = read.run_id AND rejected.row_index >= 0)
                      -- Repeats of a stored week are accounted for, not stored.
@@ -1479,6 +1482,37 @@ def eia_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleO
         RuleOutcome(
             "control.eia_read",
             "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def eia_outside_survey_season(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-EIA-005 -- a heating fuel price outside October to March is reported."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM silver_eia.fact_energy_price")
+    if total == 0:
+        return [RuleOutcome("silver_eia.fact_energy_price", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT fact.series_id, fact.period_start, fact.value_source
+          FROM silver_eia.fact_energy_price AS fact
+          JOIN control.eia_read AS read ON read.run_id = fact.run_id
+         WHERE fact.outside_survey_season
+           AND fact.value_status = 'valid'
+           AND read.status = 'published'
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_eia.fact_energy_price",
+            "warn" if offenders else "pass",
             observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
@@ -4679,6 +4713,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BEA-006": bea_component_sums,
     "DQ-BEA-007": bea_transfer_total_agreement,
     "DQ-EIA-002": eia_read_reconciliation,
+    "DQ-EIA-005": eia_outside_survey_season,
     "DQ-CBP-002": cbp_file_reconciliation,
     "DQ-CBP-004": cbp_sector_sum,
     "DQ-REF-003": reference_resolution_accounting,
