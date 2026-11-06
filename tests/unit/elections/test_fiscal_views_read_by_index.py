@@ -31,3 +31,23 @@ def test_a_fiscal_view_never_filters_bea_on_the_concatenated_key(path: str) -> N
     assert "gold_bea.observation_latest" not in sql
     assert not re.search(r"metric_key\s*=\s*'(?:CAINC|SAINC)", sql)
     assert "gold_bea.observation_revision" in sql
+
+
+def test_the_governor_tax_mix_reads_census_by_place_and_year() -> None:
+    """Covers: ETL-119 — the governor tax mix never re-ranks every asslgf row.
+
+    `gold_census_govfin.tax_mix` and `observation_latest` rank by a
+    concatenated `metric_key`, so a per-tenure filter on measure never reaches
+    `census_govfin_fact_metric_geo_idx`: 512 s for one state on OFFICE_LAB on
+    2026-11-06.
+    """
+    sql = re.sub(
+        r"--[^\n]*", "", (REPOSITORY_ROOT / VIEWS[0]).read_text(encoding="utf-8")
+    )
+    mix = sql[sql.index("VIEW gold_elections.governor_term_tax_mix") :]
+    mix = mix[: mix.index("COMMENT ON VIEW")]
+    assert "gold_census_govfin.tax_mix" not in mix
+    assert "gold_census_govfin.observation_latest" not in mix
+    assert "gold_census_govfin.observation_revision" in mix
+    assert re.search(r"revision\.geo_id\s*=\s*tenure\.geo_id", mix)
+    assert re.search(r"revision\.fiscal_year\s*=\s*tenure\.window_end_year", mix)

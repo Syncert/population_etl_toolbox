@@ -3957,7 +3957,7 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         "ELECTIONS",
         grain="tenure_key, tax_group",
         lineage="gold_elections.governor_tenure, gold_elections.governor_fiscal_series, "
-        "gold_census_govfin.tax_mix",
+        "gold_census_govfin.observation_revision",
         scope_method="every governor tenure whose window's last fiscal year Census publishes",
         cadence="with its inputs (views)",
         empty_behavior="empty until Census government finance is loaded",

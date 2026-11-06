@@ -5652,58 +5652,67 @@ v gold_elections.governor_term_tax_mix
     column tax_group text
     column share_of_taxes_pct numeric
     body WITH tenure AS (
-    body          SELECT tenure_1.state_fips,
-    body             tenure_1.geo_id,
-    body             tenure_1.tenure_key,
-    body             tenure_1.so_far,
-    body             tenure_1.window_start_year,
+    body          SELECT tenure.state_fips,
+    body             tenure.geo_id,
+    body             tenure.tenure_key,
+    body             tenure.so_far,
+    body             tenure.window_start_year,
     body                 CASE
-    body                     WHEN tenure_1.so_far THEN ( SELECT max(place.year) AS max
+    body                     WHEN tenure.so_far THEN ( SELECT max(place.year) AS max
     body                        FROM gold_elections.governor_fiscal_series place
     body                          JOIN gold_elections.governor_fiscal_series nation ON nation.measure = 'tax_burden'::text AND nation.geo_id = 'us:1'::text AND nation.year = place.year
-    body                       WHERE place.measure = 'tax_burden'::text AND place.geo_id = tenure_1.geo_id AND place.year > tenure_1.window_start_year)
-    body                     ELSE tenure_1.last_full_year
+    body                       WHERE place.measure = 'tax_burden'::text AND place.geo_id = tenure.geo_id AND place.year > tenure.window_start_year)
+    body                     ELSE tenure.last_full_year
     body                 END AS window_end_year
-    body            FROM gold_elections.governor_tenure tenure_1
+    body            FROM gold_elections.governor_tenure tenure
     body         ), named AS (
-    body          SELECT tax_mix.geo_id,
-    body             tax_mix.fiscal_year,
-    body             sum(tax_mix.share_of_taxes_pct) FILTER (WHERE tax_mix.measure_id = 'tax_property'::text) AS property,
-    body             sum(tax_mix.share_of_taxes_pct) FILTER (WHERE tax_mix.measure_id = 'tax_general_sales'::text) AS general_sales,
-    body             sum(tax_mix.share_of_taxes_pct) FILTER (WHERE tax_mix.measure_id = ANY (ARRAY['tax_individual_income'::text, 'tax_corporate_income'::text])) AS income,
-    body             count(DISTINCT tax_mix.measure_id) FILTER (WHERE tax_mix.measure_id = ANY (ARRAY['tax_property'::text, 'tax_general_sales'::text, 'tax_individual_income'::text, 'tax_corporate_income'::text])) AS named_parts
-    body            FROM gold_census_govfin.tax_mix tax_mix
-    body           WHERE tax_mix.dataset_id = 'asslgf'::text AND tax_mix.government_level = 'state_and_local'::text AND tax_mix.quarter = 0 AND tax_mix.share_of_taxes_pct IS NOT NULL
-    body           GROUP BY tax_mix.geo_id, tax_mix.fiscal_year
+    body          SELECT tenure.state_fips,
+    body             tenure.geo_id,
+    body             tenure.tenure_key,
+    body             tenure.so_far,
+    body             tenure.window_start_year,
+    body             tenure.window_end_year,
+    body             round(figure.property / figure.total * 100::numeric, 2) AS property,
+    body             round(figure.general_sales / figure.total * 100::numeric, 2) AS general_sales,
+    body             round(figure.individual_income / figure.total * 100::numeric, 2) + round(figure.corporate_income / figure.total * 100::numeric, 2) AS income
+    body            FROM tenure
+    body              CROSS JOIN LATERAL ( SELECT max(newest.value) FILTER (WHERE newest.measure_id = 'taxes_total'::text) AS total,
+    body                     max(newest.value) FILTER (WHERE newest.measure_id = 'tax_property'::text) AS property,
+    body                     max(newest.value) FILTER (WHERE newest.measure_id = 'tax_general_sales'::text) AS general_sales,
+    body                     max(newest.value) FILTER (WHERE newest.measure_id = 'tax_individual_income'::text) AS individual_income,
+    body                     max(newest.value) FILTER (WHERE newest.measure_id = 'tax_corporate_income'::text) AS corporate_income
+    body                    FROM ( SELECT DISTINCT ON (revision.measure_id) revision.measure_id,
+    body                             revision.value,
+    body                             revision.value_status
+    body                            FROM gold_census_govfin.observation_revision revision
+    body                           WHERE (revision.measure_id = ANY (ARRAY['taxes_total'::text, 'tax_property'::text, 'tax_general_sales'::text, 'tax_individual_income'::text, 'tax_corporate_income'::text])) AND revision.geo_id = tenure.geo_id AND revision.fiscal_year = tenure.window_end_year AND revision.dataset_id = 'asslgf'::text AND revision.government_level = 'state_and_local'::text AND revision.quarter = 0
+    body                           ORDER BY revision.measure_id, revision.retrieved_at DESC, revision.capture_id DESC) newest
+    body                   WHERE newest.value_status = 'valid'::text) figure
+    body           WHERE tenure.window_end_year > tenure.window_start_year AND figure.total <> 0::numeric
     body         ), complete AS (
-    body          SELECT named.geo_id,
-    body             named.fiscal_year,
+    body          SELECT named.state_fips,
+    body             named.geo_id,
+    body             named.tenure_key,
+    body             named.so_far,
+    body             named.window_start_year,
+    body             named.window_end_year,
     body             named.property,
     body             named.general_sales,
     body             named.income,
-    body             named.named_parts,
     body             100::numeric - (named.property + named.general_sales + named.income) AS remainder
     body            FROM named
-    body           WHERE named.named_parts = 4
-    body         ), mix AS (
-    body          SELECT complete.geo_id,
-    body             complete.fiscal_year,
-    body             part.tax_group,
-    body             part.share_of_taxes_pct
-    body            FROM complete
-    body              CROSS JOIN LATERAL ( VALUES ('property'::text,complete.property), ('general_sales'::text,complete.general_sales), ('income'::text,complete.income), ('other'::text,GREATEST(complete.remainder, 0::numeric))) part(tax_group, share_of_taxes_pct)
-    body           WHERE complete.remainder >= '-0.5'::numeric
+    body           WHERE named.property IS NOT NULL AND named.general_sales IS NOT NULL AND named.income IS NOT NULL
     body         )
-    body  SELECT tenure.state_fips,
-    body     tenure.geo_id,
-    body     tenure.tenure_key,
-    body     tenure.so_far,
-    body     tenure.window_end_year AS fiscal_year,
-    body     mix.tax_group,
-    body     round(mix.share_of_taxes_pct, 2) AS share_of_taxes_pct
-    body    FROM tenure
-    body      JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year
-    body   WHERE tenure.window_end_year > tenure.window_start_year;
+    body  SELECT complete.state_fips,
+    body     complete.geo_id,
+    body     complete.tenure_key,
+    body     complete.so_far,
+    body     complete.window_end_year AS fiscal_year,
+    body     part.tax_group,
+    body     round(part.share_of_taxes_pct, 2) AS share_of_taxes_pct
+    body    FROM complete
+    body      CROSS JOIN LATERAL ( VALUES ('property'::text,complete.property), ('general_sales'::text,complete.general_sales), ('income'::text,complete.income), ('other'::text,GREATEST(complete.remainder, 0::numeric))) part(tax_group, share_of_taxes_pct)
+    body   WHERE complete.remainder >= '-0.5'::numeric;
 
 v gold_elections.lean_band_definition
     column lean_band text
