@@ -544,7 +544,7 @@ test("a county's groceries and gas card names the area behind every figure", asy
   // the region named once, an item only the nation publishes named on its
   // row, an item not loaded said so, and rent linked to Housing.
   await expect(card.getByRole("heading", { level: 2 })).toHaveText("Cost of living");
-  await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average");
+  await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average, except where a row names another area");
   const eggs = page.getByTestId("place-cost-eggs");
   await expect(eggs).toHaveAttribute("data-area", "region:2");
   await expect(eggs).toContainText("$3.18 a dozen");
@@ -557,8 +557,41 @@ test("a county's groceries and gas card names the area behind every figure", asy
   await expect(page.getByTestId("place-cost-milk")).toContainText("Not loaded into this site yet.");
   // Rent is the Housing chapter's, linked, never read a second time.
   await expect(page.getByTestId("place-cost-rent").getByRole("link")).toHaveAttribute("href", "#housing");
+
+  // Covers: WEB-143 — cost-of-living-section CL-3: minutes of work are read
+  // only when chosen, at the county's own wage, stated once with its year.
+  const minutesReads = [];
+  page.on("request", (request) => { if (request.url().includes("/observations/derived")) minutesReads.push(new URL(request.url())); });
+  const view = page.getByTestId("place-cost-view");
+  await expect(view.getByRole("button", { name: "Price" })).toHaveAttribute("aria-pressed", "true");
+  await view.getByRole("button", { name: "Minutes of work" }).click();
+  await expect(page.getByTestId("place-cost-eggs-minutes")).toContainText("6 minutes");
+  await expect(page.getByTestId("place-cost-eggs-minutes")).toContainText("for $3.18 a dozen");
+  await expect(page.getByTestId("place-cost-electricity-minutes")).toContainText("20 seconds");
+  await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("9 minutes");
+  await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("United States figure");
+  await expect(page.getByTestId("place-cost-wage")).toContainText("Dane County's average wage, $1,200 a week in 2025, the newest year published");
+  await expect(page.getByTestId("place-cost-items").getByRole("columnheader", { name: "Minutes of work" })).toBeVisible();
+  expect(minutesReads.map((url) => url.searchParams.get("wage_geo_id"))).toEqual(Array(3).fill("state:55|county:025"));
+  expect(minutesReads.map((url) => url.searchParams.get("ratio_id")).sort()).toEqual([
+    "minutes_of_work_chicken:0000", "minutes_of_work_eggs:0200", "minutes_of_work_electricity:0200",
+  ]);
   await noViolations(page);
   await noHorizontalScroll(page);
+});
+
+// Covers: WEB-143 — CL-3: a county with no wage loaded says so, never zero;
+// a metro has no minutes-of-work choice, and says why.
+test("minutes of work say when no wage is loaded, and a metro says QCEW has none", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/rock-county");
+  await page.getByTestId("place-cost-view").getByRole("button", { name: "Minutes of work" }).click();
+  // Only the nation's chicken price reaches Rock County in this fixture.
+  await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("No wage loaded for this place yet.");
+  await expect(page.getByTestId("place-cost-chicken-minutes")).not.toContainText("0 minutes");
+  await ready(page, "/metro/madison-wi-metro-area");
+  await expect(page.getByTestId("place-cost-view")).toHaveCount(0);
+  await expect(page.getByTestId("place-cost-no-wage")).toContainText("not metro areas");
 });
 
 test("the nation's groceries and gas card is its own, with parity 100 by definition", async ({ page }) => {

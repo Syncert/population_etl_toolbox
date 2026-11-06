@@ -8,6 +8,7 @@
 // which is how BLS and BEA number them; nothing is matched by name.
 
 import type { ObservationRow } from "./explorerViewModel";
+import { formatNumber } from "./format";
 import type { RelatedResponse } from "./placeRelationships";
 import type { PlaceLevel } from "./placeChapters";
 
@@ -201,6 +202,19 @@ export function changeOverYear(rows: readonly ObservationRow[]): YearChange {
   return { percent: Math.round((now / then - 1) * 1000) / 10, period: `${earlierMonth} to ${month}`, reason: "" };
 }
 
+/**
+ * The month a price series last carried a value, when it is more than a
+ * year before the newest month the series publishes (rows without a value
+ * after it): BLS stopped pricing the item there. Otherwise "".
+ */
+export function stoppedSince(rows: readonly ObservationRow[], newestValued: ObservationRow): string {
+  const valued = monthOf(newestValued);
+  const latest = rows.map(monthOf).filter((month) => /^\d{4}-\d{2}$/.test(month)).sort().at(-1) || valued;
+  if (!/^\d{4}-\d{2}$/.test(valued)) return "";
+  const gap = (Number(latest.slice(0, 4)) - Number(valued.slice(0, 4))) * 12 + Number(latest.slice(5, 7)) - Number(valued.slice(5, 7));
+  return gap > 12 ? valued : "";
+}
+
 export function withheldReason(row: ObservationRow | null | undefined): string {
   const status = String(row?.value_status || "").trim();
   return status && status !== "valid" ? `Published without a value (${status}).` : "Published without a value.";
@@ -222,4 +236,67 @@ export function formatChange(percent: number): string {
 
 export function formatParity(value: number): string {
   return `${value.toFixed(1)} (nation = 100)`;
+}
+
+// ---------------------------------------------------------------------------
+// Minutes of work (cost-of-living-section CL-3; ADR-0009 amendment of
+// 2026-11-06). The API divides each price by the hourly wage of the page's
+// own county, state or nation; this module only names the pairing and words
+// the answer. QCEW publishes no wage for a metro area or a city.
+// ---------------------------------------------------------------------------
+
+/** The page levels QCEW publishes an average weekly wage for. */
+export const WAGE_LEVELS: readonly PlaceLevel[] = ["COUNTY", "STATE", "NATIONAL"];
+
+export const NO_METRO_WAGE =
+  "Minutes of work needs the area's own wage, and QCEW publishes wages for counties, states and the nation, not metro areas.";
+
+/** The served pairing for one price reading: `minutes_of_work_eggs:0200`. */
+export function minutesRatioId(reading: Pick<Reading, "measure" | "metricCode">): string | null {
+  const match = /^BLS:APU([0-9A-Z]{4})/.exec(reading.metricCode);
+  return match && PRICE_ITEMS.some((spec) => spec.item === reading.measure) ? `minutes_of_work_${reading.measure}:${match[1]}` : null;
+}
+
+/** "6 minutes", "1 minute", "20 seconds", "1 hour 5 minutes". */
+export function formatMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes < 0) return "";
+  if (minutes < 1) {
+    const seconds = Math.max(1, Math.round(minutes * 60));
+    return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+  }
+  const whole = Math.round(minutes);
+  const hours = Math.floor(whole / 60);
+  const rest = whole % 60;
+  const part = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  if (!hours) return part(rest, "minute");
+  return rest ? `${part(hours, "hour")} ${part(rest, "minute")}` : part(hours, "hour");
+}
+
+export interface MinutesRow {
+  value?: string | null;
+  unavailable_reason?: string | null;
+  wage_geo_id?: string | null;
+  wage_geo_name?: string | null;
+  wage_year?: "same_year" | "newest_published_year" | null;
+  denominator?: { value?: string | null; period_start?: string | null } | null;
+}
+
+/** The wage behind every minutes figure, stated once: "Dane County's average wage, $1,200 a week in 2025". */
+export function wageText(row: MinutesRow, placeName: string): string {
+  const weekly = Number(row.denominator?.value);
+  const year = String(row.denominator?.period_start || "").slice(0, 4);
+  if (!row.denominator || !Number.isFinite(weekly) || !/^\d{4}$/.test(year)) return "";
+  const name = row.wage_geo_name || placeName;
+  const newest = row.wage_year === "newest_published_year" ? ", the newest year published" : "";
+  return `${name}'s average wage, $${formatNumber(Math.round(weekly), { maximumFractionDigits: 0 })} a week in ${year}${newest}, over a 40-hour week. Source: ${SOURCE_NAMES.BLS}, QCEW, all jobs.`;
+}
+
+/** A minutes row's cell text, or why there is none. Never zero for missing. */
+export function minutesText(row: MinutesRow | null | undefined): string {
+  if (!row) return "";
+  const value = row.value === null || row.value === undefined || row.value === "" ? NaN : Number(row.value);
+  if (!row.unavailable_reason && Number.isFinite(value)) return formatMinutes(value);
+  if (row.unavailable_reason === "denominator_missing") return "No wage loaded for this place yet.";
+  if (row.unavailable_reason === "different_period") return "No wage published for this price's year.";
+  return "Not computed: an input is withheld.";
 }

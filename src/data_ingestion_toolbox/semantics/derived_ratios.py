@@ -22,6 +22,18 @@ FBI rate it reads beside (``reads_beside``, published only for states and the
 nation) and the one geography level it describes. It recomputes no rate the
 provider publishes at that level, so ADR-0009 rule 5 is not at stake.
 
+A ``time_cost`` entry (ADR-0009 amendment of 2026-11-06) is minutes of work:
+a price divided by an hourly wage, the wage being a weekly wage over
+``hours_per_week``. The price and the wage are different programs and
+usually different areas -- the price is BLS's for a Census region or the
+nation, the wage QCEW's for the reader's own county, state or nation -- so
+rule 2 is replaced for this kind by: the wage's area is named by the reader
+and stated beside the value, the wage's level is one of ``wage_geo_levels``,
+and the wage's calendar year matches the price's (the newest wage year when
+the price's year has none yet, and the row says so). An ``{area}``
+placeholder in the numerator expands to each listed BLS area code, as
+``<ratio_id>:<area>``.
+
 Only an ``approved`` pairing is served. ``DERIVED_RATIOS_SERVE_DRAFTS=1``
 lets a local stack serve drafts too, each marked with its status, so the
 owner can review them on the running site before approving them.
@@ -36,10 +48,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-KINDS = frozenset({"share", "per_capita", "ratio", "provider_rate", "agency_rate"})
+KINDS = frozenset(
+    {"share", "per_capita", "ratio", "provider_rate", "agency_rate", "time_cost"}
+)
 STATUSES = frozenset({"draft", "approved", "deprecated", "needs_review"})
-SCALES = frozenset({1, 100, 1000, 100000})
+#: 60 is a time cost's: minutes in an hour of work.
+SCALES = frozenset({1, 60, 100, 1000, 100000})
 DATASET_PLACEHOLDER = "{dataset}"
+AREA_PLACEHOLDER = "{area}"
+#: The levels QCEW publishes a wage for (bls-qcew-county-wages).
+TIME_COST_WAGE_LEVELS = frozenset({"COUNTY", "STATE", "NATIONAL"})
 
 REGISTRY_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "semantics" / "derived_ratios.json"
@@ -83,6 +101,11 @@ class RatioPairing:
     #: levels it is computed for.
     reads_beside: str | None = None
     geo_levels: tuple[str, ...] = ()
+    #: ``time_cost`` only: hours in the week the wage pays for, the levels
+    #: the wage may be read at, and the price's BLS area code.
+    hours_per_week: int | None = None
+    wage_geo_levels: tuple[str, ...] = ()
+    area: str | None = None
 
     @property
     def derived(self) -> bool:
@@ -112,7 +135,23 @@ def _program(code: str) -> tuple[str, ...]:
 
 
 def _expand(entry: dict) -> list[tuple[str, str, str | None, str | None]]:
-    """(ratio_id, numerator, denominator, dataset) for each listed dataset."""
+    """(ratio_id, numerator, denominator, dataset or area) for each listed one."""
+    areas = entry.get("areas")
+    if bool(areas) != (AREA_PLACEHOLDER in entry["numerator"]):
+        raise RatioRegistryError(
+            f"{entry['ratio_id']}: `areas` and the {AREA_PLACEHOLDER} "
+            "placeholder come together"
+        )
+    if areas:
+        return [
+            (
+                f"{entry['ratio_id']}:{area}",
+                entry["numerator"].replace(AREA_PLACEHOLDER, area),
+                entry.get("denominator"),
+                area,
+            )
+            for area in areas
+        ]
     datasets = entry.get("datasets")
     numerator = entry["numerator"]
     denominator = entry.get("denominator")
@@ -178,6 +217,26 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 f"{rid}: a share's numerator is a subset of its universe and "
                 "it is stated in percent (ADR-0009 rule 3)"
             )
+        time_cost = kind == "time_cost"
+        if time_cost != bool(entry.get("hours_per_week")) or (
+            time_cost
+            and (
+                entry["scale"] != 60
+                or not entry.get("areas")
+                or entry.get("datasets")
+                or entry.get("numerator_is_subset")
+                or not entry.get("wage_geo_levels")
+                or not set(entry["wage_geo_levels"]) <= TIME_COST_WAGE_LEVELS
+                or not entry["numerator"].startswith("BLS:")
+                or not entry["denominator"].startswith("BLS_QCEW:")
+            )
+        ):
+            raise RatioRegistryError(
+                f"{rid}: a time_cost divides a BLS price over its listed areas "
+                "by a QCEW weekly wage over hours_per_week, in minutes (scale "
+                "60), at the wage levels QCEW publishes; only a time_cost "
+                "names hours_per_week (ADR-0009 amendment, 2026-11-06)"
+            )
         if kind == "ratio" and entry.get("numerator_is_subset"):
             raise RatioRegistryError(
                 f"{rid}: a ratio divides one measure by another it is not a "
@@ -187,13 +246,14 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
             raise RatioRegistryError(f"{rid} is approved without a reviewer")
         if not entry.get("citations"):
             raise RatioRegistryError(f"{rid} cites nothing")
-        for ratio_id, numerator, denominator, dataset in _expand(entry):
+        for ratio_id, numerator, denominator, variant in _expand(entry):
             if ratio_id in pairings:
                 raise RatioRegistryError(f"{ratio_id} has two entries")
             other = (
                 denominator or entry.get("provider_rate") or entry.get("reads_beside")
             )
-            if _program(numerator) != _program(other):
+            # A time cost's two programs are its point (the amendment above).
+            if not time_cost and _program(numerator) != _program(other):
                 raise RatioRegistryError(
                     f"{ratio_id} pairs {numerator} with {other}: numerator and "
                     "denominator come from the same program and dataset "
@@ -208,7 +268,7 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 numerator=numerator,
                 denominator=denominator,
                 provider_rate=entry.get("provider_rate"),
-                dataset=dataset,
+                dataset=None if time_cost else variant,
                 denominator_label=entry["denominator_label"],
                 universe=entry["universe"],
                 numerator_is_subset=bool(entry.get("numerator_is_subset")),
@@ -222,6 +282,9 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 citations=tuple(entry["citations"]),
                 reads_beside=entry.get("reads_beside"),
                 geo_levels=tuple(entry.get("geo_levels", ())),
+                hours_per_week=entry.get("hours_per_week"),
+                wage_geo_levels=tuple(entry.get("wage_geo_levels", ())),
+                area=variant if time_cost else None,
             )
     rated = {p.numerator for p in pairings.values() if p.kind == "provider_rate"}
     for pairing in pairings.values():
@@ -229,7 +292,7 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
         # rate (ADR-0012), so it recomputes nothing beside the provider's.
         if (
             pairing.derived
-            and pairing.kind != "agency_rate"
+            and pairing.kind not in {"agency_rate", "time_cost"}
             and pairing.numerator in rated
         ):
             raise RatioRegistryError(

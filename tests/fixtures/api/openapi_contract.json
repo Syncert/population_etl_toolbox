@@ -2488,6 +2488,15 @@
         },
         {
           "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "wage_geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
             "maximum": 2200,
             "minimum": 1700
           },
@@ -4646,7 +4655,10 @@
         "scale": "integer",
         "unavailable_reason": "string | null",
         "unit": "string",
-        "value": "string | null"
+        "value": "string | null",
+        "wage_geo_id": "string | null",
+        "wage_geo_name": "string | null",
+        "wage_year": "string | null"
       },
       "required": [
         "derived",
@@ -4660,12 +4672,14 @@
     },
     "DerivedRatioPairing": {
       "properties": {
+        "area": "string | null",
         "citations": "array<string>",
         "dataset": "string | null",
         "denominator": "string | null",
         "denominator_label": "string",
         "derived": "boolean",
         "geo_levels": "array<string>",
+        "hours_per_week": "integer | null",
         "kind": "string",
         "label": "string",
         "limitations": "array<string>",
@@ -4681,7 +4695,8 @@
         "status": "string",
         "unit": "string",
         "universe": "string",
-        "version": "integer"
+        "version": "integer",
+        "wage_geo_levels": "array<string>"
       },
       "required": [
         "citations",

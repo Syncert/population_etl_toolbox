@@ -12,7 +12,7 @@ import { formatNumber } from "./format";
 import type { ObservationRow } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 
-export type DerivedKind = "share" | "per_capita" | "ratio" | "provider_rate" | "agency_rate";
+export type DerivedKind = "share" | "per_capita" | "ratio" | "provider_rate" | "agency_rate" | "time_cost";
 export type PairingStatus = "approved" | "draft" | "needs_review" | "deprecated";
 export type MarginMethod = "proportion" | "ratio" | "ratio_fallback" | "unavailable" | "provider" | "none";
 export type UnavailableReason =
@@ -39,6 +39,10 @@ export interface DerivedRatioPairing {
   /** `agency_rate` only: the provider rate it stands beside, and its levels. */
   reads_beside?: string | null;
   geo_levels?: string[];
+  /** `time_cost` only: the working week, the wage's levels and the price's BLS area. */
+  hours_per_week?: number | null;
+  wage_geo_levels?: string[];
+  area?: string | null;
   dataset?: string | null;
   denominator_label: string;
   universe: string;
@@ -97,6 +101,10 @@ export interface DerivedRatioObservation {
   numerator?: DerivedRatioInput | null;
   denominator?: DerivedRatioInput | null;
   provider_rate?: DerivedRatioInput | null;
+  /** `time_cost` only: the wage's area, and whether its year is the price's or the newest published. */
+  wage_geo_id?: string | null;
+  wage_geo_name?: string | null;
+  wage_year?: "same_year" | "newest_published_year" | null;
   coverage?: DerivedRatioCoverage | null;
 }
 
@@ -125,8 +133,9 @@ export function pairingFor(
 ): DerivedRatioPairing | null {
   if (choice === "count") return null;
   // A county agency rate is not a view of the count: it stands in the rate
-  // card's county row, where the FBI publishes none (ADR-0012).
-  return pairings.find((pairing) => pairing.served && pairing.kind !== "agency_rate" && pairing.numerator === metricCode && choiceOf(pairing.kind) === choice) || null;
+  // card's county row, where the FBI publishes none (ADR-0012). Minutes of
+  // work is the Cost of living section's own view of a price, not a count's.
+  return pairings.find((pairing) => pairing.served && pairing.kind !== "agency_rate" && pairing.kind !== "time_cost" && pairing.numerator === metricCode && choiceOf(pairing.kind) === choice) || null;
 }
 
 /** The served county rate computed from agency reports that stands beside this FBI rate, if any. */
@@ -152,7 +161,7 @@ export function viewChoices(pairings: readonly DerivedRatioPairing[], metricCode
 export function choiceLabel(choice: ViewChoice, pairings: readonly DerivedRatioPairing[] = []): string {
   if (choice === "count") return "Count";
   if (choice === "share") return "Share";
-  const units = [...new Set(pairings.filter((pairing) => choiceOf(pairing.kind) === "per_capita").map((pairing) => pairing.unit))];
+  const units = [...new Set(pairings.filter((pairing) => pairing.kind !== "time_cost" && choiceOf(pairing.kind) === "per_capita").map((pairing) => pairing.unit))];
   return units.length === 1 ? sentenceCase(units[0]!) : "Per resident";
 }
 
