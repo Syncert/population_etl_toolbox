@@ -60,10 +60,15 @@ with its captures kept. A row whose grade, unit, week, area or value cannot
 be read is set aside in `silver_eia.observation_quarantine` with its reason;
 a week with no price is kept as `missing` with no number.
 
+Each read goes back several weeks so a revised price is caught. A week whose
+price and status equal the newest stored reading is not stored again; the
+read counts it in `control.eia_read.repeated_row_count`, so an unchanged
+reread adds no rows.
+
 ## Checks after a run
 
 ```sql
-SELECT status, row_total, parsed_row_count FROM control.eia_read ORDER BY created_at DESC LIMIT 5;
+SELECT status, row_total, parsed_row_count, repeated_row_count FROM control.eia_read ORDER BY created_at DESC LIMIT 5;
 SELECT geo_level, COUNT(*) FROM gold_eia.observation_latest GROUP BY 1;
 SELECT source_code, status FROM silver_ref.geography_resolution
  WHERE provider_source = 'EIA' AND status <> 'resolved';
@@ -73,7 +78,7 @@ SELECT source_code, status FROM silver_ref.geography_resolution
 
 - `DQ-EIA-001` (uniqueness) and `DQ-EIA-003` (a price is positive, a missing
   week has no number) are enforced by the fact's key and named CHECKs.
-- `DQ-EIA-002` reconciles each read's rows and runs in the daily sweep.
+- `DQ-EIA-002` reconciles each read's rows (stored, set aside or repeated) and runs in the daily sweep.
 - `DQ-EIA-004` (every area resolves) is declared; unresolved areas are in
   `silver_ref.geography_resolution`.
 

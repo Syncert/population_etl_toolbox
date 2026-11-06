@@ -43,6 +43,16 @@ def _versions(factory: Callable[[], connection], sql: str, params: tuple) -> dic
         reader.close()
 
 
+def _rows_of(factory: Callable[[], connection], sql: str, params: tuple) -> list:
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(sql, params)
+            return list(cursor.fetchall())
+    finally:
+        reader.close()
+
+
 def _run(factory: Callable[[], connection], *statements: tuple[str, tuple]) -> None:
     """Run statements in one transaction, the way the chunk driver does."""
     writer = factory()
@@ -508,3 +518,68 @@ def test_an_idle_place_search_refresh_writes_nothing(
         pytest.skip("the test warehouse holds no searchable geography")
     _run(postgres_connection_factory, ("CALL gold_glossary.refresh_geo_search()", ()))
     assert _versions(postgres_connection_factory, version_sql, ()) == first
+
+
+def test_a_replayed_geography_verdict_is_rewritten_only_when_it_changes(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-069 — every loader's replay re-records each geography it reads.
+
+    The ledger row used to be updated with `resolved_at = NOW()` on every
+    replay (1.95M updates in two days on OFFICE_LAB). A replay that reaches
+    the same verdict now leaves the row as it is; a changed verdict, or
+    evidence the row lacked, still writes.
+    """
+    from data_ingestion_toolbox.silver_ref.geography_contract import (
+        persist_exact_resolution_outcomes,
+    )
+
+    source = f"CHURN{uuid4().hex[:6].upper()}"
+    hook = PostgresHookStub(postgres_connection_factory)
+    row = {
+        "geo_id": "state:churn-not-loaded",
+        "geo_level": "state",
+        "source_vintage": 2024,
+    }
+    query = (
+        "SELECT source_code, xmin::TEXT, ctid::TEXT "
+        "FROM silver_ref.geography_resolution WHERE provider_source = %s"
+    )
+    try:
+        persist_exact_resolution_outcomes(
+            hook, provider_source=source, provider_dataset="T", rows=[row]
+        )
+        first = _versions(postgres_connection_factory, query, (source,))
+        assert len(first) == 1
+
+        persist_exact_resolution_outcomes(
+            hook, provider_source=source, provider_dataset="T", rows=[row]
+        )
+        assert _versions(postgres_connection_factory, query, (source,)) == first
+
+        # A ledger row whose verdict differs from the replay's is rewritten.
+        _run(
+            postgres_connection_factory,
+            (
+                "UPDATE silver_ref.geography_resolution SET reason_code = 'stale' "
+                "WHERE provider_source = %s",
+                (source,),
+            ),
+        )
+        persist_exact_resolution_outcomes(
+            hook, provider_source=source, provider_dataset="T", rows=[row]
+        )
+        assert _rows_of(
+            postgres_connection_factory,
+            "SELECT reason_code FROM silver_ref.geography_resolution "
+            "WHERE provider_source = %s",
+            (source,),
+        ) == [("canonical_id_not_loaded",)]
+    finally:
+        _run(
+            postgres_connection_factory,
+            (
+                "DELETE FROM silver_ref.geography_resolution WHERE provider_source = %s",
+                (source,),
+            ),
+        )

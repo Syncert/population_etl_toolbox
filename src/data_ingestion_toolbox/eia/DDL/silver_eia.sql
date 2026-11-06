@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS control.eia_read (
     CONSTRAINT eia_read_published_has_time CHECK (status <> 'published' OR published_at IS NOT NULL)
 );
 
+-- Rows of a read that repeated the newest stored revision of their week and
+-- so were not stored again (refresh-churn audit, 2026-11-06).
+ALTER TABLE control.eia_read
+    ADD COLUMN IF NOT EXISTS repeated_row_count INTEGER NOT NULL DEFAULT 0
+        CHECK (repeated_row_count >= 0);
+
 -- Every captured page of a read, in order.
 CREATE TABLE IF NOT EXISTS control.eia_page (
     run_id UUID NOT NULL REFERENCES control.eia_read(run_id),
@@ -58,6 +64,10 @@ CREATE TABLE IF NOT EXISTS silver_eia.price_revision (
 );
 
 CREATE INDEX IF NOT EXISTS eia_revision_run_idx ON silver_eia.price_revision (run_id);
+-- The newest stored revision of a week, which a replay compares each incoming
+-- price with so a repeat is not stored again (refresh-churn audit, 2026-11-06).
+CREATE INDEX IF NOT EXISTS eia_revision_week_idx
+    ON silver_eia.price_revision (series_id, week_start, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS silver_eia.observation_quarantine (
     quarantine_sk BIGSERIAL PRIMARY KEY,

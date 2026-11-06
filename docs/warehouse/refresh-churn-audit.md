@@ -56,6 +56,71 @@ rows whose values differ.
 | `gold_census.age_structure_summary`, `gold_census.dim_acs_variable` / `dim_acs_table` | ACS family, left to the ACS serving-refresh thread. The live counters show `dim_acs_variable` with 54,941 updates in two days against 57,482 rows. |
 | `gold_glossary.dim_metric_catalog` | 33,032 updates in two days against 25,675 rows: a publisher whose content changed has all its rows upserted. Moderate; a candidate for the same guard after this round. |
 
+## Silver and raw layers
+
+Nick asked whether the pattern also happens below gold. The counters were read
+the same way (`/mnt/project-files/refresh_churn/live_churn_counts_silver_raw.sql`,
+read-only, ends `ROLLBACK`; output in
+`/mnt/project-files/refresh_churn_counts_silver_raw.txt`), again over the two
+days since the 11-04 restart.
+
+**Short answer.** Silver facts do not churn: every loader's fact write is
+`INSERT ... ON CONFLICT DO NOTHING` per capture, and replays of unchanged
+files were made skip-unchanged in #296/#299. The churn below gold is in three
+smaller shapes: reference and metadata upserts that touch every row on every
+run, two replays that store a repeat of the last read, and one rolled-back
+replay.
+
+| # | Layer: table (writer) | What a run rewrites | Live count (2 days) | Fix in this PR |
+|---|---|---|---|---|
+| S1 | silver_ref: `geography_resolution` (every loader's replay, ~25 call sites) | Upsert of every replayed geography with `resolved_at = NOW()`, changed or not | **1,954,945 updates**, 567,432 dead rows, 1.3 GB | Update only when the resolved geography, method, status or reason differs |
+| S2 | raw: `raw_bls.bls_series`, `bls_datasets` (BLS metadata sync) | Every series row upserted per sync | 136,307 updates against 136,311 rows | Same guard |
+| S3 | raw: `raw_census.acs_variables`, `acs_tables`, `acs_datasets` (ACS metadata sync) | Every variable row upserted per sync | 114,695 updates against 114,905 rows; 1,701 table updates | Same guard (in `census_acs/metadata.py`; the ACS serving thread was told) |
+| S4 | raw: `raw_fred.fred_series` / `fred_datasets` | Same shape | small | Same guard |
+| S5 | silver dims: `silver_irs_soi.dim_measure` / `dim_agi_band`, `silver_census_govfin.dim_measure`, `silver_bea.dim_line`, and the other loaders' `dim_*` upserts | Every dimension row upserted per replay | 1,150 + 650 + 273 + 66 updates against 23 + 13 + 34 + 66 rows | Same guard |
+| S6 | silver_ref: `dim_geo_entity`, `tract_decade_crosswalk`, `dim_time` | Gold audit #10/#11; `dim_time` likewise | (monthly; not in the two-day window) | Same guard (`LEAST`/`GREATEST` on vintage bounds) |
+| S7 | silver_fred: `observation_revision` (monthly replay re-reads two years) | A repeat of the previous read of an observation stored as a new revision | 8,713 of 62,876 rows repeat (18 MB table) | Store a revision only when its value or status differs from the newest stored one |
+| S8 | silver_eia: `price_revision` and `fact_retail_price` (weekly read re-reads eight weeks) | Same, and each stored repeat also became a fact row | 4,176 of 75,864 revisions repeat; 75,864 fact rows for 71,688 distinct weeks | Same skip; the read records `repeated_row_count` and DQ-EIA-002 counts it |
+| S9 | silver_census_govfin: `unit_amount` (`replay_cog_units`) | Not a design churn: replays that timed out and rolled back | 3,127,504 inserted, 596,001 live | None here: #304 fixed the timeout; a `VACUUM (PARALLEL 0, ANALYZE)` reclaims the dead rows |
+
+Guards compare every value column and leave out timestamps and evidence
+pointers (`updated_at`, `resolved_at`, `last_checked_at`,
+`evidence_capture_id`, `ingested_at` and similar), which change on every run
+and are never read to decide anything. An upsert that already had a `WHERE`
+or a `RETURNING`, and the release status tables (`silver_pep.release_load`,
+the CDC/FBI/NASS `dim_dataset_release`), are left alone: there the write is
+the status change.
+
+### Already covered by the storage cleanups
+
+The largest silver write counters are deletes, and every one is a storage
+cleanup or a planned reload, not churn:
+
+| Table family | Deletes in the window | Source |
+|---|---|---|
+| silver_bea fact + revision | 23,465,373 + 22,199,973 | BEA cleanup (11-06 14:13Z) |
+| silver_pep | 6,486,258 + 6,486,274 | PEP cleanup |
+| silver_bls_qcew, silver_census_cbp, silver_census_bps | 1,890,870 ×2, 1,761,372 ×2, 219,468 ×2 | Publications cleanup |
+| silver_nass, silver_census_sae, silver_fbi | 456,428; 70,318 ×2; 11,084 + 3,216 | NASS/FBI and publications cleanups |
+| silver_irs_migration | 883,191 ×2 | #305 superseded-parser reload |
+
+The big silver inserts are loads, not repeats: ACS revisions (10.3M) are the
+B25103 run and the #299 coverage, BLS revisions (4.5M) are the LAUS backfill,
+IRS SOI and migration are the #303/#305 history loads. The NASS/FBI
+same-watermark replay remains the open follow-up from the storage sweep.
+
+**Raw capture is fine.** 301,594 captures hold 262,383 distinct payloads, and
+`raw_capture.payload_blob` stores each checksum once, so a repeated answer
+costs one capture row, not a second copy of the bytes.
+`control.ingestion_request` (393 MB, 301,917 rows) is append-only request
+history; retention is a separate question.
+
+After deploy, a plain `VACUUM (PARALLEL 0, ANALYZE)` of
+`silver_ref.geography_resolution`, `silver_irs_migration.fact_flow` /
+`flow_revision` and `silver_census_govfin.unit_amount` reclaims their dead
+rows for reuse. The repeated FRED and EIA rows already stored are harmless
+history and are left in place.
+
 ## Fix shape
 
 Every fix uses the same pattern, inside one transaction so readers keep
@@ -71,14 +136,18 @@ An unchanged refresh therefore writes zero rows. Each refresh logs or returns
 how many rows it deleted, updated, inserted and left unchanged, so the saving
 is visible in the Airflow log.
 
-Planned PRs (one per family, held for CI and the coordinator's go):
+Families (held for CI and the coordinator's go):
 
 - **A. Time-series serving** (#1–#5): BLS and FRED report/latest procedures,
   their dimension upserts, and the BLS/FBI calendar rollups.
 - **B. Derived gold tables** (#6–#9): place search, lean groups, FBI county
   rates and fact counts, LODES coverage gaps.
-- **C. Reference upserts** (#10–#12): `dim_geo_entity`, the tract
-  crosswalk and the geography resolution ledger.
+- **C. Reference upserts** (#10–#12, S1–S9): `dim_geo_entity`, the tract
+  crosswalk, the geography resolution ledger, raw metadata and silver
+  dimension upserts, and the FRED/EIA repeat skips.
+
+All three families ship in one PR, since they share the pattern and the test
+file (DB-069).
 
 Existing bloat is not touched by these PRs. After they deploy, a plain
 `VACUUM (PARALLEL 0, ANALYZE)` of the tables above reclaims the space for
