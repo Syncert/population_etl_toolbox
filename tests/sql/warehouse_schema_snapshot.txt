@@ -5370,6 +5370,38 @@ v gold_elections.governor_fiscal_measure_definition
     body     display_order
     body    FROM ( VALUES ('tax_burden'::text,'State and local taxes, share of personal income'::text,'percentage points'::text,'Census Annual Survey of State and Local Government Finances; BEA personal income (CAINC1 line 1)'::text,('Taxes collected by the state and its local governments in the fiscal year ending in the '::text || 'year shown, divided by the personal income of its residents in that calendar year. '::text) || 'Where a tax is collected is not who bears it.'::text,1), ('payments_share'::text,'Payments from government and others, share of personal income'::text,'percentage points'::text,'BEA SAINC35 line 1000 over SAINC50 line 10'::text,('Personal current transfer receipts (Social Security, Medicare, Medicaid, income support, '::text || 'unemployment insurance, veterans'' benefits and others) as a share of residents'' '::text) || 'personal income. Payments respond to a state''s age and income; they do not cause them.'::text,2)) definition(measure, measure_label, change_unit, source_label, observation_basis, display_order);
 
+v gold_elections.governor_fiscal_series
+    column measure text
+    column geo_id text
+    column year integer
+    column value numeric
+    body SELECT 'tax_burden'::text AS measure,
+    body     burden.geo_id,
+    body     burden.fiscal_year AS year,
+    body     burden.taxes_pct_of_personal_income AS value
+    body    FROM gold_census_govfin.tax_burden burden
+    body   WHERE burden.dataset_id = 'asslgf'::text AND burden.government_level = 'state_and_local'::text AND burden.taxes_pct_of_personal_income IS NOT NULL
+    body UNION ALL
+    body  SELECT 'payments_share'::text AS measure,
+    body     pair.geo_id,
+    body     pair.year,
+    body     round(pair.payments / pair.income * 100::numeric, 3) AS value
+    body    FROM ( SELECT latest.geo_id,
+    body             latest.year,
+    body             max(latest.value) FILTER (WHERE latest.table_code = 'SAINC35'::text) AS payments,
+    body             max(latest.value) FILTER (WHERE latest.table_code = 'SAINC50'::text) AS income
+    body            FROM ( SELECT DISTINCT ON (revision.table_code, revision.line_code, revision.geo_id, revision.year) revision.table_code,
+    body                     revision.geo_id,
+    body                     revision.year,
+    body                     revision.value,
+    body                     revision.value_status
+    body                    FROM gold_bea.observation_revision revision
+    body                   WHERE (revision.table_code = 'SAINC35'::text AND revision.line_code = '1000'::text OR revision.table_code = 'SAINC50'::text AND revision.line_code = '10'::text) AND (revision.geo_type = ANY (ARRAY['state'::text, 'nation'::text]))
+    body                   ORDER BY revision.table_code, revision.line_code, revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC) latest
+    body           WHERE latest.value_status = 'valid'::text
+    body           GROUP BY latest.geo_id, latest.year) pair
+    body   WHERE pair.payments IS NOT NULL AND pair.income > 0::numeric;
+
 v gold_elections.governor_tenure
     column state_fips text
     column state_code text
@@ -5384,6 +5416,9 @@ v gold_elections.governor_tenure
     column end_date date
     column term_count integer
     column source_label text
+    column window_start_year integer
+    column last_full_year integer
+    column so_far boolean
     body WITH term AS (
     body          SELECT seat.office,
     body             seat.state_code,
@@ -5456,7 +5491,14 @@ v gold_elections.governor_tenure
     body             ELSE max(end_date)
     body         END AS end_date,
     body     count(*)::integer AS term_count,
-    body     min(source_label) AS source_label
+    body     min(source_label) AS source_label,
+    body     EXTRACT(year FROM min(start_date))::integer - 1 AS window_start_year,
+    body         CASE
+    body             WHEN bool_or(end_date IS NULL) OR max(end_date) > CURRENT_DATE THEN NULL::integer
+    body             WHEN to_char(max(end_date)::timestamp with time zone, 'MM-DD'::text) = '12-31'::text THEN EXTRACT(year FROM max(end_date))::integer
+    body             ELSE EXTRACT(year FROM max(end_date))::integer - 1
+    body         END AS last_full_year,
+    body     bool_or(end_date IS NULL) OR max(end_date) > CURRENT_DATE AS so_far
     body    FROM numbered
     body   GROUP BY state_fips, tenure_number, holder_id;
 
@@ -5487,54 +5529,7 @@ v gold_elections.governor_term_fiscal
     column net_change numeric
     column unavailable_reason text
     column source_label text
-    body WITH tenure AS (
-    body          SELECT tenure.state_fips,
-    body             tenure.state_code,
-    body             tenure.geo_id,
-    body             tenure.tenure_number,
-    body             tenure.tenure_key,
-    body             tenure.holder_id,
-    body             tenure.holder_name,
-    body             tenure.party_code,
-    body             tenure.party_text,
-    body             tenure.start_date,
-    body             tenure.end_date,
-    body             tenure.term_count,
-    body             tenure.source_label,
-    body             EXTRACT(year FROM tenure.start_date)::integer - 1 AS window_start_year,
-    body                 CASE
-    body                     WHEN tenure.end_date IS NULL OR tenure.end_date > CURRENT_DATE THEN NULL::integer
-    body                     WHEN EXTRACT(month FROM tenure.end_date) = 12::numeric AND EXTRACT(day FROM tenure.end_date) = 31::numeric THEN EXTRACT(year FROM tenure.end_date)::integer
-    body                     ELSE EXTRACT(year FROM tenure.end_date)::integer - 1
-    body                 END AS last_full_year,
-    body             tenure.end_date IS NULL OR tenure.end_date > CURRENT_DATE AS so_far
-    body            FROM gold_elections.governor_tenure tenure
-    body         ), bea_latest AS (
-    body          SELECT DISTINCT ON (revision.table_code, revision.line_code, revision.geo_id, revision.year) revision.table_code,
-    body             revision.line_code,
-    body             revision.geo_id,
-    body             revision.year,
-    body             revision.value,
-    body             revision.value_status
-    body            FROM gold_bea.observation_revision revision
-    body           WHERE (revision.table_code = 'SAINC35'::text AND revision.line_code = '1000'::text OR revision.table_code = 'SAINC50'::text AND revision.line_code = '10'::text) AND (revision.geo_type = ANY (ARRAY['state'::text, 'nation'::text]))
-    body           ORDER BY revision.table_code, revision.line_code, revision.geo_id, revision.year, revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
-    body         ), series AS (
-    body          SELECT 'tax_burden'::text AS measure,
-    body             burden.geo_id,
-    body             burden.fiscal_year AS year,
-    body             burden.taxes_pct_of_personal_income AS value
-    body            FROM gold_census_govfin.tax_burden burden
-    body           WHERE burden.dataset_id = 'asslgf'::text AND burden.government_level = 'state_and_local'::text AND burden.taxes_pct_of_personal_income IS NOT NULL
-    body         UNION ALL
-    body          SELECT 'payments_share'::text,
-    body             payments.geo_id,
-    body             payments.year,
-    body             round(payments.value / income.value * 100::numeric, 3) AS round
-    body            FROM bea_latest payments
-    body              JOIN bea_latest income ON income.table_code = 'SAINC50'::text AND income.line_code = '10'::text AND income.geo_id = payments.geo_id AND income.year = payments.year AND income.value_status = 'valid'::text AND income.value > 0::numeric
-    body           WHERE payments.table_code = 'SAINC35'::text AND payments.line_code = '1000'::text AND payments.value_status = 'valid'::text AND payments.value IS NOT NULL
-    body         ), windowed AS (
+    body WITH windowed AS (
     body          SELECT tenure.state_fips,
     body             tenure.state_code,
     body             tenure.geo_id,
@@ -5556,12 +5551,12 @@ v gold_elections.governor_term_fiscal
     body             definition.display_order,
     body                 CASE
     body                     WHEN tenure.so_far THEN ( SELECT max(place.year) AS max
-    body                        FROM series place
-    body                          JOIN series nation ON nation.measure = place.measure AND nation.geo_id = 'us:1'::text AND nation.year = place.year
+    body                        FROM gold_elections.governor_fiscal_series place
+    body                          JOIN gold_elections.governor_fiscal_series nation ON nation.measure = definition.measure AND nation.geo_id = 'us:1'::text AND nation.year = place.year
     body                       WHERE place.measure = definition.measure AND place.geo_id = tenure.geo_id AND place.year > tenure.window_start_year)
     body                     ELSE tenure.last_full_year
     body                 END AS window_end_year
-    body            FROM tenure
+    body            FROM gold_elections.governor_tenure tenure
     body              CROSS JOIN gold_elections.governor_fiscal_measure_definition definition
     body         ), valued AS (
     body          SELECT windowed.state_fips,
@@ -5584,15 +5579,19 @@ v gold_elections.governor_term_fiscal
     body             windowed.measure_label,
     body             windowed.display_order,
     body             windowed.window_end_year,
-    body             place_start.value AS place_start_value,
-    body             place_end.value AS place_end_value,
-    body             nation_start.value AS nation_start_value,
-    body             nation_end.value AS nation_end_value
+    body             ( SELECT series.value
+    body                    FROM gold_elections.governor_fiscal_series series
+    body                   WHERE series.measure = windowed.measure AND series.geo_id = windowed.geo_id AND series.year = windowed.window_start_year) AS place_start_value,
+    body             ( SELECT series.value
+    body                    FROM gold_elections.governor_fiscal_series series
+    body                   WHERE series.measure = windowed.measure AND series.geo_id = windowed.geo_id AND series.year = windowed.window_end_year) AS place_end_value,
+    body             ( SELECT series.value
+    body                    FROM gold_elections.governor_fiscal_series series
+    body                   WHERE series.measure = windowed.measure AND series.geo_id = 'us:1'::text AND series.year = windowed.window_start_year) AS nation_start_value,
+    body             ( SELECT series.value
+    body                    FROM gold_elections.governor_fiscal_series series
+    body                   WHERE series.measure = windowed.measure AND series.geo_id = 'us:1'::text AND series.year = windowed.window_end_year) AS nation_end_value
     body            FROM windowed
-    body              LEFT JOIN series place_start ON place_start.measure = windowed.measure AND place_start.geo_id = windowed.geo_id AND place_start.year = windowed.window_start_year
-    body              LEFT JOIN series nation_start ON nation_start.measure = windowed.measure AND nation_start.geo_id = 'us:1'::text AND nation_start.year = windowed.window_start_year
-    body              LEFT JOIN series place_end ON place_end.measure = windowed.measure AND place_end.geo_id = windowed.geo_id AND place_end.year = windowed.window_end_year
-    body              LEFT JOIN series nation_end ON nation_end.measure = windowed.measure AND nation_end.geo_id = 'us:1'::text AND nation_end.year = windowed.window_end_year
     body         )
     body  SELECT state_fips,
     body     state_code,
@@ -5643,14 +5642,19 @@ v gold_elections.governor_term_tax_mix
     column tax_group text
     column share_of_taxes_pct numeric
     body WITH tenure AS (
-    body          SELECT DISTINCT fiscal.state_fips,
-    body             fiscal.geo_id,
-    body             fiscal.tenure_key,
-    body             fiscal.so_far,
-    body             fiscal.window_start_year,
-    body             fiscal.window_end_year
-    body            FROM gold_elections.governor_term_fiscal fiscal
-    body           WHERE fiscal.measure = 'tax_burden'::text
+    body          SELECT tenure_1.state_fips,
+    body             tenure_1.geo_id,
+    body             tenure_1.tenure_key,
+    body             tenure_1.so_far,
+    body             tenure_1.window_start_year,
+    body                 CASE
+    body                     WHEN tenure_1.so_far THEN ( SELECT max(place.year) AS max
+    body                        FROM gold_elections.governor_fiscal_series place
+    body                          JOIN gold_elections.governor_fiscal_series nation ON nation.measure = 'tax_burden'::text AND nation.geo_id = 'us:1'::text AND nation.year = place.year
+    body                       WHERE place.measure = 'tax_burden'::text AND place.geo_id = tenure_1.geo_id AND place.year > tenure_1.window_start_year)
+    body                     ELSE tenure_1.last_full_year
+    body                 END AS window_end_year
+    body            FROM gold_elections.governor_tenure tenure_1
     body         ), named AS (
     body          SELECT tax_mix.geo_id,
     body             tax_mix.fiscal_year,
@@ -5688,7 +5692,8 @@ v gold_elections.governor_term_tax_mix
     body     mix.tax_group,
     body     round(mix.share_of_taxes_pct, 2) AS share_of_taxes_pct
     body    FROM tenure
-    body      JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year;
+    body      JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year
+    body   WHERE tenure.window_end_year > tenure.window_start_year;
 
 v gold_elections.lean_band_definition
     column lean_band text

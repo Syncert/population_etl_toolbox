@@ -67,94 +67,105 @@ SELECT numbered.state_fips,
        -- A serving term (no end date) leaves the whole tenure open.
        CASE WHEN BOOL_OR(numbered.end_date IS NULL) THEN NULL ELSE MAX(numbered.end_date) END AS end_date,
        COUNT(*)::INTEGER AS term_count,
-       MIN(numbered.source_label) AS source_label
+       MIN(numbered.source_label) AS source_label,
+       -- The window: from the last full year before the tenure starts to the
+       -- last full year inside it; NULL while the tenure is still serving.
+       EXTRACT(YEAR FROM MIN(numbered.start_date))::INTEGER - 1 AS window_start_year,
+       CASE WHEN BOOL_OR(numbered.end_date IS NULL) OR MAX(numbered.end_date) > CURRENT_DATE THEN NULL
+            WHEN TO_CHAR(MAX(numbered.end_date), 'MM-DD') = '12-31'
+                THEN EXTRACT(YEAR FROM MAX(numbered.end_date))::INTEGER
+            ELSE EXTRACT(YEAR FROM MAX(numbered.end_date))::INTEGER - 1
+       END AS last_full_year,
+       (BOOL_OR(numbered.end_date IS NULL) OR MAX(numbered.end_date) > CURRENT_DATE) AS so_far
 FROM numbered
 GROUP BY numbered.state_fips, numbered.tenure_number, numbered.holder_id;
 
+-- Each fiscal measure, one value per place and year, for the governor views
+-- to look up one tenure end at a time. Every filter a lookup applies (measure,
+-- place, year) reaches the indexes underneath: the tax burden through
+-- `census_govfin_fact_metric_geo_idx` and its LATERAL BEA denominators, the
+-- payments share through `bea_fact_lookup_idx`. Materialising the whole
+-- series instead, and joining it to itself with no statistics, cost 4 s per
+-- state and nine minutes for the tax mix on OFFICE_LAB on 2026-11-06.
+CREATE OR REPLACE VIEW gold_elections.governor_fiscal_series AS
+SELECT 'tax_burden'::TEXT AS measure,
+       burden.geo_id,
+       burden.fiscal_year AS year,
+       burden.taxes_pct_of_personal_income AS value
+FROM gold_census_govfin.tax_burden AS burden
+WHERE burden.dataset_id = 'asslgf'
+  AND burden.government_level = 'state_and_local'
+  AND burden.taxes_pct_of_personal_income IS NOT NULL
+UNION ALL
+SELECT 'payments_share'::TEXT,
+       pair.geo_id,
+       pair.year,
+       ROUND(pair.payments / pair.income * 100, 3)
+FROM (
+    -- The newest release of each line, then both lines side by side: a
+    -- grouping, not a join, so nothing is matched row by row.
+    SELECT latest.geo_id,
+           latest.year,
+           MAX(latest.value) FILTER (WHERE latest.table_code = 'SAINC35') AS payments,
+           MAX(latest.value) FILTER (WHERE latest.table_code = 'SAINC50') AS income
+    FROM (
+        SELECT DISTINCT ON (revision.table_code, revision.line_code, revision.geo_id, revision.year)
+               revision.table_code, revision.geo_id, revision.year, revision.value, revision.value_status
+        FROM gold_bea.observation_revision AS revision
+        WHERE ((revision.table_code = 'SAINC35' AND revision.line_code = '1000')
+               OR (revision.table_code = 'SAINC50' AND revision.line_code = '10'))
+          AND revision.geo_type IN ('state', 'nation')
+        ORDER BY revision.table_code, revision.line_code, revision.geo_id, revision.year,
+                 revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
+    ) AS latest
+    WHERE latest.value_status = 'valid'
+    GROUP BY latest.geo_id, latest.year
+) AS pair
+WHERE pair.payments IS NOT NULL
+  AND pair.income > 0;
+
 -- Each tenure's window, one row per fiscal measure, with the state's and the
--- nation's values at both ends and the change net of the nation.
+-- nation's values at both ends and the change net of the nation. Each value
+-- is one lookup in `governor_fiscal_series` by measure, place and year, so a
+-- read for one state touches that state's and the nation's rows only.
 CREATE OR REPLACE VIEW gold_elections.governor_term_fiscal AS
-WITH tenure AS (
+WITH windowed AS (
     SELECT tenure.*,
-           EXTRACT(YEAR FROM tenure.start_date)::INTEGER - 1 AS window_start_year,
-           CASE WHEN tenure.end_date IS NULL OR tenure.end_date > CURRENT_DATE THEN NULL
-                WHEN EXTRACT(MONTH FROM tenure.end_date) = 12 AND EXTRACT(DAY FROM tenure.end_date) = 31
-                    THEN EXTRACT(YEAR FROM tenure.end_date)::INTEGER
-                ELSE EXTRACT(YEAR FROM tenure.end_date)::INTEGER - 1
-           END AS last_full_year,
-           (tenure.end_date IS NULL OR tenure.end_date > CURRENT_DATE) AS so_far
-    FROM gold_elections.governor_tenure AS tenure
-),
--- The newest release of the two state BEA lines, filtered on the table and
--- line columns so `bea_fact_lookup_idx` reads only them; a filter on
--- `gold_bea.observation_latest.metric_key` ranked every BEA row first.
-bea_latest AS (
-    SELECT DISTINCT ON (revision.table_code, revision.line_code, revision.geo_id, revision.year)
-           revision.table_code, revision.line_code, revision.geo_id, revision.year,
-           revision.value, revision.value_status
-    FROM gold_bea.observation_revision AS revision
-    WHERE (revision.table_code, revision.line_code) IN (('SAINC35', '1000'), ('SAINC50', '10'))
-      AND revision.geo_type IN ('state', 'nation')
-    ORDER BY revision.table_code, revision.line_code, revision.geo_id, revision.year,
-             revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC
-),
-series AS (
-    SELECT 'tax_burden'::TEXT AS measure, burden.geo_id, burden.fiscal_year AS year,
-           burden.taxes_pct_of_personal_income AS value
-    FROM gold_census_govfin.tax_burden AS burden
-    WHERE burden.dataset_id = 'asslgf'
-      AND burden.government_level = 'state_and_local'
-      AND burden.taxes_pct_of_personal_income IS NOT NULL
-    UNION ALL
-    SELECT 'payments_share', payments.geo_id, payments.year,
-           ROUND(payments.value / income.value * 100, 3)
-    FROM bea_latest AS payments
-    JOIN bea_latest AS income
-      ON income.table_code = 'SAINC50' AND income.line_code = '10'
-     AND income.geo_id = payments.geo_id
-     AND income.year = payments.year
-     AND income.value_status = 'valid'
-     AND income.value > 0
-    WHERE payments.table_code = 'SAINC35' AND payments.line_code = '1000'
-      AND payments.value_status = 'valid'
-      AND payments.value IS NOT NULL
-),
-windowed AS (
-    SELECT tenure.*, definition.measure, definition.measure_label, definition.display_order,
+           definition.measure,
+           definition.measure_label,
+           definition.display_order,
            -- A finished tenure ends on its last full year; one serving ends
            -- on the newest year the state and the nation both publish.
            CASE WHEN tenure.so_far THEN (
                     SELECT MAX(place.year)
-                    FROM series AS place
-                    JOIN series AS nation
-                      ON nation.measure = place.measure AND nation.geo_id = 'us:1' AND nation.year = place.year
+                    FROM gold_elections.governor_fiscal_series AS place
+                    JOIN gold_elections.governor_fiscal_series AS nation
+                      ON nation.measure = definition.measure
+                     AND nation.geo_id = 'us:1'
+                     AND nation.year = place.year
                     WHERE place.measure = definition.measure
                       AND place.geo_id = tenure.geo_id
                       AND place.year > tenure.window_start_year)
                 ELSE tenure.last_full_year
            END AS window_end_year
-    FROM tenure
+    FROM gold_elections.governor_tenure AS tenure
     CROSS JOIN gold_elections.governor_fiscal_measure_definition AS definition
 ),
 valued AS (
     SELECT windowed.*,
-           place_start.value AS place_start_value,
-           place_end.value AS place_end_value,
-           nation_start.value AS nation_start_value,
-           nation_end.value AS nation_end_value
+           (SELECT series.value FROM gold_elections.governor_fiscal_series AS series
+             WHERE series.measure = windowed.measure AND series.geo_id = windowed.geo_id
+               AND series.year = windowed.window_start_year) AS place_start_value,
+           (SELECT series.value FROM gold_elections.governor_fiscal_series AS series
+             WHERE series.measure = windowed.measure AND series.geo_id = windowed.geo_id
+               AND series.year = windowed.window_end_year) AS place_end_value,
+           (SELECT series.value FROM gold_elections.governor_fiscal_series AS series
+             WHERE series.measure = windowed.measure AND series.geo_id = 'us:1'
+               AND series.year = windowed.window_start_year) AS nation_start_value,
+           (SELECT series.value FROM gold_elections.governor_fiscal_series AS series
+             WHERE series.measure = windowed.measure AND series.geo_id = 'us:1'
+               AND series.year = windowed.window_end_year) AS nation_end_value
     FROM windowed
-    LEFT JOIN series AS place_start
-      ON place_start.measure = windowed.measure AND place_start.geo_id = windowed.geo_id
-     AND place_start.year = windowed.window_start_year
-    LEFT JOIN series AS nation_start
-      ON nation_start.measure = windowed.measure AND nation_start.geo_id = 'us:1'
-     AND nation_start.year = windowed.window_start_year
-    LEFT JOIN series AS place_end
-      ON place_end.measure = windowed.measure AND place_end.geo_id = windowed.geo_id
-     AND place_end.year = windowed.window_end_year
-    LEFT JOIN series AS nation_end
-      ON nation_end.measure = windowed.measure AND nation_end.geo_id = 'us:1'
-     AND nation_end.year = windowed.window_end_year
 )
 SELECT valued.state_fips,
        valued.state_code,
@@ -209,10 +220,23 @@ FROM valued;
 -- below -0.5 points means the parts and total disagree and is not served.
 CREATE OR REPLACE VIEW gold_elections.governor_term_tax_mix AS
 WITH tenure AS (
-    SELECT DISTINCT fiscal.state_fips, fiscal.geo_id, fiscal.tenure_key, fiscal.so_far,
-           fiscal.window_start_year, fiscal.window_end_year
-    FROM gold_elections.governor_term_fiscal AS fiscal
-    WHERE fiscal.measure = 'tax_burden'
+    -- The tax burden's window end, as `governor_term_fiscal` sets it, read
+    -- from the tenure and the series directly rather than through that view.
+    SELECT tenure.state_fips, tenure.geo_id, tenure.tenure_key, tenure.so_far,
+           tenure.window_start_year,
+           CASE WHEN tenure.so_far THEN (
+                    SELECT MAX(place.year)
+                    FROM gold_elections.governor_fiscal_series AS place
+                    JOIN gold_elections.governor_fiscal_series AS nation
+                      ON nation.measure = 'tax_burden'
+                     AND nation.geo_id = 'us:1'
+                     AND nation.year = place.year
+                    WHERE place.measure = 'tax_burden'
+                      AND place.geo_id = tenure.geo_id
+                      AND place.year > tenure.window_start_year)
+                ELSE tenure.last_full_year
+           END AS window_end_year
+    FROM gold_elections.governor_tenure AS tenure
 ),
 named AS (
     SELECT tax_mix.geo_id, tax_mix.fiscal_year,
@@ -254,7 +278,8 @@ SELECT tenure.state_fips,
        mix.tax_group,
        ROUND(mix.share_of_taxes_pct, 2) AS share_of_taxes_pct
 FROM tenure
-JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year;
+JOIN mix ON mix.geo_id = tenure.geo_id AND mix.fiscal_year = tenure.window_end_year
+WHERE tenure.window_end_year > tenure.window_start_year;
 
 COMMENT ON VIEW gold_elections.governor_tenure IS
     'Each governor''s tenure: consecutive terms of one holder and party, a month or less apart, as one span.';
