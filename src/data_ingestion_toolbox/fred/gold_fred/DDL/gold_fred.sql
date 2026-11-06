@@ -229,6 +229,7 @@ DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_deleted_rows BIGINT;
     v_inserted_rows BIGINT;
+    v_candidate_rows BIGINT;
     v_affected_keys BIGINT;
 BEGIN
     RAISE NOTICE '[FRED RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
@@ -240,19 +241,15 @@ BEGIN
         PRIMARY KEY (series_id, metric_code)
     ) ON COMMIT DROP;
 
-    INSERT INTO gold_fred_affected_keys (series_id, metric_code)
-    SELECT DISTINCT d.series_id, d.metric_code
-    FROM gold_fred.rpt_fred_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+    -- The window's rows as they should be served, staged so only the rows
+    -- that differ from what is served are written (refresh-churn audit,
+    -- 2026-11-06). Deleting and re-inserting the whole year rewrote ~181k
+    -- BLS rows per touched year when a month or two had changed.
+    DROP TABLE IF EXISTS pg_temp.gold_fred_rpt_candidate;
+    CREATE TEMP TABLE gold_fred_rpt_candidate
+        (LIKE gold_fred.rpt_fred_observations INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    DELETE FROM gold_fred.rpt_fred_observations
-    WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR observation_date <= p_end_date);
-    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
-
-    INSERT INTO gold_fred.rpt_fred_observations (
+    INSERT INTO gold_fred_rpt_candidate (
         source_code,
         observation_date,
         duration_start,
@@ -324,22 +321,54 @@ BEGIN
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = 'us:1'
     WHERE (p_start_date IS NULL OR f.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR f.observation_date <= p_end_date);
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+    GET DIAGNOSTICS v_candidate_rows = ROW_COUNT;
+    ANALYZE gold_fred_rpt_candidate;
 
-    INSERT INTO gold_fred_affected_keys (series_id, metric_code)
-    SELECT DISTINCT d.series_id, d.metric_code
-    FROM gold_fred.rpt_fred_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+    -- Served rows of the window with no identical row to serve: gone, or
+    -- changed. An identical row is left physically untouched.
+    WITH removed AS (
+        DELETE FROM gold_fred.rpt_fred_observations d
+        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+          AND NOT EXISTS (
+              SELECT 1 FROM gold_fred_rpt_candidate c
+              WHERE c.observation_date = d.observation_date AND c.series_id = d.series_id
+                AND ROW(c.*) IS NOT DISTINCT FROM ROW(d.*)
+          )
+        RETURNING d.series_id, d.metric_code
+    ), removed_keys AS (
+        INSERT INTO gold_fred_affected_keys (series_id, metric_code)
+        SELECT DISTINCT series_id, metric_code FROM removed
+        ON CONFLICT DO NOTHING
+    )
+    SELECT COUNT(*) INTO v_deleted_rows FROM removed;
+
+    -- Rows to serve that are not served yet: new, or the changed rows just
+    -- removed.
+    WITH added AS (
+        INSERT INTO gold_fred.rpt_fred_observations
+        SELECT c.* FROM gold_fred_rpt_candidate c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM gold_fred.rpt_fred_observations d
+            WHERE c.observation_date = d.observation_date AND c.series_id = d.series_id
+              AND ROW(c.*) IS NOT DISTINCT FROM ROW(d.*)
+        )
+        RETURNING series_id, metric_code
+    ), added_keys AS (
+        INSERT INTO gold_fred_affected_keys (series_id, metric_code)
+        SELECT DISTINCT series_id, metric_code FROM added
+        ON CONFLICT DO NOTHING
+    )
+    SELECT COUNT(*) INTO v_inserted_rows FROM added;
 
     SELECT COUNT(*) INTO v_affected_keys FROM gold_fred_affected_keys;
     RAISE NOTICE
-        '[FRED RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        '[FRED RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% unchanged_rows=% affected_keys=% duration_ms=%',
         p_start_date,
         p_end_date,
         v_deleted_rows,
         v_inserted_rows,
+        v_candidate_rows - v_inserted_rows,
         v_affected_keys,
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
@@ -375,13 +404,13 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END IF;
 
-    DELETE FROM gold_fred.mv_fred_latest m
-    USING gold_fred_affected_keys k
-    WHERE m.series_id = k.series_id
-      AND m.metric_code = k.metric_code;
-    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
+    -- Each affected key's newest row, staged so a latest row that did not
+    -- change is left in place (refresh-churn audit, 2026-11-06).
+    DROP TABLE IF EXISTS pg_temp.gold_fred_latest_candidate;
+    CREATE TEMP TABLE gold_fred_latest_candidate
+        (LIKE gold_fred.mv_fred_latest INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    INSERT INTO gold_fred.mv_fred_latest
+    INSERT INTO gold_fred_latest_candidate
     SELECT DISTINCT ON (d.series_id, d.metric_code)
         d.*
     FROM gold_fred.rpt_fred_observations d
@@ -395,7 +424,32 @@ BEGIN
         d.realtime_start DESC NULLS LAST,
         d.realtime_end DESC NULLS LAST,
         d.updated_at DESC;
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+    ANALYZE gold_fred_latest_candidate;
+
+    WITH removed AS (
+        DELETE FROM gold_fred.mv_fred_latest m
+        USING gold_fred_affected_keys k
+        WHERE m.series_id = k.series_id AND m.metric_code = k.metric_code
+          AND NOT EXISTS (
+              SELECT 1 FROM gold_fred_latest_candidate c
+              WHERE c.series_id = m.series_id AND c.metric_code = m.metric_code
+                AND ROW(c.*) IS NOT DISTINCT FROM ROW(m.*)
+          )
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO v_deleted_rows FROM removed;
+
+    WITH added AS (
+        INSERT INTO gold_fred.mv_fred_latest
+        SELECT c.* FROM gold_fred_latest_candidate c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM gold_fred.mv_fred_latest m
+            WHERE m.series_id = c.series_id AND m.metric_code = c.metric_code
+              AND ROW(c.*) IS NOT DISTINCT FROM ROW(m.*)
+        )
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO v_inserted_rows FROM added;
 
     RAISE NOTICE
         '[FRED LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',
