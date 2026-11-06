@@ -48,7 +48,14 @@ def state_member_zip(source_pair: str) -> bytes:
             if name.endswith(".txt"):
                 folder = "Inflow" if name[-5] == "i" else "Outflow"
                 name = f"CountyMigration{folder}/{name}"
-            archive.writestr(name, data)
+            # A fixed timestamp: `writestr(name, ...)` stamps each member
+            # with the current time, so two builds in different two-second
+            # windows were different bytes, and a test asserting that a
+            # re-capture stores no new payload failed whenever the suite ran
+            # slowly enough to cross one.
+            member = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(member, data)
     return buffer.getvalue()
 
 
