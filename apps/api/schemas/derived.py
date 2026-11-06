@@ -16,7 +16,9 @@ from pydantic import BaseModel
 
 from apps.api.schemas.labels import PlainLabelled
 
-RatioKind = Literal["share", "per_capita", "ratio", "provider_rate", "agency_rate"]
+RatioKind = Literal[
+    "share", "per_capita", "ratio", "provider_rate", "agency_rate", "time_cost"
+]
 PairingStatus = Literal["approved", "draft", "needs_review", "deprecated"]
 #: How a derived margin of error was reached (ADR-0009 rule 4).
 #:
@@ -60,6 +62,11 @@ class DerivedRatioPairing(BaseModel):
     #: ``agency_rate`` only: the provider rate it reads beside, and its levels.
     reads_beside: Optional[str] = None
     geo_levels: list[str] = []
+    #: ``time_cost`` only: the week the wage is divided by, the levels a
+    #: wage may be read at, and the price's BLS area code.
+    hours_per_week: Optional[int] = None
+    wage_geo_levels: list[str] = []
+    area: Optional[str] = None
     dataset: Optional[str] = None
     denominator_label: str
     universe: str
@@ -138,6 +145,12 @@ class DerivedRatioObservation(BaseModel):
     denominator: Optional[DerivedRatioInput] = None
     provider_rate: Optional[DerivedRatioInput] = None
     coverage: Optional[DerivedRatioCoverage] = None
+    #: ``time_cost`` only: the wage's area, which is the reader's and not the
+    #: price's, and whether the wage is the price's own calendar year or the
+    #: newest year QCEW has published (ADR-0009 amendment, 2026-11-06).
+    wage_geo_id: Optional[str] = None
+    wage_geo_name: Optional[str] = None
+    wage_year: Optional[Literal["same_year", "newest_published_year"]] = None
 
 
 class DerivedRatioListResponse(BaseModel):

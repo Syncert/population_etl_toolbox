@@ -382,6 +382,15 @@ def get_derived_observations(
     ),
     newest_per_geography: bool = Query(False),
     newest_release_per_period: bool = Query(False),
+    wage_geo_id: Optional[str] = Query(
+        None,
+        max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length,
+        description=(
+            "A time_cost pairing only: the county, state or nation whose QCEW "
+            "average weekly wage the price is divided by, such as "
+            "state:55|county:025."
+        ),
+    ),
     limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
@@ -395,6 +404,9 @@ def get_derived_observations(
     and its ``unavailable_reason``. ACS rows carry a margin of error by the
     Census Bureau's formulas, with the method named. A pairing whose provider
     publishes the rate answers the provider's own rows, ``derived: false``.
+    A ``time_cost`` pairing (minutes of work) divides each price row by the
+    hourly wage of the area named in ``wage_geo_id``, matched by calendar
+    year, and names that area on every row.
     """
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(status_code=422, detail=REVERSED_YEAR_DETAIL)
@@ -417,6 +429,7 @@ def get_derived_observations(
             offset=offset,
             newest_per_geography=newest_per_geography,
             newest_release_per_period=newest_release_per_period,
+            wage_geo_id=wage_geo_id,
         )
     except UnknownRatio as exc:
         raise HTTPException(status_code=404, detail="ratio_id not found") from exc

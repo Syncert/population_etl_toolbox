@@ -5,7 +5,10 @@ Covers: API-173 (a derived value divides the numerator row by the
         Bureau's margin of error and a reason, never zero, when it cannot be
         computed), API-174 (the pairing catalog and the serving gate: only an
         approved pairing is served, a provider's own rate is served as the
-        provider's, and the route refuses what it cannot answer).
+        provider's, and the route refuses what it cannot answer), and the
+        minutes-of-work time cost (cost-of-living-section CL-3): a regional
+        price over the reader's own area's hourly wage, matched by calendar
+        year, both areas named.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from apps.api.services.derived_ratio_service import (
     derive_row,
     derived_margin,
     pair_rows,
+    time_cost_rows,
 )
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
@@ -561,3 +565,177 @@ def test_a_provider_row_without_a_number_is_unavailable() -> None:
     )
     assert row.value is None
     assert row.unavailable_reason == "suppressed_input"
+
+
+# ---------------------------------------------------------------------------
+# Minutes of work: a time cost (ADR-0009 amendment, 2026-11-06)
+# ---------------------------------------------------------------------------
+
+EGGS_MIDWEST = "BLS:APU0200708111"
+WAGE = "BLS_QCEW:annual_avg_weekly_wage:10:0"
+DANE = "state:55|county:025"
+
+
+def _price(value: str | None, period: str = "2025-09-01") -> NeutralObservation:
+    return NeutralObservation(
+        source_code="BLS",
+        metric_code=EGGS_MIDWEST,
+        geo_id="region:2",
+        geo_level="CENSUS_REGION",
+        geo_name="Midwest Region",
+        period_start=period,
+        period_end=period,
+        value=value,
+        value_status="valid" if value is not None else "missing",
+    )
+
+
+def _wage(
+    value: str | None, year: int, geo_id: str = DANE, name: str = "Dane County"
+) -> NeutralObservation:
+    return NeutralObservation(
+        source_code="BLS_QCEW",
+        metric_code=WAGE,
+        geo_id=geo_id,
+        geo_level="COUNTY",
+        geo_name=name,
+        period_start=f"{year}-01-01",
+        period_end=f"{year}-12-31",
+        release=f"{year}",
+        value=value,
+    )
+
+
+def test_minutes_of_work_divide_a_price_by_the_named_areas_hourly_wage() -> None:
+    """Covers: API-173 — $3.00 at a $1,200 week of 40 hours is 6 minutes."""
+    pairing = pairing_for("minutes_of_work_eggs:0200")
+    assert pairing.kind == "time_cost" and pairing.numerator == EGGS_MIDWEST
+    assert pairing.denominator == WAGE and pairing.hours_per_week == 40
+    [row] = time_cost_rows(pairing, [_price("3.00")], [_wage("1200", 2025)], DANE)
+    assert row.value == "6.00"
+    assert row.unit == "minutes of work" and row.derived is True
+    assert row.geo_id == "region:2"  # the price's area
+    assert (row.wage_geo_id, row.wage_geo_name) == (DANE, "Dane County")
+    assert row.wage_year == "same_year"
+    assert row.numerator.metric_code == EGGS_MIDWEST
+    assert row.denominator.metric_code == WAGE and row.denominator.value == "1200"
+
+
+def test_a_price_newer_than_every_wage_takes_the_newest_year_and_says_so() -> None:
+    """Covers: API-173 — QCEW lags the price; the substitution is stated."""
+    pairing = pairing_for("minutes_of_work_eggs:0200")
+    wages = [_wage("1100", 2023), _wage("1200", 2024)]
+    newer, same, older = time_cost_rows(
+        pairing,
+        [
+            _price("3.00", "2026-09-01"),
+            _price("2.75", "2023-06-01"),
+            _price("2", "2019-01-01"),
+        ],
+        wages,
+        DANE,
+    )
+    assert newer.value == "6.00" and newer.wage_year == "newest_published_year"
+    assert newer.denominator.period_start == "2024-01-01"
+    assert same.value == "6.00" and same.wage_year == "same_year"
+    # Older than every published wage: never another year's wage.
+    assert older.value is None and older.unavailable_reason == "different_period"
+
+
+def test_a_missing_or_withheld_input_is_never_zero_minutes() -> None:
+    """Covers: API-173 — no wage, a withheld wage, a missing price."""
+    pairing = pairing_for("minutes_of_work_eggs:0200")
+    [none] = time_cost_rows(pairing, [_price("3.00")], [], DANE)
+    assert none.value is None and none.unavailable_reason == "denominator_missing"
+    [withheld] = time_cost_rows(pairing, [_price("3.00")], [_wage(None, 2025)], DANE)
+    assert withheld.unavailable_reason == "suppressed_input"
+    [zero] = time_cost_rows(pairing, [_price("3.00")], [_wage("0", 2025)], DANE)
+    assert zero.unavailable_reason == "denominator_zero"
+    [missing] = time_cost_rows(pairing, [_price(None)], [_wage("1200", 2025)], DANE)
+    assert missing.unavailable_reason == "suppressed_input"
+    # Another area's wage is never used.
+    [other] = time_cost_rows(
+        pairing, [_price("3.00")], [_wage("1200", 2025, geo_id="state:55")], DANE
+    )
+    assert other.unavailable_reason == "denominator_missing"
+
+
+def test_the_route_reads_the_wage_for_the_named_area_without_the_price_pin(
+    client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-174 — the wage area is the reader's; QCEW is never pinned to BLS's release."""
+    seen: dict[str, Any] = {}
+
+    def price_page(db, **kwargs):
+        seen["price"] = kwargs
+        return _page(EGGS_MIDWEST, [_price("3.00")])
+
+    def wages(db, metric_code, scope, release, geo_ids):
+        seen["wage"] = (metric_code, scope, release, geo_ids)
+        return [_wage("1200", 2025)]
+
+    monkeypatch.setattr(derived_ratio_service, "list_neutral_observations", price_page)
+    monkeypatch.setattr(derived_ratio_service, "observations_for_geographies", wages)
+    response = client.get(
+        "/api/v1/observations/derived",
+        params={
+            "ratio_id": "minutes_of_work_eggs:0200",
+            "geo_id": "region:2",
+            "wage_geo_id": DANE,
+            "release": "2025-10",
+            "newest_per_geography": "true",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert seen["price"]["metric_code"] == EGGS_MIDWEST
+    assert seen["price"]["release"] == "2025-10"
+    assert seen["wage"] == (WAGE, "latest", None, [DANE])
+    payload = response.json()
+    assert payload["ratio"]["kind"] == "time_cost"
+    assert payload["ratio"]["area"] == "0200"
+    row = payload["items"][0]
+    assert row["value"] == "6.00" and row["wage_geo_id"] == DANE
+
+
+@pytest.mark.parametrize(
+    ("params", "detail"),
+    [
+        ({"ratio_id": "minutes_of_work_eggs:0200"}, "wage_geo_id"),
+        (
+            {"ratio_id": "minutes_of_work_eggs:0200", "wage_geo_id": "cbsa:31540"},
+            "county, state, national",
+        ),
+        (
+            {"ratio_id": "poverty_share:acs5", "wage_geo_id": DANE},
+            "only to a time_cost",
+        ),
+    ],
+)
+def test_the_route_refuses_a_time_cost_without_a_wage_area_it_can_read(
+    client, monkeypatch: pytest.MonkeyPatch, params: dict, detail: str
+) -> None:
+    """Covers: API-174 — QCEW publishes no metro wage; the area is required."""
+    monkeypatch.setattr(
+        derived_ratio_service,
+        "list_neutral_observations",
+        lambda db, **kwargs: _page(EGGS_MIDWEST, [_price("3.00")]),
+    )
+    response = client.get("/api/v1/observations/derived", params=params)
+    assert response.status_code == 422
+    assert detail in response.text
+
+
+def test_minutes_of_work_are_not_offered_for_a_comparison_across_places(
+    client,
+) -> None:
+    """Covers: API-174 — each place would need its own wage area."""
+    response = client.get(
+        "/api/v1/comparison/places",
+        params={
+            "ratio_id": "minutes_of_work_eggs:0200",
+            "geo_id_a": "state:55",
+            "geo_id_b": "state:17",
+        },
+    )
+    assert response.status_code == 422
+    assert "not compared across places" in response.text

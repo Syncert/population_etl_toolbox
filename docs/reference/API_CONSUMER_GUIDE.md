@@ -811,6 +811,18 @@ the provider's own rows, `derived: false`, with the provider's row in
 `provider_rate`, and no recomputed value appears beside it. Its paging,
 scope and filters are the rate metric's.
 
+A `time_cost` pairing (`minutes_of_work_<item>:<area>`, such as
+`minutes_of_work_eggs:0200` for the Midwest's eggs; ADR-0009 amendment of
+2026-11-06) answers minutes of work: each BLS average price row over the
+hourly wage, QCEW's annual average weekly wage over `hours_per_week`, of the
+county, state or nation you name in `wage_geo_id` (required; any other kind
+refuses it, and a metro is a `422` because QCEW publishes none). The wage is
+the price's calendar year, or the newest published year for a newer price,
+said in `wage_year` (`same_year` or `newest_published_year`). Each row
+carries the price as `numerator`, the wage as `denominator`, and
+`wage_geo_id` and `wage_geo_name`. Your `release` pin applies to the price,
+never to the wage.
+
 The FBI publishes its rate only for states and the nation. For a county, an
 `agency_rate` pairing (`violent_crime_county_agency_rate`,
 `property_crime_county_agency_rate`; ADR-0012) answers a rate the warehouse
