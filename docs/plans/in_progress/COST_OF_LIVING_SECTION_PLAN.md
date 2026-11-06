@@ -71,9 +71,9 @@ recognises.
     series) names that area on its row. An item with no series says "Not
     loaded into this site yet."
   - Then the existing lines (regular gasoline, food at home over the year,
-    overall price level) and a new **median rent** line: the place's own
-    ACS median gross rent, so county, metro, state and nation each show
-    their own figure.
+    overall price level) and a link to the place's own median gross rent in
+    the Housing chapter. The section does not read rent again: the place
+    page reads each value once, in its batch (WEB-149).
   - The section says once that no source publishes county or city grocery
     prices. No CPI index level is shown across areas.
   - Plain names for every new metric in `docs/semantics/metric_definitions.json`.
@@ -95,7 +95,7 @@ recognises.
   is not requested (`tests/unit/bls/test_price_series.py`).
 - [x] The section renders the everyday prices on county, metro, state and
   nation pages with each figure's area named; the nation's own figure is
-  used where a region has none; rent is the place's own; place pages stay
+  used where a region has none; rent links to Housing; place pages stay
   inside the bundle budget (`tests/frontend/unit/groceries-and-gas.test.js`,
   `tests/frontend/browser/places.spec.js`).
 - [x] No horizontal scroll at 390 px; no accessibility violations.

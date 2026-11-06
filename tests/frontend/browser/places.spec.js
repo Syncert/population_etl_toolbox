@@ -542,7 +542,7 @@ test("a county's groceries and gas card names the area behind every figure", asy
 
   // Covers: WEB-143 — cost-of-living-section: everyday prices in one table,
   // the region named once, an item only the nation publishes named on its
-  // row, an item not loaded said so, and rent the county's own.
+  // row, an item not loaded said so, and rent linked to Housing.
   await expect(card.getByRole("heading", { level: 2 })).toHaveText("Cost of living");
   await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average");
   const eggs = page.getByTestId("place-cost-eggs");
@@ -555,8 +555,8 @@ test("a county's groceries and gas card names the area behind every figure", asy
   await expect(chicken).toHaveAttribute("data-area", "us:1");
   await expect(chicken).toContainText("United States figure");
   await expect(page.getByTestId("place-cost-milk")).toContainText("Not loaded into this site yet.");
-  await expect(page.getByTestId("place-cost-rent")).toHaveAttribute("data-area", "state:55|county:025");
-  await expect(page.getByTestId("place-cost-rent")).toContainText("a month");
+  // Rent is the Housing chapter's, linked, never read a second time.
+  await expect(page.getByTestId("place-cost-rent").getByRole("link")).toHaveAttribute("href", "#housing");
   await noViolations(page);
   await noHorizontalScroll(page);
 });
@@ -614,7 +614,7 @@ test("a metro page reads its own figures beside its state and the nation and lis
   await expect(page.getByTestId("card-median-household-income-members")).toHaveCount(0);
 
   // Prices: BEA's price level is the metro's own; gas and food are larger areas'.
-  await expect(page.getByTestId("place-cost-no-local")).toContainText("The price level and rent are this metro's own");
+  await expect(page.getByTestId("place-cost-no-local")).toContainText("The price level is BEA's figure for this metro");
   await expect(page.getByTestId("place-cost-parity")).toHaveAttribute("data-area", "cbsa:31540");
 
   const members = page.getByTestId("place-metro-members");

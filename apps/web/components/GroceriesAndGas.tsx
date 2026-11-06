@@ -27,11 +27,10 @@ import {
   formatGas,
   formatParity,
   formatPrice,
-  formatRent,
   readingsFor,
   withheldReason,
 } from "../lib/groceriesAndGas";
-import type { Area, CostMeasure, PriceItem, Reading } from "../lib/groceriesAndGas";
+import type { CostMeasure, PriceItem, Reading } from "../lib/groceriesAndGas";
 
 const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
 
@@ -47,14 +46,13 @@ interface Answer {
   notes: string[];
 }
 
-const TITLES: Record<"gas" | "food" | "parity" | "rent", string> = {
+const TITLES: Record<"gas" | "food" | "parity", string> = {
   gas: "Regular gasoline",
-  rent: "Median rent",
   food: "Groceries overall (food at home)",
   parity: "Overall price level",
 };
 
-const LINES: ("gas" | "rent" | "food" | "parity")[] = ["gas", "rent", "food", "parity"];
+const LINES: ("gas" | "food" | "parity")[] = ["gas", "food", "parity"];
 const ITEMS = PRICE_ITEMS.map((spec) => spec.item);
 const ORDER: CostMeasure[] = [...ITEMS, ...LINES];
 
@@ -126,7 +124,7 @@ async function answer(
         notes.push(`${where}: ${withheldReason(row)}`);
         continue;
       }
-      const text = reading.measure === "gas" ? formatGas(value) : reading.measure === "rent" ? formatRent(value) : formatParity(value);
+      const text = reading.measure === "gas" ? formatGas(value) : formatParity(value);
       return { reading, text, period: observationPeriodLabel(row), notes };
     } catch (error) {
       if (signal.aborted) throw error;
@@ -161,8 +159,7 @@ export default function GroceriesAndGas({
     if (!sources.length) return;
     const controller = new AbortController();
     const areas = containingAreas(level, place, related);
-    const own: Area = { geoId: place.geo_id, level, name: String(place.geo_name || place.geo_id) };
-    const readings = readingsFor(areas, own);
+    const readings = readingsFor(areas);
     setAnswers({});
     for (const measure of ORDER) {
       answer(readings[measure], sources, controller.signal)
@@ -257,15 +254,15 @@ export default function GroceriesAndGas({
                 {result?.reading && measure === "food" ? (
                   <span className="subtle block"> Each area&apos;s index has its own base, so only its change over a year is shown.</span>
                 ) : null}
-                {result?.reading && measure === "rent" ? (
-                  <span className="subtle block"> Rent plus the utilities the renter pays, from the five-year survey.</span>
-                ) : null}
                 {result ? <Notes notes={result.notes} /> : null}
               </dd>
             </div>
           );
         })}
       </dl>
+      <p className="subtle" data-testid="place-cost-rent">
+        Rent is this place&apos;s own figure: see <a href="#housing">median gross rent in Housing</a>.
+      </p>
     </section>
   );
 }

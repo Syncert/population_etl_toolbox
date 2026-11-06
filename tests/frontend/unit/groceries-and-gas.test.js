@@ -7,7 +7,6 @@ import {
   formatChange,
   formatGas,
   formatPrice,
-  formatRent,
   PRICE_ITEMS,
   readingsFor,
 } from "../../../apps/web/lib/groceriesAndGas";
@@ -122,14 +121,12 @@ it("formats gasoline in dollars a gallon", () => {
 });
 
 // Covers: WEB-143 — cost-of-living-section: everyday prices come from the
-// region BLS publishes them for, then the nation, each named; rent is the
-// place's own.
+// region BLS publishes them for, then the nation, each named.
 describe("everyday prices", () => {
   const areas = containingAreas("COUNTY", { geo_id: "state:55|county:025" }, dane);
-  const own = { geoId: "state:55|county:025", level: "COUNTY", name: "Dane County" };
 
   it("asks for the region's average price, then the nation's", () => {
-    const readings = readingsFor(areas, own);
+    const readings = readingsFor(areas);
     expect(readings.eggs.map((item) => [item.metricCode, item.area.geoId])).toEqual([
       ["BLS:APU0200708111", "region:2"],
       ["BLS:APU0000708111", "us:1"],
@@ -141,18 +138,10 @@ describe("everyday prices", () => {
     expect(PRICE_ITEMS.map((spec) => spec.item)).toEqual(["eggs", "milk", "bread", "beef", "chicken", "electricity"]);
   });
 
-  it("reads rent for the place itself and nowhere else", () => {
-    expect(readingsFor(areas, own).rent).toEqual([
-      { measure: "rent", metricCode: "CENSUS_ACS:acs5:B25064_001", area: own, source: "CENSUS_ACS" },
-    ]);
-    expect(readingsFor(areas).rent).toEqual([]);
-  });
-
   it("formats prices in the units people buy them in", () => {
     const eggs = PRICE_ITEMS.find((spec) => spec.item === "eggs");
     const power = PRICE_ITEMS.find((spec) => spec.item === "electricity");
     expect(formatPrice(3.117, eggs)).toBe("$3.12 a dozen");
     expect(formatPrice(0.179, power)).toBe("17.9\u00a2 a kilowatt-hour");
-    expect(formatRent(1234.4)).toBe("$1,234 a month");
   });
 });

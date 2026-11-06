@@ -8,7 +8,6 @@
 // which is how BLS and BEA number them; nothing is matched by name.
 
 import type { ObservationRow } from "./explorerViewModel";
-import { formatNumber } from "./format";
 import type { RelatedResponse } from "./placeRelationships";
 import type { PlaceLevel } from "./placeChapters";
 
@@ -26,7 +25,7 @@ export interface ContainingAreas {
   region: Area | null;
 }
 
-export type CostMeasure = "gas" | "food" | "parity" | "rent" | PriceItem;
+export type CostMeasure = "gas" | "food" | "parity" | PriceItem;
 
 /**
  * Everyday items with a dollar price (BLS Average Price, `ap`), in the order
@@ -67,15 +66,14 @@ export const SOURCE_NAMES: Record<string, string> = {
   EIA: "U.S. Energy Information Administration",
   BLS: "Bureau of Labor Statistics",
   BEA: "Bureau of Economic Analysis",
-  CENSUS_ACS: "Census Bureau, American Community Survey (5-year)",
 };
 
 export const NO_LOCAL_PRICES =
-  "No source publishes grocery or gas prices for a county or a city. Each price here is for the larger area named beside it; rent is this place's own.";
+  "No source publishes grocery or gas prices for a county or a city. Each price here is for the larger area named beside it.";
 
 /** On a metro's page: the price level is its own, the rest a larger area's. */
 export const NO_METRO_PRICES =
-  "No source publishes grocery or gas prices for a metro area as the Census Bureau draws it. The price level and rent are this metro's own; each other figure is for the larger area named beside it.";
+  "No source publishes grocery or gas prices for a metro area as the Census Bureau draws it. The price level is BEA's figure for this metro; each other figure is for the larger area named beside it.";
 
 const LEVEL_WORDS: Partial<Record<Area["level"], string>> = {
   NATIONAL: "the nation",
@@ -135,7 +133,7 @@ const code = (area: Area | null) => (area ? area.geoId.split(":")[1] : "");
  * - Price parity: BEA's all-items parity for the metro area, else the state.
  *   The nation is 100 by definition and is stated, not read.
  */
-export function readingsFor(areas: ContainingAreas, place?: Area | null): Record<CostMeasure, Reading[]> {
+export function readingsFor(areas: ContainingAreas): Record<CostMeasure, Reading[]> {
   const region = code(areas.region);
   const division = code(areas.division);
   const gas: Reading[] = [];
@@ -156,10 +154,7 @@ export function readingsFor(areas: ContainingAreas, place?: Area | null): Record
     if (areas.nation) readings.push({ measure: spec.item, metricCode: `BLS:APU0000${spec.code}`, area: areas.nation, source: "BLS" });
     prices[spec.item] = readings;
   }
-  // Rent is the place's own: the ACS median gross rent, published for every
-  // county, metro, state and the nation.
-  const rent: Reading[] = place ? [{ measure: "rent", metricCode: "CENSUS_ACS:acs5:B25064_001", area: place, source: "CENSUS_ACS" }] : [];
-  return { gas, food, parity, rent, ...prices };
+  return { gas, food, parity, ...prices };
 }
 
 /** "$3.12 a dozen", "17.9\u00a2 a kilowatt-hour". */
@@ -168,9 +163,6 @@ export function formatPrice(value: number, spec: PriceItemSpec): string {
   return `$${value.toFixed(2)} ${spec.per}`;
 }
 
-export function formatRent(value: number): string {
-  return `$${formatNumber(Math.round(value))} a month`;
-}
 
 function numberOf(row: ObservationRow | null | undefined): number | null {
   if (!row || row.value === null || row.value === undefined || row.value === "") return null;
