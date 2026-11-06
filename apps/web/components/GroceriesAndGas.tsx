@@ -36,6 +36,7 @@ import {
   minutesRatioId,
   minutesText,
   readingsFor,
+  stoppedSince,
   wageText,
   withheldReason,
 } from "../lib/groceriesAndGas";
@@ -110,6 +111,13 @@ async function answer(
         const value = newest ? Number(newest.value) : NaN;
         if (!newest || !Number.isFinite(value)) {
           notes.push(`${where}: ${rows.length ? withheldReason(rows.at(-1)) : "no value published for this area."}`);
+          continue;
+        }
+        // A series BLS still lists but stopped pricing (Midwest milk: a value
+        // last in 2020, then empty months) is not shown as today's price.
+        const stale = stoppedSince(rows, newest);
+        if (stale) {
+          notes.push(`${where}: no value published since ${stale}.`);
           continue;
         }
         return {

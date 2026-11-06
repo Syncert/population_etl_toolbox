@@ -202,6 +202,19 @@ export function changeOverYear(rows: readonly ObservationRow[]): YearChange {
   return { percent: Math.round((now / then - 1) * 1000) / 10, period: `${earlierMonth} to ${month}`, reason: "" };
 }
 
+/**
+ * The month a price series last carried a value, when it is more than a
+ * year before the newest month the series publishes (rows without a value
+ * after it): BLS stopped pricing the item there. Otherwise "".
+ */
+export function stoppedSince(rows: readonly ObservationRow[], newestValued: ObservationRow): string {
+  const valued = monthOf(newestValued);
+  const latest = rows.map(monthOf).filter((month) => /^\d{4}-\d{2}$/.test(month)).sort().at(-1) || valued;
+  if (!/^\d{4}-\d{2}$/.test(valued)) return "";
+  const gap = (Number(latest.slice(0, 4)) - Number(valued.slice(0, 4))) * 12 + Number(latest.slice(5, 7)) - Number(valued.slice(5, 7));
+  return gap > 12 ? valued : "";
+}
+
 export function withheldReason(row: ObservationRow | null | undefined): string {
   const status = String(row?.value_status || "").trim();
   return status && status !== "valid" ? `Published without a value (${status}).` : "Published without a value.";

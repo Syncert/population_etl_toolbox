@@ -12,6 +12,7 @@ import {
   minutesText,
   PRICE_ITEMS,
   readingsFor,
+  stoppedSince,
   wageText,
 } from "../../../apps/web/lib/groceriesAndGas";
 
@@ -179,5 +180,18 @@ describe("minutes of work", () => {
     expect(minutesText({ value: null, unavailable_reason: "denominator_missing" })).toBe("No wage loaded for this place yet.");
     expect(minutesText({ value: null, unavailable_reason: "different_period" })).toBe("No wage published for this price's year.");
     expect(minutesText({ value: null, unavailable_reason: "suppressed_input" })).toBe("Not computed: an input is withheld.");
+  });
+});
+
+// Covers: WEB-143 — a series BLS lists but stopped pricing is not today's price.
+describe("a stopped price series", () => {
+  const month = (period_start, value) => ({ period_start, value });
+  it("is stopped when its last value is more than a year before its newest month", () => {
+    const rows = [month("2020-03-01", "2.6"), month("2020-04-01", "2.574"), month("2025-10-01", null)];
+    expect(stoppedSince(rows, rows[1])).toBe("2020-04");
+  });
+  it("is not stopped when only recent months are empty", () => {
+    const rows = [month("2026-05-01", "1.66"), month("2026-06-01", null), month("2026-09-01", null)];
+    expect(stoppedSince(rows, rows[0])).toBe("");
   });
 });
