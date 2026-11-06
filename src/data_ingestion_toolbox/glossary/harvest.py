@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Callable, Collection
+import os
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -63,6 +64,105 @@ REQUIRED_COLUMNS = (
 )
 
 
+#: Columns a publisher *may* carry. Read through ``to_jsonb`` of the row, so a
+#: publisher view without one answers NULL instead of failing the read, and no
+#: publisher has to change for another to opt in.
+#:
+#: ``last_value_date`` is the date of the newest observation the publisher
+#: serves *with a value*. A provider can keep listing a series it stopped
+#: publishing: BLS still answers the Midwest whole-milk Average Price
+#: (APU0200709112), whose newest price is April 2020, so the key never left
+#: the publisher and the catalog called it ``current`` for six years.
+OPTIONAL_COLUMNS = ("last_value_date",)
+
+#: The published state of a key the publisher still emits whose newest real
+#: value is older than its time grain allows (migration 042). Its history is
+#: still served; it is not ``retired``, and not ``stale`` either, which stays
+#: the warning that a publisher stopped emitting a key.
+FRESHNESS_ENDED = "ended"
+
+#: How old, in days, a key's newest real value may be before the key is
+#: ``ended``, by the time grain it publishes. A key publishing several grains
+#: takes the most lenient. Grains not named here are never ended by age:
+#: an annual or decennial series (ACS, the census, NOAA normals, elections)
+#: can legitimately go years between values, and only a person can say when
+#: one has stopped. The monthly allowance covers BLS's semiannual and
+#: every-other-month area series and the lag of an annual revision.
+#:
+#: Overridden by ``GLOSSARY_ENDED_AFTER_DAYS``, a JSON object of grain to days
+#: (``{"MONTHLY": 400}``), so an operator can change it without a release; a
+#: grain set to ``null`` there is never ended by age.
+DEFAULT_ENDED_AFTER_DAYS: dict[str, int] = {
+    "DAILY": 90,
+    "WEEKLY": 120,
+    "MONTHLY": 548,
+    "QUARTERLY": 730,
+}
+ENDED_AFTER_DAYS_ENV = "GLOSSARY_ENDED_AFTER_DAYS"
+
+
+def ended_after_days(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, int]:
+    """The configured thresholds: the defaults, overlaid by the environment."""
+    thresholds = dict(DEFAULT_ENDED_AFTER_DAYS)
+    raw = (environ if environ is not None else os.environ).get(ENDED_AFTER_DAYS_ENV)
+    if not raw:
+        return thresholds
+    overrides = json.loads(raw)
+    if not isinstance(overrides, dict):
+        raise ValueError(
+            f"{ENDED_AFTER_DAYS_ENV} must be a JSON object of grain to days"
+        )
+    for grain, days in overrides.items():
+        key = str(grain).strip().upper()
+        if days is None:
+            thresholds.pop(key, None)
+            continue
+        if isinstance(days, bool) or not isinstance(days, int) or days < 1:
+            raise ValueError(
+                f"{ENDED_AFTER_DAYS_ENV}[{grain!r}] must be a positive integer"
+            )
+        thresholds[key] = days
+    return thresholds
+
+
+def _as_date(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def freshness_of(
+    document: Mapping[str, Any],
+    *,
+    today: date,
+    thresholds: Mapping[str, int],
+) -> str:
+    """``current`` or ``ended`` for a key its publisher emits.
+
+    ``ended`` only when the publisher says when its newest real value was and
+    that date is older than every threshold its time grains have. A publisher
+    that reports no date, or a grain with no threshold, stays ``current``:
+    inventing an end from an unread signal would hide a live measure.
+    """
+    newest = _as_date(document.get("last_value_date"))
+    if newest is None:
+        return "current"
+    allowed = [
+        thresholds[str(grain).strip().upper()]
+        for grain in (document.get("valid_time_grains") or [])
+        if str(grain).strip().upper() in thresholds
+    ]
+    if not allowed:
+        return "current"
+    return FRESHNESS_ENDED if (today - newest).days > max(allowed) else "current"
+
+
 @dataclass(frozen=True)
 class Publisher:
     schema: str
@@ -96,8 +196,16 @@ def discover_publishers(database_connection: Any) -> list[Publisher]:
 
 
 def _publisher_rows(database_connection: Any, publisher: Publisher) -> list[tuple]:
-    statement = sql.SQL("SELECT {} FROM {}.{}").format(
-        sql.SQL(", ").join(map(sql.Identifier, REQUIRED_COLUMNS)),
+    """The publisher's rows: ``REQUIRED_COLUMNS``, then ``OPTIONAL_COLUMNS``."""
+    statement = sql.SQL("SELECT {}, {} FROM {}.{} AS publisher").format(
+        sql.SQL(", ").join(
+            sql.SQL("publisher.{}").format(sql.Identifier(column))
+            for column in REQUIRED_COLUMNS
+        ),
+        sql.SQL(", ").join(
+            sql.SQL("to_jsonb(publisher) ->> {}").format(sql.Literal(column))
+            for column in OPTIONAL_COLUMNS
+        ),
         sql.Identifier(publisher.schema),
         sql.Identifier(publisher.view),
     )
@@ -165,12 +273,43 @@ def _advance_retirement(
     return cursor.rowcount
 
 
+def _apply_age_states(cursor: Any, source_code: str, states: dict[str, str]) -> int:
+    """Move emitted keys between ``current`` and ``ended``; return how many.
+
+    Only a row whose state differs is written (no refresh rewrites an
+    unchanged row), and only a row the publisher emits is touched: a
+    ``stale`` or ``retired`` key is the retirement count's to move.
+    """
+    if not states:
+        return 0
+    execute_values(
+        cursor,
+        """
+        UPDATE gold_glossary.dim_metric_catalog AS catalog
+           SET freshness_state = computed.freshness_state,
+               harvested_at = NOW()
+          FROM (VALUES %s)
+               AS computed (source_code, source_object_key, freshness_state)
+         WHERE catalog.source_code = computed.source_code
+           AND catalog.source_object_key = computed.source_object_key
+           AND catalog.freshness_state IN ('current', 'ended')
+           AND catalog.freshness_state <> computed.freshness_state
+        """,
+        [(source_code, key, state) for key, state in sorted(states.items())],
+        # One page, so `rowcount` counts every row the statement moved.
+        page_size=max(len(states), 1),
+    )
+    return cursor.rowcount
+
+
 def harvest_publisher(
     connection_factory: Callable[[], Any],
     publisher: Publisher,
     *,
     retirement_grace_harvests: int = 2,
     force: bool = False,
+    today: date | None = None,
+    thresholds: Mapping[str, int] | None = None,
 ) -> int:
     """Harvest one publisher in an isolated, source-locked transaction.
 
@@ -187,6 +326,12 @@ def harvest_publisher(
 
     ``force`` bypasses both guards for a deliberate re-harvest, changing
     nothing else about what is written.
+
+    A key the publisher emits is ``current`` or, when the publisher reports
+    the date of its newest real value and that date is older than its time
+    grain allows, ``ended`` (``freshness_of``). The age moves with the
+    calendar and not with the publisher, so a skip still moves a key between
+    the two -- rewriting only the rows whose state changes.
     """
     if retirement_grace_harvests < 1:
         raise ValueError("retirement grace must be positive")
@@ -196,7 +341,17 @@ def harvest_publisher(
         if not rows:
             database_connection.rollback()
             return 0
-        documents = [dict(zip(REQUIRED_COLUMNS, row)) for row in rows]
+        documents = [
+            dict(zip(REQUIRED_COLUMNS + OPTIONAL_COLUMNS, row)) for row in rows
+        ]
+        as_of = today or datetime.now(timezone.utc).date()
+        limits = thresholds if thresholds is not None else ended_after_days()
+        states = {
+            str(item["source_object_key"]): freshness_of(
+                item, today=as_of, thresholds=limits
+            )
+            for item in documents
+        }
         source_codes = {str(item["source_code"]).strip().upper() for item in documents}
         versions = {str(item["publisher_contract_version"]) for item in documents}
         if len(source_codes) != 1 or len(versions) != 1:
@@ -246,13 +401,16 @@ def harvest_publisher(
                 retired = _advance_retirement(
                     cursor, source_code, keys, retirement_grace_harvests
                 )
+                moved = _apply_age_states(cursor, source_code, states)
                 database_connection.commit()
-                if retired:
+                if retired or moved:
                     logger.info(
                         "harvest_publisher: %s unchanged; advanced retirement "
-                        "for %d absent key(s)",
+                        "for %d absent key(s); %d key(s) changed between "
+                        "current and ended",
                         source_code,
                         retired,
+                        moved,
                     )
                 return 0
             if force:
@@ -314,6 +472,7 @@ def harvest_publisher(
                     item["source_watermark"],
                     str(item["source_run_id"]) if item["source_run_id"] else None,
                     item["publication_time"],
+                    states[str(item["source_object_key"])],
                 )
                 for item in documents
             ]
@@ -326,7 +485,7 @@ def harvest_publisher(
                     valid_geo_grains, valid_time_grains,
                     aggregation_characteristic, physical_lineage,
                     publisher_contract_version, source_watermark,
-                    source_run_id, publication_time
+                    source_run_id, publication_time, freshness_state
                 ) VALUES %s
                 ON CONFLICT (metric_code) DO UPDATE SET
                     source_object_type = EXCLUDED.source_object_type,
@@ -343,7 +502,7 @@ def harvest_publisher(
                     source_run_id = EXCLUDED.source_run_id,
                     publication_time = EXCLUDED.publication_time,
                     harvested_at = NOW(),
-                    freshness_state = 'current',
+                    freshness_state = EXCLUDED.freshness_state,
                     missing_harvest_count = 0
                 """,
                 records,

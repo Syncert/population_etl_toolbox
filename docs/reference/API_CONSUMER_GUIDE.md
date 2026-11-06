@@ -55,6 +55,7 @@ This resource reports on content, per source:
       "registered": true,
       "metrics_total": 4447,
       "metrics_current": 4447,
+      "metrics_ended": 0,
       "metrics_stale": 0,
       "metrics_retired": 0,
       "counts_are_complete": true,
@@ -85,6 +86,15 @@ This resource reports on content, per source:
   is the publisher's own harvest time, not this request's clock.
 - `silent_sources` lists the registered sources publishing nothing. It is the
   field to page on: every chart over those sources draws nothing.
+- `metrics_ended` counts measures the provider still lists but stopped
+  publishing values for: the newest value served is older than the measure's
+  time grain allows (18 months for a monthly series, 4 months weekly, 3
+  months daily, 2 years quarterly; annual and longer series are never ended
+  by age). BLS's Midwest whole-milk price, last priced April 2020, is one.
+  Their history is still served and every observation route still answers
+  them, but they are not `current`, so `active_only=true` leaves them out and
+  `/catalog/freshness` reports them as `ended_count`. A discontinued series is
+  expected, so they are not drift and never appear in `stale_sources`.
 - `stale_sources` lists the registered sources carrying at least one measure
   the warehouse has marked `stale` — the publisher stopped emitting it and it
   has not been retired. Those measures still serve their last values, so

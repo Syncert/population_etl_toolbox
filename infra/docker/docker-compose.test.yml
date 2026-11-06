@@ -131,6 +131,8 @@ services:
       - ../../sql/migrations/018_geo_grain_vocabulary.sql:/docker-entrypoint-initdb.d/215_migration_018.sql:ro
       - ../../sql/migrations/024_served_place_name.sql:/docker-entrypoint-initdb.d/220_migration_024.sql:ro
       - ../../sql/migrations/026_released_date_is_not_the_refresh_clock.sql:/docker-entrypoint-initdb.d/225_migration_026.sql:ro
+      - ../../sql/migrations/041_bls_latest_is_the_newest_value.sql:/docker-entrypoint-initdb.d/225a_migration_041.sql:ro
+      - ../../sql/migrations/042_metric_catalog_ended_state.sql:/docker-entrypoint-initdb.d/225b_migration_042.sql:ro
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/230_migration_003.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/235_contract_views.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/900_martin_seed.sql:ro

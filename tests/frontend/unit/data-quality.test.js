@@ -57,6 +57,18 @@ describe("published counts are presented, never scored", () => {
     expect(row.summary).toContain("no published freshness state");
   });
 
+  test("an ended metric is its own count, not current and not unclassified", () => {
+    // Covers: WEB-169 — a series the provider still lists but stopped
+    // publishing (BLS's Midwest whole-milk price, last priced April 2020).
+    const row = freshnessRow({ ...healthy, current_count: 8, ended_count: 2 });
+    expect(row.endedCount).toBe(2);
+    expect(row.unclassifiedCount).toBe(0);
+    expect(row.state).toBe("ok");
+    expect(coverageSegments(row).map((segment) => segment.label)).toEqual(["current", "ended"]);
+    // A rollup from an API that predates the state still reads.
+    expect(freshnessRow(healthy).endedCount).toBe(0);
+  });
+
   test("a source with no published publication time never reads as healthy", () => {
     const row = freshnessRow({ ...healthy, latest_publication_time: null });
     expect(row.state).toBe("idle");

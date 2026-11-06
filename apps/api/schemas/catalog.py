@@ -494,6 +494,9 @@ class SourceFreshness(BaseModel):
     source_code: str
     metric_count: int
     current_count: int
+    #: Metrics whose provider still lists them but whose newest real value is
+    #: older than their time grain allows. Served; not current.
+    ended_count: int = 0
     stale_count: int
     retired_count: int
     latest_publication_time: Optional[datetime] = None

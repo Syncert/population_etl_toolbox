@@ -202,6 +202,8 @@ export interface SourceFreshness {
   source_code: string;
   metric_count: number;
   current_count: number;
+  /** Still listed by the provider, but its newest real value is old. */
+  ended_count?: number;
   stale_count: number;
   retired_count: number;
   latest_publication_time?: string | null;

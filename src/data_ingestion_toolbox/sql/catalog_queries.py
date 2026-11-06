@@ -429,7 +429,7 @@ GEOGRAPHY_EXISTS_QUERY: TextClause = text(
 
 #: Per-source publication and freshness state, rolled up from the glossary's
 #: harvested metric catalog. ``freshness_state`` is the warehouse's published
-#: data-quality signal (``current`` / ``stale`` / ``retired``); the API reports
+#: data-quality signal (``current`` / ``ended`` / ``stale`` / ``retired``); the API reports
 #: it rather than recomputing quality from internals it must not read.
 #: ``geo_grains`` is the union of the grains the source's non-retired metrics
 #: publish, so a reader-facing page can say what a source covers without
@@ -440,6 +440,7 @@ SOURCE_FRESHNESS_QUERY: TextClause = text(
         source_code,
         COUNT(*)::int AS metric_count,
         COUNT(*) FILTER (WHERE freshness_state = 'current')::int AS current_count,
+        COUNT(*) FILTER (WHERE freshness_state = 'ended')::int AS ended_count,
         COUNT(*) FILTER (WHERE freshness_state = 'stale')::int AS stale_count,
         COUNT(*) FILTER (WHERE freshness_state = 'retired')::int AS retired_count,
         MAX(publication_time) AS latest_publication_time,

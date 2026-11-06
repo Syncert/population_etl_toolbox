@@ -25,7 +25,10 @@ SELECT 'EIA'::TEXT AS source_code,
        'U.S. Energy Information Administration, Gasoline and Diesel Fuel Update (EIA-878)'::TEXT
            AS source_name,
        'government-energy-statistics'::TEXT AS source_type,
-       'https://www.eia.gov/petroleum/gasdiesel/'::TEXT AS reference_url
+       'https://www.eia.gov/petroleum/gasdiesel/'::TEXT AS reference_url,
+       -- The newest week any area is served with a value, for the harvest's
+       -- `ended` rule (migration 042). Optional; appended at the end.
+       served.last_value_date
 FROM (
     SELECT latest.metric_key,
            MIN(latest.grade) AS grade,
@@ -38,7 +41,9 @@ FROM (
                ARRAY[]::TEXT[]
            )::TEXT[] AS valid_geo_grains,
            (ARRAY_AGG(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
-           MAX(read.published_at) AS publication_time
+           MAX(read.published_at) AS publication_time,
+           MAX(latest.week_start) FILTER (WHERE latest.value IS NOT NULL)::DATE
+               AS last_value_date
     FROM gold_eia.observation_latest AS latest
     JOIN control.eia_read AS read ON read.run_id = latest.run_id
     GROUP BY latest.metric_key

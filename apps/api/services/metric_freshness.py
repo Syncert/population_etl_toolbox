@@ -28,6 +28,13 @@ from typing import Any
 #: ``current`` measure serves no observation, whatever else its catalog holds.
 FRESHNESS_CURRENT = "current"
 
+#: Still emitted by its publisher, but its newest real value is older than its
+#: time grain allows: a series the provider keeps listing and stopped
+#: publishing (BLS's Midwest whole-milk Average Price, last priced April 2020).
+#: Still served -- its history is real -- and counted apart from ``current``,
+#: because a reader shown its "latest" value is being shown an old one.
+FRESHNESS_ENDED = "ended"
+
 #: Harvested, but not seen in the most recent harvests. Still served -- the
 #: warehouse has not decided the series ended -- and worth counting apart,
 #: because a source drifting from ``current`` to ``stale`` is a source on its
@@ -46,6 +53,7 @@ FRESHNESS_RETIRED = "retired"
 #: dropped it would report a smaller catalog than the warehouse holds.
 PUBLISHED_FRESHNESS_STATES: tuple[str, ...] = (
     FRESHNESS_CURRENT,
+    FRESHNESS_ENDED,
     FRESHNESS_STALE,
     FRESHNESS_RETIRED,
 )
