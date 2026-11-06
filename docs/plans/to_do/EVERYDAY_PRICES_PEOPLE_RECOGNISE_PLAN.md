@@ -61,11 +61,22 @@ The card that exists today is `apps/web/components/GroceriesAndGas.tsx`
 (three lines: regular gasoline, food-at-home change, overall price level),
 built by `GROCERIES_AND_GAS_CARDS_PLAN.md`.
 
-**Unverified live:** the code configures the eight grocery average prices,
-but no check has shown how many `ap` rows are actually loaded on OFFICE_LAB.
-`/mnt/project-files/cost_of_living/live_price_coverage.sql` is a read-only
-query that answers it (items, areas, first and last month). It runs before
-slice 1 starts.
+**Live coverage (OFFICE_LAB, 2026-11-06,
+`/mnt/project-files/cost_of_living/live_price_coverage.sql`, read-only):**
+
+| Program | Items | Areas | Months |
+| --- | --- | --- | --- |
+| BLS `ap` groceries | bread `702111`, bananas `711211`, coffee `717311`, milk `709112`, ground beef `FC1101`, chicken `FF1101` | 5 (nation + 4 regions) | from 1990 (milk 1995-07, beef 1998, chicken 2006) to 2026-09 |
+| BLS `ap` eggs `708111` | 1 | 4 (one of the five areas has no egg series) | 1990-01 to 2026-09 |
+| BLS `ap` gasoline `74714`, `7471A` | 2 | 37 | 1990-01 to 2026-09 |
+| BLS `cu` food at home, food, energy, gasoline | 4 | 37 | 1990-01 to 2026-09 |
+| BLS `cu` national extras (`SA0`, `SA0L1E`, `SAH1`, `SAM`, `SEHA`, `SEHC`) | 6 | 1 | 1990-01 to 2026-09 |
+| EIA gasoline, four grades | 4 | nation, 9 states, 19 PADD/city areas | 2015-01-05 to 2026-11-02 |
+
+So the grocery prices are loaded and current, at nation and region grain
+only: BLS publishes no metro egg or milk series in the loaded set. Slice 1
+needs no grocery loader work; a county page shows its Census region's price.
+Which area lacks eggs is checked when the card is built.
 
 ## Candidate series
 
@@ -147,9 +158,8 @@ beats an index, and a price measured in their own time beats a price.
 
 ### Slice 1 (recommended): "Everyday prices" card from data that is already loaded, plus home energy
 
-1. **OFFICE_LAB check first:** run `live_price_coverage.sql`. If grocery
-   `ap` rows are missing or stale, the fix is a scheduled-run gap in the
-   BLS loader, not new code.
+1. **OFFICE_LAB check: done 2026-11-06** (table above). Grocery `ap` rows
+   are current through 2026-09 at nation and region grain.
 2. **BLS AP config:** add `72610` (electricity per kWh) and `72620`
    (utility gas per therm) to `AVERAGE_PRICE_ITEMS`. The area set stays the
    intersection with BLS's own `ap.series`. About 60 new series, which is
@@ -211,8 +221,6 @@ reads the xlsx first.
 
 ## Acceptance criteria (slice 1)
 
-- `live_price_coverage.sql` output is recorded here, and every configured
-  grocery item has rows through the latest BLS release.
 - Electricity per kWh and utility gas per therm replay offline from
   fixtures into gold for the nation, a region and a metro; an item BLS does
   not publish for an area is not configured.
