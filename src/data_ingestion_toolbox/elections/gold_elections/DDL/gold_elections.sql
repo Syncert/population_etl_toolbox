@@ -235,9 +235,10 @@ SELECT store.office, store.election_year, store.stage, store.special,
        store.geo_level, store.geo_id, store.geo_sk, store.geography_status,
        store.republican_votes, store.democratic_votes, store.total_votes,
        store.leading_party_code, store.leading_candidate, store.candidate_count,
-       store.stream, store.source_file, store.run_id, store.published_at, store.capture_id
+       -- The read's stream, file and publication time come from the read itself.
+       read.stream, read.source_file, store.run_id, read.published_at, store.capture_id
 FROM gold_elections.contest_result_store AS store
-WHERE store.run_id IN (SELECT read.run_id FROM gold_elections.current_read AS read);
+JOIN gold_elections.current_read AS read ON read.run_id = store.run_id;
 
 -- The published measures: the general-election presidential vote by county
 -- and state.

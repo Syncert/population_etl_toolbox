@@ -5491,32 +5491,31 @@ v gold_elections.contest_result
     column run_id uuid
     column published_at timestamp with time zone
     column capture_id uuid
-    body SELECT office,
-    body     election_year,
-    body     stage,
-    body     special,
-    body     state_code,
-    body     state_fips,
-    body     county_fips,
-    body     district,
-    body     geo_level,
-    body     geo_id,
-    body     geo_sk,
-    body     geography_status,
-    body     republican_votes,
-    body     democratic_votes,
-    body     total_votes,
-    body     leading_party_code,
-    body     leading_candidate,
-    body     candidate_count,
-    body     stream,
-    body     source_file,
-    body     run_id,
-    body     published_at,
-    body     capture_id
+    body SELECT store.office,
+    body     store.election_year,
+    body     store.stage,
+    body     store.special,
+    body     store.state_code,
+    body     store.state_fips,
+    body     store.county_fips,
+    body     store.district,
+    body     store.geo_level,
+    body     store.geo_id,
+    body     store.geo_sk,
+    body     store.geography_status,
+    body     store.republican_votes,
+    body     store.democratic_votes,
+    body     store.total_votes,
+    body     store.leading_party_code,
+    body     store.leading_candidate,
+    body     store.candidate_count,
+    body     read.stream,
+    body     read.source_file,
+    body     store.run_id,
+    body     read.published_at,
+    body     store.capture_id
     body    FROM gold_elections.contest_result_store store
-    body   WHERE (run_id IN ( SELECT read.run_id
-    body            FROM gold_elections.current_read read));
+    body      JOIN gold_elections.current_read read ON read.run_id = store.run_id;
 
 r gold_elections.contest_result_store
     column office text
