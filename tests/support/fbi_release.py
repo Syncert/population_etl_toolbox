@@ -132,6 +132,11 @@ SEEDED_GEO_IDS: tuple[str, ...] = (
 #: Source-owned silver and control relations, in foreign-key-safe order.
 CLEANUP_STATEMENTS: tuple[str, ...] = (
     "DELETE FROM control.publisher_ready_event WHERE source_code = 'FBI_UCR'",
+    "DELETE FROM control.fbi_return_a_year",
+    # The publication-time tables, recomputed per product on publish.
+    "DELETE FROM gold_fbi.county_agency_rate_month",
+    "DELETE FROM gold_fbi.release_fact_count",
+    "DELETE FROM silver_fbi.return_a_county_crosswalk",
     "DELETE FROM silver_fbi.fact_crime_observation",
     "DELETE FROM silver_fbi.fact_reporting_participation",
     "DELETE FROM silver_fbi.observation_revision",

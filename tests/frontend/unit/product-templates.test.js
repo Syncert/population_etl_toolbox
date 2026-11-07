@@ -156,10 +156,12 @@ describe("slots resolve only to identities the catalog published", () => {
     expect(health.available).toBe(false);
     expect(health.metric).toBeNull();
     expect(health.metricCode).toBe("");
-    // The reason names the identities, so an operator can see whether the
-    // measure is missing or the template is pointing at the wrong code.
-    expect(health.reason).toContain("CDC:cdi:ALC06:AGEADJPREV");
+    // The identities it looked for are kept, so an operator can see whether
+    // the measure is missing or the template is pointing at the wrong code;
+    // the reason a reader sees names no code (WEB-144).
+    expect(health.lookedFor).toContain("CDC:cdi:ALC06:AGEADJPREV");
     expect(health.reason).toContain("no published measure");
+    expect(health.reason).not.toContain("CDC:cdi");
   });
 
   test("an unfilled slot is never filled by a similar measure", () => {

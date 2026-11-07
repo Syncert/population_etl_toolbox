@@ -45,7 +45,9 @@ EXPECTED_DAG_IDS = {
     "bls_qcew_ingest",
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
+    "census_govfin_ingest",
     "irs_migration_ingest",
+    "irs_soi_ingest",
     "eia_retail_gasoline_ingest",
     "census_cbp_ingest",
     "census_lodes_ingest",
@@ -53,6 +55,8 @@ EXPECTED_DAG_IDS = {
     "noaa_normals_ingest",
     "fcc_bdc_ingest",
     "fema_nri_ingest",
+    "elections_ingest",
+    "elections_lean_groups",
     "fhfa_hpi_ingest",
     "hud_fmr_il_ingest",
     "nces_ccd_ingest",
@@ -89,8 +93,15 @@ EXPECTED_SCHEDULES = {
     "census_building_permits_ingest": "0 13 25 * *",
     # Monthly: SAIPE publishes each December and SAHIE each spring.
     "census_saipe_sahie_ingest": "0 6 15 * *",
+    # Monthly: annual finances publish each autumn, QTAX a quarter after the
+    # quarter, the unit files every five years; a run captures its revision
+    # window and every registered period never answered.
+    "census_govfin_ingest": "0 7 18 * *",
     # Monthly: SOI publishes a new pair of filing years about once a year.
     "irs_migration_ingest": "0 15 5 * *",
+    # Monthly: SOI posts a tax year about once a year; a run past the
+    # history reads the two newest years again.
+    "irs_soi_ingest": "0 15 7 * *",
     # Weekly: county income lands in November and county GDP in December.
     # Tuesdays: EIA publishes Monday's prices on Monday afternoon.
     "eia_retail_gasoline_ingest": "0 15 * * 2",
@@ -112,6 +123,13 @@ EXPECTED_SCHEDULES = {
     # Daily: OpenFEMA refreshes declarations every twenty minutes, and an
     # unchanged NRI read replays nothing.
     "fema_nri_ingest": "0 6 * * *",
+    # Monthly: members change between elections and MEDSL republishes after
+    # certification; every stream is re-read whole, and an unchanged read
+    # replays nothing.
+    "elections_ingest": "0 7 3 * *",
+    # Daily: the lean groups derive from four sources that publish on their
+    # own schedules; a day with no new input publication rebuilds nothing.
+    "elections_lean_groups": "0 13 * * *",
     # Monthly: FHFA revises the annual workbook without a published
     # calendar, and an unchanged file replays nothing.
     "fhfa_hpi_ingest": "0 15 25 * *",
@@ -151,7 +169,9 @@ EXPECTED_DEFAULT_RETRIES = {
     "bls_qcew_ingest": 2,
     "census_building_permits_ingest": 2,
     "census_saipe_sahie_ingest": 2,
+    "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
+    "irs_soi_ingest": 2,
     "eia_retail_gasoline_ingest": 2,
     "census_cbp_ingest": 2,
     "census_lodes_ingest": 2,
@@ -159,6 +179,8 @@ EXPECTED_DEFAULT_RETRIES = {
     "noaa_normals_ingest": 2,
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
+    "elections_ingest": 2,
+    "elections_lean_groups": 1,
     "fhfa_hpi_ingest": 2,
     "hud_fmr_il_ingest": 2,
     "nces_ccd_ingest": 2,
@@ -178,7 +200,9 @@ EXPECTED_INGEST_POOLS = {
     "census_building_permits_ingest": "census_bps_files",
     # One host and one key with the ACS, so one rate limit.
     "census_saipe_sahie_ingest": "census_api",
+    "census_govfin_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
+    "irs_soi_ingest": "irs_soi_files",
     "eia_retail_gasoline_ingest": "eia_api",
     "census_cbp_ingest": "census_cbp_files",
     "census_lodes_ingest": "census_lodes_files",
@@ -186,6 +210,7 @@ EXPECTED_INGEST_POOLS = {
     "noaa_normals_ingest": "noaa_normals_files",
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",
+    "elections_ingest": "elections_files",
     "fhfa_hpi_ingest": "fhfa_hpi_files",
     "hud_fmr_il_ingest": "hud_fmr_il_files",
     "nces_ccd_ingest": "nces_ccd_files",
@@ -348,6 +373,13 @@ def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
         assert task.retries == 10, (
             f"bls_ingest ingest_batch expected retries=10, got {task.retries}"
         )
+
+
+@pytest.mark.dag
+def test_acs_transform_retries_once_because_each_attempt_resumes(dagbag) -> None:
+    """Covers: DAG-008 — the hours-long ACS transform retries once, not three times."""
+    task = dagbag.dags["acs_ingest"].get_task("transform_to_silver")
+    assert task.retries == 1
 
 
 # --------------------------------------------------------------------------
@@ -621,3 +653,16 @@ def test_silver_ref_publishes_place_and_tract_history_after_the_newest_tracts(
     dag = dagbag.dags["silver_ref"]
     history = dag.get_task("load_sub_county_history")
     assert "load_sub_county_geo" in {t.task_id for t in history.upstream_list}
+
+
+@pytest.mark.dag
+def test_acs_slices_are_marked_planned_before_any_batch_ingests(dagbag) -> None:
+    """Covers: DAG-009 — marking a slice planned resets its start, so it runs first.
+
+    Run side by side, marking reset `started_at` on a slice a batch had
+    already started, and the batch's finish then broke the ledger's
+    started-before-finished CHECK (the 2024 metro backfill, 2026-10-31).
+    """
+    dag = dagbag.dags["acs_ingest"]
+    ingest = dag.get_task("ingest_batch")
+    assert "mark_slices_planned" in {t.task_id for t in ingest.upstream_list}

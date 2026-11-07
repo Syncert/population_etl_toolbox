@@ -6,7 +6,7 @@ import type { DistributionResponse, MetricSummary } from "./api/types";
 import { isDrawableTileGrain } from "./tileGrains";
 import { normalizeGeoLevel } from "./urlState";
 import type { ValueScale } from "./urlState";
-import { DISPLAY_LOCALE } from "./format";
+import { DISPLAY_LOCALE, displayMetricName } from "./format";
 
 // Re-exported: the grain vocabulary and its aliases are declared beside
 // `GEO_LEVELS`, and this module's callers have always reached the
@@ -28,7 +28,53 @@ export const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
  * (WEB-078).
  */
 export const CHOROPLETH_WITHHELD_COLOR = "#c8b7a6";
-export const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
+/**
+ * One hue, light to dark: darker always means more (web-map-ramp). The five
+ * steps of the site's green pass the dataviz validator's ordinal checks
+ * (monotone lightness, visible step gaps, a light end clearing 2:1 on
+ * white, one hue). The ramp it replaces ran yellow, green, green, blue,
+ * purple, so its third and fourth steps differed mostly by hue and a map
+ * read as regions rather than as more and less.
+ */
+export const CHOROPLETH_PALETTE = ["#7fbfa9", "#55a48b", "#2f876f", "#176a56", "#0a4c3e"];
+/**
+ * A measure whose values run below and above zero (net migration, change)
+ * is drawn on two arms that meet at a neutral grey, so a loss and a gain
+ * never share a colour: purple below zero and green above, each light near
+ * zero and darker away from it, each arm a validated one-hue ramp and the
+ * two light ends apart for colour-blind readers (deutan Delta E 12).
+ */
+export const DIVERGING_BELOW = ["#a98bd8", "#8a68c6", "#6a4aa8", "#47307f"];
+export const DIVERGING_ABOVE = ["#7fbfa9", "#4f9f86", "#2a7f68", "#0a4c3e"];
+export const DIVERGING_NEUTRAL = "#e4e2dc";
+
+/**
+ * Each band's colour, bands in ascending order. Bands that all sit on one
+ * side of zero take the one-hue ramp; once they straddle zero, a band
+ * wholly below takes the purple arm by its distance from zero, a band
+ * wholly above the green arm, and the band holding zero the neutral grey.
+ */
+export function bandColours(bands: readonly { lower: number; upper: number }[]): string[] {
+  const diverging = bands.some((band) => band.lower < 0) && bands.some((band) => band.upper > 0);
+  if (!diverging) return bands.map((_, index) => CHOROPLETH_PALETTE[Math.min(index, CHOROPLETH_PALETTE.length - 1)]!);
+  const below = bands.filter((band) => band.upper <= 0).length;
+  let above = 0;
+  return bands.map((band, index) => {
+    if (band.upper <= 0) return DIVERGING_BELOW[Math.min(below - 1 - index, DIVERGING_BELOW.length - 1)]!;
+    if (band.lower >= 0) return DIVERGING_ABOVE[Math.min(above++, DIVERGING_ABOVE.length - 1)]!;
+    return DIVERGING_NEUTRAL;
+  });
+}
+
+/** The equal-width bands `colorForValue` paints, as bounds. */
+function equalBands(minValue: number, maxValue: number): { lower: number; upper: number }[] {
+  const count = CHOROPLETH_PALETTE.length;
+  const span = maxValue - minValue;
+  return Array.from({ length: count }, (_, index) => ({
+    lower: minValue + (span * index) / count,
+    upper: index === count - 1 ? maxValue : minValue + (span * (index + 1)) / count,
+  }));
+}
 export const DEFAULT_POPULATION_VARIABLE = "B01003_001";
 
 // A MapLibre style expression / filter, kept structural: the view models
@@ -184,7 +230,7 @@ export function pickPreferredMetric(
 export function metricOptions(metrics: MetricSummary[] | null | undefined): MetricOption[] {
   return (metrics || []).map((metric) => ({
     value: metric.metric_code,
-    label: `${String(metric.metric_display_name).replaceAll("!!", " › ")} (${metric.metric_code})`,
+    label: displayMetricName(metric),
     source: metric.source_code,
   }));
 }
@@ -528,7 +574,7 @@ export function colorForValue(value: number, minValue: number, maxValue: number)
   const span = maxValue - minValue;
   const ratio = span <= 0 ? 0 : (value - minValue) / span;
   const index = Math.max(0, Math.min(CHOROPLETH_PALETTE.length - 1, Math.floor(ratio * CHOROPLETH_PALETTE.length)));
-  return CHOROPLETH_PALETTE[index]!;
+  return bandColours(equalBands(minValue, maxValue))[index]!;
 }
 
 /**
@@ -627,7 +673,8 @@ export function distributionBins(
     return [];
   }
 
-  return bins.map((bin, index) => ({ ...bin, color: CHOROPLETH_PALETTE[index]! }));
+  const colours = bandColours(bins.map((bin) => ({ lower: bin.lowerBound, upper: bin.upperBound })));
+  return bins.map((bin, index) => ({ ...bin, color: colours[index]! }));
 }
 
 /**
@@ -720,10 +767,24 @@ export function observationUnit(item: ObservationRow | null | undefined): string
   return String(item?.unit || item?.units || "value");
 }
 
+/**
+ * A served unit in plain words: a rate code such as "per_1000_population" or
+ * "per_100000_population" reads "per 1,000 people"; anything else is shown as
+ * published.
+ */
+export function unitText(unit: unknown): string {
+  return String(unit || "").replace(/^per_(\d+)_population$/, (_, count) => `per ${formatObservationValue(count)} people`);
+}
+
+/**
+ * A served margin decoded for a reader. parseFloat, not Number: the API serves
+ * a field the source does not publish as null, and Number(null) is 0, which
+ * printed SAIPE's unpublished percentage as "(0%)".
+ */
 export function marginOfErrorText(item: ObservationRow | null | undefined): string {
-  const marginOfError = Number(item?.margin_of_error);
+  const marginOfError = parseFloat(item?.margin_of_error as string);
   if (Number.isFinite(marginOfError) && marginOfError >= 0) {
-    const marginPct = Number(item?.margin_of_error_pct);
+    const marginPct = parseFloat(item?.margin_of_error_pct as string);
     const pctText = Number.isFinite(marginPct) && marginPct >= 0
       ? ` (${formatObservationValue(marginPct, 2)}%)`
       : "";
@@ -874,6 +935,13 @@ function withheldGeographies(
   return { keys, statuses };
 }
 
+/** Publishers' internal status codes, in words a legend can show (web-map-ramp). */
+const STATUS_WORDS: Record<string, string> = {
+  sentinel: "coded as unavailable",
+  absent: "no value given",
+  not_available: "not available",
+};
+
 /** The legend row for the withheld set, or nothing when there is none. */
 function withheldLegendItem(withheld: WithheldGeographies): LegendItem[] {
   if (withheld.keys.length === 0) {
@@ -882,7 +950,7 @@ function withheldLegendItem(withheld: WithheldGeographies): LegendItem[] {
   // The source's own words, so the legend says what the publisher said. A
   // long vocabulary is trimmed rather than wrapped past the legend's width;
   // the count is what a reader needs first either way.
-  const shown = withheld.statuses.slice(0, 3).join(", ");
+  const shown = withheld.statuses.slice(0, 3).map((status) => STATUS_WORDS[status] || status).join(", ");
   const label = withheld.statuses.length > 3 ? `${shown}, …` : shown;
   return [
     {
@@ -1005,7 +1073,7 @@ export function buildChoroplethModel(
               : `${formatLegendValue(bin.lowerBound)} - ${formatLegendValue(bin.upperBound)}`,
         count: bin.count,
       }))
-    : CHOROPLETH_PALETTE.map((color, index) => {
+    : bandColours(equalBands(minValue, maxValue)).map((color, index) => {
     if (span <= 0) {
       return {
         color,

@@ -43,12 +43,29 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # sources (API-165): a derived reading owned by the platform, not a
     # provider data product.
     "/api/v1/place/distinctive",
+    # Age and sex structure (ADR-0013): sums and ratios of one ACS table's
+    # lines, computed at request time; a derived reading owned by the
+    # platform, not a provider data product or warehouse publisher.
+    "/api/v1/age-structure",
+    # One tract's history on its 2020 boundary (API-190): the published ACS
+    # values beside the derived comparable series, read from gold views the
+    # ACS pipeline publishes; a reading owned by the platform.
+    "/api/v1/place/tract-history",
+    # Taxes and public money (taxes-and-public-money T-6): shares of BEA, IRS
+    # SOI and ACS figures under approved pairings, the Census tax burden view,
+    # and governor tenures from the elections source joined to them; a
+    # derived reading across five sources, owned by the platform.
+    "/api/v1/public-money",
+    "/api/v1/governor-terms",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:
     # a sign-in reaches no source, no gold schema, and no warehouse row.
     "/api/v1/auth",
     "/api/v1/account",
+    # The admin warehouse pages describe every source at once (inventory,
+    # coverage, catalog schema); owned by the platform, not by one product.
+    "/api/v1/admin",
 )
 
 
@@ -291,6 +308,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             # latest-release projection, served by /api/v1/crime/county-rollup.
             "gold_fbi.county_rollup",
             "gold_fbi.latest_county_rollup",
+            # The county rate the FBI's way (ADR-0012), served by
+            # /api/v1/observations/derived for its agency_rate pairings.
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
         ),
         source_api_routes=("/api/v1/crime/county-rollup",),
         neutral_api_routes=("/api/v1/catalog/metrics", "/api/v1/catalog/sources"),
@@ -458,6 +479,42 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="census_govfin.taxes_and_revenue",
+        source="CENSUS_GOVFIN",
+        publisher_schema="gold_census_govfin",
+        datasets=("cog_units", "asslgf", "qtax"),
+        fixtures=(
+            "tests/fixtures/census_govfin/finestdat_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/fin_pid_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/statetypepu_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/asslgf_2022_us.json",
+            "tests/fixtures/census_govfin/asslgf_2022_state.json",
+            "tests/fixtures/census_govfin/qtax_2024_us.json",
+            "tests/fixtures/census_govfin/qtax_2024_state.json",
+        ),
+        serving_relations=(
+            "gold_census_govfin.observation_revision",
+            "gold_census_govfin.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_govfin_pipeline.py::"
+            "test_county_area_and_state_taxes_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "Census government finance publishes no source-specific HTTP route: "
+            "each figure is the neutral observation shape with its government "
+            "level, derivation and record coverage as declared dimensions, so "
+            "`/api/v1/observations` serves it. The tax mix and tax burden views "
+            "get routes in the taxes API step."
+        ),
+    ),
+    DataProductE2E(
         product_id="irs_migration.county_flows",
         source="IRS_MIGRATION",
         publisher_schema="gold_irs_migration",
@@ -481,6 +538,45 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         owner=(
             "tests/e2e/test_irs_migration_pipeline.py::"
             "test_top_origins_and_destinations_reach_the_api_with_withheld_categories"
+        ),
+    ),
+    DataProductE2E(
+        product_id="irs_soi.income",
+        source="IRS_SOI",
+        publisher_schema="gold_irs_soi",
+        datasets=(
+            "county_total:1989",
+            "county_total:2010",
+            "county_agi:2010",
+            "county_total:2023",
+            "county_agi:2023",
+            "state:2023",
+        ),
+        fixtures=(
+            "tests/fixtures/irs_soi/1989countyincome.zip",
+            "tests/fixtures/irs_soi/2010countydata.zip",
+            "tests/fixtures/irs_soi/23incyallnoagi.csv",
+            "tests/fixtures/irs_soi/23incyallagi.csv",
+            "tests/fixtures/irs_soi/23in55cmcsv.csv",
+        ),
+        serving_relations=(
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_irs_soi_pipeline.py::"
+            "test_county_and_state_income_reach_the_neutral_api_by_agi_band"
+        ),
+        api_absence_reason=(
+            "IRS SOI income publishes no source-specific HTTP route: its rows "
+            "are the neutral observation shape with an AGI band dimension, so "
+            "`/api/v1/observations` serves them through the dispatch registry "
+            "and a source route would repeat it."
         ),
     ),
     DataProductE2E(
@@ -658,6 +754,45 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "each row is the neutral observation shape with its as-of date, the "
             "FCC's revision and the unit denominator as declared dimensions, so "
             "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="elections.presidential_vote",
+        source="ELECTIONS",
+        publisher_schema="gold_elections",
+        datasets=(
+            "medsl:countypres_2000-2024",
+            "medsl:1976-2020-president",
+            "medsl:1976-2024-senate-state",
+            "medsl:1976-2024-house",
+            "congress-legislators:gh-pages",
+            "wikidata:governors",
+        ),
+        fixtures=(
+            "tests/fixtures/elections/county_president.csv",
+            "tests/fixtures/elections/state_president.csv",
+            "tests/fixtures/elections/legislators-current.json",
+            "tests/fixtures/elections/wikidata-governors.json",
+        ),
+        serving_relations=(
+            "gold_elections.observation_revision",
+            "gold_elections.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_elections_pipeline.py::"
+            "test_presidential_margins_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The elections source publishes no source-specific HTTP route yet: "
+            "each presidential row is the neutral observation shape with how the "
+            "share or margin is counted and the leading party as declared "
+            "dimensions, so `/api/v1/observations` serves it. Seat terms and "
+            "contest results get their own routes in the API step (E-4)."
         ),
     ),
     DataProductE2E(

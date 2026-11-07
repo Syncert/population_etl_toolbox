@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { marginOfErrorText } from "../../../apps/web/lib/explorerViewModel";
+
 import {
+  ADDITIVE_MEMBER_MEASURES,
   INDUSTRY_MIX_SECTORS,
   MIGRATION_POPULATION_NOTE,
   PLACE_CHAPTERS,
@@ -10,6 +13,7 @@ import {
   countySegment,
   citySegment,
   measureBasis,
+  memberCountyRows,
   omissionLine,
   placeChapterMetricCodes,
   placePath,
@@ -20,6 +24,8 @@ import {
   resolveStateSegment,
   stateSegment,
   threeLevelCard,
+  trendNotes,
+  trendPeriodLabel,
 } from "../../../apps/web/lib/placeChapters";
 
 // Covers: WEB-125 — place-pages: the chapter contract every place page shares, the address
@@ -53,6 +59,17 @@ describe("how a figure was made", () => {
     expect(measureBasis(null)).toBeNull();
   });
 
+  it("prints a served margin's percentage and never a null one as 0%", () => {
+    // UAT on 65cb758d: Dane County's SAIPE income read "±2,947 (0%)" because
+    // the API serves an unpublished field as null and Number(null) is 0.
+    expect(marginOfErrorText({ margin_of_error: "2947", margin_of_error_pct: "3.2215" })).toBe("±2,947 (3.22%)");
+    expect(marginOfErrorText({ margin_of_error: "2947", margin_of_error_pct: null })).toBe("±2,947");
+    expect(marginOfErrorText({ margin_of_error: "2947", margin_of_error_pct: "" })).toBe("±2,947");
+    expect(marginOfErrorText({ margin_of_error: null, margin_of_error_pct: null })).toBe("Not provided");
+    expect(marginOfErrorText({ margin_of_error: "-555555555" })).toBe("0 (Census-controlled estimate)");
+    expect(marginOfErrorText({ margin_of_error: 0, margin_of_error_pct: 0 })).toBe("±0 (0%)");
+  });
+
   it("never lists an ACS identity and a SAIPE/SAHIE identity in one slot", () => {
     for (const chapter of PLACE_CHAPTERS) {
       for (const measure of [...chapter.headline, ...chapter.depth]) {
@@ -75,6 +92,7 @@ describe("the chapter contract", () => {
       headline: chapter.headline.map((measure) => measure.candidates[0]),
       depth: chapter.depth.map((measure) => measure.candidates[0]),
       trend: chapter.trend,
+      ...(chapter.id === "work-money" ? { moreTrends: chapter.moreTrends } : {}),
     }]));
     expect(pinned).toEqual({
       people: {
@@ -93,6 +111,7 @@ describe("the chapter contract", () => {
           ...INDUSTRY_MIX_SECTORS.map(([code]) => `BLS_QCEW:employment:${code}:5`),
         ],
         trend: { measureId: "unemployment-rate", scale: "level" },
+        moreTrends: [{ measureId: "median-household-income", scale: "level" }],
       },
       housing: {
         headline: ["CENSUS_ACS:acs5:B25064_001", "CENSUS_ACS:acs5:B25077_001", "CENSUS_BPS:units:1_unit:annual", "CENSUS_BPS:units:5_plus_units:annual", "CENSUS_BPS:units:1_unit:monthly"],
@@ -243,6 +262,65 @@ describe("the three-level card", () => {
     const card = threeLevelCard(levels, new Map([["c", { row: row(2024) }]]), (level) => level === "COUNTY");
     expect(card.rows[1].message).toBe("Not published at state grain");
   });
+
+  it("says a request is still being read rather than calling it unpublished", () => {
+    const card = threeLevelCard(levels, new Map([
+      ["c", { row: row(2024) }], ["s", { row: null, pending: true }], ["n", { row: null }],
+    ]), () => true);
+    expect(card.rows.map((entry) => entry.message)).toEqual(["", "Reading…", "Not published for this place"]);
+    expect(card.period).toBe("2024-01-01 – 2024-12-31");
+  });
+});
+
+// Covers: WEB-159 — web-metro-member-counties: a metro card on a measure not
+// published for metro areas lists its member counties, and sums them only
+// for a count every member published for the card's period.
+describe("a metro card's member counties", () => {
+  const members = [
+    { level: "COUNTY", geoId: "a", name: "Dane County", role: "member county" },
+    { level: "COUNTY", geoId: "b", name: "Columbia County", role: "member county" },
+    { level: "COUNTY", geoId: "c", name: "Green County", role: "member county" },
+  ];
+  const row = (year, value = "10", extra = {}) => ({ period_start: `${year}-01-01`, period_end: `${year}-12-31`, value, ...extra });
+  const period = "2024-01-01 – 2024-12-31";
+
+  it("lists every member county's own figure on the card's period", () => {
+    const { rows, sum } = memberCountyRows(members, new Map([
+      ["a", { row: row(2024, "300") }], ["b", { row: row(2024, "20") }], ["c", { row: row(2023, "15") }],
+    ]), period, false);
+    expect(rows.map((entry) => entry.place.name)).toEqual(["Dane County", "Columbia County", "Green County"]);
+    expect(rows.map((entry) => entry.message)).toEqual(["", "", `Not published for ${period} (newest published: 2023-01-01 – 2023-12-31)`]);
+    expect(sum).toBeNull();
+  });
+
+  it("sums a count only when every member county published a value for the period", () => {
+    const all = new Map([["a", { row: row(2024, "300") }], ["b", { row: row(2024, "20") }], ["c", { row: row(2024, "15.5") }]]);
+    expect(memberCountyRows(members, all, period, true).sum).toEqual({ value: 335.5, counties: 3 });
+    // A withheld county leaves no partial total.
+    const withheld = new Map(all);
+    withheld.set("b", { row: row(2024, null, { value_status: "withheld" }) });
+    const read = memberCountyRows(members, withheld, period, true);
+    expect(read.sum).toBeNull();
+    expect(read.rows[1].message).toBe("Published without a value: withheld");
+    // Another period, a missing county or a failed read leaves none either.
+    expect(memberCountyRows(members, new Map([...all, ["c", { row: row(2023, "15") }]]), period, true).sum).toBeNull();
+    expect(memberCountyRows(members, new Map([...all, ["c", { row: null }]]), period, true).sum).toBeNull();
+    expect(memberCountyRows(members, new Map([...all, ["c", { error: "503" }]]), period, true).rows[2].message).toBe("503");
+  });
+
+  it("anchors on the first county's period when no other row set one", () => {
+    const { rows } = memberCountyRows(members.slice(0, 2), new Map([["a", { row: row(2024) }], ["b", { row: row(2023) }]]), "", false);
+    expect(rows[1].message).toBe(`Not published for ${period} (newest published: 2023-01-01 – 2023-12-31)`);
+  });
+
+  it("adds up only counts: never a median, a rate, a per-capita or a chained-dollar figure", () => {
+    expect([...ADDITIVE_MEMBER_MEASURES]).toEqual(["population-estimate", "qcew-jobs"]);
+    const headline = PLACE_CHAPTERS.flatMap((chapter) => chapter.headline);
+    for (const id of ADDITIVE_MEMBER_MEASURES) {
+      const measure = headline.find((entry) => entry.id === id);
+      expect(measure.candidates).toEqual(id === "qcew-jobs" ? ["BLS_QCEW:employment:10:0"] : ["CENSUS_PEP:POPESTIMATE"]);
+    }
+  });
 });
 
 describe("the trend", () => {
@@ -254,7 +332,7 @@ describe("the trend", () => {
 
   it("indexes counts at the first period every line publishes, and states it", () => {
     const trend = buildTrend(levels, new Map([["c", rows(["100", "110", "121"])], ["n", rows(["1000", "1100"], 2020)]]), "index");
-    expect(trend.basePeriod).toBe("2020-01-01 – 2020-12-31");
+    expect(trend.basePeriod).toBe("2020");
     expect(trend.lines[0].points.map((point) => Number(point.value.toFixed(6)))).toEqual([90.909091, 100, 110]);
     expect(trend.lines[1].points.map((point) => Number(point.value.toFixed(6)))).toEqual([100, 110]);
   });
@@ -264,6 +342,7 @@ describe("the trend", () => {
     expect(trend.basePeriod).toBe("");
     expect(trend.lines[0].points.map((point) => point.value)).toEqual([4.1, 3.9]);
     expect(trend.lines[0].unpublished).toBe(1);
+    expect(trend.lines[0].unpublishedPeriods).toEqual(["2020"]);
   });
 
   it("falls back to the primary line alone when no period is shared", () => {
@@ -342,13 +421,17 @@ describe("cities and towns", () => {
 describe("within this county", () => {
   it("offers only the tract tables and states the uncoloured count", async () => {
     const { TRACT_MEASURES, uncolouredSentence } = await import("../../../apps/web/components/WithinCounty.tsx");
-    expect(TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0])).toEqual([
-      "B19013",
-      "B01003",
-      "B17001",
-      "B25064",
-      "B25077",
-    ]);
+    const tables = TRACT_MEASURES.map((entry) => entry.code.split(":")[2].split("_")[0]);
+    expect(tables.slice(0, 5)).toEqual(["B19013", "B01003", "B17001", "B25064", "B25077"]);
+    // Covers: WEB-155 — the richer view offers every tract-page measure, each
+    // from a table `AcsConfig.tract_tables` loads, once.
+    const tractTables = [
+      "B01003", "B19013", "B17001", "B25064", "B25077", "B01001", "B01002", "B11001", "B02001", "B03002", "B15003",
+      "B23025", "B08301", "B08303", "B25003", "B25070", "B25091", "B25002", "B27010", "B28002", "B19301", "B25001",
+    ];
+    expect(tables.length).toBeGreaterThan(5);
+    expect(tables.every((table) => tractTables.includes(table))).toBe(true);
+    expect(new Set(TRACT_MEASURES.map((entry) => entry.code)).size).toBe(TRACT_MEASURES.length);
     expect(uncolouredSentence(3, 2)).toBe("1 of 3 tracts have no published value and are left uncoloured, not shown as zero.");
     expect(uncolouredSentence(4, 4)).toBe("All 4 tracts have a published value.");
   });
@@ -416,10 +499,21 @@ describe("homes authorized", () => {
     expect(permits.every((measure) => measure.showReported)).toBe(true);
   });
 
-  it("draws the monthly permits as a second trend after the rent trend", () => {
+  it("says when Census publishes the yearly permit totals, and only on the yearly cards", () => {
+    const permits = housing.headline.filter((measure) => measure.candidates[0].startsWith("CENSUS_BPS:"));
+    const annual = permits.filter((measure) => measure.candidates[0].endsWith(":annual"));
+    expect(annual.map((measure) => measure.id)).toEqual(["bps-single-family-year", "bps-multifamily-year"]);
+    for (const measure of annual) expect(measure.whenPublished).toBe("Census publishes each year's total early the next year.");
+    expect(permits.find((measure) => measure.id === "bps-single-family-month").whenPublished).toBeUndefined();
+  });
+
+  it("draws the monthly permits as a trend after the rent and home value trends", () => {
     expect(housing.trend).toEqual({ measureId: "median-gross-rent", scale: "level" });
-    expect(housing.moreTrends).toEqual([{ measureId: "bps-single-family-month", scale: "level" }]);
-    expect(housing.headline.some((measure) => measure.id === housing.moreTrends[0].measureId)).toBe(true);
+    expect(housing.moreTrends).toEqual([
+      { measureId: "median-home-value", scale: "level" },
+      { measureId: "bps-single-family-month", scale: "level" },
+    ]);
+    for (const spec of housing.moreTrends) expect(housing.headline.some((measure) => measure.id === spec.measureId)).toBe(true);
   });
 });
 
@@ -431,5 +525,59 @@ describe("migration population note", () => {
     expect(MIGRATION_POPULATION_NOTE).toContain("Population Estimates Program");
     expect(MIGRATION_POPULATION_NOTE).toContain("different populations");
     expect(MIGRATION_POPULATION_NOTE).toContain("no net figure");
+  });
+});
+
+// Covers: WEB-154 — web-city-history: a city's income, rent and home value
+// histories carry each point's published margin of error, read five-year
+// periods by their first and last year, and say what a margin and an
+// overlapping period mean.
+describe("a city's history", () => {
+  const levels = [
+    { level: "PLACE", geoId: "p", name: "Austin city", role: "this place" },
+    { level: "COUNTY", geoId: "c", name: "Travis County", role: "parent" },
+  ];
+  const fiveYear = (end, value, moe) => ({ period_start: `${end - 4}-01-01`, period_end: `${end}-12-31`, value, margin_of_error: moe });
+
+  it("labels a five-year estimate by its first and last year, and a year by itself", () => {
+    expect(trendPeriodLabel(fiveYear(2024, "1"))).toBe("2020–2024");
+    expect(trendPeriodLabel({ period_start: "2023-01-01", period_end: "2023-12-31" })).toBe("2023");
+    expect(trendPeriodLabel({ period_start: "2024-03-01", period_end: "2024-03-31" })).toBe("2024-03-01 – 2024-03-31");
+  });
+
+  it("keeps the published margin of each point, and a coded margin as words only", () => {
+    const trend = buildTrend(levels, new Map([
+      ["p", [fiveYear(2009, "50132", "1021"), fiveYear(2024, "91461", "1450"), fiveYear(2015, "60000", "-333333333")]],
+      ["c", [fiveYear(2024, "97169", "990")]],
+    ]), "level");
+    const city = trend.lines[0];
+    expect(city.points.map((point) => point.period)).toEqual(["2005–2009", "2011–2015", "2020–2024"]);
+    expect(city.points.map((point) => point.moe)).toEqual([1021, null, 1450]);
+    expect(city.points[1].moeText).toBe("Not computed (open-ended median)");
+    expect(city.points[2].moeText).toBe("±1,450");
+    expect(trend.lines[1].points[0].moe).toBe(990);
+  });
+
+  it("a row without a margin carries none", () => {
+    const trend = buildTrend(levels, new Map([["p", [{ period_start: "2024-01-01", period_end: "2024-12-31", value: "3.1" }]]]), "level");
+    expect(trend.lines[0].points[0]).toMatchObject({ moe: null, moeText: "" });
+  });
+
+  it("explains margins and overlapping five-year periods, and dollars only for dollars", () => {
+    const income = trendNotes("CENSUS_ACS:acs5:B19013_001", "dollars");
+    expect(income.join(" ")).toMatch(/margin of error/);
+    expect(income.join(" ")).toMatch(/do not overlap/);
+    expect(income.join(" ")).toMatch(/inflation/);
+    expect(trendNotes("CENSUS_ACS:acs1:B19013_001", "dollars").join(" ")).not.toMatch(/five-year/);
+    expect(trendNotes("CENSUS_ACS:acs5:B01002_001", "years").join(" ")).not.toMatch(/dollars/);
+    expect(trendNotes("CENSUS_PEP:POPESTIMATE", "persons")).toEqual([]);
+  });
+
+  it("draws income on Work and Money and home value on Housing", () => {
+    const work = PLACE_CHAPTERS.find((chapter) => chapter.id === "work-money");
+    const housing = PLACE_CHAPTERS.find((chapter) => chapter.id === "housing");
+    expect(work.moreTrends.map((spec) => spec.measureId)).toContain("median-household-income");
+    expect(housing.trend.measureId).toBe("median-gross-rent");
+    expect(housing.moreTrends.map((spec) => spec.measureId)).toContain("median-home-value");
   });
 });

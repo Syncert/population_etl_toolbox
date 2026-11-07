@@ -38,6 +38,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.operator_stop import fail_without_retry_when_stopped
 
 logger = logging.getLogger(__name__)
 
@@ -114,12 +115,16 @@ def serving_full_reserve():
             "rewritten regardless of its watermark",
             source_code,
         )
-        return refresh_serving_layer_in_year_chunks(
-            hook=PostgresHook(postgres_conn_id=POSTGRES_CONN_ID),
-            config=FULL_RESERVE_CONFIGS[source_code],
-            task_logger=logger,
-            force_full=True,
-        )
+        with fail_without_retry_when_stopped(
+            f"the {source_code} full re-serve",
+            "Trigger serving_full_reserve again to rewrite every year.",
+        ):
+            return refresh_serving_layer_in_year_chunks(
+                hook=PostgresHook(postgres_conn_id=POSTGRES_CONN_ID),
+                config=FULL_RESERVE_CONFIGS[source_code],
+                task_logger=logger,
+                force_full=True,
+            )
 
     reserve_source()
 

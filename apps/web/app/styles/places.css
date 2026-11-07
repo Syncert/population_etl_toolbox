@@ -109,6 +109,26 @@
   font-weight: 700;
 }
 
+/* A metro's member counties, beside a metro row not published for metro areas. */
+.place-member-counties caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding-top: 6px;
+}
+
+.place-member-counties th {
+  padding-left: 14px;
+  font-weight: 500;
+}
+
+.place-member-counties summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 6px 4px;
+}
+
 .place-depth {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -128,19 +148,76 @@
 
 .place-depth dd {
   margin: 2px 0 0;
-  font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+/* What the depth rows share, said once (web-compact-depth). */
+.place-depth-shared {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.place-depth-block .place-depth {
+  margin-top: 6px;
+}
+
+.place-depth-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.place-depth [data-care="true"] .place-depth-value {
+  color: var(--muted);
 }
 
 .place-trend {
   margin: 16px 0;
   min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px;
+}
+
+.place-trend-head {
+  margin-bottom: 4px;
+}
+
+.place-trend-title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.place-trend-meta,
+.place-trend-source,
+.place-trend-for {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .place-trend svg[role="img"] {
+  display: block;
   width: 100%;
+  max-width: 900px;
   height: auto;
-  max-height: 260px;
+}
+
+.place-trend-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.place-trend-grid {
+  stroke: var(--line);
+  stroke-dasharray: 2 3;
+}
+
+.place-trend-notes .subtle {
+  margin: 4px 0;
 }
 
 .place-trend-axis {
@@ -256,7 +333,15 @@
 /* What stands out (what-makes-this-place-distinctive) */
 .place-standout-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .place-standout-groups ul { margin: 0; padding: 0; list-style: none; }
-.place-standout-groups li { border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+.place-standout-groups li { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 6rem; gap: 4px 12px; align-items: center; border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
+.place-standout-groups li > p { grid-column: 1 / -1; margin: 0; font-size: 0.78rem; }
+/* Where the place falls among its siblings, lowest to highest (web-standout-strips). */
+.standout-track { position: relative; height: 12px; border-radius: 6px; background: var(--bg-2); }
+.standout-track i { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card); }
+.standout-value { min-width: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.standout-value b { white-space: nowrap; }
+.standout-value small { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.2; overflow-wrap: normal; }
+.place-standout details { margin-top: 10px; }
 /* Home finder and public data page (find-your-place-home) */
 .place-finder { margin-top: 18px; max-width: 640px; }
 .place-finder-label { display: block; margin-bottom: 6px; font-weight: 700; }
@@ -284,26 +369,65 @@
   overflow-wrap: anywhere;
 }
 
-.place-industry-mix {
-  width: 100%;
-  border-collapse: collapse;
+/* Industry tables as bars sorted largest first (web-compact-depth). */
+.place-industry {
   margin: 12px 0;
+}
+
+.place-industry-bars {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
   font-size: 0.85rem;
 }
 
-.place-industry-mix caption {
+.place-industry-bars caption {
   text-align: left;
   font-weight: 700;
   padding-bottom: 6px;
 }
 
-.place-industry-mix th,
-.place-industry-mix td {
-  border-top: 1px solid var(--line);
-  padding: 4px 8px 4px 0;
+.place-industry-bars th {
+  width: 38%;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  color: var(--ink);
+  padding: 3px 12px 3px 0;
   text-align: left;
-  vertical-align: top;
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+
+.place-industry-bars td {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.place-industry-track {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.place-industry-bar {
+  display: block;
+  height: 14px;
+  min-width: 2px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.place-industry-value {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.place-industry-gaps {
+  margin: 6px 0 0;
 }
 
 /* How a figure was made: a survey estimate and a model-based estimate of the
@@ -347,8 +471,70 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Groceries and gas (groceries-and-gas-cards): one line per measure, each
-   naming the larger area its figure describes. */
+/* Cost of living (groceries-and-gas-cards, cost-of-living-section): one
+   table of everyday prices, its area and source stated once in the caption,
+   then one line per remaining measure, each naming the area it describes. */
+.place-cost-items {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0 0 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.place-cost-items caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+.place-cost-items caption .subtle {
+  font-weight: 400;
+}
+.place-cost-items th,
+.place-cost-items td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-top: 1px solid var(--line);
+}
+.place-cost-items tbody th {
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: inherit;
+}
+.place-cost-items thead th {
+  font-weight: 400;
+  color: var(--muted);
+  border-top: 0;
+}
+.place-cost-items .block {
+  display: block;
+}
+.place-cost-items .place-spark {
+  margin: 0;
+  max-width: 160px;
+}
+.place-cost-items .place-spark svg {
+  width: 100%;
+  height: auto;
+}
+@media (max-width: 640px) {
+  .place-cost-items {
+    font-size: 0.9rem;
+  }
+  .place-cost-items thead th:nth-child(4),
+  .place-cost-items td:nth-child(4) {
+    display: none;
+  }
+  .place-cost-items th,
+  .place-cost-items td {
+    padding-right: 0.4rem;
+    word-break: break-word;
+  }
+}
 .place-cost-lines {
   display: grid;
   gap: 0.75rem;
@@ -367,4 +553,688 @@
 .place-cost-notes {
   margin: 0.25rem 0 0;
   padding-left: 1.1rem;
+}
+
+/* Count, per-capita and share views (web-per-capita-toggle). */
+.derived-toggle {
+  margin-bottom: 12px;
+}
+.derived-toggle button {
+  text-transform: none;
+}
+.derived-levels {
+  list-style: none;
+  padding: 0;
+}
+/* The switch over a chapter's counts when its cards have none to switch. */
+.place-depth-toggle {
+  margin-top: 16px;
+}
+.place-depth-toggle .derived-toggle {
+  margin-bottom: 4px;
+}
+.place-depth-toggle p {
+  margin: 0;
+}
+
+/* Age and sex (web-age-and-sex-structure): the pyramid, its toggle, the
+   at-a-glance cards, the difference bars, history and cohorts. */
+.age-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+  min-width: 0;
+}
+
+.age-section h3,
+.age-section h4 {
+  margin: 0;
+}
+
+.age-controls {
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  align-items: end;
+}
+
+.age-control {
+  display: grid;
+  gap: 4px;
+  font-size: 0.86rem;
+}
+
+.age-earlier {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.age-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 22px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .age-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.age-figure,
+.age-pyramid,
+.age-difference {
+  margin: 0;
+  min-width: 0;
+}
+
+.age-pyramid .chart-legend,
+.age-difference .chart-legend {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 8px;
+}
+
+.legend-line {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid;
+  vertical-align: middle;
+}
+
+.legend-line-dashed {
+  border-top-style: dashed;
+}
+
+.legend-hatch {
+  vertical-align: middle;
+}
+
+.age-chart-frame {
+  position: relative;
+}
+
+.age-chart-frame svg {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  overflow: visible;
+}
+
+@media (max-width: 520px) {
+  .age-chart-frame svg text {
+    font-size: 15px;
+  }
+}
+
+.age-bar-hit:focus {
+  outline: none;
+}
+
+.age-bar-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.age-tooltip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  display: grid;
+  gap: 2px;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.age-tooltip .legend-swatch {
+  width: 10px;
+  margin-right: 6px;
+}
+
+.age-cards {
+  display: grid;
+  margin: 0;
+}
+
+.age-card {
+  display: grid;
+  gap: 2px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.age-card:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.age-card dt {
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.age-card dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.age-card-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.draft-mark {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.age-subsection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  justify-items: start;
+}
+
+.age-subsection > * {
+  max-width: 100%;
+}
+
+.age-difference .age-chart-frame svg {
+  max-width: 640px;
+}
+
+.age-history-grid,
+.age-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.age-compare-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.age-history-chart {
+  margin: 0;
+}
+
+.age-history-chart svg {
+  width: 100%;
+  height: auto;
+}
+
+.age-cohorts {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.age-cohorts figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.age-cohorts svg {
+  width: 100%;
+  max-width: 680px;
+  height: auto;
+}
+
+.age-provenance,
+.age-provenance-lines {
+  font-size: 0.8rem;
+}
+
+.age-controls .segmented-control {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+/* What the record shows (D-9): one card per question, each with its chart. */
+.place-record {
+  scroll-margin-top: 56px;
+}
+
+.place-record-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  /* A one-line answer keeps its own height beside a card with a chart. */
+  align-items: start;
+}
+
+.place-record-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.place-record-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+}
+
+.place-record-sentence {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.place-record-coverage {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 0.92rem;
+}
+
+.place-record-working ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 0.9rem;
+}
+
+.place-record-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 0;
+}
+
+.place-record-chart .place-trend-title {
+  font-size: 0.92rem;
+}
+
+/* A headline card's own history, drawn small (web-card-sparkline). */
+.place-spark {
+  margin: 10px 0 0;
+}
+.place-spark svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 64px;
+}
+.place-spark-area {
+  fill: var(--accent);
+  opacity: 0.1;
+}
+.place-spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.place-spark-end {
+  fill: var(--accent);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+.place-spark figcaption {
+  display: grid;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.place-spark-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+/* A headline card's levels on one scale (web-level-strip). The table it
+   draws stays for screen readers and copying, out of sight. */
+.place-card:has(.level-strip) .place-card-table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.level-strip {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.level-strip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 26px;
+  font-size: 0.88rem;
+}
+.level-strip-name {
+  overflow-wrap: anywhere;
+}
+.level-strip-row[data-index="0"] .level-strip-name,
+.level-strip-row[data-index="0"] .level-strip-value {
+  font-weight: 700;
+}
+.level-strip-track {
+  position: relative;
+  height: 18px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat;
+}
+.level-strip-moe {
+  position: absolute;
+  top: 4px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-bottom: 0;
+  background: linear-gradient(currentColor, currentColor) 0 50% / 100% 2px no-repeat;
+  box-sizing: border-box;
+}
+.level-strip-dot {
+  position: absolute;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.level-strip-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.level-strip-value small,
+.level-strip-axis small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.level-strip-axis {
+  min-height: 16px;
+}
+.level-strip-axis .level-strip-track {
+  border: 0;
+  background: none;
+}
+.level-strip-axis small {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.level-strip-sentence {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+}
+
+/* Taxes and public money (taxes-and-public-money T-6): dot strips on one
+   shared scale per group, the level colours of the chapter's trends, lines
+   labelled at their ends, and a governor table whose changes are grey. */
+.public-money {
+  margin: 20px 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.public-money h3 {
+  margin: 0 0 4px;
+}
+.public-money-group {
+  margin: 16px 0;
+}
+.public-money-group h4,
+.governor-terms h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.public-money-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+.public-money-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.public-money-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.public-money-strips {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.public-money-strips th {
+  width: 38%;
+  padding: 3px 12px 3px 0;
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.public-money-strips td {
+  padding: 3px 0;
+}
+.public-money-strips .public-money-value {
+  width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.public-money-emphasis th,
+.public-money-emphasis .public-money-value {
+  font-weight: 700;
+}
+.public-money-track {
+  position: relative;
+  display: block;
+  height: 18px;
+  margin-right: 10px;
+  background: linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat;
+}
+.public-money-dot {
+  position: absolute;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.public-money-dot[data-index="0"] {
+  z-index: 1;
+}
+.public-money-axis small {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-sentence {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+}
+.public-money-lines {
+  margin: 0;
+}
+.public-money-lines svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 680px;
+}
+.public-money-readout {
+  margin: 0 0 2px;
+  min-height: 1.2em;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.public-money-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.public-money-tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-end-label {
+  fill: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.public-money-table {
+  margin-top: 4px;
+  font-size: 0.82rem;
+}
+.public-money-table table {
+  border-collapse: collapse;
+}
+.public-money-table th,
+.public-money-table td {
+  padding: 2px 10px 2px 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.governor-terms {
+  min-width: 0;
+  margin: 18px 0 8px;
+}
+.governor-table-wrap {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.governor-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.governor-table th,
+.governor-table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+.governor-table thead th {
+  min-width: 7rem;
+  max-width: 13rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: normal;
+  vertical-align: bottom;
+}
+.governor-table tbody th {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.governor-table tbody th small {
+  display: block;
+  font-weight: 400;
+}
+.governor-change.subtle {
+  max-width: 11rem;
+  white-space: normal;
+}
+.governor-change {
+  white-space: nowrap;
+}
+.governor-change-value {
+  display: inline-block;
+  width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.governor-change-track {
+  position: relative;
+  display: inline-block;
+  width: 6rem;
+  height: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+  background: linear-gradient(var(--muted), var(--muted)) 50% 0 / 1px 100% no-repeat;
+}
+.governor-change-bar {
+  position: absolute;
+  top: 1px;
+  height: 8px;
+  border-radius: 2px;
+}
+.governor-mix-bar {
+  display: flex;
+  gap: 2px;
+  width: 9rem;
+  height: 12px;
+}
+.governor-mix-bar span {
+  flex-basis: 0;
+  border-radius: 2px;
+}
+.party-chip {
+  display: inline-block;
+  min-width: 1.3em;
+  padding: 0 4px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+/* Party colours mark party identity only (ADR-0014 rule 8). */
+.party-R { background: #b4302c; }
+.party-D { background: #22589e; }
+.party-I,
+.party-O { background: #6b6b66; }
+.public-money-words {
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+.public-money-words dt {
+  margin-top: 8px;
+  font-weight: 700;
+}
+.public-money-words dd {
+  margin: 2px 0 0;
 }

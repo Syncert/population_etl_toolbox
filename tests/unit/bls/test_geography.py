@@ -1,7 +1,8 @@
 """ETL unit tests: BLS LAUS geography parser and builder.
 
 Covers ETL-009 (LAUS series round-trip with exact program, measure, FIPS,
-and geo_id) and ETL-010 (unsupported geography rejected).
+and geo_id), ETL-010 (unsupported geography rejected) and ETL-099 (metro
+areas keyed by CBSA).
 """
 
 import pytest
@@ -84,11 +85,19 @@ class TestParseLausSeries:
         assert result["geo_level"] is None
 
     def test_metro_area_rejected(self) -> None:
-        """Covers: ETL-010 — unsupported metro LAUS geography is rejected."""
-        # MT prefix not a supported geographic pattern
+        """Covers: ETL-010 — a malformed metro LAUS code is rejected."""
+        # A metro code is MT + state + CBSA + six zeros; this one is not.
         sid = "LAUMT123456789012303"
         result = parse_laus_series_id(sid)
         assert result["geo_level"] is None
+
+    def test_metro_area_is_keyed_by_its_cbsa(self) -> None:
+        """Covers: ETL-099 — a LAUS metro resolves as the shared CBSA."""
+        result = parse_laus_series_id("LAUMT481242000000003")
+        assert result["geo_level"] == "metro"
+        assert result["geo_id"] == "cbsa:12420"
+        assert (result["state_fips"], result["county_fips"]) == (None, None)
+        assert result["measure_code"] == "03"
 
 
 @pytest.mark.unit
@@ -237,13 +246,22 @@ class TestLausMetadataQueries:
         )
         assert get_laus_series_ids(["03"], "county", "06") == ["LAUCN060010000000003"]
 
+    def test_metro_series_query_asks_for_every_metro_area(self, monkeypatch) -> None:
+        """Covers: ETL-099 — one national metro slice, keyed by its MT prefix."""
+        connection = _Connection([("LAUMT481242000000003",), ("LAUST060000000000003",)])
+        monkeypatch.setattr(
+            "data_ingestion_toolbox.bls.geography._get_pg_connection",
+            lambda: connection,
+        )
+        assert get_laus_series_ids(["03"], "metro") == ["LAUMT481242000000003"]
+
     @pytest.mark.parametrize(
         ("measures", "level", "state_fips", "seasonal", "message"),
         [
             (["03"], "us", None, "U", "CPS/LN"),
             (["03"], "county", None, "U", "state_fips"),
             (["03"], "county", "XX", "U", "state_fips"),
-            (["03"], "metro", None, "U", "Unsupported"),
+            (["03"], "city", None, "U", "Unsupported"),
             (["03"], "state", None, "X", "seasonal"),
             (["3"], "state", None, "U", "measure codes"),
         ],

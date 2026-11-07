@@ -25,7 +25,9 @@ describe("frames", () => {
       const { width, height } = FRAME_FORMATS[format];
       expect(svg).toContain(`width="${width}" height="${height}"`);
       const footer = svg.slice(svg.indexOf('<g data-frame-footer="true">'));
-      expect(footer).toContain("Median household income (CENSUS_ACS:acs5:B19013_001)");
+      expect(footer).toContain("Median household income");
+      // WEB-144: the frame names the measure, never its variable code.
+      expect(footer).not.toContain("B19013_001");
       expect(footer).toContain("Period: 2020-01-01 – 2024-12-31");
       expect(footer).toContain("Source: CENSUS_ACS");
       expect(footer).toContain("Uncertainty: Dane County margin of error ±1,200");
@@ -38,7 +40,7 @@ describe("frames", () => {
     const stripped = renderFrameSvg({ ...spec(), footer: false, showFooter: false });
     expect(stripped).toContain('data-frame-footer="true"');
     expect(footerLines(spec("1:1", { period: "", source: "" }))).toEqual([
-      "Median household income (CENSUS_ACS:acs5:B19013_001)",
+      "Median household income",
       "Period: not published · Source: not published",
       "Uncertainty: Dane County margin of error ±1,200",
       `ACS estimates carry a margin of error · ${SITE_NAME}`,

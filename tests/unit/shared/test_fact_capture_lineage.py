@@ -76,6 +76,22 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "ELECTIONS",
+        SRC / "elections/DDL/silver_elections.sql",
+        "silver_elections.candidate_result",
+        "valid",
+        # A vote count MEDSL leaves as NA is quarantined, not kept: a
+        # candidate row with no count is a row the warehouse does not hold.
+        can_withhold=False,
+        value_column="candidate_votes",
+    ),
+    FactContract(
+        "CENSUS_GOVFIN",
+        SRC / "census_govfin/DDL/silver_census_govfin.sql",
+        "silver_census_govfin.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "FCC_BDC",
         SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
         "silver_fcc_bdc.availability_row",
@@ -115,6 +131,12 @@ FACTS = [
         "valid",
         # Three measures share one status; returns is the one SOI deletes by.
         value_column="returns",
+    ),
+    FactContract(
+        "IRS_SOI",
+        SRC / "irs_soi/DDL/silver_irs_soi.sql",
+        "silver_irs_soi.fact_observation",
+        "valid",
     ),
     FactContract(
         "BEA",

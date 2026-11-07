@@ -268,8 +268,14 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
     """Covers: API-160 — discover exact served period pairs before painting."""
     session = _DispatchSession(
         metric_row=dict(_CDC_METRIC),
-        rows=[{"period_start": "2021", "period_end": "2021", "observation_count": 3}],
-        total=2,
+        rows=[
+            {
+                "period_start": "2021",
+                "period_end": "2021",
+                "observation_count": 3,
+                "group_total": 2,
+            }
+        ],
     )
     client = _client_with(session)
     try:
@@ -305,6 +311,108 @@ def test_published_periods_are_paged_from_the_latest_relation() -> None:
         "ORDER BY period_start DESC, period_end DESC NULLS LAST"
         in _dispatched(session)[-1]
     )
+
+
+@pytest.mark.parametrize(
+    "route", ["/api/v1/observations/periods", "/api/v1/observations/releases"]
+)
+def test_grouped_listings_read_the_relation_once(route: str) -> None:
+    """Covers: API-160 — a page carries its own group total; no second scan.
+
+    Counting the groups and then listing them read every served row of the
+    metric twice, and on the tract-backed ACS relations each pass alone was
+    near the 15 s statement timeout. `COUNT(*) OVER ()` counts the groups
+    before LIMIT applies, so a page with rows needs no separate count; only a
+    page past the last group asks for one.
+    """
+    row = {
+        "period_start": "2021",
+        "period_end": "2021",
+        "release": "1710000000",
+        "observation_count": 3,
+        "group_total": 7,
+    }
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[row], total=99)
+    client = _client_with(session)
+    try:
+        response = client.get(route, params={"metric_code": _CDC_METRIC["metric_code"]})
+    finally:
+        _clear_overrides()
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 7
+    reads = _dispatched(session)
+    assert len(reads) == 1 and "COUNT(*) OVER ()" in reads[0]
+
+    empty = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[], total=7)
+    client = _client_with(empty)
+    try:
+        past_end = client.get(
+            route, params={"metric_code": _CDC_METRIC["metric_code"], "offset": 50}
+        )
+        first = client.get(route, params={"metric_code": _CDC_METRIC["metric_code"]})
+    finally:
+        _clear_overrides()
+    assert past_end.json()["total"] == 7, "past the last group, the count still answers"
+    assert first.json()["total"] == 0
+    assert (
+        sum(sql.lstrip().startswith("SELECT COUNT(") for sql in _dispatched(empty)) == 1
+    )
+
+
+def test_acs_grain_filter_is_plain_equality() -> None:
+    """Covers: API-042 — an ACS grain filter an index can serve.
+
+    ACS serving writes `geo_level` through `gold_glossary.geo_grain`, and the
+    bound word is normalised first, so `UPPER(geo_level)` added nothing but a
+    scan of every tract row of the metric for an all-county read.
+    """
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    declared = dict(OBSERVATION_DISPATCH["CENSUS_ACS"].filter_conditions)
+    assert declared["geo_level"] == "geo_level = :geo_level"
+
+
+def test_an_acs_release_pin_matches_the_vintage_column() -> None:
+    """Covers: API-182 — an earlier ACS release is pinned on `vintage_year`.
+
+    `vintage_year::TEXT = :release` is a cast no index can serve, so an
+    earlier release of one state's cities read every row of the metric. A
+    canonical integer is matched on the column itself; anything else is
+    still compared as text, which answers the same (nothing for "v2022").
+    """
+    session = _DispatchSession(metric_row=dict(_ACS_METRIC))
+    client = _client_with(session)
+    try:
+        pinned = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _ACS_METRIC["metric_code"],
+                "scope": "as_released",
+                "release": "2022",
+                "geo_level": "PLACE",
+                "state_fips": "48",
+            },
+        )
+        odd = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _ACS_METRIC["metric_code"],
+                "scope": "as_released",
+                "release": "02022",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert pinned.status_code == 200, pinned.text
+    assert pinned.json()["release"] == "2022"
+    reads = _dispatched(session)
+    assert "vintage_year = :release_number" in reads[0]
+    assert "vintage_year::TEXT = :release" not in reads[0]
+    assert any(bound.get("release_number") == 2022 for bound in session.parameters)
+    assert odd.status_code == 200, odd.text
+    assert "vintage_year::TEXT = :release" in reads[-1]
+    assert any(bound.get("release") == "02022" for bound in session.parameters)
 
 
 def test_period_listing_refuses_as_released_scope() -> None:
@@ -576,6 +684,35 @@ def test_a_filter_the_source_does_not_declare_is_rejected_with_help() -> None:
     assert not _dispatched(session), "a rejected filter must not reach SQL"
 
 
+def test_a_state_filter_reads_the_state_from_the_geography_key() -> None:
+    """Covers: API-043 — PEP and SAIPE/SAHIE rows carry no state_fips column.
+
+    Their geo_id is the canonical `state:NN|county:NNN` key, so the state
+    filter compares its first segment: a state and every county in it match,
+    and the code is bound, never interpolated.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "geo_level": "county",
+                "state_fips": "48",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    sql = _dispatched(session)[-1]
+    assert "split_part(geo_id, '|', 1) = 'state:' || :state_fips" in sql
+    assert session.parameters[-1]["state_fips"] == "48"
+    for source in ("CENSUS_PEP", "CENSUS_SAIPE_SAHIE"):
+        assert "state_fips" in OBSERVATION_DISPATCH[source].supported_filters()
+
+
 def test_supported_filters_bind_their_declared_conditions() -> None:
     """Covers: API-043 — a declared filter becomes its reviewed condition."""
     session = _DispatchSession(metric_row=dict(_CDC_METRIC))
@@ -730,6 +867,51 @@ def _cdc_suppressed_row() -> dict[str, Any]:
         "source_record_id": "row-1",
         "capture_id": "11111111-1111-1111-1111-111111111111",
     }
+
+
+def test_an_observation_page_carries_its_own_total() -> None:
+    """Covers: API-179 — one read per page, the total counted by the page.
+
+    Counting and then listing ran the relation (and, for a reduced read, its
+    ranking) twice per page: a city map of one state read every place row of
+    the metric four times over two pages. The page now counts with
+    `COUNT(*) OVER ()` before LIMIT; only a page past the end asks for the
+    separate count, so an offset past the last row still reports the total.
+    """
+    row = {**_cdc_suppressed_row(), "page_total": 1234}
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[row], total=99)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _CDC_METRIC["metric_code"]},
+        )
+    finally:
+        _clear_overrides()
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1234
+    reads = _dispatched(session)
+    assert len(reads) == 1
+    assert "COUNT(*) OVER () AS page_total" in reads[0]
+    assert "page_total" not in response.json()["items"][0]
+
+    empty = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=[], total=1234)
+    client = _client_with(empty)
+    try:
+        past_end = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _CDC_METRIC["metric_code"], "offset": 5000},
+        )
+        first = client.get(
+            "/api/v1/observations", params={"metric_code": _CDC_METRIC["metric_code"]}
+        )
+    finally:
+        _clear_overrides()
+    assert past_end.json()["total"] == 1234
+    assert first.json()["total"] == 0
+    assert (
+        sum(sql.lstrip().startswith("SELECT COUNT(") for sql in _dispatched(empty)) == 1
+    )
 
 
 def test_suppressed_values_stay_null_with_their_published_status() -> None:
@@ -894,10 +1076,16 @@ def test_releases_resource_lists_releases_newest_first() -> None:
             "observation_count": 40,
             "newest_period_start": "2022-01-01",
             "newest_period_end": "2022-12-31",
+            "group_total": 2,
         },
-        {"release": "1700000000", "as_of": None, "observation_count": 38},
+        {
+            "release": "1700000000",
+            "as_of": None,
+            "observation_count": 38,
+            "group_total": 2,
+        },
     ]
-    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=rows, total=2)
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC), rows=rows)
     client = _client_with(session)
     try:
         response = client.get(
@@ -1070,8 +1258,9 @@ def test_newest_per_geography_ranks_inside_the_source_relation() -> None:
         assert "newest_period_rank = 1" in sql
         # Ranked before projection, over the source's own relation.
         assert "FROM gold_pep.population_estimate_latest" in sql
-    # The count answers over the reduced set, so total and page agree.
-    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+    # The total is counted over the reduced set by the page itself, so total
+    # and page agree and the ranking runs once per page.
+    assert any("COUNT(*) OVER () AS page_total" in sql for sql in dispatched)
 
 
 def test_newest_per_geography_keeps_the_declared_filters() -> None:
@@ -1213,7 +1402,7 @@ def test_newest_release_per_period_ranks_by_the_declared_release_order() -> None
         assert "newest_release_rank = 1" in sql
         # Ranked inside the source's own as-released relation.
         assert "FROM gold_pep.population_estimate_revision" in sql
-    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+    assert any("COUNT(*) OVER () AS page_total" in sql for sql in dispatched)
 
 
 def test_newest_release_per_period_keeps_the_declared_filters() -> None:

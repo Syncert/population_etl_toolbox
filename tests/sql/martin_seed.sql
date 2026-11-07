@@ -22,6 +22,9 @@ GRANT SELECT ON gold.tile_boundary TO martin_test;
 -- The tract layer (sub-county-geography).
 GRANT SELECT ON gold.tile_tract TO martin_test;
 GRANT SELECT ON gold_glossary.dim_geo_latest TO martin_test;
+-- The place and metro layers (tiles-places-and-metros): function sources
+-- reading the boundaries-by-vintage relation as the invoking role.
+GRANT SELECT ON gold_glossary.tile_boundary_version TO martin_test;
 
 INSERT INTO gold_glossary.dim_geo_latest (
     geo_id, geo_level, state_fips, county_fips, state_name, county_name,
@@ -42,6 +45,23 @@ INSERT INTO gold_glossary.dim_geo_latest (
     latitude = EXCLUDED.latitude,
     longitude = EXCLUDED.longitude,
     geo_geom = EXCLUDED.geo_geom;
+
+-- Madison drawn on two boundary vintages, the 2020 one larger, and its metro
+-- on the 2023 delineation, so the live tier can prove `?vintage=` selects.
+INSERT INTO gold_glossary.tile_boundary_version (
+    geo_id, geo_level, boundary_vintage, geo_name, state_fips, state_name,
+    place_fips, area_code, lsad, latitude, longitude, geometry_checksum, tile_geom
+) VALUES
+    ('state:55|place:48000', 'PLACE', 2010, 'Madison city', '55', 'Wisconsin',
+     '48000', NULL, NULL, 43.0667, -89.4000, repeat('1', 64),
+     ST_Multi(ST_Transform(ST_MakeEnvelope(-89.45, 43.03, -89.35, 43.10, 4326), 3857))),
+    ('state:55|place:48000', 'PLACE', 2020, 'Madison city', '55', 'Wisconsin',
+     '48000', NULL, NULL, 43.0667, -89.4000, repeat('2', 64),
+     ST_Multi(ST_Transform(ST_MakeEnvelope(-89.50, 43.00, -89.30, 43.13, 4326), 3857))),
+    ('cbsa:31540', 'METRO', 2023, 'Madison, WI', NULL, NULL,
+     NULL, '31540', 'Metropolitan Statistical Area', NULL, NULL, repeat('3', 64),
+     ST_Multi(ST_Transform(ST_MakeEnvelope(-89.84, 42.84, -88.94, 43.64, 4326), 3857)))
+ON CONFLICT (geo_id, boundary_vintage) DO NOTHING;
 
 INSERT INTO gold_glossary.dim_metric_catalog (
     metric_code, metric_display_name, source_code, source_object_type,

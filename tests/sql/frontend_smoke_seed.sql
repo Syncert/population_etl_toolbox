@@ -110,10 +110,13 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
+    ('00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'success'),
+    ('00000000-0000-4000-8000-0000000006f1', 'CENSUS_GOVFIN', 'success'),
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
     ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
     ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
-    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success')
+    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success'),
+    ('00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -156,6 +159,10 @@ INSERT INTO control.ingestion_request (
      'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
     ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
      'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured'),
+    ('00000000-0000-4000-9000-000000000e1e', '00000000-0000-4000-8000-000000000e1e',
+     'ELECTIONS', 'smoke://seed', '{}'::JSONB, '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', 'captured'),
+    ('00000000-0000-4000-9000-0000000006f1', '00000000-0000-4000-8000-0000000006f1',
+     'CENSUS_GOVFIN', 'smoke://seed', '{}'::JSONB, '0d22fc01bcebc964591c62614b2c4e51ec6f5811014a45817ce6709b42902eb9', 'captured'),
     ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
      'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
     ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
@@ -163,7 +170,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000ce5', '00000000-0000-4000-8000-000000000ce5',
      'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured'),
     ('00000000-0000-4000-9000-000000000e45', '00000000-0000-4000-8000-000000000e45',
-     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured')
+     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured'),
+    ('00000000-0000-4000-9000-000000000501', '00000000-0000-4000-8000-000000000501',
+     'IRS_SOI', 'smoke://seed', '{}'::JSONB, '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -235,6 +244,14 @@ INSERT INTO raw_capture.response_capture (
      '00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'smoke://seed', '{}'::JSONB,
      '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e1e', '00000000-0000-4000-9000-000000000e1e',
+     '00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'smoke://seed', '{}'::JSONB,
+     '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000006f1', '00000000-0000-4000-9000-0000000006f1',
+     '00000000-0000-4000-8000-0000000006f1', 'CENSUS_GOVFIN', 'smoke://seed', '{}'::JSONB,
+     '0d22fc01bcebc964591c62614b2c4e51ec6f5811014a45817ce6709b42902eb9', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/zip',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
      '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
      'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
@@ -250,6 +267,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-9000-000000000e45',
      '00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'smoke://seed', '{}'::JSONB,
      '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000501', '00000000-0000-4000-9000-000000000501',
+     '00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'smoke://seed', '{}'::JSONB,
+     '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'text/csv',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -796,6 +817,38 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- IRS SOI income -- one county's returns from a county totals file. COUNTY
+-- only, like the migration rows above.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.irs_soi_file (
+    run_id, file_kind, tax_year, capture_id, captured_row_count,
+    quarantined_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000501', 'county_total', 2098, '00000000-0000-4000-a000-000000000501', 1, 0, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.dim_measure (measure_id, soi_column, measure_label, unit, parser_contract_version)
+VALUES ('returns', 'N1', 'Number of returns', 'returns', 'irs_soi_income:v1')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.dim_agi_band (agi_band, band_label, lower_dollars, upper_dollars)
+VALUES ('all', 'All returns', NULL, NULL)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.fact_observation (
+    file_kind, metric_key, tax_year, geo_id, capture_id, run_id, measure_id,
+    agi_band, agi_stub, retrieved_at, geo_sk, geo_type, geography_status,
+    value_source, value, value_status, source_record_id
+)
+SELECT 'county_total', 'returns', 2098, 'state:55|county:025', '00000000-0000-4000-a000-000000000501',
+       '00000000-0000-4000-8000-000000000501', 'returns', 'all', 0, '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved',
+       '289000.0000', 289000, 'valid',
+       '9b0c1d2e3f405162738495a6b7c8d9eafb0c1d2e3f405162738495a6b7c8d9ea'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- EIA weekly retail gasoline -- a state's regular-grade price for one week.
 -- EIA publishes no county, so this is the STATE exception to rule 2. EIA
 -- does not publish Wisconsin; the state is a fixture, like every value here.
@@ -855,7 +908,7 @@ ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Census LEHD LODES -- workplace jobs summed from census blocks to one
--- county, served from views over a published state slice.
+-- county, served from the sums computed when the state slice publishes.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO control.census_lodes_slice (
@@ -882,6 +935,11 @@ SELECT '00000000-0000-4000-8000-00000000010d', 'wac', 'C000', 'state:55|county:0
        'resolved', 1, '345678', 345678, 'valid'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
+
+-- The served sums are computed at publish, as `publish_run` does.
+SELECT gold_census_lodes.refresh_observation_fact(
+    ARRAY['00000000-0000-4000-8000-00000000010d']::UUID[]
+);
 
 -- ---------------------------------------------------------------------------
 -- EPA AirData -- one complete monitor's PM2.5 annual mean, which the county
@@ -1007,6 +1065,75 @@ SELECT '00000000-0000-4000-8000-000000000fe1', 'state:55|county:025', 'EAL_VALT'
        '00000000-0000-4000-a000-000000000fe1', '55025', 'County', 'November 2098', geo_sk, 'resolved',
        '12345678.9', 12345678.9, 'valid', 'Relatively Low',
        'cee25f8f9d0cabcbdcfe0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Elections (MEDSL) -- one county's 2096 presidential TOTAL lines from a
+-- published county read. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.elections_run (
+    run_id, stream, status, run_checksum, source_file, file_count, record_count, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e1e', 'county_president', 'published',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'countypres_2000-2096.csv', 1, 2, '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.elections_file (run_id, file_index, file_key, file_kind, capture_id)
+VALUES ('00000000-0000-4000-8000-000000000e1e', 0, 'data', 'results', '00000000-0000-4000-a000-000000000e1e')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_elections.candidate_result (
+    run_id, result_key, office, election_year, stage, special, state_code, state_fips,
+    county_fips, district, candidate, party_text, party_code, writein, mode, candidate_votes,
+    total_votes, geo_level, geo_id, geo_sk, geography_status, source_record_id, capture_id,
+    record_index
+)
+SELECT '00000000-0000-4000-8000-000000000e1e', candidate.result_key, 'president', 2096, 'GEN', FALSE,
+       'WI', '55', '55025', NULL, candidate.name, candidate.party_text, candidate.party_code, FALSE,
+       'TOTAL', candidate.votes, 300000, 'county', 'state:55|county:025', entity.geo_sk, 'resolved',
+       candidate.result_key, '00000000-0000-4000-a000-000000000e1e', candidate.record_index
+FROM silver_ref.dim_geo_entity AS entity
+CROSS JOIN (VALUES
+    ('e1e0000000000000000000000000000000000000000000000000000000000001', 'SMOKE REPUBLICAN', 'REPUBLICAN', 'REP', 100000::BIGINT, 1),
+    ('e1e0000000000000000000000000000000000000000000000000000000000002', 'SMOKE DEMOCRAT', 'DEMOCRAT', 'DEM', 190000::BIGINT, 2)
+) AS candidate(result_key, name, party_text, party_code, votes, record_index)
+WHERE entity.geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Census government finance -- one county area's local government taxes
+-- from a published Census of Governments unit file. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_govfin_slice (
+    run_id, dataset_id, period, slice_key, capture_id, captured_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000006f1', 'cog_units', 2097, 'bundle',
+    '00000000-0000-4000-a000-0000000006f1', 3, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_govfin.dim_measure (
+    dataset_id, measure_id, measure_label, definition, unit, cadence, methodology_url,
+    parser_contract_version
+) VALUES (
+    'cog_units', 'taxes_total', 'Taxes (smoke fixture)', 'All taxes collected.',
+    'thousands of dollars', 'annual',
+    'https://www.census.gov/programs-surveys/cog/technical-documentation.html', 'smoke:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_govfin.fact_observation (
+    dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id, run_id,
+    retrieved_at, geo_sk, geo_type, geography_status, value_source, value, value_status,
+    government_count, derivation, record_coverage, source_record_id
+)
+SELECT 'cog_units', 'taxes_total', 'local', 2097, 0, 'state:55|county:025',
+       '00000000-0000-4000-a000-0000000006f1', '00000000-0000-4000-8000-0000000006f1',
+       '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved', '746500', 746500, 'valid',
+       3, 'county_area_rollup', 'reported_and_imputed',
+       '6f10000000000000000000000000000000000000000000000000000000000001'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
@@ -1150,29 +1277,34 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------
 
 CREATE TEMP VIEW smoke_published AS
-SELECT * FROM gold_census.metric_publisher
-UNION ALL SELECT * FROM gold_fred.metric_publisher
-UNION ALL SELECT * FROM gold_bls.metric_publisher
-UNION ALL SELECT * FROM gold_pep.metric_publisher
-UNION ALL SELECT * FROM gold_cdc.metric_publisher
-UNION ALL SELECT * FROM gold_fbi.metric_publisher
-UNION ALL SELECT * FROM gold_nass.metric_publisher
-UNION ALL SELECT * FROM gold_bea.metric_publisher
-UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher
-UNION ALL SELECT * FROM gold_census_bps.metric_publisher
-UNION ALL SELECT * FROM gold_census_sae.metric_publisher
-UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
-UNION ALL SELECT * FROM gold_eia.metric_publisher
-UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
-UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
-UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
-UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
-UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
-UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
-UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
-UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
-UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher
-UNION ALL SELECT * FROM gold_usda_ers.metric_publisher;
+-- The publisher contract's own columns, named: a publisher may append
+-- optional ones (`last_value_date`), so `SELECT *` arms stop lining up.
+SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fred.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_bls.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_pep.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fbi.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nass.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_bea.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_bls_qcew.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_bps.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_sae.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_irs_migration.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_irs_soi.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_eia.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_cbp.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_lodes.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_epa_aqs.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_normals.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fcc_bdc.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fema_nri.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_elections.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_govfin.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fhfa_hpi.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hud_fmr_il.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ccd.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_usda_ers.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

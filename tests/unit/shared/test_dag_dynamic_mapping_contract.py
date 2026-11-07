@@ -79,6 +79,11 @@ class _Wiring:
         return seen
 
 
+# ``reschedulable_task`` (bls_ingest, DAG-023) is ``@task`` with a different
+# operator class; it takes the same arguments.
+TASK_DECORATORS = frozenset({"task", "reschedulable_task"})
+
+
 def _decorated_task_trigger_rules(tree: ast.AST, wiring: _Wiring) -> dict[str, str]:
     """The declared trigger rule of every ``@task`` function, by name."""
     rules: dict[str, str] = {}
@@ -86,13 +91,14 @@ def _decorated_task_trigger_rules(tree: ast.AST, wiring: _Wiring) -> dict[str, s
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for decorator in node.decorator_list:
-            if isinstance(decorator, ast.Name) and decorator.id == "task":
+            if isinstance(decorator, ast.Name) and decorator.id in TASK_DECORATORS:
                 rules[node.name] = DEFAULT_TRIGGER_RULE
                 continue
             if not isinstance(decorator, ast.Call):
                 continue
             if not (
-                isinstance(decorator.func, ast.Name) and decorator.func.id == "task"
+                isinstance(decorator.func, ast.Name)
+                and decorator.func.id in TASK_DECORATORS
             ):
                 continue
             rules[node.name] = DEFAULT_TRIGGER_RULE

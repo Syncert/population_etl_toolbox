@@ -29,6 +29,7 @@ from tools.deployment import (
     compose_file,
     compose_steps,
     default_env_file,
+    deploy_environment,
     example_env_file,
     guard_applies,
     read_env_file,
@@ -176,6 +177,58 @@ def test_a_deployment_without_a_base_env_file_passes_only_its_own(
     context = resolve_compose_context("internal", root=tmp_path)
     assert context.base_env_file == ""
     assert context.compose_arguments("up").count("--env-file") == 1
+
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_an_unset_web_build_id_is_stamped_with_the_commit(tmp_path: Path) -> None:
+    """Covers: DEPLOY-008 -- a deployed web build names its commit, not `development`.
+
+    `stack.env.example` ships `WEB_BUILD_ID=` blank and `next.config.mjs` falls
+    back to `development`, so every production image `deploy-up` built
+    reported `build=development` -- read on 2026-11-01 as "the container runs
+    `next dev`" while it was a standalone `node server.js` all along.
+    """
+    _write_env(tmp_path, "infra/docker/stack.env", "WEB_BUILD_ID=\n")
+    context = resolve_compose_context("internal", root=tmp_path)
+    assert deploy_environment(context, environ={}, commit_sha=SHA, root=tmp_path) == {
+        "WEB_BUILD_ID": SHA[:12]
+    }
+
+
+@pytest.mark.parametrize(
+    ("env_file_text", "environ"),
+    [
+        ("WEB_BUILD_ID=release-1\n", {}),
+        ("WEB_BUILD_ID=\n", {"WEB_BUILD_ID": "release-1"}),
+    ],
+    ids=["env-file", "host-environment"],
+)
+def test_an_operators_web_build_id_is_left_alone(
+    tmp_path: Path, env_file_text: str, environ: dict[str, str]
+) -> None:
+    """Covers: DEPLOY-008 -- an explicit build id wins, wherever it is set."""
+    _write_env(tmp_path, "infra/docker/stack.env", env_file_text)
+    context = resolve_compose_context("internal", root=tmp_path)
+    assert (
+        deploy_environment(context, environ=environ, commit_sha=SHA, root=tmp_path)
+        == {}
+    )
+
+
+def test_the_base_env_files_build_id_counts_too(tmp_path: Path) -> None:
+    """Covers: DEPLOY-008 -- `.env` is read as Compose reads it, under the mode file."""
+    _write_env(tmp_path, "infra/docker/.env", "WEB_BUILD_ID=from-base\n")
+    _write_env(tmp_path, "infra/docker/stack.env", "ANALYTICS_DB_NAME=x\n")
+    context = resolve_compose_context("internal", root=tmp_path)
+    assert deploy_environment(context, environ={}, commit_sha=SHA, root=tmp_path) == {}
+
+
+def test_no_commit_exports_nothing(tmp_path: Path) -> None:
+    """Covers: DEPLOY-008 -- outside a checkout the old fallback applies."""
+    context = resolve_compose_context("internal", use_host_env=True, root=tmp_path)
+    assert deploy_environment(context, environ={}, commit_sha="", root=tmp_path) == {}
 
 
 def test_a_compose_file_override_replaces_only_the_file(tmp_path: Path) -> None:

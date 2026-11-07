@@ -280,6 +280,12 @@ class ObservationDispatch:
     identity_columns: tuple[str, ...] = ()
     # -- projection onto the neutral envelope ------------------------------
     release_expression: str = ""
+    #: An integer column holding the release, when ``release_expression`` is
+    #: that column cast to text. A pinned release is then matched on the
+    #: column itself (``vintage_year = :release_number``), which an index can
+    #: serve, rather than on the cast, which none can (web-place-maps: an
+    #: earlier ACS release of one state's cities).
+    release_integer_column: str | None = None
     #: Orders releases oldest-to-newest (``release_watermark::BIGINT`` for CDC,
     #: dates elsewhere). Never carries ``DESC``.
     release_order_expression: str = ""
@@ -391,6 +397,13 @@ _UNION_PERIOD_START = "COALESCE(duration_start, observation_date)::TEXT"
 _UNION_PERIOD_END = "COALESCE(duration_end, observation_date)::TEXT"
 _GEO_ID_FILTER = ("geo_id", "geo_id = :geo_id")
 _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
+#: The same filter for a relation whose ``geo_level`` is already the
+#: vocabulary word: ACS serving writes it through ``gold_glossary.geo_grain``,
+#: which upper-cases and trims, and the bound value is normalised by
+#: ``normalize_geo_level`` before it is bound. Plain equality is the same
+#: answer, and unlike ``UPPER(geo_level)`` an index can serve it, which is what
+#: keeps an all-county read from scanning every tract row of the metric.
+_CANONICAL_GEO_LEVEL_FILTER = ("geo_level", "geo_level = :geo_level")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
@@ -522,6 +535,15 @@ _GRAIN_OF_GEO_TYPE = "gold_glossary.geo_grain(geo_type)"
 _GEO_TYPE_GRAIN_FILTER = ("geo_level", f"{_GRAIN_OF_GEO_TYPE} = UPPER(:geo_level)")
 _STATE_FIPS_FILTER = ("state_fips", "state_fips = :state_fips")
 _COUNTY_FIPS_FILTER = ("county_fips", "county_fips = :county_fips")
+#: The state filter for a source whose relation carries no ``state_fips``
+#: column but whose ``geo_id`` is the canonical ``state:NN[|county:NNN]`` key:
+#: the state is the key's first segment, so a state row and every county or
+#: place inside it match, and a row keyed otherwise (a metro, the nation)
+#: does not, as it does not on a ``state_fips`` column.
+_STATE_OF_GEO_ID_FILTER = (
+    "state_fips",
+    "split_part(geo_id, '|', 1) = 'state:' || :state_fips",
+)
 
 #: One reviewed dispatch entry per completed source, keyed by glossary source
 #: code. This is the registry dispatch API-001 recorded: the neutral
@@ -584,6 +606,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             lineage_relation="fact_acs_observation",
             metric_code_column="metric_code",
             release_expression="vintage_year::TEXT",
+            release_integer_column="vintage_year",
             release_order_expression="vintage_year",
             as_of_expression="as_of_date::TEXT",
             period_start_expression=_UNION_PERIOD_START,
@@ -598,7 +621,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             filter_conditions=(
                 _GEO_ID_FILTER,
-                _GEO_LEVEL_FILTER,
+                _CANONICAL_GEO_LEVEL_FILTER,
                 _STATE_FIPS_FILTER,
                 _COUNTY_FIPS_FILTER,
                 ("year_from", _DATE_YEAR_FROM),
@@ -719,6 +742,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "observation_year >= :year_from"),
                 ("year_to", "observation_year <= :year_to"),
             ),
@@ -960,6 +984,11 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("dollar_basis", "dollar_basis"),
                 ("observation_basis", "observation_basis"),
                 ("value_source", "value_source"),
+                # NULL on every figure BEA published; on a metro area summed
+                # from its member counties, how it was derived
+                # (`sum_of_member_counties`, `ratio_of_member_county_sums`),
+                # so a reader never takes it for BEA's own (web-metro-pages).
+                ("derivation", "derivation"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -1065,6 +1094,48 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="CENSUS_GOVFIN",
+            latest_relation="gold_census_govfin.observation_latest",
+            released_relation="gold_census_govfin.observation_revision",
+            lineage_schema="gold_census_govfin",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<dataset>:<measure>:<government
+            # level>`, the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("government_level", "government_level"),
+                # A fiscal year is dated by the calendar year it ends in.
+                ("period_label", "period_label"),
+                # Census's figure, or the warehouse's sum of Census's
+                # government records (county areas, Census of Governments).
+                ("derivation", "COALESCE(derivation, 'census_published')"),
+                ("record_coverage", "record_coverage"),
+                ("government_count", "government_count::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="CENSUS_SAIPE_SAHIE",
             latest_relation="gold_census_sae.estimate_latest",
             released_relation="gold_census_sae.estimate_revision",
@@ -1094,12 +1165,19 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("confidence_lower", "confidence_lower::TEXT"),
                 ("confidence_upper", "confidence_upper::TEXT"),
                 ("margin_of_error", "margin_of_error::TEXT"),
+                # The margin as a percent of the estimate, as the ACS silver
+                # transform derives it; no percentage for a zero estimate.
+                (
+                    "margin_of_error_pct",
+                    "(margin_of_error / NULLIF(value, 0) * 100)::TEXT",
+                ),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "estimate_year >= :year_from"),
                 ("year_to", "estimate_year <= :year_to"),
             ),
@@ -1144,6 +1222,51 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             latest_order=("geo_id", "period_start"),
             released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="IRS_SOI",
+            latest_relation="gold_irs_soi.observation_latest",
+            released_relation="gold_irs_soi.observation_revision",
+            lineage_schema="gold_irs_soi",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>` for all returns and
+            # `<measure>:<agi band>` for one band, the text the relations
+            # carry (and the fact stores) as `metric_key`.
+            lineage_key_column="metric_key",
+            # SOI names no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # SOI's item code: `A06500` is income tax after credits.
+                ("soi_column", "soi_column"),
+                ("agi_band", "agi_band"),
+                ("band_label", "band_label"),
+                # `county` (the county files, which also hold each state's
+                # total) or `state` (Historic Table 2).
+                ("product", "product"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "tax_year >= :year_from"),
+                ("year_to", "tax_year <= :year_to"),
+            ),
+            # One row per (metric, geography, tax year) in the latest view,
+            # and the metric is pinned by every query.
+            latest_order=("geo_id", "tax_year"),
+            released_order=("tax_year", "geo_id", "retrieved_at", "capture_id"),
             analysis_ready=True,
         ),
         ObservationDispatch(
@@ -1427,6 +1550,43 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("rating", "rating"),
                 ("missing_reason", "missing_reason"),
                 ("declarations", "declarations"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="ELECTIONS",
+            latest_relation="gold_elections.observation_latest",
+            released_relation="gold_elections.observation_revision",
+            lineage_schema="gold_elections",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The MEDSL file read ("MEDSL countypres_2000-2024.csv"); releases
+            # are ordered by when the warehouse published them.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # How the share or margin is counted (ADR-0014).
+                ("observation_basis", "observation_basis"),
+                ("missing_reason", "missing_reason"),
+                ("leading_party", "leading_party_code"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -1828,6 +1988,12 @@ def _sae_datasets() -> tuple[str, ...]:
     return tuple(dataset.dataset_id for dataset in DATASETS)
 
 
+def _govfin_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_govfin.registry import DATASET_IDS
+
+    return DATASET_IDS
+
+
 def _fbi_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
 
@@ -1866,6 +2032,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
+            source_code="IRS_SOI",
+            display_name="IRS Statistics of Income county and state income",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
             source_code=SERVING_CONTRACTS["pep"].source_code,
             display_name=SERVING_CONTRACTS["pep"].display_name,
             route_segment="pep",
@@ -1885,6 +2057,13 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_NEUTRAL_PATHS,
             dataset_provider=_fbi_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_GOVFIN",
+            display_name="Census Bureau State and Local Government Finances",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_govfin_datasets,
         ),
         SourceDiscovery(
             source_code="CENSUS_SAIPE_SAHIE",
@@ -1923,6 +2102,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         SourceDiscovery(
             source_code="FHFA_HPI",
             display_name="Federal Housing Finance Agency House Price Index",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="ELECTIONS",
+            display_name="Election Results and Seat Holders",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),

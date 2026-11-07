@@ -1,0 +1,2166 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it. An `agency_rate` entry (ADR-0012) is a county crime rate computed in gold from FBI agency reports: the reporting agencies' offenses over their own FBI populations, beside the FBI rate it names in `reads_beside`. A `time_cost` entry (ADR-0009 amendment, 2026-11-06) is minutes of work: a BLS average price divided by the QCEW average weekly wage over `hours_per_week`; its `{area}` placeholder expands to each listed BLS area code, as `<ratio_id>:<area>`, and the reader names the wage's area.",
+  "entries": [
+    {
+      "ratio_id": "poverty_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people below the poverty level",
+      "numerator": "CENSUS_ACS:{dataset}:B17001_002",
+      "denominator": "CENSUS_ACS:{dataset}:B17001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people whose poverty status is determined",
+      "universe": "people whose poverty status is determined",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B17001_002 is a line of the table whose total B17001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "The Bureau's own overall poverty rate is this ratio (table S1701)."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B17001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "unemployed_share_of_labor_force",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Unemployed share of the civilian labor force (survey)",
+      "numerator": "CENSUS_ACS:{dataset}:B23025_005",
+      "denominator": "CENSUS_ACS:{dataset}:B23025_003",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian labor force, 16 and over",
+      "universe": "civilian labor force, 16 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B23025_005 is a line of the table whose total B23025_003 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "The official unemployment rate is BLS LAUS; this is the survey's own share over a five-year (or one-year) period, and the two differ."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23025",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "labor_force_participation",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 16 and over in the labor force",
+      "numerator": "CENSUS_ACS:{dataset}:B23025_002",
+      "denominator": "CENSUS_ACS:{dataset}:B23025_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people 16 and over",
+      "universe": "people 16 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B23025_002 is a line of the table whose total B23025_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23025",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "owner_occupied_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of occupied homes that are owner-occupied",
+      "numerator": "CENSUS_ACS:{dataset}:B25003_002",
+      "denominator": "CENSUS_ACS:{dataset}:B25003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "occupied housing units",
+      "universe": "occupied housing units",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25003_002 is a line of the table whose total B25003_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25003",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "renter_occupied_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of occupied homes that are renter-occupied",
+      "numerator": "CENSUS_ACS:{dataset}:B25003_003",
+      "denominator": "CENSUS_ACS:{dataset}:B25003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "occupied housing units",
+      "universe": "occupied housing units",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25003_003 is a line of the table whose total B25003_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25003",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "vacancy_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of housing units that are vacant",
+      "numerator": "CENSUS_ACS:{dataset}:B25002_003",
+      "denominator": "CENSUS_ACS:{dataset}:B25002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "housing units",
+      "universe": "housing units",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25002_003 is a line of the table whose total B25002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "Vacant includes seasonal and for-sale units, not only units for rent."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "living_alone_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households of one person living alone",
+      "numerator": "CENSUS_ACS:{dataset}:B11001_008",
+      "denominator": "CENSUS_ACS:{dataset}:B11001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B11001_008 is a line of the table whose total B11001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B11001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "never_married_men_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of men 15 and over who never married",
+      "numerator": "CENSUS_ACS:{dataset}:B12001_003",
+      "denominator": "CENSUS_ACS:{dataset}:B12001_002",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "men 15 and over",
+      "universe": "men 15 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B12001_003 is a line of the table whose total B12001_002 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B12001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "never_married_women_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of women 15 and over who never married",
+      "numerator": "CENSUS_ACS:{dataset}:B12001_012",
+      "denominator": "CENSUS_ACS:{dataset}:B12001_011",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "women 15 and over",
+      "universe": "women 15 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B12001_012 is a line of the table whose total B12001_011 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B12001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "same_house_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people living in the same house as a year ago",
+      "numerator": "CENSUS_ACS:{dataset}:B07001_017",
+      "denominator": "CENSUS_ACS:{dataset}:B07001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people 1 year and over",
+      "universe": "people 1 year and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B07001_017 is a line of the table whose total B07001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "moved_within_county_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people who moved within the county in the past year",
+      "numerator": "CENSUS_ACS:{dataset}:B07001_033",
+      "denominator": "CENSUS_ACS:{dataset}:B07001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "people 1 year and over",
+      "universe": "people 1 year and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B07001_033 is a line of the table whose total B07001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B07001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "foreign_born_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of residents born outside the United States",
+      "numerator": "CENSUS_ACS:{dataset}:B05002_013",
+      "denominator": "CENSUS_ACS:{dataset}:B05002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "total population (survey)",
+      "universe": "total population (survey)",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B05002_013 is a line of the table whose total B05002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B05002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "veteran_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of civilians 18 and over who are veterans",
+      "numerator": "CENSUS_ACS:{dataset}:B21001_002",
+      "denominator": "CENSUS_ACS:{dataset}:B21001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilians 18 and over",
+      "universe": "civilians 18 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B21001_002 is a line of the table whose total B21001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B21001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "income_under_10k_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with income under $10,000",
+      "numerator": "CENSUS_ACS:{dataset}:B19001_002",
+      "denominator": "CENSUS_ACS:{dataset}:B19001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B19001_002 is a line of the table whose total B19001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "income_200k_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with income of $200,000 or more",
+      "numerator": "CENSUS_ACS:{dataset}:B19001_017",
+      "denominator": "CENSUS_ACS:{dataset}:B19001_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B19001_017 is a line of the table whose total B19001_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "worked_from_home_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of workers who worked from home",
+      "numerator": "CENSUS_ACS:{dataset}:B08301_021",
+      "denominator": "CENSUS_ACS:{dataset}:B08301_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "workers 16 and over",
+      "universe": "workers 16 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08301_021 is a line of the table whose total B08301_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08301",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "public_transit_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of workers commuting by public transportation",
+      "numerator": "CENSUS_ACS:{dataset}:B08301_010",
+      "denominator": "CENSUS_ACS:{dataset}:B08301_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "workers 16 and over",
+      "universe": "workers 16 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08301_010 is a line of the table whose total B08301_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08301",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "commute_90_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of commuters travelling 90 minutes or more",
+      "numerator": "CENSUS_ACS:{dataset}:B08303_013",
+      "denominator": "CENSUS_ACS:{dataset}:B08303_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "workers 16 and over who did not work from home",
+      "universe": "workers 16 and over who did not work from home",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08303_013 is a line of the table whose total B08303_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08303",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "single_family_detached_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of housing units that are single-family detached",
+      "numerator": "CENSUS_ACS:{dataset}:B25024_002",
+      "denominator": "CENSUS_ACS:{dataset}:B25024_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "housing units",
+      "universe": "housing units",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25024_002 is a line of the table whose total B25024_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25024",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "built_2020_or_later_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of housing units built in 2020 or later",
+      "numerator": "CENSUS_ACS:{dataset}:B25034_002",
+      "denominator": "CENSUS_ACS:{dataset}:B25034_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "housing units",
+      "universe": "housing units",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B25034_002 is a line of the table whose total B25034_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "The Bureau changes this table's year bands between releases; line 2 names the newest band of its own release."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25034",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "no_vehicle_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with no vehicle available",
+      "numerator": "CENSUS_ACS:{dataset}:B08201_002",
+      "denominator": "CENSUS_ACS:{dataset}:B08201_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B08201_002 is a line of the table whose total B08201_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08201",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "broadband_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with a broadband subscription",
+      "numerator": "CENSUS_ACS:{dataset}:B28002_004",
+      "denominator": "CENSUS_ACS:{dataset}:B28002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B28002_004 is a line of the table whose total B28002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "Published from the 2017 release on."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B28002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "no_internet_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with no internet access",
+      "numerator": "CENSUS_ACS:{dataset}:B28002_013",
+      "denominator": "CENSUS_ACS:{dataset}:B28002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households",
+      "universe": "households",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B28002_013 is a line of the table whose total B28002_001 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "Published from the 2017 release on."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B28002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_under_19_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people under 19 with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_017",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_002",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people under 19",
+      "universe": "civilian noninstitutionalized people under 19",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_017 is a line of the table whose total B27010_002 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_19_to_34_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 19 to 34 with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_033",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_018",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people 19 to 34",
+      "universe": "civilian noninstitutionalized people 19 to 34",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_033 is a line of the table whose total B27010_018 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_35_to_64_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 35 to 64 with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_050",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_034",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people 35 to 64",
+      "universe": "civilian noninstitutionalized people 35 to 64",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_050 is a line of the table whose total B27010_034 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_65_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people 65 and over with no health insurance",
+      "numerator": "CENSUS_ACS:{dataset}:B27010_066",
+      "denominator": "CENSUS_ACS:{dataset}:B27010_051",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "civilian noninstitutionalized people 65 and over",
+      "universe": "civilian noninstitutionalized people 65 and over",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B27010_066 is a line of the table whose total B27010_051 defines its universe; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B27010",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "under_18_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of residents under 18",
+      "numerator": "CENSUS_ACS:{dataset}:B09001_001",
+      "denominator": "CENSUS_ACS:{dataset}:B01003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "total population (survey)",
+      "universe": "total population (survey)",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B09001_001 counts a subset of the people B01003_001 counts, in the same ACS release; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year.",
+        "B09001 counts people under 18 in households and group quarters, a subset of the total population in the same release."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B09001",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "age_65_plus_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of residents 65 and over",
+      "numerator": "CENSUS_ACS:{dataset}:B09020_001",
+      "denominator": "CENSUS_ACS:{dataset}:B01003_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "total population (survey)",
+      "universe": "total population (survey)",
+      "numerator_is_subset": true,
+      "controlled_denominator_levels": [
+        "NATIONAL",
+        "STATE",
+        "COUNTY",
+        "METRO"
+      ],
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "B09020_001 counts a subset of the people B01003_001 counts, in the same ACS release; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion or ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B09020",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html"
+      ]
+    },
+    {
+      "ratio_id": "property_tax_to_home_value",
+      "kind": "ratio",
+      "scale": 100,
+      "unit": "percent of median home value",
+      "label": "Median property tax as a percent of median home value",
+      "numerator": "CENSUS_ACS:{dataset}:B25103_001",
+      "denominator": "CENSUS_ACS:{dataset}:B25077_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "median home value, owner-occupied homes",
+      "universe": "owner-occupied housing units",
+      "numerator_is_subset": false,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-2",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Both medians describe the same owner-occupied homes in the same ACS dataset, release and period, so their ratio is the Bureau's derived ratio of two estimates (ADR-0009 rules 2 and 4). The taxes are not a part of the value, so it is a ratio, not a share. Named in deliverable T-2 of the taxes-and-public-money plan, which Nick approved as option B on 2026-11-05.",
+      "limitations": [
+        "A ratio of two medians, not the median of each home's own tax rate: the homes paying the median tax need not be the homes of median value.",
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived ratio, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Home value is the owner's own estimate; where values have risen faster than assessments, the ratio falls without any change in tax law.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year ratio describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25103",
+        "https://data.census.gov/table/ACSDT5Y2023.B25077",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
+    },
+    {
+      "ratio_id": "violent_crime_rate",
+      "kind": "provider_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people",
+      "label": "Violent crime rate, as the FBI published it",
+      "numerator": "FBI_UCR:summarized_violent_crime:V:offense:absolute_total",
+      "provider_rate": "FBI_UCR:summarized_violent_crime:V:offense:rate",
+      "denominator_label": "population covered by reporting agencies",
+      "universe": "population covered by reporting agencies",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "The rate covers the population of agencies that reported; a missing agency report is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+      ]
+    },
+    {
+      "ratio_id": "property_crime_rate",
+      "kind": "provider_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people",
+      "label": "Property crime rate, as the FBI published it",
+      "numerator": "FBI_UCR:summarized_property_crime:P:offense:absolute_total",
+      "provider_rate": "FBI_UCR:summarized_property_crime:P:offense:rate",
+      "denominator_label": "population covered by reporting agencies",
+      "universe": "population covered by reporting agencies",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "The rate covers the population of agencies that reported; a missing agency report is not zero crime."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi"
+      ]
+    },
+    {
+      "ratio_id": "violent_crime_county_agency_rate",
+      "kind": "agency_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people covered by reporting agencies in this county",
+      "label": "Violent crime per 100,000 people, computed from agency reports",
+      "numerator": "FBI_UCR:return_a_violent_crime:V:offense:absolute_total",
+      "reads_beside": "FBI_UCR:summarized_violent_crime:V:offense:rate",
+      "geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "FBI population of the agencies serving only this county that reported",
+      "universe": "people covered by the reporting agencies that serve only this county",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 2,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): violent offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds. Version 2 (2026-10-31) reads the agencies from the FBI's Return A master file, which holds every agency, instead of the CDE's six-agency sample; the method is unchanged.",
+      "limitations": [
+        "Agencies serving more than one county, and agencies with no published population, are left out of both sides.",
+        "The rate describes the people its reporting agencies cover, not every county resident: where a sheriff and town police both serve a county, each agency's population is its own jurisdiction's.",
+        "No rate is shown when no agency reported, when only multi-county agencies reported, or when the reporting agencies cover under half the population the county's agencies serve.",
+        "Monthly, like the agency reports it divides; never rolled up into a year. Not comparable with a Census per-capita figure."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/downloads"
+      ]
+    },
+    {
+      "ratio_id": "property_crime_county_agency_rate",
+      "kind": "agency_rate",
+      "scale": 100000,
+      "unit": "per 100,000 people covered by reporting agencies in this county",
+      "label": "Property crime per 100,000 people, computed from agency reports",
+      "numerator": "FBI_UCR:return_a_property_crime:P:offense:absolute_total",
+      "reads_beside": "FBI_UCR:summarized_property_crime:P:offense:rate",
+      "geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "FBI population of the agencies serving only this county that reported",
+      "universe": "people covered by the reporting agencies that serve only this county",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 2,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "ADR-0012, accepted with this pairing by Nick on 2026-10-31 (50 % coverage floor, coverage shown beside the figure): property offenses reported by the agencies serving only this county, divided by those agencies' FBI-published populations, the way the FBI computes a state rate. Both sides are FBI figures from one release and one month, so ADR-0009 rule 2 holds. Version 2 (2026-10-31) reads the agencies from the FBI's Return A master file, which holds every agency, instead of the CDE's six-agency sample; the method is unchanged.",
+      "limitations": [
+        "Agencies serving more than one county, and agencies with no published population, are left out of both sides.",
+        "The rate describes the people its reporting agencies cover, not every county resident: where a sheriff and town police both serve a county, each agency's population is its own jurisdiction's.",
+        "No rate is shown when no agency reported, when only multi-county agencies reported, or when the reporting agencies cover under half the population the county's agencies serve.",
+        "Monthly, like the agency reports it divides; never rolled up into a year. Not comparable with a Census per-capita figure."
+      ],
+      "citations": [
+        "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/downloads"
+      ]
+    },
+    {
+      "ratio_id": "birth_rate",
+      "kind": "provider_rate",
+      "scale": 1000,
+      "unit": "per 1,000 residents",
+      "label": "Births per 1,000 residents, as the Census Bureau estimated it",
+      "numerator": "CENSUS_PEP:BIRTHS",
+      "provider_rate": "CENSUS_PEP:RBIRTH",
+      "denominator_label": "average resident population over the estimate year (PEP)",
+      "universe": "average resident population over the estimate year (PEP)",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "Population Estimates Program rates use the average of the year's starting and ending populations."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/file-layouts.html"
+      ]
+    },
+    {
+      "ratio_id": "death_rate",
+      "kind": "provider_rate",
+      "scale": 1000,
+      "unit": "per 1,000 residents",
+      "label": "Deaths per 1,000 residents, as the Census Bureau estimated it",
+      "numerator": "CENSUS_PEP:DEATHS",
+      "provider_rate": "CENSUS_PEP:RDEATH",
+      "denominator_label": "average resident population over the estimate year (PEP)",
+      "universe": "average resident population over the estimate year (PEP)",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "Population Estimates Program rates use the average of the year's starting and ending populations."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/popest/technical-documentation/file-layouts.html"
+      ]
+    },
+    {
+      "ratio_id": "poverty_rate_saipe",
+      "kind": "provider_rate",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people in poverty, as SAIPE modelled it",
+      "numerator": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVALL",
+      "provider_rate": "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRTALL",
+      "denominator_label": "people whose poverty status is determined (SAIPE)",
+      "universe": "people whose poverty status is determined (SAIPE)",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "A model-based single-year estimate; it is not the ACS survey share."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/saipe/technical-documentation/methodology.html"
+      ]
+    },
+    {
+      "ratio_id": "uninsured_rate_sahie",
+      "kind": "provider_rate",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of people under 65 without health insurance, as SAHIE modelled it",
+      "numerator": "CENSUS_SAIPE_SAHIE:sahie:NUI",
+      "provider_rate": "CENSUS_SAIPE_SAHIE:sahie:PCTUI",
+      "denominator_label": "people under 65, all incomes (SAHIE)",
+      "universe": "people under 65, all incomes (SAHIE)",
+      "status": "approved",
+      "owner": "v1.0 build-out",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-10-31",
+      "last_reviewed_date": "2026-10-31",
+      "rationale": "The provider publishes this rate itself, so the per-capita view is the provider's figure and nothing is recomputed beside it (ADR-0009 rule 5).",
+      "limitations": [
+        "A model-based single-year estimate; it is not the ACS survey share."
+      ],
+      "citations": [
+        "https://www.census.gov/programs-surveys/sahie/technical-documentation/methodology.html"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_all_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from all payments from government and others",
+      "numerator": "BEA:CAINC35:1000",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_social_security_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Social Security",
+      "numerator": "BEA:CAINC35:2110",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicare_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicare",
+      "numerator": "BEA:CAINC35:2210",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicaid_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicaid and other public medical care",
+      "numerator": "BEA:CAINC35:2220",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_ssi_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Supplemental Security Income",
+      "numerator": "BEA:CAINC35:2310",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_eitc_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from the Earned Income Tax Credit",
+      "numerator": "BEA:CAINC35:2320",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_snap_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from SNAP food assistance",
+      "numerator": "BEA:CAINC35:2330",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_unemployment_insurance_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from unemployment insurance",
+      "numerator": "BEA:CAINC35:2400",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_veterans_county",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from veterans' benefits",
+      "numerator": "BEA:CAINC35:2500",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Transfer receipts are a component of personal income (CAINC4 line 47), so the program's receipts over personal income is the share of residents' income the program provides. Both figures are BEA's, for the same county, year and release (ADR-0009 rule 2).",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for.",
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_all_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from all payments from government and others",
+      "numerator": "BEA:SAINC35:1000",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_social_security_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Social Security",
+      "numerator": "BEA:SAINC35:2110",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicare_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicare",
+      "numerator": "BEA:SAINC35:2210",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_medicaid_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Medicaid and other public medical care",
+      "numerator": "BEA:SAINC35:2220",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_ssi_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from Supplemental Security Income",
+      "numerator": "BEA:SAINC35:2310",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_eitc_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from the Earned Income Tax Credit",
+      "numerator": "BEA:SAINC35:2320",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_snap_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from SNAP food assistance",
+      "numerator": "BEA:SAINC35:2330",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_unemployment_insurance_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from unemployment insurance",
+      "numerator": "BEA:SAINC35:2400",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "transfer_share_veterans_state",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income from veterans' benefits",
+      "numerator": "BEA:SAINC35:2500",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "SAINC35 and SAINC50 are published together in BEA's annual state release, so the state's program receipts and its personal income share one release (ADR-0009 rule 2). Transfer receipts are a component of personal income.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in all personal taxes",
+      "numerator": "BEA:SAINC50:60",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "federal_personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in federal personal taxes",
+      "numerator": "BEA:SAINC50:70",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "state_personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in state personal taxes",
+      "numerator": "BEA:SAINC50:120",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "local_personal_taxes_share_of_income",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of personal income paid in local personal taxes",
+      "numerator": "BEA:SAINC50:180",
+      "denominator": "BEA:SAINC50:10",
+      "denominator_label": "personal income (BEA SAINC50)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-1",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current taxes are paid out of personal income; SAINC50 publishes both in one table, so the share is one release, one state, one year (ADR-0009 rule 2). It is the state's average personal tax rate as BEA measures it.",
+      "limitations": [
+        "Personal current taxes are income, licence and personal property taxes; sales, excise and business property taxes are not in them.",
+        "An average over all residents, not any household's rate."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-by-state"
+      ]
+    },
+    {
+      "ratio_id": "income_tax_share_of_agi",
+      "kind": "per_capita",
+      "label": "Federal income tax as a share of adjusted gross income",
+      "numerator": "IRS_SOI:income_tax_amount",
+      "denominator": "IRS_SOI:agi",
+      "denominator_label": "adjusted gross income",
+      "universe": "individual income tax returns filed",
+      "scale": 100,
+      "unit": "percent of adjusted gross income",
+      "rationale": "Income tax after credits (SOI item A06500) over adjusted gross income (A00100), both from the same SOI file, tax year and place; the plan's federal tax rate, approved with plan option B on 2026-11-05 (ADR-0009 rules 2-4). Not a rate SOI publishes, so rule 5 is not at stake.",
+      "limitations": [
+        "Describes returns filed by residents of the place, not every resident: people who file no return are in neither side.",
+        "Income tax after credits; refundable credits paid beyond the tax owed, such as most of the EITC, are not subtracted.",
+        "County files carry income tax from tax year 2010; the 1989-2009 county files publish no tax item, so the series starts in 2010 for counties and in 2020 for the nation."
+      ],
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data",
+        "https://www.irs.gov/statistics/soi-tax-stats-historic-table-2"
+      ],
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "status": "approved",
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "version": 1
+    },
+    {
+      "ratio_id": "eitc_share_of_returns",
+      "kind": "share",
+      "label": "Share of returns claiming the earned income tax credit",
+      "numerator": "IRS_SOI:eitc_returns",
+      "denominator": "IRS_SOI:returns",
+      "numerator_is_subset": true,
+      "denominator_label": "individual income tax returns filed",
+      "universe": "individual income tax returns filed",
+      "scale": 100,
+      "unit": "percent",
+      "rationale": "Returns with the earned income credit (N59660) are a subset of all returns (N1) in the same SOI file, tax year and place; approved with plan option B on 2026-11-05 (ADR-0009 rules 2-4).",
+      "limitations": [
+        "Counts returns, not people or households: a joint return is one return.",
+        "Available from tax year 2010 for counties; the 1989-2009 county files publish no credit items."
+      ],
+      "citations": [
+        "https://www.irs.gov/statistics/soi-tax-stats-county-data",
+        "https://www.irs.gov/statistics/soi-tax-stats-historic-table-2"
+      ],
+      "owner": "taxes-and-public-money",
+      "reviewer": "Nick",
+      "status": "approved",
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "version": 1
+    },
+    {
+      "ratio_id": "dividends_interest_rent_share",
+      "label": "Share of personal income from dividends, interest and rent",
+      "numerator": "BEA:CAINC4:46",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-6",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Dividends, interest and rent (CAINC4 line 46) are a component of personal income (CAINC1 line 1); both are BEA's, for the same place, year and release (ADR-0009 rule 2). Named in deliverable T-6 of the taxes-and-public-money plan (the \"where income comes from\" bar), which Nick approved as option B on 2026-11-05.",
+      "limitations": [
+        "Income from what residents own, counted where they live; retirees' savings and landlords' rents both count.",
+        "Rent includes the rental value of owner-occupied homes, which BEA imputes."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-income-county-metro-and-other-areas"
+      ]
+    },
+    {
+      "ratio_id": "transfer_receipts_share",
+      "label": "Share of personal income from payments from government and others",
+      "numerator": "BEA:CAINC4:47",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "denominator": "BEA:CAINC1:1",
+      "denominator_label": "personal income (BEA CAINC1)",
+      "universe": "personal income of residents",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "taxes-and-public-money T-6",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-05",
+      "last_reviewed_date": "2026-11-05",
+      "rationale": "Personal current transfer receipts (CAINC4 line 47) are a component of personal income (CAINC1 line 1), published with it in the same county release, so the share has the same year as the dividends share beside it (ADR-0009 rule 2). CAINC35's program detail is published about a year later. Named in deliverable T-6 of the taxes-and-public-money plan, approved as option B on 2026-11-05.",
+      "limitations": [
+        "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
+        "Medical benefits count as income of the people whose care they pay for."
+      ],
+      "citations": [
+        "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_eggs",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a dozen eggs, grade A large",
+      "numerator": "BLS:APU{area}708111",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_milk",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a gallon of whole milk",
+      "numerator": "BLS:APU{area}709112",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_bread",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a pound of white bread",
+      "numerator": "BLS:APU{area}702111",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_beef",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a pound of ground beef",
+      "numerator": "BLS:APU{area}FC1101",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_chicken",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a pound of boneless chicken breast",
+      "numerator": "BLS:APU{area}FF1101",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_electricity",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to buy a kilowatt-hour of electricity",
+      "numerator": "BLS:APU{area}72610",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "areas": [
+        "0000",
+        "0100",
+        "0200",
+        "0300",
+        "0400"
+      ],
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY",
+        "STATE",
+        "NATIONAL"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the wage's area (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the wage's area",
+      "status": "approved",
+      "owner": "cost-of-living-section",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-06",
+      "last_reviewed_date": "2026-11-06",
+      "rationale": "Nick approved minutes of work on 2026-11-06 as the relatable reading of an everyday price. BLS publishes the average price for the nation and the four Census regions only; QCEW publishes the average weekly wage for counties, states and the nation. The price's area and the wage's area are both named beside every value.",
+      "limitations": [
+        "The price is the Census region's urban average (or the nation's); the wage is the reader's own county, state or nation, so the two areas differ and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the area, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The price is one month's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.bls.gov/cpi/factsheets/average-prices.htm",
+        "https://www.bls.gov/cew/about-data/",
+        "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    }
+  ]
+}

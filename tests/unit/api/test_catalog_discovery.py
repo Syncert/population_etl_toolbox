@@ -33,6 +33,9 @@ _GLOSSARY_CONTRACTS = frozenset(
         # The relationship projection beside the geography it relates
         # (nearby-and-related-places).
         "gold_glossary.geo_relationship",
+        # Finding a place by name, and by location (api-place-search).
+        "gold_glossary.geo_search",
+        "gold_glossary.geo_boundary",
     }
 )
 
@@ -155,6 +158,12 @@ def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
             detail,
             catalog_queries.GEOGRAPHY_RELATED_QUERY,
             catalog_queries.GEOGRAPHY_EXISTS_QUERY,
+            catalog_queries.GEO_SEARCH_QUERY,
+            catalog_queries.GEO_SEARCH_ROWS_QUERY,
+            catalog_queries.GEO_SEARCH_COUNTY_METROS_QUERY,
+            catalog_queries.GEO_SEARCH_SEGMENTS_QUERY,
+            catalog_queries.GEO_LOCATE_QUERY,
+            catalog_queries.GEO_LOCATE_METRO_QUERY,
         )
     ]
     for sql in rendered:
@@ -395,7 +404,7 @@ def test_unknown_metric_code_returns_a_stable_404() -> None:
 
 
 def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
-    """Covers: API-039 — all twenty-three sources, ordered, none needing a database."""
+    """Covers: API-039 — all twenty-six sources, ordered, none needing a database."""
     client = TestClient(app)
     response = client.get("/api/v1/catalog/capabilities")
 
@@ -403,7 +412,7 @@ def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
     payload = response.json()
     codes = [item["source_code"] for item in payload["items"]]
     assert codes == sorted(SOURCE_DISCOVERY)
-    assert payload["total"] == len(codes) == 23
+    assert payload["total"] == len(codes) == 26
 
     by_code = {item["source_code"]: item for item in payload["items"]}
     neutral = {

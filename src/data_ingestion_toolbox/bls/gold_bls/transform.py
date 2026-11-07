@@ -111,7 +111,22 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                 id_construction_type = EXCLUDED.id_construction_type,
                 comparison_warning = EXCLUDED.comparison_warning,
                 reference_url = EXCLUDED.reference_url,
-                updated_at = NOW();
+                updated_at = NOW()
+            -- Only a row whose attributes changed is rewritten
+            -- (refresh-churn audit, 2026-11-06).
+            WHERE (gold_bls.dim_bls_survey.survey_name,
+                    gold_bls.dim_bls_survey.survey_universe,
+                    gold_bls.dim_bls_survey.observation_basis,
+                    gold_bls.dim_bls_survey.primary_concept,
+                    gold_bls.dim_bls_survey.id_construction_type,
+                    gold_bls.dim_bls_survey.comparison_warning,
+                    gold_bls.dim_bls_survey.reference_url) IS DISTINCT FROM (EXCLUDED.survey_name,
+                    EXCLUDED.survey_universe,
+                    EXCLUDED.observation_basis,
+                    EXCLUDED.primary_concept,
+                    EXCLUDED.id_construction_type,
+                    EXCLUDED.comparison_warning,
+                    EXCLUDED.reference_url);
             """
         )
 
@@ -139,7 +154,16 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                 metric_display_name = EXCLUDED.metric_display_name,
                 unit_of_measure = EXCLUDED.unit_of_measure,
                 value_type = EXCLUDED.value_type,
-                updated_at = NOW();
+                updated_at = NOW()
+            -- Only a row whose attributes changed is rewritten
+            -- (refresh-churn audit, 2026-11-06).
+            WHERE (gold_bls.dim_bls_measure.metric_key,
+                    gold_bls.dim_bls_measure.metric_display_name,
+                    gold_bls.dim_bls_measure.unit_of_measure,
+                    gold_bls.dim_bls_measure.value_type) IS DISTINCT FROM (EXCLUDED.metric_key,
+                    EXCLUDED.metric_display_name,
+                    EXCLUDED.unit_of_measure,
+                    EXCLUDED.value_type);
             """
         )
 
@@ -217,10 +241,12 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                         THEN 'Index 1982-1984=100'
                     WHEN f.program = 'cu'
                         THEN 'Index ' || TRIM(bs.raw_metadata ->> 'base_period')
-                    -- The unit is the one BLS names in the item's title.
+                    -- The unit is the one BLS names in the item's title:
+                    -- "Eggs, grade A, large, per doz. in ..." and, with no
+                    -- comma before it, "Electricity per KWH in ...".
                     WHEN f.program = 'ap'
                         THEN 'U.S. dollars ' || COALESCE(
-                            SUBSTRING(bs.title FROM ', (per .+?) in '), 'per unit'
+                            SUBSTRING(bs.title FROM '\\m(per .+?) in '), 'per unit'
                         )
                     WHEN f.series_id IN ('CES0000000001', 'CES0500000001') THEN 'Thousands of Persons'
                     WHEN f.series_id = 'CES0500000002' THEN 'Hours'
@@ -324,7 +350,32 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                 gold_metric_name = EXCLUDED.gold_metric_name,
                 analytic_role = EXCLUDED.analytic_role,
                 semantic_notes = EXCLUDED.semantic_notes,
-                updated_at = NOW();
+                updated_at = NOW()
+            -- Only a row whose attributes changed is rewritten
+            -- (refresh-churn audit, 2026-11-06).
+            WHERE (gold_bls.dim_bls_series.bls_survey_sk,
+                    gold_bls.dim_bls_series.program_code,
+                    gold_bls.dim_bls_series.series_title,
+                    gold_bls.dim_bls_series.measure_name,
+                    gold_bls.dim_bls_series.measure_category,
+                    gold_bls.dim_bls_series.unit_of_measure,
+                    gold_bls.dim_bls_series.value_type,
+                    gold_bls.dim_bls_series.seasonal_adjustment_status,
+                    gold_bls.dim_bls_series.geographic_level,
+                    gold_bls.dim_bls_series.gold_metric_name,
+                    gold_bls.dim_bls_series.analytic_role,
+                    gold_bls.dim_bls_series.semantic_notes) IS DISTINCT FROM (EXCLUDED.bls_survey_sk,
+                    EXCLUDED.program_code,
+                    EXCLUDED.series_title,
+                    EXCLUDED.measure_name,
+                    EXCLUDED.measure_category,
+                    EXCLUDED.unit_of_measure,
+                    EXCLUDED.value_type,
+                    EXCLUDED.seasonal_adjustment_status,
+                    EXCLUDED.geographic_level,
+                    EXCLUDED.gold_metric_name,
+                    EXCLUDED.analytic_role,
+                    EXCLUDED.semantic_notes);
             """
         )
 

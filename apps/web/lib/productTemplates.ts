@@ -953,8 +953,14 @@ export interface ResolvedMeasure {
   /** The identity that answered, so the reader sees what they are reading. */
   metricCode: string;
   available: boolean;
-  /** When unavailable, what the template looked for and did not find. */
+  /** When unavailable, why, in words a reader can follow. */
   reason: string;
+  /**
+   * When unavailable, the identities the template looked for, so an operator
+   * can tell a missing measure from a template naming the wrong code. Kept
+   * out of `reason`: a reader never sees a variable code (WEB-144).
+   */
+  lookedFor: string[];
 }
 
 export interface ResolvedSection {
@@ -989,7 +995,9 @@ export function resolveTemplate(
           metric: null,
           metricCode: "",
           available: false,
-          reason: `no published measure for this slot (looked for ${slot.candidates.join(", ")})`,
+          reason: `no published measure for this slot (looked for ${slot.candidates.length} ` +
+            `published ${slot.candidates.length === 1 ? "identity" : "identities"})`,
+          lookedFor: [...slot.candidates],
         };
       }
       return {
@@ -998,6 +1006,7 @@ export function resolveTemplate(
         metricCode: found,
         available: true,
         reason: "",
+        lookedFor: [],
       };
     }),
   }));

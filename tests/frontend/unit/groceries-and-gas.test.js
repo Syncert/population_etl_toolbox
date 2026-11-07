@@ -2,11 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import {
   areaLabel,
+  changeFromYearEarlierWeek,
   changeOverYear,
   containingAreas,
   formatChange,
   formatGas,
+  formatGasHeat,
+  formatMinutes,
+  formatPrice,
+  minutesRatioId,
+  minutesText,
+  paddOf,
+  PRICE_ITEMS,
   readingsFor,
+  stoppedSince,
+  wageText,
 } from "../../../apps/web/lib/groceriesAndGas";
 
 // Covers: WEB-143 — groceries-and-gas-cards: a county's grocery and gas
@@ -116,4 +126,132 @@ describe("food at home over a year", () => {
 
 it("formats gasoline in dollars a gallon", () => {
   expect(formatGas(3.1)).toBe("$3.10 a gallon");
+});
+
+// Covers: WEB-143 — cost-of-living-section: everyday prices come from the
+// region BLS publishes them for, then the nation, each named.
+describe("everyday prices", () => {
+  const areas = containingAreas("COUNTY", { geo_id: "state:55|county:025" }, dane);
+
+  it("asks for the region's average price, then the nation's", () => {
+    const readings = readingsFor(areas);
+    expect(readings.eggs.map((item) => [item.metricCode, item.area.geoId])).toEqual([
+      ["BLS:APU0200708111", "region:2"],
+      ["BLS:APU0000708111", "us:1"],
+    ]);
+    // EIA's own state price first, in cents, then BLS's region and nation.
+    expect(readings.electricity.map((item) => [item.metricCode, item.area.geoId, item.scale])).toEqual([
+      ["EIA:ELEC_RES", "state:55", 0.01],
+      ["BLS:APU020072610", "region:2", undefined],
+      ["BLS:APU000072610", "us:1", undefined],
+    ]);
+  });
+
+  it("lists the same items in the same order on every page", () => {
+    expect(PRICE_ITEMS.map((spec) => spec.item)).toEqual(["eggs", "milk", "bread", "beef", "chicken", "electricity"]);
+  });
+
+  it("formats prices in the units people buy them in", () => {
+    const eggs = PRICE_ITEMS.find((spec) => spec.item === "eggs");
+    const power = PRICE_ITEMS.find((spec) => spec.item === "electricity");
+    expect(formatPrice(3.117, eggs)).toBe("$3.12 a dozen");
+    expect(formatPrice(0.179, power)).toBe("17.9\u00a2 a kilowatt-hour");
+  });
+});
+
+// Covers: WEB-143 — cost-of-living-section CL-3: minutes of work name the
+// served pairing for the price's own area and the page's own wage, and say
+// why a figure is missing rather than show zero.
+describe("minutes of work", () => {
+  it("names the pairing for the price's BLS area", () => {
+    expect(minutesRatioId({ measure: "eggs", metricCode: "BLS:APU0200708111" })).toBe("minutes_of_work_eggs:0200");
+    expect(minutesRatioId({ measure: "electricity", metricCode: "BLS:APU000072610" })).toBe("minutes_of_work_electricity:0000");
+    expect(minutesRatioId({ measure: "gas", metricCode: "EIA:EPMR" })).toBeNull();
+  });
+
+  it("words minutes as a reader says them", () => {
+    expect(formatMinutes(6.36)).toBe("6 minutes");
+    expect(formatMinutes(1)).toBe("1 minute");
+    expect(formatMinutes(0.34)).toBe("20 seconds");
+    expect(formatMinutes(65)).toBe("1 hour 5 minutes");
+    expect(formatMinutes(120)).toBe("2 hours");
+  });
+
+  it("states the wage once, and says when it is the newest year rather than the price's", () => {
+    const row = { value: "6.00", wage_geo_name: "Dane County", wage_year: "newest_published_year", denominator: { value: "1234.4", period_start: "2024-01-01" } };
+    expect(wageText(row, "x")).toBe("Dane County's average wage, $1,234 a week in 2024, the newest year published, over a 40-hour week. Source: Bureau of Labor Statistics, QCEW, all jobs.");
+    expect(wageText({ ...row, denominator: null }, "x")).toBe("");
+  });
+
+  it("says why a figure is missing, never zero", () => {
+    expect(minutesText({ value: "6.36" })).toBe("6 minutes");
+    expect(minutesText({ value: null, unavailable_reason: "denominator_missing" })).toBe("No wage loaded for this place yet.");
+    expect(minutesText({ value: null, unavailable_reason: "different_period" })).toBe("No wage published for this price's year.");
+    expect(minutesText({ value: null, unavailable_reason: "suppressed_input" })).toBe("Not computed: an input is withheld.");
+  });
+});
+
+// Covers: WEB-143 — a series BLS lists but stopped pricing is not today's price.
+describe("a stopped price series", () => {
+  const month = (period_start, value) => ({ period_start, value });
+  it("is stopped when its last value is more than a year before its newest month", () => {
+    const rows = [month("2020-03-01", "2.6"), month("2020-04-01", "2.574"), month("2025-10-01", null)];
+    expect(stoppedSince(rows, rows[1])).toBe("2020-04");
+  });
+  it("is not stopped when only recent months are empty", () => {
+    const rows = [month("2026-05-01", "1.66"), month("2026-06-01", null), month("2026-09-01", null)];
+    expect(stoppedSince(rows, rows[0])).toBe("");
+  });
+});
+
+// Covers: WEB-170 — home-heating-fuel-prices: each heating fuel is EIA's
+// residential price for the state, else EIA's petroleum region, else the
+// nation; natural gas is restated a therm; a weekly change compares the same
+// week a year earlier and says when that week is not published.
+describe("home heating fuels", () => {
+  const areas = containingAreas("COUNTY", { geo_id: "state:55|county:025" }, dane);
+
+  it("asks for the state, then the state's EIA petroleum region, then the nation", () => {
+    const readings = readingsFor(areas);
+    expect(readings.heating_oil.map((item) => [item.metricCode, item.area.geoId])).toEqual([
+      ["EIA:EPD2F", "state:55"],
+      ["EIA:EPD2F", "area:eia:R20"],
+      ["EIA:EPD2F", "us:1"],
+    ]);
+    expect(readings.propane.map((item) => item.metricCode)).toEqual(["EIA:EPLLPA", "EIA:EPLLPA", "EIA:EPLLPA"]);
+    expect(readings.heat_gas.map((item) => [item.metricCode, item.area.geoId])).toEqual([
+      ["EIA:NG_RES", "state:55"],
+      ["EIA:NG_RES", "us:1"],
+    ]);
+    expect(readings.diesel.map((item) => item.area.geoId)).toEqual(["state:55", "area:eia:R20", "us:1"]);
+  });
+
+  it("finds a state's petroleum region by its FIPS code, never by name", () => {
+    expect(paddOf({ geoId: "state:55", level: "STATE", name: "Wisconsin" })).toEqual({ geoId: "area:eia:R20", level: "PROVIDER_AREA", name: "Midwest (PADD 2)" });
+    expect(paddOf({ geoId: "state:25", level: "STATE", name: "Massachusetts" }).geoId).toBe("area:eia:R1X");
+    expect(paddOf({ geoId: "state:06", level: "STATE", name: "California" }).geoId).toBe("area:eia:R50");
+    expect(paddOf({ geoId: "state:72", level: "STATE", name: "Puerto Rico" })).toBeNull();
+    expect(paddOf(null)).toBeNull();
+  });
+
+  it("the nation's own page asks only for the nation", () => {
+    const nation = readingsFor(containingAreas("NATIONAL", { geo_id: "us:1", geo_name: "United States" }, null));
+    expect(nation.heating_oil.map((item) => item.area.geoId)).toEqual(["us:1"]);
+    expect(nation.electricity.map((item) => item.metricCode)).toEqual(["BLS:APU000072610"]);
+  });
+
+  it("restates natural gas a therm", () => {
+    expect(formatGasHeat(15.2)).toBe("$15.20 per thousand cubic feet ($1.47 a therm)");
+  });
+
+  it("compares a week with the same week a year earlier", () => {
+    const week = (period_start, value) => ({ period_start, value });
+    expect(changeFromYearEarlierWeek([week("2025-03-31", "3.50"), week("2026-03-23", "3.60"), week("2026-03-30", "3.64")])).toEqual({
+      percent: 4, period: "2025-03-31 to 2026-03-30", reason: "",
+    });
+    const gap = changeFromYearEarlierWeek([week("2025-03-24", "3.50"), week("2026-03-30", "3.64")]);
+    expect(gap.percent).toBeNull();
+    expect(gap.reason).toBe("The week of 2025-03-31 is not published for this area.");
+    expect(changeFromYearEarlierWeek([]).percent).toBeNull();
+  });
 });

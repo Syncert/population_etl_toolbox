@@ -129,4 +129,12 @@ def test_emit_latest_forwards_publisher_identity(
         "source_watermark": "42",
         "source_run_id": None,
         "publication_time": published_at,
+        # An ordinary publication adds an event; only a backfill re-queues.
+        "requeue": False,
     }
+    harvest.emit_latest_publisher_ready(
+        lambda: Connection([("FRED", "1.0", "42", None, published_at)]),
+        publisher_schema="gold_fred",
+        requeue=True,
+    )
+    assert received["requeue"] is True

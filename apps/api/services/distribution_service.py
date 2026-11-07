@@ -166,6 +166,7 @@ def list_distribution_bins(
     ) -> DistributionBinsResponse:
         return DistributionBinsResponse(
             metric_code=metric_code,
+            metric_display_name=metric.get("metric_display_name"),
             source_code=source_code,
             units=metric.get("units"),
             # The grain these bins describe, in the vocabulary -- not the word

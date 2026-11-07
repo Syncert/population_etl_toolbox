@@ -211,3 +211,70 @@ def test_a_declared_reduction_executes_for_its_source(
             **{reduction: True},
         )
         assert answer is not None and answer.total == 0, reduction
+
+
+@pytest.mark.parametrize("source_code", sorted(OBSERVATION_DISPATCH))
+def test_the_newest_values_batch_executes_for_its_source(
+    warehouse_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    source_code: str,
+) -> None:
+    """Covers: API-180 — two metrics of one source over two places is one
+    statement the warehouse accepts, or the reduction's own refusal."""
+    dispatch = OBSERVATION_DISPATCH[source_code]
+    codes = [f"{UNMATCHABLE_METRIC}:a", f"{UNMATCHABLE_METRIC}:b"]
+    synthetic = {
+        code: {**_synthetic_metric(source_code), "metric_code": code} for code in codes
+    }
+    monkeypatch.setattr(
+        neutral,
+        "resolve_metrics",
+        lambda db, wanted: {c: synthetic[c] for c in wanted if c in synthetic},
+    )
+    monkeypatch.setattr(neutral, "resolve_metric", lambda db, code: synthetic.get(code))
+    answers = neutral.newest_values_batch(
+        warehouse_session, codes, ["state:99", "state:99|county:999"]
+    )
+    assert len(answers) == 4
+    refused = neutral.reduction_refusal(dispatch, "newest_per_geography") is not None
+    for code, geo_id, status, detail, response in answers:
+        if refused:
+            assert (status, response) == (422, None), (code, geo_id)
+            continue
+        assert status == 200, (code, geo_id, detail)
+        assert response is not None and response.total == 0 and response.items == []
+
+
+@pytest.mark.parametrize("source_code", sorted(OBSERVATION_DISPATCH))
+def test_the_history_batch_executes_for_its_source(
+    warehouse_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    source_code: str,
+) -> None:
+    """Covers: API-189 — two metrics of one source over two places is one
+    settled-history statement the warehouse accepts, or the reduction's own
+    refusal."""
+    dispatch = OBSERVATION_DISPATCH[source_code]
+    codes = [f"{UNMATCHABLE_METRIC}:a", f"{UNMATCHABLE_METRIC}:b"]
+    synthetic = {
+        code: {**_synthetic_metric(source_code), "metric_code": code} for code in codes
+    }
+    monkeypatch.setattr(
+        neutral,
+        "resolve_metrics",
+        lambda db, wanted: {c: synthetic[c] for c in wanted if c in synthetic},
+    )
+    monkeypatch.setattr(neutral, "resolve_metric", lambda db, code: synthetic.get(code))
+    answers = neutral.history_batch(
+        warehouse_session, codes, ["state:99", "state:99|county:999"]
+    )
+    assert len(answers) == 4
+    refused = (
+        neutral.reduction_refusal(dispatch, "newest_release_per_period") is not None
+    )
+    for code, geo_id, status, detail, response in answers:
+        if refused:
+            assert (status, response) == (422, None), (code, geo_id)
+            continue
+        assert status == 200, (code, geo_id, detail)
+        assert response is not None and response.total == 0 and response.items == []

@@ -34,6 +34,7 @@ from apps.api.registry import (
     observation_dispatch,
     ranking_tie_break,
 )
+from apps.api.schemas.labels import label_fields
 from apps.api.schemas import (
     CompatibilityFinding,
     ComparisonCorrelationResponse,
@@ -168,6 +169,8 @@ def preflight_metric_comparison(
     return ComparisonPreflightResponse(
         metric_code_a=metric_code_a,
         metric_code_b=metric_code_b,
+        **label_fields(metric_code_a, metric_a, "_a"),
+        **label_fields(metric_code_b, metric_b, "_b"),
         source_code_a=metric_a.get("source_code"),
         source_code_b=metric_b.get("source_code"),
         comparable=decision.comparable,
@@ -301,6 +304,8 @@ def list_metric_comparison(
     return ComparisonResponse(
         metric_code_a=metric_code_a,
         metric_code_b=metric_code_b,
+        **label_fields(metric_code_a, metric_a, "_a"),
+        **label_fields(metric_code_b, metric_b, "_b"),
         source_code_a=metric_a.get("source_code"),
         source_code_b=metric_b.get("source_code"),
         units_a=metric_a.get("units"),
@@ -577,6 +582,8 @@ def metric_correlation(
     return ComparisonCorrelationResponse(
         metric_code_a=metric_code_a,
         metric_code_b=metric_code_b,
+        **label_fields(metric_code_a, metric_a, "_a"),
+        **label_fields(metric_code_b, metric_b, "_b"),
         source_code_a=metric_a.get("source_code"),
         source_code_b=metric_b.get("source_code"),
         units_a=metric_a.get("units"),

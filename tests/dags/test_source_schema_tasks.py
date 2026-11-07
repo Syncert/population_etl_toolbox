@@ -21,14 +21,17 @@ from data_ingestion_toolbox.nces_ccd import schema as nces_ccd_schema
 from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
 from data_ingestion_toolbox.hud_fmr_il import schema as hud_fmr_il_schema
 from data_ingestion_toolbox.fema_nri import schema as fema_nri_schema
+from data_ingestion_toolbox.elections import schema as elections_schema
 from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
 from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
 from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
 from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
+from data_ingestion_toolbox.irs_soi import schema as irs_soi_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
+from data_ingestion_toolbox.census_govfin import schema as govfin_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
 from data_ingestion_toolbox.eia import schema as eia_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
@@ -75,11 +78,25 @@ SOURCES = [
         "CENSUS_SAIPE_SAHIE",
     ),
     (
+        "census_govfin_ingest",
+        "ensure_census_govfin_schema",
+        "ingest_batch_",
+        govfin_schema,
+        "CENSUS_GOVFIN",
+    ),
+    (
         "irs_migration_ingest",
         "ensure_irs_migration_schema",
         "ingest_batch_",
         irs_migration_schema,
         "IRS_MIGRATION",
+    ),
+    (
+        "irs_soi_ingest",
+        "ensure_irs_soi_schema",
+        "ingest_batch_",
+        irs_soi_schema,
+        "IRS_SOI",
     ),
     (
         "eia_retail_gasoline_ingest",
@@ -129,6 +146,13 @@ SOURCES = [
         "ingest_batch_",
         fema_nri_schema,
         "FEMA_NRI",
+    ),
+    (
+        "elections_ingest",
+        "ensure_elections_schema",
+        "ingest_batch_",
+        elections_schema,
+        "ELECTIONS",
     ),
     (
         "fhfa_hpi_ingest",

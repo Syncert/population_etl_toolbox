@@ -162,7 +162,12 @@ def sync_fred_series_metadata(series_ids: Optional[List[str]] = None) -> int:
                             observation_end = EXCLUDED.observation_end,
                             notes = EXCLUDED.notes,
                             raw_metadata = EXCLUDED.raw_metadata,
-                            last_checked_at = EXCLUDED.last_checked_at;
+                            last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_fred.fred_series.title, raw_fred.fred_series.units, raw_fred.fred_series.frequency, raw_fred.fred_series.seasonal_adjustment, raw_fred.fred_series.observation_start, raw_fred.fred_series.observation_end, raw_fred.fred_series.notes, raw_fred.fred_series.raw_metadata)
+                      IS DISTINCT FROM
+                      (EXCLUDED.title, EXCLUDED.units, EXCLUDED.frequency, EXCLUDED.seasonal_adjustment, EXCLUDED.observation_start, EXCLUDED.observation_end, EXCLUDED.notes, EXCLUDED.raw_metadata);
                     """
 
                     cur.execute(
@@ -240,7 +245,12 @@ def sync_fred_datasets_table() -> int:
                         ON CONFLICT (domain, series_id)
                         DO UPDATE SET
                             is_available = EXCLUDED.is_available,
-                            last_checked_at = EXCLUDED.last_checked_at;
+                            last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_fred.fred_datasets.is_available)
+                      IS DISTINCT FROM
+                      (EXCLUDED.is_available);
                     """
 
                     cur.execute(sql, (domain, series_id, True, now, now))

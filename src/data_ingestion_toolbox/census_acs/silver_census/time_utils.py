@@ -13,6 +13,10 @@ def compute_acs_duration(dataset: str, estimate_year: int) -> tuple[date, date]:
     Compute ACS estimate window based on dataset type.
     """
     dataset = (dataset or "").lower()
+    if dataset.startswith("dec"):
+        # A census counts on one day: April 1 of the census year
+        # (decennial-2000-and-1990-history).
+        return date(estimate_year, 4, 1), date(estimate_year, 4, 1)
     if dataset == "acs1":
         return date(estimate_year, 1, 1), date(estimate_year, 12, 31)
     if dataset == "acs5":

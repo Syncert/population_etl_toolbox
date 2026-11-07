@@ -310,9 +310,10 @@ test("the community profile reads a place through published identities", async (
   await expect(
     page.getByTestId("measure-value-total-population"),
   ).toContainText("561,504");
-  await expect(page.getByTestId("measure-total-population")).toContainText(
-    "CENSUS_ACS:acs5:B01003_001",
-  );
+  // The identity that answered is kept on the name, not printed (WEB-144).
+  await expect(
+    page.getByTestId("measure-total-population").locator("[data-metric-code]"),
+  ).toHaveAttribute("data-metric-code", "CENSUS_ACS:acs5:B01003_001");
   await expect(page.getByTestId("measure-total-population")).toContainText(
     "Source: CENSUS_ACS",
   );
@@ -354,8 +355,9 @@ test("the community profile reads a place through published identities", async (
     "data-available",
     "false",
   );
-  await expect(page.getByTestId("measure-reason-cdc-indicator")).toContainText(
-    "CDC:cdi:ALC06:AGEADJPREV",
+  await expect(page.getByTestId("measure-reason-cdc-indicator")).toHaveAttribute(
+    "data-looked-for",
+    /CDC:cdi:ALC06:AGEADJPREV/,
   );
   // Its section is still rendered: an absent measure is not a place with
   // nothing to report.
@@ -429,7 +431,8 @@ test("the products are configuration: switching rebuilds the same screen", async
     "data-available",
     "false",
   );
-  await expect(page.getByTestId("measure-reason-participation")).toContainText(
+  await expect(page.getByTestId("measure-reason-participation")).toHaveAttribute(
+    "data-looked-for",
     "FRED:CIVPART",
   );
 
@@ -584,7 +587,7 @@ test("a second-wave product renders, states its gaps, and reaches the explorer",
   ).toHaveAttribute("data-available", "false");
   await expect(
     page.getByTestId("measure-reason-cdc-chronic-indicator"),
-  ).toContainText("CDC:cdi:ALC06:AGEADJPREV");
+  ).toHaveAttribute("data-looked-for", /CDC:cdi:ALC06:AGEADJPREV/);
 
   // And the filled slot keeps its path into the explorer, naming the
   // identity that answered rather than the slot's label.

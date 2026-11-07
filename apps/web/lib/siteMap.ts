@@ -33,10 +33,11 @@ export const PUBLIC_ROUTES: readonly string[] = [
  * Routes that are a reader's own workspace rather than published analysis.
  *
  * `/saved` lists an account's stored analyses; `/builder` holds a draft
- * evidence packet. Excluding them is a statement about the published surface,
- * not the control that protects them -- that is the API's token check.
+ * evidence packet; `/admin` describes the warehouse to its operators.
+ * Excluding them is a statement about the published surface, not the control
+ * that protects them -- that is the API's token check.
  */
-export const PRIVATE_ROUTES: readonly string[] = ["/saved", "/builder", "/studio"];
+export const PRIVATE_ROUTES: readonly string[] = ["/saved", "/builder", "/studio", "/admin"];
 
 /**
  * The origin the sitemap's absolute URLs are built from.

@@ -116,7 +116,32 @@ def refresh_fred_elements(hook: PostgresHook | None = None) -> int:
                 realtime_available = EXCLUDED.realtime_available,
                 lineage_notes = EXCLUDED.lineage_notes,
                 reference_url = EXCLUDED.reference_url,
-                updated_at = NOW();
+                updated_at = NOW()
+            -- Only a row whose attributes changed is rewritten
+            -- (refresh-churn audit, 2026-11-06).
+            WHERE (gold_fred.dim_fred_series.series_title,
+                    gold_fred.dim_fred_series.source_provider,
+                    gold_fred.dim_fred_series.original_source_name,
+                    gold_fred.dim_fred_series.is_primary_source_series,
+                    gold_fred.dim_fred_series.is_republished_series,
+                    gold_fred.dim_fred_series.frequency,
+                    gold_fred.dim_fred_series.units,
+                    gold_fred.dim_fred_series.seasonal_adjustment,
+                    gold_fred.dim_fred_series.transformation_method,
+                    gold_fred.dim_fred_series.realtime_available,
+                    gold_fred.dim_fred_series.lineage_notes,
+                    gold_fred.dim_fred_series.reference_url) IS DISTINCT FROM (EXCLUDED.series_title,
+                    EXCLUDED.source_provider,
+                    EXCLUDED.original_source_name,
+                    EXCLUDED.is_primary_source_series,
+                    EXCLUDED.is_republished_series,
+                    EXCLUDED.frequency,
+                    EXCLUDED.units,
+                    EXCLUDED.seasonal_adjustment,
+                    EXCLUDED.transformation_method,
+                    EXCLUDED.realtime_available,
+                    EXCLUDED.lineage_notes,
+                    EXCLUDED.reference_url);
             """
         )
 

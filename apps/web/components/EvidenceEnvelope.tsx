@@ -26,7 +26,10 @@ export default function EvidenceEnvelope({ block, showReopen = true }: EvidenceE
   }
   const status = blockLiveStatus(envelope);
   return (
-    <div data-testid={`envelope-${block.id}`}>
+    // The envelope is a reproduction record: it names the exact identities
+    // the block read, so it is the one place a metric code is printed
+    // (WEB-144 exempts `data-provenance`).
+    <div data-testid={`envelope-${block.id}`} data-provenance="envelope">
       <StatusPill
         state={status.state}
         label="Basis"

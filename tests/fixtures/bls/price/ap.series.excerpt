@@ -12,3 +12,7 @@ APUA10474714     	A104	74714	Gasoline, unleaded regular, per gallon/3.785 liters
 APUN10074714     	N100	74714	Gasoline, unleaded regular, per gallon/3.785 liters in Northeast - Size Class B/C, average price, not seasonally adjusted		1998	M01	2026	M08
 APUS12A74714     	S12A	74714	Gasoline, unleaded regular, per gallon/3.785 liters in New York-Newark-Jersey City, NY-NJ-PA, average price, not seasonally adjusted		1978	M01	2026	M08
 APUS35A74714     	S35A	74714	Gasoline, unleaded regular, per gallon/3.785 liters in Washington-Arlington-Alexandria, DC-VA-MD-WV, average price, not seasonally adjusted		1978	M01	2026	M08
+APU000072610     	0000	72610	Electricity per KWH in U.S. city average, average price, not seasonally adjusted		1978	M11	2026	M08
+APU000072620     	0000	72620	Utility (piped) gas per therm in U.S. city average, average price, not seasonally adjusted		1978	M11	2026	M08
+APUS12A72610     	S12A	72610	Electricity per KWH in New York-Newark-Jersey City, NY-NJ-PA, average price, not seasonally adjusted		1978	M11	2026	M08
+APU020072620     	0200	72620	Utility (piped) gas per therm in Midwest urban, average price, not seasonally adjusted		1978	M11	2022	M12

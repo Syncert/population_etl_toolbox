@@ -23,6 +23,20 @@ In progress since 2026-10-12. Decisions Nick made on 2026-10-12:
   move). Docker's 665 GB image now lives at `E:\DockerDesktop\wsl`, reached
   through the `%LOCALAPPDATA%\Docker\wsl` junction; the G: copy is kept as a
   backup until E: is verified under load.
+- **Superseded on 2026-10-26: Docker on H:.** The checkouts and Docker's data
+  now live on H: (two 4 TB NVMe drives striped into one ~7.3 TB volume, no
+  redundancy), at `H:\DockerDesktop\wsl`, still reached through the
+  `%LOCALAPPDATA%\Docker\wsl` junction. The WSL data disk
+  (`disk\docker_data.vhdx`) was still capped at its original ~1 TB maximum
+  size (`df` inside Docker: 1007 G, 775 G used). The WSL 2 backend has no
+  disk setting, so Nick grew the file with `Resize-VHD -SizeBytes 6TB` from an
+  elevated shell while Docker was stopped, and the ext4 filesystem was grown
+  online (`resize2fs` from a privileged container): 5.9 T, 4.9 T free,
+  checked with `docker run --rm -v /var/lib/docker:/d:ro alpine df -h /d`.
+  Containers created from the G: checkout bind-mounted G: paths and failed to
+  start; `make deploy-up` from the H: checkout recreated them. The
+  five-table scope cut below was made for disk and is lifted (the v1.0
+  build-out, Wave W).
 - **Scope ("the recommended approach").** Tracts for every 5-year year,
   2009–2023, on the five `tract_tables`. Places for every year, but only on
   those same five tables (B01003, B19013, B17001, B25064, B25077); 2024 keeps
@@ -224,9 +238,125 @@ data-quality check before the next year starts.
   the only place data and covers large places only. Default: load it, since
   it is small and published.
 
+## Progress (2026-10-26, branch `feat/acs-backfill-measure-and-scope`)
+
+Deliverables 1, 3, 4 and 6 are implemented; 2, 5, 7 and 8 remain (v1.0
+build-out items W-2, W-5, W-10).
+
+- **D1 measurement:** `python -m data_ingestion_toolbox.census_acs.measure`
+  (ETL-085), run in the Airflow scheduler container on the internal stack:
+  Docker's data disk 6,047 GiB with 5,016 GiB free; database 704 GiB; ACS
+  silver relations 293 GiB. Measured 2024 (silver share plus the 2024 gold
+  partition's share): acs5 place 137.7 GiB for 3,844 curated variables
+  (38.5 MB per variable), acs5 tract 9.3 GiB for the five tables' 63
+  variables (159 MB per variable), acs1 place 2.8 GiB (0.61 MB per variable).
+  These are `AcsConfig.backfill_bytes_per_variable`.
+- **What the warehouse holds** (`control.acs_ingestion_slices`, 2026-10-26):
+  acs5 place slices for every year 2009–2024 (2024 on the whole curated
+  list, the rest on the five history tables); acs1 place 2009–2024 less 2020
+  on the history tables; acs5 tract 2010–2024 on the five tract tables; no
+  2009 tracts (Census 2000 tracts, not in the reference).
+- **Projection, full city history** (acs5 place 2009–2023 on the whole list,
+  less the five tables already loaded, plus acs1 places 2005–2023):
+  1,366 GiB. Per year it ranges from 41 GiB (2009, 1,276 variables) to
+  133 GiB (2020–2023, about 3,840), because older vintages publish fewer of
+  the curated variables.
+- **Projection, wider tract tables** (W-4 candidate list of 17 tables, 558
+  variables a year from 2017, 336 in 2009–2010): about 7,680 variable-years
+  for 2010–2024 at 159 MB is about 1,140 GiB.
+- Both together leave about 2,500 GiB, 41% of the 6,047 GiB volume, free:
+  above the 20% reserve.
+- **D3 declared scope:** `place_year_scope`, `tract_year_scope` and
+  `place_full_table_year_scope` ("newest", "newest:N", "YYYY-YYYY", "YYYY",
+  "none") replace the three "N newest years" knobs; defaults unchanged. The
+  one-year-and-grain run parameter (`acs_backfill` conf, ETL-083) was already
+  on `main`.
+- **D4 resume across runs:** `silver_census.transform_slice_state` keys each
+  finished slice by a content fingerprint (revision count and newest
+  revision, variable metadata, geography reference, `TRANSFORM_VERSION`); a
+  later run under any key skips an unchanged slice (ETL-087).
+- **D6 guard rails:** a backfill run projects its planned slices and refuses
+  before any request if the reserve (20%) would not stay free at
+  `backfill_disk_path` (ETL-086); `acs_ingest` already had
+  `max_active_runs=1`; the bounded slice read is unchanged.
+
+Evidence: `pytest tests/unit/census tests/unit/shared/test_catalog_evidence.py
+tests/unit/tooling` 193 passed; `pytest tests/dags/test_task_callables.py -k
+acs` 11 passed; ACS database tier against the test PostGIS (`-k "acs or
+census_ac"`) 26 passed; schema snapshot regenerated; `ruff check .` and
+`ruff format --check .` clean.
+
+## Progress (2026-10-26, branch `feat/acs-decade-geography-and-serving`)
+
+- **D2, tracts:** Census 2000 tracts (66,304, the 2009 ACS's only tract
+  geography) are published as reference vintage 2000 from the Bureau's
+  2000-to-2010 tract relationship file, which `silver_ref` now syncs with the
+  rest of the tract history from 2009 (ETL-089). Tracts of 2010–2024 already
+  resolved from each vintage's Gazetteer (ETL-084), including Connecticut's
+  2022 planning-region recoding: `silver_ref.geography_resolution` shows
+  85,395 tracts resolved for 2021 and 85,396 for 2022, none unmapped.
+- **D2, places:** places resolve for every 5-year year 2010–2024 and every
+  1-year year (2010–2024) with at most 21 codes unmapped in a year (2024).
+  2009 has 24,901 places resolved and 401 unmapped: places that ceased
+  before 2010, for which no reference before 2010 is captured yet. They stay
+  ledgered `unmapped`, never matched to a later place. A Census 2000 place
+  file (`places2k.zip`, fixed width) or the 2009 TIGER place files would
+  close it; that is left as an open item rather than guessed.
+- **D5, serving:** `ACS_CHUNK_CONFIG.grain_steps` serves each year as three
+  committed steps (area, tract, place; 90, 120 and 600 minutes), each
+  deleting and re-inserting its own grain through
+  `refresh_rpt_acs_observations(start, end, geo_levels)`. A database test
+  shows a reader of a year's counties under a one-second lock timeout reads
+  them while a place step is open, and is blocked by the whole-year path
+  (ETL-088). The whole-year path (two arguments) stays for the dashboard
+  procedure and the DB-056 checks. Per-step durations are logged and will be
+  recorded per year during W-3.
+
+## Progress (2026-10-31, W-5: crosswalk and comparable series)
+
+- `silver_ref.tract_decade_crosswalk` (#168, ETL-102) holds the Bureau's
+  2000-to-2010 and 2010-to-2020 tract relationship files, matched by code and
+  decade. Loaded on the internal stack 2026-10-30: 110,854 parts 2000-to-2010,
+  126,222 parts 2010-to-2020; the only unmapped tracts are the island areas'
+  (Guam, the Virgin Islands, the Northern Marianas, American Samoa), which the
+  ACS does not publish. It is a table of its own, not
+  `bridge_geo_relationship_version` as Deliverable 7 first said: a tract keeps
+  one entity per code across decades, so a succession must be keyed by both
+  decades, and an unchanged tract succeeds itself, which the bridge's
+  `parent <> related` CHECK refuses.
+- `gold_census.acs_tract_comparable` (ETL-103) is the derived series: counts
+  published on 2000- and 2010-decade tracts apportioned to 2020 tracts (2010
+  population share, then land share; the 2020 file publishes no population),
+  `unchanged`, `apportioned` or `incomplete`, `derivation =
+  'decade_crosswalk'`. Medians, per-capita figures and margins of error are
+  not apportioned. The API exposure belongs with A-5 (metro and tract pages).
+- Not covered: the Connecticut 2022 planning-region recoding (a recorded gap,
+  outside v1).
+- W-4 gap found 2026-10-31: tract years 2010-2024 were loaded on the first
+  five tables only, because tract slices fingerprinted the whole curated list
+  (#169 fixes it); the reload of 2024-2010 on the 22-table list runs from
+  `/h/backfill-logs/tract_wide_reload.sh` (`backfill-tract-wide.jsonl`).
+
+## Progress (2026-11-01, W-10: the runbook)
+
+- Deliverable 8: `docs/reference/BETA_RESET_REINGESTION.md` section 9 holds
+  the backfill order, commands, measured hours and GiB per year, the guards,
+  resume and safe stop; section 10 ("After the loads") holds what follows a
+  load: ANALYZE, ledger-only deploys, pre-building a PR's index DDL
+  concurrently, the age summary fill, the DQ-ACS-007 full sweep, the weekly
+  DQ run as publish gate (with `exclude_rules`), serving catch-up, stopping
+  and resuming a stuck `acs_ingest` run (retries capped at 1, ledger resume,
+  #251), and the web live-check list with map captures. The incident
+  write-up links to it.
+- Wave W loads finished on the internal stack on 2026-11-01: tracts
+  2009-2024 on the 22 tables, places 2005-2024 (acs5 from 2009, acs1 from 2005),
+  metro 2015-2024, Census 2000 and 1990.
+
 ## Checkpoint
 
-Next pickup, once `claude/project-thread-ypfqia` is merged and the 2024
-publish has finished: write the Deliverable 1 measurement script and record
-its 2024 output here, then the failing unit test that a run restricted to
-one year and grain forms no other request.
+Moved to `needs_review/` on 2026-11-01 with every deliverable in place. One
+acceptance item is an operator check, not code: the weekly data-quality run
+after the DQ-ACS-007 full sweep must be green, and the 2009 tract rows the
+stopped October run transformed (808,962 silver rows) must be served by a
+targeted `{"acs_backfill": {"year": 2009, "geo_level": "tract"}}` run.
+Review confirms both before this plan moves to `completed/`.

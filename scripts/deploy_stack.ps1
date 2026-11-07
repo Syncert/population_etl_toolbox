@@ -109,6 +109,15 @@ try {
         'skipped' { Write-Log $plan.guard.message }
     }
 
+    # Variables the plan asks the caller to export before Compose runs (today
+    # the web image's build id, stamped from the checked-out commit).
+    if ($plan.environment) {
+        foreach ($entry in $plan.environment.PSObject.Properties) {
+            Write-Log ("{0}={1} (from the checked-out commit)" -f $entry.Name, $entry.Value)
+            Set-Item -Path ("Env:" + $entry.Name) -Value $entry.Value
+        }
+    }
+
     foreach ($step in $plan.steps) {
         Write-Log $step.description
         Invoke-ComposeStep -ComposeArgs $step.arguments
