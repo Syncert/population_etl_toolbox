@@ -292,3 +292,59 @@ def test_a_repeated_county_loads_once_and_conflicting_copies_load_nothing() -> N
     assert not [o for o in parsed.observations if o.geo_id == "state:10|county:001"]
     assert parsed.in_scope_row_count == baseline.in_scope_row_count - 1
     assert len(parsed.observations) == parsed.in_scope_row_count * 12
+
+
+def test_the_parts_of_one_place_load_as_their_sum() -> None:
+    """Covers: ETL-057 — rows that share a FIPS place under different Bureau IDs.
+
+    New York city's five boroughs all carry FIPS place 51000, and a village
+    split across two counties has one row per county part (the 2007-2009
+    Northeast files). Each part is its own jurisdiction, so the place loads
+    once with the parts' sum, on the first part's row. A part repeated under
+    its own ID is a copy and is quarantined like any other repeat.
+    """
+    raw = _fixture("Place_South_so2024a.txt").split(b"\n")
+    header, rows = raw[:3], [line for line in raw[3:] if line.strip()]
+    dover = next(line for line in rows if b",Dover," in line)
+    fields = dover.split(b",")
+    # A second Dover part: another 6-digit ID and county, 1 one-unit building.
+    part = b",".join(
+        fields[:2]
+        + [b"065001", b"003"]
+        + fields[4:17]
+        + [b"1", b"1", b"200000"]
+        + [b"0"] * 9
+        + [b"1", b"1", b"200000"]
+        + [b"0"] * 9
+    )
+    baseline = parse_file(_fixture("Place_South_so2024a.txt"), item=PLACE_YEAR)
+    parsed = parse_file(b"\n".join(header + rows + [part]) + b"\n", item=PLACE_YEAR)
+    assert parsed.quarantined == ()
+    assert parsed.in_scope_row_count == baseline.in_scope_row_count
+    assert len(parsed.observations) == parsed.in_scope_row_count * 12
+    combined = {
+        (item.measure_id, item.structure_type): item
+        for item in parsed.observations
+        if item.geo_id == "state:10|place:21200"
+    }
+    assert combined[("units", "1_unit")].value == Decimal("93")
+    assert combined[("units", "1_unit")].reported_value == Decimal("93")
+    assert combined[("units", "1_unit")].value_source == "92+1"
+    assert combined[("valuation", "1_unit")].value == Decimal("16168111")
+    # The parts' other figures are unchanged: the second part adds zeros.
+    assert combined[("units", "5_plus_units")].value == Decimal("108")
+    assert combined[("units", "1_unit")].source_row_index == rows.index(dover) + 1
+    # Everything else in the file is exactly as before.
+    others = [o for o in parsed.observations if o.geo_id != "state:10|place:21200"]
+    assert others == [
+        o for o in baseline.observations if o.geo_id != "state:10|place:21200"
+    ]
+
+    # The same part printed twice is a copy, not a third part.
+    again = parse_file(
+        b"\n".join(header + rows + [part, part]) + b"\n", item=PLACE_YEAR
+    )
+    assert [(q.source_row_index, q.error_code) for q in again.quarantined] == [
+        (len(rows) + 2, "repeated_row")
+    ]
+    assert again.observations == parsed.observations
