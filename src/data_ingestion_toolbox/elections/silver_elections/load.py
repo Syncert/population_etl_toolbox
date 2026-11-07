@@ -16,14 +16,22 @@ from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
 
-from ..client import ElectionsPayloadError, FileRequest, check_body
+from ..client import DISTRICT_LISTING, ElectionsPayloadError, FileRequest, check_body
 from ..config import SOURCE_CODE
-from ..registry import GOVERNORS, HISTORY_STREAMS, LEGISLATORS, result_dataset
+from ..registry import (
+    GOVERNORS,
+    HISTORY_STREAMS,
+    HOUSE_COUNTY_SHARE,
+    LEGISLATORS,
+    result_dataset,
+)
 from .parse import (
     CandidateResult,
+    DistrictCountyPiece,
     HistoryFileError,
     Quarantine,
     SeatTerm,
+    parse_district_counties,
     parse_governors,
     parse_history,
     parse_legislators,
@@ -111,6 +119,46 @@ def _result_row(run_id: UUID, capture_id: str, result: CandidateResult) -> tuple
     )  # fmt: skip
 
 
+_SHARE_INSERT = """
+INSERT INTO silver_elections.district_county_share (
+    run_id, plan_key, congress, census_year, state_fips, state_code, district, county_fips,
+    source_county_fips, population, geo_id, geo_sk, geography_status, source_record_id,
+    capture_id, record_index
+)
+SELECT incoming.run_id::UUID, incoming.plan_key, incoming.congress::SMALLINT,
+       incoming.census_year::SMALLINT, incoming.state_fips, incoming.state_code,
+       incoming.district::INTEGER, incoming.county_fips, incoming.source_county_fips,
+       incoming.population::BIGINT, incoming.geo_id, entity.geo_sk,
+       CASE WHEN entity.geo_sk IS NULL THEN 'unmapped' ELSE 'resolved' END,
+       incoming.source_record_id, incoming.capture_id::UUID, incoming.record_index::INTEGER
+FROM (VALUES %s) AS incoming (
+    run_id, plan_key, congress, census_year, state_fips, state_code, district, county_fips,
+    source_county_fips, population, geo_id, source_record_id, capture_id, record_index
+)
+LEFT JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = incoming.geo_id
+ON CONFLICT (run_id, plan_key, state_fips, district, county_fips) DO NOTHING
+"""
+
+
+def _share_row(run_id: UUID, capture_id: str, piece: DistrictCountyPiece) -> tuple:
+    return (
+        str(run_id),
+        piece.plan_key,
+        piece.congress,
+        piece.census_year,
+        piece.state_fips,
+        piece.state_code,
+        piece.district,
+        piece.county_fips,
+        piece.source_county_fips,
+        piece.population,
+        piece.geo_id,
+        piece.source_record_id,
+        capture_id,
+        piece.record_index,
+    )
+
+
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     """Parse and conform a captured read; return the rows written."""
     connection = connection_factory()
@@ -138,11 +186,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             quarantine: list[tuple] = []
             term_rows: list[tuple] = []
             result_rows: list[tuple] = []
+            share_rows: list[tuple] = []
             records_total = 0
             refused = False
             term_keys: set[str] = set()
             for _file_index, file_key, file_kind, capture_id in files:
-                if file_kind == "listing":
+                if file_kind in ("listing", DISTRICT_LISTING):
                     continue
                 payload = load_captured_payload(connection_factory, UUID(capture_id))
                 try:
@@ -182,6 +231,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     records_total += len(terms) + len(rejected)
                     term_rows.extend(
                         _term_row(run_id, capture_id, term) for term in terms
+                    )
+                elif stream == HOUSE_COUNTY_SHARE:
+                    pieces, rejected, read = parse_district_counties(file_key, payload)
+                    records_total += read
+                    share_rows.extend(
+                        _share_row(run_id, capture_id, piece) for piece in pieces
                     )
                 elif stream in HISTORY_STREAMS:
                     try:
@@ -255,6 +310,17 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 if written != len(result_rows):
                     raise ElectionsReconciliationError(
                         f"run {run_id} wrote {written} results against {len(result_rows)}"
+                    )
+            if share_rows:
+                execute_values(cursor, _SHARE_INSERT, share_rows, page_size=10000)
+                cursor.execute(
+                    "SELECT COUNT(*) FROM silver_elections.district_county_share WHERE run_id = %s",
+                    (str(run_id),),
+                )
+                written = int(cursor.fetchone()[0])
+                if written != len(share_rows):
+                    raise ElectionsReconciliationError(
+                        f"run {run_id} wrote {written} district pieces against {len(share_rows)}"
                     )
             cursor.execute(
                 """

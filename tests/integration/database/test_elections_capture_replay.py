@@ -20,6 +20,7 @@ from data_ingestion_toolbox.elections.registry import (
     COUNTY_SENATE_HISTORY,
     GOVERNORS,
     HOUSE,
+    HOUSE_COUNTY_SHARE,
     LEGISLATORS,
     SENATE,
     STATE_PRESIDENT,
@@ -35,6 +36,7 @@ from data_ingestion_toolbox.glossary.harvest import (
 )
 from data_ingestion_toolbox.quality.sources import (
     elections_county_history_agreement,
+    elections_house_district_coverage,
     elections_run_reconciliation,
     elections_seat_overlap,
     elections_totals_and_geography,
@@ -475,3 +477,49 @@ def test_county_history_fills_1990s_counties_and_serves_one_provider(
 
     _run, status, rows, published = el.run_to_gold(factory, COUNTY_SENATE_HISTORY)
     assert (status, rows, published) == ("unchanged", 0, 0)
+
+
+def test_house_districts_cover_each_county_with_its_share_from_2006(
+    elections_warehouse,
+) -> None:
+    """Covers: ETL-111 — a county shows each covering House district, its share and the district margin."""
+    factory = elections_warehouse
+    assert _outcome(factory, elections_house_district_coverage).result == (
+        "not_applicable"
+    )
+    el.run_to_gold(factory, HOUSE)
+    run_id, status, rows, published = el.run_to_gold(factory, HOUSE_COUNTY_SHARE)
+    # Five county pieces across the two states, every one read.
+    assert (status, rows, published) == ("captured", 5, 1)
+    # Only the resolved counties are served (Kenosha and Laramie are not seeded).
+    pieces = _rows(
+        factory,
+        """
+        SELECT geo_id, election_year, district_label, piece_population, county_population,
+               county_population_share, leading_party_code, district_two_party_margin,
+               missing_reason
+          FROM gold_elections.county_house_district
+         ORDER BY geo_id, district
+        """,
+    )
+    assert pieces == [
+        (el.DANE, 2022, "WI-02", 561504, 561504, Decimal("100.00"), "DEM",
+         Decimal("-45.02"), None),
+        (el.WAUKESHA, 2022, "WI-01", 60000, 406000, Decimal("14.78"), None, None,
+         "no_district_result"),
+        (el.WAUKESHA, 2022, "WI-05", 346000, 406000, Decimal("85.22"), None, None,
+         "no_district_result"),
+    ]  # fmt: skip
+    # The fixture's House file has Wisconsin's second and Wyoming's at-large
+    # results only, so the first and fifth have county pieces and no result.
+    outcome = _outcome(factory, elections_house_district_coverage)
+    assert (outcome.result, outcome.observed_count) == ("warn", 2)
+
+    # Each plan is a frozen census tabulation: a held plan is never read again.
+    run_id, status, rows, published = el.run_to_gold(factory, HOUSE_COUNTY_SHARE)
+    assert (status, rows, published) == ("unchanged", 0, 0)
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM control.elections_file WHERE run_id = %s",
+        (str(run_id),),
+    ) == [(0,)]

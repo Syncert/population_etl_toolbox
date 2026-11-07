@@ -20,6 +20,11 @@ Pure: bytes in, typed rows and quarantine records out.
   election years from 1990 are read. A county code retired since then is
   read as its successor (``registry.COUNTY_SUCCESSOR``); a merged city's
   votes are added into its county before anything is served.
+* A district-to-county answer is the Census Bureau's: one row per county
+  piece of one district with its census population. A retired county code
+  is read as its successor and its population added into that county's
+  piece; Census's delegate district ``98`` (the District of Columbia) is
+  read as district 0, the number MEDSL gives a single seat.
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ from typing import Any
 from data_ingestion_toolbox.utility.rdata import RDataError, read_data_frames
 
 from ..registry import (
+    CENSUS_DELEGATE_DISTRICT,
     COUNTY_PRESIDENT,
     COUNTY_PRESIDENT_HISTORY,
     COUNTY_SENATE,
@@ -51,6 +57,7 @@ from ..registry import (
     STATE_PRESIDENT,
     STATEWIDE_TOTAL_STREAMS,
     WIKIDATA_PARTIES,
+    district_plan,
     party_code,
     result_dataset,
 )
@@ -121,6 +128,27 @@ class CandidateResult:
         if self.geo_level == "state" and self.state_fips:
             return f"state:{self.state_fips}"
         return None
+
+
+@dataclass(frozen=True)
+class DistrictCountyPiece:
+    """The population of one county's piece of one district in one plan."""
+
+    record_index: int
+    plan_key: str
+    congress: int
+    census_year: int
+    state_fips: str
+    state_code: str
+    district: int
+    county_fips: str
+    population: int
+    source_county_fips: str
+    source_record_id: str
+
+    @property
+    def geo_id(self) -> str:
+        return f"state:{self.county_fips[:2]}|county:{self.county_fips[2:]}"
 
 
 @dataclass(frozen=True)
@@ -803,3 +831,82 @@ def _nominee(kept: list[tuple[int, tuple]], position: int) -> str:
     if len(names) == 1:
         return names.pop()
     return "(nominee not named)" if not names else "; ".join(sorted(names))
+
+
+def parse_district_counties(
+    file_key: str, raw_bytes: bytes
+) -> tuple[list[DistrictCountyPiece], list[Quarantine], int]:
+    """One district's county pieces from a Census API answer; (pieces, quarantine, rows read).
+
+    ``file_key`` is ``<plan>/<state FIPS>/<district>`` as the capture named it.
+    """
+    from ..client import census_table
+
+    plan_key, state_fips, district_code = file_key.split("/")
+    plan = district_plan(plan_key)
+    rows = census_table(raw_bytes, file_key, "county (or part)")
+    quarantine: list[Quarantine] = []
+    merged: dict[str, tuple[int, int, str]] = {}
+    for index, row in enumerate(rows, start=1):
+        state = FIPS_STATE.get(row.get("state", ""))
+        county = row.get("county (or part)", "")
+        district = row.get("congressional district", "")
+        raw_population = row.get(plan.population_variable, "")
+        if state is None or row.get("state") != state_fips:
+            quarantine.append(
+                Quarantine(
+                    index, "unreadable_state", "state code is not the one asked for"
+                )
+            )
+            continue
+        if district != district_code:
+            quarantine.append(
+                Quarantine(
+                    index, "unexpected_district", "district is not the one asked for"
+                )
+            )
+            continue
+        if not (county.isdigit() and len(county) == 3):
+            quarantine.append(
+                Quarantine(index, "no_county_code", "county code is not three digits")
+            )
+            continue
+        if not raw_population.isdigit():
+            quarantine.append(
+                Quarantine(
+                    index, "unreadable_population", "population is not a whole number"
+                )
+            )
+            continue
+        source_fips = state_fips + county
+        target = COUNTY_SUCCESSOR.get(source_fips, source_fips)
+        population = int(raw_population)
+        if target in merged:
+            first_index, total, first_source = merged[target]
+            merged[target] = (
+                first_index,
+                total + population,
+                min(first_source, source_fips),
+            )
+        else:
+            merged[target] = (index, population, source_fips)
+    number = 0 if district_code == CENSUS_DELEGATE_DISTRICT else int(district_code)
+    pieces = [
+        DistrictCountyPiece(
+            record_index=first_index,
+            plan_key=plan.key,
+            congress=plan.congress,
+            census_year=plan.census_year,
+            state_fips=state_fips,
+            state_code=FIPS_STATE[state_fips],
+            district=number,
+            county_fips=county_fips,
+            population=population,
+            source_county_fips=source_fips,
+            source_record_id=_sha(plan.key, state_fips, district_code, county_fips),
+        )
+        for county_fips, (first_index, population, source_fips) in sorted(
+            merged.items()
+        )
+    ]
+    return pieces, quarantine, len(rows)

@@ -29,8 +29,21 @@ Three publishers, each read whole on every run:
   hand before the first load (Dataverse refuses automated reads from the
   build container); see the operations guide.
 
+* **Which House districts cover each county.** The Census Bureau's
+  congressional district summary files on its API (public domain) give the
+  population of every county piece of every district, for the Congresses
+  whose plans it tabulated: the 110th (2000 census), the 111th (2010
+  census), the 113th, 115th and 116th (2010 census) and the 118th and
+  119th (2020 census). Read on OFFICE_LAB 2026-11-07: nothing is served for
+  the 103rd to 109th Congresses, and the relationship files Census
+  publishes give land area only. ``HOUSE_PLAN_YEARS`` says which plan each
+  House election was held under.
+
 Every stream is re-read whole, so a registered election or a new Congress
 that was never loaded is loaded by the next scheduled run (the loader rule).
+The district-to-county files are the exception: each is a frozen census
+tabulation, so a plan is read until one read of it is published and never
+again; a plan added to the registry is read by the next scheduled run.
 """
 
 from __future__ import annotations
@@ -47,6 +60,7 @@ HOUSE = "house"
 COUNTY_PRESIDENT_HISTORY = "county_president_history"
 COUNTY_SENATE_HISTORY = "county_senate_history"
 COUNTY_SENATE = "county_senate"
+HOUSE_COUNTY_SHARE = "house_county_share"
 
 RESULT_STREAMS = (
     COUNTY_PRESIDENT,
@@ -72,7 +86,7 @@ STATEWIDE_TOTAL_STREAMS = (COUNTY_SENATE,)
 #: The Algara & Amlani streams: one R data frame per file, one row per county
 #: and contest with the two major parties' votes and the county's total.
 HISTORY_STREAMS = (COUNTY_PRESIDENT_HISTORY, COUNTY_SENATE_HISTORY)
-STREAMS = (LEGISLATORS, GOVERNORS, *RESULT_STREAMS)
+STREAMS = (LEGISLATORS, GOVERNORS, *RESULT_STREAMS, HOUSE_COUNTY_SHARE)
 
 LEGISLATORS_BASE_URL = (
     "https://raw.githubusercontent.com/unitedstates/congress-legislators/gh-pages"
@@ -338,3 +352,75 @@ STATE_FIPS: dict[str, str] = {
     "WV": "54", "WI": "55", "WY": "56",
 }  # fmt: skip
 FIPS_STATE: dict[str, str] = {fips: code for code, fips in STATE_FIPS.items()}
+
+
+# ---------------------------------------------------------------------------
+# House districts by county (Census Bureau API, public domain).
+# ---------------------------------------------------------------------------
+
+CENSUS_API_BASE_URL = "https://api.census.gov/data"
+CENSUS_LICENCE = "Public domain (U.S. Census Bureau)"
+
+
+@dataclass(frozen=True)
+class DistrictPlan:
+    """One Census tabulation of a Congress's districts by county piece."""
+
+    key: str
+    congress: int
+    census_year: int
+    path: str
+    population_variable: str
+
+    @property
+    def url(self) -> str:
+        return f"{CENSUS_API_BASE_URL}/{self.path}"
+
+
+#: Each tabulation's API dataset and total-population variable (read on
+#: OFFICE_LAB 2026-11-07 for Wisconsin; every one answers ``county (or
+#: part)`` within ``state`` and ``congressional district``).
+DISTRICT_PLANS: tuple[DistrictPlan, ...] = (
+    DistrictPlan("cd110", 110, 2000, "2000/dec/cd110h", "P001001"),
+    DistrictPlan("cd111", 111, 2010, "2010/dec/sf1", "P001001"),
+    DistrictPlan("cd113", 113, 2010, "2010/dec/cd113", "P001001"),
+    DistrictPlan("cd115", 115, 2010, "2010/dec/cd115", "P001001"),
+    DistrictPlan("cd116", 116, 2010, "2010/dec/cd116", "P001001"),
+    DistrictPlan("cd118", 118, 2020, "2020/dec/cd118", "P1_001N"),
+    DistrictPlan("cd119", 119, 2020, "2020/dec/cd119", "P1_001N"),
+)
+
+#: The plan each House general election was held under, and the states
+#: where it was not. A Congress with no tabulation of its own uses the one
+#: before it, which is the same plan everywhere except where a state redrew
+#: in between: North Carolina's court-ordered 2019 map was used in 2020
+#: (116th tabulated, 117th not), so North Carolina 2020 has no county view.
+#: Congresses before the 110th have no tabulation at all.
+HOUSE_PLAN_YEARS: dict[int, tuple[str, tuple[str, ...]]] = {
+    2006: ("cd110", ()),
+    2008: ("cd111", ()),
+    2010: ("cd111", ()),
+    2012: ("cd113", ()),
+    2014: ("cd113", ()),
+    2016: ("cd115", ()),
+    2018: ("cd116", ()),
+    2020: ("cd116", ("NC",)),
+    2022: ("cd118", ()),
+    2024: ("cd119", ()),
+}
+
+#: Census's code for the District of Columbia's delegate district; MEDSL
+#: numbers a single seat 0, as Census numbers an at-large seat ``00``.
+CENSUS_DELEGATE_DISTRICT = "98"
+
+
+def district_plan(key: str) -> DistrictPlan:
+    for plan in DISTRICT_PLANS:
+        if plan.key == key:
+            return plan
+    raise KeyError(f"unregistered district plan: {key}")
+
+
+def congress_elected(election_year: int) -> int:
+    """The Congress a November general election in this year elects."""
+    return (election_year - 1786) // 2

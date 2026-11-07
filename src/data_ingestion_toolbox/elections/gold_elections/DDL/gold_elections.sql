@@ -240,6 +240,108 @@ SELECT store.office, store.election_year, store.stage, store.special,
 FROM gold_elections.contest_result_store AS store
 JOIN gold_elections.current_read AS read ON read.run_id = store.run_id;
 
+-- The Census tabulations of House district plans by county piece
+-- (registry.DISTRICT_PLANS).
+CREATE OR REPLACE VIEW gold_elections.district_plan_definition AS
+SELECT plan_key, congress, census_year, census_dataset
+FROM (VALUES
+    ('cd110', 110, 2000, '2000/dec/cd110h'),
+    ('cd111', 111, 2010, '2010/dec/sf1'),
+    ('cd113', 113, 2010, '2010/dec/cd113'),
+    ('cd115', 115, 2010, '2010/dec/cd115'),
+    ('cd116', 116, 2010, '2010/dec/cd116'),
+    ('cd118', 118, 2020, '2020/dec/cd118'),
+    ('cd119', 119, 2020, '2020/dec/cd119')
+) AS plan(plan_key, congress, census_year, census_dataset);
+
+-- The plan each House general election was held under, and the states
+-- where it was not (registry.HOUSE_PLAN_YEARS): a Congress with no
+-- tabulation of its own uses the one before it, except where a state
+-- redrew in between. No House election before 2006 has a county view.
+CREATE OR REPLACE VIEW gold_elections.house_plan_year AS
+SELECT election_year, plan_key, excluded_states
+FROM (VALUES
+    (2006, 'cd110', ARRAY[]::TEXT[]),
+    (2008, 'cd111', ARRAY[]::TEXT[]),
+    (2010, 'cd111', ARRAY[]::TEXT[]),
+    (2012, 'cd113', ARRAY[]::TEXT[]),
+    (2014, 'cd113', ARRAY[]::TEXT[]),
+    (2016, 'cd115', ARRAY[]::TEXT[]),
+    (2018, 'cd116', ARRAY[]::TEXT[]),
+    (2020, 'cd116', ARRAY['NC']::TEXT[]),
+    (2022, 'cd118', ARRAY[]::TEXT[]),
+    (2024, 'cd119', ARRAY[]::TEXT[])
+) AS plan_year(election_year, plan_key, excluded_states);
+
+-- Each county's piece of each district in the newest published read of
+-- each plan, with the county's whole population in that plan's census.
+-- The window partitions by geo_id, so a filter on one county stays one
+-- county's rows.
+CREATE OR REPLACE VIEW gold_elections.district_county_share AS
+WITH plan_read AS (
+    SELECT DISTINCT ON (plan.plan_key) plan.plan_key, run.run_id, run.published_at
+      FROM gold_elections.district_plan_definition AS plan
+      JOIN control.elections_run AS run
+        ON run.stream = 'house_county_share' AND run.status = 'published'
+     WHERE EXISTS (
+         SELECT 1 FROM silver_elections.district_county_share AS share
+          WHERE share.plan_key = plan.plan_key AND share.run_id = run.run_id
+     )
+     ORDER BY plan.plan_key, run.published_at DESC, run.run_id DESC
+)
+SELECT share.plan_key, share.congress, share.census_year, share.state_code, share.state_fips,
+       share.district, share.county_fips, share.geo_id, share.geo_sk, share.population,
+       SUM(share.population) OVER (PARTITION BY share.plan_key, share.geo_id)::BIGINT
+           AS county_population,
+       share.run_id, plan_read.published_at, share.capture_id
+FROM silver_elections.district_county_share AS share
+JOIN plan_read ON plan_read.plan_key = share.plan_key AND plan_read.run_id = share.run_id
+WHERE share.geography_status = 'resolved';
+
+-- The House districts covering each county in each general election from
+-- 2006: the district, the county's share of its people in it, and the
+-- district's own result. The margin is the district's, never the county's
+-- own vote, and nothing adds district margins into a county figure.
+CREATE OR REPLACE VIEW gold_elections.county_house_district AS
+SELECT share.geo_id,
+       share.geo_sk,
+       share.state_code,
+       share.county_fips,
+       plan_year.election_year,
+       share.plan_key,
+       share.census_year,
+       share.district,
+       share.state_code || '-' || CASE WHEN share.district = 0 THEN 'AL'
+                                       ELSE LPAD(share.district::TEXT, 2, '0') END AS district_label,
+       share.population AS piece_population,
+       share.county_population,
+       ROUND(100.0 * share.population / NULLIF(share.county_population, 0), 2)
+           AS county_population_share,
+       contest.leading_party_code,
+       contest.leading_candidate,
+       contest.republican_votes AS district_republican_votes,
+       contest.democratic_votes AS district_democratic_votes,
+       contest.total_votes AS district_total_votes,
+       ROUND(100.0 * (COALESCE(contest.republican_votes, 0) - COALESCE(contest.democratic_votes, 0))
+             / NULLIF(COALESCE(contest.republican_votes, 0) + COALESCE(contest.democratic_votes, 0), 0),
+             2) AS district_two_party_margin,
+       CASE WHEN contest.run_id IS NULL THEN 'no_district_result' END AS missing_reason,
+       'District result (MIT Election Data and Science Lab) for each House district covering the '
+       || 'county, with the county''s share of its people in that district (U.S. Census Bureau, '
+       || share.census_year || ' census). The margin is the district''s, not the county''s own vote.'
+           AS observation_basis,
+       share.run_id AS share_run_id,
+       contest.run_id AS result_run_id
+FROM gold_elections.district_county_share AS share
+JOIN gold_elections.house_plan_year AS plan_year
+  ON plan_year.plan_key = share.plan_key
+ AND NOT (share.state_code = ANY (plan_year.excluded_states))
+LEFT JOIN gold_elections.contest_result AS contest
+  ON contest.office = 'us_house' AND contest.geo_level = 'district' AND contest.stage = 'GEN'
+ AND NOT contest.special
+ AND contest.state_code = share.state_code AND contest.district = share.district
+ AND contest.election_year = plan_year.election_year;
+
 -- The published measures: the general-election presidential vote by county
 -- and state.
 CREATE OR REPLACE VIEW gold_elections.measure_definition AS
@@ -357,7 +459,8 @@ SELECT measure AS source_object_key, measure, measure_label, unit, observation_b
 FROM gold_elections.measure_definition;
 
 COMMENT ON SCHEMA gold_elections IS
-    'Policy-free publication views for congressional and governor seat terms and MEDSL election results.';
+    'Policy-free publication views for congressional and governor seat terms, election results '
+    'and the House districts covering each county.';
 
 -- Store any current read published before contest_result_store existed.
 SELECT gold_elections.sync_contest_result();

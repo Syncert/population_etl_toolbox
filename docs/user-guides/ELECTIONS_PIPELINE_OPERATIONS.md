@@ -12,8 +12,10 @@ scores, ranks or adds measures together.
 
 ## What is read
 
-`src/data_ingestion_toolbox/elections/registry.py` names every stream. None
-needs a credential.
+`src/data_ingestion_toolbox/elections/registry.py` names every stream. Only
+`house_county_share` takes a credential: the Census API key in
+`CENSUS_API_KEY` (the one the Census sources use), added to each request when
+it is sent and never captured.
 
 | Stream | Provider | What |
 | --- | --- | --- |
@@ -26,6 +28,7 @@ needs a credential.
 | `county_president_history` | Algara & Amlani, `doi:10.7910/DVN/DGUMFI` (CC0 1.0, no guestbook) | `dataverse_shareable_presidential_county_returns_1868_20NN.Rdata`, data frame `pres_elections_release` |
 | `county_senate_history` | the same dataset | `dataverse_shareable_us_senate_county_returns_1908_20NN.Rdata`, data frame `senate_elections_release` |
 | `county_senate` | MEDSL `doi:10.7910/DVN/YB60EJ` | `senate_20NN` (the 2022 county file) |
+| `house_county_share` | Census Bureau API (public domain) | per registered plan, each state's district list, then each district's `county (or part)` pieces with their census population |
 
 For each MEDSL stream the run first captures the dataset's file list, then
 the one file whose name matches the registered pattern, in its original
@@ -72,6 +75,37 @@ Every run re-reads each stream whole. A Congress, a governor or an election
 year the warehouse never loaded is loaded by the next scheduled run; there is
 no separate history run (the loader rule).
 
+### Which House districts cover each county
+
+House members represent districts, not counties, and no free file counts
+House votes by county before about 2016. A county page instead shows the
+House districts covering it, each district's own result, and the county's
+share of its people in each district. The shares come from the Census
+Bureau's congressional district summary files on its API
+(`registry.DISTRICT_PLANS`, read on OFFICE_LAB 2026-11-07):
+
+| Plan | Congress | Census | API dataset | House elections |
+| --- | --- | --- | --- | --- |
+| `cd110` | 110th | 2000 | `2000/dec/cd110h` | 2006 |
+| `cd111` | 111th | 2010 | `2010/dec/sf1` | 2008, 2010 |
+| `cd113` | 113th | 2010 | `2010/dec/cd113` | 2012, 2014 |
+| `cd115` | 115th | 2010 | `2010/dec/cd115` | 2016 |
+| `cd116` | 116th | 2010 | `2010/dec/cd116` | 2018, 2020 (not North Carolina) |
+| `cd118` | 118th | 2020 | `2020/dec/cd118` | 2022 |
+| `cd119` | 119th | 2020 | `2020/dec/cd119` | 2024 |
+
+A Congress with no tabulation of its own uses the one before it
+(`registry.HOUSE_PLAN_YEARS`), which is the same plan except where a state
+redrew in between: North Carolina's 2019 court-ordered map was used in 2020,
+so North Carolina 2020 has no county view. The API serves nothing for the
+103rd to 109th Congresses (1992 to 2004) and Census's relationship files give
+land area only, so those years are House by district only.
+
+Each plan is a frozen tabulation: the stream reads only the plans no
+published read holds, about 490 small requests per plan, and is `unchanged`
+once every registered plan is held. A plan added to the registry is read by
+the next scheduled run.
+
 ## What is served
 
 | Relation | Rows |
@@ -80,6 +114,8 @@ no separate history run (the loader rule).
 | `gold_elections.contest_result` | one row per contest and area: Republican and Democratic votes, total, leading party and candidate; read from `contest_result_store`, which `publish_run` fills once per published read (`gold_elections.sync_contest_result()`) |
 | `gold_elections.contest_tally` | the same contest rows computed from silver for any published read; read it for one `run_id` only |
 | `gold_elections.candidate_total` | one row per candidate and area, every ballot line combined |
+| `gold_elections.county_house_district` | one row per county, House general election from 2006 and covering district: `district_label` (`WI-02`, `WY-AL`), `county_population_share` (percent of the county's people in that district, from the plan's census), the district's `leading_party_code`, votes and `district_two_party_margin`; `missing_reason = 'no_district_result'` where MEDSL has no result for the district that year. The margin is the district's, never the county's own vote |
+| `gold_elections.district_county_share` | the county pieces of the newest published read of each plan, with `county_population` (the county's whole population in that census) |
 | `gold_elections.observation_revision`, `observation_latest` | the presidential general-election measures below, in the neutral observation shape |
 
 | Measure | Unit | Grains |
@@ -117,7 +153,9 @@ How the source's shapes are read:
 - **Fusion lines.** New York's candidates appear on several lines; they are
   one candidate, with the major party among their lines.
 - **House districts** are contests, not observations: districts are redrawn
-  after each census and are not yet a shared geography.
+  after each census and are not yet a shared geography. A county sees them
+  through `county_house_district`, and nothing adds district margins into a
+  county figure.
 
 Quarantined, never served as zero: a county row with no county code (Maine's
 UOCAVA rows, for example), an `NA` vote count, a duplicate row, a row with no
@@ -208,6 +246,10 @@ FROM gold_elections.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
 - `DQ-ELEC-007` warns where Algara & Amlani's county presidential margin
   differs from MEDSL's by more than half a point in a year both publish
   (2000 to 2020). Review its count before trusting the 1992 and 1996 maps.
+- `DQ-ELEC-008` warns where a House district result from 2006 has no county
+  piece in its year's plan (the registered plan is not the one the election
+  used), or a district with county pieces has no result that year (an
+  unopposed seat some states leave off the ballot).
 - `DQ-ELEC-004` warns when a state's county presidential or Senate sums disagree with
   its state total, or a place does not resolve.
 - `DQ-ELEC-005` fails when a lean-group county row is not its change minus

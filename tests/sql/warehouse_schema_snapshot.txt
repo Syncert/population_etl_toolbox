@@ -509,7 +509,7 @@ r control.elections_file
     column capture_id uuid NOT NULL
     constraint elections_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint elections_file_file_index_check CHECK ((file_index >= 0))
-    constraint elections_file_file_kind_check CHECK ((file_kind = ANY (ARRAY['legislators'::text, 'sparql'::text, 'listing'::text, 'results'::text])))
+    constraint elections_file_file_kind_check CHECK ((file_kind = ANY (ARRAY['legislators'::text, 'sparql'::text, 'listing'::text, 'results'::text, 'cd_listing'::text, 'cd_county'::text])))
     constraint elections_file_pkey PRIMARY KEY (run_id, file_index)
     constraint elections_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.elections_run(run_id)
     index elections_file_pkey CREATE UNIQUE INDEX elections_file_pkey ON control.elections_file USING btree (run_id, file_index)
@@ -532,7 +532,7 @@ r control.elections_run
     constraint elections_run_run_checksum_check CHECK (((run_checksum IS NULL) OR (run_checksum ~ '^[0-9a-f]{64}$'::text)))
     constraint elections_run_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint elections_run_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
-    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text, 'county_president_history'::text, 'county_senate_history'::text, 'county_senate'::text])))
+    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text, 'county_president_history'::text, 'county_senate_history'::text, 'county_senate'::text, 'house_county_share'::text])))
     index elections_run_pkey CREATE UNIQUE INDEX elections_run_pkey ON control.elections_run USING btree (run_id)
 
 r control.epa_aqs_file
@@ -5623,6 +5623,62 @@ v gold_elections.contest_tally
     body    FROM ranked
     body   GROUP BY office, election_year, stage, special, state_code, state_fips, county_fips, district, geo_level, geo_id, geo_sk, geography_status, area_key, stream, source_file, run_id, published_at;
 
+v gold_elections.county_house_district
+    column geo_id text
+    column geo_sk bigint
+    column state_code text
+    column county_fips text
+    column election_year integer
+    column plan_key text
+    column census_year smallint
+    column district integer
+    column district_label text
+    column piece_population bigint
+    column county_population bigint
+    column county_population_share numeric
+    column leading_party_code text
+    column leading_candidate text
+    column district_republican_votes bigint
+    column district_democratic_votes bigint
+    column district_total_votes bigint
+    column district_two_party_margin numeric
+    column missing_reason text
+    column observation_basis text
+    column share_run_id uuid
+    column result_run_id uuid
+    body SELECT share.geo_id,
+    body     share.geo_sk,
+    body     share.state_code,
+    body     share.county_fips,
+    body     plan_year.election_year,
+    body     share.plan_key,
+    body     share.census_year,
+    body     share.district,
+    body     (share.state_code || '-'::text) ||
+    body         CASE
+    body             WHEN share.district = 0 THEN 'AL'::text
+    body             ELSE lpad(share.district::text, 2, '0'::text)
+    body         END AS district_label,
+    body     share.population AS piece_population,
+    body     share.county_population,
+    body     round(100.0 * share.population::numeric / NULLIF(share.county_population, 0)::numeric, 2) AS county_population_share,
+    body     contest.leading_party_code,
+    body     contest.leading_candidate,
+    body     contest.republican_votes AS district_republican_votes,
+    body     contest.democratic_votes AS district_democratic_votes,
+    body     contest.total_votes AS district_total_votes,
+    body     round(100.0 * (COALESCE(contest.republican_votes, 0::bigint) - COALESCE(contest.democratic_votes, 0::bigint))::numeric / NULLIF(COALESCE(contest.republican_votes, 0::bigint) + COALESCE(contest.democratic_votes, 0::bigint), 0)::numeric, 2) AS district_two_party_margin,
+    body         CASE
+    body             WHEN contest.run_id IS NULL THEN 'no_district_result'::text
+    body             ELSE NULL::text
+    body         END AS missing_reason,
+    body     (('District result (MIT Election Data and Science Lab) for each House district covering the '::text || 'county, with the county''s share of its people in that district (U.S. Census Bureau, '::text) || share.census_year) || ' census). The margin is the district''s, not the county''s own vote.'::text AS observation_basis,
+    body     share.run_id AS share_run_id,
+    body     contest.run_id AS result_run_id
+    body    FROM gold_elections.district_county_share share
+    body      JOIN gold_elections.house_plan_year plan_year ON plan_year.plan_key = share.plan_key AND NOT (share.state_code = ANY (plan_year.excluded_states))
+    body      LEFT JOIN gold_elections.contest_result contest ON contest.office = 'us_house'::text AND contest.geo_level = 'district'::text AND contest.stage = 'GEN'::text AND NOT contest.special AND contest.state_code = share.state_code AND contest.district = share.district AND contest.election_year = plan_year.election_year;
+
 v gold_elections.current_read
     column stream text
     column run_id uuid
@@ -5635,6 +5691,61 @@ v gold_elections.current_read
     body    FROM control.elections_run run
     body   WHERE status = 'published'::text
     body   ORDER BY stream, published_at DESC, run_id DESC;
+
+v gold_elections.district_county_share
+    column plan_key text
+    column congress smallint
+    column census_year smallint
+    column state_code text
+    column state_fips text
+    column district integer
+    column county_fips text
+    column geo_id text
+    column geo_sk bigint
+    column population bigint
+    column county_population bigint
+    column run_id uuid
+    column published_at timestamp with time zone
+    column capture_id uuid
+    body WITH plan_read AS (
+    body          SELECT DISTINCT ON (plan.plan_key) plan.plan_key,
+    body             run.run_id,
+    body             run.published_at
+    body            FROM gold_elections.district_plan_definition plan
+    body              JOIN control.elections_run run ON run.stream = 'house_county_share'::text AND run.status = 'published'::text
+    body           WHERE (EXISTS ( SELECT 1
+    body                    FROM silver_elections.district_county_share share_1
+    body                   WHERE share_1.plan_key = plan.plan_key AND share_1.run_id = run.run_id))
+    body           ORDER BY plan.plan_key, run.published_at DESC, run.run_id DESC
+    body         )
+    body  SELECT share.plan_key,
+    body     share.congress,
+    body     share.census_year,
+    body     share.state_code,
+    body     share.state_fips,
+    body     share.district,
+    body     share.county_fips,
+    body     share.geo_id,
+    body     share.geo_sk,
+    body     share.population,
+    body     sum(share.population) OVER (PARTITION BY share.plan_key, share.geo_id)::bigint AS county_population,
+    body     share.run_id,
+    body     plan_read.published_at,
+    body     share.capture_id
+    body    FROM silver_elections.district_county_share share
+    body      JOIN plan_read ON plan_read.plan_key = share.plan_key AND plan_read.run_id = share.run_id
+    body   WHERE share.geography_status = 'resolved'::text;
+
+v gold_elections.district_plan_definition
+    column plan_key text
+    column congress integer
+    column census_year integer
+    column census_dataset text
+    body SELECT plan_key,
+    body     congress,
+    body     census_year,
+    body     census_dataset
+    body    FROM ( VALUES ('cd110'::text,110,2000,'2000/dec/cd110h'::text), ('cd111'::text,111,2010,'2010/dec/sf1'::text), ('cd113'::text,113,2010,'2010/dec/cd113'::text), ('cd115'::text,115,2010,'2010/dec/cd115'::text), ('cd116'::text,116,2010,'2010/dec/cd116'::text), ('cd118'::text,118,2020,'2020/dec/cd118'::text), ('cd119'::text,119,2020,'2020/dec/cd119'::text)) plan(plan_key, congress, census_year, census_dataset);
 
 v gold_elections.governor_fiscal_measure_definition
     column measure text
@@ -5984,6 +6095,15 @@ v gold_elections.governor_term_tax_mix
     body    FROM complete
     body      CROSS JOIN LATERAL ( VALUES ('property'::text,complete.property), ('general_sales'::text,complete.general_sales), ('income'::text,complete.income), ('other'::text,GREATEST(complete.remainder, 0::numeric))) part(tax_group, share_of_taxes_pct)
     body   WHERE complete.remainder >= '-0.5'::numeric;
+
+v gold_elections.house_plan_year
+    column election_year integer
+    column plan_key text
+    column excluded_states text[]
+    body SELECT election_year,
+    body     plan_key,
+    body     excluded_states
+    body    FROM ( VALUES (2006,'cd110'::text,ARRAY[]::text[]), (2008,'cd111'::text,ARRAY[]::text[]), (2010,'cd111'::text,ARRAY[]::text[]), (2012,'cd113'::text,ARRAY[]::text[]), (2014,'cd113'::text,ARRAY[]::text[]), (2016,'cd115'::text,ARRAY[]::text[]), (2018,'cd116'::text,ARRAY[]::text[]), (2020,'cd116'::text,ARRAY['NC'::text]), (2022,'cd118'::text,ARRAY[]::text[]), (2024,'cd119'::text,ARRAY[]::text[])) plan_year(election_year, plan_key, excluded_states);
 
 v gold_elections.lean_band_definition
     column lean_band text
@@ -12852,6 +12972,43 @@ r silver_elections.candidate_result
     constraint elections_result_level_shape CHECK ((((geo_level = 'county'::text) AND (county_fips IS NOT NULL)) OR ((geo_level = 'district'::text) AND (district IS NOT NULL) AND (geography_status = 'district'::text)) OR ((geo_level = 'state'::text) AND (county_fips IS NULL))))
     index candidate_result_pkey CREATE UNIQUE INDEX candidate_result_pkey ON silver_elections.candidate_result USING btree (run_id, result_key)
     index elections_result_contest_idx CREATE INDEX elections_result_contest_idx ON silver_elections.candidate_result USING btree (run_id, office, election_year, geo_id)
+
+r silver_elections.district_county_share
+    column run_id uuid NOT NULL
+    column plan_key text NOT NULL
+    column congress smallint NOT NULL
+    column census_year smallint NOT NULL
+    column state_fips text NOT NULL
+    column state_code text NOT NULL
+    column district integer NOT NULL
+    column county_fips text NOT NULL
+    column source_county_fips text NOT NULL
+    column population bigint NOT NULL
+    column geo_id text NOT NULL
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column source_record_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column record_index integer NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint district_county_share_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint district_county_share_census_year_check CHECK (((census_year >= 1790) AND (census_year <= 2100)))
+    constraint district_county_share_congress_check CHECK (((congress >= 1) AND (congress <= 200)))
+    constraint district_county_share_county_fips_check CHECK ((county_fips ~ '^[0-9]{5}$'::text))
+    constraint district_county_share_district_check CHECK ((district >= 0))
+    constraint district_county_share_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint district_county_share_pkey PRIMARY KEY (run_id, plan_key, state_fips, district, county_fips)
+    constraint district_county_share_plan_key_check CHECK ((plan_key ~ '^cd[0-9]{3}$'::text))
+    constraint district_county_share_population_check CHECK ((population >= 0))
+    constraint district_county_share_record_index_check CHECK ((record_index >= 1))
+    constraint district_county_share_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.elections_run(run_id)
+    constraint district_county_share_source_county_fips_check CHECK ((source_county_fips ~ '^[0-9]{5}$'::text))
+    constraint district_county_share_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint district_county_share_state_code_check CHECK ((state_code ~ '^[A-Z]{2}$'::text))
+    constraint district_county_share_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    index district_county_share_pkey CREATE UNIQUE INDEX district_county_share_pkey ON silver_elections.district_county_share USING btree (run_id, plan_key, state_fips, district, county_fips)
+    index elections_district_share_geo_idx CREATE INDEX elections_district_share_geo_idx ON silver_elections.district_county_share USING btree (geo_id, plan_key)
+    index elections_district_share_plan_idx CREATE INDEX elections_district_share_plan_idx ON silver_elections.district_county_share USING btree (plan_key, run_id)
 
 r silver_elections.quarantine
     column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_elections.quarantine_quarantine_sk_seq'::regclass)

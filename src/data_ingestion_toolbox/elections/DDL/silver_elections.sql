@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS control.elections_run (
     run_id UUID PRIMARY KEY REFERENCES control.ingestion_run(run_id),
     stream TEXT NOT NULL CHECK (
         stream IN ('legislators', 'governors', 'county_president', 'state_president', 'senate', 'house',
-                   'county_president_history', 'county_senate_history', 'county_senate')
+                   'county_president_history', 'county_senate_history', 'county_senate',
+                   'house_county_share')
     ),
     status TEXT NOT NULL CHECK (
         status IN ('capturing', 'captured', 'unchanged', 'silver_ready', 'quarantined', 'published')
@@ -26,7 +27,8 @@ CREATE TABLE IF NOT EXISTS control.elections_run (
     CONSTRAINT elections_run_published_has_time CHECK (status <> 'published' OR published_at IS NOT NULL)
 );
 
--- The county history streams (plan election-results-back-to-1990) widen the
+-- The county history streams and the district-to-county stream (plan
+-- election-results-back-to-1990) widen the
 -- stream list of a table created before them. Widening a list invalidates
 -- nothing stored; a CHECK that already names the new streams is left alone,
 -- so a rerun changes nothing.
@@ -36,12 +38,13 @@ BEGIN
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'control.elections_run'::regclass
           AND conname = 'elections_run_stream_check'
-          AND pg_get_constraintdef(oid) NOT LIKE '%county_senate_history%'
+          AND pg_get_constraintdef(oid) NOT LIKE '%house_county_share%'
     ) THEN
         ALTER TABLE control.elections_run DROP CONSTRAINT elections_run_stream_check;
         ALTER TABLE control.elections_run ADD CONSTRAINT elections_run_stream_check CHECK (
             stream IN ('legislators', 'governors', 'county_president', 'state_president', 'senate', 'house',
-                       'county_president_history', 'county_senate_history', 'county_senate')
+                       'county_president_history', 'county_senate_history', 'county_senate',
+                       'house_county_share')
         );
     END IF;
 END
@@ -53,10 +56,29 @@ CREATE TABLE IF NOT EXISTS control.elections_file (
     run_id UUID NOT NULL REFERENCES control.elections_run(run_id),
     file_index INTEGER NOT NULL CHECK (file_index >= 0),
     file_key TEXT NOT NULL,
-    file_kind TEXT NOT NULL CHECK (file_kind IN ('legislators', 'sparql', 'listing', 'results')),
+    file_kind TEXT NOT NULL CHECK (
+        file_kind IN ('legislators', 'sparql', 'listing', 'results', 'cd_listing', 'cd_county')
+    ),
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     PRIMARY KEY (run_id, file_index)
 );
+
+-- The Census API answers of the district-to-county stream widen the kinds.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'control.elections_file'::regclass
+          AND conname = 'elections_file_file_kind_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%cd_county%'
+    ) THEN
+        ALTER TABLE control.elections_file DROP CONSTRAINT elections_file_file_kind_check;
+        ALTER TABLE control.elections_file ADD CONSTRAINT elections_file_file_kind_check CHECK (
+            file_kind IN ('legislators', 'sparql', 'listing', 'results', 'cd_listing', 'cd_county')
+        );
+    END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS silver_elections.quarantine (
     quarantine_sk BIGSERIAL PRIMARY KEY,
@@ -148,3 +170,32 @@ CREATE TABLE IF NOT EXISTS silver_elections.candidate_result (
 
 CREATE INDEX IF NOT EXISTS elections_result_contest_idx
     ON silver_elections.candidate_result (run_id, office, election_year, geo_id);
+
+-- The population of each county's piece of each House district, per Census
+-- tabulation of a Congress's plan (registry.DISTRICT_PLANS). A retired
+-- county code is already its successor; the source code is kept beside it.
+CREATE TABLE IF NOT EXISTS silver_elections.district_county_share (
+    run_id UUID NOT NULL REFERENCES control.elections_run(run_id),
+    plan_key TEXT NOT NULL CHECK (plan_key ~ '^cd[0-9]{3}$'),
+    congress SMALLINT NOT NULL CHECK (congress BETWEEN 1 AND 200),
+    census_year SMALLINT NOT NULL CHECK (census_year BETWEEN 1790 AND 2100),
+    state_fips TEXT NOT NULL CHECK (state_fips ~ '^[0-9]{2}$'),
+    state_code TEXT NOT NULL CHECK (state_code ~ '^[A-Z]{2}$'),
+    district INTEGER NOT NULL CHECK (district >= 0),
+    county_fips TEXT NOT NULL CHECK (county_fips ~ '^[0-9]{5}$'),
+    source_county_fips TEXT NOT NULL CHECK (source_county_fips ~ '^[0-9]{5}$'),
+    population BIGINT NOT NULL CHECK (population >= 0),
+    geo_id TEXT NOT NULL,
+    geo_sk BIGINT,
+    geography_status TEXT NOT NULL CHECK (geography_status IN ('resolved', 'unmapped')),
+    source_record_id TEXT NOT NULL CHECK (source_record_id ~ '^[0-9a-f]{64}$'),
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    record_index INTEGER NOT NULL CHECK (record_index >= 1),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (run_id, plan_key, state_fips, district, county_fips)
+);
+
+CREATE INDEX IF NOT EXISTS elections_district_share_geo_idx
+    ON silver_elections.district_county_share (geo_id, plan_key);
+CREATE INDEX IF NOT EXISTS elections_district_share_plan_idx
+    ON silver_elections.district_county_share (plan_key, run_id);
