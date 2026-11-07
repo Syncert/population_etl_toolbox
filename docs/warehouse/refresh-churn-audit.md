@@ -82,6 +82,7 @@ replay.
 | S7 | silver_fred: `observation_revision` (monthly replay re-reads two years) | A repeat of the previous read of an observation stored as a new revision | 8,713 of 62,876 rows repeat (18 MB table) | Store a revision only when its value or status differs from the newest stored one |
 | S8 | silver_eia: `price_revision` and `fact_retail_price` (weekly read re-reads eight weeks) | Same, and each stored repeat also became a fact row | 4,176 of 75,864 revisions repeat; 75,864 fact rows for 71,688 distinct weeks | Same skip; the read records `repeated_row_count` and DQ-EIA-002 counts it |
 | S9 | silver_census_govfin: `unit_amount` (`replay_cog_units`) | Not a design churn: replays that timed out and rolled back | 3,127,504 inserted, 596,001 live | None here: #304 fixed the timeout; a `VACUUM (PARALLEL 0, ANALYZE)` reclaims the dead rows |
+| S10 | silver_fbi: Return A facts, agency links, county crosswalk, source rows (`fbi_ucr/return_a/load.py`, found 2026-11-07) | A changed master file started a new release key and loaded all eleven years again as new facts (a forced reload deleted and re-inserted the year) | ~20M facts per new release key (one release live, loaded 2026-10-31) | **Fixed (ETL-122):** one standing release revised in place; an unchanged file is skipped unread, a changed one staged and diffed so only differing rows are written; identical rows keep their lineage |
 
 Guards compare every value column and leave out timestamps and evidence
 pointers (`updated_at`, `resolved_at`, `last_checked_at`,

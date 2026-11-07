@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from .layout import property_total, violent_total
 
@@ -44,3 +45,21 @@ RETURN_A_PRODUCTS: tuple[ReturnAProduct, ...] = (
     RETURN_A_VIOLENT_CRIME,
     RETURN_A_PROPERTY_CRIME,
 )
+
+
+#: The first master file the warehouse registers (``reta-2015.zip``).
+FIRST_YEAR = 2015
+
+
+def registered_years(today_year: int | None = None) -> list[int]:
+    """Every registered Return A data year, newest first (the registry periods).
+
+    A master file holds one finished calendar year, so the newest registered
+    year is last year. The FBI publishes it during the following year, so
+    until then that one year may answer "not found" (see ``load``); every
+    older year is expected to exist. The scheduled run asks for all of them:
+    a year never loaded is loaded, an unchanged file is skipped unread
+    (LOADER RULE, CHURN RULE).
+    """
+    newest = (today_year or datetime.now(UTC).year) - 1
+    return list(range(newest, FIRST_YEAR - 1, -1))

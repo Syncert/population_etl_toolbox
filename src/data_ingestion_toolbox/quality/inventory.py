@@ -1633,8 +1633,8 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "FBI_UCR",
         grain="release_key, data_year",
         lineage="raw_capture.response_capture",
-        scope_method="years requested of fbi_ucr/return_a/load.py",
-        cadence="per Return A load",
+        scope_method="registered years (2015 through last year) of fbi_ucr/return_a",
+        cadence="weekly (fbi_ucr_ingest); an unchanged file is not reloaded",
         empty_behavior="empty until the first Return A year is loaded",
     ),
     _obj(
@@ -1644,7 +1644,7 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         grain="capture_id, source_row_index",
         lineage="raw_capture.response_capture",
         scope_method="every master-file line a loaded Return A year's facts name",
-        cadence="per Return A load; backfilled by fbi_ucr_ingest",
+        cadence="weekly with the Return A load; backfilled by fbi_ucr_ingest",
         empty_behavior="empty until the first Return A year is loaded",
     ),
     _obj(
