@@ -6,6 +6,12 @@ operations guide under `docs/user-guides/`). The **status** column and each sour
 the internal warehouse with [`coverage.sql`](coverage.sql), taken 2026-10-31 17:05 UTC. **Loaded** means the declared years
 are there; **Partly loaded** means years or levels are still missing.
 
+Sources added or extended from 2026-11-03 to 2026-11-07 (taxes and public money, elections, cost of living, the FBI
+Return A master files and the full permits history) were not in that count: their **status** is from the operator's
+checks on the live warehouse up to 2026-11-07 and says so. Each section's **Shown on** line names the site pages that
+read it. What the new sources add up to, and the measures derived from them, is summarised in
+[What was added in November 2026](#added-2026-11).
+
 Interactive version: [Warehouse Source Map](https://claude.ai/artifact/R8x3zkZjRAXFcPEYNr45s7). Table structures: [erd.md](erd.md).
 
 **Live version (admins):** the site's `/admin/warehouse` page shows this map and the schema atlas read from the
@@ -13,7 +19,7 @@ warehouse each time it opens: grains and metric counts from `gold_glossary.dim_m
 measured from each source's serving relations (kept until a new release lands), and every table and view from `pg_catalog`. The
 descriptions it shows come from `apps/api/services/warehouse_inventory.py`; a unit test fails if a served source has
 no entry there, so add one with every new source. Turn the page on by listing operator labels or sign-in emails in
-`API_ADMIN_ACCOUNTS`. This file and `erd.md` are the snapshot of 2026-10-31.
+`API_ADMIN_ACCOUNTS`. This file was last brought up to date on 2026-11-07; `erd.md` was regenerated from the DDL the same day.
 
 Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, averaged or placed from finer records) · ◌ some programs or areas only.
 
@@ -22,23 +28,23 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [American Community Survey](#census_acs) | U.S. Census Bureau | ● | ● | ● | ● | ● | ● |  | 2005–2024 | Monthly check | Partly loaded |
 | [Census 2000 and 1990](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  | ● | ● |  | 1990–2000 | One-time history load | Partly loaded |
 | [Population Estimates Program](#census_pep) | U.S. Census Bureau | ● | ● | ● |  | ● |  | ● | 1970–2025 | Monthly check | Loaded |
-| [SOI county-to-county migration](#irs_migration) | IRS Statistics of Income |  |  | ● |  |  |  |  | 2019–2023 | Monthly | Loaded |
+| [SOI county-to-county migration](#irs_migration) | IRS Statistics of Income |  |  | ● |  |  |  |  | 1990–2023 | Monthly | Loaded |
 | [BLS labor and prices (LAUS, CPS, CES, CPI, JOLTS, average prices)](#bls) | Bureau of Labor Statistics | ● | ● | ● | ● | ◌ |  | ◌ | 1990–2026 | Monthly | Loaded |
-| [SOI individual income tax statistics by county and state](#irs_soi) | IRS Statistics of Income | ● | ● | ● |  |  |  |  | 1989–2023 | Monthly | Not yet loaded |
+| [SOI individual income tax statistics by county and state](#irs_soi) | IRS Statistics of Income | ● | ● | ● |  |  |  |  | 1989–2023 | Monthly | Loaded |
 | [Quarterly Census of Employment and Wages](#bls_qcew) | Bureau of Labor Statistics | ● | ● | ● |  |  |  |  | 2014–2025 | Monthly | Partly loaded |
 | [County Business Patterns](#census_cbp) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 2016–2023 | Monthly | Loaded |
 | [Regional economic accounts](#bea) | Bureau of Economic Analysis | ● | ● | ● | ◐ |  |  | ● | 1969–2024 | Weekly | Loaded |
 | [SAIPE and SAHIE](#census_saipe_sahie) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 1989–2024 | Monthly | Partly loaded |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
-| [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Partly loaded |
+| [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
 | [Fair Market Rents and income limits](#hud_fmr_il) | HUD |  |  | ● |  |  |  |  | 2026–2027 | Monthly | Loaded |
-| [Gasoline, diesel and home energy prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 2015–2026 | Weekly | Loaded |
+| [Gasoline, diesel and home energy prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 1973–2026 | Weekly | Partly loaded |
 | [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Loaded |
-| [Crime Data Explorer summarized offenses](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2023 | Weekly | Loaded |
+| [Crime Data Explorer and Return A master files](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2025 | Weekly | Loaded |
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
-| [State and local government finances](#census_govfin) | U.S. Census Bureau | ● | ● | ◐ |  |  |  |  | 1994–2026 | Monthly | Not yet loaded |
-| [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly | Not yet loaded |
+| [State and local government finances](#census_govfin) | U.S. Census Bureau | ● | ● | ◐ |  |  |  |  | 1994–2026 | Monthly | Loaded |
+| [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly + daily lean groups | Loaded |
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
 | [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Loaded |
@@ -61,11 +67,12 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Credential:** CENSUS_API_KEY
 - **Years:** 1-year from 2005 (no 2020 release); 5-year from 2009; tracts 5-year only
 - **Datasets:** acs1 (1-year estimates); acs5 (5-year estimates)
-- **Measures:** 59 curated detailed tables (age, sex, race, origin, language, mobility, commute, education, disability, veterans, poverty, employment, income, earnings, industry, occupation, housing stock, tenure, rent, value, costs, health insurance, internet). 22 of them at tract grain.
+- **Measures:** 60 curated detailed tables (age, sex, race, origin, language, mobility, commute, education, disability, veterans, poverty, employment, income, earnings, industry, occupation, housing stock, tenure, rent, value, costs, property tax, health insurance, internet). 23 of them at tract grain. B25103 (median real estate taxes paid) was added 2026-11-05 through `AcsConfig.added_tables`, so held years request only that table. Derived: median property tax as a percent of median home value (B25103_001 ÷ B25077_001).
 - **Capture and control:** `raw_census.acs_datasets`, `raw_census.acs_tables`, `raw_census.acs_variables`, `control.acs_ingestion_slices`
 - **Silver:** `silver_census.observation_revision`, `silver_census.fact_demographics`
 - **Gold:** `gold_census.rpt_acs_observations (partitioned by year)`, `gold_census.mv_acs_latest`, `gold_census.fact_acs_observation`, `gold_census.acs_tract_comparable`, `gold_census.dim_acs_table`, `gold_census.dim_acs_variable`
 - **Status (live count 2026-10-31):** Partly loaded. 5-year: 2009–2024 at nation, state, county, place and tract. 1-year: 2005–2024 at nation, state, county and place (19 releases; the Bureau published no standard 2020 1-year). Metro: 2022–2024 so far; the metro backfill (2024 back to 2005) and the tract wide reload were running at the count.
+- **Shown on:** every place page (People, Work and Money, Housing, Health chapters); the property tax load card in Work and Money's Taxes and public money group; the map, explorer and compare pages.
 
 <a id="census_decennial"></a>
 ### Census 2000 and 1990 (`CENSUS_DECENNIAL`)
@@ -110,7 +117,8 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.irs_migration_file`
 - **Silver:** `silver_irs_migration.flow_revision`, `silver_irs_migration.fact_flow`, `silver_irs_migration.flow_quarantine`
 - **Gold:** `gold_irs_migration.flow_revision`, `gold_irs_migration.flow_latest`, `gold_irs_migration.total_observation_revision`, `gold_irs_migration.total_observation_latest`
-- **Status (live count 2026-10-31):** Partly loaded. County 2019–2023, 468,528 rows; 1990-1991 to 2017-2018 load on the next scheduled run.
+- **Status (operator checks 2026-11-07):** Loaded. Every filing-year pair from 1990-1991 to 2022-2023 is served (66 inflow and outflow files published); `fact_flow` holds 6,803,025 rows after the superseded first-parser rows were cleaned. 81 rows from 2009–2011 stay quarantined.
+- **Shown on:** county pages, People chapter: where people came from and went (`MigrationFlows`).
 
 ## Work, income and business
 
@@ -122,12 +130,16 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Publisher releases:** Monthly
 - **Credential:** BLS_API_KEY
 - **Years:** History band from 1990 plus a rolling two-year window
-- **Datasets:** LAUS (state, county, metro, city); CPS / LN (national); CES (national payroll); CPI-U (national); JOLTS (national); Average prices (nation, 4 regions, 9 divisions, 23 metros)
-- **Measures:** Unemployment rate and level, employment, labor force, participation, employment-population ratio; 17 national CPS series; 17 CES series; 9 CPI-U series; 13 JOLTS series; grocery and fuel average prices.
+- **Datasets:** LAUS (state, county, metro, city); CPS / LN (national); CES (national payroll); CPI-U `cu` (national, plus 4 items at regions, divisions and metros); JOLTS (national); Average Price `ap` (nation, 4 regions, 9 divisions, 23 metros)
+- **Measures:** Unemployment rate and level, employment, labor force, participation, employment-population ratio; 17 national CPS series; 17 CES series; 13 JOLTS series.
+  - **CPI-U (`cu`), 10 items:** all items, all items less food and energy, shelter, medical care, rent of primary residence, owners' equivalent rent (national only); food at home, food, energy and gasoline (nation and the 36 BLS price areas: 4 regions, 9 divisions, 23 metros). Not seasonally adjusted, monthly periodicity (`bls/price_series.py`).
+  - **Average Price (`ap`), 11 items, dollars:** regular and all-types gasoline per gallon (nation and all 36 areas); eggs per dozen, whole milk per gallon, white bread, ground beef, boneless chicken breast, bananas and ground coffee per pound, electricity per kilowatt-hour and utility gas per therm (the nation and the four regions, where BLS publishes them). Chicago, Los Angeles and New York are monthly; the other metros every other month.
+  - Which series are requested is read from BLS's own `cu.series` / `ap.series` lists, so an item an area does not carry is not asked for. A series BLS stopped is still served as history; the catalog marks it `ended` once its newest real value is older than 548 days for a monthly series (about 18 months; 120 days weekly, 730 quarterly; `GLOSSARY_ENDED_AFTER_DAYS` overrides).
 - **Capture and control:** `raw_bls.bls_datasets`, `raw_bls.bls_series`, `control.bls_ingestion_slices`
 - **Silver:** `silver_bls.observation_revision`, `silver_bls.fact_labor_statistics`
 - **Gold:** `gold_bls.rpt_bls_observations`, `gold_bls.mv_bls_latest`, `gold_bls.fact_bls_observation`, `gold_bls.provider_annual_average`, `gold_bls.calendar_window_observation`, `gold_bls.derived_calendar_rollup`, `gold_bls.dim_bls_series / measure / survey`
-- **Status (live count 2026-10-31):** Loaded. 1990–2026 at county, metro, state and nation, plus BLS's own areas (regions from 1990, divisions from 2017). No place-level rows were seen.
+- **Status (live count 2026-10-31):** Loaded. 1990–2026 at county, metro, state and nation, plus BLS's own areas (regions from 1990, divisions from 2017). No place-level rows were seen. Operator check 2026-11-06: the 9 grocery and gasoline `ap` items and 10 `cu` items are loaded from 1990 (eggs from 1990, milk from 1995, ground beef from 1998, chicken from 2006) to September 2026; the LAUS reload finished 2026-11-07. The BLS key allows 500 requests in a rolling 24 hours, so a quota-stopped batch resumes on the next window.
+- **Shown on:** place pages: unemployment rate card and chart (LAUS); the Cost of living section (CPI food, gasoline and energy; everyday prices with minutes of work); the national page's work charts; explorer and map.
 
 <a id="irs_soi"></a>
 ### SOI individual income tax statistics by county and state (`IRS_SOI`)
@@ -142,7 +154,8 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.irs_soi_file`
 - **Silver:** `silver_irs_soi.observation_revision`, `silver_irs_soi.fact_observation`, `silver_irs_soi.observation_quarantine`
 - **Gold:** `gold_irs_soi.observation_revision`, `gold_irs_soi.observation_latest`, `gold_irs_soi.measure_export`, `gold_irs_soi.metric_publisher`
-- **Status:** Not yet loaded; the first scheduled run loads every registered year.
+- **Status (operator checks 2026-11-07):** Loaded (first run 2026-11-05, fixes in #303); DQ-IRS-002 passes. Rows SOI prints twice are kept once and the repeat set aside as `repeated_row`.
+- **Shown on:** place pages for a county, a state and the nation: Work and Money, Taxes and public money, "Federal income tax as a share of adjusted gross income" (county from 2010, nation from 2020); explorer and map for every published item.
 
 <a id="bls_qcew"></a>
 ### Quarterly Census of Employment and Wages (`BLS_QCEW`)
@@ -157,7 +170,8 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.bls_qcew_slice`
 - **Silver:** `silver_bls_qcew.observation_revision`, `silver_bls_qcew.fact_observation`, `silver_bls_qcew.dim_industry`, `silver_bls_qcew.dim_measure`
 - **Gold:** `gold_bls_qcew.observation_revision`, `gold_bls_qcew.observation_latest`
-- **Status (live count 2026-10-31):** Partly loaded. Only 2025–2026 is loaded; the registry declares 2014–2025.
+- **Status (live count 2026-10-31):** Partly loaded. Only 2025–2026 is loaded; the registry declares 2014–2025. Operator check 2026-11-07: 22,948,366 serving rows after the duplicate cleanup; the schedule loads the missing years.
+- **Shown on:** place pages: jobs and average weekly wage cards; its county annual average weekly wage ÷ 40 is the hourly wage behind "minutes of work" in the Cost of living section; lean groups' jobs measure.
 
 <a id="census_cbp"></a>
 ### County Business Patterns (`CENSUS_CBP`)
@@ -182,12 +196,16 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Publisher releases:** County income each November, county GDP each December
 - **Credential:** none (bulk zips)
 - **Years:** Personal income from 1969; earnings by industry and GDP from 2001; price parities from 2008
-- **Datasets:** CAINC1; CAINC4; CAINC5N; CAGDP1; CAGDP2; SARPP; MARPP; PARPP; MAIRPD
-- **Measures:** Personal income, population, per capita income, earnings, transfer receipts, wages; earnings and GDP by industry; real and current GDP; regional price parities and deflators.
+- **Datasets:** CAINC1; CAINC4; CAINC35 (transfer receipts by program, county); CAINC5N; CAGDP1; CAGDP2; SAINC35 (transfer receipts, state); SAINC50 (personal current taxes, state); SAINC51 (disposable personal income, state); SARPP; MARPP; PARPP; MAIRPD
+- **Measures:** Personal income, population, per capita income, earnings, transfer receipts, wages; dividends, interest and rent; earnings and GDP by industry; real and current GDP; regional price parities and deflators.
+  - **Added 2026-11-05/06 (taxes and public money):** transfer receipts by program (Social Security, Medicare, Medicaid, SSI, EITC, SNAP, unemployment insurance, veterans' benefits and the rest; county from CAINC35, state from SAINC35); personal current taxes, federal, state and local (SAINC50); disposable (after-tax) income and per person (SAINC51), also deflated to 2017 dollars in `gold_bea.disposable_income_real`.
+  - **Derived:** each program's share of personal income (county and state); all payments from government and others as a share of personal income; dividends, interest and rent share and transfer receipts share ("where income comes from"); personal taxes as a share of income, federal, state and local.
+  - CAINC35's county file ends in 2022 while the other county tables reach 2024, so a county's program shares use the newest year both publish.
 - **Capture and control:** `control.bea_table_capture`
 - **Silver:** `silver_bea.observation_revision`, `silver_bea.fact_observation`, `silver_bea.dim_line`
 - **Gold:** `gold_bea.observation_revision`, `gold_bea.observation_latest`
-- **Status (live count 2026-10-31):** Loaded. 1969–2024 at county, metro, state and nation; BEA's state metro/nonmetro portions 2008–2024; about 5.7 million rows. Metro income and GDP are summed from counties (918 of 925 metros for 2023; Connecticut's 7 metros 2024 only).
+- **Status (live count 2026-10-31):** Loaded. 1969–2024 at county, metro, state and nation; BEA's state metro/nonmetro portions 2008–2024; about 5.7 million rows. Metro income and GDP are summed from counties (918 of 925 metros for 2023; Connecticut's 7 metros 2024 only). The CAINC35/SAINC tables loaded on the weekly run after 2026-11-05; the income-sources card has served since 2026-11-07.
+- **Shown on:** place pages: per capita income and real GDP cards; Taxes and public money ("Payments from government and others" by program, "Where income comes from"); the denominator of the state and local tax burden; the Cost of living section's regional price parity; governor and lean-group comparisons; map and explorer.
 
 <a id="census_saipe_sahie"></a>
 ### SAIPE and SAHIE (`CENSUS_SAIPE_SAHIE`)
@@ -234,7 +252,9 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.census_bps_slice`
 - **Silver:** `silver_census_bps.observation_revision`, `silver_census_bps.fact_observation`, `silver_census_bps.dim_measure`
 - **Gold:** `gold_census_bps.observation_revision`, `gold_census_bps.observation_latest`
-- **Status (live count 2026-10-31):** Partly loaded. Only 2026 is loaded; the registry declares 2000–2026. No place-level rows.
+- **Rules:** a jurisdiction the Bureau prints twice with identical figures loads once (the repeat is quarantined `repeated_row`; disagreeing copies are both set aside as `conflicting_repeated_row`). The parts of one place are summed: New York City's five boroughs under FIPS 36-51000, and a village split across two counties. A row naming a different place under another place's code is quarantined `conflicting_place_code`. A place that reported no month carries `not_reported`, never zero.
+- **Status (operator checks 2026-11-07):** Loaded. Monthly and annual county and state 2000–2026 and annual places 2007–2025, after the reconciliation fix (#315); DQ-BPS-002 passes.
+- **Shown on:** place pages, Housing chapter: single-family and multifamily units authorized in the year, and the newest month; map and explorer.
 
 <a id="fhfa_hpi"></a>
 ### House Price Index (annual, all transactions) (`FHFA_HPI`)
@@ -281,7 +301,9 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.eia_read`, `control.eia_page`
 - **Silver:** `silver_eia.price_revision`, `silver_eia.fact_retail_price`, `silver_eia.energy_price_revision`, `silver_eia.fact_energy_price`
 - **Gold:** `gold_eia.observation_revision`, `gold_eia.observation_latest`
-- **Status (live count 2026-10-31):** Gasoline loaded, 2015–2026. Diesel and home energy routes added by home-heating-fuel-prices; loaded on their first scheduled run.
+- **Areas:** gasoline and diesel for the nation, 9 states and 19 cities and EIA regions (PADDs); electricity and natural gas by state; heating oil and propane by state where EIA surveys it, else its petroleum region.
+- **Status (operator checks 2026-11-06):** Partly loaded. Gasoline loaded every week 2015-01-05 to 2026-11-02 for the nation, 9 states and 19 areas. The diesel and home-energy routes (#314) load on their first weekly run after deploy; check with `LIVE_CHECKS_314.sql`.
+- **Shown on:** place pages, Cost of living section: gasoline and diesel per gallon, home heating (natural gas, heating oil, propane) and electricity, each from the smallest area EIA publishes that contains the place, named beside the price.
 
 <a id="fred"></a>
 ### FRED national indicators (`FRED`)
@@ -301,19 +323,20 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 ## Crime and hazards
 
 <a id="fbi_ucr"></a>
-### Crime Data Explorer summarized offenses (`FBI_UCR`)
+### Crime Data Explorer and Return A master files (`FBI_UCR`)
 
 - **Publisher:** FBI
 - **Code:** `src/data_ingestion_toolbox/fbi_ucr` · DAG `fbi_ucr_ingest` · Weekly, Monday 10:00 UTC
 - **Publisher releases:** UCR refresh
 - **Credential:** FBI_CDE_API_KEY
-- **Years:** Monthly, January 1990 to June 2023
-- **Datasets:** 10 offense products: violent, assault, burglary, larceny, motor vehicle theft, homicide, rape, robbery, arson, property
-- **Measures:** Offenses and clearances, as counts and rates. County rollup sums agency-reported totals (ADR-0012 county rate with a 50% coverage floor is in progress).
-- **Capture and control:** `control.fbi_ucr_release`
-- **Silver:** `silver_fbi.observation_revision`, `silver_fbi.fact_crime_observation`, `silver_fbi.dim_agency(_version)`, `silver_fbi.agency_geography_relationship`, `silver_fbi.fact_reporting_participation`
+- **Years:** CDE API: monthly, January 1990 to June 2023, for the registered agencies. Return A master files: every reporting agency, monthly, 2015–2025
+- **Datasets:** CDE API: 10 offense products: violent, assault, burglary, larceny, motor vehicle theft, homicide, rape, robbery, arson, property. Return A: one national fixed-width file a year, `master_files/reta/reta-<year>.zip`, read with the FBI's own layout; products `return_a_violent_crime` and `return_a_property_crime`
+- **Measures:** Offenses and offenses cleared by arrest, as counts and rates, and monthly reporting participation (population covered). Return A has no violent or property total, so each is the CDE's definition summed from the file's offense components and labelled as derived; overlapping agencies are checked against the CDE's own totals (DQ-FBI-011). County rate per ADR-0012: agency totals summed, refused below 50% agency coverage.
+- **Capture and control:** `control.fbi_ucr_release`, `control.fbi_return_a_year`
+- **Silver:** `silver_fbi.observation_revision`, `silver_fbi.return_a_source_row` (one row per agency line read, which every Return A fact names), `silver_fbi.fact_crime_observation`, `silver_fbi.dim_agency(_version)`, `silver_fbi.agency_geography_relationship`, `silver_fbi.fact_reporting_participation`
 - **Gold:** `gold_fbi.crime_observation`, `gold_fbi.latest_release_observation`, `gold_fbi.county_rollup`, `gold_fbi.latest_county_rollup`, `gold_fbi.reporting_coverage`, `gold_fbi.agency_observation_area_filter`
-- **Status (live count 2026-10-31):** Loaded. Agency, state and nation 1990–2023; county rollup 1990–2023 (33 years). The agencies are the six-agency Wisconsin sample in the registry, so few counties get a rate; a nationwide bulk load is planned.
+- **Status (live count 2026-10-31):** Loaded. Agency, state and nation 1990–2023; county rollup 1990–2023 (33 years) from the six-agency Wisconsin API sample. Return A 2015–2025 for every agency was loaded 2026-10-31 by `python -m data_ingestion_toolbox.fbi_ucr.return_a.load --years 2025-2015`: 13,290,720 crime and 6,645,360 participation facts. Their source rows (#319) are rebuilt by the scheduled run's `backfill_return_a_source_rows` task (expected 276,890 rows over 11 years; DQ-FBI-015 checks every fact has one). The master-file load is not yet on a schedule; that work is in progress.
+- **Shown on:** place pages, Crime chapter: violent and property crime rates as the program published them, and the county rollup with its agency coverage (`CountyCrimeRollup`); map and explorer.
 
 <a id="fema_nri"></a>
 ### National Risk Index and disaster declarations (`FEMA_NRI`)
@@ -345,22 +368,27 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.census_govfin_slice`
 - **Silver:** `silver_census_govfin.fact_observation`, `silver_census_govfin.unit_amount`, `silver_census_govfin.unit_government`, `silver_census_govfin.state_type_total`, `silver_census_govfin.api_revision`, `silver_census_govfin.dim_measure`
 - **Gold:** `gold_census_govfin.observation_revision`, `gold_census_govfin.observation_latest`, `gold_census_govfin.county_area_government`, `gold_census_govfin.tax_mix`, `gold_census_govfin.tax_burden`
-- **Status:** Not yet loaded (added 2026-11-05). County areas are sums of each county's governments, a government spanning counties counted whole in its Census home county ([operations](../user-guides/CENSUS_GOVFIN_PIPELINE_OPERATIONS.md)).
+- **Status (operator checks 2026-11-07):** Loaded: API fiscal years 2017–2024 and the 2002, 2012, 2017 and 2022 unit files (Wisconsin's fiscal 2022 tax burden reads 9.609%). Tax burden exists only for 2017–2024, so a governor whose term starts earlier has none. County areas are sums of each county's governments, a government spanning counties counted whole in its Census home county ([operations](../user-guides/CENSUS_GOVFIN_PIPELINE_OPERATIONS.md)).
+- **Shown on:** place pages, Work and Money, Taxes and public money: "State and local taxes collected, share of personal income" (states and the nation every fiscal year; a county's local governments in Census of Governments years); a state's governor table (tax burden and tax mix by type over each tenure); the lean groups' "similar tax burden" peer group.
 
 <a id="elections"></a>
 ### Election results and seat holders (`ELECTIONS`)
 
 - **Publisher:** MIT Election Data and Science Lab (results, on Harvard Dataverse); the unitedstates/congress-legislators project (U.S. House and Senate members, CC0 1.0); Wikidata (governors, CC0 1.0)
-- **Code:** `src/data_ingestion_toolbox/elections` · DAG `elections_ingest` · Monthly, 3rd, 07:00 UTC
+- **Code:** `src/data_ingestion_toolbox/elections` · DAG `elections_ingest` · Monthly, 3rd, 07:00 UTC; DAG `elections_lean_groups` · Daily, 13:00 UTC (rebuilds only when its inputs changed)
 - **Publisher releases:** MEDSL after each certified election; congress-legislators as members change; Wikidata continuously
 - **Credential:** none; MEDSL's county and House files need a Dataverse guestbook answer (`ELECTIONS_GUESTBOOK_*` in `stack.env`)
 - **Years:** seat terms in office on or after 1969-01-01; presidential results by county 2000–2024 and by state 1976–2024; Senate 1976–2024; House 1976–2024 (MEDSL's own spans)
 - **Datasets:** MEDSL `countypres_2000-2024`, `1976-2024-president`, `1976-2024-senate-state`, `1976-2024-house`; `legislators-current.json`, `legislators-historical.json`; one Wikidata SPARQL query for governors
-- **Measures:** Presidential vote at state and county: Republican share of the two-party vote, two-party margin (Republican minus Democratic), total votes. Seat-term spans (party, caucus, dates) and contest results are served as relations, not measures (ADR-0014).
+- **Measures:** Presidential vote at state and county: Republican share of the two-party vote, two-party margin (Republican minus Democratic), total votes. Seat-term spans (party, caucus, dates) and contest results are served as relations, not measures (ADR-0014, proposed).
+  - **Lean groups:** counties are banded by the two-party presidential margin in a window's first year: Republican by 20 points or more, Republican by less than 20, Democratic by less than 20, Democratic by 20 or more. For each band the warehouse reports how its counties' real income per person, real GDP, jobs, unemployment rate and poverty rate changed over the window, net of the nation, one measure at a time (middle county and middle half, never scored or ranked). Peer groups: all counties, same state, same rural-urban type, similar starting level, same industry dependence, similar state and local tax burden.
+  - **Governor terms:** each governor's tenure (from Wikidata) with the state's change against the nation's in tax burden and in payments from government as a share of income, and the tax mix by type (property, general sales, income, other).
+- **Access:** MEDSL's county president and House files sit behind a Dataverse guestbook; the loader fills it from `ELECTIONS_GUESTBOOK_*` variables in the stack's environment file (values are kept out of the repository).
 - **Capture and control:** `control.elections_run`, `control.elections_file`
 - **Silver:** `silver_elections.seat_term`, `silver_elections.candidate_result`, `silver_elections.quarantine`
-- **Gold:** `gold_elections.seat_term`, `gold_elections.contest_result`, `gold_elections.candidate_total`, `gold_elections.observation_revision`, `gold_elections.observation_latest`
-- **Status:** Not yet loaded (added 2026-11-04). House districts are kept as contests until district boundaries are a shared geography; state legislatures wait on decision L-1.
+- **Gold:** `gold_elections.seat_term`, `gold_elections.contest_result`, `gold_elections.candidate_total`, `gold_elections.observation_revision`, `gold_elections.observation_latest`; lean groups `gold_elections.lean_place_change`, `lean_group_change`, `lean_refresh`; governors `gold_elections.governor_tenure`, `governor_fiscal_series`, `governor_term_fiscal`, `governor_term_tax_mix`
+- **Status (operator checks 2026-11-07):** Loaded; lean groups are rebuilt once the LAUS reload's serving refresh finishes. House districts are kept as contests until district boundaries are a shared geography; state legislatures wait on decision L-1.
+- **Shown on:** state pages, Work and Money: the governor table; the presidential vote measures in the explorer and map (for example a county's two-party margin over time). The lean-group tables are built in the warehouse; no API route or page reads them yet.
 
 ## Health
 
@@ -491,6 +519,45 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_ref.dim_geo_entity`, `silver_ref.dim_geo_entity_version`, `silver_ref.dim_geo_geometry_version`, `silver_ref.bridge_geo_relationship_version`, `silver_ref.tract_decade_crosswalk`, `silver_ref.geography_resolution`, `silver_ref.dim_time`
 - **Gold:** `gold_glossary.geo_boundary`, `gold_glossary.geo_relationship`, `gold_glossary.geo_search`, `gold.tile_boundary / tile_tract (Martin tiles)`
 - **Status (live count 2026-10-31):** Partly loaded. One boundary vintage each: state, county, tract and place 2025; metro 2023 (925); ZCTA 2020. Historical place boundaries 2010–2024 are a recorded gap.
+
+<a id="added-2026-11"></a>
+## What was added in November 2026
+
+Between 2026-11-03 and 2026-11-07 the warehouse gained three groups of measures (taxes and public money, elections,
+cost of living) and two bulk histories (FBI Return A, building permits back to 2000). Every source follows the same
+layers: **bronze** is the publisher's bytes in `raw_capture.response_capture` / `payload_blob` with the source's
+`control.*` ledger, **silver** is the parsed revisions and facts in `silver_<source>`, and **gold** is the serving views
+in `gold_<source>`, whose `metric_publisher` view feeds the catalog the API and site read. Diagrams: [erd.md](erd.md).
+
+| Group | Source | Publisher and product | Geography | Years | Refresh | What the site shows | Bronze → silver → gold | Pages |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Taxes | [`CENSUS_GOVFIN`](#census_govfin) | Census Annual Survey of State and Local Government Finances (`asslgf` API); Census of Governments unit files | Nation, state; county areas summed from their governments | FY 2017–2024 (API); 2002, 2012, 2017, 2022 (unit files; 2007 only in the 1967–2012 history file, not loaded) | Monthly, 18th | Taxes collected by type (property, sales, income, other), charges, aid, debt; tax mix; tax burden | `control.census_govfin_slice` → `silver_census_govfin.*` → `gold_census_govfin.tax_mix`, `tax_burden` | Taxes and public money; governor table |
+| Taxes | [`IRS_SOI`](#irs_soi) | IRS Statistics of Income county and state income data | Nation, state, county | Tax years 1989–2023 (tax and EITC items from 2010; nation from 2020) | Monthly, 7th | AGI, wages, income tax, EITC and more; federal income tax as a share of AGI; share of returns claiming the EITC | `control.irs_soi_file` → `silver_irs_soi.*` → `gold_irs_soi.observation_latest` | Taxes and public money; explorer, map |
+| Taxes | [`IRS_MIGRATION`](#irs_migration) (extended) | IRS SOI county-to-county migration | County pairs | 1990-1991 to 2022-2023 (txt 1990–91, xls 1995–2010, CSV from 2011) | Monthly, 5th | Movers in and out, their AGI, by county pair | `control.irs_migration_file` → `silver_irs_migration.fact_flow` → `gold_irs_migration.flow_latest` | County People chapter |
+| Taxes | [`BEA`](#bea) (extended) | BEA regional accounts CAINC4, CAINC35, SAINC35, SAINC50, SAINC51 | County (CAINC), state and nation (SAINC) | County programs to 2022; state to 2025 | Weekly, Wednesday | Payments by program; personal taxes; after-tax income; where income comes from | `control.bea_table_capture` → `silver_bea.fact_observation` → `gold_bea.observation_latest`, `disposable_income_real` | Taxes and public money |
+| Taxes | [`CENSUS_ACS`](#census_acs) (extended) | ACS table B25103, median real estate taxes paid | Nation to tract | ACS years held | Monthly check | Median property tax; as a percent of median home value | `control.acs_ingestion_slices` → `silver_census.fact_demographics` → `gold_census.rpt_acs_observations` | Taxes and public money (property tax load) |
+| Elections | [`ELECTIONS`](#elections) | MIT Election Data and Science Lab on Harvard Dataverse; congress-legislators; Wikidata | State, county; House districts as contests | President by county 2000–2024, by state 1976–2024; Senate and House 1976–2024; seat terms from 1969 | Monthly, 3rd; lean groups daily | Republican two-party share, two-party margin, total votes; seat holders; governors; lean groups; governor-term fiscal change | `control.elections_run`, `elections_file` → `silver_elections.*` → `gold_elections.*` | State governor table; explorer and map |
+| Cost of living | [`BLS`](#bls) (extended) | BLS Average Price (`ap`) and CPI-U (`cu`) | Nation, 4 regions, 9 divisions, 23 metros | 1990–2026, monthly | Monthly, 1st | 11 dollar prices (gasoline, eggs, milk, bread, beef, chicken, bananas, coffee, electricity, utility gas); 10 CPI items; minutes of work | `control.bls_ingestion_slices` → `silver_bls.fact_labor_statistics` → `gold_bls.mv_bls_latest` | Cost of living section |
+| Cost of living | [`EIA`](#eia) (extended) | EIA petroleum, electricity and natural gas prices | Nation, 9 states, 19 areas (fuel); every state (electricity, gas) | Gasoline and diesel from 2015; electricity from 2001; natural gas from 1973; heating oil and propane from 1990 (winter) | Weekly, Tuesday | Gasoline and diesel per gallon; electricity, natural gas, heating oil, propane | `control.eia_read`, `eia_page` → `silver_eia.fact_retail_price`, `fact_energy_price` → `gold_eia.observation_latest` | Cost of living section |
+| Crime | [`FBI_UCR`](#fbi_ucr) (extended) | FBI Return A master files (`reta-<year>.zip`) | Every agency, placed in counties; state; nation | 2015–2025, monthly | Operator load (schedule in progress); source-row backfill weekly | Violent and property crime, offenses cleared, participation | `control.fbi_return_a_year` → `silver_fbi.return_a_source_row`, `fact_crime_observation` → `gold_fbi.county_rollup` | Crime chapter |
+| Housing | [`CENSUS_BPS`](#census_bps) (history) | Census Building Permits Survey | Nation, state, county monthly and annual; place annual | 2000–2026 (places from 2007) | Monthly, 25th | Units, buildings and valuation authorized, by structure type | `control.census_bps_slice` → `silver_census_bps.fact_observation` → `gold_census_bps.observation_latest` | Housing chapter |
+
+### Measures the warehouse derives from them
+
+Each pairing is approved in [`docs/semantics/derived_ratios.json`](../semantics/derived_ratios.json) (ADR-0009) or
+defined in the view named; nothing is added together, scored or ranked, and a missing input gives no value, never zero.
+
+- **State and local tax burden:** Census state and local taxes collected in the fiscal year ÷ BEA personal income of residents (CAINC1 line 1) in the calendar year the fiscal year ends; 2017–2024 (`gold_census_govfin.tax_burden`). It is a different definition from the Tax Foundation's.
+- **Tax mix:** each tax type's share of all state and local taxes, adding to 100 (`gold_census_govfin.tax_mix`).
+- **Payments from government and others:** BEA transfer receipts ÷ personal income, in total and for Social Security, Medicare, Medicaid, SSI, EITC, SNAP, unemployment insurance and veterans' benefits (county CAINC35 ÷ CAINC1; state SAINC35 ÷ SAINC50 line 10).
+- **Where income comes from:** dividends, interest and rent, and transfer receipts, each as a share of personal income (CAINC4).
+- **Personal taxes:** personal current taxes, federal, state and local, as a share of personal income (SAINC50).
+- **Federal income tax as a share of AGI** and **share of returns claiming the EITC** (IRS SOI).
+- **Property tax to home value:** ACS median real estate taxes ÷ median home value (B25103_001 ÷ B25077_001).
+- **Minutes of work:** a BLS average price ÷ (the QCEW annual average weekly wage of the page's county, state or nation ÷ 40 hours), × 60; for eggs, milk, bread, ground beef, chicken and electricity, using the region's or the nation's price. Both areas are named beside the value.
+- **Lean groups:** county change net of the nation in real income per person, real GDP, jobs (QCEW), unemployment rate (LAUS) and poverty rate (SAIPE), grouped into four bands by the window-start presidential margin (`gold_elections.lean_group_change`).
+- **Governor-term change:** a state's change in tax burden and payments share over each governor's tenure, minus the nation's, with the tax mix (`gold_elections.governor_term_fiscal`, `governor_term_tax_mix`).
+- **Ended series:** a key whose newest real value is older than its grain allows (monthly 548 days, weekly 120, daily 90, quarterly 730) is published with catalog state `ended`; its history is still served.
 
 ## Keeping this current
 
