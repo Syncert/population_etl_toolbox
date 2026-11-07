@@ -30,7 +30,20 @@ BACKOFF_SECONDS = 2.0
 
 
 class ReturnAFetchError(RuntimeError):
-    """A file that could not be fetched; the message never carries a URL."""
+    """A file that could not be fetched; the message never carries a URL.
+
+    ``status_code`` is the refusing HTTP status when the answer was a refusal
+    that retrying cannot change (a 4xx other than 429), else ``None``.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+#: What the signed-URL endpoint or S3 answer for a file not published yet: S3
+#: answers 403 for a missing key when the signer may not list the bucket.
+NOT_PUBLISHED_STATUSES = frozenset({403, 404})
 
 
 @dataclass(frozen=True)
@@ -74,7 +87,9 @@ def _get(client: httpx.Client, url: str, **kwargs: Any) -> httpx.Response:
             if response.status_code < 400:
                 return response
             if response.status_code != 429 and response.status_code < 500:
-                raise ReturnAFetchError(f"HTTP {response.status_code}")
+                raise ReturnAFetchError(
+                    f"HTTP {response.status_code}", status_code=response.status_code
+                )
             last = f"HTTP {response.status_code}"
         if attempt < MAX_ATTEMPTS:
             time.sleep(BACKOFF_SECONDS * 2 ** (attempt - 1))
