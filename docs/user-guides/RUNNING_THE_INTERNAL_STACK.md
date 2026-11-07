@@ -150,6 +150,14 @@ the cause directly -- `missing_api_key` is a configuration fault, `HTTP 403`
 after a working key usually means throttling, and a check-constraint violation
 is a defect worth a ticket.
 
+## Provider keys stay out of the logs
+
+Airflow runs with `data_ingestion_toolbox.airflow_logging.LOGGING_CONFIG`, which
+keeps `httpx` request lines out of task logs and masks `key=`/`api_key=` values
+and credential environment values on every handler. Logs written before that
+change can be scrubbed, and the keys rotated, with
+[AIRFLOW_LOG_SECRET_SCRUB.md](AIRFLOW_LOG_SECRET_SCRUB.md).
+
 ## Reviewing county crime in the web
 
 Open `http://127.0.0.1:3001/use-cases/public-safety-trend?place=state%3A55%7Ccounty%3A025`

@@ -8,6 +8,8 @@ import re
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 
+from data_ingestion_toolbox.log_redaction import redact_secrets
+
 
 class NumericParseError(ValueError):
     """A numeric source value is malformed or outside the warehouse contract."""
@@ -75,4 +77,8 @@ def sanitize_error_message(error: BaseException | str, *, limit: int = 4000) -> 
     text = str(error)
     text = _CONNECTION_URL.sub("[REDACTED_CONNECTION_URL]", text)
     text = _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=***", text)
+    # Census sends its key as a bare ``key=`` query parameter, which the
+    # assignment pattern above does not name; mask URL parameters and known
+    # credential values as the log redaction does.
+    text = redact_secrets(text)
     return text[:limit]
