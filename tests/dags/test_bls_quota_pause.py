@@ -1,4 +1,4 @@
-"""A BLS daily-quota stop resumes at the next 1:00am US/Eastern.
+"""A BLS daily-quota stop resumes after BLS's rolling 24-hour window.
 
 Covers: DAG-022
 
@@ -9,6 +9,10 @@ reads ``self.task.retry_delay`` from the serialized DAG), so the worker's write
 never reached it and every pause waited the static 23-hour fallback: on
 OFFICE_LAB the 2026-11-05 LAUS backfill batch stopped at 00:32 UTC and was due
 back at 23:32 UTC instead of 06:00 UTC.
+
+The 01:00 Eastern target that replaced it was itself too early: BLS counts a
+rolling 24 hours from the first accepted call, and on 2026-11-07 the 06:00:02
+UTC resume came 12 seconds before 11-06's window (opened 06:00:14 UTC) closed.
 """
 
 from __future__ import annotations
@@ -34,51 +38,83 @@ def _callable(dagbag, task_id: str):
 @pytest.mark.parametrize(
     ("stopped_utc", "resume_utc"),
     [
-        # The live case: stopped 00:32 UTC (19:32 EST on 11-04), resume 06:00 UTC.
+        # The 2026-11-07 live case: 11-06's window opened 06:00:14 UTC and ran
+        # out at 06:35:19 UTC. The old 01:00 ET target (06:00:00 UTC) was 12 s
+        # inside the window; the new resume clears it.
         (
-            datetime(2026, 11, 5, 0, 32, tzinfo=timezone.utc),
+            datetime(2026, 11, 6, 6, 35, 19, tzinfo=timezone.utc),
+            datetime(2026, 11, 8, 6, 15, tzinfo=timezone.utc),
+        ),
+        # Refused just before the daily floor: +24h15m is past tomorrow's
+        # 06:15, so the day after.
+        (
+            datetime(2026, 11, 6, 6, 1, tzinfo=timezone.utc),
+            datetime(2026, 11, 8, 6, 15, tzinfo=timezone.utc),
+        ),
+        # Refused early in the UTC day: tomorrow's 06:15 is far enough away.
+        (
+            datetime(2026, 11, 5, 0, 32, 32, tzinfo=timezone.utc),
+            datetime(2026, 11, 6, 6, 15, tzinfo=timezone.utc),
+        ),
+        # Exactly 24h15m before a floor: that floor is allowed.
+        (
             datetime(2026, 11, 5, 6, 0, tzinfo=timezone.utc),
+            datetime(2026, 11, 6, 6, 15, tzinfo=timezone.utc),
         ),
-        # Stopped after 01:00 ET: the same Eastern day's 01:00 has passed, so tomorrow.
-        (
-            datetime(2026, 11, 5, 14, 0, tzinfo=timezone.utc),
-            datetime(2026, 11, 6, 6, 0, tzinfo=timezone.utc),
-        ),
-        # Summer time (EDT, UTC-4).
-        (
-            datetime(2026, 7, 1, 16, 0, tzinfo=timezone.utc),
-            datetime(2026, 7, 2, 5, 0, tzinfo=timezone.utc),
-        ),
-        # Across the autumn change (EDT on 10-31, EST from 02:00 on 11-01).
-        (
-            datetime(2026, 10, 31, 20, 0, tzinfo=timezone.utc),
-            datetime(2026, 11, 1, 5, 0, tzinfo=timezone.utc),
-        ),
-        # Across the spring change (EST on 03-07, EDT from 02:00 on 03-08).
+        # Across the spring clock change: UTC arithmetic, no hour lost.
         (
             datetime(2026, 3, 7, 20, 0, tzinfo=timezone.utc),
-            datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 9, 6, 15, tzinfo=timezone.utc),
+        ),
+        # An Eastern-zoned input is converted to UTC first.
+        (
+            datetime(2026, 11, 5, 19, 32, tzinfo=_EASTERN),
+            datetime(2026, 11, 7, 6, 15, tzinfo=timezone.utc),
         ),
     ],
 )
-def test_resume_time_is_the_next_one_am_eastern(
-    dagbag, stopped_utc: datetime, resume_utc: datetime
+def test_resume_waits_out_the_rolling_window(
+    dagbag, monkeypatch: pytest.MonkeyPatch, stopped_utc: datetime, resume_utc: datetime
 ) -> None:
-    """Covers: DAG-022 — the resume is 01:00 Eastern, in real elapsed time."""
+    """Covers: DAG-022 — the resume is the first 06:15 UTC at least 24h15m after the refusal."""
+    monkeypatch.delenv("BLS_QUOTA_RESUME_UTC", raising=False)
     module_globals = _callable(dagbag, "ingest_batch").__globals__
     resume = module_globals["_next_quota_resume_utc"](stopped_utc)
     assert resume == resume_utc
-    assert resume.astimezone(_EASTERN).hour == 1
+    assert resume - stopped_utc >= timedelta(hours=24, minutes=15)
+    assert resume - stopped_utc < timedelta(hours=48, minutes=15)
     assert (
-        module_globals["_compute_delay_until_1am_est"](stopped_utc)
-        == resume_utc - stopped_utc
+        module_globals["_compute_quota_delay"](stopped_utc) == resume_utc - stopped_utc
     )
 
 
-def test_quota_stop_reschedules_the_batch_for_one_am_eastern(
+@pytest.mark.parametrize(
+    ("setting", "resume_utc"),
+    [
+        # Later floors that clear 06:50:19 (refusal + 24h15m) apply the same day.
+        ("10:00", datetime(2026, 11, 7, 10, 0, tzinfo=timezone.utc)),
+        (" 7:05 ", datetime(2026, 11, 7, 7, 5, tzinfo=timezone.utc)),
+        # Malformed or out-of-range settings fall back to the 06:15 default.
+        ("25:00", datetime(2026, 11, 8, 6, 15, tzinfo=timezone.utc)),
+        ("soon", datetime(2026, 11, 8, 6, 15, tzinfo=timezone.utc)),
+        ("", datetime(2026, 11, 8, 6, 15, tzinfo=timezone.utc)),
+    ],
+)
+def test_resume_time_of_day_is_configurable(
+    dagbag, monkeypatch: pytest.MonkeyPatch, setting: str, resume_utc: datetime
+) -> None:
+    """Covers: DAG-022 — BLS_QUOTA_RESUME_UTC moves the daily floor, never inside the window."""
+    monkeypatch.setenv("BLS_QUOTA_RESUME_UTC", setting)
+    module_globals = _callable(dagbag, "ingest_batch").__globals__
+    stopped = datetime(2026, 11, 6, 6, 35, 19, tzinfo=timezone.utc)
+    assert module_globals["_next_quota_resume_utc"](stopped) == resume_utc
+
+
+def test_quota_stop_reschedules_the_batch_past_the_window(
     dagbag, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Covers: DAG-022 — a quota stop raises a reschedule carrying the resume time."""
+    monkeypatch.delenv("BLS_QUOTA_RESUME_UTC", raising=False)
     ingest_batch = _callable(dagbag, "ingest_batch")
     module_globals = ingest_batch.__globals__
     threshold = module_globals["BlsDailyThresholdExceeded"]
@@ -104,9 +140,10 @@ def test_quota_stop_reschedules_the_batch_for_one_am_eastern(
     assert len(ran) == 2, "the batch stops at the slice the quota refused"
     resume = raised.value.reschedule_date
     assert resume.tzinfo is not None
-    assert resume.astimezone(_EASTERN).hour == 1
-    assert resume.astimezone(_EASTERN).minute == 0
-    assert before < resume <= after + timedelta(hours=25)
+    resume_utc = resume.astimezone(timezone.utc)
+    assert (resume_utc.hour, resume_utc.minute) == (6, 15)
+    assert before + timedelta(hours=24, minutes=15) <= resume
+    assert resume <= after + timedelta(hours=48, minutes=15)
     assert isinstance(raised.value.__cause__, threshold)
 
 
