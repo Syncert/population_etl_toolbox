@@ -58,6 +58,9 @@ OPERATIONAL_SCRIPTS = {
     # Runs an ACS backfill one year per `acs_ingest` run, newest first, and
     # records each year's duration and size (ETL-090).
     "run_acs_backfill.py",
+    # Masks provider keys that httpx's request log had already written into
+    # the Airflow log volume before redaction was installed (ETL-038).
+    "scrub_airflow_log_secrets.py",
     # The POSIX half of the same entrypoint. Both are thin callers over
     # tools/deployment.py, so the deployment path runs on the host a
     # deployment will actually run on rather than only on a workstation.
