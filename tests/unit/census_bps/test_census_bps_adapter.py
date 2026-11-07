@@ -251,3 +251,128 @@ def test_rows_that_cannot_be_read_are_quarantined_and_absence_writes_nothing() -
         item for item in absent.observations if item.geo_id == "state:10|county:001"
     ]
     assert parse_file(b"", item=COUNTY_YEAR).row_count == 0
+
+
+def test_a_repeated_county_loads_once_and_conflicting_copies_load_nothing() -> None:
+    """Covers: ETL-057 — the 2000 county files list St. Clair County, IL, twice.
+
+    The 2000-04..2000-11 county files print 17163 under two region/division
+    codes with the same figures; the fact key collapsed the copies and the
+    run failed reconciliation 12 facts short. A same-figure copy is
+    quarantined as ``repeated_row`` and the county loads once; copies whose
+    figures differ are all quarantined and the county loads nothing.
+    """
+    raw = _fixture("County_co2403c.txt").split(b"\n")
+    header, rows = raw[:3], [line for line in raw[3:] if line.strip()]
+    kent = next(line for line in rows if line.startswith(b"202403,10,001"))
+    sussex = next(line for line in rows if line.startswith(b"202403,10,005"))
+    fields = kent.split(b",")
+    moved = b",".join(fields[:3] + [b"9", b"9"] + fields[5:])
+    payload = b"\n".join(header + rows + [moved]) + b"\n"
+    parsed = parse_file(payload, item=COUNTY_MONTH)
+    baseline = parse_file(_fixture("County_co2403c.txt"), item=COUNTY_MONTH)
+    assert [(q.source_row_index, q.error_code) for q in parsed.quarantined] == [
+        (len(rows) + 1, "repeated_row")
+    ]
+    assert parsed.observations == baseline.observations
+    assert parsed.in_scope_row_count == baseline.in_scope_row_count
+    keys = {(o.measure_id, o.structure_type, o.geo_id) for o in parsed.observations}
+    assert len(keys) == len(parsed.observations) == parsed.in_scope_row_count * 12
+
+    sussex_fields = sussex.split(b",")
+    conflicting = b",".join(fields[:6] + sussex_fields[6:])
+    payload = b"\n".join(header + rows + [moved, conflicting]) + b"\n"
+    parsed = parse_file(payload, item=COUNTY_MONTH)
+    kent_index = rows.index(kent) + 1
+    assert [(q.source_row_index, q.error_code) for q in parsed.quarantined] == [
+        (kent_index, "conflicting_repeated_row"),
+        (len(rows) + 1, "conflicting_repeated_row"),
+        (len(rows) + 2, "conflicting_repeated_row"),
+    ]
+    assert not [o for o in parsed.observations if o.geo_id == "state:10|county:001"]
+    assert parsed.in_scope_row_count == baseline.in_scope_row_count - 1
+    assert len(parsed.observations) == parsed.in_scope_row_count * 12
+
+
+def test_the_parts_of_one_place_load_as_their_sum() -> None:
+    """Covers: ETL-057 — rows that share a FIPS place under different Bureau IDs.
+
+    New York city's five boroughs all carry FIPS place 51000, and a village
+    split across two counties has one row per county part (the 2007-2009
+    Northeast files). Each part is its own jurisdiction, so the place loads
+    once with the parts' sum, on the first part's row. A part repeated under
+    its own ID is a copy and is quarantined like any other repeat.
+    """
+    raw = _fixture("Place_South_so2024a.txt").split(b"\n")
+    header, rows = raw[:3], [line for line in raw[3:] if line.strip()]
+    dover = next(line for line in rows if b",Dover," in line)
+    fields = dover.split(b",")
+    # A second Dover part: another 6-digit ID and county, 1 one-unit building.
+    part = b",".join(
+        fields[:2]
+        + [b"065001", b"003"]
+        + fields[4:17]
+        + [b"1", b"1", b"200000"]
+        + [b"0"] * 9
+        + [b"1", b"1", b"200000"]
+        + [b"0"] * 9
+    )
+    baseline = parse_file(_fixture("Place_South_so2024a.txt"), item=PLACE_YEAR)
+    parsed = parse_file(b"\n".join(header + rows + [part]) + b"\n", item=PLACE_YEAR)
+    assert parsed.quarantined == ()
+    assert parsed.in_scope_row_count == baseline.in_scope_row_count
+    assert len(parsed.observations) == parsed.in_scope_row_count * 12
+    combined = {
+        (item.measure_id, item.structure_type): item
+        for item in parsed.observations
+        if item.geo_id == "state:10|place:21200"
+    }
+    assert combined[("units", "1_unit")].value == Decimal("93")
+    assert combined[("units", "1_unit")].reported_value == Decimal("93")
+    assert combined[("units", "1_unit")].value_source == "92+1"
+    assert combined[("valuation", "1_unit")].value == Decimal("16168111")
+    # The parts' other figures are unchanged: the second part adds zeros.
+    assert combined[("units", "5_plus_units")].value == Decimal("108")
+    assert combined[("units", "1_unit")].source_row_index == rows.index(dover) + 1
+    # Everything else in the file is exactly as before.
+    others = [o for o in parsed.observations if o.geo_id != "state:10|place:21200"]
+    assert others == [
+        o for o in baseline.observations if o.geo_id != "state:10|place:21200"
+    ]
+
+    # The same part printed twice is a copy, not a third part.
+    again = parse_file(
+        b"\n".join(header + rows + [part, part]) + b"\n", item=PLACE_YEAR
+    )
+    assert [(q.source_row_index, q.error_code) for q in again.quarantined] == [
+        (len(rows) + 2, "repeated_row")
+    ]
+    assert again.observations == parsed.observations
+
+
+def test_rows_naming_different_places_under_one_code_load_nothing() -> None:
+    """Covers: ETL-057 — Renovo borough, PA, printed with Red Lion's code (2012-2013).
+
+    Parts of one place carry its name; New York city's boroughs are the one
+    registered exception. Two rows naming different places under one FIPS
+    code mean a wrong code on one of them, so both are quarantined.
+    """
+    raw = _fixture("Place_South_so2024a.txt").split(b"\n")
+    header, rows = raw[:3], [line for line in raw[3:] if line.strip()]
+    dover = next(line for line in rows if b",Dover," in line)
+    fields = dover.split(b",")
+    other = b",".join(
+        fields[:2]
+        + [b"065001", b"003"]
+        + fields[4:16]
+        + [b"Renovo borough"]
+        + fields[17:]
+    )
+    baseline = parse_file(_fixture("Place_South_so2024a.txt"), item=PLACE_YEAR)
+    parsed = parse_file(b"\n".join(header + rows + [other]) + b"\n", item=PLACE_YEAR)
+    assert [(q.source_row_index, q.error_code) for q in parsed.quarantined] == [
+        (rows.index(dover) + 1, "conflicting_place_code"),
+        (len(rows) + 1, "conflicting_place_code"),
+    ]
+    assert not [o for o in parsed.observations if o.geo_id == "state:10|place:21200"]
+    assert parsed.in_scope_row_count == baseline.in_scope_row_count - 1
