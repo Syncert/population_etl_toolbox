@@ -7,6 +7,14 @@ A row outside the scope -- a county or place code the reference cannot hold
 -- is counted, not loaded. A row whose date or codes cannot be read is
 quarantined with a reason. A jurisdiction missing from a file produces no
 row at all: nothing here writes a zero for it.
+
+A jurisdiction printed more than once in one file (the 2000-04..2000-11
+county files list St. Clair County, Illinois, twice, under two region and
+division codes, with the same figures) loads once: a later copy whose
+figures match the first is quarantined as ``repeated_row``. Copies whose
+figures differ cannot be told apart, so every copy is quarantined as
+``conflicting_repeated_row`` and the jurisdiction loads nothing for that
+file rather than an arbitrary one.
 """
 
 from __future__ import annotations
@@ -110,6 +118,11 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
     observations: list[BpsObservation] = []
     quarantined: list[BpsQuarantine] = []
     in_scope = out_of_scope = 0
+    #: provider code -> (first row index, that row's figures)
+    first_copy: dict[str, tuple[int, tuple[str, ...]]] = {}
+    #: provider code -> every row index printing it, when more than one does
+    copies: dict[str, list[int]] = {}
+    conflicting: set[str] = set()
     for index, row in enumerate(rows, start=1):
         if len(row) != layout.leading_columns + 2 * len(STRUCTURE_TYPES) * len(
             MEASURES
@@ -135,8 +148,18 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
         if geography is None:
             out_of_scope += 1
             continue
-        in_scope += 1
         geo_type, code, geo_id, label = geography
+        figures_key = tuple(cell.strip() for cell in row[layout.leading_columns :])
+        if item.kind == "place":
+            figures_key += (row[15].strip(),)
+        if code in first_copy:
+            first_index, first_figures = first_copy[code]
+            copies.setdefault(code, [first_index]).append(index)
+            if figures_key != first_figures:
+                conflicting.add(code)
+            continue
+        first_copy[code] = (index, figures_key)
+        in_scope += 1
         months_reported: int | None = None
         if item.kind == "place":
             months_text = row[15].strip()
@@ -189,6 +212,33 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
                         ).hexdigest(),
                     )
                 )
+    for code, indexes in copies.items():
+        if code in conflicting:
+            quarantined.extend(
+                BpsQuarantine(
+                    index,
+                    "conflicting_repeated_row",
+                    f"{code} is printed {len(indexes)} times with different figures"
+                    f" (rows {', '.join(str(i) for i in indexes)})",
+                )
+                for index in indexes
+            )
+        else:
+            quarantined.extend(
+                BpsQuarantine(
+                    index,
+                    "repeated_row",
+                    f"{code} repeats row {indexes[0]} with the same figures",
+                )
+                for index in indexes[1:]
+            )
+    if conflicting:
+        observations = [
+            obs for obs in observations if obs.geo_source_code not in conflicting
+        ]
+        in_scope -= len(conflicting)
+    if copies:
+        quarantined.sort(key=lambda q: (q.source_row_index, q.error_code))
     return ParsedFile(
         tuple(observations), tuple(quarantined), len(rows), in_scope, out_of_scope
     )
