@@ -5338,6 +5338,8 @@ v gold_elections.candidate_tally
     body             bool_or(tagged.mode = 'TOTAL'::text) OVER area AS has_total,
     body             max(tagged.total_votes) FILTER (WHERE tagged.mode = 'TOTAL'::text) OVER area AS total_line_votes,
     body             max(tagged.total_votes) OVER area_mode AS mode_total_votes,
+    body             max(tagged.total_votes) OVER area AS largest_mode_total_votes,
+    body             sum(tagged.candidate_votes) OVER area AS area_candidate_votes,
     body             row_number() OVER area_mode AS mode_row
     body            FROM tagged
     body           WINDOW area AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage, tagged.special, tagged.state_code, tagged.area_key), area_mode AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage, tagged.special, tagged.state_code, tagged.area_key, tagged.mode)
@@ -5374,9 +5376,12 @@ v gold_elections.candidate_tally
     body             moded.has_total,
     body             moded.total_line_votes,
     body             moded.mode_total_votes,
+    body             moded.largest_mode_total_votes,
+    body             moded.area_candidate_votes,
     body             moded.mode_row,
     body                 CASE
     body                     WHEN moded.has_total THEN moded.total_line_votes::numeric
+    body                     WHEN moded.largest_mode_total_votes::numeric >= moded.area_candidate_votes THEN moded.largest_mode_total_votes::numeric
     body                     ELSE sum(moded.mode_total_votes) FILTER (WHERE moded.mode_row = 1) OVER (PARTITION BY moded.run_id, moded.office, moded.election_year, moded.stage, moded.special, moded.state_code, moded.area_key)
     body                 END AS area_total_votes
     body            FROM moded

@@ -59,6 +59,7 @@ REQUIRED_PROCEDURES = (
     "gold_elections.lean_input_fingerprint()",
     "gold_elections.refresh_lean_groups(boolean)",
     "gold_elections.sync_contest_result()",
+    "gold_elections.reconcile_contest_result()",
 )
 
 

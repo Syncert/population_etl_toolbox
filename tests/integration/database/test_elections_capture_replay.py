@@ -182,8 +182,8 @@ def test_results_count_each_candidate_once_and_derive_the_margin(
             """,
         )
     }
-    # Dane 2020 publishes only modes: the candidate is their sum, the total
-    # is the sum of each mode's total.
+    # Dane 2020 publishes only modes: the candidate is their sum; the county
+    # total MEDSL repeats on each mode is counted once.
     assert contests[(el.DANE, 2020)] == (78800, 260000, 344000, "DEM")
     # Albany's Biden and Trump each appear on two lines.
     assert contests[(el.ALBANY, 2020)] == (50000, 96000, 150000, "DEM")
@@ -240,6 +240,108 @@ def test_results_count_each_candidate_once_and_derive_the_margin(
         """,
         (el.WISCONSIN,),
     ) == [(Decimal("-0.64"),)]
+
+
+#: MEDSL's county presidential layout with the mode mixes of its 2020 and
+#: 2024 files: Dane's county total repeated on four modes (Georgia's shape),
+#: Waukesha's TOTAL line beside its ONE STOP and FAILSAFE modes, and Albany
+#: publishing each mode's own total.
+MODE_MIX = b"""year,state,state_po,county_name,county_fips,office,candidate,party,candidatevotes,totalvotes,version,mode
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,3000,15257,20250101,ABSENTEE
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,1000,15257,20250101,ABSENTEE
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,4000,15257,20250101,ELECTION DAY
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,3000,15257,20250101,ELECTION DAY
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,2000,15257,20250101,EARLY VOTING
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,2000,15257,20250101,EARLY VOTING
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,100,15257,20250101,PROVISIONAL
+2020,WISCONSIN,WI,DANE,55025,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,57,15257,20250101,PROVISIONAL
+2020,WISCONSIN,WI,WAUKESHA,55133,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,5000,11500,20250101,TOTAL
+2020,WISCONSIN,WI,WAUKESHA,55133,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,6000,11500,20250101,TOTAL
+2020,WISCONSIN,WI,WAUKESHA,55133,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,3000,11500,20250101,ONE STOP
+2020,WISCONSIN,WI,WAUKESHA,55133,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,4000,11500,20250101,ONE STOP
+2020,WISCONSIN,WI,WAUKESHA,55133,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,2000,11500,20250101,FAILSAFE
+2020,WISCONSIN,WI,WAUKESHA,55133,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,2000,11500,20250101,FAILSAFE
+2020,NEW YORK,NY,ALBANY,36001,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,600,950,20250101,ELECTION DAY
+2020,NEW YORK,NY,ALBANY,36001,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,300,950,20250101,ELECTION DAY
+2020,NEW YORK,NY,ALBANY,36001,US PRESIDENT,JOSEPH R BIDEN JR,DEMOCRAT,400,520,20250101,ABSENTEE
+2020,NEW YORK,NY,ALBANY,36001,US PRESIDENT,DONALD J TRUMP,REPUBLICAN,100,520,20250101,ABSENTEE
+"""
+
+
+def _president_2020(factory: Callable[[], connection]) -> dict[str, tuple]:
+    return {
+        geo_id: (republican, democratic, total)
+        for geo_id, republican, democratic, total in _rows(
+            factory,
+            """
+            SELECT geo_id, republican_votes, democratic_votes, total_votes
+              FROM gold_elections.contest_result
+             WHERE office = 'president' AND election_year = 2020
+            """,
+        )
+    }
+
+
+def test_a_county_total_repeated_on_each_mode_is_counted_once(
+    elections_warehouse,
+) -> None:
+    """Covers: ETL-111 — a county total repeated on each mode counts once; a TOTAL line wins; part totals add up; only changed stored contests are rewritten."""
+    factory = elections_warehouse
+    run_id, _status, rows, published = el.run_to_gold(
+        factory,
+        COUNTY_PRESIDENT,
+        client=el.FixtureClient({"county_president.csv": MODE_MIX}),
+    )
+    assert (rows, published) == (18, 1)
+    assert _president_2020(factory) == {
+        # Four modes each carry Dane's 15,257: the total is 15,257, not 61,028.
+        el.DANE: (6057, 9100, 15257),
+        # The TOTAL line is read alone; its modes are not added to it.
+        el.WAUKESHA: (6000, 5000, 11500),
+        # Albany's modes each publish their own part: 950 + 520.
+        el.ALBANY: (400, 1000, 1470),
+    }
+
+    # A store written by the old totalling (Dane at four times its total) is
+    # corrected by rewriting that one contest; the others are left untouched.
+    _write(
+        factory,
+        """
+        UPDATE gold_elections.contest_result_store SET total_votes = 61028
+         WHERE run_id = %s AND geo_id = %s
+        """,
+        (str(run_id), el.DANE),
+    )
+    untouched = _rows(
+        factory,
+        """
+        SELECT geo_id, xmin::TEXT FROM gold_elections.contest_result_store
+         WHERE run_id = %s AND geo_id <> %s ORDER BY geo_id
+        """,
+        (str(run_id), el.DANE),
+    )
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute("SELECT gold_elections.reconcile_contest_result()")
+            assert cursor.fetchone() == (1,)
+        writer.commit()
+    finally:
+        writer.close()
+    assert _president_2020(factory)[el.DANE] == (6057, 9100, 15257)
+    assert (
+        _rows(
+            factory,
+            """
+            SELECT geo_id, xmin::TEXT FROM gold_elections.contest_result_store
+             WHERE run_id = %s AND geo_id <> %s ORDER BY geo_id
+            """,
+            (str(run_id), el.DANE),
+        )
+        == untouched
+    )
+    # Nothing left to correct: a second pass writes nothing.
+    assert _rows(factory, "SELECT gold_elections.reconcile_contest_result()") == [(0,)]
 
 
 def test_reruns_and_revisions(elections_warehouse) -> None:
