@@ -77,6 +77,10 @@ WHERE term.geography_status = 'resolved';
 -- MEDSL and Algara & Amlani rows of every published read, one mode per
 -- area: an area that publishes a TOTAL line is read from it alone; an area
 -- that publishes only modes (absentee, election day, early) is their sum.
+-- The area's total is counted once: MEDSL's county presidential file repeats
+-- the county-wide total on every mode's rows (Georgia 2020 carries it on four
+-- modes), so a mode total that already covers every mode's candidate votes is
+-- the area's total; only totals that are each a part are added up.
 -- Each level partitions by run_id, so a filter on one run reaches the silver
 -- index instead of totalling every read (the speed gate's quadratic plan
 -- came from joining two scans of a CTE the planner could not estimate).
@@ -97,6 +101,8 @@ moded AS (
            MAX(tagged.total_votes) FILTER (WHERE tagged.mode = 'TOTAL') OVER area AS total_line_votes,
            -- MEDSL repeats an area's total on every candidate row of a mode.
            MAX(tagged.total_votes) OVER area_mode AS mode_total_votes,
+           MAX(tagged.total_votes) OVER area AS largest_mode_total_votes,
+           SUM(tagged.candidate_votes) OVER area AS area_candidate_votes,
            ROW_NUMBER() OVER area_mode AS mode_row
     FROM tagged
     WINDOW area AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage,
@@ -106,8 +112,12 @@ moded AS (
 ),
 area_total AS (
     SELECT moded.*,
-           -- The area's published total: its TOTAL line, or the sum of its modes.
+           -- The area's published total: its TOTAL line; else a mode total
+           -- that covers every mode's candidate votes (the area total repeated
+           -- on each mode); else the sum of its modes' totals.
            CASE WHEN moded.has_total THEN moded.total_line_votes
+                WHEN moded.largest_mode_total_votes >= moded.area_candidate_votes
+                    THEN moded.largest_mode_total_votes
                 ELSE SUM(moded.mode_total_votes) FILTER (WHERE moded.mode_row = 1) OVER (
                     PARTITION BY moded.run_id, moded.office, moded.election_year, moded.stage,
                                  moded.special, moded.state_code, moded.area_key)
@@ -225,8 +235,57 @@ BEGIN
 END;
 $$;
 
+-- Bring the stored rows of every current read in line with a fresh total,
+-- for when the totalling itself changes (this file is re-applied only when it
+-- changes). A row whose fresh total is identical is left alone (the CHURN
+-- rule): only a changed contest's old row is removed and its new row written.
+-- Read per run, like sync_contest_result. Returns the number of rows written.
+CREATE OR REPLACE FUNCTION gold_elections.reconcile_contest_result()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    written INTEGER := gold_elections.sync_contest_result();
+    added INTEGER;
+    pending RECORD;
+BEGIN
+    FOR pending IN
+        SELECT read.run_id
+          FROM gold_elections.current_read AS read
+          JOIN control.elections_run AS run ON run.run_id = read.run_id
+         WHERE run.stream <> ALL (ARRAY['legislators', 'governors'])
+    LOOP
+        CREATE TEMP TABLE IF NOT EXISTS reconcile_fresh (LIKE gold_elections.contest_result_store)
+            ON COMMIT DROP;
+        TRUNCATE reconcile_fresh;
+        INSERT INTO reconcile_fresh
+        SELECT * FROM gold_elections.contest_tally AS tally WHERE tally.run_id = pending.run_id;
+        ANALYZE reconcile_fresh;
+        -- Whole rows compared as text: NULLs compare equal and the anti-joins
+        -- hash instead of looping.
+        DELETE FROM gold_elections.contest_result_store AS store
+         WHERE store.run_id = pending.run_id
+           AND NOT EXISTS (
+               SELECT 1 FROM reconcile_fresh AS fresh
+                WHERE ROW(fresh.*)::TEXT = ROW(store.*)::TEXT
+           );
+        INSERT INTO gold_elections.contest_result_store
+        SELECT fresh.* FROM reconcile_fresh AS fresh
+         WHERE NOT EXISTS (
+             SELECT 1 FROM gold_elections.contest_result_store AS store
+              WHERE store.run_id = pending.run_id
+                AND ROW(store.*)::TEXT = ROW(fresh.*)::TEXT
+         );
+        GET DIAGNOSTICS added = ROW_COUNT;
+        written := written + added;
+    END LOOP;
+    RETURN written;
+END;
+$$;
+
 -- Only the warehouse owner writes the store; the serving role reads it.
 REVOKE EXECUTE ON FUNCTION gold_elections.sync_contest_result() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION gold_elections.reconcile_contest_result() FROM PUBLIC;
 
 -- One row per contest and area of the current reads (see contest_tally).
 CREATE OR REPLACE VIEW gold_elections.contest_result AS
@@ -359,5 +418,6 @@ FROM gold_elections.measure_definition;
 COMMENT ON SCHEMA gold_elections IS
     'Policy-free publication views for congressional and governor seat terms and MEDSL election results.';
 
--- Store any current read published before contest_result_store existed.
-SELECT gold_elections.sync_contest_result();
+-- Store any current read published before contest_result_store existed,
+-- and rewrite only the stored contests whose totalling changed.
+SELECT gold_elections.reconcile_contest_result();

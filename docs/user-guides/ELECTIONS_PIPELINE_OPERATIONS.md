@@ -98,6 +98,26 @@ value a year.
 Each observation is dated on election day and its release is the MEDSL file
 it was read from (`MEDSL countypres_2000-2024.csv`).
 
+### How a county's total is counted
+
+MEDSL publishes some counties as one `TOTAL` line and others by vote mode
+(`ELECTION DAY`, `ABSENTEE`, `EARLY VOTING`, `PROVISIONAL`, `ONE STOP`,
+`FAILSAFE`, ...). A candidate's votes are the `TOTAL` line when there is one,
+otherwise the sum of their mode rows. The county's `totalvotes` is counted
+once: in the county presidential file MEDSL repeats the county-wide total on
+every mode's rows, so a mode total that already covers all the county's
+candidate votes is the county total. Only when each mode carries its own part
+are the parts added. Before this rule the repeated total was added once per
+mode, which served `president_total_votes` at two to six times the real
+count in about 17 state-years (Wisconsin, Texas, South Carolina and West
+Virginia 2024; Georgia, North Carolina, Maryland, Virginia and others 2020).
+Party votes, shares and margins were not affected.
+
+A change to the totalling reaches the stored contests when the gold DDL is
+next applied: `gold_elections.reconcile_contest_result()` totals every
+current read afresh and rewrites only the stored rows that differ; an
+identical row is left alone.
+
 How the source's shapes are read:
 
 - **Party switches.** congress-legislators records a change of party inside
@@ -209,7 +229,30 @@ FROM gold_elections.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
   differs from MEDSL's by more than half a point in a year both publish
   (2000 to 2020). Review its count before trusting the 1992 and 1996 maps.
 - `DQ-ELEC-004` warns when a state's county presidential or Senate sums disagree with
-  its state total, or a place does not resolve.
+  its state total by more than 0.5%, or a place does not resolve.
+
+### Known county shortfalls under `DQ-ELEC-004`
+
+About 46 presidential state-years warn because the counties add up to 0.5%
+to 7% *less* than the state's total, steadily, year after year. These are
+votes the state counts but does not assign to a county, not a loading
+fault: overseas and military (UOCAVA) and federal-only ballots, Kansas City
+reported apart from its four counties (Missouri, about 5% every year), and
+New England returns kept by town (Maine, Massachusetts, Vermont). Seen on
+2026-11-07: Missouri 2004-2020, Maine 2004-2024, Massachusetts 2000-2024,
+New York 2000-2024, Hawaii 2008-2024, Washington 2016 (-3.3%), Iowa 2000
+(-2.8%), Mississippi 2004, Wyoming 2012/2016 and single years in Alaska,
+Colorado, Idaho, Nebraska, New Hampshire, New Jersey, Pennsylvania and South
+Dakota. A few years run 0.5% to 2.2% *over* (Arizona 2016/2024, Montana
+2008/2016, Georgia 2000, Iowa 2024, Wyoming 2000), from county files that
+include write-ins the state file leaves out.
+
+Read a warning this way: a county sum that is a whole multiple of the state,
+or more than a few percent over it, is a counting fault to fix; a steady
+shortfall in the states above is expected. The proposed treatment (not yet
+built) is to keep these as warnings and serve the difference on state pages
+as "votes not assigned to a county", so county numbers stay the published
+ones and nothing is invented.
 - `DQ-ELEC-005` fails when a lean-group county row is not its change minus
   the nation's, sits in a band its window-start margin does not name, or the
   all-county groups do not count exactly the county rows.
