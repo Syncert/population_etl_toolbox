@@ -23,6 +23,7 @@ from data_ingestion_toolbox.glossary.harvest import (
 )
 from data_ingestion_toolbox.quality.sources import qcew_slice_reconciliation
 from tests.support import bls_qcew as qcew
+from tests.support.capture_seed import delete_geography
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -194,6 +195,105 @@ def test_a_rerun_is_idempotent_and_a_changed_file_keeps_both_checksums(
     assert _rows(factory, "SELECT COUNT(*) FROM gold_bls_qcew.observation_latest") == [
         (72,)
     ]
+
+
+def _add_geography(factory, geo_id: str, geo_type: str, **codes: str) -> None:
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips, county_fips, place_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES (%s, %s, %s, %s, %s, 2020, 2020)
+                """,
+                (
+                    geo_id,
+                    geo_type,
+                    codes.get("state_fips"),
+                    codes.get("county_fips"),
+                    codes.get("place_fips"),
+                ),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+
+def test_only_a_geography_the_slice_names_replays_identical_bytes(
+    qcew_warehouse, request: pytest.FixtureRequest
+) -> None:
+    """Covers: ETL-056, ETL-116 — another source's new geography stores no second copy."""
+    factory = qcew_warehouse
+
+    def remove_added_geographies() -> None:
+        # Runs before the warehouse fixture's cleanup, so the facts that
+        # resolved to these geographies go first.
+        writer = factory()
+        try:
+            with writer.cursor() as cursor:
+                for table in qcew.SILVER_TABLES:
+                    cursor.execute(f"DELETE FROM {table}")
+                for geo_id in ("state:01|county:001", "state:55|place:48000"):
+                    delete_geography(cursor, geo_id)
+            writer.commit()
+        finally:
+            writer.close()
+
+    request.addfinalizer(remove_added_geographies)
+    first, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))
+    first_rows = _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_bls_qcew.fact_observation WHERE run_id = %s",
+        (str(first),),
+    )
+
+    # A place no QCEW row names (another loader's geography, 2026-11-07).
+    _add_geography(
+        factory, "state:55|place:48000", "place", state_fips="55", place_fips="48000"
+    )
+    second, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))
+    assert _rows(
+        factory,
+        "SELECT DISTINCT status FROM control.bls_qcew_slice WHERE run_id = %s",
+        (str(second),),
+    ) == [("unchanged",)]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_bls_qcew.fact_observation WHERE run_id = %s",
+        (str(second),),
+    ) == [(0,)]
+
+    # The county the first replay left unmapped: the same bytes replay.
+    _add_geography(
+        factory,
+        "state:01|county:001",
+        "county",
+        state_fips="01",
+        county_fips="001",
+    )
+    third, _f, _p = qcew.run_to_gold(factory, 2024, "1", (TOTAL,))
+    assert _rows(
+        factory,
+        "SELECT DISTINCT status FROM control.bls_qcew_slice WHERE run_id = %s",
+        (str(third),),
+    ) == [("published",)]
+    assert (
+        _rows(
+            factory,
+            "SELECT COUNT(*) FROM silver_bls_qcew.fact_observation WHERE run_id = %s",
+            (str(third),),
+        )
+        == first_rows
+    )
+    assert _rows(
+        factory,
+        """
+        SELECT DISTINCT geography_status FROM gold_bls_qcew.observation_latest
+        WHERE geo_id = 'state:01|county:001'
+        """,
+    ) == [("resolved",)]
 
 
 def test_a_malformed_file_is_captured_and_quarantined(qcew_warehouse) -> None:

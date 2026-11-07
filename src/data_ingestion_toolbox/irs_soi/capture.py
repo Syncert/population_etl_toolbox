@@ -31,13 +31,17 @@ PARSER_CONTRACT_VERSION = "irs_soi_income:v1"
 
 #: The file's newest published capture.
 LATEST_PUBLISHED_SQL = """
-    SELECT response.payload_checksum, response.payload_schema_version, file.published_at
+    SELECT response.payload_checksum, response.payload_schema_version, file.published_at,
+           response.capture_id
     FROM control.irs_soi_file AS file
     JOIN raw_capture.response_capture AS response ON response.capture_id = file.capture_id
     WHERE file.file_kind = %s AND file.tax_year = %s AND file.status = 'published'
     ORDER BY file.published_at DESC
     LIMIT 1
 """
+
+#: Its revision rows name the geographies a replay would resolve (utility.unchanged).
+REVISION_TABLE = "silver_irs_soi.observation_revision"
 
 
 def capture_file(
@@ -101,6 +105,7 @@ def capture_file(
                 (item.kind, item.tax_year),
                 payload_checksum=receipt.payload_checksum,
                 parser_contract=PARSER_CONTRACT_VERSION,
+                revision_table=REVISION_TABLE,
             )
             else "captured"
         )

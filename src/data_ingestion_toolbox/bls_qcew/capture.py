@@ -30,7 +30,8 @@ PARSER_CONTRACT_VERSION = "bls_qcew_csv:v1"
 
 #: The slice's newest published capture.
 LATEST_PUBLISHED_SQL = """
-    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at
+    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at,
+           response.capture_id
     FROM control.bls_qcew_slice AS slice
     JOIN raw_capture.response_capture AS response ON response.capture_id = slice.capture_id
     WHERE slice.year = %s AND slice.period = %s AND slice.industry_code = %s
@@ -38,6 +39,9 @@ LATEST_PUBLISHED_SQL = """
     ORDER BY slice.published_at DESC
     LIMIT 1
 """
+
+#: Its revision rows name the geographies a replay would resolve (utility.unchanged).
+REVISION_TABLE = "silver_bls_qcew.observation_revision"
 
 
 def pause(seconds: float) -> None:
@@ -179,6 +183,7 @@ def capture_period(
                     (year, period, industry.code),
                     payload_checksum=receipt.payload_checksum,
                     parser_contract=PARSER_CONTRACT_VERSION,
+                    revision_table=REVISION_TABLE,
                 ),
             )
             record_slice(connection_factory, slice_capture)
