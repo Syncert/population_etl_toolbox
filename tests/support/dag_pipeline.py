@@ -783,6 +783,48 @@ def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(fbi_capture, "fetch_summarized_observations", observations)
     monkeypatch.setattr(fbi_capture, "fetch_agency_directory", directory)
+    stub_fbi_return_a(monkeypatch)
+
+
+def stub_fbi_return_a(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the Return A master files from the 2023 sample (ETL-122).
+
+    The registry is narrowed to 2024 and 2023: 2024, the newest, answers "not
+    found" as an unpublished file does, so the scheduled task's
+    ``not_published`` path runs too; 2023 is the verbatim 49-record sample.
+    """
+    import io
+    import zipfile
+    from datetime import date
+
+    from data_ingestion_toolbox.fbi_ucr.return_a import load as return_a_load
+    from data_ingestion_toolbox.fbi_ucr.return_a import registry as return_a_registry
+    from data_ingestion_toolbox.fbi_ucr.return_a.fetch import (
+        FetchedFile,
+        ReturnAFetchError,
+        object_key,
+    )
+
+    sample = FIXTURE_ROOT / "fbi_ucr" / "return_a" / "reta-2023-sample.txt"
+
+    def fetch_year(year: int) -> FetchedFile:
+        if year != 2023:
+            raise ReturnAFetchError("HTTP 404", status_code=404)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            member = zipfile.ZipInfo("reta-2023.txt", date_time=(2026, 8, 20, 0, 0, 0))
+            archive.writestr(member, sample.read_bytes())
+        return FetchedFile(
+            data_year=2023,
+            object_key=object_key(2023),
+            payload=buffer.getvalue(),
+            last_modified=date(2026, 8, 20),
+            http_status=200,
+            response_headers={"Content-Type": "application/zip"},
+        )
+
+    monkeypatch.setattr(return_a_registry, "registered_years", lambda: [2024, 2023])
+    monkeypatch.setattr(return_a_load, "fetch_year", fetch_year)
 
 
 def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -706,3 +706,288 @@ def test_the_backfill_waits_for_a_running_return_a_load(
     finally:
         holder.close()
     assert backfill_source_rows(return_a_warehouse)["status"] == "done"
+
+
+# ---------------------------------------------------------------------------
+# ETL-122: the scheduled load writes only what changed (CHURN RULE) and loads
+# a registered year the warehouse never loaded (LOADER RULE).
+# ---------------------------------------------------------------------------
+
+REVISED = "2026-09-30"
+
+
+def _file(text: str, year: int, last_modified: str) -> FetchedFile:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        member = zipfile.ZipInfo(f"reta-{year}.txt", date_time=(2026, 8, 20, 0, 0, 0))
+        archive.writestr(member, text.encode("latin-1"))
+    return FetchedFile(
+        data_year=year,
+        object_key=object_key(year),
+        payload=buffer.getvalue(),
+        last_modified=date.fromisoformat(last_modified),
+        http_status=200,
+        response_headers={"Content-Type": "application/zip"},
+    )
+
+
+def _revised_text() -> str:
+    """The FBI's revision of the sample, as a changed file would arrive.
+
+    Stoughton (line 16) is renamed, Ridgetop (line 49, the last) is gone and
+    Manor and Washington (lines 47 and 48) trade places: their facts are the
+    same, only their line numbers move.
+    """
+    lines = SAMPLE.read_text(encoding="latin-1").split("\n")
+    assert lines[15][120:144].strip() == "STOUGHTON"
+    lines[15] = lines[15][:120] + "STOUGHTON CITY".ljust(24) + lines[15][144:]
+    assert lines[48][120:144].strip() == "RIDGETOP"
+    del lines[48]
+    lines[46], lines[47] = lines[47], lines[46]
+    return "\n".join(lines)
+
+
+_FACT_STATE = (
+    "SELECT 'obs', source_record_id, xmin::text, capture_id::text, source_row_index"
+    " FROM silver_fbi.fact_crime_observation WHERE product_id LIKE 'return_a_%%'"
+    " UNION ALL SELECT 'part', product_id || subject_code || period, xmin::text,"
+    " capture_id::text, source_row_index FROM silver_fbi.fact_reporting_participation"
+    " WHERE product_id LIKE 'return_a_%%'"
+)
+_OTHER_STATE = (
+    "SELECT 'link', ori || relationship_type || source_label || product_id,"
+    " xmin::text FROM silver_fbi.agency_geography_relationship"
+    " WHERE product_id LIKE 'return_a_%%'"
+    " UNION ALL SELECT 'xwalk', state_code || fbi_county_code, xmin::text"
+    " FROM silver_fbi.return_a_county_crosswalk"
+    " UNION ALL SELECT 'agency', ori, xmin::text FROM silver_fbi.dim_agency"
+    " UNION ALL SELECT 'line', capture_id::text || source_row_index, xmin::text"
+    " FROM silver_fbi.return_a_source_row"
+    " UNION ALL SELECT 'release', product_id, xmin::text"
+    " FROM silver_fbi.dim_ucr_dataset_release WHERE product_id LIKE 'return_a_%%'"
+)
+
+
+def _ori_of_line(line_number: int, text: str) -> str:
+    line = text.split("\n")[line_number - 1]
+    return next(iter_records(line)).ori
+
+
+def test_a_reread_of_unchanged_rows_rewrites_none_of_them(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-122 — the same rows read again are written to no table."""
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    facts = sorted(_rows(return_a_warehouse, _FACT_STATE))
+    others = sorted(_rows(return_a_warehouse, _OTHER_STATE))
+
+    # Unchanged bytes are skipped unread.
+    again = load(return_a_warehouse, [2023], fetch=_fetch)
+    assert [item["status"] for item in again["years"]] == ["already_loaded"]
+    assert again["published"] is False
+    assert sorted(_rows(return_a_warehouse, _FACT_STATE)) == facts
+    assert sorted(_rows(return_a_warehouse, _OTHER_STATE)) == others
+
+    # Read again in full (its ledger row gone, as after a parser change), the
+    # year diffs to nothing: no row of any table gets a new version.
+    writer = return_a_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute("DELETE FROM control.fbi_return_a_year")
+        writer.commit()
+    finally:
+        writer.close()
+    reread = load(return_a_warehouse, [2023], fetch=_fetch)
+    (year,) = reread["years"]
+    assert (year["status"], year["inserted"], year["updated"], year["deleted"]) == (
+        "loaded",
+        0,
+        0,
+        0,
+    )
+    assert reread["published"] is False
+    assert sorted(_rows(return_a_warehouse, _FACT_STATE)) == facts
+    assert sorted(_rows(return_a_warehouse, _OTHER_STATE)) == others
+
+
+def test_a_revised_file_writes_only_its_changed_rows_into_the_same_release(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-122, DQ-FBI-015 — a revision updates, deletes, keeps lineage."""
+    import hashlib
+
+    first = load(return_a_warehouse, [2023], fetch=_fetch)
+    original = SAMPLE.read_text(encoding="latin-1")
+    revised = _revised_text()
+    stoughton = _ori_of_line(16, original)
+    ridgetop = _ori_of_line(49, original)
+    manor, washington = _ori_of_line(47, original), _ori_of_line(48, original)
+    before = {row[:2]: row[2:] for row in _rows(return_a_warehouse, _FACT_STATE)}
+
+    summary = load(
+        return_a_warehouse, [2023], fetch=lambda year: _file(revised, year, REVISED)
+    )
+
+    # The standing release is revised in place, never keyed afresh.
+    assert summary["release_key"] == RELEASE
+    assert summary["published"] is True
+    (year,) = summary["years"]
+    # Stoughton: 24 participation + 48 offense rows renamed; Ridgetop's gone.
+    assert (year["inserted"], year["updated"], year["deleted"]) == (0, 72, 72)
+    assert _rows(
+        return_a_warehouse,
+        "SELECT DISTINCT release_key, refresh_date::text, status"
+        " FROM silver_fbi.dim_ucr_dataset_release WHERE product_id LIKE 'return_a_%%'",
+    ) == [(RELEASE, REVISED, "published")]
+
+    after = {row[:2]: row[2:] for row in _rows(return_a_warehouse, _FACT_STATE)}
+    revised_capture = _rows(
+        return_a_warehouse,
+        "SELECT capture_id::text FROM control.fbi_return_a_year WHERE data_year = 2023",
+    )[0][0]
+    labels = dict(
+        _rows(
+            return_a_warehouse,
+            "SELECT source_record_id, subject_code"
+            " FROM silver_fbi.fact_crime_observation"
+            " WHERE product_id LIKE 'return_a_%%'"
+            " UNION ALL SELECT product_id || subject_code || period, subject_code"
+            " FROM silver_fbi.fact_reporting_participation"
+            " WHERE product_id LIKE 'return_a_%%'",
+        )
+    )
+    assert ridgetop not in labels.values()
+    for key, (xmin, capture_id, line) in after.items():
+        if labels[key[1]] == stoughton:
+            # Rewritten, naming the revised file's line.
+            assert (capture_id, line) == (revised_capture, 16)
+            assert xmin != before[key][0]
+        else:
+            # Untouched, still naming the line it was first read from --
+            # Manor and Washington keep their old line numbers.
+            assert (xmin, capture_id, line) == before[key]
+    assert {
+        labels[key[1]]: line
+        for key, (_, _, line) in after.items()
+        if labels[key[1]] in {manor, washington}
+    } == {manor: 47, washington: 48}
+
+    # Lineage: the renamed line is recorded from the revised file, the lines
+    # no fact names any more are gone, the rest stay as they were.
+    source_rows = {
+        (capture_id, index): (ori, checksum)
+        for capture_id, index, ori, checksum in _rows(
+            return_a_warehouse,
+            "SELECT capture_id::text, source_row_index, ori, line_checksum"
+            " FROM silver_fbi.return_a_source_row",
+        )
+    }
+    assert len(source_rows) == 48
+    revised_line = revised.split("\n")[15]
+    assert source_rows[(revised_capture, 16)] == (
+        stoughton,
+        hashlib.sha256(revised_line.encode("latin-1")).hexdigest(),
+    )
+    assert ridgetop not in {ori for ori, _ in source_rows.values()}
+    assert {capture for capture, _ in source_rows} == {
+        revised_capture,
+        _rows(
+            return_a_warehouse,
+            "SELECT DISTINCT capture_id::text FROM silver_fbi.return_a_source_row"
+            " WHERE run_id = %s",
+            first["run_id"],
+        )[0][0],
+    }
+    outcomes = _source_row_outcomes(return_a_warehouse)
+    assert outcomes["silver_fbi.fact_crime_observation"][:2] == ("pass", 0)
+    assert outcomes["silver_fbi.fact_reporting_participation"][:2] == ("pass", 0)
+
+    # The same revision read again writes nothing.
+    facts = sorted(_rows(return_a_warehouse, _FACT_STATE))
+    others = sorted(_rows(return_a_warehouse, _OTHER_STATE))
+    again = load(
+        return_a_warehouse, [2023], fetch=lambda year: _file(revised, year, REVISED)
+    )
+    assert [item["status"] for item in again["years"]] == ["already_loaded"]
+    assert sorted(_rows(return_a_warehouse, _FACT_STATE)) == facts
+    assert sorted(_rows(return_a_warehouse, _OTHER_STATE)) == others
+
+
+def test_the_newest_year_waits_for_its_file_then_loads_on_a_scheduled_run(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-122 — a never-loaded registered year loads when published."""
+    from data_ingestion_toolbox.fbi_ucr.return_a.fetch import ReturnAFetchError
+
+    year_2024 = "\n".join(
+        line[:13] + "24" + line[15:] if line else line
+        for line in SAMPLE.read_text(encoding="latin-1").split("\n")
+    )
+
+    def not_yet(year: int) -> FetchedFile:
+        if year == 2024:
+            raise ReturnAFetchError("HTTP 404", status_code=404)
+        return _fetch(year)
+
+    waiting = load(
+        return_a_warehouse, [2024, 2023], fetch=not_yet, may_be_unpublished=2024
+    )
+    assert {item["data_year"]: item["status"] for item in waiting["years"]} == {
+        2024: "not_published",
+        2023: "loaded",
+    }
+    assert waiting["failed_years"] == []
+    assert waiting["published"] is True
+    assert _rows(
+        return_a_warehouse,
+        "SELECT status FROM control.ingestion_request WHERE run_id = %s "
+        "AND endpoint = 'master_files/reta/reta-2024.zip'",
+        waiting["run_id"],
+    ) == [("empty",)]
+    assert _rows(
+        return_a_warehouse,
+        "SELECT status FROM control.ingestion_run WHERE run_id = %s",
+        waiting["run_id"],
+    ) == [("success",)]
+
+    # Only the newest registered year may be absent: an older one is a failure.
+    def older_missing(year: int) -> FetchedFile:
+        if year == 2022:
+            raise ReturnAFetchError("HTTP 404", status_code=404)
+        return _fetch(year)
+
+    older = load(
+        return_a_warehouse, [2023, 2022], fetch=older_missing, may_be_unpublished=2024
+    )
+    assert {item["data_year"]: item["status"] for item in older["years"]} == {
+        2023: "already_loaded",
+        2022: "fetch_failed",
+    }
+    assert older["failed_years"] == [2022]
+
+    facts_2023 = sorted(_rows(return_a_warehouse, _FACT_STATE))
+
+    def published(year: int) -> FetchedFile:
+        if year == 2024:
+            return _file(year_2024, 2024, REVISED)
+        return _fetch(year)
+
+    loaded = load(
+        return_a_warehouse, [2024, 2023], fetch=published, may_be_unpublished=2024
+    )
+    statuses = {item["data_year"]: item["status"] for item in loaded["years"]}
+    assert statuses == {2024: "loaded", 2023: "already_loaded"}
+    assert loaded["release_key"] == RELEASE
+    assert loaded["published"] is True
+    assert _rows(
+        return_a_warehouse,
+        "SELECT data_year FROM control.fbi_return_a_year ORDER BY data_year",
+    ) == [(2023,), (2024,)]
+    # 2024 went in beside 2023, whose rows were not touched.
+    assert set(facts_2023) <= set(_rows(return_a_warehouse, _FACT_STATE))
+    assert _rows(
+        return_a_warehouse,
+        "SELECT EXTRACT(YEAR FROM period_start)::int, COUNT(*)"
+        " FROM silver_fbi.fact_crime_observation"
+        " WHERE product_id LIKE 'return_a_%%' GROUP BY 1 ORDER BY 1",
+    ) == [(2023, 49 * 48), (2024, 49 * 48)]
