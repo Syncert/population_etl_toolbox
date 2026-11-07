@@ -34,7 +34,14 @@ from .client import (
     select_data_file,
 )
 from .config import SOURCE_CODE, ElectionsConfig
-from .registry import GOVERNORS, LEGISLATORS, STREAMS, result_dataset
+from .registry import (
+    GOVERNORS,
+    LEGISLATORS,
+    MEDSL_READING_VERSION,
+    MEDSL_STREAMS,
+    STREAMS,
+    result_dataset,
+)
 
 PARSER_CONTRACT_VERSION = "elections_files:v1"
 
@@ -155,6 +162,9 @@ def capture_stream(
             listing = capture(listing_request(dataset))
             file_id, source_file = select_data_file(dataset, listing.raw_bytes)
             capture(data_request(dataset, file_id))
+        # A MEDSL read is also its reading rules: a changed rule is a new read.
+        if stream in MEDSL_STREAMS:
+            checksums.insert(0, MEDSL_READING_VERSION)
         run_checksum = hashlib.sha256("|".join(checksums).encode()).hexdigest()
         previous = _execute(
             connection_factory,

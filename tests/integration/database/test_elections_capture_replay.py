@@ -12,6 +12,7 @@ from decimal import Decimal
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.elections import capture as capture_module
 from data_ingestion_toolbox.elections.client import ElectionsPayloadError
 from data_ingestion_toolbox.elections.registry import (
     COUNTY_PRESIDENT,
@@ -342,6 +343,26 @@ def test_a_county_total_repeated_on_each_mode_is_counted_once(
     )
     # Nothing left to correct: a second pass writes nothing.
     assert _rows(factory, "SELECT gold_elections.reconcile_contest_result()") == [(0,)]
+
+
+def test_a_changed_medsl_reading_rule_replays_an_unchanged_file_once(
+    elections_warehouse, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-111 — a new MEDSL reading version makes one new read of an unchanged file, then unchanged again."""
+    factory = elections_warehouse
+    first, _status, _rows_written, _published = el.run_to_gold(
+        factory, COUNTY_PRESIDENT
+    )
+    monkeypatch.setattr(capture_module, "MEDSL_READING_VERSION", "medsl-reading-test")
+    second, status, rows, published = el.run_to_gold(factory, COUNTY_PRESIDENT)
+    assert (status, rows, published) == ("captured", 15, 1)
+    assert _rows(
+        factory,
+        "SELECT DISTINCT run_id::TEXT FROM gold_elections.contest_result_store",
+    ) == [(str(second),)]
+    assert first != second
+    _run, status, rows, published = el.run_to_gold(factory, COUNTY_PRESIDENT)
+    assert (status, rows, published) == ("unchanged", 0, 0)
 
 
 def test_reruns_and_revisions(elections_warehouse) -> None:

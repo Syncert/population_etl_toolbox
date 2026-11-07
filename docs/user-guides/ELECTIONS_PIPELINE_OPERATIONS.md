@@ -231,6 +231,10 @@ FROM gold_elections.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
 - `DQ-ELEC-004` warns when a state's county presidential or Senate sums disagree with
   its state total by more than 0.5%, or a place does not resolve.
 
+- `DQ-ELEC-005` fails when a lean-group county row is not its change minus
+  the nation's, sits in a band its window-start margin does not name, or the
+  all-county groups do not count exactly the county rows.
+
 ### Known county shortfalls under `DQ-ELEC-004`
 
 About 46 presidential state-years warn because the counties add up to 0.5%
@@ -253,9 +257,54 @@ shortfall in the states above is expected. The proposed treatment (not yet
 built) is to keep these as warnings and serve the difference on state pages
 as "votes not assigned to a county", so county numbers stay the published
 ones and nothing is invented.
-- `DQ-ELEC-005` fails when a lean-group county row is not its change minus
-  the nation's, sits in a band its window-start margin does not name, or the
-  all-county groups do not count exactly the county rows.
+
+### Senate and history state-years that cannot match (proposed handling)
+
+Seen on 2026-11-07, after the counting fixes. None is a counting fault in
+this pipeline; each is a difference in what the two files hold. The proposed
+handling is to list them in `DQ-ELEC-004` as known (warn with the reason, not
+as new offenders) rather than change any vote:
+
+| State-years | County sum against state | Reason | Proposal |
+| --- | --- | --- | --- |
+| LA Senate 1990, 1992 | state total 1 | Louisiana's open primary decided the race in October; the state file has no November general | Known: no general to compare |
+| LA Senate 2002, 2014, 2016 | -50% to -64% | November open primary against a December runoff: the two files hold different rounds | Known: compare only the same round |
+| IN Senate 2022 | -40.6% | MEDSL's county file repeats candidate rows under one county code with different votes (Marion's kept row carried Lake County's numbers). Copies that disagree are now all quarantined as `conflicting_row`, so Indiana 2022 has almost no county Senate result instead of wrong ones | Known: not usable as published |
+| MO president 1992, 1996 (Algara & Amlani) | +13%, +18% | No Kansas City row and no repeated county in the frame (checked 2026-11-07); cause not found | Investigate before serving 1992/1996 Missouri maps |
+| MO Senate 2022 | -18% | One county missing (114 of 115 codes) and Kansas City reported apart | Known shortfall |
+| MO president 2024 | small | MEDSL adds a Kansas City line coded `36000`, which does not resolve | Known: unmapped line |
+| WV Senate 2006 | +122.6% | MEDSL's state Senate file holds only part of the state (Byrd 159,154 of about 296,000); the county rows are right | Known: state file short |
+| ME Senate 2012, CO Senate 2020, GA Senate 2020 special | -16%, -13.6%, -8.8% | Town-kept returns (Maine) and votes not assigned to a county | Known shortfall |
+
+### Lines that are not candidates
+
+MEDSL publishes, beside the candidates, lines that are not votes for anyone
+(reading version `medsl-reading-2`, `registry.MEDSL_READING_VERSION`):
+
+- **Total lines.** The 2024 county presidential file adds a `TOTAL VOTES
+  CAST` line to every county in four states, and the 2022 county Senate file
+  a `TOTAL` line per mode. Each is read as the county's total for its mode,
+  never as a candidate. Counted as a candidate it doubled the county total
+  (Wisconsin, Texas, South Carolina and West Virginia 2024; Georgia 2022
+  Senate) and could be served as the leading candidate.
+- **Ballot counts.** `OVERVOTES`, `UNDERVOTES`, `BLANK`, `SPOILED` and their
+  spellings are quarantined as `not_a_vote`. `SCATTERING` is write-ins and is
+  kept; a mixed `BLANK VOTE/SCATTERING` line is kept as Other.
+- **Repeated rows.** A row repeated exactly in one contest, area and mode
+  keeps its first copy (`duplicate_row`); copies that disagree are all set
+  aside (`conflicting_row`), so neither number is served.
+- **Alaska.** MEDSL's Alaska "counties" are its 40 state House districts
+  (02001-02040) and an overseas line (02099) in every year; three of those
+  codes are also real boroughs' (02013 Aleutians East, 02016 Aleutians West,
+  02020 Anchorage), so they were served as those boroughs. They are
+  quarantined as `not_a_county`; Alaska has no county results.
+
+A run's checksum includes the reading version, so after a deploy that
+changes it the next scheduled run of each MEDSL stream replays its unchanged
+file once as a new read, and runs after that are `unchanged` again.
+
+Georgia's 2022 December runoff is its own contest (stage `GEN RUNOFF`); it is
+in `contest_result` but not in the measures, which read `GEN` only.
 
 ## Lean groups (ADR-0014)
 

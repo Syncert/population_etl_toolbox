@@ -27,6 +27,7 @@ from data_ingestion_toolbox.elections.client import (
 from data_ingestion_toolbox.elections.config import ElectionsConfig
 from data_ingestion_toolbox.elections.registry import (
     COUNTY_PRESIDENT,
+    COUNTY_SENATE,
     HOUSE,
     SENATE,
     STATE_FIPS,
@@ -492,3 +493,80 @@ def test_a_medsl_county_row_with_a_retired_code_adds_into_its_successor() -> Non
         ("51019", 1500, None),
     ]
     assert results[0].result_key != results[1].result_key
+
+
+def test_a_medsl_total_line_is_the_area_total_never_a_candidate() -> None:
+    """Covers: ETL-111 — MEDSL's "TOTAL VOTES CAST" and Senate "TOTAL" lines are totals, not candidates."""
+    header = b"year,state_po,county_name,county_fips,candidate,party,candidatevotes,totalvotes,mode\n"
+    body = (
+        b"2024,WI,DANE,55025,DONALD J TRUMP,REPUBLICAN,85454,365929,TOTAL\n"
+        b"2024,WI,DANE,55025,KAMALA D HARRIS,DEMOCRAT,273995,365929,TOTAL\n"
+        b"2024,WI,DANE,55025,TOTAL VOTES CAST,,365929,365929,TOTAL\n"
+    )
+    results, quarantined, read = parse_results(COUNTY_PRESIDENT, header + body)
+    assert (quarantined, read) == ([], 3)
+    assert [(r.candidate, r.total_votes) for r in results] == [
+        ("DONALD J TRUMP", 365929),
+        ("KAMALA D HARRIS", 365929),
+    ]
+
+    # The county Senate file's totalvotes is the state's, so the county's own
+    # TOTAL line of each mode becomes its total.
+    senate = fixture_bytes("county_senate.csv").splitlines(keepends=True)
+    extra = (
+        b"2022,2022-11-08,WISCONSIN,WI,55,35,25,DANE,55025.0,US SENATE,TOTAL,OTHER,OTHER,"
+        b"False,305000.0,2652477,False,GEN,False,TOTAL,20230920\n"
+    )
+    results, quarantined, _read = parse_results(
+        COUNTY_SENATE, b"".join([*senate, extra])
+    )
+    assert quarantined == []
+    assert "TOTAL" not in {r.candidate for r in results}
+    assert {(r.county_fips, r.total_votes) for r in results} == {
+        ("55025", 305000),
+        ("55133", None),
+    }
+
+
+def test_ballot_counts_and_alaska_districts_are_set_aside() -> None:
+    """Covers: ETL-111 — over/under/blank lines are not votes; Alaska's House districts are not counties."""
+    header = b"year,state_po,county_name,county_fips,candidate,party,candidatevotes,totalvotes,mode\n"
+    body = (
+        b"2024,SC,ABBEVILLE,45001,DONALD J TRUMP,REPUBLICAN,8000,12100,TOTAL\n"
+        b"2024,SC,ABBEVILLE,45001,OVERVOTES,OTHER,40,12100,TOTAL\n"
+        b"2024,SC,ABBEVILLE,45001,UNDERVOTES,,60,12100,TOTAL\n"
+        b"2024,SC,ABBEVILLE,45001,SCATTERING,OTHER,12,12100,TOTAL\n"
+        b"2024,AK,DISTRICT 13,2013,DONALD J TRUMP,REPUBLICAN,5000,9000,TOTAL\n"
+        b"2024,AK,DISTRICT 99,2099,DONALD J TRUMP,REPUBLICAN,500,900,TOTAL\n"
+    )
+    results, quarantined, read = parse_results(COUNTY_PRESIDENT, header + body)
+    assert read == 6
+    assert [r.candidate for r in results] == ["DONALD J TRUMP", "SCATTERING"]
+    assert [(q.record_index, q.error_code) for q in quarantined] == [
+        (2, "not_a_vote"),
+        (3, "not_a_vote"),
+        (5, "not_a_county"),
+        (6, "not_a_county"),
+    ]
+
+
+def test_medsl_repeats_keep_one_identical_copy_and_set_disagreeing_copies_aside() -> (
+    None
+):
+    """Covers: ETL-111 — an identical repeat keeps its first copy; copies that disagree are all quarantined."""
+    header = b"year,state_po,county_name,county_fips,candidate,party,candidatevotes,totalvotes,mode\n"
+    body = (
+        b"2022,IN,MARION,18097,TODD YOUNG,REPUBLICAN,100,300,TOTAL\n"
+        b"2022,IN,MARION,18097,TODD YOUNG,REPUBLICAN,90,300,TOTAL\n"
+        b"2022,IN,MARION,18097,THOMAS M. MCDERMOTT JR.,DEMOCRAT,200,300,TOTAL\n"
+        b"2022,IN,MARION,18097,THOMAS M. MCDERMOTT JR.,DEMOCRAT,200,300,TOTAL\n"
+    )
+    results, quarantined, _read = parse_results(COUNTY_PRESIDENT, header + body)
+    assert [(r.record_index, r.candidate) for r in results] == [
+        (3, "THOMAS M. MCDERMOTT JR.")
+    ]
+    assert [(q.record_index, q.error_code) for q in quarantined] == [
+        (1, "conflicting_row"),
+        (2, "conflicting_row"),
+        (4, "duplicate_row"),
+    ]
