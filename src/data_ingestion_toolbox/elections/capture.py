@@ -4,7 +4,9 @@ One ingestion run per read of a stream: one request and one committed
 capture per file, before anything parses it. A results stream reads its
 Dataverse file list first and then the one registered file it names. A read
 whose files are byte-for-byte the last published read's is recorded
-``unchanged`` and replays nothing; a failed read is withdrawn from the
+``unchanged`` and replays nothing. The district-to-county stream reads only
+the plans no published read holds (each is a frozen census tabulation), and
+is ``unchanged`` when every registered plan is held; a failed read is withdrawn from the
 stream's ledger and keeps its errors in the ingestion ledger.
 """
 
@@ -27,19 +29,26 @@ from .client import (
     ElectionFile,
     FileRequest,
     data_request,
+    district_county_request,
+    district_listing_request,
     fetch_file,
     governor_request,
     legislator_requests,
+    listed_districts,
     listing_request,
     select_data_file,
 )
 from .config import SOURCE_CODE, ElectionsConfig
 from .registry import (
+    DISTRICT_PLANS,
     GOVERNORS,
+    HOUSE_COUNTY_SHARE,
     LEGISLATORS,
     MEDSL_READING_VERSION,
     MEDSL_STREAMS,
+    STATE_FIPS,
     STREAMS,
+    DistrictPlan,
     result_dataset,
 )
 
@@ -61,6 +70,24 @@ def _execute(
         raise
     finally:
         connection.close()
+
+
+def unread_district_plans(connection_factory: Callable[[], Any]) -> list[DistrictPlan]:
+    """The registered district plans no published read holds."""
+    held = {
+        row[0]
+        for row in _execute(
+            connection_factory,
+            """
+            SELECT DISTINCT split_part(file.file_key, '/', 1)
+              FROM control.elections_file AS file
+              JOIN control.elections_run AS run ON run.run_id = file.run_id
+             WHERE run.stream = %s AND run.status = 'published'
+            """,
+            (HOUSE_COUNTY_SHARE,),
+        )
+    }
+    return [plan for plan in DISTRICT_PLANS if plan.key not in held]
 
 
 def capture_stream(
@@ -157,6 +184,15 @@ def capture_stream(
                 capture(request)
         elif stream == GOVERNORS:
             capture(governor_request())
+        elif stream == HOUSE_COUNTY_SHARE:
+            states = runtime.district_states or tuple(sorted(STATE_FIPS.values()))
+            for plan in unread_district_plans(connection_factory):
+                for state_fips in states:
+                    listing = capture(district_listing_request(plan, state_fips))
+                    for district in listed_districts(
+                        listing.raw_bytes, listing.request.endpoint
+                    ):
+                        capture(district_county_request(plan, state_fips, district))
         else:
             dataset = result_dataset(stream)
             listing = capture(listing_request(dataset))
@@ -176,7 +212,9 @@ def capture_stream(
             (stream,),
         )
         status = (
-            "unchanged" if previous and previous[0][0] == run_checksum else "captured"
+            "unchanged"
+            if not checksums or (previous and previous[0][0] == run_checksum)
+            else "captured"
         )
         _execute(
             connection_factory,

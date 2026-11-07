@@ -1,0 +1,13 @@
+{
+  "_about": "Census API county pieces of House districts, illustrative populations in the API's layout (the build container cannot reach api.census.gov). Only the 118th Congress plan carries districts; every other plan answers with no districts for the fixture states.",
+  "cd118": {
+    "55": {
+      "01": [["Kenosha County", "059", 169151], ["Waukesha County (part)", "133", 60000]],
+      "02": [["Dane County", "025", 561504]],
+      "05": [["Waukesha County (part)", "133", 346000]]
+    },
+    "56": {
+      "00": [["Laramie County", "021", 100512]]
+    }
+  }
+}

@@ -2467,6 +2467,10 @@ def elections_run_reconciliation(
                 AND NOT EXISTS (
                     SELECT 1 FROM silver_elections.candidate_result AS result
                      WHERE result.run_id = run.run_id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM silver_elections.district_county_share AS share
+                     WHERE share.run_id = run.run_id
                 ))
         """,
         order_by="1",
@@ -2618,6 +2622,74 @@ def elections_county_history_agreement(
     return [
         RuleOutcome(
             "silver_elections.candidate_result",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def elections_house_district_coverage(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-008 — every House district served from 2006 has county pieces, and each piece a result.
+
+    A district result with no county piece means the plan registered for
+    that year is not the one the election was held under; a county piece
+    with no district result means the district had no general election
+    returns in MEDSL's file that year (an unopposed seat some states leave
+    off the ballot). Both are reported, never filled in.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_elections.district_county_share")
+    if total == 0:
+        return [RuleOutcome("gold_elections.county_house_district", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH served AS (
+            SELECT plan_year.election_year, plan_year.plan_key, plan_year.excluded_states
+              FROM gold_elections.house_plan_year AS plan_year
+             WHERE EXISTS (
+                 SELECT 1 FROM gold_elections.district_county_share AS share
+                  WHERE share.plan_key = plan_year.plan_key
+             )
+        ),
+        district_piece AS (
+            SELECT DISTINCT plan_key, state_code, district
+              FROM gold_elections.district_county_share
+        )
+        SELECT contest.state_code || '-' || contest.district AS item,
+               contest.election_year::TEXT AS year,
+               'House result with no county piece in plan ' || served.plan_key AS detail
+          FROM gold_elections.contest_result AS contest
+          JOIN served ON served.election_year = contest.election_year
+         WHERE contest.office = 'us_house' AND contest.geo_level = 'district'
+           AND contest.stage = 'GEN' AND NOT contest.special
+           AND NOT (contest.state_code = ANY (served.excluded_states))
+           AND contest.state_code IN (SELECT state_code FROM district_piece)
+           AND NOT EXISTS (
+               SELECT 1 FROM district_piece AS piece
+                WHERE piece.plan_key = served.plan_key AND piece.state_code = contest.state_code
+                  AND piece.district = contest.district
+           )
+        UNION ALL
+        SELECT DISTINCT county.state_code || '-' || county.district, county.election_year::TEXT,
+               'county pieces with no House result'
+          FROM gold_elections.county_house_district AS county
+         WHERE county.missing_reason = 'no_district_result'
+           AND EXISTS (
+               SELECT 1 FROM gold_elections.contest_result AS any_house
+                WHERE any_house.office = 'us_house' AND any_house.geo_level = 'district'
+                  AND any_house.election_year = county.election_year
+           )
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "gold_elections.county_house_district",
             "warn" if offenders else "pass",
             observed_count=offenders_total,
             expected_count=0,
@@ -4837,6 +4909,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ELEC-005": elections_lean_group_arithmetic,
     "DQ-ELEC-006": elections_governor_fiscal_arithmetic,
     "DQ-ELEC-007": elections_county_history_agreement,
+    "DQ-ELEC-008": elections_house_district_coverage,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

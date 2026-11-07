@@ -24,8 +24,17 @@ from data_ingestion_toolbox.elections.client import (
     listing_request,
     select_data_file,
 )
+from data_ingestion_toolbox.elections.client import (
+    district_county_request,
+    district_listing_request,
+    listed_districts,
+)
 from data_ingestion_toolbox.elections.config import ElectionsConfig
 from data_ingestion_toolbox.elections.registry import (
+    DISTRICT_PLANS,
+    HOUSE_PLAN_YEARS,
+    congress_elected,
+    district_plan,
     COUNTY_PRESIDENT,
     COUNTY_SENATE,
     HOUSE,
@@ -36,6 +45,7 @@ from data_ingestion_toolbox.elections.registry import (
     result_dataset,
 )
 from data_ingestion_toolbox.elections.silver_elections.parse import (
+    parse_district_counties,
     parse_governors,
     parse_legislators,
     parse_results,
@@ -46,7 +56,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_configuration_imports_without_io_and_holds_no_credential() -> None:
-    """Covers: ETL-111 — none of the three providers needs a key, so there is none to leak."""
+    """Covers: ETL-111 — only the Census API takes a key, read from the environment, never defaulted."""
     for name in list(sys.modules):
         if name.startswith("data_ingestion_toolbox.elections"):
             del sys.modules[name]
@@ -57,9 +67,11 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
         for field in module.ElectionsConfig.model_fields
         if "key" in field or "token" in field or "password" in field
     }
-    assert secrets == {"dataverse_api_token"}
+    assert secrets == {"dataverse_api_token", "census_api_key"}
     assert module.ElectionsConfig().dataverse_api_token == ""
-    assert len(STREAMS) == 9 and len(STATE_FIPS) == 51
+    assert module.ElectionsConfig().census_api_key == ""
+    assert "census_api_key" not in repr(module.ElectionsConfig(census_api_key="k"))
+    assert len(STREAMS) == 10 and len(STATE_FIPS) == 51
 
 
 @pytest.mark.parametrize(
@@ -570,3 +582,128 @@ def test_medsl_repeats_keep_one_identical_copy_and_set_disagreeing_copies_aside(
         (2, "conflicting_row"),
         (4, "duplicate_row"),
     ]
+
+
+def _census(rows: list[list[str]]) -> bytes:
+    return json.dumps(rows).encode()
+
+
+def test_district_pieces_merge_retired_counties_and_read_the_delegate_as_zero() -> None:
+    """Covers: ETL-111 — Census county pieces: successor codes summed, DC's 98 is district 0, bad rows held back."""
+    header = ["NAME", "P001001", "state", "congressional district", "county (or part)"]
+    pieces, quarantine, read = parse_district_counties(
+        "cd110/51/05",
+        _census(
+            [
+                header,
+                ["Bedford County (part)", "60000", "51", "05", "019"],
+                ["Bedford city", "6000", "51", "05", "515"],
+                ["Halifax County", "37000", "51", "05", "083"],
+                ["Nowhere", "x", "51", "05", "999"],
+                ["Wrong district", "5", "51", "06", "001"],
+            ]
+        ),
+    )
+    assert read == 5
+    assert [(p.county_fips, p.population, p.district, p.congress) for p in pieces] == [
+        ("51019", 66000, 5, 110),
+        ("51083", 37000, 5, 110),
+    ]
+    assert {q.error_code for q in quarantine} == {
+        "unreadable_population",
+        "unexpected_district",
+    }
+    (delegate,), _, _ = parse_district_counties(
+        "cd118/11/98",
+        _census(
+            [
+                [
+                    "NAME",
+                    "P1_001N",
+                    "state",
+                    "congressional district",
+                    "county (or part)",
+                ],
+                ["District of Columbia", "689545", "11", "98", "001"],
+            ]
+        ),
+    )
+    assert (delegate.district, delegate.state_code, delegate.geo_id) == (
+        0,
+        "DC",
+        "state:11|county:001",
+    )
+
+
+def test_the_census_key_is_sent_but_never_part_of_the_captured_request() -> None:
+    """Covers: ETL-111 — the key rides on the wire only; a body without the geography is refused."""
+    plan = district_plan("cd118")
+    request = district_county_request(plan, "55", "02")
+    assert "key" not in request.parameters
+    assert request.parameters["in"] == "state:55 congressional district:02"
+    seen: list[dict[str, str]] = []
+
+    class _Census:
+        def get(self, url, *, params, headers):
+            seen.append(dict(params))
+            body = _census(
+                [
+                    [
+                        "NAME",
+                        "P1_001N",
+                        "state",
+                        "congressional district",
+                        "county (or part)",
+                    ]
+                ]
+            )
+            return httpx.Response(200, content=body, request=httpx.Request("GET", url))
+
+    fetched = fetch_file(
+        request,
+        config=ElectionsConfig(census_api_key="secret", max_attempts=1),
+        client=_Census(),
+    )
+    assert seen[0]["key"] == "secret" and "key" not in fetched.request.parameters
+    with pytest.raises(ElectionsPayloadError, match="not_a_census_table"):
+        check_body(request, b'[["NAME", "state"]]')
+    listing = district_listing_request(plan, "56")
+    assert listed_districts(
+        _census(
+            [
+                ["NAME", "state", "congressional district"],
+                ["x", "56", "00"],
+                ["w", "56", "ZZ"],
+            ]
+        ),
+        listing.endpoint,
+    ) == ["00"]
+
+
+def test_every_house_election_year_names_a_registered_plan_no_newer_than_its_congress() -> (
+    None
+):
+    """Covers: ETL-111 — the registry and the gold plan views list the same plans and years."""
+    import re as _re
+    from pathlib import Path
+
+    sql = (
+        Path(__file__).resolve().parents[3]
+        / "src/data_ingestion_toolbox/elections/gold_elections/DDL/gold_elections.sql"
+    ).read_text()
+    plans = set(_re.findall(r"\('(cd\d{3})', (\d{3}), (\d{4}), '([^']+)'\)", sql))
+    assert plans == {
+        (plan.key, str(plan.congress), str(plan.census_year), plan.path)
+        for plan in DISTRICT_PLANS
+    }
+    years = {
+        (int(year), key, tuple(_re.findall(r"'([A-Z]{2})'", states)))
+        for year, key, states in _re.findall(
+            r"\((\d{4}), '(cd\d{3})', ARRAY\[([^\]]*)\]", sql
+        )
+    }
+    assert years == {
+        (year, key, excluded) for year, (key, excluded) in HOUSE_PLAN_YEARS.items()
+    }
+    for year, (key, _excluded) in HOUSE_PLAN_YEARS.items():
+        assert district_plan(key).congress <= congress_elected(year)

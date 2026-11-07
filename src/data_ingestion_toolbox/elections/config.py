@@ -11,6 +11,10 @@ download; it is never written to the repository or to a capture. An
 optional Dataverse API token is honoured when the installation requires a
 signed-in user for the guestbook.
 
+The Census Bureau's API, read for the House districts that cover each
+county, asks for the operator's key (``CENSUS_API_KEY``, the one the Census
+sources use); it is added to each request when sent and never captured.
+
 Importing this module reads nothing: no network, database or secret.
 """
 
@@ -30,6 +34,7 @@ GUESTBOOK_ENVIRONMENT = {
     "guestbook_position": "ELECTIONS_GUESTBOOK_POSITION",
 }
 DATAVERSE_TOKEN_ENVIRONMENT_VARIABLE = "DATAVERSE_API_TOKEN"
+CENSUS_API_KEY_ENV = "CENSUS_API_KEY"
 
 
 class ElectionsConfig(BaseModel):
@@ -50,6 +55,9 @@ class ElectionsConfig(BaseModel):
     guestbook_institution: str = Field(default="", repr=False)
     guestbook_position: str = Field(default="", repr=False)
     dataverse_api_token: str = Field(default="", repr=False)
+    census_api_key: str = Field(default="", repr=False)
+    #: The states whose districts are read (FIPS); every state when unset.
+    district_states: tuple[str, ...] | None = None
 
     @classmethod
     def from_environment(cls) -> "ElectionsConfig":
@@ -60,6 +68,7 @@ class ElectionsConfig(BaseModel):
         values["dataverse_api_token"] = os.environ.get(
             DATAVERSE_TOKEN_ENVIRONMENT_VARIABLE, ""
         ).strip()
+        values["census_api_key"] = os.environ.get(CENSUS_API_KEY_ENV, "").strip()
         return cls(**values)
 
     @property

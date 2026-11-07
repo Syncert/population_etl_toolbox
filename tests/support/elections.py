@@ -31,6 +31,11 @@ The fixtures under ``tests/fixtures/elections``:
   list carries the real file ids.
 * ``county_senate.csv`` is MEDSL's county Senate 2022 file cut to Dane and
   Waukesha counties (CC0), whose ``totalvotes`` is the statewide total.
+* ``district_counties.json`` holds Census API answers for the House
+  districts covering each county, with illustrative populations: in the
+  118th Congress plan Waukesha is split between Wisconsin's first and fifth
+  districts, Dane is wholly in the second, and Wyoming is one at-large
+  district. ``FixtureClient`` serves it in the API's JSON table layout.
 """
 
 from __future__ import annotations
@@ -40,13 +45,16 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import json
+import re
+
 import httpx
 import pytest
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.elections.capture import capture_stream
 from data_ingestion_toolbox.elections.config import SOURCE_CODE, ElectionsConfig
-from data_ingestion_toolbox.elections.registry import STREAMS
+from data_ingestion_toolbox.elections.registry import DISTRICT_PLANS, STREAMS
 from data_ingestion_toolbox.elections.silver_elections.load import (
     publish_run,
     replay_run,
@@ -157,6 +165,43 @@ def fixture_bytes(name: str) -> bytes:
     return (FIXTURE_DIR / name).read_bytes()
 
 
+#: The states the district-to-county fixture covers; tests read only these.
+DISTRICT_STATES = ("55", "56")
+_PLAN_BY_URL = {plan.url: plan for plan in DISTRICT_PLANS}
+
+
+def census_answer(url: str, params: dict[str, str]) -> bytes:
+    """The Census API's answer for a district list or a district's county pieces."""
+    plan = _PLAN_BY_URL[url]
+    pieces = json.loads(fixture_bytes("district_counties.json").decode()).get(
+        plan.key, {}
+    )
+    geography = dict(re.findall(r"([a-z ]+?):(\w+)\s*", params["in"]))
+    state = geography["state"]
+    if params["for"].startswith("congressional district"):
+        rows = [["NAME", "state", "congressional district"]]
+        rows += [
+            [f"Congressional District {district}", state, district]
+            for district in sorted(pieces.get(state, {}))
+        ]
+    else:
+        district = geography["congressional district"]
+        rows = [
+            [
+                "NAME",
+                plan.population_variable,
+                "state",
+                "congressional district",
+                "county (or part)",
+            ]
+        ]
+        rows += [
+            [name, str(population), state, district, county]
+            for name, county, population in pieces.get(state, {}).get(district, [])
+        ]
+    return json.dumps(rows).encode()
+
+
 class FixtureClient:
     """Answers every registered URL from its fixture.
 
@@ -169,6 +214,8 @@ class FixtureClient:
         self.calls: list[tuple[str, dict[str, str]]] = []
 
     def _name(self, url: str, params: dict[str, str]) -> str:
+        if url.startswith("https://api.census.gov/"):
+            return "census"
         if url.endswith(".json") and "congress-legislators" in url:
             return url.rsplit("/", 1)[1]
         if "query.wikidata.org" in url:
@@ -186,7 +233,12 @@ class FixtureClient:
         override = self.overrides.get(name)
         if isinstance(override, int):
             return httpx.Response(override, content=b"", request=request)
-        body = override if isinstance(override, bytes) else fixture_bytes(name)
+        if isinstance(override, bytes):
+            body = override
+        elif name == "census":
+            body = census_answer(url, params)
+        else:
+            body = fixture_bytes(name)
         return httpx.Response(200, content=body, request=request)
 
     def close(self) -> None:
@@ -200,7 +252,9 @@ def run_to_gold(
     client: FixtureClient | None = None,
 ) -> tuple[UUID, str, int, int]:
     """Capture, replay and publish one stream; return (run, status, rows, published)."""
-    runtime = ElectionsConfig(min_spacing_seconds=0, max_attempts=1)
+    runtime = ElectionsConfig(
+        min_spacing_seconds=0, max_attempts=1, district_states=DISTRICT_STATES
+    )
     run_id, status = capture_stream(
         connection_factory, stream, config=runtime, client=client or FixtureClient()
     )
@@ -249,6 +303,8 @@ def reviewed_warehouse(
                     (SOURCE_CODE,),
                 )
                 for table in (
+                    "gold_elections.contest_result_store",
+                    "silver_elections.district_county_share",
                     "silver_elections.seat_term",
                     "silver_elections.candidate_result",
                     "silver_elections.quarantine",
