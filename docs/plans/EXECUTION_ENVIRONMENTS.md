@@ -100,7 +100,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**13 plans.**
+**14 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -108,6 +108,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`cost-of-living-section`](in_progress/COST_OF_LIVING_SECTION_PLAN.md) | high | `browser`, `postgres` | `groceries-and-gas-cards` |
 | [`county-childcare-prices`](to_do/COUNTY_CHILDCARE_PRICES_PLAN.md) | high | `browser`, `postgres` | `cost-of-living-section` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
+| [`election-results-back-to-1990`](to_do/ELECTION_RESULTS_BACK_TO_1990_PLAN.md) | medium | `postgres` | -- |
 | [`elections-and-economic-performance`](in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md) | high | `browser`, `postgres` | -- |
 | [`fbi-return-a-bulk-load`](to_do/FBI_RETURN_A_BULK_LOAD_PLAN.md) | high | `postgres` | -- |
 | [`home-heating-fuel-prices`](in_progress/HOME_HEATING_FUEL_PRICES_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
