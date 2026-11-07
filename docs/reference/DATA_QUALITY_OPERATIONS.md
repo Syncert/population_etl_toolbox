@@ -85,8 +85,9 @@ The ACS, BLS, and FRED slice ledgers are not finalized: they carry no run
 linkage and are declarative registries of configured work, so a `planned` row
 there means the warehouse genuinely still owes that slice. A red DQ-BLS-002
 after a quota-deferred day is therefore correct — the BLS DAG parks the
-stopped batch until 1:00am US/Eastern the next day (an Airflow reschedule,
-DAG-022), ingests the deferred chunks then, and the rule goes green once the
+stopped batch until the first 06:15 UTC at least 24h15m after the refusal,
+because BLS counts its quota over a rolling 24 hours from the first accepted
+call (an Airflow reschedule, DAG-022), ingests the deferred chunks then, and the rule goes green once the
 work exists.
 
 Run the same repair by hand with

@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -176,23 +177,57 @@ def reschedulable_task(**kwargs):
     )
 
 
+#: BLS's daily quota is a rolling 24 hours from the key's first accepted call,
+#: not a calendar day (OFFICE_LAB logs: 11-06's first call 06:00:14 UTC; the
+#: 11-07 call at 06:00:02 UTC, 12 s short of 24 h, was refused; a midnight-ET
+#: reset is ruled out). A resume therefore waits at least this long after the
+#: refusal, which is never earlier than the window's first call.
+QUOTA_WINDOW = timedelta(hours=24)
+#: Slack past the rolling window, for clock skew and BLS's own bookkeeping.
+QUOTA_MARGIN = timedelta(minutes=15)
+#: Earliest UTC time of day a resume may run, ``HH:MM``; overridable with the
+#: ``BLS_QUOTA_RESUME_UTC`` environment variable. Kept as a floor in case BLS
+#: also has a fixed daily reset; 06:15 UTC is 01:15 EST / 02:15 EDT.
+DEFAULT_QUOTA_RESUME_UTC = "06:15"
+
+
+def _quota_resume_time_of_day() -> tuple[int, int]:
+    """Parse ``BLS_QUOTA_RESUME_UTC`` (``HH:MM``), falling back to the default."""
+    raw = (os.environ.get("BLS_QUOTA_RESUME_UTC") or "").strip()
+    for candidate in (raw, DEFAULT_QUOTA_RESUME_UTC):
+        try:
+            hour_text, minute_text = candidate.split(":")
+            hour, minute = int(hour_text), int(minute_text)
+        except ValueError:
+            continue
+        if 0 <= hour < 24 and 0 <= minute < 60:
+            return hour, minute
+    raise AssertionError("DEFAULT_QUOTA_RESUME_UTC is malformed")
+
+
 def _next_quota_resume_utc(now: Optional[datetime] = None) -> datetime:
     """
-    Return the next 1:00am US/Eastern after a daily-quota stop, as a UTC datetime.
+    Return when a quota-stopped batch may call BLS again, as a UTC datetime.
 
-    The target is 01:00 on the next Eastern calendar day (not +24h), so the
-    resume always lands at 01:00 regardless of when in the day the quota ran
-    out. The answer is converted to UTC before any arithmetic: subtracting two
-    datetimes that share a ``ZoneInfo`` is wall-clock arithmetic in Python and
-    would be an hour off on the nights the clocks change.
+    The resume is the first daily ``BLS_QUOTA_RESUME_UTC`` time (default 06:15
+    UTC) that is at least ``QUOTA_WINDOW + QUOTA_MARGIN`` after ``now``, the
+    moment BLS refused. BLS counts a rolling 24 hours from the first accepted
+    call; every call in the spent window was made at or before the refusal, so
+    24 h plus a margin after the refusal is always past the window, whatever
+    time of day the window began. The old target, 01:00 Eastern the next
+    calendar day, landed 12 seconds inside the previous window on 2026-11-07.
+    Working in UTC throughout means the nights the clocks change cost nothing.
     """
     now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    next_day = (now_utc.astimezone(_EST) + timedelta(days=1)).date()
-    target = datetime(next_day.year, next_day.month, next_day.day, 1, 0, 0, tzinfo=_EST)
-    return target.astimezone(timezone.utc)
+    earliest = now_utc + QUOTA_WINDOW + QUOTA_MARGIN
+    hour, minute = _quota_resume_time_of_day()
+    target = earliest.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target < earliest:
+        target += timedelta(days=1)
+    return target
 
 
-def _compute_delay_until_1am_est(now: Optional[datetime] = None) -> timedelta:
+def _compute_quota_delay(now: Optional[datetime] = None) -> timedelta:
     """Return the real time from ``now`` until :func:`_next_quota_resume_utc`."""
     now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     return _next_quota_resume_utc(now_utc) - now_utc
@@ -202,7 +237,7 @@ def _quota_pause(
     exc: BaseException, now: Optional[datetime] = None
 ) -> AirflowRescheduleException:
     """
-    Build the reschedule request that parks a quota-stopped batch until 1:00am ET.
+    Build the reschedule request that parks a quota-stopped batch past BLS's window.
 
     Why a reschedule and not a retry: the scheduler decides when a retry runs
     from ``retry_delay`` on its own copy of the task (the serialized DAG), so a
@@ -370,8 +405,8 @@ def _run_one_work_unit(work_unit: dict) -> int:
         # BLS daily API quota exhausted.  Mark slice 'planned' so the resumed
         # task picks it up, then re-raise so the batch stops here.
         #
-        # ``ingest_batch`` turns the exception into an Airflow reschedule for
-        # 1:00am US/Eastern the next calendar day (see ``_quota_pause``).
+        # ``ingest_batch`` turns the exception into an Airflow reschedule to
+        # past BLS's rolling 24-hour window (see ``_next_quota_resume_utc``).
         finished = datetime.now(timezone.utc)
         err_txt = sanitize_error_message(e)
         sql_planned = """
@@ -902,8 +937,8 @@ def bls_ingest():
     @reschedulable_task(
         pool=BLS_API_POOL,
         # A BLS daily-quota stop (REQUEST_NOT_PROCESSED) is not a retry: the
-        # batch raises AirflowRescheduleException for 1:00am US/Eastern the next
-        # calendar day (see ``_quota_pause``), which spends no retries and frees
+        # batch raises AirflowRescheduleException for the first 06:15 UTC at
+        # least 24h15m after the refusal (see ``_next_quota_resume_utc``), which spends no retries and frees
         # the pool slot while it waits. retries/retry_delay cover only real
         # failures (network, database); 10 is kept from the old quota policy.
         retries=10,
