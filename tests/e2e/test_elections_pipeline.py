@@ -36,7 +36,8 @@ def test_presidential_margins_reach_the_neutral_api(elections_warehouse) -> None
     `/api/v1/observations` for a county with the fixture's value.
 
     Covers: ETL-111 — the margin is Republican minus Democratic share of the
-    two-party vote, dated on election day, with the MEDSL file as the release.
+    two-party vote, dated on election day, with the MEDSL file as the release;
+    county years before 2000 come from Algara & Amlani and name that file.
     """
     factory = elections_warehouse
     el.run_all(factory)
@@ -59,8 +60,15 @@ def test_presidential_margins_reach_the_neutral_api(elections_warehouse) -> None
         assert [
             (item["period_start"], float(item["value"]), item["geo_level"])
             for item in items
-        ] == [("2016-11-08", -50.67, "COUNTY"), ("2020-11-03", -53.48, "COUNTY")]
-        first = items[0]
+        ] == [
+            ("1992-11-03", -33.33, "COUNTY"),
+            ("1996-11-05", -36.84, "COUNTY"),
+            ("2016-11-08", -50.67, "COUNTY"),
+            ("2020-11-03", -53.48, "COUNTY"),
+        ]
+        # The 1990s come from Algara & Amlani; 2000 on from MEDSL only.
+        assert items[0]["release"].startswith("Algara & Amlani ")
+        first = items[2]
         assert first["unit"] == "percentage points"
         assert first["release"] == "MEDSL countypres_2000-2024.csv"
         assert (
