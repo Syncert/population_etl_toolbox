@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS silver_elections.quarantine (
     UNIQUE (capture_id, record_index, error_code)
 );
 
+-- Where a quarantined row was, when the row says, so quarantine can be
+-- audited by state and county. Rows set aside before these columns existed
+-- keep NULL; a replayed read fills them.
+ALTER TABLE silver_elections.quarantine ADD COLUMN IF NOT EXISTS state_code TEXT
+    CHECK (state_code IS NULL OR state_code ~ '^[A-Z]{2}$');
+ALTER TABLE silver_elections.quarantine ADD COLUMN IF NOT EXISTS county_fips TEXT
+    CHECK (county_fips IS NULL OR county_fips ~ '^[0-9]{5}$');
+
 -- One span of one person in one seat with one party. A congressional term
 -- whose party changed is one span per affiliation. A seat is a state's
 -- governorship, a state's Senate class, or a state's House district (0 is

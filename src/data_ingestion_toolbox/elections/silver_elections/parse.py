@@ -156,6 +156,9 @@ class Quarantine:
     record_index: int
     error_code: str
     error_summary: str
+    #: Where the row was, when the row says: for auditing quarantine by place.
+    state_code: str | None = None
+    county_fips: str | None = None
 
 
 class _RowError(ValueError):
@@ -521,6 +524,9 @@ NOT_A_VOTE_CANDIDATES = frozenset(
 #: MEDSL's Alaska "counties" are its state House districts (02001-02040) and
 #: an overseas line (02099) in every county presidential year (read on
 #: OFFICE_LAB 2026-11-07); three of the codes are also real boroughs'.
+#: States whose repeated MEDSL key is another round of the same race, not a
+#: part of one count (Louisiana's open primary and runoff, 2002 Senate).
+REPEAT_IS_ANOTHER_ROUND = frozenset({"LA"})
 ALASKA_DISTRICT_CODES = frozenset(
     {f"020{number:02d}" for number in range(1, 41)} | {"02099"}
 )
@@ -555,7 +561,10 @@ def parse_results(
     # is the total of the candidate rows beside it where they carry none.
     total_lines: dict[tuple[Any, ...], int] = {}
     retired: set[int] = set()
+    positions: dict[str, int] = {}
     for index, row in enumerate(rows, start=1):
+        state: str | None = None
+        county_fips: str | None = None
         try:
             year = _whole(row.get("year"), "year")
             state = _text(row, "state_po") or ""
@@ -564,7 +573,6 @@ def parse_results(
                     "unreadable_state", f"state_po {state!r} is not a USPS code"
                 )
             state_fips = STATE_FIPS.get(state)
-            county_fips: str | None = None
             source_fips: str | None = None
             district: int | None = None
             if stream in COUNTY_STREAMS:
@@ -605,6 +613,9 @@ def parse_results(
                 )
             mode = (_text(row, "mode") or "TOTAL").upper()
             stage = (_text(row, "stage") or "GEN").upper()
+            if _flag(row.get("runoff")) and "RUNOFF" not in stage:
+                # MEDSL's House file marks a runoff in its own column.
+                stage = f"{stage} RUNOFF"
             special = _flag(row.get("special"))
             writein = _flag(row.get("writein"))
             votes = _whole(row.get("candidatevotes"), "candidatevotes")
@@ -629,22 +640,47 @@ def parse_results(
                 mode,
                 writein,
             )
+            is_total_line = _is_total_line(candidate, party_text)
             if key in seen:
-                # An identical repeat is set aside and its first copy kept;
-                # copies that disagree are all set aside (the REPEATS rule).
-                if seen[key] != (votes, total):
-                    conflicting.add(key)
+                if state in REPEAT_IS_ANOTHER_ROUND:
+                    # Louisiana's November open primary and December runoff
+                    # share one key in MEDSL's files: an identical repeat
+                    # keeps one copy, copies that disagree are all set aside.
+                    if seen[key] != (votes, total):
+                        conflicting.add(key)
+                        raise _RowError(
+                            "conflicting_row",
+                            f"{candidate!r} on {party_text!r} appears twice in one "
+                            "contest and mode with different votes",
+                        )
                     raise _RowError(
-                        "conflicting_row",
-                        f"{candidate!r} on {party_text!r} appears twice in one contest "
-                        "and mode with different votes",
+                        "duplicate_row",
+                        f"{candidate!r} on {party_text!r} appears twice in one "
+                        "contest and mode",
                     )
-                raise _RowError(
-                    "duplicate_row",
-                    f"{candidate!r} on {party_text!r} appears twice in one contest and mode",
-                )
+                # Elsewhere a repeated key is a part of the line's count:
+                # precincts under a county (Indiana 2022), a mode MEDSL left
+                # blank (North Carolina 2024), or several write-in and
+                # "OTHER" lines folded into one name. The parts are added.
+                if is_total_line:
+                    if key in total_line_keys:
+                        area = total_line_keys[key][1]
+                        total_lines[area] = total_lines[area] + votes
+                    continue
+                position = positions.get(key)
+                if position is not None:
+                    first = results[position]
+                    results[position] = replace(
+                        first,
+                        candidate_votes=first.candidate_votes + votes,
+                        total_votes=max(
+                            (t for t in (first.total_votes, total) if t is not None),
+                            default=None,
+                        ),
+                    )
+                continue
             seen[key] = (votes, total)
-            if _is_total_line(candidate, party_text):
+            if is_total_line:
                 if source_fips is None:
                     area = (year, stage, special, state, county_fips, district, mode)
                     total_lines[area] = votes
@@ -652,6 +688,7 @@ def parse_results(
                 continue
             if source_fips is not None:
                 retired.add(index)
+            positions[key] = len(results)
             results.append(
                 CandidateResult(
                     record_index=index,
@@ -676,7 +713,17 @@ def parse_results(
                 )
             )
         except _RowError as error:
-            quarantined.append(Quarantine(index, error.code, str(error)[:200]))
+            quarantined.append(
+                Quarantine(
+                    index,
+                    error.code,
+                    str(error)[:200],
+                    state if state and re.fullmatch(r"[A-Z]{2}", state) else None,
+                    county_fips
+                    if county_fips and re.fullmatch(r"[0-9]{5}", county_fips)
+                    else None,
+                )
+            )
     if conflicting:
         for result in results:
             if result.result_key in conflicting:
@@ -686,6 +733,8 @@ def parse_results(
                         "conflicting_row",
                         f"{result.candidate!r} on {result.party_text!r} appears twice "
                         "in one contest and mode with different votes",
+                        result.state_code,
+                        result.county_fips,
                     )
                 )
         results = [r for r in results if r.result_key not in conflicting]

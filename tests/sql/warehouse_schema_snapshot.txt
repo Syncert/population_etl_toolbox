@@ -13023,11 +13023,15 @@ r silver_elections.quarantine
     column error_code text NOT NULL
     column error_summary text NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column state_code text
+    column county_fips text
     constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint quarantine_capture_id_record_index_error_code_key UNIQUE (capture_id, record_index, error_code)
+    constraint quarantine_county_fips_check CHECK (((county_fips IS NULL) OR (county_fips ~ '^[0-9]{5}$'::text)))
     constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
     constraint quarantine_record_index_check CHECK ((record_index >= 0))
     constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_state_code_check CHECK (((state_code IS NULL) OR (state_code ~ '^[A-Z]{2}$'::text)))
     index quarantine_capture_id_record_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_record_index_error_code_key ON silver_elections.quarantine USING btree (capture_id, record_index, error_code)
     index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_elections.quarantine USING btree (quarantine_sk)
 

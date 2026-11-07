@@ -311,7 +311,7 @@ as new offenders) rather than change any vote:
 | --- | --- | --- | --- |
 | LA Senate 1990, 1992 | state total 1 | Louisiana's open primary decided the race in October; the state file has no November general | Known: no general to compare |
 | LA Senate 2002, 2014, 2016 | -50% to -64% | November open primary against a December runoff: the two files hold different rounds | Known: compare only the same round |
-| IN Senate 2022 | -40.6% | MEDSL's county file repeats candidate rows under one county code with different votes (Marion's kept row carried Lake County's numbers). Copies that disagree are now all quarantined as `conflicting_row`, so Indiana 2022 has almost no county Senate result instead of wrong ones | Known: not usable as published |
+| IN Senate 2022 | -40.6% before reading version 3 | MEDSL's county file is precinct rows under their county's name and code (Lake County 18089 has hundreds of rows per candidate, checked 2026-11-07). Reading version 2 set the repeats aside as `conflicting_row` and kept 75 of 92 counties; version 3 adds the precinct rows into their county | Fixed in `medsl-reading-3`; recheck DQ-ELEC-004 after the replay |
 | MO president 1992, 1996 (Algara & Amlani) | +13%, +18% | No Kansas City row and no repeated county in the frame (checked 2026-11-07); cause not found | Investigate before serving 1992/1996 Missouri maps |
 | MO Senate 2022 | -18% | One county missing (114 of 115 codes) and Kansas City reported apart | Known shortfall |
 | MO president 2024 | small | MEDSL adds a Kansas City line coded `36000`, which does not resolve | Known: unmapped line |
@@ -321,7 +321,7 @@ as new offenders) rather than change any vote:
 ### Lines that are not candidates
 
 MEDSL publishes, beside the candidates, lines that are not votes for anyone
-(reading version `medsl-reading-2`, `registry.MEDSL_READING_VERSION`):
+(reading version `medsl-reading-3`, `registry.MEDSL_READING_VERSION`):
 
 - **Total lines.** The 2024 county presidential file adds a `TOTAL VOTES
   CAST` line to every county in four states, and the 2022 county Senate file
@@ -332,9 +332,25 @@ MEDSL publishes, beside the candidates, lines that are not votes for anyone
 - **Ballot counts.** `OVERVOTES`, `UNDERVOTES`, `BLANK`, `SPOILED` and their
   spellings are quarantined as `not_a_vote`. `SCATTERING` is write-ins and is
   kept; a mixed `BLANK VOTE/SCATTERING` line is kept as Other.
-- **Repeated rows.** A row repeated exactly in one contest, area and mode
-  keeps its first copy (`duplicate_row`); copies that disagree are all set
-  aside (`conflicting_row`), so neither number is served.
+- **Repeated rows are parts.** A candidate repeated in one contest, area and
+  mode is a part of that candidate's count and the parts are added: Indiana
+  2022 county Senate is precinct rows under each county, North Carolina 2024
+  county president has four unlabelled mode rows per candidate, and the
+  `OTHER`, `UNDERVOTES` and write-in lines of AZ, CA, CT, SC and the House
+  and Senate files fold several lines into one name. A repeated `TOTAL` line
+  is added the same way. Reading version 2 set these aside as
+  `conflicting_row`, which dropped real votes (Indiana 2022 kept 75 of 92
+  counties); version 3 restores them.
+- **Louisiana is the exception.** Its November open primary and December
+  runoff share one key in MEDSL's files (Senate 2002), so there an identical
+  repeat keeps one copy (`duplicate_row`) and copies that disagree are all
+  set aside (`conflicting_row`).
+- **Runoff column.** The House file marks a runoff in a `runoff` column; such
+  a row's stage reads `GEN RUNOFF`, its own contest, not a part of the
+  general election.
+- **Where a quarantined row was.** `silver_elections.quarantine` records the
+  row's `state_code` and `county_fips` when the row has readable ones, so
+  quarantine can be counted by state and county.
 - **Alaska.** MEDSL's Alaska "counties" are its 40 state House districts
   (02001-02040) and an overseas line (02099) in every year; three of those
   codes are also real boroughs' (02013 Aleutians East, 02016 Aleutians West,

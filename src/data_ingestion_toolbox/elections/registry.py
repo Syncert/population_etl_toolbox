@@ -89,7 +89,11 @@ STATEWIDE_TOTAL_STREAMS = (COUNTY_SENATE,)
 #: 2 (2026-11-07): total lines ("TOTAL VOTES CAST", "TOTAL") are the area's
 #: total, over/under/blank/spoiled lines are not votes, and Alaska's state
 #: House district rows are not counties.
-MEDSL_READING_VERSION = "medsl-reading-2"
+#: 3 (2026-11-07): a key MEDSL repeats is a part of the count and is added
+#: (Indiana 2022 precincts, North Carolina 2024 blank modes, folded write-in
+#: and Other lines), except in Louisiana, where it is another round; the House
+#: file's runoff column is a stage; quarantine records state and county.
+MEDSL_READING_VERSION = "medsl-reading-3"
 MEDSL_STREAMS = (COUNTY_PRESIDENT, STATE_PRESIDENT, SENATE, HOUSE, COUNTY_SENATE)
 #: The Algara & Amlani streams: one R data frame per file, one row per county
 #: and contest with the two major parties' votes and the county's total.

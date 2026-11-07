@@ -207,6 +207,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                             0,
                             error.code,
                             f"file refused: {error.code}",
+                            None,
+                            None,
                         )
                     )
                     continue
@@ -254,6 +256,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                                 0,
                                 "unexpected_layout",
                                 str(error)[:200],
+                                None,
+                                None,
                             )
                         )
                         continue
@@ -274,6 +278,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                         q.record_index,
                         q.error_code,
                         q.error_summary,
+                        q.state_code,
+                        q.county_fips,
                     )
                     for q in rejected
                 )
@@ -282,7 +288,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     cursor,
                     """
                     INSERT INTO silver_elections.quarantine (
-                        run_id, capture_id, record_index, error_code, error_summary
+                        run_id, capture_id, record_index, error_code, error_summary,
+                        state_code, county_fips
                     ) VALUES %s
                     ON CONFLICT (capture_id, record_index, error_code) DO NOTHING
                     """,
