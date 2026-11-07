@@ -83,6 +83,14 @@ COUNTY_STREAMS = (
 #: OFFICE_LAB 2026-11-07: 2,652,477 on each Wisconsin county), so a county's
 #: total there is the sum of its candidates' votes.
 STATEWIDE_TOTAL_STREAMS = (COUNTY_SENATE,)
+#: The MEDSL files' reading rules, by version. A read's checksum includes it,
+#: so a changed rule makes the next run of an unchanged file a new read that
+#: replays once under the new rule; a run after that is unchanged again.
+#: 2 (2026-11-07): total lines ("TOTAL VOTES CAST", "TOTAL") are the area's
+#: total, over/under/blank/spoiled lines are not votes, and Alaska's state
+#: House district rows are not counties.
+MEDSL_READING_VERSION = "medsl-reading-2"
+MEDSL_STREAMS = (COUNTY_PRESIDENT, STATE_PRESIDENT, SENATE, HOUSE, COUNTY_SENATE)
 #: The Algara & Amlani streams: one R data frame per file, one row per county
 #: and contest with the two major parties' votes and the county's total.
 HISTORY_STREAMS = (COUNTY_PRESIDENT_HISTORY, COUNTY_SENATE_HISTORY)

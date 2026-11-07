@@ -35,7 +35,7 @@ import io
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
@@ -492,6 +492,54 @@ def read_results_table(raw_bytes: bytes) -> list[dict[str, str]]:
     return list(reader)
 
 
+#: Candidate names MEDSL uses for a line that is the area's total, not a
+#: candidate (its 2024 county presidential file adds "TOTAL VOTES CAST" to
+#: every county; its 2022 county Senate file a "TOTAL" line per mode).
+TOTAL_LINE_CANDIDATES = frozenset({"TOTAL VOTES CAST", "TOTAL VOTES", "TOTAL"})
+
+
+#: Ballot lines MEDSL publishes beside the candidates that are not votes for
+#: anyone: over-, under-, blank and spoiled ballots. "SCATTERING" is
+#: write-ins (votes) and stays; a line mixing the two ("BLANK
+#: VOTE/SCATTERING") stays too, as Other.
+NOT_A_VOTE_CANDIDATES = frozenset(
+    {
+        "OVERVOTES",
+        "OVER VOTES",
+        "OVER VOTE",
+        "UNDERVOTES",
+        "UNDER VOTES",
+        "UNDER VOTE",
+        "BLANK",
+        "BLANKS",
+        "BLANK VOTE",
+        "BLANK VOTES",
+        "SPOILED",
+        "VOID",
+    }
+)
+#: MEDSL's Alaska "counties" are its state House districts (02001-02040) and
+#: an overseas line (02099) in every county presidential year (read on
+#: OFFICE_LAB 2026-11-07); three of the codes are also real boroughs'.
+ALASKA_DISTRICT_CODES = frozenset(
+    {f"020{number:02d}" for number in range(1, 41)} | {"02099"}
+)
+
+
+def _is_total_line(candidate: str, party_text: str | None) -> bool:
+    return (
+        candidate.strip().upper() in TOTAL_LINE_CANDIDATES
+        and party_code(party_text) == "OTH"
+    )
+
+
+def _is_not_a_vote(candidate: str, party_text: str | None) -> bool:
+    return (
+        candidate.strip().upper() in NOT_A_VOTE_CANDIDATES
+        and party_code(party_text) == "OTH"
+    )
+
+
 def parse_results(
     stream: str, raw_bytes: bytes
 ) -> tuple[list[CandidateResult], list[Quarantine], int]:
@@ -500,7 +548,13 @@ def parse_results(
     rows = read_results_table(raw_bytes)
     results: list[CandidateResult] = []
     quarantined: list[Quarantine] = []
-    seen: set[str] = set()
+    seen: dict[str, tuple[int, int | None]] = {}
+    conflicting: set[str] = set()
+    total_line_keys: dict[str, tuple[int, tuple[Any, ...]]] = {}
+    # A total line's votes, by contest, area and mode: never a candidate, it
+    # is the total of the candidate rows beside it where they carry none.
+    total_lines: dict[tuple[Any, ...], int] = {}
+    retired: set[int] = set()
     for index, row in enumerate(rows, start=1):
         try:
             year = _whole(row.get("year"), "year")
@@ -527,6 +581,11 @@ def parse_results(
                         "no_county_code",
                         f"county_fips {raw_fips!r} is not a county code",
                     )
+                if state == "AK" and county_fips in ALASKA_DISTRICT_CODES:
+                    raise _RowError(
+                        "not_a_county",
+                        f"Alaska code {county_fips} is a state House district, not a borough",
+                    )
                 if county_fips in COUNTY_SUCCESSOR:
                     # A retired code is read as its successor. Its own total
                     # is not the successor's, so it is dropped: the county's
@@ -540,6 +599,10 @@ def parse_results(
                 geo_level = "state"
             party_text = _text(row, "party_detailed", "party", "party_simplified")
             candidate = _text(row, "candidate") or "(no candidate named)"
+            if _is_not_a_vote(candidate, party_text):
+                raise _RowError(
+                    "not_a_vote", f"{candidate!r} is a ballot count, not a candidate"
+                )
             mode = (_text(row, "mode") or "TOTAL").upper()
             stage = (_text(row, "stage") or "GEN").upper()
             special = _flag(row.get("special"))
@@ -567,11 +630,28 @@ def parse_results(
                 writein,
             )
             if key in seen:
+                # An identical repeat is set aside and its first copy kept;
+                # copies that disagree are all set aside (the REPEATS rule).
+                if seen[key] != (votes, total):
+                    conflicting.add(key)
+                    raise _RowError(
+                        "conflicting_row",
+                        f"{candidate!r} on {party_text!r} appears twice in one contest "
+                        "and mode with different votes",
+                    )
                 raise _RowError(
                     "duplicate_row",
                     f"{candidate!r} on {party_text!r} appears twice in one contest and mode",
                 )
-            seen.add(key)
+            seen[key] = (votes, total)
+            if _is_total_line(candidate, party_text):
+                if source_fips is None:
+                    area = (year, stage, special, state, county_fips, district, mode)
+                    total_lines[area] = votes
+                    total_line_keys[key] = (index, area)
+                continue
+            if source_fips is not None:
+                retired.add(index)
             results.append(
                 CandidateResult(
                     record_index=index,
@@ -597,7 +677,47 @@ def parse_results(
             )
         except _RowError as error:
             quarantined.append(Quarantine(index, error.code, str(error)[:200]))
+    if conflicting:
+        for result in results:
+            if result.result_key in conflicting:
+                quarantined.append(
+                    Quarantine(
+                        result.record_index,
+                        "conflicting_row",
+                        f"{result.candidate!r} on {result.party_text!r} appears twice "
+                        "in one contest and mode with different votes",
+                    )
+                )
+        results = [r for r in results if r.result_key not in conflicting]
+        for key, (index, area) in total_line_keys.items():
+            if key in conflicting:
+                total_lines.pop(area, None)
+                quarantined.append(
+                    Quarantine(index, "conflicting_row", "a total line appears twice")
+                )
+        quarantined.sort(key=lambda entry: (entry.record_index, entry.error_code))
+    if total_lines:
+        results = [
+            replace(result, total_votes=total_lines.get(_area_mode(result)))
+            if result.total_votes is None
+            and result.record_index not in retired
+            and _area_mode(result) in total_lines
+            else result
+            for result in results
+        ]
     return results, quarantined, len(rows)
+
+
+def _area_mode(result: CandidateResult) -> tuple[Any, ...]:
+    return (
+        result.election_year,
+        result.stage,
+        result.special,
+        result.state_code,
+        result.county_fips,
+        result.district,
+        result.mode,
+    )
 
 
 # ---------------------------------------------------------------------------

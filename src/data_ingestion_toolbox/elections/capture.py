@@ -44,6 +44,8 @@ from .registry import (
     GOVERNORS,
     HOUSE_COUNTY_SHARE,
     LEGISLATORS,
+    MEDSL_READING_VERSION,
+    MEDSL_STREAMS,
     STATE_FIPS,
     STREAMS,
     DistrictPlan,
@@ -196,6 +198,9 @@ def capture_stream(
             listing = capture(listing_request(dataset))
             file_id, source_file = select_data_file(dataset, listing.raw_bytes)
             capture(data_request(dataset, file_id))
+        # A MEDSL read is also its reading rules: a changed rule is a new read.
+        if stream in MEDSL_STREAMS:
+            checksums.insert(0, MEDSL_READING_VERSION)
         run_checksum = hashlib.sha256("|".join(checksums).encode()).hexdigest()
         previous = _execute(
             connection_factory,
