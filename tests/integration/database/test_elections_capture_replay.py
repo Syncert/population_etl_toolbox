@@ -243,7 +243,7 @@ def test_results_count_each_candidate_once_and_derive_the_margin(
 
 
 def test_reruns_and_revisions(elections_warehouse) -> None:
-    """Covers: ETL-111 — an unchanged read replays nothing; a corrected file becomes the current read."""
+    """Covers: ETL-111 — an unchanged read replays nothing; a corrected file becomes the current read, stored once."""
     factory = elections_warehouse
     el.run_to_gold(factory, COUNTY_PRESIDENT)
     _run, status, rows, published = el.run_to_gold(factory, COUNTY_PRESIDENT)
@@ -270,6 +270,26 @@ def test_reruns_and_revisions(elections_warehouse) -> None:
         """,
         (el.WAUKESHA,),
     ) == [(160000,)]
+    # The served contests are stored once per read: the superseded read's
+    # rows are gone, and the store matches a fresh total of the current read.
+    assert _rows(
+        factory,
+        """
+        SELECT run_id::TEXT, COUNT(*) FROM gold_elections.contest_result_store
+         GROUP BY run_id
+        """,
+    ) == [(str(run_id), 5)]
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(*) FROM (
+            SELECT * FROM gold_elections.contest_tally WHERE run_id = %s
+            EXCEPT SELECT * FROM gold_elections.contest_result_store
+        ) AS differs
+        """,
+        (str(run_id),),
+    ) == [(0,)]
+    assert _rows(factory, "SELECT gold_elections.sync_contest_result()") == [(0,)]
 
 
 def test_a_refused_file_and_the_rules(elections_warehouse) -> None:

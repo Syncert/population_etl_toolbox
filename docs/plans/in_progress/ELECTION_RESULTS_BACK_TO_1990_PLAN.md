@@ -273,6 +273,13 @@ Done in this PR:
   applied to both providers.
 - R-7 (gold only): Senate measures at state and county; presidential county
   measures for 1992 and 1996. No API or web change yet.
+- Speed gate: the first OFFICE_LAB run timed out at 10 minutes (and so did
+  dev's views at 90 s): `candidate_total` joined two scans of a CTE the
+  planner estimated at one or two rows. Contest rows are now stored once per
+  published read (`gold_elections.contest_result_store`, written by
+  `sync_contest_result()` inside `publish_run`; an unchanged read stores
+  nothing), and the totalling views partition by `run_id` so one read is
+  totalled from the silver index.
 
 Left:
 

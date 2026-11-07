@@ -342,6 +342,10 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             row = cursor.fetchone()
             if row is None or row[0] in ("captured", "capturing"):
                 raise ElectionsPublicationError(f"run {run_id} was never replayed")
+            if published:
+                # The served contests are stored once per read, in the same
+                # transaction, so a reader never sees the read without them.
+                cursor.execute("SELECT gold_elections.sync_contest_result()")
         connection.commit()
     except BaseException:
         connection.rollback()

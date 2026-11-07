@@ -5247,7 +5247,7 @@ v gold_eia.observation_revision
     body      JOIN control.eia_read read ON read.run_id = fact.run_id
     body   WHERE read.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text])) AND fact.geo_id IS NOT NULL;
 
-v gold_elections.candidate_total
+v gold_elections.candidate_tally
     column run_id uuid
     column stream text
     column source_file text
@@ -5272,7 +5272,7 @@ v gold_elections.candidate_total
     column votes bigint
     column published_total_votes bigint
     column capture_id uuid
-    body WITH current_rows AS (
+    body WITH tagged AS (
     body          SELECT result.run_id,
     body             result.result_key,
     body             result.office,
@@ -5298,76 +5298,255 @@ v gold_elections.candidate_total
     body             result.capture_id,
     body             result.record_index,
     body             result.created_at,
-    body             read.stream,
-    body             read.source_file,
-    body             read.published_at,
+    body             run.stream,
+    body             run.source_file,
+    body             run.published_at,
     body             (COALESCE(result.county_fips, ''::text) || '|'::text) || COALESCE(result.district::text, ''::text) AS area_key
     body            FROM silver_elections.candidate_result result
-    body              JOIN gold_elections.current_read read ON read.run_id = result.run_id
-    body           WHERE NOT (read.stream = 'county_president_history'::text AND result.election_year >= 2000)
-    body         ), mode_total AS (
-    body          SELECT current_rows.run_id,
-    body             current_rows.office,
-    body             current_rows.election_year,
-    body             current_rows.stage,
-    body             current_rows.special,
-    body             current_rows.state_code,
-    body             current_rows.area_key,
-    body             current_rows.mode,
-    body             max(current_rows.total_votes) AS total_votes
-    body            FROM current_rows
-    body           GROUP BY current_rows.run_id, current_rows.office, current_rows.election_year, current_rows.stage, current_rows.special, current_rows.state_code, current_rows.area_key, current_rows.mode
-    body         ), area AS (
-    body          SELECT mode_total.run_id,
-    body             mode_total.office,
-    body             mode_total.election_year,
-    body             mode_total.stage,
-    body             mode_total.special,
-    body             mode_total.state_code,
-    body             mode_total.area_key,
-    body             bool_or(mode_total.mode = 'TOTAL'::text) AS has_total,
+    body              JOIN control.elections_run run ON run.run_id = result.run_id
+    body           WHERE NOT (run.stream = 'county_president_history'::text AND result.election_year >= 2000)
+    body         ), moded AS (
+    body          SELECT tagged.run_id,
+    body             tagged.result_key,
+    body             tagged.office,
+    body             tagged.election_year,
+    body             tagged.stage,
+    body             tagged.special,
+    body             tagged.state_code,
+    body             tagged.state_fips,
+    body             tagged.county_fips,
+    body             tagged.district,
+    body             tagged.candidate,
+    body             tagged.party_text,
+    body             tagged.party_code,
+    body             tagged.writein,
+    body             tagged.mode,
+    body             tagged.candidate_votes,
+    body             tagged.total_votes,
+    body             tagged.geo_level,
+    body             tagged.geo_id,
+    body             tagged.geo_sk,
+    body             tagged.geography_status,
+    body             tagged.source_record_id,
+    body             tagged.capture_id,
+    body             tagged.record_index,
+    body             tagged.created_at,
+    body             tagged.stream,
+    body             tagged.source_file,
+    body             tagged.published_at,
+    body             tagged.area_key,
+    body             bool_or(tagged.mode = 'TOTAL'::text) OVER area AS has_total,
+    body             max(tagged.total_votes) FILTER (WHERE tagged.mode = 'TOTAL'::text) OVER area AS total_line_votes,
+    body             max(tagged.total_votes) OVER area_mode AS mode_total_votes,
+    body             row_number() OVER area_mode AS mode_row
+    body            FROM tagged
+    body           WINDOW area AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage, tagged.special, tagged.state_code, tagged.area_key), area_mode AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage, tagged.special, tagged.state_code, tagged.area_key, tagged.mode)
+    body         ), area_total AS (
+    body          SELECT moded.run_id,
+    body             moded.result_key,
+    body             moded.office,
+    body             moded.election_year,
+    body             moded.stage,
+    body             moded.special,
+    body             moded.state_code,
+    body             moded.state_fips,
+    body             moded.county_fips,
+    body             moded.district,
+    body             moded.candidate,
+    body             moded.party_text,
+    body             moded.party_code,
+    body             moded.writein,
+    body             moded.mode,
+    body             moded.candidate_votes,
+    body             moded.total_votes,
+    body             moded.geo_level,
+    body             moded.geo_id,
+    body             moded.geo_sk,
+    body             moded.geography_status,
+    body             moded.source_record_id,
+    body             moded.capture_id,
+    body             moded.record_index,
+    body             moded.created_at,
+    body             moded.stream,
+    body             moded.source_file,
+    body             moded.published_at,
+    body             moded.area_key,
+    body             moded.has_total,
+    body             moded.total_line_votes,
+    body             moded.mode_total_votes,
+    body             moded.mode_row,
     body                 CASE
-    body                     WHEN bool_or(mode_total.mode = 'TOTAL'::text) THEN max(mode_total.total_votes) FILTER (WHERE mode_total.mode = 'TOTAL'::text)::numeric
-    body                     ELSE sum(mode_total.total_votes)
+    body                     WHEN moded.has_total THEN moded.total_line_votes::numeric
+    body                     ELSE sum(moded.mode_total_votes) FILTER (WHERE moded.mode_row = 1) OVER (PARTITION BY moded.run_id, moded.office, moded.election_year, moded.stage, moded.special, moded.state_code, moded.area_key)
     body                 END AS area_total_votes
-    body            FROM mode_total
-    body           GROUP BY mode_total.run_id, mode_total.office, mode_total.election_year, mode_total.stage, mode_total.special, mode_total.state_code, mode_total.area_key
+    body            FROM moded
     body         )
-    body  SELECT rows.run_id,
-    body     rows.stream,
-    body     rows.source_file,
-    body     rows.published_at,
-    body     rows.office,
-    body     rows.election_year,
-    body     rows.stage,
-    body     rows.special,
-    body     rows.state_code,
-    body     rows.state_fips,
-    body     rows.county_fips,
-    body     rows.district,
-    body     rows.geo_level,
-    body     rows.geo_id,
-    body     rows.geo_sk,
-    body     rows.geography_status,
-    body     rows.area_key,
-    body     rows.candidate,
+    body  SELECT run_id,
+    body     stream,
+    body     source_file,
+    body     published_at,
+    body     office,
+    body     election_year,
+    body     stage,
+    body     special,
+    body     state_code,
+    body     state_fips,
+    body     county_fips,
+    body     district,
+    body     geo_level,
+    body     geo_id,
+    body     geo_sk,
+    body     geography_status,
+    body     area_key,
+    body     candidate,
     body         CASE
-    body             WHEN bool_or(rows.party_code = 'REP'::text) THEN 'REP'::text
-    body             WHEN bool_or(rows.party_code = 'DEM'::text) THEN 'DEM'::text
-    body             WHEN bool_or(rows.party_code = 'IND'::text) THEN 'IND'::text
+    body             WHEN bool_or(party_code = 'REP'::text) THEN 'REP'::text
+    body             WHEN bool_or(party_code = 'DEM'::text) THEN 'DEM'::text
+    body             WHEN bool_or(party_code = 'IND'::text) THEN 'IND'::text
     body             ELSE 'OTH'::text
     body         END AS party_code,
-    body     string_agg(DISTINCT rows.party_text, '; '::text ORDER BY rows.party_text) AS party_text,
-    body     bool_and(rows.writein) AS writein,
-    body     sum(rows.candidate_votes)::bigint AS votes,
-    body     max(area.area_total_votes)::bigint AS published_total_votes,
-    body     min(rows.capture_id::text)::uuid AS capture_id
-    body    FROM current_rows rows
-    body      JOIN area USING (run_id, office, election_year, stage, special, state_code, area_key)
-    body   WHERE NOT area.has_total OR rows.mode = 'TOTAL'::text
-    body   GROUP BY rows.run_id, rows.stream, rows.source_file, rows.published_at, rows.office, rows.election_year, rows.stage, rows.special, rows.state_code, rows.state_fips, rows.county_fips, rows.district, rows.geo_level, rows.geo_id, rows.geo_sk, rows.geography_status, rows.area_key, rows.candidate;
+    body     string_agg(DISTINCT party_text, '; '::text ORDER BY rows.party_text) AS party_text,
+    body     bool_and(writein) AS writein,
+    body     sum(candidate_votes)::bigint AS votes,
+    body     max(area_total_votes)::bigint AS published_total_votes,
+    body     min(capture_id::text)::uuid AS capture_id
+    body    FROM area_total rows
+    body   WHERE NOT has_total OR mode = 'TOTAL'::text
+    body   GROUP BY run_id, stream, source_file, published_at, office, election_year, stage, special, state_code, state_fips, county_fips, district, geo_level, geo_id, geo_sk, geography_status, area_key, candidate;
+
+v gold_elections.candidate_total
+    column run_id uuid
+    column stream text
+    column source_file text
+    column published_at timestamp with time zone
+    column office text
+    column election_year smallint
+    column stage text
+    column special boolean
+    column state_code text
+    column state_fips text
+    column county_fips text
+    column district integer
+    column geo_level text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column area_key text
+    column candidate text
+    column party_code text
+    column party_text text
+    column writein boolean
+    column votes bigint
+    column published_total_votes bigint
+    column capture_id uuid
+    body SELECT run_id,
+    body     stream,
+    body     source_file,
+    body     published_at,
+    body     office,
+    body     election_year,
+    body     stage,
+    body     special,
+    body     state_code,
+    body     state_fips,
+    body     county_fips,
+    body     district,
+    body     geo_level,
+    body     geo_id,
+    body     geo_sk,
+    body     geography_status,
+    body     area_key,
+    body     candidate,
+    body     party_code,
+    body     party_text,
+    body     writein,
+    body     votes,
+    body     published_total_votes,
+    body     capture_id
+    body    FROM gold_elections.candidate_tally tally
+    body   WHERE (run_id IN ( SELECT read.run_id
+    body            FROM gold_elections.current_read read));
 
 v gold_elections.contest_result
+    column office text
+    column election_year smallint
+    column stage text
+    column special boolean
+    column state_code text
+    column state_fips text
+    column county_fips text
+    column district integer
+    column geo_level text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column republican_votes bigint
+    column democratic_votes bigint
+    column total_votes bigint
+    column leading_party_code text
+    column leading_candidate text
+    column candidate_count integer
+    column stream text
+    column source_file text
+    column run_id uuid
+    column published_at timestamp with time zone
+    column capture_id uuid
+    body SELECT office,
+    body     election_year,
+    body     stage,
+    body     special,
+    body     state_code,
+    body     state_fips,
+    body     county_fips,
+    body     district,
+    body     geo_level,
+    body     geo_id,
+    body     geo_sk,
+    body     geography_status,
+    body     republican_votes,
+    body     democratic_votes,
+    body     total_votes,
+    body     leading_party_code,
+    body     leading_candidate,
+    body     candidate_count,
+    body     stream,
+    body     source_file,
+    body     run_id,
+    body     published_at,
+    body     capture_id
+    body    FROM gold_elections.contest_result_store store
+    body   WHERE (run_id IN ( SELECT read.run_id
+    body            FROM gold_elections.current_read read));
+
+r gold_elections.contest_result_store
+    column office text
+    column election_year smallint
+    column stage text
+    column special boolean
+    column state_code text
+    column state_fips text
+    column county_fips text
+    column district integer
+    column geo_level text
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text
+    column republican_votes bigint
+    column democratic_votes bigint
+    column total_votes bigint
+    column leading_party_code text
+    column leading_candidate text
+    column candidate_count integer
+    column stream text
+    column source_file text
+    column run_id uuid
+    column published_at timestamp with time zone
+    column capture_id uuid
+    index elections_contest_store_geo_idx CREATE INDEX elections_contest_store_geo_idx ON gold_elections.contest_result_store USING btree (geo_id, office)
+    index elections_contest_store_run_idx CREATE INDEX elections_contest_store_run_idx ON gold_elections.contest_result_store USING btree (run_id)
+    index elections_contest_store_year_idx CREATE INDEX elections_contest_store_year_idx ON gold_elections.contest_result_store USING btree (office, geo_level, election_year)
+
+v gold_elections.contest_tally
     column office text
     column election_year smallint
     column stage text
@@ -5417,7 +5596,7 @@ v gold_elections.contest_result
     body             total.published_total_votes,
     body             total.capture_id,
     body             row_number() OVER (PARTITION BY total.run_id, total.office, total.election_year, total.stage, total.special, total.state_code, total.area_key ORDER BY total.votes DESC, total.candidate) AS place
-    body            FROM gold_elections.candidate_total total
+    body            FROM gold_elections.candidate_tally total
     body         )
     body  SELECT office,
     body     election_year,

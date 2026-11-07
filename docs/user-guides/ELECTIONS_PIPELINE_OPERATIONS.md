@@ -77,7 +77,8 @@ no separate history run (the loader rule).
 | Relation | Rows |
 | --- | --- |
 | `gold_elections.seat_term` | one row per span a person held a seat with one party: `seat_label` (`WI Senate class 1`, `WI-02`, `VT-AL`, `WI governor`), `party_code`, `caucus_code` (an independent's caucus), `start_date`, `end_date` (NULL is serving), `source_label` |
-| `gold_elections.contest_result` | one row per contest and area: Republican and Democratic votes, total, leading party and candidate |
+| `gold_elections.contest_result` | one row per contest and area: Republican and Democratic votes, total, leading party and candidate; read from `contest_result_store`, which `publish_run` fills once per published read (`gold_elections.sync_contest_result()`) |
+| `gold_elections.contest_tally` | the same contest rows computed from silver for any published read; read it for one `run_id` only |
 | `gold_elections.candidate_total` | one row per candidate and area, every ballot line combined |
 | `gold_elections.observation_revision`, `observation_latest` | the presidential general-election measures below, in the neutral observation shape |
 

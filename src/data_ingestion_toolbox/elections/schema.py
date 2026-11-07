@@ -34,7 +34,10 @@ REQUIRED_RELATIONS = (
     "gold_elections.party_definition",
     "gold_elections.current_read",
     "gold_elections.seat_term",
+    "gold_elections.candidate_tally",
     "gold_elections.candidate_total",
+    "gold_elections.contest_tally",
+    "gold_elections.contest_result_store",
     "gold_elections.contest_result",
     "gold_elections.measure_definition",
     "gold_elections.observation_revision",
@@ -55,6 +58,7 @@ REQUIRED_PROCEDURES = (
     "gold_elections.build_lean_groups(bigint)",
     "gold_elections.lean_input_fingerprint()",
     "gold_elections.refresh_lean_groups(boolean)",
+    "gold_elections.sync_contest_result()",
 )
 
 
