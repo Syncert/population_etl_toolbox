@@ -615,9 +615,23 @@ def emit_publisher_ready(
     source_watermark: str,
     publication_time: datetime,
     source_run_id: UUID | None = None,
+    requeue: bool = False,
 ) -> UUID:
-    """Append an idempotent durable event after source-gold publication commits."""
+    """Append an idempotent durable event after source-gold publication commits.
+
+    ``requeue`` sets an already processed event for this watermark pending
+    again, as migration 029 does by hand: for a publication that changes
+    what the publisher says (a newly loaded line) without moving its
+    watermark. The harvest's content fingerprint then sees the change; an
+    unchanged publisher is skipped as before.
+    """
     event_id = uuid4()
+    conflict = (
+        """DO UPDATE SET status = 'pending', available_at = NOW(),
+                       claimed_at = NULL, processed_at = NULL, last_error = NULL"""
+        if requeue
+        else "DO NOTHING"
+    )
     database_connection = connection_factory()
     try:
         with database_connection.cursor() as cursor:
@@ -629,8 +643,8 @@ def emit_publisher_ready(
                 ) VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (
                     source_code, publisher_contract_version, source_watermark
-                ) DO NOTHING
-                """,
+                ) """
+                + conflict,
                 (
                     str(event_id),
                     source_code.strip().upper(),
@@ -650,7 +664,10 @@ def emit_publisher_ready(
 
 
 def emit_latest_publisher_ready(
-    connection_factory: Callable[[], Any], *, publisher_schema: str
+    connection_factory: Callable[[], Any],
+    *,
+    publisher_schema: str,
+    requeue: bool = False,
 ) -> UUID | None:
     """Read a source-owned publisher watermark and append its outbox event."""
     database_connection = connection_factory()
@@ -678,6 +695,7 @@ def emit_latest_publisher_ready(
         source_watermark=row[2],
         source_run_id=row[3],
         publication_time=row[4],
+        requeue=requeue,
     )
 
 
