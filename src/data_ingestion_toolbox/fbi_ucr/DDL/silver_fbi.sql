@@ -495,3 +495,26 @@ CREATE TABLE IF NOT EXISTS silver_fbi.return_a_county_crosswalk (
     CHECK (status <> 'resolved' OR (geo_id IS NOT NULL AND method IS NOT NULL))
 );
 
+
+-- Every Return A fact's source row. The CDE products' facts each name the
+-- observation_revision or participation_revision row they were built from;
+-- a Return A fact is built straight from one line of a year's master file,
+-- and that one line yields up to 48 offense facts and 24 participation facts
+-- (two products, twelve months, two cards), all naming the same
+-- (capture_id, source_row_index = line number). So the line is the source
+-- row, stored once: which capture, which line, which agency, and the line's
+-- SHA-256, so the exact bytes can be checked against raw_capture. A per-fact
+-- revision copy would have been ~20 million rows repeating the facts
+-- themselves. DQ-FBI-015 holds every fact to a source row of either kind.
+CREATE TABLE IF NOT EXISTS silver_fbi.return_a_source_row (
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    source_row_index BIGINT NOT NULL CHECK (source_row_index > 0),
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    release_key TEXT NOT NULL CHECK (release_key ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+    data_year INTEGER NOT NULL CHECK (data_year BETWEEN 1960 AND 2100),
+    ori TEXT NOT NULL,
+    line_checksum TEXT NOT NULL CHECK (line_checksum ~ '^[0-9a-f]{64}$'),
+    parser_contract_version TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (capture_id, source_row_index)
+);

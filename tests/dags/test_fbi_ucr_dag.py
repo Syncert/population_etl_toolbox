@@ -65,3 +65,15 @@ def test_every_registered_offense_has_its_own_chain(dagbag) -> None:
         assert sorted(
             task.task_id for task in dag.tasks if task.task_id.startswith(f"{stage}_")
         ) == sorted(f"{stage}_{product_id}" for product_id in product_ids)
+
+
+def test_return_a_source_rows_are_backfilled_by_the_scheduled_run(dagbag) -> None:
+    """Covers: ETL-121 — the weekly run rebuilds missing Return A lineage.
+
+    It needs only the schema, and nothing downstream waits on it, so a
+    failure there never holds a CDE publication back.
+    """
+    dag = dagbag.dags["fbi_ucr_ingest"]
+    task = dag.get_task("backfill_return_a_source_rows")
+    assert {item.task_id for item in task.upstream_list} == {"ensure_fbi_schema"}
+    assert task.downstream_list == []

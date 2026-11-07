@@ -13130,6 +13130,25 @@ r silver_fbi.return_a_county_crosswalk
     constraint return_a_county_crosswalk_status_check CHECK ((status = ANY (ARRAY['resolved'::text, 'unresolved'::text])))
     index return_a_county_crosswalk_pkey CREATE UNIQUE INDEX return_a_county_crosswalk_pkey ON silver_fbi.return_a_county_crosswalk USING btree (release_key, data_year, state_code, fbi_county_code)
 
+r silver_fbi.return_a_source_row
+    column capture_id uuid NOT NULL
+    column source_row_index bigint NOT NULL
+    column run_id uuid NOT NULL
+    column release_key text NOT NULL
+    column data_year integer NOT NULL
+    column ori text NOT NULL
+    column line_checksum text NOT NULL
+    column parser_contract_version text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint return_a_source_row_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint return_a_source_row_data_year_check CHECK (((data_year >= 1960) AND (data_year <= 2100)))
+    constraint return_a_source_row_line_checksum_check CHECK ((line_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint return_a_source_row_pkey PRIMARY KEY (capture_id, source_row_index)
+    constraint return_a_source_row_release_key_check CHECK ((release_key ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text))
+    constraint return_a_source_row_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint return_a_source_row_source_row_index_check CHECK ((source_row_index > 0))
+    index return_a_source_row_pkey CREATE UNIQUE INDEX return_a_source_row_pkey ON silver_fbi.return_a_source_row USING btree (capture_id, source_row_index)
+
 r silver_fbi.reviewed_place_crosswalk
     column ori text NOT NULL
     column place_geo_id text NOT NULL

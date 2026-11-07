@@ -137,6 +137,7 @@ CLEANUP_STATEMENTS: tuple[str, ...] = (
     "DELETE FROM gold_fbi.county_agency_rate_month",
     "DELETE FROM gold_fbi.release_fact_count",
     "DELETE FROM silver_fbi.return_a_county_crosswalk",
+    "DELETE FROM silver_fbi.return_a_source_row",
     "DELETE FROM silver_fbi.fact_crime_observation",
     "DELETE FROM silver_fbi.fact_reporting_participation",
     "DELETE FROM silver_fbi.observation_revision",

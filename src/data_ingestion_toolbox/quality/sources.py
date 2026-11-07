@@ -953,6 +953,82 @@ def fbi_return_a_matches_cde(
     ]
 
 
+#: Each FBI fact table, the revision table its CDE facts are built from, and
+#: the Return A source-row table its master-file facts are built from.
+FBI_FACT_SOURCE_ROWS: tuple[tuple[str, str], ...] = (
+    ("silver_fbi.fact_crime_observation", "silver_fbi.observation_revision"),
+    ("silver_fbi.fact_reporting_participation", "silver_fbi.participation_revision"),
+)
+
+
+def fbi_fact_source_rows(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-FBI-015 — every FBI fact names a source row silver still holds.
+
+    A CDE fact names the ``observation_revision`` or ``participation_revision``
+    row it was replayed into; a Return A fact names the master-file line in
+    ``silver_fbi.return_a_source_row`` (one line yields every month and card
+    of an agency). The Return A loader once wrote facts with no source row at
+    all, and 2015-2025 carried about 20 million of them unnoticed until a
+    storage cleanup counted them (2026-11-07).
+
+    Measured per fact table and side as one hashed anti-join each, the small
+    lineage table hashed and the facts read once; evidence is grouped by
+    capture, so a whole year missing reads as one line with its count rather
+    than as twenty sampled rows.
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.registry import RETURN_A_PRODUCTS
+
+    del scope
+    return_a = [item.product_id for item in RETURN_A_PRODUCTS]
+    previous = _without_nested_loops(cursor)
+    outcomes: list[RuleOutcome] = []
+    try:
+        for fact_table, revision_table in FBI_FACT_SOURCE_ROWS:
+            if not _count(cursor, f"SELECT (EXISTS (SELECT 1 FROM {fact_table}))::int"):
+                outcomes.append(RuleOutcome(fact_table, "not_applicable"))
+                continue
+            cursor.execute(
+                f"""
+                SELECT fact.capture_id::text, 'revision' AS side, COUNT(*)
+                  FROM {fact_table} AS fact
+                 WHERE fact.product_id <> ALL(%(return_a)s)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM {revision_table} AS revision
+                        WHERE revision.capture_id = fact.capture_id
+                          AND revision.source_row_index = fact.source_row_index)
+                 GROUP BY fact.capture_id
+                UNION ALL
+                SELECT fact.capture_id::text, 'return_a_source_row', COUNT(*)
+                  FROM {fact_table} AS fact
+                 WHERE fact.product_id = ANY(%(return_a)s)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM silver_fbi.return_a_source_row AS source_row
+                        WHERE source_row.capture_id = fact.capture_id
+                          AND source_row.source_row_index = fact.source_row_index)
+                 GROUP BY fact.capture_id
+                 ORDER BY 1, 2
+                """,
+                {"return_a": return_a},
+            )
+            missing = cursor.fetchall()
+            total = sum(int(count) for _capture, _side, count in missing)
+            outcomes.append(
+                RuleOutcome(
+                    fact_table,
+                    "fail" if missing else "pass",
+                    observed_count=total,
+                    expected_count=0,
+                    evidence=[
+                        f"capture {capture}: {count} facts with no {side} row"
+                        for capture, side, count in missing[:EVIDENCE_LIMIT]
+                    ],
+                )
+            )
+    finally:
+        _restore_nested_loops(cursor, previous)
+    return outcomes
+
+
 def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-NASS-002 — preflight counts, captures, and slice states agree."""
     del scope
@@ -4677,6 +4753,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-FBI-010": fbi_county_agency_rate_agreement,
     "DQ-FBI-011": fbi_return_a_matches_cde,
     "DQ-FBI-014": fbi_county_agency_rate_is_current,
+    "DQ-FBI-015": fbi_fact_source_rows,
     "DQ-NASS-002": nass_slice_ledger,
     "DQ-NASS-003": nass_suppression_vocabulary,
     "DQ-ERS-002": ers_file_reconciliation,

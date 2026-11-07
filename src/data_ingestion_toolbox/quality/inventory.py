@@ -1638,6 +1638,16 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty until the first Return A year is loaded",
     ),
     _obj(
+        "silver_fbi.return_a_source_row",
+        "silver",
+        "FBI_UCR",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every master-file line a loaded Return A year's facts name",
+        cadence="per Return A load; backfilled by fbi_ucr_ingest",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
         "silver_fbi.return_a_county_crosswalk",
         "silver",
         "FBI_UCR",
@@ -5909,6 +5919,21 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "percent is the CDE's revision after the master file was cut and "
         "warns, naming the month, and a larger gap fails.",
         ("gold_fbi.latest_release_observation",),
+    ),
+    _rule(
+        "DQ-FBI-015",
+        "BLOCK",
+        "referential_integrity",
+        "Every FBI fact names a source row silver still holds: a CDE fact its "
+        "observation or participation revision row, a Return A fact the "
+        "master-file line it was read from.",
+        (
+            "silver_fbi.fact_crime_observation",
+            "silver_fbi.fact_reporting_participation",
+            "silver_fbi.observation_revision",
+            "silver_fbi.participation_revision",
+            "silver_fbi.return_a_source_row",
+        ),
     ),
     # -- USDA NASS ---------------------------------------------------------
     _rule(
