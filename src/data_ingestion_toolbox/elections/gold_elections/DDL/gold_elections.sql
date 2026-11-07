@@ -74,31 +74,45 @@ FROM silver_elections.seat_term AS term
 JOIN gold_elections.current_read AS read ON read.run_id = term.run_id
 WHERE term.geography_status = 'resolved';
 
--- MEDSL rows of the current reads, one mode per area: an area that
--- publishes a TOTAL line is read from it alone; an area that publishes only
--- modes (absentee, election day, early) is their sum.
-CREATE OR REPLACE VIEW gold_elections.candidate_total AS
-WITH current_rows AS (
-    SELECT result.*, read.stream, read.source_file, read.published_at,
+-- MEDSL and Algara & Amlani rows of every published read, one mode per
+-- area: an area that publishes a TOTAL line is read from it alone; an area
+-- that publishes only modes (absentee, election day, early) is their sum.
+-- Each level partitions by run_id, so a filter on one run reaches the silver
+-- index instead of totalling every read (the speed gate's quadratic plan
+-- came from joining two scans of a CTE the planner could not estimate).
+CREATE OR REPLACE VIEW gold_elections.candidate_tally AS
+WITH tagged AS (
+    SELECT result.*, run.stream, run.source_file, run.published_at,
            COALESCE(result.county_fips, '') || '|' || COALESCE(result.district::TEXT, '') AS area_key
     FROM silver_elections.candidate_result AS result
-    JOIN gold_elections.current_read AS read ON read.run_id = result.run_id
+    JOIN control.elections_run AS run ON run.run_id = result.run_id
+    -- One provider serves each county contest (registry.HISTORY_SERVED_BEFORE):
+    -- Algara & Amlani's presidential rows from 2000 are MEDSL's years and are
+    -- kept in silver only for the agreement check (DQ-ELEC-007).
+    WHERE NOT (run.stream = 'county_president_history' AND result.election_year >= 2000)
 ),
-mode_total AS (
-    -- MEDSL repeats an area's total on every candidate row of a mode.
-    SELECT run_id, office, election_year, stage, special, state_code, area_key, mode,
-           MAX(total_votes) AS total_votes
-    FROM current_rows
-    GROUP BY run_id, office, election_year, stage, special, state_code, area_key, mode
+moded AS (
+    SELECT tagged.*,
+           BOOL_OR(tagged.mode = 'TOTAL') OVER area AS has_total,
+           MAX(tagged.total_votes) FILTER (WHERE tagged.mode = 'TOTAL') OVER area AS total_line_votes,
+           -- MEDSL repeats an area's total on every candidate row of a mode.
+           MAX(tagged.total_votes) OVER area_mode AS mode_total_votes,
+           ROW_NUMBER() OVER area_mode AS mode_row
+    FROM tagged
+    WINDOW area AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage,
+                                 tagged.special, tagged.state_code, tagged.area_key),
+           area_mode AS (PARTITION BY tagged.run_id, tagged.office, tagged.election_year, tagged.stage,
+                                      tagged.special, tagged.state_code, tagged.area_key, tagged.mode)
 ),
-area AS (
-    SELECT run_id, office, election_year, stage, special, state_code, area_key,
-           BOOL_OR(mode = 'TOTAL') AS has_total,
+area_total AS (
+    SELECT moded.*,
            -- The area's published total: its TOTAL line, or the sum of its modes.
-           CASE WHEN BOOL_OR(mode = 'TOTAL') THEN MAX(total_votes) FILTER (WHERE mode = 'TOTAL')
-                ELSE SUM(total_votes) END AS area_total_votes
-    FROM mode_total
-    GROUP BY run_id, office, election_year, stage, special, state_code, area_key
+           CASE WHEN moded.has_total THEN moded.total_line_votes
+                ELSE SUM(moded.mode_total_votes) FILTER (WHERE moded.mode_row = 1) OVER (
+                    PARTITION BY moded.run_id, moded.office, moded.election_year, moded.stage,
+                                 moded.special, moded.state_code, moded.area_key)
+           END AS area_total_votes
+    FROM moded
 )
 SELECT rows.run_id, rows.stream, rows.source_file, rows.published_at, rows.office,
        rows.election_year, rows.stage, rows.special, rows.state_code, rows.state_fips,
@@ -113,20 +127,26 @@ SELECT rows.run_id, rows.stream, rows.source_file, rows.published_at, rows.offic
        STRING_AGG(DISTINCT rows.party_text, '; ' ORDER BY rows.party_text) AS party_text,
        BOOL_AND(rows.writein) AS writein,
        SUM(rows.candidate_votes)::BIGINT AS votes,
-       MAX(area.area_total_votes)::BIGINT AS published_total_votes,
+       MAX(rows.area_total_votes)::BIGINT AS published_total_votes,
        MIN(rows.capture_id::TEXT)::UUID AS capture_id
-FROM current_rows AS rows
-JOIN area USING (run_id, office, election_year, stage, special, state_code, area_key)
-WHERE NOT area.has_total OR rows.mode = 'TOTAL'
+FROM area_total AS rows
+WHERE NOT rows.has_total OR rows.mode = 'TOTAL'
 GROUP BY rows.run_id, rows.stream, rows.source_file, rows.published_at, rows.office,
          rows.election_year, rows.stage, rows.special, rows.state_code, rows.state_fips,
          rows.county_fips, rows.district, rows.geo_level, rows.geo_id, rows.geo_sk,
          rows.geography_status, rows.area_key, rows.candidate;
 
--- One row per contest and area: each major party's votes, the total, the
--- two-party share and margin, and the party of the leading candidate.
--- A district row is a House district (not yet a shared geography).
-CREATE OR REPLACE VIEW gold_elections.contest_result AS
+-- The candidate totals of the current reads.
+CREATE OR REPLACE VIEW gold_elections.candidate_total AS
+SELECT tally.*
+FROM gold_elections.candidate_tally AS tally
+WHERE tally.run_id IN (SELECT read.run_id FROM gold_elections.current_read AS read);
+
+-- One row per contest and area of any published read: each major party's
+-- votes, the total, the two-party share and margin, and the party of the
+-- leading candidate. A district row is a House district (not yet a shared
+-- geography). Read it for one run_id; contest_result is the served copy.
+CREATE OR REPLACE VIEW gold_elections.contest_tally AS
 WITH ranked AS (
     SELECT total.*,
            ROW_NUMBER() OVER (
@@ -134,7 +154,7 @@ WITH ranked AS (
                             total.special, total.state_code, total.area_key
                ORDER BY total.votes DESC, total.candidate
            ) AS place
-    FROM gold_elections.candidate_total AS total
+    FROM gold_elections.candidate_tally AS total
 )
 SELECT ranked.office, ranked.election_year, ranked.stage, ranked.special,
        ranked.state_code, ranked.state_fips, ranked.county_fips, ranked.district,
@@ -153,6 +173,73 @@ GROUP BY ranked.office, ranked.election_year, ranked.stage, ranked.special,
          ranked.geo_level, ranked.geo_id, ranked.geo_sk, ranked.geography_status,
          ranked.area_key, ranked.stream, ranked.source_file, ranked.run_id, ranked.published_at;
 
+-- The contest rows of the current reads, written once when a read is
+-- published (silver_elections.load.publish_run) so the user path and the DQ
+-- rules read an indexed table instead of re-totalling every candidate line.
+-- An unchanged read publishes nothing, so nothing here is rewritten (the
+-- CHURN rule); a superseded read's rows are removed when its successor lands.
+CREATE TABLE IF NOT EXISTS gold_elections.contest_result_store AS
+SELECT * FROM gold_elections.contest_tally WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS elections_contest_store_run_idx
+    ON gold_elections.contest_result_store (run_id);
+CREATE INDEX IF NOT EXISTS elections_contest_store_geo_idx
+    ON gold_elections.contest_result_store (geo_id, office);
+CREATE INDEX IF NOT EXISTS elections_contest_store_year_idx
+    ON gold_elections.contest_result_store (office, geo_level, election_year);
+
+-- Bring the stored contests in line with the current reads: drop a
+-- superseded read's rows and total any current read not yet stored. One
+-- caller at a time, so two streams publishing together cannot both store a
+-- read. Returns the number of contest rows written.
+CREATE OR REPLACE FUNCTION gold_elections.sync_contest_result()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    written INTEGER := 0;
+    added INTEGER;
+    pending RECORD;
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('gold_elections.contest_result_store'));
+    DELETE FROM gold_elections.contest_result_store AS store
+     WHERE NOT EXISTS (
+        SELECT 1 FROM gold_elections.current_read AS read WHERE read.run_id = store.run_id
+     );
+    FOR pending IN
+        SELECT read.run_id
+          FROM gold_elections.current_read AS read
+          JOIN control.elections_run AS run ON run.run_id = read.run_id
+         WHERE run.stream <> ALL (ARRAY['legislators', 'governors'])
+           AND NOT EXISTS (
+               SELECT 1 FROM gold_elections.contest_result_store AS store
+                WHERE store.run_id = read.run_id
+           )
+    LOOP
+        INSERT INTO gold_elections.contest_result_store
+        SELECT * FROM gold_elections.contest_tally AS tally WHERE tally.run_id = pending.run_id;
+        GET DIAGNOSTICS added = ROW_COUNT;
+        written := written + added;
+    END LOOP;
+    RETURN written;
+END;
+$$;
+
+-- Only the warehouse owner writes the store; the serving role reads it.
+REVOKE EXECUTE ON FUNCTION gold_elections.sync_contest_result() FROM PUBLIC;
+
+-- One row per contest and area of the current reads (see contest_tally).
+CREATE OR REPLACE VIEW gold_elections.contest_result AS
+SELECT store.office, store.election_year, store.stage, store.special,
+       store.state_code, store.state_fips, store.county_fips, store.district,
+       store.geo_level, store.geo_id, store.geo_sk, store.geography_status,
+       store.republican_votes, store.democratic_votes, store.total_votes,
+       store.leading_party_code, store.leading_candidate, store.candidate_count,
+       -- The read's stream, file and publication time come from the read itself.
+       read.stream, read.source_file, store.run_id, read.published_at, store.capture_id
+FROM gold_elections.contest_result_store AS store
+JOIN gold_elections.current_read AS read ON read.run_id = store.run_id;
+
 -- The published measures: the general-election presidential vote by county
 -- and state.
 CREATE OR REPLACE VIEW gold_elections.measure_definition AS
@@ -160,17 +247,37 @@ SELECT measure, measure_label, unit, observation_basis
 FROM (VALUES
     ('president_two_party_republican_share',
      'Presidential vote: Republican share of the two-party vote', 'percent',
-     'MIT Election Data and Science Lab returns: the Republican candidate''s votes as a share of the '
-     || 'Republican and Democratic candidates'' combined votes in the general election, counting a '
-     || 'candidate''s every ballot line. A comparison of places, not a measure of how any voter fared.'),
+     'Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '
+     || 'Amlani): the Republican candidate''s votes as a share of the Republican and Democratic '
+     || 'candidates'' combined votes in the general election, counting a candidate''s every ballot '
+     || 'line. A comparison of places, not a measure of how any voter fared.'),
     ('president_two_party_margin',
      'Presidential vote: two-party margin (Republican minus Democratic)', 'percentage points',
-     'MIT Election Data and Science Lab returns: the Republican share minus the Democratic share of '
-     || 'the two-party vote in the general election; positive leans Republican, negative Democratic.'),
+     'Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '
+     || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '
+     || 'general election; positive leans Republican, negative Democratic.'),
     ('president_total_votes',
      'Presidential vote: total votes cast', 'votes',
-     'MIT Election Data and Science Lab returns: every vote cast for president in the area, as the '
-     || 'returns publish it, including candidates of every party and write-ins.')
+     'Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '
+     || 'Amlani): every vote cast for president in the area, including candidates of every party '
+     || 'and write-ins.'),
+    ('senate_two_party_republican_share',
+     'U.S. Senate vote: Republican share of the two-party vote', 'percent',
+     'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
+     || 'Amlani): the Republican nominee''s votes as a share of the two major parties'' nominees'' '
+     || 'combined votes in the regularly scheduled general election for the seat. A special election '
+     || 'held the same year is kept in the contest results but not served here.'),
+    ('senate_two_party_margin',
+     'U.S. Senate vote: two-party margin (Republican minus Democratic)', 'percentage points',
+     'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
+     || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '
+     || 'regularly scheduled general election; positive leans Republican. Where a party ran no '
+     || 'nominee the margin is 100 points one way, never a missing value read as zero.'),
+    ('senate_total_votes',
+     'U.S. Senate vote: total votes cast', 'votes',
+     'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
+     || 'Amlani): every vote cast for the Senate seat in the area, including candidates of every '
+     || 'party.')
 ) AS definition(measure, measure_label, unit, observation_basis);
 
 -- The presidential general-election measures in the neutral observation
@@ -185,22 +292,27 @@ WITH contest AS (
            NULLIF(COALESCE(result.republican_votes, 0) + COALESCE(result.democratic_votes, 0), 0)
                AS two_party_votes
     FROM gold_elections.contest_result AS result
-    WHERE result.office = 'president' AND result.stage = 'GEN' AND NOT result.special
+    WHERE result.office IN ('president', 'us_senate') AND result.stage = 'GEN' AND NOT result.special
       AND result.geo_level IN ('state', 'county')
 ),
 measured AS (
-    SELECT contest.*, measure.metric_key,
-           CASE measure.metric_key
-               WHEN 'president_two_party_republican_share'
+    SELECT contest.*, measure.prefix || measure.suffix AS metric_key,
+           CASE measure.suffix
+               WHEN '_two_party_republican_share'
                    THEN ROUND(100.0 * COALESCE(contest.republican_votes, 0) / contest.two_party_votes, 2)
-               WHEN 'president_two_party_margin'
+               WHEN '_two_party_margin'
                    THEN ROUND(100.0 * (COALESCE(contest.republican_votes, 0)
                                        - COALESCE(contest.democratic_votes, 0)) / contest.two_party_votes, 2)
                ELSE contest.total_votes::NUMERIC
            END AS value
     FROM contest
-    CROSS JOIN (VALUES ('president_two_party_republican_share'), ('president_two_party_margin'),
-                       ('president_total_votes')) AS measure(metric_key)
+    JOIN (VALUES ('president', 'president'), ('us_senate', 'senate')) AS office_prefix(office, prefix)
+      ON office_prefix.office = contest.office
+    CROSS JOIN LATERAL (
+        SELECT office_prefix.prefix, suffix
+        FROM (VALUES ('_two_party_republican_share'), ('_two_party_margin'), ('_total_votes'))
+             AS suffixes(suffix)
+    ) AS measure
 )
 SELECT measured.metric_key,
        definition.measure_label,
@@ -220,7 +332,8 @@ SELECT measured.metric_key,
        measured.democratic_votes,
        measured.total_votes,
        measured.leading_party_code,
-       'MEDSL ' || COALESCE(measured.source_file, measured.stream) AS release_key,
+       CASE WHEN measured.stream LIKE '%\_history' THEN 'Algara & Amlani ' ELSE 'MEDSL ' END
+           || COALESCE(measured.source_file, measured.stream) AS release_key,
        measured.published_at,
        md5(measured.metric_key || '|' || measured.geo_id || '|' || measured.election_year::TEXT)
            AS source_record_id,
@@ -245,3 +358,6 @@ FROM gold_elections.measure_definition;
 
 COMMENT ON SCHEMA gold_elections IS
     'Policy-free publication views for congressional and governor seat terms and MEDSL election results.';
+
+-- Store any current read published before contest_result_store existed.
+SELECT gold_elections.sync_contest_result();

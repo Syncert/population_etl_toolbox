@@ -18,12 +18,14 @@ from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..client import ElectionsPayloadError, FileRequest, check_body
 from ..config import SOURCE_CODE
-from ..registry import GOVERNORS, LEGISLATORS
+from ..registry import GOVERNORS, HISTORY_STREAMS, LEGISLATORS, result_dataset
 from .parse import (
     CandidateResult,
+    HistoryFileError,
     Quarantine,
     SeatTerm,
     parse_governors,
+    parse_history,
     parse_legislators,
     parse_results,
 )
@@ -181,6 +183,29 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     term_rows.extend(
                         _term_row(run_id, capture_id, term) for term in terms
                     )
+                elif stream in HISTORY_STREAMS:
+                    try:
+                        results, rejected, read = parse_history(
+                            stream,
+                            payload,
+                            first_year=result_dataset(stream).first_year,
+                        )
+                    except HistoryFileError as error:
+                        refused = True
+                        quarantine.append(
+                            (
+                                str(run_id),
+                                capture_id,
+                                0,
+                                "unexpected_layout",
+                                str(error)[:200],
+                            )
+                        )
+                        continue
+                    records_total += read
+                    result_rows.extend(
+                        _result_row(run_id, capture_id, item) for item in results
+                    )
                 else:
                     results, rejected, read = parse_results(stream, payload)
                     records_total += read
@@ -317,6 +342,10 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             row = cursor.fetchone()
             if row is None or row[0] in ("captured", "capturing"):
                 raise ElectionsPublicationError(f"run {run_id} was never replayed")
+            if published:
+                # The served contests are stored once per read, in the same
+                # transaction, so a reader never sees the read without them.
+                cursor.execute("SELECT gold_elections.sync_contest_result()")
         connection.commit()
     except BaseException:
         connection.rollback()

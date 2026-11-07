@@ -20,6 +20,17 @@ The fixtures under ``tests/fixtures/elections``:
   York's fusion lines, a county row with no code and a row with ``NA``
   votes; state presidential, Senate (with a special election) and House
   rows. The Dataverse file lists carry invented file ids.
+* ``county_president_history.Rdata`` and ``county_senate_history.Rdata``
+  are R data frames in Algara & Amlani's release layout (read on
+  OFFICE_LAB 2026-11-07) with illustrative counts, written by
+  ``make_history_fixtures.py`` beside them: a year before 1990, Dade's
+  retired code, South Boston city beside Halifax County, a row with neither
+  party's votes, an identical repeat, two copies that disagree, two Senate
+  races in one state and year, a race with no Democratic nominee, and
+  presidential rows in MEDSL's years for the agreement check. Their file
+  list carries the real file ids.
+* ``county_senate.csv`` is MEDSL's county Senate 2022 file cut to Dane and
+  Waukesha counties (CC0), whose ``totalvotes`` is the statewide total.
 """
 
 from __future__ import annotations
@@ -55,6 +66,9 @@ WISCONSIN = "state:55"
 DANE = "state:55|county:025"
 WAUKESHA = "state:55|county:133"
 ALBANY = "state:36|county:001"
+MIAMI_DADE = "state:12|county:086"
+HALIFAX = "state:51|county:083"
+HENNEPIN = "state:27|county:053"
 
 _SEED_ARGUMENTS: tuple[dict[str, Any], ...] = (
     {"geo_type": "state", "state_fips": "12", "vintage": 2024, "name": "Florida"},
@@ -63,6 +77,7 @@ _SEED_ARGUMENTS: tuple[dict[str, Any], ...] = (
     {"geo_type": "state", "state_fips": "36", "vintage": 2024, "name": "New York"},
     {"geo_type": "state", "state_fips": "48", "vintage": 2024, "name": "Texas"},
     {"geo_type": "state", "state_fips": "50", "vintage": 2024, "name": "Vermont"},
+    {"geo_type": "state", "state_fips": "51", "vintage": 2024, "name": "Virginia"},
     {"geo_type": "state", "state_fips": "55", "vintage": 2024, "name": "Wisconsin"},
     {"geo_type": "state", "state_fips": "56", "vintage": 2024, "name": "Wyoming"},
     {
@@ -86,6 +101,27 @@ _SEED_ARGUMENTS: tuple[dict[str, Any], ...] = (
         "vintage": 2024,
         "name": "Albany County",
     },
+    {
+        "geo_type": "county",
+        "state_fips": "12",
+        "county_fips": "086",
+        "vintage": 2024,
+        "name": "Miami-Dade County",
+    },
+    {
+        "geo_type": "county",
+        "state_fips": "51",
+        "county_fips": "083",
+        "vintage": 2024,
+        "name": "Halifax County",
+    },
+    {
+        "geo_type": "county",
+        "state_fips": "27",
+        "county_fips": "053",
+        "vintage": 2024,
+        "name": "Hennepin County",
+    },
 )
 
 
@@ -103,12 +139,17 @@ _DATA_FILES = {
     "4299753": "state_president.csv",
     "6559998": "senate.csv",
     "11384761": "house.tab",
+    "5028532": "county_president_history.Rdata",
+    "5028534": "county_senate_history.Rdata",
+    "7412054": "county_senate.csv",
 }
 _LISTINGS = {
     "doi:10.7910/DVN/VOQCHQ": "listing-county_president.json",
     "doi:10.7910/DVN/42MVDX": "listing-state_president.json",
     "doi:10.7910/DVN/PEJ5QU": "listing-senate.json",
     "doi:10.7910/DVN/IG0UN2": "listing-house.json",
+    "doi:10.7910/DVN/DGUMFI": "listing-county_history.json",
+    "doi:10.7910/DVN/YB60EJ": "listing-county_senate.json",
 }
 
 

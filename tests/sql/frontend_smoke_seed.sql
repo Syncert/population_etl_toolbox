@@ -1103,6 +1103,9 @@ CROSS JOIN (VALUES
 WHERE entity.geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
+-- What publish_run does after marking a read published: store its contests.
+SELECT gold_elections.sync_contest_result();
+
 -- ---------------------------------------------------------------------------
 -- Census government finance -- one county area's local government taxes
 -- from a published Census of Governments unit file. COUNTY only.

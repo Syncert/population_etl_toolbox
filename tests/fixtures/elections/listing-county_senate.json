@@ -1,0 +1,16 @@
+{
+ "status": "OK",
+ "data": [
+  {
+   "label": "senate_2022.tab",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 7412054,
+    "filename": "senate_2022.tab",
+    "contentType": "text/tab-separated-values",
+    "originalFileName": "senate_2022.csv"
+   }
+  }
+ ]
+}

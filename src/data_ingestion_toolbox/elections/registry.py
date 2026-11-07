@@ -18,6 +18,11 @@ Three publishers, each read whole on every run:
 * **Election results.** MIT Election Data and Science Lab files on Harvard
   Dataverse: county presidential returns (2000 onward), and state-level
   presidential, U.S. Senate and U.S. House (district) returns (1976 onward).
+  County returns before 2000 come from Algara & Amlani's county dataset on
+  the same Dataverse (CC0 1.0, version 1.1 of 2022-09-04): county
+  presidential returns for 1992 and 1996 and county U.S. Senate returns
+  for 1990 to 2020, each an R ``.Rdata`` data frame of one row per county
+  and contest (plan election-results-back-to-1990).
   A dataset's file list is read from Dataverse's API and the registered
   file is downloaded in its original format. The licences are recorded as
   the publisher states them on each dataset page and must be confirmed by
@@ -39,8 +44,34 @@ COUNTY_PRESIDENT = "county_president"
 STATE_PRESIDENT = "state_president"
 SENATE = "senate"
 HOUSE = "house"
+COUNTY_PRESIDENT_HISTORY = "county_president_history"
+COUNTY_SENATE_HISTORY = "county_senate_history"
+COUNTY_SENATE = "county_senate"
 
-RESULT_STREAMS = (COUNTY_PRESIDENT, STATE_PRESIDENT, SENATE, HOUSE)
+RESULT_STREAMS = (
+    COUNTY_PRESIDENT,
+    STATE_PRESIDENT,
+    SENATE,
+    HOUSE,
+    COUNTY_PRESIDENT_HISTORY,
+    COUNTY_SENATE_HISTORY,
+    COUNTY_SENATE,
+)
+#: Streams read at county grain.
+COUNTY_STREAMS = (
+    COUNTY_PRESIDENT,
+    COUNTY_PRESIDENT_HISTORY,
+    COUNTY_SENATE_HISTORY,
+    COUNTY_SENATE,
+)
+#: Streams whose ``totalvotes`` is not the area's own total. MEDSL's county
+#: Senate 2022 file repeats the statewide total on every county row (read on
+#: OFFICE_LAB 2026-11-07: 2,652,477 on each Wisconsin county), so a county's
+#: total there is the sum of its candidates' votes.
+STATEWIDE_TOTAL_STREAMS = (COUNTY_SENATE,)
+#: The Algara & Amlani streams: one R data frame per file, one row per county
+#: and contest with the two major parties' votes and the county's total.
+HISTORY_STREAMS = (COUNTY_PRESIDENT_HISTORY, COUNTY_SENATE_HISTORY)
 STREAMS = (LEGISLATORS, GOVERNORS, *RESULT_STREAMS)
 
 LEGISLATORS_BASE_URL = (
@@ -82,6 +113,16 @@ ORDER BY ?stateFips ?start ?person
 
 DATAVERSE_BASE_URL = "https://dataverse.harvard.edu"
 
+#: Algara & Amlani, "Replication Data for: Partisanship & Nationalization in
+#: American Elections: Evidence from Presidential, Senatorial, & Gubernatorial
+#: Elections in the U.S. Counties, 1872-2020". Read on OFFICE_LAB 2026-11-07:
+#: version 1.1 (2022-09-04), CC0 1.0, no guestbook, no restricted files.
+ALGARA_AMLANI_DOI = "10.7910/DVN/DGUMFI"
+ALGARA_AMLANI_LICENCE = "CC0 1.0 (Algara & Amlani, Harvard Dataverse)"
+
+#: The first election year the county history streams load.
+HISTORY_FIRST_YEAR = 1990
+
 
 @dataclass(frozen=True)
 class ResultDataset:
@@ -100,6 +141,11 @@ class ResultDataset:
     licence: str = (
         "As stated on the Dataverse dataset page (MEDSL); confirm before first load"
     )
+    provider: str = "MEDSL"
+    #: ``delimited`` (MEDSL's CSV or tab files) or ``rdata`` (an R data frame).
+    payload_format: str = "delimited"
+    #: The data frame an ``rdata`` file is read from (it may hold others).
+    rdata_object: str | None = None
 
     @property
     def persistent_id(self) -> str:
@@ -148,7 +194,72 @@ RESULT_DATASETS: tuple[ResultDataset, ...] = (
         1976,
         "https://doi.org/10.7910/DVN/IG0UN2",
     ),
+    ResultDataset(
+        COUNTY_PRESIDENT_HISTORY,
+        ALGARA_AMLANI_DOI,
+        "County presidential returns 1868-2020 (Algara & Amlani)",
+        "president",
+        "county",
+        re.compile(
+            r"^dataverse_shareable_presidential_county_returns_1868_20\d\d\.Rdata$"
+        ),
+        HISTORY_FIRST_YEAR,
+        f"https://doi.org/{ALGARA_AMLANI_DOI}",
+        licence=ALGARA_AMLANI_LICENCE,
+        provider="ALGARA_AMLANI",
+        payload_format="rdata",
+        rdata_object="pres_elections_release",
+    ),
+    ResultDataset(
+        COUNTY_SENATE_HISTORY,
+        ALGARA_AMLANI_DOI,
+        "County U.S. Senate returns 1908-2020 (Algara & Amlani)",
+        "us_senate",
+        "county",
+        re.compile(
+            r"^dataverse_shareable_us_senate_county_returns_1908_20\d\d\.Rdata$"
+        ),
+        HISTORY_FIRST_YEAR,
+        f"https://doi.org/{ALGARA_AMLANI_DOI}",
+        licence=ALGARA_AMLANI_LICENCE,
+        provider="ALGARA_AMLANI",
+        payload_format="rdata",
+        rdata_object="senate_elections_release",
+    ),
+    ResultDataset(
+        COUNTY_SENATE,
+        "10.7910/DVN/YB60EJ",
+        "U.S. Senate county-level results 2022",
+        "us_senate",
+        "county",
+        # One dataset per election; the 2022 file is senate_2022.csv. MEDSL
+        # publishes 2024 only by precinct (doi:10.7910/DVN/ZCM3BN), not read yet.
+        re.compile(r"^senate_20\d\d\.(csv|tab)$"),
+        2022,
+        "https://doi.org/10.7910/DVN/YB60EJ",
+    ),
 )
+
+#: Which provider serves a county contest in a given year, so one contest
+#: never has two serving rows. MEDSL's county presidential file starts in
+#: 2000; Algara & Amlani's presidential rows from 2000 to 2020 are kept in
+#: silver only for the agreement check (DQ-ELEC-007), never served.
+HISTORY_SERVED_BEFORE = {"president": 2000, "us_senate": 2100}
+
+#: County codes retired since 1990, mapped to the county that carries the
+#: area now (Census Bureau, "Substantial Changes to Counties and County
+#: Equivalent Entities", public domain). A rename maps one to one; an
+#: independent city that merged into its county is added into that county,
+#: never apportioned. Yellowstone National Park (30113, about 50 voters) was
+#: split between two counties in 1997 and is left unmapped.
+COUNTY_SUCCESSOR: dict[str, str] = {
+    "12025": "12086",  # Dade, FL -> Miami-Dade (1997), a rename
+    "46113": "46102",  # Shannon, SD -> Oglala Lakota (2015), a rename
+    "02270": "02158",  # Wade Hampton, AK -> Kusilvak (2015), a rename
+    "51780": "51083",  # South Boston city, VA -> Halifax County (1995)
+    "51560": "51005",  # Clifton Forge city, VA -> Alleghany County (2001)
+    "51515": "51019",  # Bedford city, VA -> Bedford County (2013)
+}
 
 
 def result_dataset(stream: str) -> ResultDataset:

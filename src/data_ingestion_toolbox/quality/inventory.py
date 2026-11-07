@@ -3817,11 +3817,41 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published read",
     ),
     _obj(
+        "gold_elections.candidate_tally",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area, candidate",
+        lineage="silver_elections.candidate_result, control.elections_run",
+        scope_method="every published read; one mode per area, filtered by run_id when stored",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.contest_tally",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area",
+        lineage="gold_elections.candidate_tally",
+        scope_method="contest totals of every published read, stored per read by sync_contest_result",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.contest_result_store",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area",
+        lineage="gold_elections.contest_tally",
+        scope_method="contest rows of the current reads, written once when a read is published",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
         "gold_elections.candidate_total",
         "gold",
         "ELECTIONS",
         grain="run_id, office, election_year, stage, special, area, candidate",
-        lineage="silver_elections.candidate_result, gold_elections.current_read",
+        lineage="gold_elections.candidate_tally, gold_elections.current_read",
         scope_method="one mode per area: the TOTAL line where published, else the sum of modes",
         cadence="per publication",
         empty_behavior="empty only before the first published results read",
@@ -3831,7 +3861,7 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold",
         "ELECTIONS",
         grain="run_id, office, election_year, stage, special, area",
-        lineage="gold_elections.candidate_total",
+        lineage="gold_elections.contest_result_store, gold_elections.current_read",
         scope_method="major-party votes, total votes and the leading party per contest and area",
         cadence="per publication",
         empty_behavior="empty only before the first published results read",
@@ -7372,7 +7402,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_elections.seat_term",
             "silver_elections.candidate_result",
             "gold_elections.seat_term",
+            "gold_elections.candidate_tally",
             "gold_elections.candidate_total",
+            "gold_elections.contest_tally",
+            "gold_elections.contest_result_store",
             "gold_elections.contest_result",
             "gold_elections.observation_revision",
             "gold_elections.observation_latest",
@@ -7417,9 +7450,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-ELEC-004",
         "WARN",
         "reconciliation",
-        "Each state's county presidential totals sum to within 0.5 percent of "
-        "its state total, and every county and state row of the current results "
-        "reads resolved to the shared geography.",
+        "Each state's county presidential and U.S. Senate totals sum to within "
+        "0.5 percent of its state total for the same contest, and every county "
+        "and state row of the current results reads resolved to the shared "
+        "geography.",
         (
             "gold_elections.contest_result",
             "gold_elections.measure_export",
@@ -7458,6 +7492,16 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.governor_fiscal_measure_definition",
             "gold_elections.governor_fiscal_series",
         ),
+    ),
+    _rule(
+        "DQ-ELEC-007",
+        "WARN",
+        "reconciliation",
+        "Where Algara & Amlani's county presidential returns overlap MEDSL's "
+        "(2000 to 2020), each county's two-party margin agrees within half a "
+        "point; only MEDSL's years are served, so the overlap vouches for the "
+        "1992 and 1996 counties.",
+        ("silver_elections.candidate_result", "gold_elections.contest_result"),
     ),
     # -- Census state and local government finance -------------------------
     _rule(

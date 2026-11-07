@@ -23,6 +23,9 @@ needs a credential.
 | `state_president` | `doi:10.7910/DVN/42MVDX` | `1976-20NN-president` |
 | `senate` | `doi:10.7910/DVN/PEJ5QU` | `1976-20NN-senate-state` (or `1976-20NN-senate`) |
 | `house` | `doi:10.7910/DVN/IG0UN2` | `1976-20NN-house` |
+| `county_president_history` | Algara & Amlani, `doi:10.7910/DVN/DGUMFI` (CC0 1.0, no guestbook) | `dataverse_shareable_presidential_county_returns_1868_20NN.Rdata`, data frame `pres_elections_release` |
+| `county_senate_history` | the same dataset | `dataverse_shareable_us_senate_county_returns_1908_20NN.Rdata`, data frame `senate_elections_release` |
+| `county_senate` | MEDSL `doi:10.7910/DVN/YB60EJ` | `senate_20NN` (the 2022 county file) |
 
 For each MEDSL stream the run first captures the dataset's file list, then
 the one file whose name matches the registered pattern, in its original
@@ -30,6 +33,40 @@ format (`?format=original`). A second matching file (a new edition beside the
 old) is refused rather than guessed between; update the pattern deliberately.
 Every capture is committed before parsing, so a replay never needs the
 network.
+
+### County returns before 2000 (Algara & Amlani)
+
+MEDSL's county presidential file starts in 2000 and MEDSL publishes county
+Senate results only from 2022 (2024 only by precinct). Algara & Amlani's
+county dataset (version 1.1, 2022-09-04) fills county presidential results
+for 1992 and 1996 and county Senate results for 1990 to 2020. Its files are
+R `save()` files; `data_ingestion_toolbox.utility.rdata` reads them with the
+standard library (pyreadr is AGPL-3.0 and needs pandas). Each row is one
+county and contest with the Democratic and Republican nominees' votes and the
+county's total, read as one row per nominee plus "(other candidates
+combined)" for what is left, so a county's rows still add to its total.
+
+- Only election years from 1990 are read.
+- A Senate special in the same state and year (Minnesota 2018, Georgia 2020)
+  is its own contest, told apart by seat class.
+- An absent nominee is no row. A county with neither party's votes is
+  quarantined `no_major_party_votes`; an identical repeated row keeps one
+  copy (`repeated_row`); two copies that disagree are both quarantined
+  (`conflicting_row`).
+- Retired county codes read as their successor (`registry.COUNTY_SUCCESSOR`):
+  Dade (12025) as Miami-Dade (12086), Shannon SD as Oglala Lakota, Wade
+  Hampton AK as Kusilvak, and South Boston, Clifton Forge and Bedford cities
+  added into Halifax, Alleghany and Bedford counties. Votes are summed, never
+  apportioned. Broomfield, CO did not exist before 2001 and has no earlier
+  rows. A MEDSL county row with a retired code (Bedford city before 2013,
+  for example) is read the same way; its own total is dropped, so the
+  county's total is the sum of its candidates' votes.
+- Algara & Amlani's presidential rows from 2000 to 2020 are MEDSL's years.
+  They stay in silver for `DQ-ELEC-007` and are never served, so a contest
+  has one provider. The release key names the provider and file.
+
+MEDSL's county Senate 2022 file repeats the statewide total in `totalvotes`
+on every county row, so a county's total there is the sum of its candidates.
 
 Every run re-reads each stream whole. A Congress, a governor or an election
 year the warehouse never loaded is loaded by the next scheduled run; there is
@@ -40,7 +77,8 @@ no separate history run (the loader rule).
 | Relation | Rows |
 | --- | --- |
 | `gold_elections.seat_term` | one row per span a person held a seat with one party: `seat_label` (`WI Senate class 1`, `WI-02`, `VT-AL`, `WI governor`), `party_code`, `caucus_code` (an independent's caucus), `start_date`, `end_date` (NULL is serving), `source_label` |
-| `gold_elections.contest_result` | one row per contest and area: Republican and Democratic votes, total, leading party and candidate |
+| `gold_elections.contest_result` | one row per contest and area: Republican and Democratic votes, total, leading party and candidate; read from `contest_result_store`, which `publish_run` fills once per published read (`gold_elections.sync_contest_result()`) |
+| `gold_elections.contest_tally` | the same contest rows computed from silver for any published read; read it for one `run_id` only |
 | `gold_elections.candidate_total` | one row per candidate and area, every ballot line combined |
 | `gold_elections.observation_revision`, `observation_latest` | the presidential general-election measures below, in the neutral observation shape |
 
@@ -49,6 +87,13 @@ no separate history run (the loader rule).
 | `president_two_party_republican_share` | percent | state, county |
 | `president_two_party_margin` | percentage points (positive leans Republican) | state, county |
 | `president_total_votes` | votes | state, county |
+| `senate_two_party_republican_share` | percent | state, county |
+| `senate_two_party_margin` | percentage points (positive leans Republican) | state, county |
+| `senate_total_votes` | votes | state, county |
+
+The Senate measures are the regularly scheduled race; a special held the same
+year is in `contest_result` but not in the measures, so a place has one Senate
+value a year.
 
 Each observation is dated on election day and its release is the MEDSL file
 it was read from (`MEDSL countypres_2000-2024.csv`).
@@ -98,8 +143,8 @@ The four answers are the operator's, set in `infra/docker/stack.env`:
 `DATAVERSE_API_TOKEN` if Harvard's installation requires a signed-in user.
 They are sent only to Dataverse, with each download (once a month), and are
 never written to a capture or the repository. With none set, the county
-and House streams fail as `guestbook_required` and the other four streams
-still load.
+and House streams fail as `guestbook_required` and the other streams
+still load. The Algara & Amlani files have no guestbook.
 Answering the guestbook records a download in MEDSL's guestbook log; read the
 dataset's terms on its Dataverse page before setting them.
 
@@ -160,7 +205,10 @@ FROM gold_elections.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
 - `DQ-ELEC-002` fails on a read left unreplayed or a replayed read that
   reached no row, and runs in the daily sweep.
 - `DQ-ELEC-003` fails when two current spans hold one seat on one day.
-- `DQ-ELEC-004` warns when a state's county presidential sums disagree with
+- `DQ-ELEC-007` warns where Algara & Amlani's county presidential margin
+  differs from MEDSL's by more than half a point in a year both publish
+  (2000 to 2020). Review its count before trusting the 1992 and 1996 maps.
+- `DQ-ELEC-004` warns when a state's county presidential or Senate sums disagree with
   its state total, or a place does not resolve.
 - `DQ-ELEC-005` fails when a lean-group county row is not its change minus
   the nation's, sits in a band its window-start margin does not name, or the

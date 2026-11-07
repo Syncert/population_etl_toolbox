@@ -251,4 +251,41 @@ ROLLBACK transaction with `lock_timeout = 10s`; user-path reads under
 
 ## Checkpoint
 
-Not started.
+**2026-11-07, first build PR (county president and Senate).** OFFICE_LAB read
+the Algara & Amlani dataset: version 1.1 (2022-09-04), CC0 1.0, no guestbook,
+no edition after 2020; county files are R `.Rdata` (gzip, `RDX3`, R 4.0.2).
+MEDSL's YB60EJ is county Senate 2022 only; 2024 is precinct-only
+(`doi:10.7910/DVN/ZCM3BN`, 166 MB).
+
+Done in this PR:
+
+- R-1: streams `county_president_history`, `county_senate_history` (one
+  Dataverse dataset, one file each) and `county_senate` (MEDSL 2022, whose
+  `totalvotes` is the statewide total and is ignored). The `.Rdata` files are
+  read by `data_ingestion_toolbox.utility.rdata`, a standard-library reader
+  (pyreadr is AGPL-3.0 and needs pandas; not added).
+- R-2/R-3: every stream is re-read monthly; an unchanged file replays
+  nothing (existing capture ledger).
+- R-4: repeats, conflicts and rows with neither party's votes quarantined.
+- R-5: Algara & Amlani presidential rows from 2000 are not served;
+  DQ-ELEC-007 compares them with MEDSL's.
+- R-6: `registry.COUNTY_SUCCESSOR` (renames and merged Virginia cities),
+  applied to both providers.
+- R-7 (gold only): Senate measures at state and county; presidential county
+  measures for 1992 and 1996. No API or web change yet.
+- Speed gate: the first OFFICE_LAB run timed out at 10 minutes (and so did
+  dev's views at 90 s): `candidate_total` joined two scans of a CTE the
+  planner estimated at one or two rows. Contest rows are now stored once per
+  published read (`gold_elections.contest_result_store`, written by
+  `sync_contest_result()` inside `publish_run`; an unchanged read stores
+  nothing), and the totalling views partition by `run_id` so one read is
+  totalled from the silver index.
+
+Left:
+
+- R-1b: House per county through the covering districts (Census
+  congressional district to county relationship files), its own PR.
+- County Senate 2024 from MEDSL's precinct file (aggregate to county).
+- Lean-group windows from 1992 (they still start in 2000).
+- API and web: the Senate office switch on the paired maps; the seat
+  timeline's vote per term.

@@ -15,6 +15,9 @@ from psycopg2.extensions import connection
 from data_ingestion_toolbox.elections.client import ElectionsPayloadError
 from data_ingestion_toolbox.elections.registry import (
     COUNTY_PRESIDENT,
+    COUNTY_PRESIDENT_HISTORY,
+    COUNTY_SENATE,
+    COUNTY_SENATE_HISTORY,
     GOVERNORS,
     HOUSE,
     LEGISLATORS,
@@ -31,6 +34,7 @@ from data_ingestion_toolbox.glossary.harvest import (
     process_pending_events,
 )
 from data_ingestion_toolbox.quality.sources import (
+    elections_county_history_agreement,
     elections_run_reconciliation,
     elections_seat_overlap,
     elections_totals_and_geography,
@@ -239,7 +243,7 @@ def test_results_count_each_candidate_once_and_derive_the_margin(
 
 
 def test_reruns_and_revisions(elections_warehouse) -> None:
-    """Covers: ETL-111 — an unchanged read replays nothing; a corrected file becomes the current read."""
+    """Covers: ETL-111 — an unchanged read replays nothing; a corrected file becomes the current read, stored once."""
     factory = elections_warehouse
     el.run_to_gold(factory, COUNTY_PRESIDENT)
     _run, status, rows, published = el.run_to_gold(factory, COUNTY_PRESIDENT)
@@ -266,6 +270,26 @@ def test_reruns_and_revisions(elections_warehouse) -> None:
         """,
         (el.WAUKESHA,),
     ) == [(160000,)]
+    # The served contests are stored once per read: the superseded read's
+    # rows are gone, and the store matches a fresh total of the current read.
+    assert _rows(
+        factory,
+        """
+        SELECT run_id::TEXT, COUNT(*) FROM gold_elections.contest_result_store
+         GROUP BY run_id
+        """,
+    ) == [(str(run_id), 5)]
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(*) FROM (
+            SELECT * FROM gold_elections.contest_tally WHERE run_id = %s
+            EXCEPT SELECT * FROM gold_elections.contest_result_store
+        ) AS differs
+        """,
+        (str(run_id),),
+    ) == [(0,)]
+    assert _rows(factory, "SELECT gold_elections.sync_contest_result()") == [(0,)]
 
 
 def test_a_refused_file_and_the_rules(elections_warehouse) -> None:
@@ -294,9 +318,10 @@ def test_a_refused_file_and_the_rules(elections_warehouse) -> None:
     assert _outcome(factory, elections_run_reconciliation).result == "pass"
     assert _outcome(factory, elections_seat_overlap).result == "pass"
     # The fixture's county file holds two of Wisconsin's seventy-two counties,
-    # so their sum cannot match the state's.
+    # so their sum cannot match the state's; Minnesota's two 2018 Senate races
+    # are each one county (Hennepin) against the state.
     totals = _outcome(factory, elections_totals_and_geography)
-    assert totals.result == "warn" and totals.observed_count == 2
+    assert totals.result == "warn" and totals.observed_count == 4
 
     _write(
         factory,
@@ -336,7 +361,7 @@ def test_a_refused_file_and_the_rules(elections_warehouse) -> None:
 
 
 def test_the_harvest_names_every_published_measure(elections_warehouse) -> None:
-    """Covers: ETL-111 — three presidential measures at state and county, and nothing summed."""
+    """Covers: ETL-111 — three presidential and three Senate measures at state and county."""
     factory = elections_warehouse
     el.run_all(factory)
     published = {
@@ -356,10 +381,97 @@ def test_the_harvest_names_every_published_measure(elections_warehouse) -> None:
         ),
         "president_two_party_margin": ("derived_summary", ["COUNTY", "STATE"]),
         "president_total_votes": ("source_fact", ["COUNTY", "STATE"]),
+        "senate_two_party_republican_share": ("derived_summary", ["COUNTY", "STATE"]),
+        "senate_two_party_margin": ("derived_summary", ["COUNTY", "STATE"]),
+        "senate_total_votes": ("source_fact", ["COUNTY", "STATE"]),
     }
     assert harvest_publisher(factory, Publisher("gold_elections")) > 0
     assert process_pending_events(factory) >= 1
     assert _rows(
         factory,
         "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'ELECTIONS'",
-    ) == [(3,)]
+    ) == [(6,)]
+
+
+def test_county_history_fills_1990s_counties_and_serves_one_provider(
+    elections_warehouse,
+) -> None:
+    """Covers: ETL-111 — Algara & Amlani serve before 2000 only; Senate counties from 1990."""
+    factory = elections_warehouse
+    assert _outcome(factory, elections_county_history_agreement).result == (
+        "not_applicable"
+    )
+    _run, status, rows, published = el.run_to_gold(factory, COUNTY_PRESIDENT_HISTORY)
+    # 24 lines: 1992 and 1996 counties plus the 2016 rows kept for the check.
+    assert (status, rows, published) == ("captured", 24, 1)
+    el.run_to_gold(factory, COUNTY_PRESIDENT)
+    contests = {
+        (geo_id, year): (republican, democratic, total, stream)
+        for geo_id, year, republican, democratic, total, stream in _rows(
+            factory,
+            """
+            SELECT geo_id, election_year, republican_votes, democratic_votes, total_votes, stream
+              FROM gold_elections.contest_result
+             WHERE office = 'president' AND geo_level = 'county'
+            """,
+        )
+    }
+    # Dade's 1992 code reads as Miami-Dade; South Boston city adds into Halifax.
+    assert contests[(el.MIAMI_DADE, 1992)] == (
+        230000, 300000, 560000, COUNTY_PRESIDENT_HISTORY,
+    )  # fmt: skip
+    assert contests[(el.HALIFAX, 1992)] == (
+        7800, 6500, 15600, COUNTY_PRESIDENT_HISTORY,
+    )  # fmt: skip
+    # Waukesha 1996's two copies disagree: no 1996 Waukesha contest at all.
+    assert (el.WAUKESHA, 1996) not in contests
+    # 2016 is MEDSL's year: Algara & Amlani's 2016 rows are not served.
+    assert contests[(el.DANE, 2016)][3] == COUNTY_PRESIDENT
+    releases = dict(
+        _rows(
+            factory,
+            """
+            SELECT year, release_key FROM gold_elections.observation_latest
+             WHERE metric_key = 'president_two_party_margin' AND geo_id = %s
+            """,
+            (el.DANE,),
+        )
+    )
+    assert releases[1992] == (
+        "Algara & Amlani dataverse_shareable_presidential_county_returns_1868_2020.Rdata"
+    )
+    assert releases[2016] == "MEDSL countypres_2000-2024.csv"
+    # Waukesha's 2016 margin differs from MEDSL's by more than half a point.
+    agreement = _outcome(factory, elections_county_history_agreement)
+    assert (agreement.result, agreement.observed_count) == ("warn", 1)
+
+    for stream, expected in ((COUNTY_SENATE_HISTORY, 17), (COUNTY_SENATE, 7)):
+        _run, status, rows, published = el.run_to_gold(factory, stream)
+        assert (status, rows, published) == ("captured", expected, 1), stream
+    senate = {
+        (geo_id, year): value
+        for geo_id, year, value in _rows(
+            factory,
+            """
+            SELECT geo_id, year, value FROM gold_elections.observation_latest
+             WHERE metric_key = 'senate_two_party_margin' AND geo_type = 'county'
+            """,
+        )
+    }
+    assert senate[(el.DANE, 1992)] == Decimal("-28.21")
+    # Minnesota's 2018 special is a contest but not the served measure.
+    assert senate[(el.HENNEPIN, 2018)] == Decimal("-38.46")
+    # No Democratic nominee: 100 points Republican, never a missing zero.
+    assert senate[(el.HALIFAX, 2002)] == Decimal("100.00")
+    # MEDSL's 2022 county total is the county's own sum, not the state's.
+    assert _rows(
+        factory,
+        """
+        SELECT total_votes FROM gold_elections.contest_result
+         WHERE office = 'us_senate' AND geo_id = %s AND election_year = 2022
+        """,
+        (el.DANE,),
+    ) == [(231818 + 68228 + 4 + 678,)]
+
+    _run, status, rows, published = el.run_to_gold(factory, COUNTY_SENATE_HISTORY)
+    assert (status, rows, published) == ("unchanged", 0, 0)

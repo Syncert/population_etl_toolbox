@@ -5,13 +5,18 @@ server errors retry with backoff. Error text names the stream, file and
 status only. A body is kept only when it is the file it claims to be: a
 legislators file is a JSON list, a Wikidata answer carries
 ``results.bindings``, a Dataverse file list is ``status: OK`` with a list of
-files, and a results file starts with a header naming ``year`` and
-``candidatevotes``.
+files, a MEDSL results file starts with a header naming ``year`` and
+``candidatevotes``, and an Algara & Amlani file is an R ``save()`` file
+(``RDX2`` or ``RDX3`` once decompressed).
 """
 
 from __future__ import annotations
 
+import bz2
+import gzip
+import io
 import json
+import lzma
 import re
 import time
 from collections.abc import Callable, Mapping
@@ -32,6 +37,7 @@ from .registry import (
     LEGISLATORS_BASE_URL,
     WIKIDATA_SPARQL_URL,
     ResultDataset,
+    result_dataset,
 )
 
 
@@ -119,8 +125,26 @@ def data_request(dataset: ResultDataset, file_id: int) -> FileRequest:
         f"{DATAVERSE_BASE_URL}/api/access/datafile/{file_id}",
         {"format": "original"},
         "results",
-        "text/csv",
+        "application/octet-stream" if dataset.payload_format == "rdata" else "text/csv",
     )
+
+
+def _is_rdata(raw_bytes: bytes) -> bool:
+    """Whether the bytes are an R ``save()`` file, compressed or not."""
+    opener = {
+        b"\x1f\x8b": lambda stream: gzip.GzipFile(fileobj=stream),
+        b"BZ": bz2.BZ2File,
+        b"\xfd7": lzma.LZMAFile,
+    }.get(raw_bytes[:2])
+    try:
+        head = (
+            opener(io.BytesIO(raw_bytes)).read(5)
+            if opener is not None
+            else raw_bytes[:5]
+        )
+    except (OSError, EOFError, lzma.LZMAError):
+        return False
+    return head in (b"RDX2\n", b"RDX3\n")
 
 
 def select_data_file(dataset: ResultDataset, listing: bytes) -> tuple[int, str]:
@@ -188,10 +212,20 @@ def check_body(request: FileRequest, raw_bytes: bytes) -> None:
         body = _json(raw_bytes, endpoint)
         if not isinstance(body, dict) or body.get("status") != "OK":
             raise ElectionsPayloadError(endpoint, code="service_error")
+    elif _payload_format(request.stream) == "rdata":
+        if not _is_rdata(raw_bytes):
+            raise ElectionsPayloadError(endpoint, code="not_an_rdata_file")
     else:
         header = raw_bytes[:4096].split(b"\n", 1)[0].decode("utf-8", "replace").lower()
         if "year" not in header or "candidatevotes" not in header:
             raise ElectionsPayloadError(endpoint, code="not_a_results_file")
+
+
+def _payload_format(stream: str) -> str:
+    try:
+        return result_dataset(stream).payload_format
+    except KeyError:
+        return "delimited"
 
 
 def fetch_file(
