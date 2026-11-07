@@ -7417,9 +7417,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-ELEC-004",
         "WARN",
         "reconciliation",
-        "Each state's county presidential totals sum to within 0.5 percent of "
-        "its state total, and every county and state row of the current results "
-        "reads resolved to the shared geography.",
+        "Each state's county presidential and U.S. Senate totals sum to within "
+        "0.5 percent of its state total for the same contest, and every county "
+        "and state row of the current results reads resolved to the shared "
+        "geography.",
         (
             "gold_elections.contest_result",
             "gold_elections.measure_export",
@@ -7458,6 +7459,16 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.governor_fiscal_measure_definition",
             "gold_elections.governor_fiscal_series",
         ),
+    ),
+    _rule(
+        "DQ-ELEC-007",
+        "WARN",
+        "reconciliation",
+        "Where Algara & Amlani's county presidential returns overlap MEDSL's "
+        "(2000 to 2020), each county's two-party margin agrees within half a "
+        "point; only MEDSL's years are served, so the overlap vouches for the "
+        "1992 and 1996 counties.",
+        ("silver_elections.candidate_result", "gold_elections.contest_result"),
     ),
     # -- Census state and local government finance -------------------------
     _rule(

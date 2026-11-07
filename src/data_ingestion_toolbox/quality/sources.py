@@ -2520,7 +2520,7 @@ def elections_seat_overlap(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
 def elections_totals_and_geography(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-ELEC-004 — county presidential sums agree with the state's; places resolve."""
+    """DQ-ELEC-004 — county presidential and Senate sums agree with the state's; places resolve."""
     del scope
     total = _count(
         cursor, "SELECT COUNT(*) FROM control.elections_run WHERE status = 'published'"
@@ -2531,16 +2531,19 @@ def elections_totals_and_geography(
         cursor,
         """
         WITH county_sum AS (
-            SELECT state_code, election_year, SUM(total_votes) AS votes
+            SELECT office, state_code, election_year, special, SUM(total_votes) AS votes
               FROM gold_elections.contest_result
-             WHERE office = 'president' AND geo_level = 'county' AND stage = 'GEN'
-             GROUP BY state_code, election_year
+             WHERE office IN ('president', 'us_senate') AND geo_level = 'county' AND stage = 'GEN'
+             GROUP BY office, state_code, election_year, special
         )
         SELECT state.state_code AS item, state.election_year::TEXT AS year,
-               'county sum ' || county_sum.votes || ' against state ' || state.total_votes AS detail
+               state.office || CASE WHEN state.special THEN ' special' ELSE '' END
+               || ': county sum ' || county_sum.votes || ' against state ' || state.total_votes
+                   AS detail
           FROM gold_elections.contest_result AS state
-          JOIN county_sum USING (state_code, election_year)
-         WHERE state.office = 'president' AND state.geo_level = 'state' AND state.stage = 'GEN'
+          JOIN county_sum USING (office, state_code, election_year, special)
+         WHERE state.office IN ('president', 'us_senate') AND state.geo_level = 'state'
+           AND state.stage = 'GEN'
            AND ABS(county_sum.votes - state.total_votes) > 0.005 * state.total_votes
         UNION ALL
         SELECT COALESCE(result.county_fips, result.state_code), result.election_year::TEXT,
@@ -2555,6 +2558,66 @@ def elections_totals_and_geography(
     return [
         RuleOutcome(
             "gold_elections.contest_result",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def elections_county_history_agreement(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-007 — Algara & Amlani's county presidential margins agree with MEDSL's.
+
+    The two providers overlap for 2000 to 2020. Only MEDSL's years are served;
+    the overlap is what says Algara & Amlani's 1992 and 1996 counties can be
+    trusted beside them.
+    """
+    del scope
+    history = _count(
+        cursor,
+        """
+        SELECT COUNT(*) FROM gold_elections.current_read
+         WHERE stream IN ('county_president', 'county_president_history')
+        """,
+    )
+    if history < 2:
+        return [RuleOutcome("silver_elections.candidate_result", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH history AS (
+            SELECT result.county_fips, result.election_year,
+                   SUM(result.candidate_votes) FILTER (WHERE result.party_code = 'REP') AS rep,
+                   SUM(result.candidate_votes) FILTER (WHERE result.party_code = 'DEM') AS dem
+              FROM silver_elections.candidate_result AS result
+              JOIN gold_elections.current_read AS read ON read.run_id = result.run_id
+             WHERE read.stream = 'county_president_history'
+               AND result.election_year BETWEEN 2000 AND 2020
+             GROUP BY result.county_fips, result.election_year
+        ),
+        medsl AS (
+            SELECT county_fips, election_year, republican_votes AS rep, democratic_votes AS dem
+              FROM gold_elections.contest_result
+             WHERE office = 'president' AND geo_level = 'county' AND stage = 'GEN'
+               AND stream = 'county_president' AND election_year BETWEEN 2000 AND 2020
+        )
+        SELECT history.county_fips AS item, history.election_year::TEXT AS year,
+               'margin ' || ROUND(100.0 * (history.rep - history.dem) / NULLIF(history.rep + history.dem, 0), 2)
+               || ' against MEDSL ' || ROUND(100.0 * (medsl.rep - medsl.dem) / NULLIF(medsl.rep + medsl.dem, 0), 2)
+                   AS detail
+          FROM history
+          JOIN medsl USING (county_fips, election_year)
+         WHERE ABS(100.0 * (history.rep - history.dem) / NULLIF(history.rep + history.dem, 0)
+                   - 100.0 * (medsl.rep - medsl.dem) / NULLIF(medsl.rep + medsl.dem, 0)) > 0.5
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "silver_elections.candidate_result",
             "warn" if offenders else "pass",
             observed_count=offenders_total,
             expected_count=0,
@@ -4773,6 +4836,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ELEC-004": elections_totals_and_geography,
     "DQ-ELEC-005": elections_lean_group_arithmetic,
     "DQ-ELEC-006": elections_governor_fiscal_arithmetic,
+    "DQ-ELEC-007": elections_county_history_agreement,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

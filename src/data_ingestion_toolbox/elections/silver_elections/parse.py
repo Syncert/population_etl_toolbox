@@ -13,6 +13,13 @@ Pure: bytes in, typed rows and quarantine records out.
   area. Votes that are not a whole number are quarantined, never read as
   zero; an empty total is unknown. A county row with no county code (a
   statewide write-in line, overseas ballots) is quarantined and counted.
+* An Algara & Amlani row is one county and contest with the Democratic and
+  Republican nominees' votes and the county's total. It becomes one row per
+  major-party nominee who stood, plus "(other candidates combined)" for any
+  votes left over, so a county's total is still the sum of its rows. Only
+  election years from 1990 are read. A county code retired since then is
+  read as its successor (``registry.COUNTY_SUCCESSOR``); a merged city's
+  votes are added into its county before anything is served.
 """
 
 from __future__ import annotations
@@ -27,16 +34,25 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from data_ingestion_toolbox.utility.rdata import RDataError, read_data_frames
+
 from ..registry import (
     COUNTY_PRESIDENT,
+    COUNTY_PRESIDENT_HISTORY,
+    COUNTY_SENATE,
+    COUNTY_SENATE_HISTORY,
+    COUNTY_STREAMS,
+    COUNTY_SUCCESSOR,
     FIPS_STATE,
     FIRST_TERM_DAY,
     HOUSE,
     SENATE,
     STATE_FIPS,
     STATE_PRESIDENT,
+    STATEWIDE_TOTAL_STREAMS,
     WIKIDATA_PARTIES,
     party_code,
+    result_dataset,
 )
 
 _FIRST_DAY = date.fromisoformat(FIRST_TERM_DAY)
@@ -46,6 +62,9 @@ _RESULT_OFFICES = {
     STATE_PRESIDENT: "president",
     SENATE: "us_senate",
     HOUSE: "us_house",
+    COUNTY_PRESIDENT_HISTORY: "president",
+    COUNTY_SENATE_HISTORY: "us_senate",
+    COUNTY_SENATE: "us_senate",
 }
 
 
@@ -464,8 +483,9 @@ def parse_results(
                 )
             state_fips = STATE_FIPS.get(state)
             county_fips: str | None = None
+            source_fips: str | None = None
             district: int | None = None
-            if stream == COUNTY_PRESIDENT:
+            if stream in COUNTY_STREAMS:
                 geo_level = "county"
                 raw_fips = _text(row, "county_fips")
                 if raw_fips is None:
@@ -479,6 +499,12 @@ def parse_results(
                         "no_county_code",
                         f"county_fips {raw_fips!r} is not a county code",
                     )
+                if county_fips in COUNTY_SUCCESSOR:
+                    # A retired code is read as its successor. Its own total
+                    # is not the successor's, so it is dropped: the county's
+                    # total becomes the sum of its candidates' votes.
+                    source_fips = county_fips
+                    county_fips = COUNTY_SUCCESSOR[county_fips]
             elif stream == HOUSE:
                 geo_level = "district"
                 district = _whole(_text(row, "district") or "", "district")
@@ -492,14 +518,20 @@ def parse_results(
             writein = _flag(row.get("writein"))
             votes = _whole(row.get("candidatevotes"), "candidatevotes")
             total_text = _text(row, "totalvotes")
-            total = _whole(total_text, "totalvotes") if total_text is not None else None
+            total = (
+                _whole(total_text, "totalvotes")
+                if total_text is not None
+                and stream not in STATEWIDE_TOTAL_STREAMS
+                and source_fips is None
+                else None
+            )
             key = _sha(
                 stream,
                 year,
                 stage,
                 special,
                 state,
-                county_fips,
+                source_fips or county_fips,
                 district,
                 candidate,
                 party_text,
@@ -538,3 +570,236 @@ def parse_results(
         except _RowError as error:
             quarantined.append(Quarantine(index, error.code, str(error)[:200]))
     return results, quarantined, len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Algara & Amlani county returns.
+# ---------------------------------------------------------------------------
+
+#: The columns every Algara & Amlani release frame carries (read on
+#: OFFICE_LAB 2026-11-07). The Senate frame adds ``election_id`` and
+#: ``seat_class``.
+_HISTORY_COLUMNS = (
+    "election_year",
+    "fips",
+    "state",
+    "office",
+    "election_type",
+    "democratic_raw_votes",
+    "dem_nominee",
+    "republican_raw_votes",
+    "rep_nominee",
+    "raw_county_vote_totals",
+)
+_HISTORY_OFFICES = {"PRES": "president", "SEN": "us_senate"}
+OTHER_CANDIDATES = "(other candidates combined)"
+
+
+class HistoryFileError(ValueError):
+    """The R file does not hold the registered data frame in its known shape."""
+
+
+def _history_votes(value: Any, field: str) -> int | None:
+    if value is None:
+        return None
+    number = float(value)
+    if number < 0 or not number.is_integer():
+        raise _RowError("unreadable_votes", f"{field} {value!r} is not a whole number")
+    return int(number)
+
+
+def _history_frame(stream: str, raw_bytes: bytes) -> dict[str, list[Any]]:
+    dataset = result_dataset(stream)
+    try:
+        frames = read_data_frames(raw_bytes)
+    except RDataError as exc:
+        raise HistoryFileError(f"{stream}: {exc}") from exc
+    frame = next((f for f in frames if f.name == dataset.rdata_object), None)
+    if frame is None:
+        raise HistoryFileError(f"{stream}: no data frame {dataset.rdata_object}")
+    missing = [c for c in _HISTORY_COLUMNS if c not in frame.columns]
+    if missing:
+        raise HistoryFileError(f"{stream}: columns missing: {', '.join(missing)}")
+    return frame.columns
+
+
+def parse_history(
+    stream: str, raw_bytes: bytes, *, first_year: int
+) -> tuple[list[CandidateResult], list[Quarantine], int]:
+    """(results, quarantine, records read) from one Algara & Amlani file.
+
+    Rows before ``first_year`` are not read and not counted. Two rows that
+    map to one county and contest (a merged city and its county) are summed;
+    two identical rows keep one and set the repeat aside as ``repeated_row``;
+    two rows for one county and contest from the same code that disagree are
+    both quarantined as ``conflicting_row``.
+    """
+    office = _RESULT_OFFICES[stream]
+    columns = _history_frame(stream, raw_bytes)
+    count = len(columns["fips"])
+    seat_classes = columns.get("seat_class") or [None] * count
+    quarantined: list[Quarantine] = []
+    #: contest key -> source code -> (record index, row tuple)
+    contests: dict[tuple, dict[str, list[tuple[int, tuple]]]] = {}
+    read = 0
+    for position in range(count):
+        index = position + 1
+        year_value = columns["election_year"][position]
+        if year_value is None or float(year_value) < first_year:
+            continue
+        read += 1
+        try:
+            year = int(float(year_value))
+            row_office = _HISTORY_OFFICES.get(str(columns["office"][position] or ""))
+            if row_office != office:
+                raise _RowError(
+                    "unknown_office",
+                    f"office {columns['office'][position]!r} is not {office}",
+                )
+            state = str(columns["state"][position] or "")
+            if state not in STATE_FIPS:
+                raise _RowError(
+                    "unreadable_state", f"state {state!r} is not a USPS code"
+                )
+            source_fips = str(columns["fips"][position] or "").strip()
+            if not re.fullmatch(r"[0-9]{5}", source_fips):
+                raise _RowError(
+                    "no_county_code", f"fips {source_fips!r} is not a county code"
+                )
+            if source_fips[:2] != STATE_FIPS[state]:
+                raise _RowError(
+                    "unreadable_state",
+                    f"fips {source_fips} is not in {state}",
+                )
+            election_type = str(columns["election_type"][position] or "").upper()
+            if election_type not in ("G", "S"):
+                raise _RowError(
+                    "unknown_election_type",
+                    f"election_type {election_type!r} is not G or S",
+                )
+            democratic = _history_votes(
+                columns["democratic_raw_votes"][position], "democratic_raw_votes"
+            )
+            republican = _history_votes(
+                columns["republican_raw_votes"][position], "republican_raw_votes"
+            )
+            total = _history_votes(
+                columns["raw_county_vote_totals"][position], "raw_county_vote_totals"
+            )
+            if democratic is None and republican is None:
+                raise _RowError(
+                    "no_major_party_votes", "neither major party's votes are given"
+                )
+            major = (democratic or 0) + (republican or 0)
+            if total is not None and total < major:
+                raise _RowError(
+                    "total_below_parties",
+                    f"total {total} is below the major parties' {major}",
+                )
+        except (_RowError, TypeError, ValueError) as error:
+            code = error.code if isinstance(error, _RowError) else "unreadable_row"
+            quarantined.append(Quarantine(index, code, str(error)[:200]))
+            continue
+        county = COUNTY_SUCCESSOR.get(source_fips, source_fips)
+        seat_class = seat_classes[position]
+        key = (year, election_type == "S", str(seat_class or ""), state, county)
+        row = (
+            democratic,
+            columns["dem_nominee"][position],
+            republican,
+            columns["rep_nominee"][position],
+            total,
+        )
+        contests.setdefault(key, {}).setdefault(source_fips, []).append((index, row))
+
+    results: list[CandidateResult] = []
+    for key, sources in contests.items():
+        year, special, seat_class, state, county = key
+        kept: list[tuple[int, tuple]] = []
+        refused = False
+        for source_fips, rows in sources.items():
+            first_index, first_row = rows[0]
+            for repeat_index, repeat_row in rows[1:]:
+                if repeat_row == first_row:
+                    quarantined.append(
+                        Quarantine(
+                            repeat_index,
+                            "repeated_row",
+                            f"{source_fips} {year} repeats row {first_index}",
+                        )
+                    )
+                else:
+                    refused = True
+            if refused:
+                quarantined.extend(
+                    Quarantine(
+                        i,
+                        "conflicting_row",
+                        f"{source_fips} {year} has rows that disagree",
+                    )
+                    for i, _row in rows
+                )
+                break
+            kept.append((first_index, first_row))
+        if refused:
+            continue
+        democratic = _sum_known(r[0] for _i, r in kept)
+        republican = _sum_known(r[2] for _i, r in kept)
+        totals = [r[4] for _i, r in kept]
+        total = None if any(t is None for t in totals) else sum(totals)
+        record_index = min(i for i, _r in kept)
+        source_codes = "+".join(sorted(sources))
+        lines: list[tuple[str, str | None, int]] = []
+        if democratic is not None:
+            lines.append((_nominee(kept, 1), "Democratic", democratic))
+        if republican is not None:
+            lines.append((_nominee(kept, 3), "Republican", republican))
+        if total is not None:
+            others = total - (democratic or 0) - (republican or 0)
+            if others > 0:
+                lines.append((OTHER_CANDIDATES, None, others))
+        for candidate, party_text, votes in lines:
+            result_key = _sha(
+                stream, year, "GEN", special, seat_class, state, county, candidate,
+                party_text,
+            )  # fmt: skip
+            results.append(
+                CandidateResult(
+                    record_index=record_index,
+                    result_key=result_key,
+                    office=office,
+                    election_year=year,
+                    stage="GEN",
+                    special=special,
+                    state_code=state,
+                    state_fips=STATE_FIPS[state],
+                    county_fips=county,
+                    district=None,
+                    candidate=candidate,
+                    party_text=party_text,
+                    party_code=party_code(party_text),
+                    writein=False,
+                    mode="TOTAL",
+                    candidate_votes=votes,
+                    total_votes=total,
+                    geo_level="county",
+                    source_record_id=_sha(
+                        "elections", stream, source_codes, result_key
+                    ),
+                )
+            )
+    return results, quarantined, read
+
+
+def _sum_known(values: Any) -> int | None:
+    numbers = list(values)
+    if all(n is None for n in numbers):
+        return None
+    return sum(n or 0 for n in numbers)
+
+
+def _nominee(kept: list[tuple[int, tuple]], position: int) -> str:
+    names = {str(r[position]).strip() for _i, r in kept if r[position]}
+    if len(names) == 1:
+        return names.pop()
+    return "(nominee not named)" if not names else "; ".join(sorted(names))

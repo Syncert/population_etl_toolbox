@@ -58,7 +58,7 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
     }
     assert secrets == {"dataverse_api_token"}
     assert module.ElectionsConfig().dataverse_api_token == ""
-    assert len(STREAMS) == 6 and len(STATE_FIPS) == 51
+    assert len(STREAMS) == 9 and len(STATE_FIPS) == 51
 
 
 @pytest.mark.parametrize(
@@ -380,3 +380,115 @@ def test_the_guestbook_identity_is_read_from_the_environment(
         "position": "",
     }
     assert "not-a-real-token" not in repr(config)
+
+
+def _history(stream: str, name: str):  # noqa: ANN202
+    from data_ingestion_toolbox.elections.registry import result_dataset
+    from data_ingestion_toolbox.elections.silver_elections.parse import parse_history
+
+    return parse_history(
+        stream, fixture_bytes(name), first_year=result_dataset(stream).first_year
+    )
+
+
+def test_county_history_reads_from_1990_and_maps_retired_counties() -> None:
+    """Covers: ETL-111 — Dade reads as Miami-Dade; South Boston city adds into Halifax."""
+    results, quarantined, read = _history(
+        "county_president_history", "county_president_history.Rdata"
+    )
+    # Fourteen rows; the 1988 row is not read.
+    assert read == 13
+    assert {r.election_year for r in results} == {1992, 1996, 2016}
+    by_county = {
+        (r.election_year, r.county_fips, r.party_code): r.candidate_votes
+        for r in results
+    }
+    assert "12025" not in {r.county_fips for r in results}
+    assert by_county[(1992, "12086", "REP")] == 230000
+    # Halifax 6,000 + South Boston city 1,800; totals 12,000 + 3,600.
+    assert by_county[(1992, "51083", "REP")] == 7800
+    assert by_county[(1992, "51083", "OTH")] == 15600 - 6500 - 7800
+    halifax = [r for r in results if r.county_fips == "51083"]
+    assert {r.total_votes for r in halifax} == {15600}
+    assert {(q.record_index, q.error_code) for q in quarantined} == {
+        (7, "no_major_party_votes"),
+        (10, "repeated_row"),
+        (11, "conflicting_row"),
+        (12, "conflicting_row"),
+    }
+    # Every county's rows add up to its total: nothing is left out.
+    for year, county in {(r.election_year, r.county_fips) for r in results}:
+        rows = [
+            r for r in results if (r.election_year, r.county_fips) == (year, county)
+        ]
+        assert sum(r.candidate_votes for r in rows) == rows[0].total_votes
+
+
+def test_county_senate_history_keeps_two_races_apart_and_no_missing_zero() -> None:
+    """Covers: ETL-111 — a special is its own contest; an absent nominee is no row, not zero."""
+    results, quarantined, read = _history(
+        "county_senate_history", "county_senate_history.Rdata"
+    )
+    assert quarantined == [] and read == 6
+    hennepin = {(r.special, r.candidate) for r in results if r.county_fips == "27053"}
+    assert (False, "Amy Klobuchar") in hennepin and (True, "Tina Smith") in hennepin
+    warner = [r for r in results if r.election_year == 2002]
+    assert {r.party_code for r in warner} == {"REP", "OTH"}
+    assert all(r.office == "us_senate" and r.geo_level == "county" for r in results)
+
+
+def test_county_senate_2022_reads_county_votes_not_the_state_total() -> None:
+    """Covers: ETL-111 — MEDSL repeats the statewide total on county rows; it is not kept."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE
+
+    results, quarantined, _read = parse_results(
+        COUNTY_SENATE, fixture_bytes("county_senate.csv")
+    )
+    assert quarantined == []
+    assert {r.county_fips for r in results} == {"55025", "55133"}
+    assert all(r.total_votes is None for r in results)
+    assert all(r.office == "us_senate" and not r.special for r in results)
+    assert sum(r.candidate_votes for r in results if r.county_fips == "55025") == (
+        231818 + 68228 + 4 + 678
+    )
+
+
+def test_history_files_are_checked_as_r_files() -> None:
+    """Covers: ETL-111 — an HTML error page in place of the .Rdata file is refused."""
+    from data_ingestion_toolbox.elections.client import FileRequest
+
+    request = FileRequest("county_senate_history", "data", "", {}, "results", "")
+    check_body(request, fixture_bytes("county_senate_history.Rdata"))
+    with pytest.raises(ElectionsPayloadError) as refused:
+        check_body(request, b"<html>maintenance</html>")
+    assert refused.value.code == "not_an_rdata_file"
+
+
+def test_history_streams_select_their_own_file_from_one_dataset() -> None:
+    """Covers: ETL-111 — two streams share one Dataverse dataset, one file each."""
+    listing = fixture_bytes("listing-county_history.json")
+    assert select_data_file(result_dataset("county_president_history"), listing) == (
+        5028532,
+        "dataverse_shareable_presidential_county_returns_1868_2020.Rdata",
+    )
+    assert select_data_file(result_dataset("county_senate_history"), listing)[0] == (
+        5028534
+    )
+    request = data_request(result_dataset("county_senate_history"), 5028534)
+    assert request.media_type == "application/octet-stream"
+
+
+def test_a_medsl_county_row_with_a_retired_code_adds_into_its_successor() -> None:
+    """Covers: ETL-111 — Bedford city 2008 counts in Bedford County, its total dropped."""
+    header = b"year,state_po,county_name,county_fips,candidate,party,candidatevotes,totalvotes,mode\n"
+    body = (
+        b"2008,VA,BEDFORD,51019,JOHN MCCAIN,REPUBLICAN,23000,34000,TOTAL\n"
+        b"2008,VA,BEDFORD CITY,51515,JOHN MCCAIN,REPUBLICAN,1500,3000,TOTAL\n"
+    )
+    results, quarantined, _read = parse_results(COUNTY_PRESIDENT, header + body)
+    assert quarantined == []
+    assert [(r.county_fips, r.candidate_votes, r.total_votes) for r in results] == [
+        ("51019", 23000, 34000),
+        ("51019", 1500, None),
+    ]
+    assert results[0].result_key != results[1].result_key

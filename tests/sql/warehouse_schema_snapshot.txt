@@ -532,7 +532,7 @@ r control.elections_run
     constraint elections_run_run_checksum_check CHECK (((run_checksum IS NULL) OR (run_checksum ~ '^[0-9a-f]{64}$'::text)))
     constraint elections_run_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint elections_run_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
-    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text])))
+    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text, 'county_president_history'::text, 'county_senate_history'::text, 'county_senate'::text])))
     index elections_run_pkey CREATE UNIQUE INDEX elections_run_pkey ON control.elections_run USING btree (run_id)
 
 r control.epa_aqs_file
@@ -5304,6 +5304,7 @@ v gold_elections.candidate_total
     body             (COALESCE(result.county_fips, ''::text) || '|'::text) || COALESCE(result.district::text, ''::text) AS area_key
     body            FROM silver_elections.candidate_result result
     body              JOIN gold_elections.current_read read ON read.run_id = result.run_id
+    body           WHERE NOT (read.stream = 'county_president_history'::text AND result.election_year >= 2000)
     body         ), mode_total AS (
     body          SELECT current_rows.run_id,
     body             current_rows.office,
@@ -5914,7 +5915,7 @@ v gold_elections.measure_definition
     body     measure_label,
     body     unit,
     body     observation_basis
-    body    FROM ( VALUES ('president_two_party_republican_share'::text,'Presidential vote: Republican share of the two-party vote'::text,'percent'::text,('MIT Election Data and Science Lab returns: the Republican candidate''s votes as a share of the '::text || 'Republican and Democratic candidates'' combined votes in the general election, counting a '::text) || 'candidate''s every ballot line. A comparison of places, not a measure of how any voter fared.'::text), ('president_two_party_margin'::text,'Presidential vote: two-party margin (Republican minus Democratic)'::text,'percentage points'::text,'MIT Election Data and Science Lab returns: the Republican share minus the Democratic share of '::text || 'the two-party vote in the general election; positive leans Republican, negative Democratic.'::text), ('president_total_votes'::text,'Presidential vote: total votes cast'::text,'votes'::text,'MIT Election Data and Science Lab returns: every vote cast for president in the area, as the '::text || 'returns publish it, including candidates of every party and write-ins.'::text)) definition(measure, measure_label, unit, observation_basis);
+    body    FROM ( VALUES ('president_two_party_republican_share'::text,'Presidential vote: Republican share of the two-party vote'::text,'percent'::text,(('Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '::text || 'Amlani): the Republican candidate''s votes as a share of the Republican and Democratic '::text) || 'candidates'' combined votes in the general election, counting a candidate''s every ballot '::text) || 'line. A comparison of places, not a measure of how any voter fared.'::text), ('president_two_party_margin'::text,'Presidential vote: two-party margin (Republican minus Democratic)'::text,'percentage points'::text,('Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '::text || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '::text) || 'general election; positive leans Republican, negative Democratic.'::text), ('president_total_votes'::text,'Presidential vote: total votes cast'::text,'votes'::text,('Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '::text || 'Amlani): every vote cast for president in the area, including candidates of every party '::text) || 'and write-ins.'::text), ('senate_two_party_republican_share'::text,'U.S. Senate vote: Republican share of the two-party vote'::text,'percent'::text,(('Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '::text || 'Amlani): the Republican nominee''s votes as a share of the two major parties'' nominees'' '::text) || 'combined votes in the regularly scheduled general election for the seat. A special election '::text) || 'held the same year is kept in the contest results but not served here.'::text), ('senate_two_party_margin'::text,'U.S. Senate vote: two-party margin (Republican minus Democratic)'::text,'percentage points'::text,(('Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '::text || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '::text) || 'regularly scheduled general election; positive leans Republican. Where a party ran no '::text) || 'nominee the margin is 100 points one way, never a missing value read as zero.'::text), ('senate_total_votes'::text,'U.S. Senate vote: total votes cast'::text,'votes'::text,('Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '::text || 'Amlani): every vote cast for the Senate seat in the area, including candidates of every '::text) || 'party.'::text)) definition(measure, measure_label, unit, observation_basis);
 
 v gold_elections.measure_export
     column source_object_key text
@@ -5953,10 +5954,11 @@ v gold_elections.metric_publisher
     body     '1.0'::text AS publisher_contract_version,
     body     served.metric_key AS source_object_key,
     body     'measure'::text AS source_object_type,
-    body     export.measure_label || ' (MEDSL)'::text AS metric_display_name,
+    body     export.measure_label AS metric_display_name,
     body     export.unit AS units,
     body         CASE served.metric_key
     body             WHEN 'president_total_votes'::text THEN 'source_fact'::text
+    body             WHEN 'senate_total_votes'::text THEN 'source_fact'::text
     body             ELSE 'derived_summary'::text
     body         END AS measure_kind,
     body     served.valid_geo_grains,
@@ -5966,7 +5968,7 @@ v gold_elections.metric_publisher
     body     served.source_watermark,
     body     served.source_run_id,
     body     served.publication_time,
-    body     'MIT Election Data and Science Lab'::text AS source_name,
+    body     'MIT Election Data and Science Lab, with Algara & Amlani for county returns before 2000'::text AS source_name,
     body     'academic-data-archive'::text AS source_type,
     body     'https://electionlab.mit.edu/data'::text AS reference_url
     body    FROM ( SELECT latest.metric_key,
@@ -6080,7 +6082,7 @@ v gold_elections.observation_revision
     body             make_date(result.election_year::integer, 11, 2) + (2 - EXTRACT(dow FROM make_date(result.election_year::integer, 11, 2))::integer + 7) % 7 AS election_day,
     body             NULLIF(COALESCE(result.republican_votes, 0::bigint) + COALESCE(result.democratic_votes, 0::bigint), 0) AS two_party_votes
     body            FROM gold_elections.contest_result result
-    body           WHERE result.office = 'president'::text AND result.stage = 'GEN'::text AND NOT result.special AND (result.geo_level = ANY (ARRAY['state'::text, 'county'::text]))
+    body           WHERE (result.office = ANY (ARRAY['president'::text, 'us_senate'::text])) AND result.stage = 'GEN'::text AND NOT result.special AND (result.geo_level = ANY (ARRAY['state'::text, 'county'::text]))
     body         ), measured AS (
     body          SELECT contest.office,
     body             contest.election_year,
@@ -6107,14 +6109,17 @@ v gold_elections.observation_revision
     body             contest.capture_id,
     body             contest.election_day,
     body             contest.two_party_votes,
-    body             measure.metric_key,
-    body                 CASE measure.metric_key
-    body                     WHEN 'president_two_party_republican_share'::text THEN round(100.0 * COALESCE(contest.republican_votes, 0::bigint)::numeric / contest.two_party_votes::numeric, 2)
-    body                     WHEN 'president_two_party_margin'::text THEN round(100.0 * (COALESCE(contest.republican_votes, 0::bigint) - COALESCE(contest.democratic_votes, 0::bigint))::numeric / contest.two_party_votes::numeric, 2)
+    body             measure.prefix || measure.suffix AS metric_key,
+    body                 CASE measure.suffix
+    body                     WHEN '_two_party_republican_share'::text THEN round(100.0 * COALESCE(contest.republican_votes, 0::bigint)::numeric / contest.two_party_votes::numeric, 2)
+    body                     WHEN '_two_party_margin'::text THEN round(100.0 * (COALESCE(contest.republican_votes, 0::bigint) - COALESCE(contest.democratic_votes, 0::bigint))::numeric / contest.two_party_votes::numeric, 2)
     body                     ELSE contest.total_votes::numeric
     body                 END AS value
     body            FROM contest
-    body              CROSS JOIN ( VALUES ('president_two_party_republican_share'::text), ('president_two_party_margin'::text), ('president_total_votes'::text)) measure(metric_key)
+    body              JOIN ( VALUES ('president'::text,'president'::text), ('us_senate'::text,'senate'::text)) office_prefix(office, prefix) ON office_prefix.office = contest.office
+    body              CROSS JOIN LATERAL ( SELECT office_prefix.prefix,
+    body                     suffixes.suffix
+    body                    FROM ( VALUES ('_two_party_republican_share'::text), ('_two_party_margin'::text), ('_total_votes'::text)) suffixes(suffix)) measure
     body         )
     body  SELECT measured.metric_key,
     body     definition.measure_label,
@@ -6140,7 +6145,10 @@ v gold_elections.observation_revision
     body     measured.democratic_votes,
     body     measured.total_votes,
     body     measured.leading_party_code,
-    body     'MEDSL '::text || COALESCE(measured.source_file, measured.stream) AS release_key,
+    body         CASE
+    body             WHEN measured.stream ~~ '%\_history'::text THEN 'Algara & Amlani '::text
+    body             ELSE 'MEDSL '::text
+    body         END || COALESCE(measured.source_file, measured.stream) AS release_key,
     body     measured.published_at,
     body     md5((((measured.metric_key || '|'::text) || measured.geo_id) || '|'::text) || measured.election_year::text) AS source_record_id,
     body     measured.capture_id,

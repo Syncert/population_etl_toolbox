@@ -6,10 +6,11 @@ SELECT 'ELECTIONS'::TEXT AS source_code,
        '1.0'::TEXT AS publisher_contract_version,
        served.metric_key AS source_object_key,
        'measure'::TEXT AS source_object_type,
-       (export.measure_label || ' (MEDSL)')::TEXT AS metric_display_name,
+       export.measure_label::TEXT AS metric_display_name,
        export.unit::TEXT AS units,
        CASE served.metric_key
            WHEN 'president_total_votes' THEN 'source_fact'
+           WHEN 'senate_total_votes' THEN 'source_fact'
            ELSE 'derived_summary'
        END::TEXT AS measure_kind,
        served.valid_geo_grains,
@@ -23,7 +24,8 @@ SELECT 'ELECTIONS'::TEXT AS source_code,
        served.source_watermark,
        served.source_run_id,
        served.publication_time,
-       'MIT Election Data and Science Lab'::TEXT AS source_name,
+       'MIT Election Data and Science Lab, with Algara & Amlani for county returns before 2000'::TEXT
+           AS source_name,
        'academic-data-archive'::TEXT AS source_type,
        'https://electionlab.mit.edu/data'::TEXT AS reference_url
 FROM (

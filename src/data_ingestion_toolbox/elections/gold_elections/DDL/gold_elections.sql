@@ -83,6 +83,10 @@ WITH current_rows AS (
            COALESCE(result.county_fips, '') || '|' || COALESCE(result.district::TEXT, '') AS area_key
     FROM silver_elections.candidate_result AS result
     JOIN gold_elections.current_read AS read ON read.run_id = result.run_id
+    -- One provider serves each county contest (registry.HISTORY_SERVED_BEFORE):
+    -- Algara & Amlani's presidential rows from 2000 are MEDSL's years and are
+    -- kept in silver only for the agreement check (DQ-ELEC-007).
+    WHERE NOT (read.stream = 'county_president_history' AND result.election_year >= 2000)
 ),
 mode_total AS (
     -- MEDSL repeats an area's total on every candidate row of a mode.
@@ -160,17 +164,37 @@ SELECT measure, measure_label, unit, observation_basis
 FROM (VALUES
     ('president_two_party_republican_share',
      'Presidential vote: Republican share of the two-party vote', 'percent',
-     'MIT Election Data and Science Lab returns: the Republican candidate''s votes as a share of the '
-     || 'Republican and Democratic candidates'' combined votes in the general election, counting a '
-     || 'candidate''s every ballot line. A comparison of places, not a measure of how any voter fared.'),
+     'Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '
+     || 'Amlani): the Republican candidate''s votes as a share of the Republican and Democratic '
+     || 'candidates'' combined votes in the general election, counting a candidate''s every ballot '
+     || 'line. A comparison of places, not a measure of how any voter fared.'),
     ('president_two_party_margin',
      'Presidential vote: two-party margin (Republican minus Democratic)', 'percentage points',
-     'MIT Election Data and Science Lab returns: the Republican share minus the Democratic share of '
-     || 'the two-party vote in the general election; positive leans Republican, negative Democratic.'),
+     'Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '
+     || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '
+     || 'general election; positive leans Republican, negative Democratic.'),
     ('president_total_votes',
      'Presidential vote: total votes cast', 'votes',
-     'MIT Election Data and Science Lab returns: every vote cast for president in the area, as the '
-     || 'returns publish it, including candidates of every party and write-ins.')
+     'Certified returns (MIT Election Data and Science Lab; county returns before 2000 from Algara & '
+     || 'Amlani): every vote cast for president in the area, including candidates of every party '
+     || 'and write-ins.'),
+    ('senate_two_party_republican_share',
+     'U.S. Senate vote: Republican share of the two-party vote', 'percent',
+     'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
+     || 'Amlani): the Republican nominee''s votes as a share of the two major parties'' nominees'' '
+     || 'combined votes in the regularly scheduled general election for the seat. A special election '
+     || 'held the same year is kept in the contest results but not served here.'),
+    ('senate_two_party_margin',
+     'U.S. Senate vote: two-party margin (Republican minus Democratic)', 'percentage points',
+     'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
+     || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '
+     || 'regularly scheduled general election; positive leans Republican. Where a party ran no '
+     || 'nominee the margin is 100 points one way, never a missing value read as zero.'),
+    ('senate_total_votes',
+     'U.S. Senate vote: total votes cast', 'votes',
+     'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
+     || 'Amlani): every vote cast for the Senate seat in the area, including candidates of every '
+     || 'party.')
 ) AS definition(measure, measure_label, unit, observation_basis);
 
 -- The presidential general-election measures in the neutral observation
@@ -185,22 +209,27 @@ WITH contest AS (
            NULLIF(COALESCE(result.republican_votes, 0) + COALESCE(result.democratic_votes, 0), 0)
                AS two_party_votes
     FROM gold_elections.contest_result AS result
-    WHERE result.office = 'president' AND result.stage = 'GEN' AND NOT result.special
+    WHERE result.office IN ('president', 'us_senate') AND result.stage = 'GEN' AND NOT result.special
       AND result.geo_level IN ('state', 'county')
 ),
 measured AS (
-    SELECT contest.*, measure.metric_key,
-           CASE measure.metric_key
-               WHEN 'president_two_party_republican_share'
+    SELECT contest.*, measure.prefix || measure.suffix AS metric_key,
+           CASE measure.suffix
+               WHEN '_two_party_republican_share'
                    THEN ROUND(100.0 * COALESCE(contest.republican_votes, 0) / contest.two_party_votes, 2)
-               WHEN 'president_two_party_margin'
+               WHEN '_two_party_margin'
                    THEN ROUND(100.0 * (COALESCE(contest.republican_votes, 0)
                                        - COALESCE(contest.democratic_votes, 0)) / contest.two_party_votes, 2)
                ELSE contest.total_votes::NUMERIC
            END AS value
     FROM contest
-    CROSS JOIN (VALUES ('president_two_party_republican_share'), ('president_two_party_margin'),
-                       ('president_total_votes')) AS measure(metric_key)
+    JOIN (VALUES ('president', 'president'), ('us_senate', 'senate')) AS office_prefix(office, prefix)
+      ON office_prefix.office = contest.office
+    CROSS JOIN LATERAL (
+        SELECT office_prefix.prefix, suffix
+        FROM (VALUES ('_two_party_republican_share'), ('_two_party_margin'), ('_total_votes'))
+             AS suffixes(suffix)
+    ) AS measure
 )
 SELECT measured.metric_key,
        definition.measure_label,
@@ -220,7 +249,8 @@ SELECT measured.metric_key,
        measured.democratic_votes,
        measured.total_votes,
        measured.leading_party_code,
-       'MEDSL ' || COALESCE(measured.source_file, measured.stream) AS release_key,
+       CASE WHEN measured.stream LIKE '%\_history' THEN 'Algara & Amlani ' ELSE 'MEDSL ' END
+           || COALESCE(measured.source_file, measured.stream) AS release_key,
        measured.published_at,
        md5(measured.metric_key || '|' || measured.geo_id || '|' || measured.election_year::TEXT)
            AS source_record_id,

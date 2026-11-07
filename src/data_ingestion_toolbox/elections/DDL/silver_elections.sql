@@ -9,7 +9,8 @@ CREATE SCHEMA IF NOT EXISTS silver_elections;
 CREATE TABLE IF NOT EXISTS control.elections_run (
     run_id UUID PRIMARY KEY REFERENCES control.ingestion_run(run_id),
     stream TEXT NOT NULL CHECK (
-        stream IN ('legislators', 'governors', 'county_president', 'state_president', 'senate', 'house')
+        stream IN ('legislators', 'governors', 'county_president', 'state_president', 'senate', 'house',
+                   'county_president_history', 'county_senate_history', 'county_senate')
     ),
     status TEXT NOT NULL CHECK (
         status IN ('capturing', 'captured', 'unchanged', 'silver_ready', 'quarantined', 'published')
@@ -24,6 +25,27 @@ CREATE TABLE IF NOT EXISTS control.elections_run (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT elections_run_published_has_time CHECK (status <> 'published' OR published_at IS NOT NULL)
 );
+
+-- The county history streams (plan election-results-back-to-1990) widen the
+-- stream list of a table created before them. Widening a list invalidates
+-- nothing stored; a CHECK that already names the new streams is left alone,
+-- so a rerun changes nothing.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'control.elections_run'::regclass
+          AND conname = 'elections_run_stream_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%county_senate_history%'
+    ) THEN
+        ALTER TABLE control.elections_run DROP CONSTRAINT elections_run_stream_check;
+        ALTER TABLE control.elections_run ADD CONSTRAINT elections_run_stream_check CHECK (
+            stream IN ('legislators', 'governors', 'county_president', 'state_president', 'senate', 'house',
+                       'county_president_history', 'county_senate_history', 'county_senate')
+        );
+    END IF;
+END
+$$;
 
 -- One row per committed file of a run: a results read's Dataverse list, then
 -- its data file; the two legislators files; the Wikidata answer.
