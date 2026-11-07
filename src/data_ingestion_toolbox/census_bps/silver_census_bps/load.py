@@ -91,6 +91,39 @@ def _upsert_dimension(cursor: Any) -> None:
     )
 
 
+def _forget_abandoned_attempts(cursor: Any, run_id: UUID) -> int:
+    """Drop the ledger rows of earlier attempts at this run's period that never replayed.
+
+    A replay that fails rolls back everything it parsed, but the capture step
+    has already committed one ``captured`` slice row per file; the retry
+    captures again under a new run. Once this run reconciles, those earlier
+    rows describe nothing (their revisions were never kept) and would hold
+    ``DQ-BPS-002`` failing for good. Their raw captures stay: the raw layer
+    is immutable, and identical bytes share one payload blob. Only rows
+    created before this run's are removed, in this run's transaction, so a
+    replay that fails again removes nothing.
+    """
+    cursor.execute(
+        """
+        DELETE FROM control.census_bps_slice AS abandoned
+         USING (
+                SELECT frequency, year, month, MIN(created_at) AS created_at
+                  FROM control.census_bps_slice
+                 WHERE run_id = %s
+                 GROUP BY frequency, year, month
+         ) AS current_run
+         WHERE abandoned.run_id <> %s
+           AND abandoned.status = 'captured'
+           AND abandoned.frequency = current_run.frequency
+           AND abandoned.year = current_run.year
+           AND abandoned.month = current_run.month
+           AND abandoned.created_at < current_run.created_at
+        """,
+        (str(run_id), str(run_id)),
+    )
+    return int(cursor.rowcount or 0)
+
+
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     """Parse and conform every captured file of a run; return the fact count."""
     connection = connection_factory()
@@ -269,6 +302,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 raise BpsReconciliationError(
                     f"run {run_id} reconciles {revisions} revisions and {facts} facts against {expected} expected"
                 )
+            _forget_abandoned_attempts(cursor, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()

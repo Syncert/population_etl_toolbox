@@ -11,7 +11,9 @@ import httpx
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.census_bps.capture import capture_period
 from data_ingestion_toolbox.census_bps.client import BpsPayloadError
+from data_ingestion_toolbox.census_bps.config import BpsConfig
 from data_ingestion_toolbox.census_bps.registry import ANNUAL, MONTHLY, BpsSlice
 from data_ingestion_toolbox.census_bps.schema import (
     REQUIRED_RELATIONS,
@@ -283,3 +285,55 @@ def test_an_unpublished_month_is_recorded_empty_and_the_schema_reapplies(
         "SELECT COUNT(*) FROM unnest(%s::TEXT[]) AS name WHERE to_regclass(name) IS NOT NULL",
         (list(REQUIRED_RELATIONS),),
     ) == [(len(REQUIRED_RELATIONS),)]
+
+
+def test_a_replay_that_succeeds_forgets_the_attempts_that_failed(
+    bps_warehouse,
+) -> None:
+    """Covers: ETL-057 — an attempt whose replay rolled back leaves no ledger row behind.
+
+    The capture step commits a `captured` slice row per file before replay;
+    a failed replay rolls back its silver rows but not those. The next
+    attempt captures under a new run, and once it reconciles the earlier
+    attempt's rows are removed in the same transaction, so DQ-BPS-002 passes
+    and nothing silver is rewritten. The raw captures stay (immutable).
+    """
+    factory = bps_warehouse
+    abandoned, _files = capture_period(
+        factory,
+        MONTHLY,
+        2024,
+        3,
+        config=BpsConfig(min_spacing_seconds=0, max_attempts=1),
+        client=bps.FixtureClient(),
+        sleep=lambda _: None,
+    )
+    assert _rows(
+        factory,
+        "SELECT DISTINCT status FROM control.census_bps_slice WHERE run_id = %s",
+        (str(abandoned),),
+    ) == [("captured",)]
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            assert bps_file_reconciliation(cursor, {})[0].result == "fail"
+    finally:
+        reader.close()
+    _run_id, facts, published = bps.run_to_gold(factory, MONTHLY, 2024, 3)
+    assert published == 2 and facts > 0
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM control.census_bps_slice WHERE run_id = %s",
+        (str(abandoned),),
+    ) == [(0,)]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM raw_capture.response_capture WHERE run_id = %s",
+        (str(abandoned),),
+    ) == [(2,)]
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            assert bps_file_reconciliation(cursor, {})[0].result == "pass"
+    finally:
+        reader.close()
