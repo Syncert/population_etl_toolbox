@@ -7,7 +7,9 @@ legislators file is a JSON list, a Wikidata answer carries
 ``results.bindings``, a Dataverse file list is ``status: OK`` with a list of
 files, a MEDSL results file starts with a header naming ``year`` and
 ``candidatevotes``, and an Algara & Amlani file is an R ``save()`` file
-(``RDX2`` or ``RDX3`` once decompressed).
+(``RDX2`` or ``RDX3`` once decompressed). A Census API answer is a JSON
+table whose header names the geography asked for; the API key is added to
+the request when it is sent and is never part of a captured request.
 """
 
 from __future__ import annotations
@@ -32,13 +34,21 @@ from .registry import (
     DATAVERSE_BASE_URL,
     GOVERNOR_QUERY,
     GOVERNORS,
+    HOUSE_COUNTY_SHARE,
     LEGISLATOR_FILES,
     LEGISLATORS,
     LEGISLATORS_BASE_URL,
     WIKIDATA_SPARQL_URL,
+    DistrictPlan,
     ResultDataset,
     result_dataset,
 )
+
+#: Census API request kinds: a state's district list, then one district's
+#: county pieces.
+DISTRICT_LISTING = "cd_listing"
+DISTRICT_COUNTIES = "cd_county"
+CENSUS_KINDS = (DISTRICT_LISTING, DISTRICT_COUNTIES)
 
 
 class ElectionsFetchError(RuntimeError):
@@ -129,6 +139,71 @@ def data_request(dataset: ResultDataset, file_id: int) -> FileRequest:
     )
 
 
+def district_listing_request(plan: DistrictPlan, state_fips: str) -> FileRequest:
+    """A state's districts in one plan."""
+    return FileRequest(
+        HOUSE_COUNTY_SHARE,
+        f"{plan.key}/{state_fips}",
+        plan.url,
+        {"get": "NAME", "for": "congressional district:*", "in": f"state:{state_fips}"},
+        DISTRICT_LISTING,
+        "application/json",
+    )
+
+
+def district_county_request(
+    plan: DistrictPlan, state_fips: str, district: str
+) -> FileRequest:
+    """The population of every county piece of one district in one plan."""
+    return FileRequest(
+        HOUSE_COUNTY_SHARE,
+        f"{plan.key}/{state_fips}/{district}",
+        plan.url,
+        {
+            "get": f"NAME,{plan.population_variable}",
+            "for": "county (or part):*",
+            "in": f"state:{state_fips} congressional district:{district}",
+        },
+        DISTRICT_COUNTIES,
+        "application/json",
+    )
+
+
+def census_table(
+    raw_bytes: bytes, endpoint: str, geography: str
+) -> list[dict[str, str]]:
+    """A Census API answer as rows keyed by its header; the header must name ``geography``."""
+    body = _json(raw_bytes, endpoint)
+    if (
+        not isinstance(body, list)
+        or not body
+        or not isinstance(body[0], list)
+        or geography not in body[0]
+    ):
+        raise ElectionsPayloadError(endpoint, code="not_a_census_table")
+    header = [str(name) for name in body[0]]
+    rows: list[dict[str, str]] = []
+    for row in body[1:]:
+        if not isinstance(row, list) or len(row) != len(header):
+            raise ElectionsPayloadError(endpoint, code="not_a_census_table")
+        rows.append(
+            {
+                name: "" if value is None else str(value)
+                for name, value in zip(header, row, strict=True)
+            }
+        )
+    return rows
+
+
+def listed_districts(raw_bytes: bytes, endpoint: str) -> list[str]:
+    """The numbered districts of a state's district list (``ZZ``, water, left out)."""
+    codes = {
+        row["congressional district"]
+        for row in census_table(raw_bytes, endpoint, "congressional district")
+    }
+    return sorted(code for code in codes if code.isdigit())
+
+
 def _is_rdata(raw_bytes: bytes) -> bool:
     """Whether the bytes are an R ``save()`` file, compressed or not."""
     opener = {
@@ -212,6 +287,10 @@ def check_body(request: FileRequest, raw_bytes: bytes) -> None:
         body = _json(raw_bytes, endpoint)
         if not isinstance(body, dict) or body.get("status") != "OK":
             raise ElectionsPayloadError(endpoint, code="service_error")
+    elif request.kind == DISTRICT_LISTING:
+        census_table(raw_bytes, endpoint, "congressional district")
+    elif request.kind == DISTRICT_COUNTIES:
+        census_table(raw_bytes, endpoint, "county (or part)")
     elif _payload_format(request.stream) == "rdata":
         if not _is_rdata(raw_bytes):
             raise ElectionsPayloadError(endpoint, code="not_an_rdata_file")
@@ -247,12 +326,14 @@ def fetch_file(
         headers["Accept"] = request.media_type
     final_status: int | None = None
     final_error: BaseException | None = None
+    parameters = dict(request.parameters)
+    if request.kind in CENSUS_KINDS and config.census_api_key:
+        # Sent, never captured: the capture records request.parameters.
+        parameters["key"] = config.census_api_key
     try:
         for attempt in range(1, config.max_attempts + 1):
             try:
-                response = active.get(
-                    request.url, params=dict(request.parameters), headers=headers
-                )
+                response = active.get(request.url, params=parameters, headers=headers)
             except httpx.HTTPError as exc:
                 final_error = ElectionsFetchError(
                     request.endpoint, code=type(exc).__name__

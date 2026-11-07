@@ -115,6 +115,16 @@ handling if that dataset has one), from OFFICE_LAB only.
 
 ### R-1b. House by county through the districts that cover it
 
+**As built (2026-11-07, second PR).** Census's relationship files give land
+area only, and its API serves county pieces with population only for the
+110th, 111th, 113th, 115th, 116th, 118th and 119th Congresses (probe on
+OFFICE_LAB, `/mnt/project-files/probe_cd_county.out`). Stream
+`house_county_share` reads those; `gold_elections.county_house_district`
+serves House elections from 2006, a Congress without its own tabulation
+using the one before it except where a state redrew (North Carolina 2020).
+1990 to 2004 is House by district only unless the UCLA district maps are
+added with land-area weighting (put to Nick 2026-11-07).
+
 A new reference stream `cd_county_relationship` captures the Census
 Bureau's congressional district to county relationship files, one per
 Congress from the 103rd (1993) on, each giving the county's population
