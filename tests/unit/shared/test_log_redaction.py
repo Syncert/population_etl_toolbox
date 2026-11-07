@@ -261,3 +261,25 @@ def test_a_malformed_record_is_passed_through() -> None:
         "x", logging.INFO, __file__, 1, "%s %s", ("one",), None
     )
     assert record.msg == "%s %s"
+
+
+def test_logging_config_attribute_wraps_airflows_default(monkeypatch) -> None:
+    """Covers: ETL-038 — the attribute Airflow reads is its default plus the mask."""
+    import sys
+    import types
+
+    import data_ingestion_toolbox.airflow_logging as module
+
+    default = {"version": 1, "handlers": {"task": {"class": "logging.StreamHandler"}}}
+    fake = types.ModuleType("airflow.config_templates.airflow_local_settings")
+    fake.DEFAULT_LOGGING_CONFIG = default
+    for name in ("airflow", "airflow.config_templates"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, fake.__name__, fake)
+    monkeypatch.delitem(module.__dict__, "LOGGING_CONFIG", raising=False)
+
+    config = module.LOGGING_CONFIG
+
+    assert config["handlers"]["task"]["filters"] == [module.FILTER_NAME]
+    assert config["loggers"]["httpx"]["level"] == "WARNING"
+    assert module.LOGGING_CONFIG is config  # built once, then cached
