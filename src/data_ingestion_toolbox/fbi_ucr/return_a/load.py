@@ -1216,7 +1216,7 @@ def load(
     connection_factory: Callable[[], Any],
     years: Sequence[int],
     *,
-    fetch: Callable[[int], FetchedFile] = fetch_year,
+    fetch: Callable[[int], FetchedFile] | None = None,
     publish_release: bool = True,
     may_be_unpublished: int | None = None,
 ) -> dict[str, Any]:
@@ -1227,6 +1227,9 @@ def load(
     has never been loaded: it is recorded ``not_published`` and does not hold
     the release back. Any other year's refusal is a failure.
     """
+    # Resolved per call, not bound as a default, so a test boundary stub of
+    # ``fetch_year`` reaches the scheduled task too.
+    fetch = fetch or fetch_year
     lock = connection_factory()
     lock.autocommit = True
     with lock.cursor() as cursor:
