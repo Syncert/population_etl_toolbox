@@ -21,8 +21,6 @@ import copy
 import logging
 from typing import Any
 
-from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
-
 from data_ingestion_toolbox.log_redaction import (
     QUIET_HTTP_LOGGERS,
     install_log_redaction,
@@ -51,7 +49,11 @@ class RedactSecretsFilter(logging.Filter):
 
 def build_logging_config(base: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return ``base`` (Airflow's default) with credential redaction added."""
-    config = copy.deepcopy(DEFAULT_LOGGING_CONFIG if base is None else base)
+    if base is None:
+        from airflow.config_templates.airflow_local_settings import (
+            DEFAULT_LOGGING_CONFIG as base,
+        )
+    config = copy.deepcopy(base)
     config.setdefault("filters", {})[FILTER_NAME] = {
         "()": f"{__name__}.RedactSecretsFilter"
     }
@@ -66,4 +68,13 @@ def build_logging_config(base: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 install_log_redaction()
-LOGGING_CONFIG = build_logging_config()
+
+
+def __getattr__(name: str) -> Any:
+    # Airflow reads ``LOGGING_CONFIG`` by attribute; building it on first read
+    # keeps Airflow out of the import, so the module is usable without it.
+    if name == "LOGGING_CONFIG":
+        config = build_logging_config()
+        globals()["LOGGING_CONFIG"] = config
+        return config
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

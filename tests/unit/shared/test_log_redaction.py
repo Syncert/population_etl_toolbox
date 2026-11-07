@@ -192,3 +192,72 @@ def test_scrub_rewrites_only_files_carrying_secrets(tmp_path) -> None:
     assert not scrub_log_file(clean, apply=True)
     assert clean.stat().st_mtime_ns == clean_mtime
     assert sorted(p.name for p in tmp_path.iterdir()) == ["attempt=1.log", "clean.log"]
+
+
+def test_airflow_logging_config_masks_every_handler_and_quiets_httpx() -> None:
+    """Covers: ETL-038, DAG-014 — Airflow's handlers all carry the secret mask."""
+    from data_ingestion_toolbox.airflow_logging import (
+        FILTER_NAME,
+        RedactSecretsFilter,
+        build_logging_config,
+    )
+
+    base = {
+        "version": 1,
+        "filters": {"mask_secrets": {"()": "x.SecretsMasker"}},
+        "handlers": {
+            "console": {"class": "logging.StreamHandler"},
+            "task": {"class": "logging.StreamHandler", "filters": ["mask_secrets"]},
+        },
+        "loggers": {"airflow.task": {"handlers": ["task"]}},
+    }
+    config = build_logging_config(base)
+    assert config["handlers"]["task"]["filters"] == ["mask_secrets", FILTER_NAME]
+    assert config["handlers"]["console"]["filters"] == [FILTER_NAME]
+    assert config["loggers"]["httpx"]["level"] == "WARNING"
+    assert config["loggers"]["httpcore"]["level"] == "WARNING"
+    assert "filters" not in base["handlers"]["console"]  # base left untouched
+    assert (
+        build_logging_config(config)["handlers"]["task"]["filters"].count(FILTER_NAME)
+        == 1
+    )
+
+    install_log_redaction(environ={})
+    record = logging.LogRecord(
+        "airflow.task",
+        logging.INFO,
+        __file__,
+        1,
+        "GET %s",
+        (f"https://api.eia.gov/v2/x?api_key={FAKE_EIA_KEY}",),
+        None,
+    )
+    record.exc_text = f"for url 'https://x/?key={FAKE_CENSUS_KEY}'"
+    assert RedactSecretsFilter().filter(record)
+    assert FAKE_EIA_KEY not in record.getMessage()
+    assert FAKE_CENSUS_KEY not in record.exc_text
+
+    broken = logging.LogRecord("x", logging.INFO, __file__, 1, "%s %s", ("one",), None)
+    assert RedactSecretsFilter().filter(broken)  # a malformed record still passes
+
+    with pytest.raises(AttributeError):
+        import data_ingestion_toolbox.airflow_logging as module
+
+        module.NOT_A_SETTING  # noqa: B018
+
+
+def test_redaction_reads_the_environment_when_not_installed(monkeypatch) -> None:
+    """Covers: ETL-038 — redaction without an install still masks env keys."""
+    monkeypatch.setattr(log_redaction, "_installed_factory", None)
+    monkeypatch.setenv("CENSUS_API_KEY", FAKE_CENSUS_KEY)
+    assert redact_secrets(f"value {FAKE_CENSUS_KEY}") == f"value {REDACTED}"
+    assert redact_secrets("") == ""
+
+
+def test_a_malformed_record_is_passed_through() -> None:
+    """Covers: ETL-038 — a record whose arguments do not format is not lost."""
+    install_log_redaction(environ={})
+    record = logging.getLogRecordFactory()(
+        "x", logging.INFO, __file__, 1, "%s %s", ("one",), None
+    )
+    assert record.msg == "%s %s"
