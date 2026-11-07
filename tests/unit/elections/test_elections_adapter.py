@@ -562,25 +562,49 @@ def test_ballot_counts_and_alaska_districts_are_set_aside() -> None:
     ]
 
 
-def test_medsl_repeats_keep_one_identical_copy_and_set_disagreeing_copies_aside() -> (
-    None
-):
-    """Covers: ETL-111 — an identical repeat keeps its first copy; copies that disagree are all quarantined."""
+def test_a_repeated_medsl_key_is_a_part_and_is_added_except_in_louisiana() -> None:
+    """Covers: ETL-111 — precinct and blank-mode repeats add up; Louisiana's rounds are set aside; quarantine says where."""
     header = b"year,state_po,county_name,county_fips,candidate,party,candidatevotes,totalvotes,mode\n"
     body = (
-        b"2022,IN,MARION,18097,TODD YOUNG,REPUBLICAN,100,300,TOTAL\n"
-        b"2022,IN,MARION,18097,TODD YOUNG,REPUBLICAN,90,300,TOTAL\n"
-        b"2022,IN,MARION,18097,THOMAS M. MCDERMOTT JR.,DEMOCRAT,200,300,TOTAL\n"
-        b"2022,IN,MARION,18097,THOMAS M. MCDERMOTT JR.,DEMOCRAT,200,300,TOTAL\n"
+        b"2022,IN,ADAMS,18001.0,TODD YOUNG,REPUBLICAN,100,300,TOTAL\n"
+        b"2022,IN,ADAMS,18001.0,TODD YOUNG,REPUBLICAN,90,300,TOTAL\n"
+        b"2022,IN,ADAMS,18001.0,TODD YOUNG,REPUBLICAN,90,300,TOTAL\n"
+        b"2024,NC,ALAMANCE,37001,TOTAL VOTES CAST,,40,89,\n"
+        b"2024,NC,ALAMANCE,37001,TOTAL VOTES CAST,,49,89,\n"
+        b"2024,NC,ALAMANCE,37001,KAMALA D HARRIS,DEMOCRAT,20,89,\n"
+        b"2024,NC,ALAMANCE,37001,KAMALA D HARRIS,DEMOCRAT,29,89,\n"
+        b"2002,LA,ORLEANS,22071,MARY L. LANDRIEU,DEMOCRAT,600,900,TOTAL\n"
+        b"2002,LA,ORLEANS,22071,MARY L. LANDRIEU,DEMOCRAT,500,900,TOTAL\n"
+        b"2002,LA,ORLEANS,22071,SUZANNE HAIK TERRELL,REPUBLICAN,300,900,TOTAL\n"
+        b"2002,LA,ORLEANS,22071,SUZANNE HAIK TERRELL,REPUBLICAN,300,900,TOTAL\n"
     )
     results, quarantined, _read = parse_results(COUNTY_PRESIDENT, header + body)
-    assert [(r.record_index, r.candidate) for r in results] == [
-        (3, "THOMAS M. MCDERMOTT JR.")
+    assert [
+        (r.record_index, r.candidate, r.candidate_votes, r.total_votes) for r in results
+    ] == [
+        (1, "TODD YOUNG", 280, 300),
+        (6, "KAMALA D HARRIS", 49, 89),
+        (10, "SUZANNE HAIK TERRELL", 300, 900),
     ]
-    assert [(q.record_index, q.error_code) for q in quarantined] == [
-        (1, "conflicting_row"),
-        (2, "conflicting_row"),
-        (4, "duplicate_row"),
+    assert [
+        (q.record_index, q.error_code, q.state_code, q.county_fips) for q in quarantined
+    ] == [
+        (8, "conflicting_row", "LA", "22071"),
+        (9, "conflicting_row", "LA", "22071"),
+        (11, "duplicate_row", "LA", "22071"),
+    ]
+
+    # The House file's runoff column makes the runoff its own contest.
+    house = (
+        b"year,state_po,district,stage,runoff,special,candidate,party,writein,mode,candidatevotes,totalvotes\n"
+        b"2002,LA,5,GEN,TRUE,FALSE,LEE FLETCHER,REPUBLICAN,FALSE,TOTAL,85744,172462\n"
+        b"2002,LA,5,GEN,FALSE,FALSE,LEE FLETCHER,REPUBLICAN,FALSE,TOTAL,45278,184657\n"
+    )
+    results, quarantined, _read = parse_results(HOUSE, house)
+    assert quarantined == []
+    assert sorted((r.stage, r.candidate_votes) for r in results) == [
+        ("GEN", 45278),
+        ("GEN RUNOFF", 85744),
     ]
 
 
