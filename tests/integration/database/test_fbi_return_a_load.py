@@ -331,12 +331,16 @@ def test_a_year_that_fails_is_recorded_and_the_run_moves_on(
 def test_return_a_totals_are_checked_against_the_cde(
     return_a_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-107, DQ-FBI-011 — summed totals equal the CDE's own."""
+    """Covers: ETL-107, DQ-FBI-011, DQ-FBI-015 — summed totals equal the CDE's own."""
     from data_ingestion_toolbox.quality.sources import fbi_return_a_matches_cde
 
     captured = fbi_release.persist_fixture_release(return_a_warehouse)
     fbi_release.run_pipeline(return_a_warehouse, captured)
     load(return_a_warehouse, [2023], fetch=_fetch)
+    # Both paths' facts name their source rows: the CDE's its revisions,
+    # Return A's its master-file lines.
+    for result, missing, _evidence in _source_row_outcomes(return_a_warehouse).values():
+        assert (result, missing) == ("pass", 0)
     reader = return_a_warehouse()
     try:
         with reader.cursor() as cursor:
@@ -545,3 +549,160 @@ def test_the_admin_coverage_read_counts_what_the_latest_view_serves(
         reader.close()
     assert fast == served
     assert any(row[0] == "AGENCY" and row[4] > 0 for row in fast)
+
+
+def _source_row_outcomes(factory: Callable[[], connection]) -> dict[str, tuple]:
+    from data_ingestion_toolbox.quality.sources import fbi_fact_source_rows
+
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            outcomes = fbi_fact_source_rows(cursor, {})
+    finally:
+        reader.rollback()
+        reader.close()
+    return {
+        outcome.object_name: (outcome.result, outcome.observed_count, outcome.evidence)
+        for outcome in outcomes
+    }
+
+
+def test_every_return_a_fact_names_the_line_it_was_read_from(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-121, DQ-FBI-015 — each fact's line is a stored source row."""
+    import hashlib
+
+    summary = load(return_a_warehouse, [2023], fetch=_fetch)
+    rows = _rows(
+        return_a_warehouse,
+        "SELECT source_row_index, ori, line_checksum, data_year, release_key, "
+        "run_id::text FROM silver_fbi.return_a_source_row ORDER BY 1",
+    )
+    # One row per agency line, never one per fact.
+    assert len(rows) == 49
+    lines = SAMPLE.read_text(encoding="latin-1").split("\n")
+    for index, ori, checksum, year, release, run_id in rows:
+        line = lines[index - 1].rstrip("\r")
+        assert ori.startswith(line[3:10])
+        assert checksum == hashlib.sha256(line.encode("latin-1")).hexdigest()
+        assert (year, release, run_id) == (2023, RELEASE, summary["run_id"])
+    for fact_table in (
+        "silver_fbi.fact_crime_observation",
+        "silver_fbi.fact_reporting_participation",
+    ):
+        assert _rows(
+            return_a_warehouse,
+            f"SELECT COUNT(*) FROM {fact_table} AS fact WHERE NOT EXISTS ("
+            "SELECT 1 FROM silver_fbi.return_a_source_row AS source_row "
+            "WHERE source_row.capture_id = fact.capture_id "
+            "AND source_row.source_row_index = fact.source_row_index)",
+        ) == [(0,)]
+    outcomes = _source_row_outcomes(return_a_warehouse)
+    assert outcomes["silver_fbi.fact_crime_observation"][:2] == ("pass", 0)
+    assert outcomes["silver_fbi.fact_reporting_participation"][:2] == ("pass", 0)
+
+    # A forced reload of the year replaces its source rows, never adds.
+    writer = return_a_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute("DELETE FROM control.fbi_return_a_year")
+        writer.commit()
+    finally:
+        writer.close()
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    assert _rows(
+        return_a_warehouse, "SELECT COUNT(*) FROM silver_fbi.return_a_source_row"
+    ) == [(49,)]
+    assert _source_row_outcomes(return_a_warehouse)[
+        "silver_fbi.fact_crime_observation"
+    ][:2] == ("pass", 0)
+
+
+def test_the_scheduled_backfill_rebuilds_missing_source_rows_once(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-121, DQ-FBI-015 — years loaded without lineage get it back.
+
+    2015-2025 were loaded on 2026-10-31 before the loader kept source rows:
+    about 20 million facts named lines silver did not hold. The rule names
+    the capture; the scheduled backfill re-reads its bytes from raw_capture,
+    inserts each line once, touches no fact, and a second run writes nothing.
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.lineage import backfill_source_rows
+
+    load(return_a_warehouse, [2023], fetch=_fetch)
+    [(capture_id,)] = _rows(
+        return_a_warehouse, "SELECT capture_id::text FROM control.fbi_return_a_year"
+    )
+    expected = _rows(
+        return_a_warehouse,
+        "SELECT capture_id, source_row_index, run_id, release_key, data_year, ori, "
+        "line_checksum, parser_contract_version "
+        "FROM silver_fbi.return_a_source_row ORDER BY 1, 2",
+    )
+    facts = "SELECT observation_sk, xmin::text FROM silver_fbi.fact_crime_observation"
+    facts_before = sorted(_rows(return_a_warehouse, facts))
+    writer = return_a_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            # The warehouse as the 2026-10-31 load left it.
+            cursor.execute("DELETE FROM silver_fbi.return_a_source_row")
+        writer.commit()
+    finally:
+        writer.close()
+
+    outcomes = _source_row_outcomes(return_a_warehouse)
+    crime = outcomes["silver_fbi.fact_crime_observation"]
+    participation = outcomes["silver_fbi.fact_reporting_participation"]
+    assert crime[0] == participation[0] == "fail"
+    assert (
+        crime[1]
+        == _rows(
+            return_a_warehouse, "SELECT COUNT(*) FROM silver_fbi.fact_crime_observation"
+        )[0][0]
+    )
+    assert crime[2] == [
+        f"capture {capture_id}: {crime[1]} facts with no return_a_source_row row"
+    ]
+
+    summary = backfill_source_rows(return_a_warehouse)
+    assert summary["status"] == "done"
+    assert summary["inserted"] == 49
+    assert [item["data_year"] for item in summary["years"]] == [2023]
+    assert (
+        _rows(
+            return_a_warehouse,
+            "SELECT capture_id, source_row_index, run_id, release_key, data_year, "
+            "ori, line_checksum, parser_contract_version "
+            "FROM silver_fbi.return_a_source_row ORDER BY 1, 2",
+        )
+        == expected
+    )
+    assert _source_row_outcomes(return_a_warehouse)[
+        "silver_fbi.fact_crime_observation"
+    ][:2] == ("pass", 0)
+    # CHURN RULE: no fact rewritten, and a second run reads and writes nothing.
+    assert sorted(_rows(return_a_warehouse, facts)) == facts_before
+    stored = "SELECT source_row_index, xmin::text FROM silver_fbi.return_a_source_row"
+    before = sorted(_rows(return_a_warehouse, stored))
+    again = backfill_source_rows(return_a_warehouse)
+    assert again == {"status": "done", "years": [], "inserted": 0}
+    assert sorted(_rows(return_a_warehouse, stored)) == before
+
+
+def test_the_backfill_waits_for_a_running_return_a_load(
+    return_a_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-121 — a load holding the lock defers the backfill a run."""
+    from data_ingestion_toolbox.fbi_ucr.return_a.lineage import backfill_source_rows
+    from data_ingestion_toolbox.fbi_ucr.return_a.load import LOCK_KEY
+
+    holder = return_a_warehouse()
+    try:
+        with holder.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_lock(%s)", (LOCK_KEY,))
+        assert backfill_source_rows(return_a_warehouse)["status"] == "deferred"
+    finally:
+        holder.close()
+    assert backfill_source_rows(return_a_warehouse)["status"] == "done"

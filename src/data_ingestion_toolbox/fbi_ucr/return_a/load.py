@@ -12,8 +12,9 @@ What a run does:
    ``Last-Modified`` date, so the same files always load into the same
    release and a changed file starts a new one.
 2. Loads each year in its own transaction: the year's county crosswalk,
-   agencies, agency-county links, monthly participation (population) and
-   offense rows for the two products below. A year already in
+   agencies, agency-county links, each agency line as a source row
+   (``silver_fbi.return_a_source_row``, which every fact names), monthly
+   participation (population) and offense rows for the two products below. A year already in
    ``control.fbi_return_a_year`` with the same file is skipped, so a run that
    stops part way resumes where it stopped and a rerun changes nothing.
    Reloading a year deletes exactly that year's rows first.
@@ -33,7 +34,7 @@ import hashlib
 import io
 import json
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -141,6 +142,85 @@ def _copy(
         buffer,
     )
     return count
+
+
+def _agencies(records: Iterable[ReturnARecord]) -> list[ReturnARecord]:
+    """One record per ORI, the file's last, in ORI order: the rows a year loads."""
+    return sorted(
+        {record.ori: record for record in records}.values(),
+        key=lambda record: record.ori,
+    )
+
+
+def line_checksums(text: str, line_numbers: Iterable[int]) -> dict[int, str]:
+    """SHA-256 of each named line of a year's file, as ``iter_records`` read it."""
+    lines = text.split("\n")
+    return {
+        number: hashlib.sha256(
+            lines[number - 1].rstrip("\r").encode("latin-1")
+        ).hexdigest()
+        for number in line_numbers
+    }
+
+
+def _write_source_rows(
+    cursor: Any,
+    *,
+    run_id: UUID,
+    release_key: str,
+    year: int,
+    capture_id: UUID,
+    agencies: Sequence[ReturnARecord],
+    checksums: Mapping[int, str],
+) -> int:
+    """Record the line every fact of these agencies was built from.
+
+    Inserts only lines not already recorded, so a rerun writes nothing.
+    """
+    cursor.execute(
+        """
+        CREATE TEMP TABLE return_a_source_row_stage
+            (LIKE silver_fbi.return_a_source_row INCLUDING DEFAULTS) ON COMMIT DROP
+        """
+    )
+    _copy(
+        cursor,
+        "return_a_source_row_stage",
+        (
+            "capture_id",
+            "source_row_index",
+            "run_id",
+            "release_key",
+            "data_year",
+            "ori",
+            "line_checksum",
+            "parser_contract_version",
+        ),
+        (
+            (
+                str(capture_id),
+                record.line_number,
+                str(run_id),
+                release_key,
+                year,
+                record.ori,
+                checksums[record.line_number],
+                PARSER_VERSION,
+            )
+            for record in agencies
+        ),
+    )
+    cursor.execute(
+        """
+        INSERT INTO silver_fbi.return_a_source_row
+        SELECT * FROM return_a_source_row_stage
+        ORDER BY capture_id, source_row_index
+        ON CONFLICT (capture_id, source_row_index) DO NOTHING
+        """
+    )
+    inserted = cursor.rowcount
+    cursor.execute("DROP TABLE return_a_source_row_stage")
+    return inserted
 
 
 def _county_reference(cursor: Any) -> list[CountyRef]:
@@ -273,6 +353,24 @@ def _delete_year(cursor: Any, release_key: str, year: int) -> None:
         """,
         (release_key, year),
     )
+    # The replaced file's source rows go with its facts. Matched by release
+    # and year, not by the ledger's capture, so a reload whose ledger row was
+    # removed by hand leaves none behind; a row some fact still names stays.
+    cursor.execute(
+        """
+        DELETE FROM silver_fbi.return_a_source_row AS source_row
+        WHERE source_row.release_key = %s AND source_row.data_year = %s
+          AND NOT EXISTS (
+              SELECT 1 FROM silver_fbi.fact_crime_observation AS fact
+              WHERE fact.capture_id = source_row.capture_id
+                AND fact.source_row_index = source_row.source_row_index)
+          AND NOT EXISTS (
+              SELECT 1 FROM silver_fbi.fact_reporting_participation AS fact
+              WHERE fact.capture_id = source_row.capture_id
+                AND fact.source_row_index = source_row.source_row_index)
+        """,
+        (release_key, year),
+    )
 
 
 def _load_year(
@@ -284,6 +382,7 @@ def _load_year(
     capture_id: UUID,
     records: list[ReturnARecord],
     counties: list[CountyRef],
+    checksums: Mapping[int, str],
 ) -> YearResult:
     _delete_year(cursor, release_key, year)
     crosswalk = build_crosswalk(records, counties)
@@ -322,9 +421,16 @@ def _load_year(
         (row.state_code, row.fbi_county_code): row for row in crosswalk
     }
 
-    agencies = sorted(
-        {record.ori: record for record in records}.values(),
-        key=lambda record: record.ori,
+    agencies = _agencies(records)
+    # Lineage first: every fact below names one of these lines.
+    _write_source_rows(
+        cursor,
+        run_id=run_id,
+        release_key=release_key,
+        year=year,
+        capture_id=capture_id,
+        agencies=agencies,
+        checksums=checksums,
     )
     cursor.execute(
         "CREATE TEMP TABLE return_a_agency (ori TEXT, state_code TEXT) ON COMMIT DROP"
@@ -750,7 +856,8 @@ def load(
                         results.append(YearResult(fetched.data_year, "already_loaded"))
                         continue
                 try:
-                    records = list(iter_records(unzip_text(fetched.payload)))
+                    text = unzip_text(fetched.payload)
+                    records = list(iter_records(text))
                     wrong = sorted({r.data_year for r in records} - {fetched.data_year})
                     if wrong:
                         raise ValueError(
@@ -765,6 +872,9 @@ def load(
                             capture_id=capture_id,
                             records=records,
                             counties=counties,
+                            checksums=line_checksums(
+                                text, (r.line_number for r in _agencies(records))
+                            ),
                         )
                         cursor.execute(
                             """

@@ -121,6 +121,18 @@ def _replay_registered_product(capture: dict[str, Any]) -> dict[str, Any]:
     return {**capture, "silver_row_count": count, "publication_required": True}
 
 
+def _backfill_return_a_source_rows() -> dict[str, Any]:
+    """Record the source rows of Return A years loaded before they were kept.
+
+    Reads only years whose capture has no source row yet, so once every
+    loaded year is covered this is one index probe per year (LOADER RULE: the
+    scheduled run closes the gap, never a manual history run).
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.lineage import backfill_source_rows
+
+    return backfill_source_rows(_get_postgres_hook().get_conn)
+
+
 def _refresh_time_rollups() -> int:
     """Derive quarters and years of the FBI UCR counts with an approved method."""
     from data_ingestion_toolbox.semantics.rollups import refresh_calendar_rollups
@@ -161,6 +173,14 @@ with DAG(
         task_id="require_shared_geography",
         python_callable=_require_shared_geography,
     )
+
+    # Independent of the CDE products: it only reads raw_capture and inserts
+    # lineage rows, so a failure here never holds a publication back.
+    return_a_source_rows = PythonOperator(
+        task_id="backfill_return_a_source_rows",
+        python_callable=_backfill_return_a_source_rows,
+    )
+    ensure_schema >> return_a_source_rows
 
     # Derived from every product's latest published release, so it waits for
     # every publication in the run.
