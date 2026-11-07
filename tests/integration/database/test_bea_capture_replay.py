@@ -297,6 +297,14 @@ def test_a_line_registered_after_its_file_was_read_is_loaded_from_that_capture(
     """
     before = dict((line, count) for line, count, _c in _rows(factory, line_rows))
     assert "46" not in before
+    # The first publication's event is harvested before the line is
+    # registered, as on OFFICE_LAB: the catalog does not name it yet.
+    process_pending_events(factory)
+    catalog = (
+        "SELECT COUNT(*) FROM gold_glossary.dim_metric "
+        "WHERE metric_code = 'BEA:CAINC4:46'"
+    )
+    assert _rows(factory, catalog) == [(0,)]
 
     second, backfilled, _p = bea.run_to_gold(factory, "CAINC4")
     assert _rows(
@@ -325,11 +333,10 @@ def test_a_line_registered_after_its_file_was_read_is_loaded_from_that_capture(
         factory,
         "SELECT COUNT(*) > 0 FROM gold_bea.observation_latest WHERE metric_key = 'CAINC4:46'",
     ) == [(True,)]
-    process_pending_events(factory)
-    assert _rows(
-        factory,
-        "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE metric_code = 'BEA:CAINC4:46'",
-    ) == [(1,)]
+    # The backfill moves no watermark, so it re-queues that watermark's event
+    # rather than adding one the outbox would drop as a duplicate.
+    assert process_pending_events(factory) == 1
+    assert _rows(factory, catalog) == [(1,)]
 
     # Once loaded, the same bytes replay nothing again.
     _third, facts, _p = bea.run_to_gold(factory, "CAINC4")

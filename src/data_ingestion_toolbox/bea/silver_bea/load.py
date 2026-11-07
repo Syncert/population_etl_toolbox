@@ -497,5 +497,11 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     if published or backfilled:
         from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
 
-        emit_latest_publisher_ready(connection_factory, publisher_schema="gold_bea")
+        # A backfill moves no watermark (the lines carry the published
+        # release), so the existing event is set pending again; without that
+        # the outbox drops it as a duplicate and the catalog waits for the
+        # nightly reconciliation (OFFICE_LAB, 2026-11-07, CAINC4 line 46).
+        emit_latest_publisher_ready(
+            connection_factory, publisher_schema="gold_bea", requeue=backfilled
+        )
     return published
