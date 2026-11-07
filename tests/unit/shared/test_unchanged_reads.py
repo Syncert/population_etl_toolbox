@@ -33,6 +33,7 @@ from data_ingestion_toolbox.census_saipe_sahie.config import SaeConfig
 from data_ingestion_toolbox.census_saipe_sahie.registry import get_dataset
 from data_ingestion_toolbox.irs_migration import capture as irs_capture
 from data_ingestion_toolbox.irs_migration.registry import registered_files
+from data_ingestion_toolbox.irs_soi import capture as irs_soi_capture
 from data_ingestion_toolbox.irs_migration.silver_irs_migration.load import (
     replay_run as replay_irs,
 )
@@ -60,6 +61,8 @@ class _Cursor:
         self.database.statements.append((text, parameters))
         if "FROM silver_ref.dim_geo_entity WHERE created_at" in text:
             self._result = (self.database.geography_since,)
+        elif "JOIN silver_ref.dim_geo_entity AS entity" in text:
+            self._result = (self.database.named_geography_since,)
         elif "status = 'published'" in text and "LIMIT 1" in text:
             self._result = self.database.published
         elif "FROM silver_pep.release_load" in text:
@@ -82,10 +85,15 @@ class _Cursor:
 
 class _Database:
     def __init__(
-        self, published: tuple | None = None, *, geography_since: bool = False
+        self,
+        published: tuple | None = None,
+        *,
+        geography_since: bool = False,
+        named_geography_since: bool = False,
     ) -> None:
         self.published = published
         self.geography_since = geography_since
+        self.named_geography_since = named_geography_since
         self.statements: list[tuple[str, tuple]] = []
         self.control_rows: list[tuple] = []
 
@@ -174,6 +182,54 @@ def test_only_identical_bytes_under_the_same_parser_and_geography_repeat(
         )
         is expected
     )
+
+
+PREVIOUS_CAPTURE = UUID("00000000-0000-0000-0000-0000000000aa")
+
+
+@pytest.mark.parametrize(
+    ("geography_since", "named_geography_since", "expected"),
+    [(False, False, True), (True, False, True), (True, True, False)],
+    ids=["no-new-geography", "another-sources-geography", "a-geography-it-names"],
+)
+def test_only_a_new_geography_the_capture_names_forces_a_replay(
+    geography_since: bool, named_geography_since: bool, expected: bool
+) -> None:
+    """Covers: ETL-116 — an FBI agency or a new place no longer replays every QCEW slice."""
+    database = _Database(
+        (CHECKSUM, "contract:v1", PUBLISHED_AT, PREVIOUS_CAPTURE),
+        geography_since=geography_since,
+        named_geography_since=named_geography_since,
+    )
+    assert (
+        repeats_last_publication(
+            database.connect,
+            "SELECT ... WHERE status = 'published' LIMIT 1",
+            ("key",),
+            payload_checksum=CHECKSUM,
+            parser_contract="contract:v1",
+            revision_table="silver_example.observation_revision",
+        )
+        is expected
+    )
+    if named_geography_since:
+        text, parameters = database.statements[-1]
+        assert "FROM silver_example.observation_revision AS revision" in text
+        assert parameters == (PREVIOUS_CAPTURE, PUBLISHED_AT)
+
+
+@pytest.mark.parametrize(
+    "module",
+    [qcew_capture, cbp_capture, bps_capture, sae_capture, irs_soi_capture],
+    ids=["qcew", "cbp", "permits", "saipe-sahie", "soi"],
+)
+def test_each_window_loader_reads_the_capture_its_geography_check_needs(
+    module: Any,
+) -> None:
+    """Covers: ETL-116 — the newest publication's capture id is the fourth column."""
+    select = " ".join(module.LATEST_PUBLISHED_SQL.split())
+    assert ".published_at, response.capture_id FROM control." in select
+    assert module.REVISION_TABLE.endswith(".observation_revision")
 
 
 # --- whole-file loaders ----------------------------------------------------

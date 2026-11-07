@@ -40,7 +40,8 @@ class CapturedSlice:
 
 #: The slice's newest published capture.
 LATEST_PUBLISHED_SQL = """
-    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at
+    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at,
+           response.capture_id
     FROM control.census_sae_slice AS slice
     JOIN raw_capture.response_capture AS response ON response.capture_id = slice.capture_id
     WHERE slice.dataset_id = %s AND slice.estimate_year = %s AND slice.geo_level = %s
@@ -48,6 +49,9 @@ LATEST_PUBLISHED_SQL = """
     ORDER BY slice.published_at DESC
     LIMIT 1
 """
+
+#: Its revision rows name the geographies a replay would resolve (utility.unchanged).
+REVISION_TABLE = "silver_census_sae.observation_revision"
 
 
 def slice_status(captured: CapturedSlice) -> str:
@@ -165,6 +169,7 @@ def capture_dataset_year(
                     (dataset.dataset_id, year, geo_level),
                     payload_checksum=receipt.payload_checksum,
                     parser_contract=dataset.parser_contract_version,
+                    revision_table=REVISION_TABLE,
                 ),
             )
             # Recorded before anything parses the bytes; the replay counts

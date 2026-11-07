@@ -30,7 +30,8 @@ PARSER_CONTRACT_VERSION = "census_bps_text:v1"
 
 #: The file's newest published capture.
 LATEST_PUBLISHED_SQL = """
-    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at
+    SELECT response.payload_checksum, response.payload_schema_version, slice.published_at,
+           response.capture_id
     FROM control.census_bps_slice AS slice
     JOIN raw_capture.response_capture AS response ON response.capture_id = slice.capture_id
     WHERE slice.slice_key = %s AND slice.frequency = %s AND slice.year = %s
@@ -38,6 +39,9 @@ LATEST_PUBLISHED_SQL = """
     ORDER BY slice.published_at DESC
     LIMIT 1
 """
+
+#: Its revision rows name the geographies a replay would resolve (utility.unchanged).
+REVISION_TABLE = "silver_census_bps.observation_revision"
 
 
 def pause(seconds: float) -> None:
@@ -176,6 +180,7 @@ def capture_period(
                     (item.slice_key, item.frequency, item.year, item.month),
                     payload_checksum=receipt.payload_checksum,
                     parser_contract=PARSER_CONTRACT_VERSION,
+                    revision_table=REVISION_TABLE,
                 ),
             )
             record_file(connection_factory, captured_file)
