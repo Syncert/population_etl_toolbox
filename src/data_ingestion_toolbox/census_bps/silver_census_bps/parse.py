@@ -17,6 +17,10 @@ One geography can sit on more than one row of a file:
   6-digit IDs and the same FIPS place are the place's parts: they load as
   one observation per measure whose value is their sum, on the first part's
   row. If any part reported for no month, the place is ``not_reported``.
+  Parts must carry the same place name, New York city's boroughs excepted:
+  rows naming different places under one code (Renovo borough, PA, printed
+  with Red Lion's 63840 in 2012-2013) mean a wrong code, so every such row is
+  quarantined as ``conflicting_place_code``.
 * **The same jurisdiction printed twice.** The 2000-04..2000-11 county
   files list St. Clair County, Illinois, twice under two region/division
   codes with the same figures. A later copy with the same figures is
@@ -112,6 +116,12 @@ def _geography(item: BpsSlice, row: list[str]) -> tuple[str, str, str, str] | No
     if len(place) != 5 or not place.isdigit():
         raise ValueError(f"place code {place!r} is not five digits")
     return "place", f"{state}{place}", f"state:{state}|place:{place}", row[16].strip()
+
+
+#: Places the Bureau reports as several differently named jurisdictions:
+#: New York city (FIPS 36-51000) as its five boroughs. Elsewhere the parts of
+#: one place (a village split across counties) carry the place's own name.
+MULTI_JURISDICTION_PLACES = frozenset({"3651000"})
 
 
 @dataclass(frozen=True)
@@ -211,7 +221,22 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
                 )
             else:
                 conflicting = True
+        labels = list(dict.fromkeys(part.geography[3] for part in parts))
         if conflicting:
+            reason = (
+                "conflicting_repeated_row",
+                "is printed {n} times with different figures",
+            )
+        elif len(labels) > 1 and code not in MULTI_JURISDICTION_PLACES:
+            # Different places under one FIPS code: the code is wrong on at
+            # least one row, and nothing here can tell which.
+            reason = (
+                "conflicting_place_code",
+                "is the FIPS code of {n} rows naming different places",
+            )
+        else:
+            reason = None
+        if reason is not None:
             indexes = [part.index for part in copies]
             quarantined = [
                 q
@@ -220,11 +245,12 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
                     q.error_code == "repeated_row" and q.source_row_index in indexes
                 )
             ]
+            error_code, summary = reason
             quarantined.extend(
                 BpsQuarantine(
                     index,
-                    "conflicting_repeated_row",
-                    f"{code} is printed {len(indexes)} times with different figures"
+                    error_code,
+                    f"{code} {summary.format(n=len(indexes))}"
                     f" (rows {', '.join(str(i) for i in indexes)})",
                 )
                 for index in indexes
@@ -232,7 +258,6 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
             continue
         in_scope += 1
         geo_type, _code, geo_id, _label = parts[0].geography
-        labels = list(dict.fromkeys(part.geography[3] for part in parts))
         label = " + ".join(labels)
         months = [part.months_reported for part in parts]
         months_reported = (

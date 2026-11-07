@@ -348,3 +348,31 @@ def test_the_parts_of_one_place_load_as_their_sum() -> None:
         (len(rows) + 2, "repeated_row")
     ]
     assert again.observations == parsed.observations
+
+
+def test_rows_naming_different_places_under_one_code_load_nothing() -> None:
+    """Covers: ETL-057 — Renovo borough, PA, printed with Red Lion's code (2012-2013).
+
+    Parts of one place carry its name; New York city's boroughs are the one
+    registered exception. Two rows naming different places under one FIPS
+    code mean a wrong code on one of them, so both are quarantined.
+    """
+    raw = _fixture("Place_South_so2024a.txt").split(b"\n")
+    header, rows = raw[:3], [line for line in raw[3:] if line.strip()]
+    dover = next(line for line in rows if b",Dover," in line)
+    fields = dover.split(b",")
+    other = b",".join(
+        fields[:2]
+        + [b"065001", b"003"]
+        + fields[4:16]
+        + [b"Renovo borough"]
+        + fields[17:]
+    )
+    baseline = parse_file(_fixture("Place_South_so2024a.txt"), item=PLACE_YEAR)
+    parsed = parse_file(b"\n".join(header + rows + [other]) + b"\n", item=PLACE_YEAR)
+    assert [(q.source_row_index, q.error_code) for q in parsed.quarantined] == [
+        (rows.index(dover) + 1, "conflicting_place_code"),
+        (len(rows) + 1, "conflicting_place_code"),
+    ]
+    assert not [o for o in parsed.observations if o.geo_id == "state:10|place:21200"]
+    assert parsed.in_scope_row_count == baseline.in_scope_row_count - 1
