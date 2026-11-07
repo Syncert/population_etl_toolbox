@@ -30,6 +30,11 @@ class ProgramShare(BaseModel):
 class PaymentsByProgram(BaseModel):
     geo_id: str
     year: int
+    #: BEA's release of the program figures and of the income they divide.
+    #: A county's differ: BEA publishes its program file (CAINC35) years
+    #: after the income file (CAINC1), and the year is matched across them.
+    program_release: Optional[str] = None
+    income_release: Optional[str] = None
     total_pct: Optional[str] = None
     programs: list[ProgramShare]
     unavailable_reason: Optional[str] = None

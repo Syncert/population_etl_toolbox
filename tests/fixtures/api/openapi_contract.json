@@ -6082,6 +6082,8 @@
     "PaymentsByProgram": {
       "properties": {
         "geo_id": "string",
+        "income_release": "string | null",
+        "program_release": "string | null",
         "programs": "array<ProgramShare>",
         "total_pct": "string | null",
         "unavailable_reason": "string | null",

@@ -58,35 +58,34 @@ STATE_GEO_ID = re.compile(r"^state:(\d{2})$")
 COUNTY_GEO_ID = re.compile(r"^state:(\d{2})\|county:\d{3}$")
 QUANTUM = Decimal("0.01")
 
-#: Program groups of the payments bar, in BEA's order. Each is one or more
-#: approved CAINC35 pairings over the same personal income; `other` is the
-#: rest of BEA's total (veterans' benefits, education and training, and the
-#: smaller programs), never an estimate.
+#: Program groups of the payments bar, in BEA's order. Each names one or more
+#: BEA programs; `other` is the rest of BEA's total (veterans' benefits,
+#: education and training, and the smaller programs), never an estimate.
+#: A program is read through its approved pairing for the place's level
+#: (`payment_ratio`).
 PROGRAM_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("social_security", "Social Security", ("transfer_share_social_security_county",)),
-    ("medicare", "Medicare", ("transfer_share_medicare_county",)),
-    (
-        "medicaid",
-        "Medicaid and other public medical care",
-        ("transfer_share_medicaid_county",),
-    ),
-    (
-        "income_support",
-        "SSI, EITC and SNAP",
-        (
-            "transfer_share_ssi_county",
-            "transfer_share_eitc_county",
-            "transfer_share_snap_county",
-        ),
-    ),
-    (
-        "unemployment",
-        "Unemployment insurance",
-        ("transfer_share_unemployment_insurance_county",),
-    ),
+    ("social_security", "Social Security", ("social_security",)),
+    ("medicare", "Medicare", ("medicare",)),
+    ("medicaid", "Medicaid and other public medical care", ("medicaid",)),
+    ("income_support", "SSI, EITC and SNAP", ("ssi", "eitc", "snap")),
+    ("unemployment", "Unemployment insurance", ("unemployment_insurance",)),
 )
 OTHER_PROGRAMS = ("other", "Veterans' benefits and everything else")
-PAYMENTS_TOTAL = "transfer_share_all_county"
+PAYMENTS_TOTAL = "all"
+
+
+def payment_ratio(program: str, geo_id: str) -> str:
+    """The approved pairing that reads one BEA program for this place.
+
+    A county divides CAINC35 by CAINC1 personal income. A state and the nation
+    divide SAINC35 by SAINC50 personal income: BEA publishes the state table a
+    year or more ahead of the county one (SAINC35 ran to 2025 on 2026-11-06,
+    CAINC35 to 2022), and CAINC35's state and nation rows never share a
+    release with CAINC1's, so reading them left the state and nation empty.
+    """
+    level = "county" if COUNTY_GEO_ID.match(geo_id) else "state"
+    return f"transfer_share_{program}_{level}"
+
 
 INCOME_PARTS = (
     (
@@ -230,24 +229,47 @@ def _newest_year(
 # ---------------------------------------------------------------------------
 
 
+def program_values(
+    db: Session, program: str, geo_ids: Iterable[str]
+) -> dict[tuple[str, int], DerivedRatioObservation]:
+    """One BEA program's shares for these places, each through its level's pairing."""
+    by_ratio: dict[str, list[str]] = {}
+    for geo_id in geo_ids:
+        by_ratio.setdefault(payment_ratio(program, geo_id), []).append(geo_id)
+    values: dict[tuple[str, int], DerivedRatioObservation] = {}
+    for ratio_id, ids in by_ratio.items():
+        values.update(ratio_values(db, ratio_id, ids))
+    return values
+
+
 def _payments(db: Session, levels: list[PublicMoneyLevel]) -> list[PaymentsByProgram]:
     geo_ids = [level.geo_id for level in levels]
-    total = ratio_values(db, PAYMENTS_TOTAL, geo_ids)
-    year = _newest_year(total, levels[0].geo_id)
+    total = program_values(db, PAYMENTS_TOTAL, geo_ids)
+    # The place's newest year; a place with none (a county whose program
+    # detail BEA has not published beside its current income) is shown as
+    # not published, beside its state and the nation in their newest year.
+    year = next(
+        (
+            newest
+            for newest in (_newest_year(total, geo_id) for geo_id in geo_ids)
+            if newest is not None
+        ),
+        None,
+    )
     if year is None:
         return []
     parts = {
-        ratio_id: ratio_values(db, ratio_id, geo_ids)
-        for _program, _label, ratio_ids in PROGRAM_GROUPS
-        for ratio_id in ratio_ids
+        program: program_values(db, program, geo_ids)
+        for _group, _label, programs in PROGRAM_GROUPS
+        for program in programs
     }
     answer = []
     for geo_id in geo_ids:
         whole = _value(total, geo_id, year)
         programs = []
         named: Optional[Decimal] = Decimal(0)
-        for program, label, ratio_ids in PROGRAM_GROUPS:
-            shares = [_value(parts[ratio_id], geo_id, year) for ratio_id in ratio_ids]
+        for group, label, members in PROGRAM_GROUPS:
+            shares = [_value(parts[member], geo_id, year) for member in members]
             share = (
                 None
                 if any(value is None for value in shares)
@@ -255,7 +277,7 @@ def _payments(db: Session, levels: list[PublicMoneyLevel]) -> list[PaymentsByPro
             )
             named = None if named is None or share is None else named + share
             programs.append(
-                ProgramShare(program=program, label=label, share_pct=_text(share))
+                ProgramShare(program=group, label=label, share_pct=_text(share))
             )
         rest = None if whole is None or named is None else whole - named
         if rest is not None and rest < 0:
@@ -269,10 +291,15 @@ def _payments(db: Session, levels: list[PublicMoneyLevel]) -> list[PaymentsByPro
                 share_pct=_text(rest),
             )
         )
+        row = total.get((geo_id, year))
         answer.append(
             PaymentsByProgram(
                 geo_id=geo_id,
                 year=year,
+                program_release=row.numerator.release if row else None,
+                income_release=row.denominator.release
+                if row and row.denominator
+                else None,
                 total_pct=_text(whole),
                 programs=programs,
                 unavailable_reason=None
@@ -454,13 +481,25 @@ def _property_tax(db: Session, levels: list[PublicMoneyLevel]) -> PeriodValues:
     )
 
 
+def payments_source(payments: list[PaymentsByProgram]) -> str:
+    """Which BEA files the payments shares divide, for the levels shown."""
+    state_files = "SAINC35 transfer receipts over SAINC50 personal income"
+    if not any(COUNTY_GEO_ID.match(row.geo_id) for row in payments):
+        return f"BEA {state_files}"
+    return (
+        "BEA: the county, CAINC35 transfer receipts over CAINC1 personal income "
+        f"of the same release; the state and nation, {state_files}"
+    )
+
+
 def public_money(db: Session, geo_id: str) -> PublicMoneyResponse:
     levels = levels_for(geo_id)
+    payments = _payments(db, levels)
     return PublicMoneyResponse(
         geo_id=geo_id,
         levels=levels,
-        payments=_payments(db, levels),
-        payments_source="BEA CAINC35 transfer receipts over CAINC1 personal income",
+        payments=payments,
+        payments_source=payments_source(payments),
         income_sources=_income_sources(db, levels),
         federal_tax_rate=_federal_tax_rate(db, levels),
         tax_burden=_tax_burden(db, levels),

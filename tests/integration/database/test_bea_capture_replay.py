@@ -5,6 +5,7 @@ Covers: ETL-058
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import zipfile
 from collections.abc import Callable
@@ -13,6 +14,7 @@ import httpx
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.bea import registry
 from data_ingestion_toolbox.bea.schema import REQUIRED_RELATIONS, ensure_bea_schema
 from data_ingestion_toolbox.glossary.harvest import (
     Publisher,
@@ -263,3 +265,72 @@ def test_a_malformed_file_is_quarantined_and_the_ledger_rule_runs(
         "SELECT COUNT(*) FROM unnest(%s::TEXT[]) AS name WHERE to_regclass(name) IS NOT NULL",
         (list(REQUIRED_RELATIONS),),
     ) == [(len(REQUIRED_RELATIONS),)]
+
+
+def test_a_line_registered_after_its_file_was_read_is_loaded_from_that_capture(
+    bea_warehouse, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-058 — an unchanged file still yields a newly registered line, once, under its capture.
+
+    OFFICE_LAB, 2026-11-06: CAINC4 line 46 (dividends, interest and rent) was
+    registered after CAINC4.zip was first loaded. Every weekly read since
+    matched the published bytes and replayed nothing, so the line never
+    loaded and the income-sources card stayed empty.
+    """
+    factory = bea_warehouse
+    full = registry.get_table("CAINC4")
+    narrowed = dataclasses.replace(
+        full, lines={line: basis for line, basis in full.lines.items() if line != "46"}
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            registry,
+            "TABLES",
+            tuple(narrowed if t.code == "CAINC4" else t for t in registry.TABLES),
+        )
+        first, first_facts, _p = bea.run_to_gold(factory, "CAINC4")
+    assert first_facts > 0
+    line_rows = """
+        SELECT line_code, COUNT(*), COUNT(DISTINCT capture_id)
+        FROM silver_bea.fact_observation WHERE table_code = 'CAINC4'
+        GROUP BY 1 ORDER BY 1
+    """
+    before = dict((line, count) for line, count, _c in _rows(factory, line_rows))
+    assert "46" not in before
+
+    second, backfilled, _p = bea.run_to_gold(factory, "CAINC4")
+    assert _rows(
+        factory,
+        "SELECT status FROM control.bea_table_capture WHERE run_id = %s",
+        (str(second),),
+    ) == [("unchanged",)]
+    after = {
+        line: (count, captures) for line, count, captures in _rows(factory, line_rows)
+    }
+    # Only the new line was added, under the published capture and its release.
+    assert {
+        line: count for line, (count, _c) in after.items() if line != "46"
+    } == before
+    assert after["46"][0] == backfilled > 0
+    assert _rows(
+        factory,
+        """
+        SELECT DISTINCT capture.run_id::TEXT, fact.release_date::TEXT
+        FROM silver_bea.fact_observation AS fact
+        JOIN control.bea_table_capture AS capture ON capture.capture_id = fact.capture_id
+        WHERE fact.table_code = 'CAINC4' AND fact.line_code = '46'
+        """,
+    ) == [(str(first), "2026-02-05")]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) > 0 FROM gold_bea.observation_latest WHERE metric_key = 'CAINC4:46'",
+    ) == [(True,)]
+    process_pending_events(factory)
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE metric_code = 'BEA:CAINC4:46'",
+    ) == [(1,)]
+
+    # Once loaded, the same bytes replay nothing again.
+    _third, facts, _p = bea.run_to_gold(factory, "CAINC4")
+    assert facts == 0
