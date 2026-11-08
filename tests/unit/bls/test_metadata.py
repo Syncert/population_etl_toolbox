@@ -105,3 +105,66 @@ def test_every_download_bls_gov_client_names_the_project_not_a_placeholder() -> 
 
     assert BLS_HEADERS["User-Agent"] == metadata.UA
     assert "example.com" not in metadata.UA
+
+
+class _CountCursor:
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.executed: list[tuple[str, tuple]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return None
+
+    def execute(self, sql: str, params: tuple) -> None:
+        self.executed.append((sql, params))
+
+    def fetchone(self):
+        return (self.count,)
+
+
+class _CountConnection:
+    def __init__(self, count: int) -> None:
+        self.cursor_ = _CountCursor(count)
+        self.closed = False
+
+    def cursor(self):
+        return self.cursor_
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_the_stored_count_is_the_curated_rows_for_a_curated_program(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-124 — a curated program counts only its configured series."""
+    from data_ingestion_toolbox.bls.config import CONFIG
+
+    connection = _CountConnection(10)
+    monkeypatch.setattr(metadata, "_get_pg_connection", lambda: connection)
+    assert metadata._stored_series_count("cx") == 10
+    sql, params = connection.cursor_.executed[0]
+    assert "ANY" in sql and params == ("cx", list(CONFIG.curated_by_program["cx"]))
+    assert connection.closed
+
+    connection = _CountConnection(812)
+    monkeypatch.setattr(metadata, "_get_pg_connection", lambda: connection)
+    assert metadata._stored_series_count("la") == 812
+    assert connection.cursor_.executed[0][1] == ("la",)
+
+
+def test_a_dropped_connection_keeps_the_stored_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-124 — a name-resolution or reset error is a refusal for now."""
+    import requests
+
+    def drop(_program: str):
+        raise requests.ConnectionError("NameResolutionError")
+
+    monkeypatch.setattr(metadata, "sync_bls_series_metadata", drop)
+    monkeypatch.setattr(metadata, "_get_pg_connection", lambda: _CountConnection(5))
+    assert metadata.sync_or_keep_bls_series_metadata("ap") == 5
