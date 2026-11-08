@@ -198,6 +198,115 @@ CREATE INDEX IF NOT EXISTS elections_contest_store_geo_idx
 CREATE INDEX IF NOT EXISTS elections_contest_store_year_idx
     ON gold_elections.contest_result_store (office, geo_level, election_year);
 
+-- County rows summed from MEDSL's precinct file (stream
+-- `county_senate_precinct`) are served only for a state whose county sums
+-- agree with the state's own count in MEDSL's statewide file: each major
+-- party's votes within 1% (or 100 votes). A precinct file can repeat
+-- subtotals or leave counts out (New Jersey's town totals, California's
+-- suppressed small precincts, Missouri's Kansas City board) in ways no
+-- reading rule can always see; the state count is the check. A state with no
+-- statewide row yet is not served. One row per state contest of the current
+-- precinct read, rewritten by sync_contest_result() only where it changed,
+-- so serving reads join a few dozen stored rows (the speed gate's first
+-- draft, a view, re-totalled the store for every served row).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_class AS relation
+          JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = 'gold_elections'
+           AND relation.relname = 'precinct_county_check' AND relation.relkind = 'v'
+    ) THEN
+        DROP VIEW gold_elections.contest_result CASCADE;
+        DROP VIEW gold_elections.precinct_county_check;
+    END IF;
+END
+$$;
+CREATE TABLE IF NOT EXISTS gold_elections.precinct_county_check (
+    run_id UUID NOT NULL,
+    office TEXT NOT NULL,
+    election_year INTEGER NOT NULL,
+    stage TEXT NOT NULL,
+    special BOOLEAN NOT NULL,
+    state_code TEXT NOT NULL,
+    county_count INTEGER NOT NULL,
+    county_republican_votes BIGINT NOT NULL,
+    county_democratic_votes BIGINT NOT NULL,
+    state_republican_votes BIGINT,
+    state_democratic_votes BIGINT,
+    agrees BOOLEAN NOT NULL,
+    PRIMARY KEY (run_id, office, election_year, stage, special, state_code)
+);
+
+-- Bring precinct_county_check in line with the stored contests of the
+-- current reads. Only a changed row is rewritten (the CHURN rule).
+CREATE OR REPLACE FUNCTION gold_elections.refresh_precinct_county_check()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    written INTEGER;
+BEGIN
+    CREATE TEMP TABLE IF NOT EXISTS precinct_check_fresh
+        (LIKE gold_elections.precinct_county_check) ON COMMIT DROP;
+    TRUNCATE precinct_check_fresh;
+    INSERT INTO precinct_check_fresh
+    WITH county_sum AS (
+        SELECT store.run_id, store.office, store.election_year, store.stage, store.special,
+               store.state_code,
+               COUNT(*)::INTEGER AS county_count,
+               SUM(COALESCE(store.republican_votes, 0))::BIGINT AS county_republican_votes,
+               SUM(COALESCE(store.democratic_votes, 0))::BIGINT AS county_democratic_votes
+        FROM gold_elections.contest_result_store AS store
+        JOIN gold_elections.current_read AS read ON read.run_id = store.run_id
+        WHERE read.stream = 'county_senate_precinct'
+          AND store.geo_level = 'county'
+        GROUP BY store.run_id, store.office, store.election_year, store.stage, store.special,
+                 store.state_code
+    ),
+    state_count AS (
+        SELECT store.office, store.election_year, store.stage, store.special, store.state_code,
+               store.republican_votes, store.democratic_votes
+        FROM gold_elections.contest_result_store AS store
+        JOIN gold_elections.current_read AS read ON read.run_id = store.run_id
+        WHERE read.stream = 'senate'
+          AND store.geo_level = 'state'
+    )
+    SELECT county_sum.run_id, county_sum.office, county_sum.election_year, county_sum.stage,
+           county_sum.special, county_sum.state_code, county_sum.county_count,
+           county_sum.county_republican_votes, county_sum.county_democratic_votes,
+           state_count.republican_votes, state_count.democratic_votes,
+           COALESCE(
+               state_count.state_code IS NOT NULL
+               AND ABS(county_sum.county_republican_votes - COALESCE(state_count.republican_votes, 0))
+                   <= GREATEST(100, 0.01 * COALESCE(state_count.republican_votes, 0))
+               AND ABS(county_sum.county_democratic_votes - COALESCE(state_count.democratic_votes, 0))
+                   <= GREATEST(100, 0.01 * COALESCE(state_count.democratic_votes, 0)),
+               FALSE
+           )
+    FROM county_sum
+    LEFT JOIN state_count
+      ON state_count.office = county_sum.office
+     AND state_count.election_year = county_sum.election_year
+     AND state_count.stage = county_sum.stage
+     AND state_count.special = county_sum.special
+     AND state_count.state_code = county_sum.state_code;
+    DELETE FROM gold_elections.precinct_county_check AS held
+     WHERE NOT EXISTS (
+         SELECT 1 FROM precinct_check_fresh AS fresh
+          WHERE ROW(fresh.*)::TEXT = ROW(held.*)::TEXT
+     );
+    INSERT INTO gold_elections.precinct_county_check
+    SELECT fresh.* FROM precinct_check_fresh AS fresh
+     WHERE NOT EXISTS (
+         SELECT 1 FROM gold_elections.precinct_county_check AS held
+          WHERE ROW(held.*)::TEXT = ROW(fresh.*)::TEXT
+     );
+    GET DIAGNOSTICS written = ROW_COUNT;
+    RETURN written;
+END;
+$$;
+
 -- Bring the stored contests in line with the current reads: drop a
 -- superseded read's rows and total any current read not yet stored. One
 -- caller at a time, so two streams publishing together cannot both store a
@@ -231,6 +340,7 @@ BEGIN
         GET DIAGNOSTICS added = ROW_COUNT;
         written := written + added;
     END LOOP;
+    PERFORM gold_elections.refresh_precinct_county_check();
     RETURN written;
 END;
 $$;
@@ -279,6 +389,7 @@ BEGIN
         GET DIAGNOSTICS added = ROW_COUNT;
         written := written + added;
     END LOOP;
+    PERFORM gold_elections.refresh_precinct_county_check();
     RETURN written;
 END;
 $$;
@@ -286,57 +397,9 @@ $$;
 -- Only the warehouse owner writes the store; the serving role reads it.
 REVOKE EXECUTE ON FUNCTION gold_elections.sync_contest_result() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION gold_elections.reconcile_contest_result() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION gold_elections.refresh_precinct_county_check() FROM PUBLIC;
 
 -- One row per contest and area of the current reads (see contest_tally).
--- County rows summed from MEDSL's precinct file (stream
--- `county_senate_precinct`) are served only for a state whose county sums
--- agree with the state's own count in MEDSL's statewide file: each major
--- party's votes within 1% (or 100 votes). A precinct file can repeat
--- subtotals or leave counts out (New Jersey's town totals, California's
--- suppressed small precincts, Missouri's Kansas City board) in ways no
--- reading rule can always see; the state count is the check. A state with no
--- statewide row yet is not served.
-CREATE OR REPLACE VIEW gold_elections.precinct_county_check AS
-WITH county_sum AS (
-    SELECT store.run_id, store.office, store.election_year, store.stage, store.special,
-           store.state_code,
-           SUM(COALESCE(store.republican_votes, 0))::BIGINT AS county_republican_votes,
-           SUM(COALESCE(store.democratic_votes, 0))::BIGINT AS county_democratic_votes,
-           COUNT(*)::INTEGER AS county_count
-    FROM gold_elections.contest_result_store AS store
-    JOIN gold_elections.current_read AS read ON read.run_id = store.run_id
-    WHERE read.stream = 'county_senate_precinct'
-      AND store.geo_level = 'county'
-    GROUP BY store.run_id, store.office, store.election_year, store.stage, store.special,
-             store.state_code
-),
-state_count AS (
-    SELECT store.office, store.election_year, store.stage, store.special, store.state_code,
-           store.republican_votes, store.democratic_votes
-    FROM gold_elections.contest_result_store AS store
-    JOIN gold_elections.current_read AS read ON read.run_id = store.run_id
-    WHERE read.stream = 'senate'
-      AND store.geo_level = 'state'
-)
-SELECT county_sum.*,
-       state_count.republican_votes AS state_republican_votes,
-       state_count.democratic_votes AS state_democratic_votes,
-       COALESCE(
-           ABS(county_sum.county_republican_votes - COALESCE(state_count.republican_votes, 0))
-               <= GREATEST(100, 0.01 * COALESCE(state_count.republican_votes, 0))
-           AND ABS(county_sum.county_democratic_votes - COALESCE(state_count.democratic_votes, 0))
-               <= GREATEST(100, 0.01 * COALESCE(state_count.democratic_votes, 0))
-           AND state_count.state_code IS NOT NULL,
-           FALSE
-       ) AS agrees
-FROM county_sum
-LEFT JOIN state_count
-  ON state_count.office = county_sum.office
- AND state_count.election_year = county_sum.election_year
- AND state_count.stage = county_sum.stage
- AND state_count.special = county_sum.special
- AND state_count.state_code = county_sum.state_code;
-
 CREATE OR REPLACE VIEW gold_elections.contest_result AS
 SELECT store.office, store.election_year, store.stage, store.special,
        store.state_code, store.state_fips, store.county_fips, store.district,
@@ -347,16 +410,15 @@ SELECT store.office, store.election_year, store.stage, store.special,
        read.stream, read.source_file, store.run_id, read.published_at, store.capture_id
 FROM gold_elections.contest_result_store AS store
 JOIN gold_elections.current_read AS read ON read.run_id = store.run_id
+-- Rows summed from MEDSL's precinct file are served only for a state that
+-- agrees with its own count (gold_elections.precinct_county_check).
 WHERE read.stream <> 'county_senate_precinct'
-   OR EXISTS (
-       SELECT 1 FROM gold_elections.precinct_county_check AS checked
-       WHERE checked.run_id = store.run_id
-         AND checked.office = store.office
-         AND checked.election_year = store.election_year
-         AND checked.stage = store.stage
-         AND checked.special = store.special
-         AND checked.state_code = store.state_code
-         AND checked.agrees
+   OR (store.run_id, store.office, store.election_year, store.stage, store.special,
+       store.state_code) IN (
+       SELECT checked.run_id, checked.office, checked.election_year, checked.stage,
+              checked.special, checked.state_code
+         FROM gold_elections.precinct_county_check AS checked
+        WHERE checked.agrees
    );
 
 -- The Census tabulations of House district plans by county piece
