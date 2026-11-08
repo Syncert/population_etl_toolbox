@@ -470,10 +470,10 @@ def test_a_county_without_program_detail_still_shows_its_state_and_nation(
     assert nation["total_pct"] == "17.90"
 
 
-def test_a_county_whose_bea_files_differ_in_release_is_null_beside_its_state(
+def test_a_county_pairs_bea_program_and_income_files_by_year_and_names_both(
     reads: _Reads, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: API-194 — CAINC35 (Nov 2023) and CAINC1 (Feb 2026) are not paired; the state still answers."""
+    """Covers: API-194 — CAINC35 (Nov 2023) over CAINC1 (Feb 2026) by year, both releases said."""
     released = {"BEA:CAINC35": "2023-11-16", "BEA:CAINC1": "2026-02-05"}
 
     def bea_files(db, metric_code, scope, release, geo_ids):  # noqa: ANN001, ANN202
@@ -489,11 +489,12 @@ def test_a_county_whose_bea_files_differ_in_release_is_null_beside_its_state(
         .get("/api/v1/public-money", params={"geo_id": DANE})
         .json()
     )
-    dane, wisconsin, _nation = body["payments"]
-    assert (dane["total_pct"], dane["unavailable_reason"]) == (
-        None,
-        "not_published_that_year",
+    dane = body["payments"][0]
+    assert (dane["year"], dane["total_pct"]) == (2022, "13.10")
+    assert (dane["program_release"], dane["income_release"]) == (
+        "2023-11-16",
+        "2026-02-05",
     )
-    assert (wisconsin["year"], wisconsin["total_pct"]) == (2022, "18.40")
-    assert "CAINC35" in body["payments_source"]
+    assert "released November 16, 2023" in body["payments_source"]
+    assert "released February 5, 2026" in body["payments_source"]
     assert "SAINC35" in body["payments_source"]
