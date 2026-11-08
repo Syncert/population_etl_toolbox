@@ -82,6 +82,8 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
         ("Democrat-Liberal", "DEM"),
         ("REPUBLICAN", "REP"),
         ("Republican-Conservative", "REP"),
+        # Washington's 2024 statewide Senate line for Raul Garcia.
+        ("GOP", "REP"),
         ("INDEPENDENT", "IND"),
         # An independent with a party's name is neither the party nor a
         # plain independent: no guess folds it into either.
@@ -825,6 +827,137 @@ def test_a_town_total_is_told_from_a_town_sharing_its_name() -> None:
         (6, "subtotal_row"),
         (11, "subtotal_row"),
         (12, "subtotal_row"),
+    ]
+
+
+def test_a_contest_whose_precinct_labels_conflict_is_not_served() -> None:
+    """Covers: ETL-111 — Nebraska's regular 2024 race labels independent Osborn DEMOCRAT: its counties are withheld, the special is served."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+    from data_ingestion_toolbox.elections.silver_elections.parse import (
+        parse_precinct_results,
+    )
+
+    header = (
+        "precinct,office,party_detailed,party_simplified,mode,votes,county_name,"
+        "county_fips,jurisdiction_fips,candidate,year,stage,special,writein,state_po\n"
+    )
+
+    def row(office: str, party: str, candidate: str, special: str, votes: int) -> str:
+        return (
+            f"LINCOLN 1,{office},{party},{party},TOTAL,{votes},LANCASTER,31109,"
+            f"31109,{candidate},2024,GEN,{special},FALSE,NE\n"
+        )
+
+    body = header + "".join(
+        [
+            row("US SENATE", "DEMOCRAT", "DAN OSBORN", "FALSE", 500),
+            row("US SENATE", "REPUBLICAN", "DEB FISCHER", "FALSE", 450),
+            row("US SENATE PARTIAL", "REPUBLICAN", "PETE RICKETTS", "TRUE", 520),
+        ]
+    )
+    results, quarantined, _ = parse_precinct_results(
+        COUNTY_SENATE_PRECINCT, body.encode()
+    )
+    assert [(r.special, r.candidate, r.candidate_votes) for r in results] == [
+        (True, "PETE RICKETTS", 520)
+    ]
+    assert [(q.record_index, q.error_code, q.county_fips) for q in quarantined] == [
+        (1, "party_label_conflict", "31109")
+    ]
+
+
+def test_a_county_a_spanning_board_covers_is_not_served() -> None:
+    """Covers: ETL-111 — Kansas City's board counts parts of four counties: those counties are not served, the rest of Missouri is."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+    from data_ingestion_toolbox.elections.silver_elections.parse import (
+        parse_precinct_results,
+    )
+
+    header = (
+        "precinct,office,party_detailed,party_simplified,mode,votes,county_name,"
+        "county_fips,jurisdiction_fips,candidate,year,stage,special,writein,state_po\n"
+    )
+
+    def row(precinct: str, county: str, fips: str, votes: int) -> str:
+        return (
+            f"{precinct},US SENATE,DEMOCRAT,DEMOCRAT,TOTAL,{votes},{county},{fips},"
+            f"{fips},LUCAS KUNCE,2024,GEN,FALSE,FALSE,MO\n"
+        )
+
+    body = header + "".join(
+        [
+            row("INDEPENDENCE 1", "JACKSON", "29095", 300),
+            row("KC WARD 1", "KANSAS CITY", "36000", 900),
+            row("COLUMBIA 1", "BOONE", "29019", 400),
+        ]
+    )
+    results, quarantined, _ = parse_precinct_results(
+        COUNTY_SENATE_PRECINCT, body.encode()
+    )
+    assert [(r.county_fips, r.candidate_votes) for r in results] == [("29019", 400)]
+    assert [(q.record_index, q.error_code, q.county_fips) for q in quarantined] == [
+        (1, "county_split_by_unit", "29095"),
+        (2, "not_a_county", "36000"),
+    ]
+
+
+def test_a_county_total_or_a_renamed_copy_is_not_counted_twice() -> None:
+    """Covers: ETL-111 — Indiana's Hendricks prints its total as a precinct row and St. Joseph prints each precinct twice: each vote is counted once."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+    from data_ingestion_toolbox.elections.silver_elections.parse import (
+        parse_precinct_results,
+    )
+
+    header = (
+        "precinct,office,party_detailed,party_simplified,mode,votes,county_name,"
+        "county_fips,jurisdiction_fips,candidate,year,stage,special,writein,state_po\n"
+    )
+
+    def row(
+        precinct: str, fips: str, candidate: str, votes: int, mode: str = "TOTAL"
+    ) -> str:
+        party = "REPUBLICAN" if candidate == "JIM BANKS" else "DEMOCRAT"
+        return (
+            f"{precinct},US SENATE,{party},{party},{mode},{votes},X,{fips},{fips},"
+            f"{candidate},2024,GEN,FALSE,FALSE,IN\n"
+        )
+
+    hendricks = [
+        row(f"01{n:02d}-Brown {n}", "18063", candidate, votes, "ELECTION DAY")
+        for n in range(1, 13)
+        for candidate, votes in (("JIM BANKS", 100 + n), ("VALERIE MCCRAY", 50 + n))
+    ]
+    banks = sum(100 + n for n in range(1, 13))
+    mccray = sum(50 + n for n in range(1, 13))
+    # The county's total, printed as a second row of its last precinct.
+    hendricks += [
+        row("0112-Brown 12", "18063", "JIM BANKS", banks, "ELECTION DAY"),
+        row("0112-Brown 12", "18063", "VALERIE MCCRAY", mccray, "ELECTION DAY"),
+    ]
+    st_joseph = [
+        row("110004", "18141", "JIM BANKS", 734),
+        row("110004", "18141", "VALERIE MCCRAY", 397),
+        row("PENN TWP 4 110004", "18141", "JIM BANKS", 734),
+        row("PENN TWP 4 110004", "18141", "VALERIE MCCRAY", 397),
+        row("PENN TWP 4 110004", "18141", "ANTONIO XAVIER ALVAREZ", 0),
+    ]
+    results, quarantined, _ = parse_precinct_results(
+        COUNTY_SENATE_PRECINCT, (header + "".join(hendricks + st_joseph)).encode()
+    )
+    by_line = {
+        (r.county_fips, r.candidate): r.candidate_votes
+        for r in results
+        if r.candidate_votes
+    }
+    assert by_line == {
+        ("18063", "JIM BANKS"): banks,
+        ("18063", "VALERIE MCCRAY"): mccray,
+        ("18141", "JIM BANKS"): 734,
+        ("18141", "VALERIE MCCRAY"): 397,
+    }
+    assert [q.error_code for q in quarantined] == [
+        "county_total_row",
+        "repeated_precinct",
     ]
 
 

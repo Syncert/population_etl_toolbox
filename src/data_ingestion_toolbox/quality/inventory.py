@@ -7753,9 +7753,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-ELEC-009",
         "WARN",
         "reconciliation",
-        "County Senate rows summed from MEDSL's precinct file are served only "
-        "for a state whose county sums agree with the statewide count; each "
-        "state held back is named with both counts, never filled in.",
+        "County Senate rows summed from MEDSL's precinct file are served as "
+        "published; each state whose county sums miss the statewide count by "
+        "more than 1% is named with both counts, never filled in.",
         (
             "gold_elections.precinct_county_check",
             "gold_elections.contest_result",

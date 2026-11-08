@@ -90,7 +90,10 @@ PRECINCT_STREAMS = (COUNTY_SENATE_PRECINCT,)
 #: a suppressed count ("*") is quarantined, never zero; a blank party is the
 #: party the same candidate carries elsewhere in the contest; the District
 #: of Columbia's shadow senator is not a Senate seat.
-PRECINCT_READING_VERSION = "medsl-precinct-reading-1"
+#: 2 (2026-11-08): served as published, checked against the state; a county
+#: total or a renamed copy printed as a precinct is set aside; counties a
+#: spanning unit covers, and contests whose labels conflict, are withheld.
+PRECINCT_READING_VERSION = "medsl-precinct-reading-2"
 #: Streams whose ``totalvotes`` is not the area's own total. MEDSL's county
 #: Senate 2022 file repeats the statewide total on every county row (read on
 #: OFFICE_LAB 2026-11-07: 2,652,477 on each Wisconsin county), so a county's
@@ -106,7 +109,9 @@ STATEWIDE_TOTAL_STREAMS = (COUNTY_SENATE,)
 #: (Indiana 2022 precincts, North Carolina 2024 blank modes, folded write-in
 #: and Other lines), except in Louisiana, where it is another round; the House
 #: file's runoff column is a stage; quarantine records state and county.
-MEDSL_READING_VERSION = "medsl-reading-3"
+#: 4 (2026-11-08): party text "GOP" is Republican (Washington 2024 Senate,
+#: Raul Garcia, in the statewide file).
+MEDSL_READING_VERSION = "medsl-reading-4"
 MEDSL_STREAMS = (COUNTY_PRESIDENT, STATE_PRESIDENT, SENATE, HOUSE, COUNTY_SENATE)
 #: The Algara & Amlani streams: one R data frame per file, one row per county
 #: and contest with the two major parties' votes and the county's total.
@@ -349,7 +354,7 @@ WIKIDATA_PARTIES = {
 }
 
 _DEMOCRATIC = re.compile(r"\bDEMOCRAT(IC)?\b|DEMOCRATIC-FARMER-LABOR|DEMOCRATIC-NPL")
-_REPUBLICAN = re.compile(r"\bREPUBLICAN\b")
+_REPUBLICAN = re.compile(r"\bREPUBLICAN\b|^GOP$")
 _INDEPENDENT = re.compile(r"^(INDEPENDENT|IND\.?|NO PARTY AFFILIATION|NONPARTISAN)$")
 
 
@@ -357,7 +362,7 @@ def party_code(text: str | None) -> str:
     """The vocabulary code for a source's party text.
 
     "Democrat-Liberal" and "Democratic-Farmer-Labor" are Democratic;
-    "Republican-Conservative" is Republican; "Ind. Democrat" and other
+    "Republican-Conservative" and "GOP" are Republican; "Ind. Democrat" and other
     labels are Other, never folded into a major party by guess.
     """
     if text is None:

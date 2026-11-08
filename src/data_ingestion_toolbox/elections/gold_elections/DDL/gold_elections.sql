@@ -199,16 +199,14 @@ CREATE INDEX IF NOT EXISTS elections_contest_store_year_idx
     ON gold_elections.contest_result_store (office, geo_level, election_year);
 
 -- County rows summed from MEDSL's precinct file (stream
--- `county_senate_precinct`) are served only for a state whose county sums
--- agree with the state's own count in MEDSL's statewide file: each major
--- party's votes within 1% (or 100 votes). A precinct file can repeat
--- subtotals or leave counts out (New Jersey's town totals, California's
--- suppressed small precincts, Missouri's Kansas City board) in ways no
--- reading rule can always see; the state count is the check. A state with no
--- statewide row yet is not served. One row per state contest of the current
--- precinct read, rewritten by sync_contest_result() only where it changed,
--- so serving reads join a few dozen stored rows (the speed gate's first
--- draft, a view, re-totalled the store for every served row).
+-- `county_senate_precinct`) are served as the file publishes them, and each
+-- state's county sums are checked against the state's own count in MEDSL's
+-- statewide file: each major party's votes within 1% (or 100 votes). A state
+-- outside that (New Jersey 2024: Mercer's early votes and Union's
+-- provisionals are not in the file) is named by DQ-ELEC-009 and still
+-- served; nothing is filled in (Nick, 2026-11-08: "stay true to source").
+-- One row per state contest of the current precinct read, rewritten by
+-- sync_contest_result() only where it changed.
 DO $$
 BEGIN
     IF EXISTS (
@@ -409,17 +407,7 @@ SELECT store.office, store.election_year, store.stage, store.special,
        -- The read's stream, file and publication time come from the read itself.
        read.stream, read.source_file, store.run_id, read.published_at, store.capture_id
 FROM gold_elections.contest_result_store AS store
-JOIN gold_elections.current_read AS read ON read.run_id = store.run_id
--- Rows summed from MEDSL's precinct file are served only for a state that
--- agrees with its own count (gold_elections.precinct_county_check).
-WHERE read.stream <> 'county_senate_precinct'
-   OR (store.run_id, store.office, store.election_year, store.stage, store.special,
-       store.state_code) IN (
-       SELECT checked.run_id, checked.office, checked.election_year, checked.stage,
-              checked.special, checked.state_code
-         FROM gold_elections.precinct_county_check AS checked
-        WHERE checked.agrees
-   );
+JOIN gold_elections.current_read AS read ON read.run_id = store.run_id;
 
 -- The Census tabulations of House district plans by county piece
 -- (registry.DISTRICT_PLANS).
@@ -547,19 +535,19 @@ FROM (VALUES
     ('senate_two_party_republican_share',
      'U.S. Senate vote: Republican share of the two-party vote', 'percent',
      'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
-     || 'Amlani, 2024 summed from MEDSL''s precinct returns where they match the state''s count): the Republican nominee''s votes as a share of the two major parties'' nominees'' '
+     || 'Amlani, 2024 summed from MEDSL''s precinct returns as published): the Republican nominee''s votes as a share of the two major parties'' nominees'' '
      || 'combined votes in the regularly scheduled general election for the seat. A special election '
      || 'held the same year is kept in the contest results but not served here.'),
     ('senate_two_party_margin',
      'U.S. Senate vote: two-party margin (Republican minus Democratic)', 'percentage points',
      'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
-     || 'Amlani, 2024 summed from MEDSL''s precinct returns where they match the state''s count): the Republican share minus the Democratic share of the two-party vote in the '
+     || 'Amlani, 2024 summed from MEDSL''s precinct returns as published): the Republican share minus the Democratic share of the two-party vote in the '
      || 'regularly scheduled general election; positive leans Republican. Where a party ran no '
      || 'nominee the margin is 100 points one way, never a missing value read as zero.'),
     ('senate_total_votes',
      'U.S. Senate vote: total votes cast', 'votes',
      'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
-     || 'Amlani, 2024 summed from MEDSL''s precinct returns where they match the state''s count): every vote cast for the Senate seat in the area, including candidates of every '
+     || 'Amlani, 2024 summed from MEDSL''s precinct returns as published): every vote cast for the Senate seat in the area, including candidates of every '
      || 'party.')
 ) AS definition(measure, measure_label, unit, observation_basis);
 
