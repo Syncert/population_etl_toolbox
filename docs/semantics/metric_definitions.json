@@ -4353,6 +4353,214 @@
       "version": 1,
       "effective_date": "2026-11-06",
       "last_reviewed_date": "2026-11-06"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:center_infant",
+      "metric_codes": [
+        "DOL_CHILDCARE:center_infant"
+      ],
+      "name": "Median weekly price of full-time center-based childcare, infant (birth to 23 months)",
+      "definition": "The median weekly price of full-time care for a child aged birth to 23 months at a childcare center in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:center_toddler",
+      "metric_codes": [
+        "DOL_CHILDCARE:center_toddler"
+      ],
+      "name": "Median weekly price of full-time center-based childcare, toddler (24 to 35 months)",
+      "definition": "The median weekly price of full-time care for a child aged 24 to 35 months at a childcare center in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:center_preschool",
+      "metric_codes": [
+        "DOL_CHILDCARE:center_preschool"
+      ],
+      "name": "Median weekly price of full-time center-based childcare, preschool (3 to 4 years)",
+      "definition": "The median weekly price of full-time care for a child aged 3 to 4 years at a childcare center in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:center_school_age",
+      "metric_codes": [
+        "DOL_CHILDCARE:center_school_age"
+      ],
+      "name": "Median weekly price of full-time center-based childcare, school-age (5 to 12 years)",
+      "definition": "The median weekly price of full-time care for a child aged 5 to 12 years at a childcare center in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:home_infant",
+      "metric_codes": [
+        "DOL_CHILDCARE:home_infant"
+      ],
+      "name": "Median weekly price of full-time family childcare, infant (birth to 23 months)",
+      "definition": "The median weekly price of full-time care for a child aged birth to 23 months at a provider's home (family childcare) in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:home_toddler",
+      "metric_codes": [
+        "DOL_CHILDCARE:home_toddler"
+      ],
+      "name": "Median weekly price of full-time family childcare, toddler (24 to 35 months)",
+      "definition": "The median weekly price of full-time care for a child aged 24 to 35 months at a provider's home (family childcare) in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:home_preschool",
+      "metric_codes": [
+        "DOL_CHILDCARE:home_preschool"
+      ],
+      "name": "Median weekly price of full-time family childcare, preschool (3 to 4 years)",
+      "definition": "The median weekly price of full-time care for a child aged 3 to 4 years at a provider's home (family childcare) in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "DOL_CHILDCARE:home_school_age",
+      "metric_codes": [
+        "DOL_CHILDCARE:home_school_age"
+      ],
+      "name": "Median weekly price of full-time family childcare, school-age (5 to 12 years)",
+      "definition": "The median weekly price of full-time care for a child aged 5 to 12 years at a provider's home (family childcare) in the county, from the U.S. Department of Labor Women's Bureau National Database of Childcare Prices.",
+      "unit": "dollars per week",
+      "universe": "childcare providers in the county surveyed by the state's market rate survey",
+      "kind": "median",
+      "caveat": "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+      "intended_use": "Show what childcare costs in a county, in dollars a week, and in hours of the county's average wage.",
+      "limitations": [
+        "Some county prices are filled in by the Women's Bureau (imputed); the row says so and why.",
+        "Published for counties only; no state or national figure is made from counties here."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare"
+      ],
+      "status": "draft",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
     }
   ]
 }

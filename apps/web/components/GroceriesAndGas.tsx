@@ -6,10 +6,12 @@
 // are `lib/groceriesAndGas.ts`. Loaded as its own chunk. "Minutes of work"
 // asks the API for each price over the page's own area's hourly wage, only
 // when the reader chooses it, so the page's own reads are unchanged. Home
-// heating fuels and diesel are EIA's (home-heating-fuel-prices).
+// heating fuels and diesel are EIA's (home-heating-fuel-prices); childcare
+// is the Women's Bureau's, for counties only (county-childcare-prices).
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
+import ChildcarePrices from "./ChildcarePrices";
 import { ApiError, apiErrorMessage, apiFetch, fetchCollectionPages, getMetric } from "../lib/api/client";
 import type { CollectionResponse, GeographySummary, Observation } from "../lib/api/types";
 import type { ExplorerSource } from "../lib/explorerSources";
@@ -412,6 +414,7 @@ export default function GroceriesAndGas({
           );
         })}
       </dl>
+      <ChildcarePrices level={level} place={place} sources={sources} />
       <p className="subtle" data-testid="place-cost-rent">
         Rent is this place&apos;s own figure: see <a href="#housing">median gross rent in Housing</a>.
       </p>

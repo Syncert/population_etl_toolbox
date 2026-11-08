@@ -47,6 +47,9 @@ from __future__ import annotations
 #: * ``BLS_QCEW`` -- ``bls_qcew/registry.py`` registers aggregation levels
 #:   10-14, 50-54 and 70-74 (national, state, county) and counts every other
 #:   level -- MSAs and the "unknown county" areas -- out of scope.
+#: * ``DOL_CHILDCARE`` -- the National Database of Childcare Prices is one row
+#:   per county and study year; ``dol_childcare/silver_dol_childcare/parse.py``
+#:   reads every row as a county.
 #: * ``EIA`` -- ``eia/registry.py`` classifies ``NUS`` as the nation, ``S`` codes
 #:   as states by USPS code, and PADDs and cities as EIA's own provider areas.
 #: * ``CENSUS_CBP`` -- ``census_cbp/registry.py`` reads the nation, state
@@ -102,6 +105,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "DOL_CHILDCARE": frozenset({"COUNTY"}),
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),

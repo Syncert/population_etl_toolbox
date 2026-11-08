@@ -1,0 +1,244 @@
+"""Parse one captured NDCP workbook into childcare prices.
+
+Pure: bytes in, typed prices and quarantine records out. Columns are read
+by name from the sheet's first row, and only the registered ones: the eight
+median weekly prices and the imputation codes of their age bands. A county
+and study year is one row; each row gives one price per registered measure.
+
+* An empty price cell is missing (``provider_missing``), never zero.
+* A price is ``imputed`` when any position of any of its bands' imputation
+  codes is ``1``; the code kept is those positions combined, so a reader can
+  see which of the Women's Bureau's five imputations were applied.
+* A row whose county code, study year, price or code cannot be read, or
+  that repeats a county and year, is set aside whole with its reason; a
+  sheet without the registered columns is refused whole (row 0).
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+
+from data_ingestion_toolbox.utility.workbook import Cell, WorkbookError, read_sheet
+
+from ..registry import MEASURES, ChildcareMeasure, NdcpRelease
+
+#: The states and the District of Columbia; NDCP covers no territory.
+_STATE_CODES = frozenset(f"{code:02d}" for code in range(1, 57))
+_CODE_LENGTH = 5
+
+
+@dataclass(frozen=True)
+class ChildcarePrice:
+    source_row_index: int
+    metric_key: str
+    care_type: str
+    age_group: str
+    study_year: int
+    fips_code: str
+    county_name: str
+    geo_id: str
+    value_source: str
+    value: Decimal | None
+    value_status: str
+    missing_reason: str | None
+    imputed: bool
+    #: The five positions combined over the price's bands, or None when the
+    #: workbook gives no code for any of them.
+    imputation_code: str | None
+    source_record_id: str
+
+
+@dataclass(frozen=True)
+class ChildcareQuarantine:
+    source_row_index: int
+    error_code: str
+    error_summary: str
+
+
+@dataclass(frozen=True)
+class ParsedWorkbook:
+    prices: tuple[ChildcarePrice, ...]
+    quarantined: tuple[ChildcareQuarantine, ...]
+    #: Rows that carry anything; a wholly blank row is not counted.
+    row_count: int
+
+    @property
+    def rejected(self) -> bool:
+        return any(q.source_row_index == 0 for q in self.quarantined)
+
+
+class _RowError(ValueError):
+    def __init__(self, code: str, summary: str) -> None:
+        self.code = code
+        super().__init__(summary)
+
+
+def required_columns(release: NdcpRelease) -> frozenset[str]:
+    columns = {release.fips_column, release.year_column}
+    for measure in MEASURES:
+        columns.add(measure.column)
+        columns.update(measure.imputation_columns)
+    return frozenset(columns)
+
+
+def _integer(cell: Cell | None, name: str) -> int:
+    if cell is None or not cell.value.strip():
+        raise _RowError("unreadable_row", f"{name} is blank")
+    stored = cell.value.strip()
+    try:
+        number = Decimal(stored)
+    except InvalidOperation as exc:
+        raise _RowError("unreadable_row", f"{name} {stored!r} is not a number") from exc
+    if number != number.to_integral_value():
+        raise _RowError("unreadable_row", f"{name} {stored!r} is not an integer")
+    return int(number)
+
+
+def _fips(cell: Cell | None) -> str:
+    code = str(_integer(cell, "county FIPS code")).zfill(5)
+    if len(code) != 5 or code[:2] not in _STATE_CODES or code.endswith("000"):
+        raise _RowError("unreadable_row", f"county FIPS code {code!r} is not a county")
+    return code
+
+
+def _price(cell: Cell | None, column: str) -> tuple[str, Decimal | None]:
+    if cell is None or not cell.value.strip():
+        return "", None
+    stored = cell.value.strip()
+    try:
+        value = Decimal(stored)
+    except InvalidOperation as exc:
+        raise _RowError(
+            "unreadable_value", f"{column} {stored!r} is not a number"
+        ) from exc
+    if not value.is_finite() or value <= 0:
+        raise _RowError("implausible_value", f"{column} {stored!r} is not a price")
+    return stored, value
+
+
+def _code(cell: Cell | None, column: str) -> str | None:
+    if cell is None or not cell.value.strip():
+        return None
+    stored = cell.value.strip()
+    if cell.kind == "number":
+        # The 2008-2018 release stores the code as a number (11 for 00011).
+        stored = str(_integer(cell, column)).zfill(_CODE_LENGTH)
+    if len(stored) != _CODE_LENGTH or set(stored) - {"0", "1"}:
+        raise _RowError(
+            "unreadable_row", f"{column} {stored!r} is not an imputation code"
+        )
+    return stored
+
+
+def _combined(codes: list[str]) -> str | None:
+    if not codes:
+        return None
+    return "".join(
+        "1" if any(code[position] == "1" for code in codes) else "0"
+        for position in range(_CODE_LENGTH)
+    )
+
+
+def _record_id(
+    release: NdcpRelease, fips: str, year: int, measure: ChildcareMeasure
+) -> str:
+    return hashlib.sha256(
+        f"dol_childcare|{release.key}|{fips}|{year}|{measure.metric_key}".encode()
+    ).hexdigest()
+
+
+def _refused(code: str, summary: str) -> ParsedWorkbook:
+    return ParsedWorkbook((), (ChildcareQuarantine(0, code, summary[:200]),), 0)
+
+
+def parse_workbook(raw_bytes: bytes, *, release: NdcpRelease) -> ParsedWorkbook:
+    prices: list[ChildcarePrice] = []
+    quarantined: list[ChildcareQuarantine] = []
+    seen: set[tuple[str, int]] = set()
+    row_count = 0
+    header: dict[str, int] | None = None
+    try:
+        for number, cells in read_sheet(raw_bytes, release.sheet):
+            if header is None:
+                header = {
+                    cell.value.strip(): column
+                    for column, cell in cells.items()
+                    if cell.kind == "text"
+                }
+                missing = sorted(required_columns(release) - set(header))
+                if missing:
+                    return _refused(
+                        "unexpected_header", f"missing columns: {', '.join(missing)}"
+                    )
+                continue
+            if not any(cell.value.strip() for cell in cells.values()):
+                continue
+            row_count += 1
+            try:
+                fips = _fips(cells.get(header[release.fips_column]))
+                year = _integer(cells.get(header[release.year_column]), "study year")
+                if year not in release.years:
+                    raise _RowError(
+                        "unregistered_year",
+                        f"study year {year} is outside {release.key}'s "
+                        f"{release.first_year}-{release.last_year}",
+                    )
+                if (fips, year) in seen:
+                    raise _RowError(
+                        "duplicate_row",
+                        f"county {fips} study year {year} appears twice",
+                    )
+                read = []
+                for measure in MEASURES:
+                    stored, value = _price(
+                        cells.get(header[measure.column]), measure.column
+                    )
+                    codes = [
+                        code
+                        for column in measure.imputation_columns
+                        if (code := _code(cells.get(header[column]), column))
+                        is not None
+                    ]
+                    read.append((measure, stored, value, _combined(codes)))
+            except _RowError as error:
+                quarantined.append(
+                    ChildcareQuarantine(number, error.code, str(error)[:200])
+                )
+                continue
+            seen.add((fips, year))
+            name_column = header.get(release.county_name_column)
+            county_name = (
+                cells[name_column].value.strip()
+                if name_column is not None and name_column in cells
+                else ""
+            )
+            geo_id = f"state:{fips[:2]}|county:{fips[2:]}"
+            for measure, stored, value, code in read:
+                prices.append(
+                    ChildcarePrice(
+                        source_row_index=number,
+                        metric_key=measure.metric_key,
+                        care_type=measure.care_type,
+                        age_group=measure.age_group,
+                        study_year=year,
+                        fips_code=fips,
+                        county_name=county_name,
+                        geo_id=geo_id,
+                        value_source=stored,
+                        value=value,
+                        value_status="valid" if value is not None else "missing",
+                        missing_reason=None
+                        if value is not None
+                        else "provider_missing",
+                        imputed=code is not None and "1" in code,
+                        imputation_code=code,
+                        source_record_id=_record_id(release, fips, year, measure),
+                    )
+                )
+    except WorkbookError as error:
+        return _refused(error.code, f"workbook refused: {error.code}")
+    if header is None:
+        return _refused("unexpected_header", "the sheet has no rows")
+    return ParsedWorkbook(tuple(prices), tuple(quarantined), row_count)

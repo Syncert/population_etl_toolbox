@@ -36,6 +36,7 @@ from tests.support import census_cbp as cbp_support
 from tests.support import bea as bea_support
 from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
+from tests.support import dol_childcare as ndcp_support
 from tests.support import irs_soi as soi_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
@@ -984,6 +985,18 @@ def published_irs_soi_metric(
 
 
 @pytest.fixture
+def published_ndcp_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NDCP fixture workbook's county childcare prices."""
+    factory = ndcp_support.reviewed_warehouse(postgres_connection_factory, request)
+    ndcp_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_dol_childcare"))
+    return _one_published_code(factory, "DOL_CHILDCARE")
+
+
+@pytest.fixture
 def published_cbp_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1206,6 +1219,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_qcew_metric: str,
     published_bea_metric: str,
     published_eia_metric: str,
+    published_ndcp_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -1283,6 +1297,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
+        ("DOL_CHILDCARE", published_ndcp_metric),
         ("CENSUS_CBP", published_cbp_metric),
         ("CENSUS_LODES", published_lodes_metric),
         ("NOAA_NORMALS", published_normals_metric),
@@ -1446,6 +1461,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_hpi_metric: str,
     published_ccd_metric: str,
     published_ers_metric: str,
+    published_ndcp_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 

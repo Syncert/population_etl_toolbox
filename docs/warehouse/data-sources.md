@@ -40,6 +40,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
 | [Fair Market Rents and income limits](#hud_fmr_il) | HUD |  |  | ● |  |  |  |  | 2026–2027 | Monthly | Loaded |
 | [Gasoline, diesel and home energy prices](#eia) | Energy Information Administration | ● | ◌ |  |  |  |  | ● | 1973–2026 | Weekly | Partly loaded |
+| [County childcare prices](#dol_childcare) | DOL Women's Bureau |  |  | ● |  |  |  |  | 2008–2022 | Monthly | Not yet loaded |
 | [FRED national indicators](#fred) | Federal Reserve Bank of St. Louis | ● |  |  |  |  |  |  | 1990–2026 | Monthly | Loaded |
 | [Crime Data Explorer and Return A master files](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2025 | Weekly | Loaded |
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
@@ -304,6 +305,22 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Areas:** gasoline and diesel for the nation, 9 states and 19 cities and EIA regions (PADDs); electricity and natural gas by state; heating oil and propane by state where EIA surveys it, else its petroleum region.
 - **Status (operator checks 2026-11-06):** Partly loaded. Gasoline loaded every week 2015-01-05 to 2026-11-02 for the nation, 9 states and 19 areas. The diesel and home-energy routes (#314) load on their first weekly run after deploy; check with `LIVE_CHECKS_314.sql`.
 - **Shown on:** place pages, Cost of living section: gasoline and diesel per gallon, home heating (natural gas, heating oil, propane) and electricity, each from the smallest area EIA publishes that contains the place, named beside the price.
+
+<a id="dol_childcare"></a>
+### County childcare prices (`DOL_CHILDCARE`)
+
+- **Publisher:** U.S. Department of Labor Women's Bureau (National Database of Childcare Prices)
+- **Code:** `src/data_ingestion_toolbox/dol_childcare` · DAG `dol_childcare_ingest` · Monthly, 9th 16:00 UTC
+- **Publisher releases:** Every year or two, one workbook
+- **Credential:** none
+- **Years:** study years 2008–2022 (`NDCP2022.xlsx`, which restates the 2008–2018 file)
+- **Datasets:** `NDCP2022.xlsx`, sheet `County_LevelNDCP_v8_update2008_`
+- **Measures:** Median weekly full-time price, dollars per week, for center-based and family childcare, each for infants, toddlers, preschoolers and school-age children; the Women's Bureau's imputation flag and code kept beside each price.
+- **Capture and control:** `control.dol_childcare_file`
+- **Silver:** `silver_dol_childcare.price_revision`, `silver_dol_childcare.fact_price`, `silver_dol_childcare.observation_quarantine`
+- **Gold:** `gold_dol_childcare.observation_revision`, `gold_dol_childcare.observation_latest`
+- **Status:** Not yet loaded. Loads whole on the first monthly run after deploy; see `docs/user-guides/DOL_CHILDCARE_PIPELINE_OPERATIONS.md`.
+- **Shown on:** county pages, Cost of living section: the eight prices for the newest study year, imputed prices marked; other pages say the prices are published for counties only.
 
 <a id="fred"></a>
 ### FRED national indicators (`FRED`)

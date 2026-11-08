@@ -45,6 +45,7 @@ services:
       - ../../src/data_ingestion_toolbox/irs_soi/DDL/silver_irs_soi.sql:/docker-entrypoint-initdb.d/115a_silver_irs_soi.sql:ro
       - ../../src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql:/docker-entrypoint-initdb.d/116_silver_census_cbp.sql:ro
       - ../../src/data_ingestion_toolbox/eia/DDL/silver_eia.sql:/docker-entrypoint-initdb.d/116_silver_eia.sql:ro
+      - ../../src/data_ingestion_toolbox/dol_childcare/DDL/silver_dol_childcare.sql:/docker-entrypoint-initdb.d/116a_silver_dol_childcare.sql:ro
       - ../../src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql:/docker-entrypoint-initdb.d/117_silver_census_lodes.sql:ro
       - ../../src/data_ingestion_toolbox/fhfa_hpi/DDL/silver_fhfa_hpi.sql:/docker-entrypoint-initdb.d/118_silver_fhfa_hpi.sql:ro
       - ../../src/data_ingestion_toolbox/hud_fmr_il/DDL/silver_hud_fmr_il.sql:/docker-entrypoint-initdb.d/119_silver_hud_fmr_il.sql:ro
@@ -78,6 +79,7 @@ services:
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql:/docker-entrypoint-initdb.d/162_gold_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql:/docker-entrypoint-initdb.d/163_gold_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/eia/gold_eia/DDL/gold_eia.sql:/docker-entrypoint-initdb.d/163_gold_eia.sql:ro
+      - ../../src/data_ingestion_toolbox/dol_childcare/gold_dol_childcare/DDL/gold_dol_childcare.sql:/docker-entrypoint-initdb.d/163a_gold_dol_childcare.sql:ro
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql:/docker-entrypoint-initdb.d/164_gold_bea.sql:ro
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea_real_income.sql:/docker-entrypoint-initdb.d/164_gold_bea_real_income.sql:ro
       - ../../src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql:/docker-entrypoint-initdb.d/165_gold_irs_migration.sql:ro
@@ -107,6 +109,7 @@ services:
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql:/docker-entrypoint-initdb.d/192_publisher_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/eia/gold_eia/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_eia.sql:ro
+      - ../../src/data_ingestion_toolbox/dol_childcare/gold_dol_childcare/DDL/publisher.sql:/docker-entrypoint-initdb.d/193a_publisher_dol_childcare.sql:ro
       - ../../src/data_ingestion_toolbox/bea/gold_bea/DDL/publisher.sql:/docker-entrypoint-initdb.d/194_publisher_bea.sql:ro
       - ../../sql/migrations/028_serving_publishes_a_withheld_value.sql:/docker-entrypoint-initdb.d/195_migration_028.sql:ro
       - ../../src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql:/docker-entrypoint-initdb.d/195_publisher_irs_migration.sql:ro

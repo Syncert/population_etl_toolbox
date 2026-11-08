@@ -132,6 +132,9 @@ const COST_METRICS = Object.fromEntries([
   costMetric("EIA:NG_RES", "U.S. dollars per thousand cubic feet", ["NATIONAL", "STATE"]),
   costMetric("EIA:EPD2F", "U.S. dollars per gallon", ["NATIONAL", "STATE", "PROVIDER_AREA"]),
   costMetric("EIA:EPD2D", "U.S. dollars per gallon", ["NATIONAL", "PROVIDER_AREA"]),
+  // Childcare (county-childcare-prices): the Women's Bureau's county prices.
+  ...["center", "home"].flatMap((care) => ["infant", "toddler", "preschool", "school_age"].map((age) =>
+    costMetric(`DOL_CHILDCARE:${care}_${age}`, "dollars per week", ["COUNTY"]))),
 ].map((metric) => [metric.metric_code, metric]));
 // Which area publishes which cost measure, and its value. The division's
 // food index skips August 2025, so its change over the year cannot be read
@@ -152,7 +155,32 @@ const COST_VALUES = {
   "EIA:EPD2F": { "area:eia:R20": "season:3.50" },
   "EIA:EPD2D": { "us:1": "3.71" },
 };
+// Dane County's childcare prices for 2021 and 2022, as the fixture workbook
+// publishes them: 2021 interpolated between surveys, 2022's home school-age
+// price blank.
+const DANE_CHILDCARE = {
+  center_infant: [["299.75", "00001"], ["293", "00000"]],
+  center_toddler: [["262", "00001"], ["258.75", "00000"]],
+  center_preschool: [["240", "00001"], ["236.5", "00000"]],
+  center_school_age: [["180", "00001"], ["175", "00000"]],
+  home_infant: [["225", "00001"], ["220", "00000"]],
+  home_toddler: [["215", "00001"], ["210", "00000"]],
+  home_preschool: [["205", "00001"], ["200", "00000"]],
+  home_school_age: [["150", "00001"], [null, "00000"]],
+};
+function childcareRows(code, geo) {
+  const prices = DANE_CHILDCARE[code.split(":")[1]];
+  if (!prices || geo !== "state:55|county:025") return [];
+  return prices.map(([value, imputation_code], index) => {
+    const year = 2021 + index;
+    return { metric_code: code, source_code: "DOL_CHILDCARE", geo_id: geo, geo_level: "COUNTY", geo_name: "Dane County",
+      value, value_status: value === null ? "missing" : "valid", unit: "dollars per week", release: "ndcp2022", as_of: "2026-09-01",
+      period_start: `${year}-01-01`, period_end: `${year}-12-31`, uncertainty: null, coverage: null,
+      dimensions: { care_type: code.includes(":center") ? "center" : "home", imputed: imputation_code.includes("1") ? "true" : "false", imputation_code } };
+  });
+}
 function costRows(code, geo) {
+  if (code.startsWith("DOL_CHILDCARE:")) return childcareRows(code, geo);
   const value = COST_VALUES[code]?.[geo];
   const area = [NATION, ...STATES, ...Object.values(AREAS)].find((item) => item.geo_id === geo);
   if (!value || !area) return [];
@@ -274,8 +302,12 @@ function timeCostRows(ratio, priceGeo, wageGeo, periodStart) {
     numerator: { metric_code: ratio.numerator, period_start: price.period_start, value: price.value, value_status: "valid" } };
   if (!wage) return [{ ...base, value: null, unavailable_reason: "denominator_missing", denominator: null }];
   const [name, weekly] = wage;
-  return [{ ...base, value: ((Number(price.value) * 2400) / Number(weekly)).toFixed(2), unavailable_reason: null, wage_geo_name: name, wage_year: "newest_published_year",
-    denominator: { metric_code: ratio.denominator, period_start: "2025-01-01", period_end: "2025-12-31", value: weekly, value_status: "valid" } }];
+  // A childcare price's study year has its own county wage in this fixture;
+  // the BLS prices are newer than QCEW's newest year.
+  const year = ratio.numerator.startsWith("DOL_CHILDCARE:") ? price.period_start.slice(0, 4) : "2025";
+  return [{ ...base, value: ((Number(price.value) * 2400) / Number(weekly)).toFixed(2), unavailable_reason: null, wage_geo_name: name,
+    wage_year: ratio.numerator.startsWith("DOL_CHILDCARE:") ? "same_year" : "newest_published_year",
+    denominator: { metric_code: ratio.denominator, period_start: `${year}-01-01`, period_end: `${year}-12-31`, value: weekly, value_status: "valid" } }];
 }
 
 // Synthetic derived values. Rock County's survey count has no same-period
@@ -457,7 +489,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     const params = url.searchParams;
     const path = url.pathname;
     if (path === "/api/v1/auth/refresh") return route.fulfill({ status: 401, json: { detail: "sign-in could not be completed" } });
-    if (path === "/api/v1/catalog/capabilities") return route.fulfill({ json: { total: sources.length + 1, items: [...sources, "EIA"].map((source_code) => ({ source_code,
+    if (path === "/api/v1/catalog/capabilities") return route.fulfill({ json: { total: sources.length + 2, items: [...sources, "EIA", "DOL_CHILDCARE"].map((source_code) => ({ source_code,
       display_name: source_code, route_segment: null, served_by_neutral_routes: true,
       publishes_value_status: source_code !== "CENSUS_PEP", publishes_aligned_reduction: !["CDC", "FBI_UCR", "USDA_NASS"].includes(source_code),
       observation_filters: ["geo_id", "geo_level", "state_fips"], observation_dimensions: [],
