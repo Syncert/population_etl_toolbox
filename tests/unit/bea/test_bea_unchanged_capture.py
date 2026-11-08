@@ -42,7 +42,12 @@ class _Cursor:
 
     def execute(self, sql: str, parameters: tuple = ()) -> None:
         self.database.statements.append((sql, parameters))
-        if "FROM control.bea_table_capture AS capture" in sql:
+        if "capture.in_scope_row_count" in sql:
+            # The published capture's count already matches its replayed rows.
+            self._result = (9471, 9471)
+        elif "SELECT capture.capture_id::TEXT" in sql:
+            self._result = (str(uuid4()),)
+        elif "FROM control.bea_table_capture AS capture" in sql:
             self._result = self.database.published
         elif "FROM silver_bea.fact_observation" in sql:
             # Every registered line already has facts.
@@ -157,12 +162,20 @@ def test_the_same_bytes_as_the_last_publication_are_unchanged_and_replay_nothing
     assert status == "unchanged"
     before = len(database.statements)
     assert replay_run(database.connect, run_id=run_id) == 0
-    # Replay read the run's status, found every registered line loaded, and
-    # stopped: no parse, no insert.
+    # Replay read the run's status, found every registered line loaded and
+    # the published capture's count matching its replayed rows, and stopped:
+    # no parse, no insert, no update.
     replayed = database.statements[before:]
     assert "WHERE run_id" in replayed[0][0]
-    assert all("fact_observation" in sql for sql, _p in replayed[1:])
-    assert not any("INSERT" in sql for sql, _p in replayed)
+    assert all(
+        "fact_observation" in sql or "control.bea_table_capture AS capture" in sql
+        for sql, _p in replayed[1:]
+    )
+    assert any("in_scope_row_count" in sql for sql, _p in replayed)
+    assert not any(
+        "INSERT" in sql or "UPDATE" in sql or "load_captured" in sql
+        for sql, _p in replayed
+    )
 
 
 @pytest.mark.parametrize(

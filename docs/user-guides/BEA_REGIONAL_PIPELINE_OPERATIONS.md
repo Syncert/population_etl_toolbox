@@ -197,7 +197,12 @@ FROM gold_bea.observation_latest GROUP BY dollar_basis, value_status;
 - `DQ-BEA-001` (uniqueness) and `DQ-BEA-003` (a provider code carries no
   number) are enforced by the fact's key and named CHECK constraints.
 - `DQ-BEA-002` is the table-ledger reconciliation and runs in the daily
-  sweep.
+  sweep. It compares the rows replayed under each published capture with
+  that capture's `in_scope_row_count`. A line backfill (a line registered
+  after its file was read) replays under the published capture and raises
+  that count to the current registry's; a weekly unchanged run re-derives a
+  count that still disagrees by re-parsing the capture (CAINC4, 2026-11-08:
+  9,471 recorded, 12,628 replayed after line 46 was added).
 - `DQ-BEA-004` (year continuity) is declared and not yet executed.
 - `DQ-BEA-005` fails a price parity table whose national all-items parity is
   not 100 in a published year; it runs in the weekly sweep.
