@@ -22,7 +22,7 @@ import {
   CHILDCARE_CREDIT,
   CHILDCARE_SOURCE,
   NOT_A_COUNTY,
-  childcareMetricCode,
+  catalogedCodes,
   childcareRatioId,
   childcareTable,
   footnoteReasons,
@@ -36,32 +36,42 @@ import type { ChildcareMinutes } from "../lib/childcare";
 type Newest = Record<string, ObservationRow | null>;
 type State = { status: "reading" } | { status: "unloaded" } | { status: "failed" } | { status: "read"; newest: Newest };
 
-const CODES = CARE_TYPES.flatMap((care) => AGE_GROUPS.map((age) => childcareMetricCode(care.key, age.key)));
 
 export default function ChildcarePrices({
   level,
   place,
   sources,
+  catalogued,
 }: {
   level: PlaceLevel;
   place: GeographySummary;
   sources: readonly ExplorerSource[];
+  /** The place page's catalog read: `null` while pending (see `catalogedCodes`). */
+  catalogued?: ReadonlyMap<string, unknown> | null;
 }) {
   const [state, setState] = useState<State>({ status: "reading" });
   const [minutes, setMinutes] = useState<Record<string, ChildcareMinutes | null>>({});
   const source = sources.find((item) => item.sourceCode === CHILDCARE_SOURCE) || null;
   const county = level === "COUNTY";
+  const codes = catalogedCodes(catalogued);
+  const codesKey = codes ? codes.join(",") : null;
 
   useEffect(() => {
     if (!county) return;
-    if (!source) {
+    if (codesKey === null) {
+      setState({ status: "reading" });
+      return;
+    }
+    const wanted = codesKey ? codesKey.split(",") : [];
+    // A source with no catalogued price is not loaded: nothing is asked.
+    if (!source || !wanted.length) {
       setState({ status: "unloaded" });
       return;
     }
     const controller = new AbortController();
     setState({ status: "reading" });
     Promise.all(
-      CODES.map(async (code) => {
+      wanted.map(async (code) => {
         const { resource, params } = buildNewestValueRequest(source, { metricCode: code, geoId: place.geo_id });
         const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params, signal: controller.signal });
         const rows = normalizeObservationRows(source, Array.isArray(payload.items) ? payload.items : [])
@@ -77,7 +87,7 @@ export default function ChildcarePrices({
         if (!controller.signal.aborted) setState({ status: "failed" });
       });
     return () => controller.abort();
-  }, [county, source, place.geo_id]);
+  }, [county, source, codesKey, place.geo_id]);
 
   // Hours of work for each shown price, at the county's own wage, for the
   // price's own study year. A price not computed shows no hours, never zero.

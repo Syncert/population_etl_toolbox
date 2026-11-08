@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CHILDCARE_CODES,
+  catalogedCodes,
   childcareMetricCode,
   childcareRatioId,
   childcareTable,
@@ -102,5 +104,18 @@ describe("hours of work for a childcare price", () => {
     );
     expect(workGap(row, 2022, "Dane County")).toBe("");
     expect(workFormula({ ...row, value: null }, 293, "x", "Dane County")).toBe("");
+  });
+});
+
+// Covers: WEB-171 — county-childcare-prices: a price the catalog does not
+// hold is never asked for, so a deployment without the load reads nothing.
+describe("which childcare prices are read", () => {
+  it("reads only the catalogued prices, none while the catalog is pending", () => {
+    expect(CHILDCARE_CODES).toHaveLength(8);
+    expect(CHILDCARE_CODES[0]).toBe("DOL_CHILDCARE:center_infant");
+    expect(catalogedCodes(null)).toBeNull();
+    expect(catalogedCodes(new Map())).toEqual([]);
+    expect(catalogedCodes(new Map([["DOL_CHILDCARE:home_infant", {}], ["BLS:X", {}]]))).toEqual(["DOL_CHILDCARE:home_infant"]);
+    expect(catalogedCodes(undefined)).toEqual(CHILDCARE_CODES);
   });
 });

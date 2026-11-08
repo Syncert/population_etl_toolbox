@@ -241,11 +241,14 @@ export default function GroceriesAndGas({
   place,
   related,
   sources,
+  catalogued,
 }: {
   level: PlaceLevel;
   place: GeographySummary;
   related: RelatedResponse | null;
   sources: readonly ExplorerSource[];
+  /** The place page's one catalog read, `null` while pending. */
+  catalogued?: ReadonlyMap<string, unknown> | null;
 }) {
   const [answers, setAnswers] = useState<Partial<Record<CostMeasure, Answer>>>({});
   const [view, setView] = useState<View>("price");
@@ -476,7 +479,7 @@ export default function GroceriesAndGas({
           );
         })}
       </dl>
-      <ChildcarePrices level={level} place={place} sources={sources} />
+      <ChildcarePrices level={level} place={place} sources={sources} catalogued={catalogued} />
       <p className="subtle" data-testid="place-cost-rent">
         Rent is this place&apos;s own figure: see <a href="#housing">median gross rent in Housing</a>.
       </p>
