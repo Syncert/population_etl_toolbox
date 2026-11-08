@@ -700,6 +700,25 @@ test("a county's childcare prices are its own, for one year, with a blank price 
   await expect(page.getByTestId("place-childcare-table")).toHaveCount(0);
 });
 
+// Covers: WEB-172 — grocery-spending: a county shows its Census region's
+// yearly household grocery spending, named as the region's and as spending,
+// not a price, with the nation's figures by household size.
+test("a county's grocery spending is its region's, named, with the nation's household sizes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const spending = page.getByTestId("place-cost-spending");
+  await expect(spending).toHaveAttribute("data-area", "region:2");
+  await expect(spending).toContainText("Household grocery spending (food at home)");
+  await expect(spending).toContainText("$5,846 a year");
+  await expect(spending).toContainText("Midwest Region figure, 2024");
+  await expect(spending).toContainText("It is spending, not a price");
+  await expect(page.getByTestId("place-cost-spending-sizes")).toContainText(
+    "Nationally, by household size (2024): one person $3,612, two people $6,120, three $7,310, four $8,905, five or more $10,214 a year.",
+  );
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 // Covers: WEB-143 — CL-3: a county with no wage loaded says so, never zero;
 // a metro has no minutes-of-work choice, and says why.
 test("minutes of work say when no wage is loaded, and a metro says QCEW has none", async ({ page }) => {

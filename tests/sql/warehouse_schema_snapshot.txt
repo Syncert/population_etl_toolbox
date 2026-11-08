@@ -2247,7 +2247,7 @@ r gold_bls.dim_bls_survey
     column comparison_warning text
     column reference_url text
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_bls_survey_observation_basis_check CHECK ((observation_basis = ANY (ARRAY['PEOPLE'::text, 'JOBS'::text, 'PRICES'::text, 'FLOWS'::text])))
+    constraint dim_bls_survey_observation_basis_check CHECK ((observation_basis = ANY (ARRAY['PEOPLE'::text, 'JOBS'::text, 'PRICES'::text, 'FLOWS'::text, 'SPENDING'::text])))
     constraint dim_bls_survey_pkey PRIMARY KEY (bls_survey_sk)
     constraint dim_bls_survey_program_code_key UNIQUE (program_code)
     index dim_bls_survey_pkey CREATE UNIQUE INDEX dim_bls_survey_pkey ON gold_bls.dim_bls_survey USING btree (bls_survey_sk)

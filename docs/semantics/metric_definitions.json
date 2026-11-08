@@ -4709,6 +4709,266 @@
       "version": 1,
       "effective_date": "2026-11-08",
       "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB1101M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB1101M"
+      ],
+      "name": "Average yearly household spending on food at home, the nation",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the nation, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "all consumer units in the United States",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB1102M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB1102M"
+      ],
+      "name": "Average yearly household spending on food at home, the Northeast Census region",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the Northeast Census region, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "consumer units in the Northeast",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB1103M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB1103M"
+      ],
+      "name": "Average yearly household spending on food at home, the Midwest Census region",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the Midwest Census region, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "consumer units in the Midwest",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB1104M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB1104M"
+      ],
+      "name": "Average yearly household spending on food at home, the South Census region",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the South Census region, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "consumer units in the South",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB1105M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB1105M"
+      ],
+      "name": "Average yearly household spending on food at home, the West Census region",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the West Census region, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "consumer units in the West",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB0502M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB0502M"
+      ],
+      "name": "Average yearly household spending on food at home, the nation, one-person households",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the nation, one-person households, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "one-person consumer units in the United States",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB0504M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB0504M"
+      ],
+      "name": "Average yearly household spending on food at home, the nation, two-person households",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the nation, two-person households, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "two-person consumer units in the United States",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB0505M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB0505M"
+      ],
+      "name": "Average yearly household spending on food at home, the nation, three-person households",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the nation, three-person households, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "three-person consumer units in the United States",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB0506M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB0506M"
+      ],
+      "name": "Average yearly household spending on food at home, the nation, four-person households",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the nation, four-person households, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "four-person consumer units in the United States",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "BLS:CXUFOODHOMELB0507M",
+      "metric_codes": [
+        "BLS:CXUFOODHOMELB0507M"
+      ],
+      "name": "Average yearly household spending on food at home, the nation, households of five or more",
+      "definition": "The average a household (a consumer unit) spends in a year on food and drink to prepare and eat at home, for the nation, households of five or more, from the Bureau of Labor Statistics Consumer Expenditure Survey.",
+      "unit": "U.S. dollars per consumer unit per year",
+      "universe": "consumer units of five or more people in the United States",
+      "kind": "mean",
+      "caveat": "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+      "intended_use": "Show what households typically spend on groceries in a year, named as spending and as the area's.",
+      "limitations": [
+        "A mean over consumer units (households), from a survey; it is spending, not a price, and depends on what households choose to buy.",
+        "Published for the nation and the four Census regions only; a county or state page shows its region's figure, named as the region's."
+      ],
+      "citations": [
+        "https://www.bls.gov/cex/"
+      ],
+      "status": "draft",
+      "owner": "grocery-spending",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
     }
   ]
 }

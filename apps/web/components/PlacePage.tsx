@@ -101,6 +101,7 @@ import {
   multiStateNote,
 } from "../lib/metroPages";
 import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
+import { CHILDCARE_CODES } from "../lib/childcare";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 /** The grains `/public-money` answers (taxes-and-public-money T-6). */
@@ -378,7 +379,9 @@ export default function PlacePage({
         // No pairings listed: every chapter shows its counts, and no toggle.
       });
     (async () => {
-      const codes = placeChapterMetricCodes();
+      // The childcare prices are named in the same read, so a price not
+      // loaded is never asked for on its own (county-childcare-prices).
+      const codes = [...placeChapterMetricCodes(), ...CHILDCARE_CODES];
       let found = new Map<string, MetricSummary>();
       let failures = 0;
       try {
@@ -911,7 +914,13 @@ export default function PlacePage({
       ) : null}
 
       {place && related?.geo_id === place.geo_id ? (
-        <GroceriesAndGas level={level} place={place} related={related} sources={sources} />
+        <GroceriesAndGas
+          level={level}
+          place={place}
+          related={related}
+          sources={sources}
+          catalogued={catalogStatus.state === "loading" ? null : metricsByCode}
+        />
       ) : null}
 
       {level === "PLACE" && city && nearby?.counties.length ? (

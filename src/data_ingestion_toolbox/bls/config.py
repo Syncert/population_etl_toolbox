@@ -103,6 +103,9 @@ class BlsConfig(BaseModel):
         # selected from BLS's own series list by item and area
         # (`bls/price_series.py`), so it has no curated series ids.
         "ap",
+        # Consumer Expenditure Survey (grocery-spending): annual household
+        # spending on food at home, curated series ids below.
+        "cx",
     ]
 
     # ------------------------------------------------------------------
@@ -244,6 +247,24 @@ class BlsConfig(BaseModel):
         ],
         # Average prices: none hand-listed; see `price_series.py`.
         "ap": [],
+        # --------------------------------------------------------------
+        # Consumer Expenditure Survey (cx) -- grocery spending. Annual
+        # (`A01`) means, dollars a year per consumer unit, for food at home.
+        # No free source publishes grocery spending below the four Census
+        # regions, so a county page shows its region's figure, named.
+        # Ids checked against BLS's own `cx.series` (2026-11-08).
+        "cx": [
+            "CXUFOODHOMELB1101M",  # Food at home, all consumer units (nation)
+            "CXUFOODHOMELB1102M",  # Northeast region
+            "CXUFOODHOMELB1103M",  # Midwest region
+            "CXUFOODHOMELB1104M",  # South region
+            "CXUFOODHOMELB1105M",  # West region
+            "CXUFOODHOMELB0502M",  # One person consumer unit (nation)
+            "CXUFOODHOMELB0504M",  # Two people
+            "CXUFOODHOMELB0505M",  # Three people
+            "CXUFOODHOMELB0506M",  # Four people
+            "CXUFOODHOMELB0507M",  # Five or more people
+        ],
     }
 
     # Airflow connection ID to Postgres
@@ -332,6 +353,7 @@ BLS_PROGRAM_LABELS: Dict[str, str] = {
     "cu": "CPI",
     "jt": "JOLTS",
     "ap": "Average Price",
+    "cx": "Consumer Expenditure",
 }
 
 LAUS_MEASURE_META: Dict[str, Dict[str, str]] = {
