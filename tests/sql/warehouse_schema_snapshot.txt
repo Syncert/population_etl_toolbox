@@ -5086,13 +5086,20 @@ v gold_dol_childcare.metric_publisher
     body     'U.S. Department of Labor Women''s Bureau National Database of Childcare Prices'::text AS source_name,
     body     'government-statistical-program'::text AS source_type,
     body     'https://www.dol.gov/agencies/wb/topics/featured-childcare'::text AS reference_url
-    body    FROM ( SELECT revision.metric_key,
-    body             max(revision.year)::text AS source_watermark,
-    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(revision.geo_type) ORDER BY (gold_glossary.geo_grain(revision.geo_type))) FILTER (WHERE revision.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
-    body             (array_agg(revision.run_id ORDER BY revision.published_at DESC))[1] AS source_run_id,
-    body             max(revision.published_at) AS publication_time
-    body            FROM gold_dol_childcare.observation_revision revision
-    body           GROUP BY revision.metric_key) served
+    body    FROM ( SELECT grouped.metric_key,
+    body             max(grouped.max_year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(grouped.geo_type) ORDER BY (gold_glossary.geo_grain(grouped.geo_type))) FILTER (WHERE grouped.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(grouped.run_id ORDER BY grouped.published_at DESC))[1] AS source_run_id,
+    body             max(grouped.published_at) AS publication_time
+    body            FROM ( SELECT revision.metric_key,
+    body                     revision.geo_type,
+    body                     revision.run_id,
+    body                     revision.published_at,
+    body                     max(revision.year) AS max_year,
+    body                     max(revision.value) AS value
+    body                    FROM gold_dol_childcare.observation_revision revision
+    body                   GROUP BY revision.metric_key, revision.geo_type, revision.run_id, revision.published_at) grouped
+    body           GROUP BY grouped.metric_key) served
     body      JOIN gold_dol_childcare.measure_export export ON export.source_object_key = served.metric_key
     body   WHERE served.publication_time IS NOT NULL;
 
