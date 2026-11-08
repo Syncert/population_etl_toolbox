@@ -417,11 +417,15 @@ in `contest_result` but not in the measures, which read `GEN` only.
 ## Lean groups (ADR-0014)
 
 `gold_elections.lean_place_change` holds, for each window between two
-presidential election years from 2000, each county's change in five measures
+presidential election years from 1992, each county's change in five measures
 against the nation's change over the same window, with the county's lean from
 the vote in the window's first year. `gold_elections.lean_group_change` holds
 each lean band within each peer group: the count of counties and the median
 and quartiles of their change net of the nation. Nothing combines measures.
+A measure the source does not publish by county at both ends of a window has no
+rows for that window: county GDP starts in 2001, the QCEW load in 2014, and
+SAIPE has no county poverty for 1992 or 1996, so the 1992–1996 and 1996–2000
+windows carry income and unemployment only.
 
 | Measure | Source | Change |
 | --- | --- | --- |

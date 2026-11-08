@@ -180,13 +180,16 @@ BEGIN
     DROP TABLE IF EXISTS pg_temp.lean_tax_burden;
     DROP TABLE IF EXISTS pg_temp.lean_state_name;
 
-    -- The lean: each county's presidential two-party margin, 2000 onward.
+    -- The lean: each county's presidential two-party margin, 1992 onward
+    -- (Algara & Amlani's county returns serve 1992 and 1996, MEDSL's 2000 on).
+    -- A measure with no value at a window's start (GDP before 2001, QCEW
+    -- before 2014, SAIPE in 1992 and 1996) simply has no row for it.
     CREATE TEMP TABLE lean_vote ON COMMIT DROP AS
     SELECT latest.geo_id, latest.year, latest.value AS margin
     FROM gold_elections.observation_latest AS latest
     WHERE latest.metric_key = 'president_two_party_margin'
       AND latest.geo_type = 'county'
-      AND latest.year >= 2000
+      AND latest.year >= 1992
       AND latest.value IS NOT NULL;
 
     -- Every input is read only for the election years: a window starts and
@@ -566,6 +569,9 @@ BEGIN
         (SELECT COUNT(*) || '@' || COALESCE(MAX(published_at)::TEXT, '') FROM control.census_govfin_slice WHERE status = 'published'),
         (SELECT COALESCE(MAX(ingested_at)::TEXT, '') FROM silver_bls.fact_labor_statistics),
         (SELECT COALESCE(MAX(ingested_at)::TEXT, '') FROM silver_fred.fact_economic_indicators WHERE series_id = 'PCEPI'),
+        -- The window rule is part of the input: windows from 1992
+        -- (2026-11-08) rebuild once on deploy, writing only the new rows.
+        'windows-from-1992',
         -- The definitions are part of the input: a change to this file
         -- rebuilds even when no source published.
         (SELECT md5(STRING_AGG(definition::TEXT, ',' ORDER BY definition.measure))
