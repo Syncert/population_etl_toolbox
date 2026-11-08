@@ -83,7 +83,7 @@ describe("how a figure was made", () => {
 describe("the chapter contract", () => {
   it("pins the chapter order every place page reads in", () => {
     expect(PLACE_CHAPTERS.map((chapter) => chapter.title)).toEqual([
-      "People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change",
+      "People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "Voting",
     ]);
   });
 
@@ -92,7 +92,7 @@ describe("the chapter contract", () => {
       headline: chapter.headline.map((measure) => measure.candidates[0]),
       depth: chapter.depth.map((measure) => measure.candidates[0]),
       trend: chapter.trend,
-      ...(chapter.id === "work-money" ? { moreTrends: chapter.moreTrends } : {}),
+      ...(["work-money", "voting"].includes(chapter.id) ? { moreTrends: chapter.moreTrends } : {}),
     }]));
     expect(pinned).toEqual({
       people: {
@@ -141,7 +141,23 @@ describe("the chapter contract", () => {
         depth: ["BIRTHS", "DEATHS", "DOMESTICMIG", "INTERNATIONALMIG", "NPOPCHG"].map((name) => `CENSUS_PEP:${name}`),
         trend: { measureId: "net-migration-rate", scale: "level" },
       },
+      voting: {
+        headline: ["ELECTIONS:president_two_party_margin", "ELECTIONS:senate_two_party_margin"],
+        depth: ["ELECTIONS:president_total_votes", "ELECTIONS:senate_total_votes"],
+        trend: { measureId: "president-margin", scale: "level" },
+        moreTrends: [{ measureId: "senate-margin", scale: "level" }],
+      },
     });
+  });
+
+  it("says how a margin is counted and why a city or metro has none", () => {
+    const voting = PLACE_CHAPTERS.find((chapter) => chapter.id === "voting");
+    for (const measure of voting.headline) {
+      expect(measure.note).toContain("below zero, the Democrat led");
+      expect(Object.keys(measure.gaps).sort()).toEqual(["METRO", "NATIONAL", "PLACE"]);
+    }
+    expect(voting.caveat).toContain("never as a cause");
+    expect(voting.caveat).toContain("never estimated");
   });
 
   it("labels every ACS count with its Census universe and every trend names a headline", () => {

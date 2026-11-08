@@ -18,7 +18,7 @@ const DEFINED = new Map(
     .entries.flatMap((entry) => entry.metric_codes.map((code) => [code, [entry.name, entry.status]])),
 );
 
-const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS"];
+const sources = ["BEA", "CENSUS_ACS", "CENSUS_BPS", "CENSUS_PEP", "CENSUS_SAIPE_SAHIE", "BLS", "BLS_QCEW", "CDC", "FBI_UCR", "USDA_NASS", "ELECTIONS"];
 
 const UNCERTAINTY_FIELDS = ["margin_of_error", "margin_of_error_pct", "confidence_lower", "confidence_upper", "cv_value", "cv_status", "cv_symbol", "noise_flag"];
 /** A served uncertainty object: the published fields, every other one null. */
@@ -64,6 +64,8 @@ function grainsFor(code) {
 
 function baseGrainsFor(code) {
   if (code.startsWith("BLS:")) return ["COUNTY", "STATE"];
+  // Returns are counted by county and state; the nation's popular vote is not loaded.
+  if (code.startsWith("ELECTIONS:")) return ["COUNTY", "STATE"];
   if (code.startsWith("CDC:")) return ["COUNTY", "NATIONAL"];
   if (code.startsWith("FBI_UCR:")) return ["AGENCY", "STATE", "NATIONAL"];
   if (code.startsWith("CENSUS_ACS:") || code.startsWith("CENSUS_PEP:POPESTIMATE")) return ["PLACE", "COUNTY", "STATE", "NATIONAL"];
@@ -78,6 +80,8 @@ function unitFor(code) {
   if (code.startsWith("BEA:")) return "Thousands of dollars";
   if (code.startsWith("BLS_QCEW:avg_weekly_wage")) return "dollars per week";
   if (code.startsWith("BLS_QCEW:")) return "jobs";
+  if (code.endsWith("_margin")) return "percentage points";
+  if (code.startsWith("ELECTIONS:")) return "votes";
   if (code.startsWith("CENSUS_BPS:")) return "housing units";
   if (code.startsWith("BLS:")) return "Percent";
   if (code.startsWith("CDC:")) return "%";
@@ -458,6 +462,25 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       // Bureau's curated tables grew (web-city-history): the city's line
       // starts there and the earlier years read "Not published that year".
       const firstIndex = geo === "state:55|place:48000" && code.endsWith("B25077_001") ? 2 : 0;
+      // Election measures are dated on election day: a presidential margin
+      // every four years to 2024, a Senate margin every two (one seat or the
+      // other), each below zero where the Democrat led.
+      if (code.startsWith("ELECTIONS:")) {
+        const every = code.startsWith("ELECTIONS:president") ? 4 : 2;
+        const margin = code.endsWith("_margin");
+        let votes = empty ? [] : Array.from({ length: 6 }, (_, index) => {
+          const year = 2024 - every * (5 - index);
+          const day = `${year}-11-0${2 + (index % 6)}`;
+          const value = margin ? -10 - (scale[geo] || 1) + index : Math.round(300000 * (scale[geo] || 1) * (1 + index * 0.02));
+          return { metric_code: code, source_code: "ELECTIONS", geo_id: geo, geo_level: place.geo_level, geo_name: place.geo_name,
+            value: String(value), value_status: "valid", unit: metric.units, period_start: day, period_end: day,
+            release: year < 2000 ? "Algara & Amlani countypres_1992-1996" : "MEDSL countypres_2000-2024.csv", as_of: "2025-09-01",
+            dimensions: margin ? { observation_basis: "Republican share minus the Democratic share of the two-party vote", leading_party: value < 0 ? "DEM" : "REP" } : {},
+            uncertainty: null, coverage: null };
+        });
+        if (newest) votes = votes.slice(-1);
+        return { status: 200, json: { metric_code: code, source_code: "ELECTIONS", scope: "latest", total: votes.length, offset: 0, limit: Number(params.get("limit") || 500), items: votes } };
+      }
       let items = empty ? [] : Array.from({ length: 6 }, (_, index) => {
         const year = lastYear - 5 + index;
         const monthly = code.endsWith(":monthly");
@@ -561,7 +584,7 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
     // USDA NASS is deliberately absent from the rollup: the public data page
     // must call it "not reported", never fresh.
     if (path === "/api/v1/catalog/freshness") return route.fulfill({ json: { total: sources.length - 1, items: sources.filter((code) => code !== "USDA_NASS").map((source_code) => ({ source_code, metric_count: 12, current_count: 11, stale_count: 1, retired_count: 0,
-      latest_publication_time: "2026-09-01T00:00:00Z", latest_harvested_at: `2026-09-0${sources.indexOf(source_code) + 2}T00:00:00Z`, geo_grains: grainsFor(`${source_code}:x`).filter((grain) => grain !== "AGENCY") })) } });
+      latest_publication_time: "2026-09-01T00:00:00Z", latest_harvested_at: `2026-09-${String(sources.indexOf(source_code) + 2).padStart(2, "0")}T00:00:00Z`, geo_grains: grainsFor(`${source_code}:x`).filter((grain) => grain !== "AGENCY") })) } });
     if (path === "/api/v1/catalog/derived-ratios") {
       const items = DERIVED_RATIOS.filter((ratio) => !params.get("numerator") || ratio.numerator === params.get("numerator"));
       return route.fulfill({ json: { total: items.length, items } });

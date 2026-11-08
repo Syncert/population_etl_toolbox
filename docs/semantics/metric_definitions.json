@@ -4561,6 +4561,154 @@
       "version": 1,
       "effective_date": "2026-11-08",
       "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "ELECTIONS:president_two_party_republican_share",
+      "metric_codes": [
+        "ELECTIONS:president_two_party_republican_share"
+      ],
+      "name": "Presidential vote: Republican share of the two-party vote",
+      "definition": "The Republican candidate's votes as a share of the Republican and Democratic candidates' combined votes in the presidential general election (MIT Election Data and Science Lab certified returns; county returns before 2000 from Algara & Amlani).",
+      "unit": "percent",
+      "kind": "share",
+      "intended_use": "Show how a place voted for president, election by election.",
+      "limitations": [
+        "A comparison of places, not a measure of how any voter fared; nothing here is scored or combined with an economic measure (ADR-0014)."
+      ],
+      "citations": [
+        "https://electionlab.mit.edu/data",
+        "https://doi.org/10.7910/DVN/DGUMFI"
+      ],
+      "status": "draft",
+      "owner": "elections-history",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "ELECTIONS:president_two_party_margin",
+      "metric_codes": [
+        "ELECTIONS:president_two_party_margin"
+      ],
+      "name": "Presidential vote: two-party margin (Republican minus Democratic)",
+      "definition": "The Republican share minus the Democratic share of the two-party presidential vote; positive leans Republican, negative Democratic (MIT Election Data and Science Lab certified returns; county returns before 2000 from Algara & Amlani).",
+      "unit": "percentage points",
+      "kind": "share",
+      "intended_use": "Show how far a place leaned toward either party for president, election by election.",
+      "limitations": [
+        "A comparison of places, not a measure of how any voter fared; nothing here is scored or combined with an economic measure (ADR-0014)."
+      ],
+      "citations": [
+        "https://electionlab.mit.edu/data",
+        "https://doi.org/10.7910/DVN/DGUMFI"
+      ],
+      "status": "draft",
+      "owner": "elections-history",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "ELECTIONS:president_total_votes",
+      "metric_codes": [
+        "ELECTIONS:president_total_votes"
+      ],
+      "name": "Presidential vote: total votes cast",
+      "definition": "Every vote cast for president in the area, including candidates of every party and write-ins (MIT Election Data and Science Lab certified returns; county returns before 2000 from Algara & Amlani).",
+      "unit": "votes",
+      "kind": "count",
+      "intended_use": "Show how many people voted for president in a place.",
+      "limitations": [
+        "A count: it grows with the place's population."
+      ],
+      "citations": [
+        "https://electionlab.mit.edu/data",
+        "https://doi.org/10.7910/DVN/DGUMFI"
+      ],
+      "status": "draft",
+      "owner": "elections-history",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "ELECTIONS:senate_two_party_republican_share",
+      "metric_codes": [
+        "ELECTIONS:senate_two_party_republican_share"
+      ],
+      "name": "U.S. Senate vote: Republican share of the two-party vote",
+      "definition": "The Republican nominee's votes as a share of the two major parties' nominees' combined votes in the regularly scheduled Senate general election (MIT Election Data and Science Lab certified returns; county returns to 2020 from Algara & Amlani, 2024 summed from MEDSL's precinct returns as published).",
+      "unit": "percent",
+      "kind": "share",
+      "intended_use": "Show how a place voted for the U.S. Senate, election by election.",
+      "limitations": [
+        "A comparison of places, not a measure of how any voter fared; nothing here is scored or combined with an economic measure (ADR-0014).",
+        "A special election held the same year is kept in the contest results but not served here.",
+        "2024 county figures are summed from precinct returns as MEDSL published them; a state whose county sums miss its statewide count is flagged, not corrected."
+      ],
+      "citations": [
+        "https://electionlab.mit.edu/data",
+        "https://doi.org/10.7910/DVN/DGUMFI"
+      ],
+      "status": "draft",
+      "owner": "elections-history",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "ELECTIONS:senate_two_party_margin",
+      "metric_codes": [
+        "ELECTIONS:senate_two_party_margin"
+      ],
+      "name": "U.S. Senate vote: two-party margin (Republican minus Democratic)",
+      "definition": "The Republican share minus the Democratic share of the two-party vote in the regularly scheduled Senate general election; positive leans Republican (MIT Election Data and Science Lab certified returns; county returns to 2020 from Algara & Amlani, 2024 summed from MEDSL's precinct returns as published).",
+      "unit": "percentage points",
+      "kind": "share",
+      "intended_use": "Show how far a place leaned toward either party for the U.S. Senate, election by election.",
+      "limitations": [
+        "A comparison of places, not a measure of how any voter fared; nothing here is scored or combined with an economic measure (ADR-0014).",
+        "Where a party ran no nominee the margin is 100 points one way.",
+        "2024 county figures are summed from precinct returns as MEDSL published them; a state whose county sums miss its statewide count is flagged, not corrected."
+      ],
+      "citations": [
+        "https://electionlab.mit.edu/data",
+        "https://doi.org/10.7910/DVN/DGUMFI"
+      ],
+      "status": "draft",
+      "owner": "elections-history",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "ELECTIONS:senate_total_votes",
+      "metric_codes": [
+        "ELECTIONS:senate_total_votes"
+      ],
+      "name": "U.S. Senate vote: total votes cast",
+      "definition": "Every vote cast for the Senate seat in the area, including candidates of every party (MIT Election Data and Science Lab certified returns; county returns to 2020 from Algara & Amlani, 2024 summed from MEDSL's precinct returns as published).",
+      "unit": "votes",
+      "kind": "count",
+      "intended_use": "Show how many people voted for the U.S. Senate in a place.",
+      "limitations": [
+        "A count: it grows with the place's population."
+      ],
+      "citations": [
+        "https://electionlab.mit.edu/data",
+        "https://doi.org/10.7910/DVN/DGUMFI"
+      ],
+      "status": "draft",
+      "owner": "elections-history",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08"
     }
   ]
 }

@@ -102,6 +102,20 @@ export interface PlaceChapter {
   stateContextAtCounty?: boolean;
 }
 
+/** How the two margins are counted (ADR-0014), on both cards. */
+const ELECTION_MARGIN_NOTE =
+  "The Republican share of the two-party vote minus the Democratic share, in points: below zero, the Democrat led.";
+
+/** Why a grain has no election figure, in the returns' own terms. */
+const ELECTION_GAPS: Partial<Record<PlaceLevel, string>> = {
+  NATIONAL: "The nation's popular vote is not loaded; results are shown by state and county",
+  METRO: "Returns are counted by county and state, not summed for metro areas",
+  PLACE: "Returns are counted by county and state, not by city",
+};
+
+const ELECTION_CAVEAT =
+  "Results are shown for comparison with the other chapters, never as a cause of anything in them. County presidential results start in 1992 and Senate results in 1990; a year a county's returns were not published is left blank, never estimated. House results are counted by district, not county, so they are not shown here.";
+
 /** BEA regional accounts: one table and line (bea-regional-accounts). */
 const bea = (table: string, line: string): string[] => [`BEA:${table}:${line}`];
 
@@ -523,6 +537,34 @@ export const PLACE_CHAPTERS: readonly PlaceChapter[] = [
     ],
     trend: { measureId: "net-migration-rate", scale: "level" },
     caveat: "Components are estimates for the year ending July 1 of the vintage, and the residual the program publishes is not shown as a component.",
+  },
+  {
+    id: "voting",
+    title: "Voting",
+    description: "How the place voted for president and U.S. Senate, as the certified returns count it.",
+    headline: [
+      {
+        id: "president-margin",
+        label: "Presidential vote margin",
+        candidates: ["ELECTIONS:president_two_party_margin"],
+        note: ELECTION_MARGIN_NOTE,
+        gaps: ELECTION_GAPS,
+      },
+      {
+        id: "senate-margin",
+        label: "U.S. Senate vote margin",
+        candidates: ["ELECTIONS:senate_two_party_margin"],
+        note: `${ELECTION_MARGIN_NOTE} A special election is left out.`,
+        gaps: ELECTION_GAPS,
+      },
+    ],
+    depth: [
+      { id: "president-votes", label: "Votes cast for president", candidates: ["ELECTIONS:president_total_votes"], universe: "votes" },
+      { id: "senate-votes", label: "Votes cast for U.S. Senate", candidates: ["ELECTIONS:senate_total_votes"], universe: "votes" },
+    ],
+    trend: { measureId: "president-margin", scale: "level" },
+    moreTrends: [{ measureId: "senate-margin", scale: "level" }],
+    caveat: ELECTION_CAVEAT,
   },
 ];
 

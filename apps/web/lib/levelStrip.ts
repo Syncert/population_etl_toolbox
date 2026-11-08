@@ -27,6 +27,14 @@ export const COUNT_MEASURES: ReadonlySet<string> = new Set([
   "corn-acres-harvested",
 ]);
 
+/**
+ * Headline measures that are a signed difference, Republican minus Democratic
+ * (ADR-0014): "higher" there means further Republican, which the sentence
+ * says, so a county that voted Democratic is never read as "higher" in the
+ * ordinary sense.
+ */
+export const SIGNED_MARGIN_MEASURES: ReadonlySet<string> = new Set(["president-margin", "senate-margin"]);
+
 export interface StripPoint {
   name: string;
   value: number;
@@ -114,5 +122,7 @@ export function levelStrip(measureId: string, rows: readonly CardRow[]): LevelSt
   hi += pad;
   // A rate or a median that cannot go below zero is not drawn below it.
   if (lo < 0 && points.every((point) => point.value >= 0)) lo = 0;
-  return { points, domain: [lo, hi], ticks: stripTicks(lo, hi), sentence: stripSentence(points) };
+  const sentence = stripSentence(points);
+  const reading = sentence && SIGNED_MARGIN_MEASURES.has(measureId) ? `${sentence} A higher margin is further Republican, a lower one further Democratic.` : sentence;
+  return { points, domain: [lo, hi], ticks: stripTicks(lo, hi), sentence: reading };
 }
