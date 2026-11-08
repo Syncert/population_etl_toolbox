@@ -652,25 +652,27 @@ def test_house_districts_cover_each_county_with_its_share_from_2006(
     ) == [(0,)]
 
 
-def test_precinct_senate_2024_is_served_only_where_it_matches_the_state(
+def test_precinct_senate_2024_is_served_as_published_and_checked_against_the_state(
     elections_warehouse,
 ) -> None:
-    """Covers: ETL-111 — counties summed from precincts are served for a state whose sums match its own count."""
+    """Covers: ETL-111 — counties summed from precincts are served as published; a state whose sums miss its own count is named."""
     factory = elections_warehouse
     assert _outcome(factory, elections_precinct_states_held_back).result == (
         "not_applicable"
     )
     el.run_to_gold(factory, COUNTY_SENATE_PRECINCT)
-    # Before the statewide file is in, nothing can be checked: nothing is served.
+    # Before the statewide file is in, nothing can be checked, and the
+    # counties are served all the same.
     outcome = _outcome(factory, elections_precinct_states_held_back)
     assert (outcome.result, outcome.observed_count) == ("warn", 2)
     assert _rows(
         factory,
         """
-        SELECT COUNT(*) FROM gold_elections.contest_result
+        SELECT state_code, COUNT(*) FROM gold_elections.contest_result
          WHERE stream = 'county_senate_precinct'
+         GROUP BY state_code ORDER BY state_code
         """,
-    ) == [(0,)]
+    ) == [("WI", 2), ("WY", 1)]
     el.run_to_gold(factory, SENATE)
     checked = _rows(
         factory,
@@ -694,9 +696,11 @@ def test_precinct_senate_2024_is_served_only_where_it_matches_the_state(
         """,
     )
     # Dane: Baldwin's partyless absentee line counts with her other lines.
+    # Wyoming has no statewide count to check against and is served too.
     assert served == [
         (el.DANE, 579, 1160, 579 + 1160 + 10 + 2, "DEM"),
         (el.WAUKESHA, 1000, 500, 1500, "REP"),
+        ("state:56|county:021", 600, 250, 850, "REP"),
     ]
     assert _rows(
         factory,

@@ -795,6 +795,24 @@ PRECINCT_NOT_A_VOTE = NOT_A_VOTE_CANDIDATES | {
 #: The count MEDSL prints where a state suppressed a small precinct's count
 #: (California, Nevada, New Mexico 2024).
 SUPPRESSED_COUNT = "*"
+#: Reporting units that count votes from parts of several counties without
+#: saying how many came from each. Where the file carries one, the counties
+#: it spans are not served: summed without it, Jackson County would read as if
+#: Kansas City had not voted. Missouri's Kansas City election board spans
+#: Cass, Clay, Jackson and Platte counties.
+SPANNING_UNITS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("MO", "36000"): ("29037", "29047", "29095", "29165"),
+}
+#: Contests whose precinct rows give a candidate a party the statewide file
+#: and the ballot do not: (year, state, special) -> why. Their counties are
+#: not served, since a two-party margin read from them would be wrong, and no
+#: party is put in the source's place. Nebraska's 2024 regular Senate race:
+#: the precinct file labels Dan Osborn, an independent on the ballot by
+#: petition, DEMOCRAT; MEDSL's statewide file has him "BY PETITION" (read on
+#: OFFICE_LAB 2026-11-08).
+MISLABELLED_CONTESTS: dict[tuple[int, str, bool], str] = {
+    (2024, "NE", False): "the precinct file labels independent Dan Osborn DEMOCRAT",
+}
 
 
 def parse_precinct_results(
@@ -817,6 +835,11 @@ def parse_precinct_results(
     # (county line key) -> [first record index, TOTAL votes, mode votes,
     # whether a TOTAL row was seen], per precinct.
     precinct_lines: dict[tuple[Any, ...], list[Any]] = {}
+    # (line, place, mode) -> [rows, vote sum, largest row, its precinct, its
+    # record index], to find a county total printed as a precinct.
+    by_mode_line: dict[tuple[Any, ...], list[Any]] = {}
+    # (year, state) -> counties a spanning reporting unit in the file covers.
+    spanned: dict[tuple[int, str], set[str]] = {}
     read = 0
     for index, row in enumerate(reader, start=1):
         read = index
@@ -850,7 +873,11 @@ def parse_precinct_results(
             county_fips = str(_whole(raw_fips, "county_fips")).zfill(5)
             if len(county_fips) != 5 or county_fips[:2] != STATE_FIPS.get(state):
                 # Missouri's Kansas City board ("36000") counts parts of four
-                # counties without saying which: not apportioned.
+                # counties without saying which: not apportioned, and the
+                # counties it spans are not served (SPANNING_UNITS).
+                spans = SPANNING_UNITS.get((state, county_fips))
+                if spans:
+                    spanned.setdefault((year, state), set()).update(spans)
                 raise _RowError(
                     "not_a_county",
                     f"county_fips {raw_fips!r} is not a county of {state}",
@@ -901,6 +928,20 @@ def parse_precinct_results(
             held = precinct_lines.get(precinct)
             if held is None:
                 held = precinct_lines[precinct] = [index, 0, 0, False]
+            seen = by_mode_line.get((line, precinct[1], mode))
+            if seen is None:
+                by_mode_line[(line, precinct[1], mode)] = [
+                    1,
+                    votes,
+                    votes,
+                    precinct[2],
+                    index,
+                ]
+            else:
+                seen[0] += 1
+                seen[1] += votes
+                if votes > seen[2]:
+                    seen[2:5] = [votes, precinct[2], index]
             if mode == "TOTAL":
                 held[1] += votes
                 held[3] = True
@@ -918,6 +959,44 @@ def parse_precinct_results(
                     else None,
                 )
             )
+    # Indiana's Hendricks County prints its county total as one more row of
+    # a real precinct ("1229-Washington 29", in every mode). A row that is
+    # the sum of every other row of its county, for every candidate line of
+    # one mode and in the same precinct, is that total and is taken out.
+    by_area_mode: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
+    for (line, place, mode), seen in by_mode_line.items():
+        by_area_mode.setdefault((*line[:5], place, mode), []).append((line, seen))
+    for (*area, place, mode), lines in by_area_mode.items():
+        counted = [(line, seen) for line, seen in lines if seen[1] > 0]
+        # Only a county of many rows, whose total is no small number: a town
+        # of three precincts can split 2, 1, 1 by chance.
+        if (
+            not counted
+            or any(seen[0] < 10 for _line, seen in counted)
+            or max(seen[2] for _line, seen in counted) < 100
+        ):
+            continue
+        precincts = {seen[3] for _line, seen in counted}
+        if len(precincts) != 1 or not all(
+            abs(2 * seen[2] - seen[1]) <= 1 for _line, seen in counted
+        ):
+            continue
+        (name,) = precincts
+        for line, seen in counted:
+            held = precinct_lines[(line, place, name)]
+            held[1 if mode == "TOTAL" else 2] -= seen[2]
+        first = min(seen[4] for _line, seen in counted)
+        quarantined.append(
+            Quarantine(
+                first,
+                "county_total_row",
+                f"a {mode.lower()} row of precinct {name!r} is the sum of every "
+                "other precinct in its county",
+                area[3],
+                area[4],
+            )
+        )
+    del by_mode_line, by_area_mode
     # Six New Jersey counties leave a candidate's party blank where the
     # rest of the state names it. A blank-party line takes the one party
     # its candidate carries elsewhere in the same state's contest, so Kim
@@ -1013,7 +1092,37 @@ def parse_precinct_results(
 
             if adds_up(top) or adds_up(leaves):
                 subtotals.add((area, name))
-    for area, name in sorted(subtotals, key=lambda key: first_row[key]):
+    # Indiana's St. Joseph County prints every precinct twice, by its code
+    # ("110004") and by its name ending in that code ("PENN TWP 4 110004").
+    # A precinct whose name ends in another precinct's name, with the same
+    # count on every line that has votes, is that precinct again and is set
+    # aside (the longer copy lists two write-in lines at zero).
+    repeats: set[tuple[Any, ...]] = set()
+    for area, precincts in by_area.items():
+        for name, own in precincts.items():
+            if " " not in name:
+                continue
+            shorter = name.rsplit(" ", 1)[1]
+            other = precincts.get(shorter)
+            counted = {line: votes for line, votes in own.items() if votes}
+            if (
+                other is not None
+                and counted
+                and counted == {line: votes for line, votes in other.items() if votes}
+            ):
+                repeats.add((area, name))
+    for area, name in sorted(repeats, key=lambda key: first_row[key]):
+        quarantined.append(
+            Quarantine(
+                first_row[(area, name)],
+                "repeated_precinct",
+                f"precinct {name!r} repeats precinct {name.rsplit(' ', 1)[1]!r}",
+                area[3],
+                area[4],
+            )
+        )
+    subtotals |= repeats
+    for area, name in sorted(subtotals - repeats, key=lambda key: first_row[key]):
         quarantined.append(
             Quarantine(
                 first_row[(area, name)],
@@ -1023,8 +1132,11 @@ def parse_precinct_results(
                 area[4],
             )
         )
-    # Then the precincts are added into the county.
+    # Then the precincts are added into the county, leaving out a county a
+    # spanning reporting unit covers.
     counties: dict[tuple[Any, ...], list[int]] = {}
+    withheld: dict[tuple[Any, ...], int] = {}
+    mislabelled: dict[tuple[Any, ...], int] = {}
     for (line, place, precinct), (
         first,
         total,
@@ -1033,6 +1145,14 @@ def parse_precinct_results(
     ) in precinct_lines.items():
         if ((*line[:5], place), precinct) in subtotals:
             continue
+        if (line[0], line[3], line[2]) in MISLABELLED_CONTESTS:
+            county_key = line[:5]
+            mislabelled[county_key] = min(mislabelled.get(county_key, first), first)
+            continue
+        if line[4] in spanned.get((line[0], line[3]), ()):
+            county_key = line[:5]
+            withheld[county_key] = min(withheld.get(county_key, first), first)
+            continue
         held_county = counties.get(line)
         count = total if has_total else by_mode
         if held_county is None:
@@ -1040,6 +1160,27 @@ def parse_precinct_results(
         else:
             held_county[0] = min(held_county[0], first)
             held_county[1] += count
+    for county_key, first in sorted(withheld.items(), key=lambda item: item[1]):
+        quarantined.append(
+            Quarantine(
+                first,
+                "county_split_by_unit",
+                f"county {county_key[4]} is partly counted in a reporting unit that "
+                "spans several counties, so its own rows are not the county's vote",
+                county_key[3],
+                county_key[4],
+            )
+        )
+    for county_key, first in sorted(mislabelled.items(), key=lambda item: item[1]):
+        quarantined.append(
+            Quarantine(
+                first,
+                "party_label_conflict",
+                MISLABELLED_CONTESTS[(county_key[0], county_key[3], county_key[2])],
+                county_key[3],
+                county_key[4],
+            )
+        )
     results: list[CandidateResult] = []
     for line, (first, votes) in sorted(counties.items(), key=lambda item: item[1][0]):
         year, stage, special, state, county_fips, candidate, party_text, writein = line
