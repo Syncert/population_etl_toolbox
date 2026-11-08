@@ -128,3 +128,60 @@ export function footnoteReasons(cells: readonly ChildcareCell[]): string[] {
   const codes = cells.filter((cell) => cell.imputed && cell.value !== null).map((cell) => cell.code);
   return IMPUTATION_REASONS.filter((reason) => codes.some((code) => imputationReasons(code).includes(reason)));
 }
+
+// ---------------------------------------------------------------------------
+// Hours of work (Nick, 2026-11-08): each price over the county's own average
+// hourly wage, the QCEW weekly wage over 40 hours, read through the API's
+// reviewed `minutes_of_work_childcare_*` pairings. The dollar price stays
+// the figure; the hours are shown beside it with the arithmetic stated.
+// ---------------------------------------------------------------------------
+
+export const HOURS_PER_WEEK = 40;
+
+export function childcareRatioId(care: CareType, age: AgeGroup): string {
+  return `minutes_of_work_childcare_${care}_${age}`;
+}
+
+/** A served minutes-of-work row, the fields this page reads. */
+export interface ChildcareMinutes {
+  value?: string | null;
+  unavailable_reason?: string | null;
+  wage_geo_name?: string | null;
+  wage_year?: "same_year" | "newest_published_year" | null;
+  denominator?: { value?: string | null; period_start?: string | null } | null;
+}
+
+const dollars = (value: number, cents = false): string =>
+  `$${formatNumber(value, { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 })}`;
+
+/** "9 hours 23 minutes of work", or "" when there is no value: never zero. */
+export function workText(row: ChildcareMinutes | null | undefined): string {
+  const minutes = row?.value === null || row?.value === undefined || row.value === "" ? NaN : Number(row.value);
+  if (!row || row.unavailable_reason || !Number.isFinite(minutes)) return "";
+  const whole = Math.round(minutes);
+  const hours = Math.floor(whole / 60);
+  const rest = whole % 60;
+  const part = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  const text = !hours ? part(rest, "minute") : rest ? `${part(hours, "hour")} ${part(rest, "minute")}` : part(hours, "hour");
+  return `${text} of work`;
+}
+
+/**
+ * The arithmetic behind the hours, worked once for one price: the county's
+ * wage and its year, the hourly wage over a 40-hour week, and the division.
+ */
+export function workFormula(row: ChildcareMinutes | null | undefined, price: number, what: string, county: string): string {
+  const weekly = Number(row?.denominator?.value);
+  const year = String(row?.denominator?.period_start || "").slice(0, 4);
+  if (!row || !workText(row) || !Number.isFinite(weekly) || weekly <= 0 || !/^\d{4}$/.test(year)) return "";
+  const hourly = weekly / HOURS_PER_WEEK;
+  const hours = price / hourly;
+  const name = row.wage_geo_name || county;
+  const newest = row.wage_year === "newest_published_year" ? ", the newest year published" : "";
+  return (
+    `How the hours are worked out: ${name}'s average wage in ${year}${newest} was ${dollars(weekly)} a week ` +
+    `(Bureau of Labor Statistics, QCEW, all jobs located in the county), or ${dollars(hourly, true)} an hour over a ${HOURS_PER_WEEK}-hour week. ` +
+    `${dollars(price, !Number.isInteger(price))} a week for ${what} ÷ ${dollars(hourly, true)} an hour = ` +
+    `${formatNumber(hours, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours of work. Each price is divided the same way.`
+  );
+}

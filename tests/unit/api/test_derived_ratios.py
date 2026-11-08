@@ -739,3 +739,24 @@ def test_minutes_of_work_are_not_offered_for_a_comparison_across_places(
     )
     assert response.status_code == 422
     assert "not compared across places" in response.text
+
+
+def test_a_county_childcare_price_is_hours_of_the_countys_own_wage() -> None:
+    """Covers: ETL-123 — $293 a week at Dane's $1,250 week of 40 hours is 562.56 minutes."""
+    pairing = pairing_for("minutes_of_work_childcare_center_infant")
+    assert pairing.numerator == "DOL_CHILDCARE:center_infant"
+    assert pairing.wage_geo_levels == ("COUNTY",) and pairing.area is None
+    price = NeutralObservation(
+        source_code="DOL_CHILDCARE",
+        metric_code="DOL_CHILDCARE:center_infant",
+        geo_id=DANE,
+        geo_level="COUNTY",
+        geo_name="Dane County",
+        period_start="2022-01-01",
+        period_end="2022-12-31",
+        value="293",
+        value_status="valid",
+    )
+    [row] = time_cost_rows(pairing, [price], [_wage("1250", 2022)], DANE)
+    assert row.value == "562.56" and row.wage_year == "same_year"
+    assert row.geo_id == DANE and row.denominator.value == "1250"

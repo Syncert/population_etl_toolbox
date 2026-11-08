@@ -616,14 +616,24 @@ test("a county's home heating fuels name the area, season and unit behind each p
 });
 
 // Covers: WEB-171 — county-childcare-prices: a county page shows its own
-// eight childcare prices for one study year as published, marks none
+// eight childcare prices for one study year as published, each with its
+// hours of the county's own wage and the arithmetic stated, marks none
 // imputed in 2022, says a blank price is not published, and a state page
 // says the prices are published for counties only.
 test("a county's childcare prices are its own, for one year, with a blank price said to be missing", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await ready(page, "/us/wisconsin/dane-county");
   const childcare = page.getByTestId("place-childcare");
-  await expect(page.getByTestId("place-childcare-headline")).toContainText("A childcare center charges $293 a week for an infant in Dane County, the median full-time price in 2022.");
+  await expect(page.getByTestId("place-childcare-headline")).toContainText("A childcare center charges $293 a week for an infant in Dane County, the median full-time price in 2022");
+  // Hours of work beside the dollars, never instead of them, the arithmetic
+  // stated once: $293 over Dane County's $1,200 week of 40 hours.
+  await expect(page.getByTestId("place-childcare-headline-work")).toHaveText("9 hours 46 minutes of work");
+  await expect(page.getByTestId("place-childcare-center_infant-work")).toHaveText("9 hours 46 minutes of work");
+  await expect(page.getByTestId("place-childcare-center_infant")).toContainText("$293 a week");
+  await expect(page.getByTestId("place-childcare-formula")).toContainText(
+    "Dane County's average wage in 2025, the newest year published was $1,200 a week (Bureau of Labor Statistics, QCEW, all jobs located in the county), or $30.00 an hour over a 40-hour week. $293 a week for center-based infant care ÷ $30.00 an hour = 9.8 hours of work.",
+  );
+  await expect(page.getByTestId("place-childcare-home_school_age-work")).toHaveCount(0);
   const table = page.getByTestId("place-childcare-table");
   await expect(table).toContainText("Median weekly full-time price, 2022");
   await expect(table).toContainText("Women's Bureau, National Database of Childcare Prices");

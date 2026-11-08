@@ -34,6 +34,11 @@ the price's year has none yet, and the row says so). An ``{area}``
 placeholder in the numerator expands to each listed BLS area code, as
 ``<ratio_id>:<area>``.
 
+A county childcare price (Nick, 2026-11-08) is the other time cost: the
+Women's Bureau's weekly price is published for the county itself, so it
+names no ``{area}`` and its wage is that county's own (``wage_geo_levels``
+is ``COUNTY`` only).
+
 Only an ``approved`` pairing is served. ``DERIVED_RATIOS_SERVE_DRAFTS=1``
 lets a local stack serve drafts too, each marked with its status, so the
 owner can review them on the running site before approving them.
@@ -58,6 +63,10 @@ DATASET_PLACEHOLDER = "{dataset}"
 AREA_PLACEHOLDER = "{area}"
 #: The levels QCEW publishes a wage for (bls-qcew-county-wages).
 TIME_COST_WAGE_LEVELS = frozenset({"COUNTY", "STATE", "NATIONAL"})
+#: The price programs a time cost divides: BLS's region and nation prices,
+#: each over its listed areas, and the Women's Bureau's county childcare
+#: prices, over the county's own wage.
+TIME_COST_PRICES = {"BLS": "areas", "DOL_CHILDCARE": "county"}
 
 REGISTRY_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "semantics" / "derived_ratios.json"
@@ -222,20 +231,28 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
             time_cost
             and (
                 entry["scale"] != 60
-                or not entry.get("areas")
                 or entry.get("datasets")
                 or entry.get("numerator_is_subset")
                 or not entry.get("wage_geo_levels")
                 or not set(entry["wage_geo_levels"]) <= TIME_COST_WAGE_LEVELS
-                or not entry["numerator"].startswith("BLS:")
+                or _program(entry["numerator"])[0] not in TIME_COST_PRICES
+                or (
+                    TIME_COST_PRICES[_program(entry["numerator"])[0]] == "areas"
+                    and not entry.get("areas")
+                )
+                or (
+                    TIME_COST_PRICES[_program(entry["numerator"])[0]] == "county"
+                    and (entry.get("areas") or entry["wage_geo_levels"] != ["COUNTY"])
+                )
                 or not entry["denominator"].startswith("BLS_QCEW:")
             )
         ):
             raise RatioRegistryError(
-                f"{rid}: a time_cost divides a BLS price over its listed areas "
-                "by a QCEW weekly wage over hours_per_week, in minutes (scale "
-                "60), at the wage levels QCEW publishes; only a time_cost "
-                "names hours_per_week (ADR-0009 amendment, 2026-11-06)"
+                f"{rid}: a time_cost divides a BLS price over its listed areas, "
+                "or a county childcare price over the county's own wage, by a "
+                "QCEW weekly wage over hours_per_week, in minutes (scale 60), "
+                "at the wage levels QCEW publishes; only a time_cost names "
+                "hours_per_week (ADR-0009 amendment, 2026-11-06)"
             )
         if kind == "ratio" and entry.get("numerator_is_subset"):
             raise RatioRegistryError(

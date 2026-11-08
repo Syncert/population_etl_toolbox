@@ -258,3 +258,37 @@ def test_a_time_cost_is_minutes_of_a_qcew_wage_for_each_bls_price_area() -> None
     # Only a time cost names a working week.
     with pytest.raises(RatioRegistryError, match="hours_per_week"):
         _parse(_entry(hours_per_week=40))
+
+
+def test_a_county_childcare_price_is_divided_by_that_countys_own_wage() -> None:
+    """Covers: ETL-123 — eight childcare pairings, county wage only, no BLS area."""
+    shipped = load_registry()
+    childcare = sorted(
+        rid for rid in shipped if rid.startswith("minutes_of_work_childcare_")
+    )
+    assert len(childcare) == 8
+    pairing = shipped["minutes_of_work_childcare_home_school_age"]
+    assert pairing.numerator == "DOL_CHILDCARE:home_school_age"
+    assert pairing.wage_geo_levels == ("COUNTY",) and pairing.area is None
+    assert pairing.status == "approved" and pairing.reviewer == "Nick"
+
+    cost = _entry(
+        ratio_id="minutes_of_work_childcare_center_infant",
+        kind="time_cost",
+        scale=60,
+        unit="minutes of work",
+        numerator="DOL_CHILDCARE:center_infant",
+        denominator="BLS_QCEW:annual_avg_weekly_wage:10:0",
+        datasets=None,
+        hours_per_week=40,
+        wage_geo_levels=["COUNTY"],
+        numerator_is_subset=None,
+    )
+    assert list(_parse(cost)) == ["minutes_of_work_childcare_center_infant"]
+    # A county's price is divided by that county's wage, never a state's.
+    for broken in (
+        {"wage_geo_levels": ["COUNTY", "STATE"]},
+        {"numerator": "HUD_FMR_IL:fmr_2br"},
+    ):
+        with pytest.raises(RatioRegistryError):
+            _parse({**cost, **broken})

@@ -34,8 +34,12 @@ approved by Nick 2026-11-06 18:15Z. Decisions made while building:
 - **Rows stored only when they change.** A repeated price is counted, not
   stored (CHURN RULE), so a monthly re-read of the unchanged 92 MB workbook
   replays nothing and a restated release adds only the prices it changed.
-- **Minutes of work are not shown yet.** Dividing a weekly childcare price
-  by a wage is a new kind of figure; it waits for Nick's yes.
+- **Hours of work** (Nick, 2026-11-08: "Yes, add it", with the dollar
+  amount quoted and the calculation transparent). Eight reviewed
+  `minutes_of_work_childcare_*` pairings divide each price by the county's
+  own QCEW average weekly wage over 40 hours; the page shows the dollar
+  price first, the hours under it, and the arithmetic once, with the wage,
+  its year and its source.
 - **Not built:** the state-level files the Women's Bureau also publishes
   (`NDCP2022-state-level-estimates-and-rankings.xlsx`,
   `NDCP-State-Level-Estimates-2018-2023.xlsx`, which reaches 2023) could be a
@@ -83,7 +87,7 @@ few prices published for every county.
 - County page: a "Childcare" block in the "Cost of living" section leading
   with the centre-based infant price per week, then a table of the four age
   groups by care type, each price with a bar on one scale for the whole
-  table (built; minutes of work deferred, see Status). Imputed values are
+  table, each with its hours of the county's average wage (built). Imputed values are
   marked and footnoted once with the reasons their code gives.
 - State and nation: the median of their counties is **not** computed here;
   the block says the prices are published for counties only (built). The county map layer uses the quantile bands rule.

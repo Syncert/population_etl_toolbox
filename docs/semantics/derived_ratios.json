@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it. An `agency_rate` entry (ADR-0012) is a county crime rate computed in gold from FBI agency reports: the reporting agencies' offenses over their own FBI populations, beside the FBI rate it names in `reads_beside`. A `time_cost` entry (ADR-0009 amendment, 2026-11-06) is minutes of work: a BLS average price divided by the QCEW average weekly wage over `hours_per_week`; its `{area}` placeholder expands to each listed BLS area code, as `<ratio_id>:<area>`, and the reader names the wage's area.",
+  "description": "Reviewed per-capita and share pairings (ADR-0009). Only an entry with status `approved` is served; `draft` entries are proposals awaiting the owner's review. An ACS entry's `{dataset}` placeholder expands to each listed dataset, as `<ratio_id>:<dataset>`. A `provider_rate` entry names the rate the provider publishes for its count; nothing is recomputed beside it. An `agency_rate` entry (ADR-0012) is a county crime rate computed in gold from FBI agency reports: the reporting agencies' offenses over their own FBI populations, beside the FBI rate it names in `reads_beside`. A `time_cost` entry (ADR-0009 amendment, 2026-11-06) is minutes of work: a BLS average price divided by the QCEW average weekly wage over `hours_per_week`; its `{area}` placeholder expands to each listed BLS area code, as `<ratio_id>:<area>`, and the reader names the wage's area. A county childcare price (`DOL_CHILDCARE`) names no area: it is the county's own, divided by that county's wage.",
   "entries": [
     {
       "ratio_id": "poverty_share",
@@ -2160,6 +2160,254 @@
         "https://www.bls.gov/cpi/factsheets/average-prices.htm",
         "https://www.bls.gov/cew/about-data/",
         "https://www.bls.gov/cew/classifications/areas/area-guide.htm"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_center_infant",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for an infant (birth to 23 months) at a childcare center",
+      "numerator": "DOL_CHILDCARE:center_infant",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_center_toddler",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for a toddler (24 to 35 months) at a childcare center",
+      "numerator": "DOL_CHILDCARE:center_toddler",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_center_preschool",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for a preschooler (3 to 4 years) at a childcare center",
+      "numerator": "DOL_CHILDCARE:center_preschool",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_center_school_age",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for a school-age child (5 to 12 years) at a childcare center",
+      "numerator": "DOL_CHILDCARE:center_school_age",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_home_infant",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for an infant (birth to 23 months) in family childcare (a provider's home)",
+      "numerator": "DOL_CHILDCARE:home_infant",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_home_toddler",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for a toddler (24 to 35 months) in family childcare (a provider's home)",
+      "numerator": "DOL_CHILDCARE:home_toddler",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_home_preschool",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for a preschooler (3 to 4 years) in family childcare (a provider's home)",
+      "numerator": "DOL_CHILDCARE:home_preschool",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_childcare_home_school_age",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one week of full-time childcare for a school-age child (5 to 12 years) in family childcare (a provider's home)",
+      "numerator": "DOL_CHILDCARE:home_school_age",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "county-childcare-prices",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-08",
+      "last_reviewed_date": "2026-11-08",
+      "rationale": "Nick approved minutes of work for childcare on 2026-11-08, with the dollar price shown first and the calculation stated beside it. The Women's Bureau publishes the median weekly price for each county, and QCEW the county's average weekly wage, so both are the county's own, for the same calendar year.",
+      "limitations": [
+        "The price is the county's median full-time weekly price for this care; the wage is the average of all jobs located in the county, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "Some prices are filled in by the Women's Bureau (imputed); the price row says so.",
+        "The price is a study year's; the wage is that calendar year's annual average, or the newest year QCEW has published when the price's year has none yet, and the row says so."
+      ],
+      "citations": [
+        "https://www.dol.gov/agencies/wb/topics/featured-childcare",
+        "https://www.bls.gov/cew/about-data/"
       ]
     }
   ]

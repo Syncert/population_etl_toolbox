@@ -65,7 +65,11 @@ Gold: `gold_dol_childcare.observation_latest` (newest revision per county,
 measure and year), `observation_revision`, `measure_export` and
 `metric_publisher`. The API serves `DOL_CHILDCARE:<measure>` on
 `/api/v1/observations` with `care_type`, `age_group`, `imputed` and
-`imputation_code` dimensions.
+`imputation_code` dimensions. `/api/v1/observations/derived` serves
+each price's hours of work through the reviewed
+`minutes_of_work_childcare_<measure>` pairings (`docs/semantics/derived_ratios.json`):
+the weekly price over the county's own QCEW average weekly wage over 40
+hours, the reader naming the county in `wage_geo_id`.
 
 ## Checks after a run
 

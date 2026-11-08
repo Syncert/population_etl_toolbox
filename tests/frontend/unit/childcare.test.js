@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   childcareMetricCode,
+  childcareRatioId,
   childcareTable,
   footnoteReasons,
   formatWeekly,
   imputationReasons,
+  workFormula,
+  workText,
 } from "../../../apps/web/lib/childcare";
 
 // Covers: WEB-171 — county-childcare-prices: a county's eight childcare
@@ -60,5 +63,34 @@ describe("a county's childcare table", () => {
     ]);
     expect(imputationReasons("0001")).toEqual([]);
     expect(footnoteReasons(table.cells)).toEqual(["filled in for a year between the state's surveys"]);
+  });
+});
+
+// Covers: WEB-171 — county-childcare-prices: hours of work divide each price
+// by the county's own hourly wage, read from the reviewed pairing, and the
+// arithmetic is stated with the wage, its year and source; a price not
+// computed shows no hours, never zero.
+describe("hours of work for a childcare price", () => {
+  const row = { value: "586.00", wage_geo_name: "Dane County", wage_year: "same_year", denominator: { value: "1200", period_start: "2022-01-01" } };
+
+  it("names the reviewed pairing for each price", () => {
+    expect(childcareRatioId("home", "school_age")).toBe("minutes_of_work_childcare_home_school_age");
+  });
+
+  it("is hours and minutes of work, or nothing", () => {
+    expect(workText(row)).toBe("9 hours 46 minutes of work");
+    expect(workText({ ...row, value: "45" })).toBe("45 minutes of work");
+    expect(workText({ ...row, value: null, unavailable_reason: "denominator_missing" })).toBe("");
+    expect(workText(null)).toBe("");
+  });
+
+  it("states the wage, its year, the hourly wage and the division", () => {
+    expect(workFormula(row, 293, "center-based infant care", "Dane County")).toBe(
+      "How the hours are worked out: Dane County's average wage in 2022 was $1,200 a week (Bureau of Labor Statistics, QCEW, all jobs located in the county), or $30.00 an hour over a 40-hour week. $293 a week for center-based infant care ÷ $30.00 an hour = 9.8 hours of work. Each price is divided the same way.",
+    );
+    expect(workFormula({ ...row, wage_year: "newest_published_year" }, 258.75, "x", "Dane County")).toContain(
+      "in 2022, the newest year published was $1,200 a week",
+    );
+    expect(workFormula({ ...row, value: null }, 293, "x", "Dane County")).toBe("");
   });
 });

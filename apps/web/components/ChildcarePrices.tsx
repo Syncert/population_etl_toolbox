@@ -5,9 +5,12 @@
 // other page says the Women's Bureau publishes counties only. The rules for
 // the table are `lib/childcare.ts`. The price is the number in each cell;
 // the bar beside it, on one scale for the whole table, only helps compare.
+// Hours of work (each price over the county's own average hourly wage) are
+// read once the prices are, shown under each price, and worked once below.
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api/client";
+import { getDerivedObservations } from "../lib/derivedViews";
 import type { CollectionResponse, GeographySummary, Observation } from "../lib/api/types";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
@@ -20,10 +23,14 @@ import {
   CHILDCARE_SOURCE,
   NOT_A_COUNTY,
   childcareMetricCode,
+  childcareRatioId,
   childcareTable,
   footnoteReasons,
   formatWeekly,
+  workFormula,
+  workText,
 } from "../lib/childcare";
+import type { ChildcareMinutes } from "../lib/childcare";
 
 type Newest = Record<string, ObservationRow | null>;
 type State = { status: "reading" } | { status: "unloaded" } | { status: "failed" } | { status: "read"; newest: Newest };
@@ -40,6 +47,7 @@ export default function ChildcarePrices({
   sources: readonly ExplorerSource[];
 }) {
   const [state, setState] = useState<State>({ status: "reading" });
+  const [minutes, setMinutes] = useState<Record<string, ChildcareMinutes | null>>({});
   const source = sources.find((item) => item.sourceCode === CHILDCARE_SOURCE) || null;
   const county = level === "COUNTY";
 
@@ -70,6 +78,30 @@ export default function ChildcarePrices({
     return () => controller.abort();
   }, [county, source, place.geo_id]);
 
+  // Hours of work for each shown price, at the county's own wage, for the
+  // price's own study year. A price not computed shows no hours, never zero.
+  useEffect(() => {
+    setMinutes({});
+    if (!county || state.status !== "read") return;
+    const table = childcareTable(state.newest);
+    if (table.year === null) return;
+    const controller = new AbortController();
+    for (const cell of table.cells.filter((item) => item.value !== null)) {
+      const key = `${cell.care}_${cell.age}`;
+      getDerivedObservations(
+        { ratio_id: childcareRatioId(cell.care, cell.age), geo_id: place.geo_id, wage_geo_id: place.geo_id, period_start: `${table.year}-01-01`, limit: 1 },
+        { signal: controller.signal },
+      )
+        .then((page) => {
+          if (!controller.signal.aborted) setMinutes((current) => ({ ...current, [key]: page.items[0] || null }));
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setMinutes((current) => ({ ...current, [key]: null }));
+        });
+    }
+    return () => controller.abort();
+  }, [county, state, place.geo_id]);
+
   if (!county) {
     return (
       <div className="place-childcare" data-testid="place-childcare">
@@ -84,6 +116,11 @@ export default function ChildcarePrices({
   const headline = table?.cells.find((cell) => cell.care === "center" && cell.age === "infant");
   const reasons = table ? footnoteReasons(table.cells) : [];
   const name = String(place.geo_name || "This county");
+  const headlineWork = workText(minutes.center_infant);
+  const formula =
+    headline?.value !== null && headline?.value !== undefined
+      ? workFormula(minutes.center_infant, headline.value, "center-based infant care", name)
+      : "";
 
   return (
     <div className="place-childcare" data-testid="place-childcare">
@@ -99,7 +136,13 @@ export default function ChildcarePrices({
           {headline?.value !== null && headline?.value !== undefined ? (
             <p className="place-childcare-headline" data-testid="place-childcare-headline">
               A childcare center charges <strong>{formatWeekly(headline.value)}</strong>
-              {headline.imputed ? <sup aria-label="imputed">*</sup> : null} for an infant in {name}, the median full-time price in {table.year}.
+              {headline.imputed ? <sup aria-label="imputed">*</sup> : null} for an infant in {name}, the median full-time price in {table.year}
+              {headlineWork ? (
+                <>
+                  : <span data-testid="place-childcare-headline-work">{headlineWork}</span> at the county&apos;s average wage
+                </>
+              ) : null}
+              .
             </p>
           ) : null}
           <table className="place-childcare-table" data-testid="place-childcare-table">
@@ -141,6 +184,11 @@ export default function ChildcarePrices({
                         <span className="place-childcare-bar" aria-hidden="true">
                           <span style={{ width: `${width}%` }} />
                         </span>
+                        {workText(minutes[`${care.key}_${age.key}`]) ? (
+                          <span className="subtle block" data-testid={`${testId}-work`}>
+                            {workText(minutes[`${care.key}_${age.key}`])}
+                          </span>
+                        ) : null}
                       </td>
                     );
                   })}
@@ -148,6 +196,11 @@ export default function ChildcarePrices({
               ))}
             </tbody>
           </table>
+          {formula ? (
+            <p className="subtle" data-testid="place-childcare-formula">
+              {formula}
+            </p>
+          ) : null}
           {reasons.length ? (
             <p className="subtle" data-testid="place-childcare-imputed">
               * The Women&apos;s Bureau filled this price in itself ({reasons.join("; ")}). It is shown as published.
