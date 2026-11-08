@@ -547,19 +547,19 @@ FROM (VALUES
     ('senate_two_party_republican_share',
      'U.S. Senate vote: Republican share of the two-party vote', 'percent',
      'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
-     || 'Amlani): the Republican nominee''s votes as a share of the two major parties'' nominees'' '
+     || 'Amlani, 2024 summed from MEDSL''s precinct returns where they match the state''s count): the Republican nominee''s votes as a share of the two major parties'' nominees'' '
      || 'combined votes in the regularly scheduled general election for the seat. A special election '
      || 'held the same year is kept in the contest results but not served here.'),
     ('senate_two_party_margin',
      'U.S. Senate vote: two-party margin (Republican minus Democratic)', 'percentage points',
      'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
-     || 'Amlani): the Republican share minus the Democratic share of the two-party vote in the '
+     || 'Amlani, 2024 summed from MEDSL''s precinct returns where they match the state''s count): the Republican share minus the Democratic share of the two-party vote in the '
      || 'regularly scheduled general election; positive leans Republican. Where a party ran no '
      || 'nominee the margin is 100 points one way, never a missing value read as zero.'),
     ('senate_total_votes',
      'U.S. Senate vote: total votes cast', 'votes',
      'Certified returns (MIT Election Data and Science Lab; county returns to 2020 from Algara & '
-     || 'Amlani): every vote cast for the Senate seat in the area, including candidates of every '
+     || 'Amlani, 2024 summed from MEDSL''s precinct returns where they match the state''s count): every vote cast for the Senate seat in the area, including candidates of every '
      || 'party.')
 ) AS definition(measure, measure_label, unit, observation_basis);
 
