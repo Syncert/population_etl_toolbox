@@ -54,6 +54,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "census_lodes_files",
     "census_cbp_files",
     "irs_soi_files",
+    "dol_childcare_files",
     "census_bps_files",
     "bls_qcew_api",
     "bea_files",
@@ -1142,6 +1143,23 @@ def stub_irs_soi(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(soi_capture, "fetch_file", fetch)
 
 
+def stub_dol_childcare(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed NDCP fixture workbook for every registered release."""
+    from data_ingestion_toolbox.dol_childcare import capture as ndcp_capture
+    from data_ingestion_toolbox.dol_childcare.client import NdcpResponse
+
+    def fetch(release: Any, **_kwargs: Any) -> NdcpResponse:
+        path = FIXTURE_ROOT / "dol_childcare" / "NDCP2022.xlsx"
+        return NdcpResponse(
+            release.path,
+            path.read_bytes(),
+            {"content-type": ndcp_capture.XLSX_MEDIA_TYPE},
+            200,
+        )
+
+    monkeypatch.setattr(ndcp_capture, "fetch_release", fetch)
+
+
 def stub_census_cbp(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed Delaware County Business Patterns zips.
 
@@ -1827,6 +1845,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("irs_migration", stub_irs_migration),
         ("irs_soi", stub_irs_soi),
+        ("dol_childcare", stub_dol_childcare),
         ("census_saipe_sahie", stub_census_saipe_sahie),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),

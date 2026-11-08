@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  childcareMetricCode,
+  childcareTable,
+  footnoteReasons,
+  formatWeekly,
+  imputationReasons,
+} from "../../../apps/web/lib/childcare";
+
+// Covers: WEB-171 — county-childcare-prices: a county's eight childcare
+// prices are read as published for one study year, an imputed price is
+// marked with the reasons its code gives, and a blank price is missing,
+// never zero and never an older year's price.
+
+const row = (metric, year, value, imputation_code = "00000") => ({
+  metric_code: childcareMetricCode(...metric),
+  geo_id: "state:55|county:025",
+  period_start: `${year}-01-01`,
+  value,
+  dimensions: { imputed: imputation_code.includes("1") ? "true" : "false", imputation_code },
+});
+
+describe("a county's childcare table", () => {
+  const newest = {
+    [childcareMetricCode("center", "infant")]: row(["center", "infant"], 2022, "293"),
+    [childcareMetricCode("center", "toddler")]: row(["center", "toddler"], 2022, "258.75", "00001"),
+    [childcareMetricCode("home", "infant")]: row(["home", "infant"], 2022, "220"),
+    [childcareMetricCode("home", "school_age")]: row(["home", "school_age"], 2022, null),
+    // Newest row older than the table's year: not published for 2022.
+    [childcareMetricCode("home", "toddler")]: row(["home", "toddler"], 2021, "199"),
+  };
+  const table = childcareTable(newest);
+  const cell = (care, age) => table.cells.find((item) => item.care === care && item.age === age);
+
+  it("names one study year, the newest any price was published for", () => {
+    expect(table.year).toBe(2022);
+    expect(table.cells).toHaveLength(8);
+    expect(table.max).toBe(293);
+  });
+
+  it("keeps each price as published and marks an imputed one", () => {
+    expect(cell("center", "infant")).toMatchObject({ value: 293, imputed: false, code: "00000" });
+    expect(cell("center", "toddler")).toMatchObject({ value: 258.75, imputed: true, code: "00001" });
+    expect(formatWeekly(293)).toBe("$293 a week");
+    expect(formatWeekly(258.75)).toBe("$258.75 a week");
+  });
+
+  it("reads a blank price, an older year and an unread price as missing, never zero", () => {
+    expect(cell("home", "school_age").value).toBeNull();
+    expect(cell("home", "toddler")).toMatchObject({ value: null, year: null });
+    expect(cell("center", "preschool").value).toBeNull();
+    expect(childcareTable({}).year).toBeNull();
+  });
+
+  it("gives each imputation position's reason once, in the code's order", () => {
+    expect(imputationReasons("10001")).toEqual([
+      "taken from another age group",
+      "filled in for a year between the state's surveys",
+    ]);
+    expect(imputationReasons("0001")).toEqual([]);
+    expect(footnoteReasons(table.cells)).toEqual(["filled in for a year between the state's surveys"]);
+  });
+});

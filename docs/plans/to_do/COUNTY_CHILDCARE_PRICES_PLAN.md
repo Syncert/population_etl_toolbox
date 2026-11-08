@@ -18,9 +18,35 @@ verify:
 
 ## Status
 
-To do. Slice 4 of
+Built (2026-11-08), awaiting review. Slice 4 of
 [`EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md`](EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md),
-approved by Nick 2026-11-06 18:15Z.
+approved by Nick 2026-11-06 18:15Z. Decisions made while building:
+
+- **One release.** `NDCP2022.xlsx` holds study years 2008 to 2022 and
+  restates every year of the earlier `nationaldatabaseofchildcareprices.xlsx`
+  (2008 to 2018), so only `NDCP2022` is registered: keeping both would store
+  2008-2018 twice (storage rule). A later release is added to the registry
+  and loads on the next monthly run.
+- **Eight prices**, the Women's Bureau's own median weekly full-time
+  aggregates (`MCINFANT` ... `MFCCSA`); the 75th percentiles and the 370
+  county characteristics are not loaded. A price's imputation code is its
+  age bands' five positions combined, kept beside the price.
+- **Rows stored only when they change.** A repeated price is counted, not
+  stored (CHURN RULE), so a monthly re-read of the unchanged 92 MB workbook
+  replays nothing and a restated release adds only the prices it changed.
+- **Minutes of work are not shown yet.** Dividing a weekly childcare price
+  by a wage is a new kind of figure; it waits for Nick's yes.
+- **Not built:** the state-level files the Women's Bureau also publishes
+  (`NDCP2022-state-level-estimates-and-rankings.xlsx`,
+  `NDCP-State-Level-Estimates-2018-2023.xlsx`, which reaches 2023) could be a
+  follow-up for a state figure that is the publisher's own.
+
+Evidence: `tests/unit/dol_childcare` (ETL-123),
+`tests/integration/database/test_dol_childcare_capture_replay.py` and
+`tests/e2e/test_dol_childcare_pipeline.py` (DB-073),
+`tests/frontend/unit/childcare.test.js` and the childcare test in
+`tests/frontend/browser/places.spec.js` (WEB-171). Operations:
+[`DOL_CHILDCARE_PIPELINE_OPERATIONS.md`](../../user-guides/DOL_CHILDCARE_PIPELINE_OPERATIONS.md).
 
 ## Why
 
@@ -54,13 +80,13 @@ few prices published for every county.
 
 ## Display
 
-- County page: a "Childcare" line in the "Cost of living" section with the
-  centre-based infant price per week and its minutes-of-work figure, and a
-  small sorted bar of the four age groups for centre and home care, all on
-  one scale. Imputed values are marked once in a footnote.
+- County page: a "Childcare" block in the "Cost of living" section leading
+  with the centre-based infant price per week, then a table of the four age
+  groups by care type, each price with a bar on one scale for the whole
+  table (built; minutes of work deferred, see Status). Imputed values are
+  marked and footnoted once with the reasons their code gives.
 - State and nation: the median of their counties is **not** computed here;
-  the line says "Published for counties" and links to the state's county
-  map. The county map layer uses the quantile bands rule.
+  the block says the prices are published for counties only (built). The county map layer uses the quantile bands rule.
 
 ## Acceptance criteria
 

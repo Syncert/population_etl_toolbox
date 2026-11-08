@@ -541,6 +541,32 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="dol_childcare.prices",
+        source="DOL_CHILDCARE",
+        publisher_schema="gold_dol_childcare",
+        datasets=("ndcp2022",),
+        fixtures=("tests/fixtures/dol_childcare/NDCP2022.xlsx",),
+        serving_relations=(
+            "gold_dol_childcare.observation_revision",
+            "gold_dol_childcare.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_dol_childcare_pipeline.py::"
+            "test_county_childcare_prices_reach_the_neutral_api_with_imputation_flags"
+        ),
+        api_absence_reason=(
+            "NDCP childcare prices publish no source-specific HTTP route: each "
+            "price is the neutral observation shape with care-type, age-group "
+            "and imputation dimensions, so `/api/v1/observations` serves them "
+            "through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="irs_soi.income",
         source="IRS_SOI",
         publisher_schema="gold_irs_soi",

@@ -404,7 +404,7 @@ def test_unknown_metric_code_returns_a_stable_404() -> None:
 
 
 def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
-    """Covers: API-039 — all twenty-six sources, ordered, none needing a database."""
+    """Covers: API-039 — all twenty-seven sources, ordered, none needing a database."""
     client = TestClient(app)
     response = client.get("/api/v1/catalog/capabilities")
 
@@ -412,7 +412,7 @@ def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
     payload = response.json()
     codes = [item["source_code"] for item in payload["items"]]
     assert codes == sorted(SOURCE_DISCOVERY)
-    assert payload["total"] == len(codes) == 26
+    assert payload["total"] == len(codes) == 27
 
     by_code = {item["source_code"]: item for item in payload["items"]}
     neutral = {

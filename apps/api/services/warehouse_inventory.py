@@ -686,6 +686,41 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="EIA",
     ),
     WarehouseSource(
+        code="DOL_CHILDCARE",
+        name="Childcare prices by county",
+        publisher="U.S. Department of Labor, Women's Bureau",
+        topic="Prices and the national economy",
+        module="dol_childcare",
+        dag="dol_childcare_ingest",
+        cadence="Monthly, 9th 16:00 UTC",
+        release="A new National Database of Childcare Prices every year or two",
+        grains={"county": "n"},
+        years=[(2008, 2022)],
+        years_note=(
+            "Study years 2008-2022 from the NDCP2022 workbook, which restates the "
+            "earlier 2008-2018 release; some county values are imputed by the "
+            "Women's Bureau and flagged"
+        ),
+        datasets=["NDCP2022.xlsx"],
+        measures=(
+            "Median weekly full-time price of center-based and home-based (family) "
+            "childcare for infants, toddlers, preschoolers and school-age children."
+        ),
+        raw=[],
+        control=["control.dol_childcare_file"],
+        silver=[
+            "silver_dol_childcare.price_revision",
+            "silver_dol_childcare.fact_price",
+            "silver_dol_childcare.observation_quarantine",
+        ],
+        gold=[
+            "gold_dol_childcare.observation_revision",
+            "gold_dol_childcare.observation_latest",
+        ],
+        credential="none",
+        catalog_source_code="DOL_CHILDCARE",
+    ),
+    WarehouseSource(
         code="FRED",
         name="FRED national indicators",
         publisher="Federal Reserve Bank of St. Louis",

@@ -85,6 +85,7 @@ SOURCES: tuple[str, ...] = (
     "BLS_QCEW",
     "BEA",
     "EIA",
+    "DOL_CHILDCARE",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -2927,6 +2928,100 @@ _IRS_SOI_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+_NDCP_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.dol_childcare_file",
+        "control",
+        "DOL_CHILDCARE",
+        grain="run_id (one run per read of a registered NDCP release)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered releases in dol_childcare/registry.py, every one read each month",
+        cadence="monthly; an unchanged workbook adds a capture and no price",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_dol_childcare.price_revision",
+        "silver",
+        "DOL_CHILDCARE",
+        grain="capture_id, source_row_index, metric_key",
+        lineage="raw_capture.response_capture",
+        scope_method=(
+            "deterministic replay of committed captures; a price that repeats the "
+            "newest stored one is not stored again"
+        ),
+        cadence="per NDCP replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_dol_childcare.observation_quarantine",
+        "silver",
+        "DOL_CHILDCARE",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable row; row 0 for a workbook refused whole",
+        cadence="per NDCP replay",
+        empty_behavior="empty when every row was read",
+    ),
+    _obj(
+        "silver_dol_childcare.fact_price",
+        "silver",
+        "DOL_CHILDCARE",
+        grain="metric_key, geo_id, study_year, capture_id",
+        lineage="silver_dol_childcare.price_revision, silver_ref.dim_geo_entity",
+        scope_method="registered releases x eight prices x every county and study year",
+        cadence="per NDCP replay",
+        empty_behavior="a blank price cell is missing (provider_missing), never zero",
+    ),
+    _obj(
+        "gold_dol_childcare.measure_definition",
+        "gold",
+        "DOL_CHILDCARE",
+        grain="metric_key",
+        scope_method="the eight measures in dol_childcare/registry.py",
+        cadence="per deploy",
+        empty_behavior="never empty",
+    ),
+    _obj(
+        "gold_dol_childcare.observation_revision",
+        "gold",
+        "DOL_CHILDCARE",
+        grain="metric_key, geo_id, study_year, capture_id (published reads, resolved counties)",
+        lineage="silver_dol_childcare.fact_price, control.dol_childcare_file",
+        scope_method="published reads; every stored price kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_dol_childcare.observation_latest",
+        "gold",
+        "DOL_CHILDCARE",
+        grain="metric_key, geo_id, study_year (newest stored price)",
+        lineage="gold_dol_childcare.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_dol_childcare.measure_export",
+        "publisher",
+        "DOL_CHILDCARE",
+        grain="source_object_key (metric_key)",
+        scope_method="the eight registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty",
+    ),
+    _obj(
+        "gold_dol_childcare.metric_publisher",
+        "publisher",
+        "DOL_CHILDCARE",
+        grain="source_object_key (metric_key)",
+        lineage="silver_dol_childcare.fact_price, control.dol_childcare_file",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
 _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
     _obj(
         "control.eia_read",
@@ -4547,6 +4642,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
     + _EIA_OBJECTS
+    + _NDCP_OBJECTS
 )
 
 
@@ -4937,6 +5033,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.metric_publisher",
             "gold_bea.metric_publisher",
             "gold_eia.metric_publisher",
+            "gold_dol_childcare.metric_publisher",
             "gold_census_cbp.metric_publisher",
             "gold_census_lodes.metric_publisher",
             "gold_bls_qcew.metric_publisher",
@@ -6289,6 +6386,75 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "the route's registry entry does not survey) in a published read "
             "(home-heating-fuel-prices). A summer week EIA does not publish has "
             "no row and is not a finding."
+        ),
+    ),
+    # -- DOL Women's Bureau childcare prices (county-childcare-prices) -------
+    _rule(
+        "DQ-NDCP-001",
+        "BLOCK",
+        "uniqueness",
+        "NDCP prices are unique per (measure, county, study year, capture): a "
+        "price a later workbook restates is a second row beside the first.",
+        (
+            "silver_dol_childcare.fact_price",
+            "gold_dol_childcare.observation_revision",
+            "gold_dol_childcare.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_dol_childcare.fact_price",
+                ("metric_key", "geo_id", "study_year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NDCP-002",
+        "BLOCK",
+        "conformance",
+        "A childcare price is a positive weekly dollar amount or a blank cell "
+        "kept as missing with no number; a missing price is never zero.",
+        (
+            "silver_dol_childcare.fact_price",
+            "silver_dol_childcare.price_revision",
+            "gold_dol_childcare.measure_definition",
+            "gold_dol_childcare.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value, a missing row with one, and any value that is not "
+            "positive."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_dol_childcare.fact_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_dol_childcare.fact_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_dol_childcare.price_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_revision_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_dol_childcare.price_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_revision_missing_value_absent",
+            ),
         ),
     ),
     # -- BEA regional economic accounts --------------------------------------

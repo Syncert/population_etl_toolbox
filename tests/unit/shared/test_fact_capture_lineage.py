@@ -145,6 +145,12 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "DOL_CHILDCARE",
+        SRC / "dol_childcare/DDL/silver_dol_childcare.sql",
+        "silver_dol_childcare.fact_price",
+        "valid",
+    ),
+    FactContract(
         "EIA",
         SRC / "eia/DDL/silver_eia.sql",
         "silver_eia.fact_retail_price",

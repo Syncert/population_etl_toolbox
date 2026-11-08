@@ -615,6 +615,35 @@ test("a county's home heating fuels name the area, season and unit behind each p
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-171 — county-childcare-prices: a county page shows its own
+// eight childcare prices for one study year as published, marks none
+// imputed in 2022, says a blank price is not published, and a state page
+// says the prices are published for counties only.
+test("a county's childcare prices are its own, for one year, with a blank price said to be missing", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const childcare = page.getByTestId("place-childcare");
+  await expect(page.getByTestId("place-childcare-headline")).toContainText("A childcare center charges $293 a week for an infant in Dane County, the median full-time price in 2022.");
+  const table = page.getByTestId("place-childcare-table");
+  await expect(table).toContainText("Median weekly full-time price, 2022");
+  await expect(table).toContainText("Women's Bureau, National Database of Childcare Prices");
+  await expect(page.getByTestId("place-childcare-center_toddler")).toContainText("$258.75 a week");
+  await expect(page.getByTestId("place-childcare-center_toddler")).toHaveAttribute("data-imputed", "false");
+  await expect(page.getByTestId("place-childcare-home_infant")).toContainText("$220 a week");
+  const blank = page.getByTestId("place-childcare-home_school_age");
+  await expect(blank).toHaveAttribute("data-missing", "true");
+  await expect(blank).toContainText("Not published for 2022.");
+  await expect(blank).not.toContainText("$150");
+  await expect(page.getByTestId("place-childcare-imputed")).toHaveCount(0);
+  await expect(childcare.getByRole("columnheader", { name: "Childcare center" })).toBeVisible();
+  await noViolations(page);
+  await noHorizontalScroll(page);
+
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("place-childcare-counties-only")).toContainText("publishes childcare prices for counties only");
+  await expect(page.getByTestId("place-childcare-table")).toHaveCount(0);
+});
+
 // Covers: WEB-143 — CL-3: a county with no wage loaded says so, never zero;
 // a metro has no minutes-of-work choice, and says why.
 test("minutes of work say when no wage is loaded, and a metro says QCEW has none", async ({ page }) => {

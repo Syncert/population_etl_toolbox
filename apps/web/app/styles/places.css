@@ -1238,3 +1238,85 @@
 .public-money-words dd {
   margin: 2px 0 0;
 }
+
+/* Childcare (county-childcare-prices): one table of a county's eight
+   prices, each cell its number then a thin bar on the table's one scale. */
+.place-childcare {
+  margin: 1rem 0;
+}
+.place-childcare h3 {
+  margin: 0 0 0.4rem;
+}
+.place-childcare-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0 0 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.place-childcare-table caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+.place-childcare-table caption .subtle {
+  font-weight: 400;
+}
+.place-childcare-table .block {
+  display: block;
+}
+.place-childcare-table th,
+.place-childcare-table td {
+  white-space: normal;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  overflow-wrap: anywhere;
+}
+.place-childcare-table tbody th {
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: inherit;
+}
+.place-childcare-table tbody th .subtle {
+  font-weight: 400;
+}
+.place-childcare-table thead th {
+  font-weight: 400;
+  color: var(--muted);
+  border-top: 0;
+}
+.place-childcare-value {
+  display: block;
+  color: var(--ink);
+}
+.place-childcare-bar {
+  display: block;
+  height: 8px;
+  margin-top: 4px;
+  max-width: 220px;
+}
+.place-childcare-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 4px 4px 0;
+}
+@media (max-width: 640px) {
+  .place-childcare-table {
+    font-size: 0.9rem;
+  }
+  .place-childcare-table th,
+  .place-childcare-table td {
+    padding-right: 0.4rem;
+  }
+}
+@media (forced-colors: active) {
+  .place-childcare-bar > span {
+    background: CanvasText;
+  }
+}
