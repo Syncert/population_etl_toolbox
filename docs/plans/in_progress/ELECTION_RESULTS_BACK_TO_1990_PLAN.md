@@ -122,10 +122,16 @@ OFFICE_LAB, `/mnt/project-files/probe_cd_county.out`). Stream
 `house_county_share` reads those; `gold_elections.county_house_district`
 serves House elections from 2006, a Congress without its own tabulation
 using the one before it except where a state redrew (North Carolina 2020).
-1990 to 2004 is House by district only unless the UCLA district maps are
-added with land-area weighting (put to Nick 2026-11-07).
+1990 to 2004 is House by district only. **Decided by Nick 2026-11-08:** no
+county view from the UCLA district maps weighted by land area, because
+spreading a district's votes by area is an estimate, not a count. County
+pages say "House results before 2006 are shown by district only" for those
+years, and the district results themselves stay on the state page.
 
-A new reference stream `cd_county_relationship` captures the Census
+*Superseded design (kept for the record): Census does not publish
+population shares for the 103rd–109th Congresses or the 1980s districts,
+so the stream below was not built.* A new reference stream
+`cd_county_relationship` captures the Census
 Bureau's congressional district to county relationship files, one per
 Congress from the 103rd (1993) on, each giving the county's population
 share in each district. `gold_elections.county_house_district` holds, per
@@ -204,7 +210,7 @@ year", never zero.
 | Paired vote/economy maps | county president 2000 → | county president 1992 →; new office switch Senate (1990 →); House is not a county map (districts are not counties) |
 | Seat timeline (place Change chapter) | seat holders 1969 → | each Senate term marked with the county's own Senate vote; each House term marked with the covering district's margin and the county's population share in it |
 | Lean groups | windows from 2000 | windows from 1992 (LAUS county starts 1990; SAIPE county gaps 1990–92, 1994, 1996 are recorded gaps, so the poverty measure starts at 1997) |
-| County election card | latest presidential margin | latest presidential, Senate and House margins side by side, each labelled with its election year |
+| County election card | latest presidential margin | latest presidential, Senate and House margins side by side, each labelled with its election year; before 2006 the House line reads "House results before 2006 are shown by district only" |
 | State page | state results 1976 → | unchanged |
 
 House figures on a county are labelled "district result" with the
@@ -256,8 +262,9 @@ ROLLBACK transaction with `lock_timeout = 10s`; user-path reads under
 - Algara & Amlani: licence, guestbook, file names, columns, and whether a
   2022/2024 edition exists. Dataverse refuses the cloud, so OFFICE_LAB reads
   the dataset page and downloads a sample first.
-- Whether Census still serves the 1980s (98th–102nd Congress) district to
-  county file for the 1990 House election.
+- ~~Whether Census still serves the 1980s district to county file for the
+  1990 House election.~~ It does not serve population shares for it;
+  1990 to 2004 House stays at district level (Nick, 2026-11-08).
 
 ## Checkpoint
 

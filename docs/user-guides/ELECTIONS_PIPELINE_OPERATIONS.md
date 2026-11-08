@@ -99,7 +99,11 @@ A Congress with no tabulation of its own uses the one before it
 redrew in between: North Carolina's 2019 court-ordered map was used in 2020,
 so North Carolina 2020 has no county view. The API serves nothing for the
 103rd to 109th Congresses (1992 to 2004) and Census's relationship files give
-land area only, so those years are House by district only.
+land area only, so those years (and 1990) are House by district only. Nick
+decided on 2026-11-08 to keep them that way: no county view is built from
+district maps weighted by land area, because that would spread a district's
+votes by area rather than by people. A county page reads "House results
+before 2006 are shown by district only" for those years.
 
 Each plan is a frozen tabulation: the stream reads only the plans no
 published read holds, about 490 small requests per plan, and is `unchanged`
