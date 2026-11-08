@@ -123,11 +123,60 @@ def _unloaded_lines(cursor: Any, table: BeaTable) -> tuple[frozenset[str], str |
         cursor.execute(_LINE_LOADED_SQL, (table.code, line))
         if not cursor.fetchone()[0]:
             missing.add(line)
-    if not missing:
-        return frozenset(), None
     cursor.execute(_PUBLISHED_CAPTURE_SQL, (table.code,))
     row = cursor.fetchone()
     return frozenset(missing), (row[0] if row else None)
+
+
+_PUBLISHED_SCOPE_SQL = """
+    SELECT capture.in_scope_row_count,
+           (SELECT COUNT(DISTINCT revision.source_row_index)
+              FROM silver_bea.observation_revision AS revision
+             WHERE revision.capture_id = capture.capture_id)
+    FROM control.bea_table_capture AS capture
+    WHERE capture.capture_id = %s AND capture.status = 'published'
+"""
+
+
+def _set_published_scope(cursor: Any, capture_id: str, in_scope: int) -> None:
+    """Record the published capture's in-scope rows under the current registry.
+
+    Only a differing count is written (refresh-churn rule).
+    """
+    cursor.execute(
+        """
+        UPDATE control.bea_table_capture
+           SET in_scope_row_count = %s, updated_at = NOW()
+         WHERE capture_id = %s AND status = 'published'
+           AND in_scope_row_count <> %s
+        """,
+        (in_scope, capture_id, in_scope),
+    )
+
+
+def _realign_published_scope(
+    connection_factory: Callable[[], Any],
+    cursor: Any,
+    table: BeaTable,
+    capture_id: str,
+) -> None:
+    """Correct a published capture whose count predates a line backfill.
+
+    Before the backfill raised the count itself, CAINC4's published capture
+    kept 9,471 in-scope rows while 12,628 were replayed under it, line 46's
+    3,157 added by a later backfill. The weekly unchanged run checks the two
+    counts (one indexed read) and, only when they disagree, re-parses the
+    capture so the count comes from the file under the current registry,
+    never from the revisions it is checked against.
+    """
+    cursor.execute(_PUBLISHED_SCOPE_SQL, (capture_id,))
+    row = cursor.fetchone()
+    if row is None or row[0] == row[1]:
+        return
+    parsed = parse_table(
+        load_captured_payload(connection_factory, UUID(capture_id)), table=table
+    )
+    _set_published_scope(cursor, capture_id, parsed.in_scope_row_count)
 
 
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
@@ -150,7 +199,13 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             backfill: frozenset[str] = frozenset()
             if status == "unchanged":
                 backfill, published_capture = _unloaded_lines(cursor, table)
-                if not backfill or published_capture is None:
+                if published_capture is None:
+                    connection.commit()
+                    return 0
+                if not backfill:
+                    _realign_published_scope(
+                        connection_factory, cursor, table, published_capture
+                    )
                     connection.commit()
                     return 0
                 # The bytes repeat the published capture, but the registry
@@ -162,6 +217,9 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             parsed = parse_table(
                 load_captured_payload(connection_factory, UUID(capture_id)), table=table
             )
+            # Every row the current registry puts in scope, before a backfill
+            # narrows the parse to its new lines.
+            registry_in_scope = parsed.in_scope_row_count
             if backfill:
                 parsed = replace(
                     parsed,
@@ -274,6 +332,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     ],
                 )
             payload_rejected = any(q.source_row_index == 0 for q in parsed.quarantined)
+            if backfill:
+                # The new lines' rows are now replayed under the published
+                # capture, so its in-scope count is the registry's count, or
+                # DQ-BEA-002 reads them as rows nothing accounted for
+                # (CAINC4 line 46, 2026-11-07).
+                _set_published_scope(cursor, capture_id, registry_in_scope)
             # A backfill leaves this run `unchanged`: its own bytes added nothing.
             cursor.execute(
                 """
