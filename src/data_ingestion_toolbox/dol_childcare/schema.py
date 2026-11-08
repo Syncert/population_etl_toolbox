@@ -16,9 +16,7 @@ if TYPE_CHECKING:
 
 _PACKAGE = Path(__file__).resolve().parent
 
-#: Silver first, then the views that read it, then the publisher, which
-#: ends with the API's read grants on all of them (a warehouse bootstrapped
-#: before this source never re-applies the bootstrap grants).
+#: Silver first, then the views that read it, then the publisher.
 DDL_FILES = [
     _PACKAGE / "DDL" / "silver_dol_childcare.sql",
     _PACKAGE / "gold_dol_childcare" / "DDL" / "gold_dol_childcare.sql",
