@@ -23,7 +23,7 @@ DDL_FILES = [
     _PACKAGE / "DDL" / "silver_dol_childcare.sql",
     _PACKAGE / "gold_dol_childcare" / "DDL" / "gold_dol_childcare.sql",
     _PACKAGE / "gold_dol_childcare" / "DDL" / "publisher.sql",
-    _PACKAGE / "gold_dol_childcare" / "DDL" / "grants.sql",
+    _PACKAGE / "gold_dol_childcare" / "DDL" / "serving_grants.sql",
 ]
 
 REQUIRED_RELATIONS = (
