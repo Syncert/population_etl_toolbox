@@ -135,6 +135,10 @@ const COST_METRICS = Object.fromEntries([
   // Childcare (county-childcare-prices): the Women's Bureau's county prices.
   ...["center", "home"].flatMap((care) => ["infant", "toddler", "preschool", "school_age"].map((age) =>
     costMetric(`DOL_CHILDCARE:${care}_${age}`, "dollars per week", ["COUNTY"]))),
+  // Grocery spending (grocery-spending): the Consumer Expenditure Survey's
+  // Midwest and national means, and the nation's household sizes.
+  ...["LB1101", "LB1103", "LB0502", "LB0504", "LB0505", "LB0506", "LB0507"].map((table) =>
+    costMetric(`BLS:CXUFOODHOME${table}M`, "U.S. dollars per consumer unit per year", table === "LB1103" ? ["CENSUS_REGION"] : ["NATIONAL"])),
 ].map((metric) => [metric.metric_code, metric]));
 // Which area publishes which cost measure, and its value. The division's
 // food index skips August 2025, so its change over the year cannot be read
@@ -154,6 +158,13 @@ const COST_VALUES = {
   "EIA:NG_RES": { "state:55": "price:12.00" },
   "EIA:EPD2F": { "area:eia:R20": "season:3.50" },
   "EIA:EPD2D": { "us:1": "3.71" },
+  "BLS:CXUFOODHOMELB1101M": { "us:1": "6224" },
+  "BLS:CXUFOODHOMELB1103M": { "region:2": "5846" },
+  "BLS:CXUFOODHOMELB0502M": { "us:1": "3612" },
+  "BLS:CXUFOODHOMELB0504M": { "us:1": "6120" },
+  "BLS:CXUFOODHOMELB0505M": { "us:1": "7310" },
+  "BLS:CXUFOODHOMELB0506M": { "us:1": "8905" },
+  "BLS:CXUFOODHOMELB0507M": { "us:1": "10214" },
 };
 // Dane County's childcare prices for 2021 and 2022, as the fixture workbook
 // publishes them: 2021 interpolated between surveys, 2022's home school-age

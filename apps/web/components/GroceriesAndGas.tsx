@@ -6,8 +6,9 @@
 // are `lib/groceriesAndGas.ts`. Loaded as its own chunk. "Minutes of work"
 // asks the API for each price over the page's own area's hourly wage, only
 // when the reader chooses it, so the page's own reads are unchanged. Home
-// heating fuels and diesel are EIA's (home-heating-fuel-prices); childcare
-// is the Women's Bureau's, for counties only (county-childcare-prices).
+// heating fuels and diesel are EIA's (home-heating-fuel-prices); grocery
+// spending is the BLS Consumer Expenditure Survey's (grocery-spending);
+// childcare is the Women's Bureau's, for counties only (county-childcare-prices).
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
@@ -24,11 +25,13 @@ import type { PlaceLevel } from "../lib/placeChapters";
 import type { RelatedResponse } from "../lib/placeRelationships";
 import {
   HEATING_SEASON,
+  HOUSEHOLD_SIZES,
   NO_LOCAL_PRICES,
   NO_METRO_PRICES,
   NO_METRO_WAGE,
   PRICE_ITEMS,
   SOURCE_NAMES,
+  SPENDING_NOTE,
   WAGE_LEVELS,
   areaLabel,
   changeFromYearEarlierWeek,
@@ -39,10 +42,13 @@ import {
   formatGasHeat,
   formatParity,
   formatPrice,
+  formatDollars,
+  formatSpending,
   minutesRatioId,
   minutesText,
   readingsFor,
   stoppedSince,
+  surveyYear,
   wageText,
   withheldReason,
 } from "../lib/groceriesAndGas";
@@ -64,7 +70,7 @@ interface Answer {
   notes: string[];
 }
 
-type Line = "gas" | HeatMeasure | "food" | "parity";
+type Line = "gas" | HeatMeasure | "food" | "spending" | "parity";
 
 const TITLES: Record<Line, string> = {
   gas: "Regular gasoline",
@@ -72,10 +78,11 @@ const TITLES: Record<Line, string> = {
   heating_oil: "Heating oil",
   propane: "Propane",
   food: "Groceries overall (food at home)",
+  spending: "Household grocery spending (food at home)",
   parity: "Overall price level",
 };
 
-const LINES: Line[] = ["gas", "heat_gas", "heating_oil", "propane", "food", "parity"];
+const LINES: Line[] = ["gas", "heat_gas", "heating_oil", "propane", "food", "spending", "parity"];
 const HEAT: readonly CostMeasure[] = ["heat_gas", "heating_oil", "propane"];
 const ITEMS = PRICE_ITEMS.map((spec) => spec.item);
 const ORDER: CostMeasure[] = [...ITEMS, ...LINES, "diesel"];
@@ -178,14 +185,44 @@ async function answer(
         notes.push(`${where}: ${withheldReason(row)}`);
         continue;
       }
-      const text = reading.measure === "parity" ? formatParity(value) : formatGas(value);
-      return { reading, text, period: observationPeriodLabel(row), notes };
+      const text = reading.measure === "parity" ? formatParity(value) : reading.measure === "spending" ? formatSpending(value) : formatGas(value);
+      return { reading, text, period: reading.measure === "spending" ? surveyYear(row) : observationPeriodLabel(row), notes };
     } catch (error) {
       if (signal.aborted) throw error;
       notes.push(error instanceof ApiError && error.status === 404 ? `${where}: not published.` : `${where}: ${apiErrorMessage(error)}`);
     }
   }
   return { reading: null, text: "", period: "", notes };
+}
+
+/**
+ * The nation's grocery spending by household size, one newest row each, as
+ * "one person $3,612, two people $6,120, ...", with its year; BLS publishes
+ * these for the nation only. Null when none is published.
+ */
+async function householdSizes(
+  sources: readonly ExplorerSource[],
+  signal: AbortSignal,
+): Promise<{ text: string; period: string } | null> {
+  const source = sources.find((item) => item.sourceCode === "BLS");
+  if (!source) return null;
+  const rows = await Promise.all(
+    HOUSEHOLD_SIZES.map(async (size) => {
+      const { resource, params } = buildNewestValueRequest(source, { metricCode: size.metricCode, geoId: "us:1" });
+      const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params, signal });
+      const row = normalizeObservationRows(source, Array.isArray(payload.items) ? payload.items : []).filter((item) => item.geo_id === "us:1").at(-1);
+      return { size, row };
+    }),
+  );
+  const valued = rows.filter(({ row }) => row && isValued(row));
+  if (!valued.length) return null;
+  // One year for the whole line: a size whose newest year is older is left out.
+  const year = valued.map(({ row }) => surveyYear(row!)).sort().at(-1)!;
+  const text = valued
+    .filter(({ row }) => surveyYear(row!) === year)
+    .map(({ size, row }) => `${size.label} ${formatDollars(Number(row!.value))}`)
+    .join(", ");
+  return { text, period: year };
 }
 
 type View = "price" | "minutes";
@@ -216,6 +253,7 @@ export default function GroceriesAndGas({
   // The price minutes of work divide where the shown price has no pairing:
   // electricity's state price is EIA's, minutes are of BLS's region price.
   const [basis, setBasis] = useState<Partial<Record<PriceItem, Answer>>>({});
+  const [sizes, setSizes] = useState<{ text: string; period: string } | null>(null);
 
   useEffect(() => {
     if (!sources.length) return;
@@ -232,6 +270,20 @@ export default function GroceriesAndGas({
     }
     return () => controller.abort();
   }, [level, place, related, sources]);
+
+  // Household sizes are read once the spending line answered, for any page.
+  const spendingRead = Boolean(answers.spending?.reading);
+  useEffect(() => {
+    setSizes(null);
+    if (!spendingRead) return;
+    const controller = new AbortController();
+    householdSizes(sources, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) setSizes(result);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [spendingRead, sources]);
 
   useEffect(() => {
     setView("price");
@@ -404,6 +456,16 @@ export default function GroceriesAndGas({
                 {measure === "heating_oil" || measure === "propane" ? <span className="subtle block">{HEATING_SEASON}</span> : null}
                 {result?.reading && measure === "heat_gas" ? (
                   <span className="subtle block"> A thousand cubic feet is about 10.37 therms at EIA&apos;s average heat content.</span>
+                ) : null}
+                {result?.reading && measure === "spending" ? (
+                  <>
+                    {sizes ? (
+                      <span className="block" data-testid="place-cost-spending-sizes">
+                        Nationally, by household size ({sizes.period}): {sizes.text} a year.
+                      </span>
+                    ) : null}
+                    <span className="subtle block">{SPENDING_NOTE}</span>
+                  </>
                 ) : null}
                 {result?.reading && measure === "food" ? (
                   <span className="subtle block"> Each area&apos;s index has its own base, so only its change over a year is shown.</span>

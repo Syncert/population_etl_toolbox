@@ -10,6 +10,7 @@ import {
   formatGasHeat,
   formatMinutes,
   formatPrice,
+  formatSpending,
   minutesRatioId,
   minutesText,
   paddOf,
@@ -253,5 +254,31 @@ describe("home heating fuels", () => {
     expect(gap.percent).toBeNull();
     expect(gap.reason).toBe("The week of 2025-03-31 is not published for this area.");
     expect(changeFromYearEarlierWeek([]).percent).toBeNull();
+  });
+});
+
+// Covers: WEB-172 — grocery-spending: grocery spending is the Consumer
+// Expenditure Survey's mean for the county's Census region, else the
+// nation's, built from the region's code, in whole dollars a year.
+describe("household grocery spending", () => {
+  const areas = containingAreas("COUNTY", { geo_id: "state:55|county:025" }, dane);
+
+  it("asks for the region's mean, then the nation's", () => {
+    expect(readingsFor(areas).spending.map((item) => [item.metricCode, item.area.geoId])).toEqual([
+      ["BLS:CXUFOODHOMELB1103M", "region:2"],
+      ["BLS:CXUFOODHOMELB1101M", "us:1"],
+    ]);
+  });
+
+  it("numbers Northeast to West as BLS's region table does", () => {
+    const codes = [1, 2, 3, 4].map((region) =>
+      readingsFor({ ...areas, region: { geoId: `region:${region}`, level: "CENSUS_REGION", name: "x" } }).spending[0].metricCode,
+    );
+    expect(codes).toEqual(["BLS:CXUFOODHOMELB1102M", "BLS:CXUFOODHOMELB1103M", "BLS:CXUFOODHOMELB1104M", "BLS:CXUFOODHOMELB1105M"]);
+  });
+
+  it("is stated in whole dollars a year", () => {
+    expect(formatSpending(5846)).toBe("$5,846 a year");
+    expect(formatSpending(10213.6)).toBe("$10,214 a year");
   });
 });

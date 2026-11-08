@@ -18,7 +18,21 @@ verify:
 
 ## Status
 
-To do. Slice 3 of
+**Built (2026-11-08), on the BLS Consumer Expenditure Survey.** Program
+`cx` is read through the existing BLS loader: ten curated food-at-home
+series (`CXUFOODHOME...M`), annual (`A01`), 1984 onward: the nation
+(`LB1101`), the four Census regions (`LB1102` Northeast to `LB1105` West)
+and five household sizes at the nation (`LB0502`, `LB0504` to `LB0507`).
+Only those ten rows of the 32 MB `cx.series` list are synced (storage
+rule), and the BLS metadata client now names the project's repository as
+its contact. Gold carries the survey as observation basis `SPENDING`, so it
+is never read as a price. A county or state page shows its region's
+figure, named as the region's ("Midwest Region figure, 2024"), in whole
+dollars a year, with the nation's household sizes in one sentence; no
+minutes of work are derived for spending (coordinator, 2026-11-08).
+Catalog rows ETL-124 and WEB-172.
+
+Slice 3 of
 [`EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md`](EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md),
 approved by Nick 2026-11-06 18:15Z.
 
