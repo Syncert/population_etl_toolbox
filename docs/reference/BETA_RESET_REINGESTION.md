@@ -366,6 +366,11 @@ areas, then reads every week from 2015, and later runs read eight weeks back
 `silver_ref` must have run first: a state resolves through the USPS code of
 its reference version, and one the reference lacks is ledgered `unmapped`.
 
+Trigger `dol_childcare_ingest` once (no key): it reads the Women's Bureau's
+`NDCP2022.xlsx` (about 92 MB) and loads every study year 2008-2022 for every
+county; later runs replay nothing until the workbook changes
+([operations](../user-guides/DOL_CHILDCARE_PIPELINE_OPERATIONS.md)).
+
 
 Trigger `bea_regional_ingest` once: every run reads every year of every
 registered BEA table, five zips through the one-slot `bea_files` pool

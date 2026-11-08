@@ -460,6 +460,31 @@ v control.data_quality_source_status
     body           WHERE latest.source_code = run.source_code))
     body   GROUP BY run.source_code, run.quality_run_id;
 
+r control.dol_childcare_file
+    column run_id uuid NOT NULL
+    column release text NOT NULL
+    column capture_id uuid NOT NULL
+    column captured_row_count integer NOT NULL DEFAULT 0
+    column quarantined_row_count integer NOT NULL DEFAULT 0
+    column repeated_price_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dol_childcare_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint dol_childcare_file_captured_row_count_check CHECK ((captured_row_count >= 0))
+    constraint dol_childcare_file_pkey PRIMARY KEY (run_id)
+    constraint dol_childcare_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint dol_childcare_file_quarantine_within_rows CHECK ((quarantined_row_count <= captured_row_count))
+    constraint dol_childcare_file_quarantined_row_count_check CHECK ((quarantined_row_count >= 0))
+    constraint dol_childcare_file_release_check CHECK ((release ~ '^ndcp[0-9]{4}$'::text))
+    constraint dol_childcare_file_repeated_price_count_check CHECK ((repeated_price_count >= 0))
+    constraint dol_childcare_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint dol_childcare_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index dol_childcare_file_capture_idx CREATE INDEX dol_childcare_file_capture_idx ON control.dol_childcare_file USING btree (capture_id)
+    index dol_childcare_file_pkey CREATE UNIQUE INDEX dol_childcare_file_pkey ON control.dol_childcare_file USING btree (run_id)
+    index dol_childcare_file_release_idx CREATE INDEX dol_childcare_file_release_idx ON control.dol_childcare_file USING btree (release, status)
+
 r control.eia_page
     column run_id uuid NOT NULL
     column page_index integer NOT NULL
@@ -4987,6 +5012,218 @@ v gold_census_sae.metric_publisher
     body            FROM gold_census_sae.estimate_latest latest
     body              JOIN control.census_sae_slice slice ON slice.capture_id = latest.capture_id
     body           WHERE latest.dataset_id = measure.dataset_id AND latest.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
+
+v gold_dol_childcare.measure_definition
+    column metric_key text
+    column care_type text
+    column age_group text
+    column ndcp_column text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    body SELECT metric_key,
+    body     care_type,
+    body     age_group,
+    body     ndcp_column,
+    body     measure_label,
+    body     unit,
+    body     ((('Median weekly price of full-time childcare charged by providers in the '::text || 'county, from the state''s market rate survey, in that year''s dollars. '::text) || 'Some county values are imputed by the Women''s Bureau; imputed values '::text) || 'are flagged. Source: U.S. Department of Labor, Women''s Bureau, National '::text) || 'Database of Childcare Prices.'::text AS observation_basis
+    body    FROM ( VALUES ('center_infant'::text,'center'::text,'infant'::text,'MCINFANT'::text,'Center-based childcare, infant (birth to 23 months): median weekly full-time price'::text,'dollars per week'::text), ('center_toddler'::text,'center'::text,'toddler'::text,'MCTODDLER'::text,'Center-based childcare, toddler (24 to 35 months): median weekly full-time price'::text,'dollars per week'::text), ('center_preschool'::text,'center'::text,'preschool'::text,'MCPRESCHOOL'::text,'Center-based childcare, preschool (36 to 54 months): median weekly full-time price'::text,'dollars per week'::text), ('center_school_age'::text,'center'::text,'school_age'::text,'MCSA'::text,'Center-based childcare, school age: median weekly full-time price'::text,'dollars per week'::text), ('home_infant'::text,'home'::text,'infant'::text,'MFCCINFANT'::text,'Home-based (family) childcare, infant (birth to 23 months): median weekly full-time price'::text,'dollars per week'::text), ('home_toddler'::text,'home'::text,'toddler'::text,'MFCCTODDLER'::text,'Home-based (family) childcare, toddler (24 to 35 months): median weekly full-time price'::text,'dollars per week'::text), ('home_preschool'::text,'home'::text,'preschool'::text,'MFCCPRESCHOOL'::text,'Home-based (family) childcare, preschool (36 to 54 months): median weekly full-time price'::text,'dollars per week'::text), ('home_school_age'::text,'home'::text,'school_age'::text,'MFCCSA'::text,'Home-based (family) childcare, school age: median weekly full-time price'::text,'dollars per week'::text)) measure(metric_key, care_type, age_group, ndcp_column, measure_label, unit);
+
+v gold_dol_childcare.measure_export
+    column source_object_key text
+    column metric_key text
+    column care_type text
+    column age_group text
+    column ndcp_column text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    body SELECT metric_key AS source_object_key,
+    body     metric_key,
+    body     care_type,
+    body     age_group,
+    body     ndcp_column,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'dol_ndcp_xlsx:v1'::text AS schema_version
+    body    FROM gold_dol_childcare.measure_definition;
+
+v gold_dol_childcare.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'DOL_CHILDCARE'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (DOL Women''s Bureau)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_dol_childcare', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'U.S. Department of Labor Women''s Bureau National Database of Childcare Prices'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.dol.gov/agencies/wb/topics/featured-childcare'::text AS reference_url
+    body    FROM ( SELECT grouped.metric_key,
+    body             max(grouped.max_year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(grouped.geo_type) ORDER BY (gold_glossary.geo_grain(grouped.geo_type))) FILTER (WHERE grouped.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(grouped.run_id ORDER BY grouped.published_at DESC))[1] AS source_run_id,
+    body             max(grouped.published_at) AS publication_time
+    body            FROM ( SELECT revision.metric_key,
+    body                     revision.geo_type,
+    body                     revision.run_id,
+    body                     revision.published_at,
+    body                     max(revision.year) AS max_year,
+    body                     max(revision.value) AS value
+    body                    FROM gold_dol_childcare.observation_revision revision
+    body                   GROUP BY revision.metric_key, revision.geo_type, revision.run_id, revision.published_at) grouped
+    body           GROUP BY grouped.metric_key) served
+    body      JOIN gold_dol_childcare.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE served.publication_time IS NOT NULL;
+
+v gold_dol_childcare.observation_latest
+    column metric_key text
+    column care_type text
+    column age_group text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column fips_code text
+    column county_name text
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column imputed boolean
+    column imputation_code text
+    column release text
+    column release_key text
+    column published_at timestamp with time zone
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body     care_type,
+    body     age_group,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     year,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     fips_code,
+    body     county_name,
+    body     value_source,
+    body     value,
+    body     value_status,
+    body     missing_reason,
+    body     imputed,
+    body     imputation_code,
+    body     release,
+    body     release_key,
+    body     published_at,
+    body     retrieved_at,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_dol_childcare.observation_revision revision
+    body   ORDER BY metric_key, geo_id, year, retrieved_at DESC, capture_id DESC;
+
+v gold_dol_childcare.observation_revision
+    column metric_key text
+    column care_type text
+    column age_group text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column fips_code text
+    column county_name text
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column imputed boolean
+    column imputation_code text
+    column release text
+    column release_key text
+    column published_at timestamp with time zone
+    column retrieved_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT fact.metric_key,
+    body     fact.care_type,
+    body     fact.age_group,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.observation_basis,
+    body     fact.study_year AS year,
+    body     make_date(fact.study_year, 1, 1) AS period_start,
+    body     make_date(fact.study_year, 12, 31) AS period_end,
+    body     fact.geo_id,
+    body     fact.geo_sk,
+    body     fact.geo_type,
+    body     gold_glossary.geo_grain(fact.geo_type) AS geo_level,
+    body     fact.fips_code,
+    body     fact.county_name,
+    body     fact.value_source,
+    body     fact.value,
+    body     fact.value_status,
+    body     fact.missing_reason,
+    body     fact.imputed,
+    body     fact.imputation_code,
+    body     fact.release,
+    body     fact.release AS release_key,
+    body     file.published_at,
+    body     fact.retrieved_at,
+    body     fact.source_record_id,
+    body     fact.capture_id,
+    body     fact.run_id
+    body    FROM silver_dol_childcare.fact_price fact
+    body      JOIN control.dol_childcare_file file ON file.run_id = fact.run_id
+    body      JOIN gold_dol_childcare.measure_definition measure ON measure.metric_key = fact.metric_key
+    body   WHERE file.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unmapped'::text, 'unsupported'::text, 'ambiguous'::text]));
 
 v gold_eia.measure_export
     column source_object_key text
@@ -12781,6 +13018,105 @@ r silver_census_sae.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index census_sae_revision_run_idx CREATE INDEX census_sae_revision_run_idx ON silver_census_sae.observation_revision USING btree (run_id)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_sae.observation_revision USING btree (capture_id, source_row_index, measure_id)
+
+r silver_dol_childcare.fact_price
+    column metric_key text NOT NULL
+    column geo_id text NOT NULL
+    column study_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column release text NOT NULL
+    column care_type text NOT NULL
+    column age_group text NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL
+    column fips_code text NOT NULL
+    column county_name text
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column imputed boolean NOT NULL
+    column imputation_code text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dol_childcare_fact_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint dol_childcare_fact_resolved_has_key CHECK (((geography_status <> 'resolved'::text) OR (geo_sk IS NOT NULL)))
+    constraint dol_childcare_fact_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint fact_price_age_group_check CHECK ((age_group = ANY (ARRAY['infant'::text, 'toddler'::text, 'preschool'::text, 'school_age'::text])))
+    constraint fact_price_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fact_price_care_type_check CHECK ((care_type = ANY (ARRAY['center'::text, 'home'::text])))
+    constraint fact_price_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
+    constraint fact_price_geo_type_check CHECK ((geo_type = 'county'::text))
+    constraint fact_price_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint fact_price_pkey PRIMARY KEY (metric_key, geo_id, study_year, capture_id)
+    constraint fact_price_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint fact_price_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
+    constraint fact_price_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index dol_childcare_fact_capture_idx CREATE INDEX dol_childcare_fact_capture_idx ON silver_dol_childcare.fact_price USING btree (capture_id)
+    index dol_childcare_fact_metric_year_idx CREATE INDEX dol_childcare_fact_metric_year_idx ON silver_dol_childcare.fact_price USING btree (metric_key, study_year)
+    index dol_childcare_fact_run_idx CREATE INDEX dol_childcare_fact_run_idx ON silver_dol_childcare.fact_price USING btree (run_id)
+    index fact_price_pkey CREATE UNIQUE INDEX fact_price_pkey ON silver_dol_childcare.fact_price USING btree (metric_key, geo_id, study_year, capture_id)
+
+r silver_dol_childcare.observation_quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_dol_childcare.observation_quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint observation_quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint observation_quarantine_capture_id_source_row_index_error_co_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint observation_quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index observation_quarantine_capture_id_source_row_index_error_co_key CREATE UNIQUE INDEX observation_quarantine_capture_id_source_row_index_error_co_key ON silver_dol_childcare.observation_quarantine USING btree (capture_id, source_row_index, error_code)
+    index observation_quarantine_pkey CREATE UNIQUE INDEX observation_quarantine_pkey ON silver_dol_childcare.observation_quarantine USING btree (quarantine_sk)
+
+r silver_dol_childcare.price_revision
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column metric_key text NOT NULL
+    column run_id uuid NOT NULL
+    column release text NOT NULL
+    column care_type text NOT NULL
+    column age_group text NOT NULL
+    column study_year integer NOT NULL
+    column fips_code text NOT NULL
+    column county_name text
+    column geo_id text NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column imputed boolean NOT NULL
+    column imputation_code text
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dol_childcare_revision_imputed_from_code CHECK ((imputed = COALESCE((POSITION(('1'::text) IN (imputation_code)) > 0), false)))
+    constraint dol_childcare_revision_missing_has_reason CHECK (((value_status = 'valid'::text) = (missing_reason IS NULL)))
+    constraint dol_childcare_revision_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint dol_childcare_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint price_revision_age_group_check CHECK ((age_group = ANY (ARRAY['infant'::text, 'toddler'::text, 'preschool'::text, 'school_age'::text])))
+    constraint price_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint price_revision_care_type_check CHECK ((care_type = ANY (ARRAY['center'::text, 'home'::text])))
+    constraint price_revision_fips_code_check CHECK ((fips_code ~ '^[0-9]{5}$'::text))
+    constraint price_revision_imputation_code_check CHECK (((imputation_code IS NULL) OR (imputation_code ~ '^[01]{5}$'::text)))
+    constraint price_revision_metric_key_check CHECK ((metric_key ~ '^(center|home)_(infant|toddler|preschool|school_age)$'::text))
+    constraint price_revision_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = 'provider_missing'::text)))
+    constraint price_revision_pkey PRIMARY KEY (capture_id, source_row_index, metric_key)
+    constraint price_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint price_revision_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{64}$'::text))
+    constraint price_revision_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint price_revision_study_year_check CHECK (((study_year >= 2008) AND (study_year <= 2100)))
+    constraint price_revision_value_check CHECK (((value IS NULL) OR (value > (0)::numeric)))
+    constraint price_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index dol_childcare_revision_price_idx CREATE INDEX dol_childcare_revision_price_idx ON silver_dol_childcare.price_revision USING btree (metric_key, geo_id, study_year, created_at DESC)
+    index dol_childcare_revision_run_idx CREATE INDEX dol_childcare_revision_run_idx ON silver_dol_childcare.price_revision USING btree (run_id)
+    index price_revision_pkey CREATE UNIQUE INDEX price_revision_pkey ON silver_dol_childcare.price_revision USING btree (capture_id, source_row_index, metric_key)
 
 r silver_eia.energy_price_revision
     column capture_id uuid NOT NULL

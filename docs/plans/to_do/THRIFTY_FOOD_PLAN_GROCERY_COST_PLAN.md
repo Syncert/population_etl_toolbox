@@ -22,6 +22,42 @@ To do. Slice 3 of
 [`EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md`](EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md),
 approved by Nick 2026-11-06 18:15Z.
 
+**Source changed (Nick, 2026-11-08 16:36Z).** USDA's Cost of Food series
+is a non-option: `fns.usda.gov` refuses scripted clients and manual sourcing
+is out. Slice 3 is rebuilt on the **BLS Consumer Expenditure Survey (`cx`)**,
+read through the BLS API the warehouse already uses. The sections below
+this note describe the dropped USDA design and stay only as a record.
+
+### Sources considered (2026-11-08)
+
+| Source | What it gives | Grain | Fit |
+| --- | --- | --- | --- |
+| **BLS Consumer Expenditure Survey (`cx`), BLS API** | Average annual spending on food at home per household, in dollars, plus the same by household size, income and age | Nation, 4 Census regions, urban/rural; by household size at the nation | **Chosen.** A published dollar figure for real households, same key and loader as `ap`/`cu` |
+| BLS Average Price (`ap`) | Dollar prices of single items (eggs, milk, bread ...) | Nation, 4 regions | Already loaded and shown (slice 1) |
+| BLS CPI food at home (`cu`) | An index, change over a year | Nation, regions, 23 metros | Already loaded and shown; not a cost |
+| BEA Regional Price Parities | Price level vs the nation; goods, not food | State, metro | Already loaded; no food component |
+| Census (Economic Census, CBP, Monthly Retail Trade) | Grocery store sales and establishments | County (sales), nation (monthly) | Business totals, not what a household pays |
+| USDA ERS Food Price Outlook, Food Expenditure Series | Forecast changes; national spending totals | Nation | Forecasts and totals, not a household cost |
+
+No free source publishes a grocery cost for a county or city. Under the
+NO EXTRAPOLATION rule a county page shows its Census region's figure, named
+beside the number, exactly as slice 1 shows the region's egg price.
+
+### Design (BLS `cx`)
+
+- Add the `cx` program to the BLS pipeline: series
+  `CXUFOODHOMELB0101M` (all households, nation), `CXUFOODHOMELB1102M` to
+  `CXUFOODHOMELB1105M` (the four regions), and the household-size series at
+  the nation (`CXUFOODHOMELB04xxM`, confirmed against `cx.series` at
+  build). Annual, from the 1980s. A few dozen series: one API batch.
+- Same capture-first path and quota as `ap`/`cu`; a scheduled run loads
+  every year never loaded (LOADER RULE); repeats are not stored (CHURN RULE).
+- Display: one line in "Cost of living": "Households in the Midwest spend
+  $X a year on groceries (food at home), BLS Consumer Expenditure Survey",
+  with the household-size figure for a family of four at the nation in a
+  note. The published annual figure is shown as published, never converted
+  to another period.
+
 ## Why
 
 "A week of groceries" is the most relatable food figure, and it must be a

@@ -48,6 +48,7 @@ EXPECTED_DAG_IDS = {
     "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
+    "dol_childcare_ingest",
     "eia_retail_gasoline_ingest",
     "census_cbp_ingest",
     "census_lodes_ingest",
@@ -102,6 +103,9 @@ EXPECTED_SCHEDULES = {
     # Monthly: SOI posts a tax year about once a year; a run past the
     # history reads the two newest years again.
     "irs_soi_ingest": "0 15 7 * *",
+    # Monthly: the Women's Bureau publishes a childcare release every year or
+    # two; an unchanged workbook replays nothing.
+    "dol_childcare_ingest": "0 16 9 * *",
     # Weekly: county income lands in November and county GDP in December.
     # Tuesdays: EIA publishes Monday's prices on Monday afternoon.
     "eia_retail_gasoline_ingest": "0 15 * * 2",
@@ -172,6 +176,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,
+    "dol_childcare_ingest": 2,
     "eia_retail_gasoline_ingest": 2,
     "census_cbp_ingest": 2,
     "census_lodes_ingest": 2,
@@ -203,6 +208,7 @@ EXPECTED_INGEST_POOLS = {
     "census_govfin_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
     "irs_soi_ingest": "irs_soi_files",
+    "dol_childcare_ingest": "dol_childcare_files",
     "eia_retail_gasoline_ingest": "eia_api",
     "census_cbp_ingest": "census_cbp_files",
     "census_lodes_ingest": "census_lodes_files",

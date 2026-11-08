@@ -167,6 +167,11 @@
       "path": "src/data_ingestion_toolbox/eia/DDL/silver_eia.sql"
     },
     {
+      "id": "silver-dol-childcare",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/dol_childcare/DDL/silver_dol_childcare.sql"
+    },
+    {
       "id": "silver-census-lodes",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/census_lodes/DDL/silver_census_lodes.sql"
@@ -332,6 +337,11 @@
       "path": "src/data_ingestion_toolbox/eia/gold_eia/DDL/gold_eia.sql"
     },
     {
+      "id": "gold-dol-childcare",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/dol_childcare/gold_dol_childcare/DDL/gold_dol_childcare.sql"
+    },
+    {
       "id": "gold-bea",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql"
@@ -475,6 +485,11 @@
       "id": "publisher-eia",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/eia/gold_eia/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-dol-childcare",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/dol_childcare/gold_dol_childcare/DDL/publisher.sql"
     },
     {
       "id": "publisher-bea",
