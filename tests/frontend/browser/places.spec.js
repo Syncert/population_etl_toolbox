@@ -631,9 +631,10 @@ test("a county's childcare prices are its own, for one year, with a blank price 
   await expect(page.getByTestId("place-childcare-center_infant-work")).toHaveText("9 hours 46 minutes of work");
   await expect(page.getByTestId("place-childcare-center_infant")).toContainText("$293 a week");
   await expect(page.getByTestId("place-childcare-formula")).toContainText(
-    "Dane County's average wage in 2025, the newest year published was $1,200 a week (Bureau of Labor Statistics, QCEW, all jobs located in the county), or $30.00 an hour over a 40-hour week. $293 a week for center-based infant care ÷ $30.00 an hour = 9.8 hours of work.",
+    "Dane County's average wage in 2022 was $1,200 a week (Bureau of Labor Statistics, QCEW, all jobs located in the county), or $30.00 an hour over a 40-hour week. $293 a week for center-based infant care ÷ $30.00 an hour = 9.8 hours of work.",
   );
   await expect(page.getByTestId("place-childcare-home_school_age-work")).toHaveCount(0);
+  await expect(page.getByTestId("place-childcare-work-gap")).toHaveCount(0);
   const table = page.getByTestId("place-childcare-table");
   await expect(table).toContainText("Median weekly full-time price, 2022");
   await expect(table).toContainText("Women's Bureau, National Database of Childcare Prices");

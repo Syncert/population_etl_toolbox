@@ -134,6 +134,8 @@ export function footnoteReasons(cells: readonly ChildcareCell[]): string[] {
 // hourly wage, the QCEW weekly wage over 40 hours, read through the API's
 // reviewed `minutes_of_work_childcare_*` pairings. The dollar price stays
 // the figure; the hours are shown beside it with the arithmetic stated.
+// Only a wage of the price's own year is used: a price is never divided by
+// another year's wage (no extrapolation), and the gap is said instead.
 // ---------------------------------------------------------------------------
 
 export const HOURS_PER_WEEK = 40;
@@ -154,10 +156,13 @@ export interface ChildcareMinutes {
 const dollars = (value: number, cents = false): string =>
   `$${formatNumber(value, { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 })}`;
 
-/** "9 hours 23 minutes of work", or "" when there is no value: never zero. */
+/**
+ * "9 hours 23 minutes of work", or "" when there is no value or the wage is
+ * not the price's own year: never zero, never another year's wage.
+ */
 export function workText(row: ChildcareMinutes | null | undefined): string {
   const minutes = row?.value === null || row?.value === undefined || row.value === "" ? NaN : Number(row.value);
-  if (!row || row.unavailable_reason || !Number.isFinite(minutes)) return "";
+  if (!row || row.unavailable_reason || row.wage_year !== "same_year" || !Number.isFinite(minutes)) return "";
   const whole = Math.round(minutes);
   const hours = Math.floor(whole / 60);
   const rest = whole % 60;
@@ -177,11 +182,23 @@ export function workFormula(row: ChildcareMinutes | null | undefined, price: num
   const hourly = weekly / HOURS_PER_WEEK;
   const hours = price / hourly;
   const name = row.wage_geo_name || county;
-  const newest = row.wage_year === "newest_published_year" ? ", the newest year published" : "";
   return (
-    `How the hours are worked out: ${name}'s average wage in ${year}${newest} was ${dollars(weekly)} a week ` +
+    `How the hours are worked out: ${name}'s average wage in ${year} was ${dollars(weekly)} a week ` +
     `(Bureau of Labor Statistics, QCEW, all jobs located in the county), or ${dollars(hourly, true)} an hour over a ${HOURS_PER_WEEK}-hour week. ` +
     `${dollars(price, !Number.isInteger(price))} a week for ${what} ÷ ${dollars(hourly, true)} an hour = ` +
     `${formatNumber(hours, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours of work. Each price is divided the same way.`
   );
+}
+
+/**
+ * Why no hours are shown for a price that has one, in the words the other
+ * gaps use; "" when hours are shown or the price itself is missing.
+ */
+export function workGap(row: ChildcareMinutes | null | undefined, year: number | null, county: string): string {
+  if (!row || workText(row) || year === null) return "";
+  if (row.unavailable_reason === "denominator_missing") return `Hours of work: no wage is loaded for ${county} yet.`;
+  if (row.wage_year === "newest_published_year" || row.unavailable_reason === "different_period") {
+    return `Hours of work: ${county}'s wage for ${year} is not published yet.`;
+  }
+  return "";
 }

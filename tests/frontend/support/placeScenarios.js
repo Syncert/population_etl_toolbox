@@ -302,8 +302,12 @@ function timeCostRows(ratio, priceGeo, wageGeo, periodStart) {
     numerator: { metric_code: ratio.numerator, period_start: price.period_start, value: price.value, value_status: "valid" } };
   if (!wage) return [{ ...base, value: null, unavailable_reason: "denominator_missing", denominator: null }];
   const [name, weekly] = wage;
-  return [{ ...base, value: ((Number(price.value) * 2400) / Number(weekly)).toFixed(2), unavailable_reason: null, wage_geo_name: name, wage_year: "newest_published_year",
-    denominator: { metric_code: ratio.denominator, period_start: "2025-01-01", period_end: "2025-12-31", value: weekly, value_status: "valid" } }];
+  // A childcare price's study year has its own county wage in this fixture;
+  // the BLS prices are newer than QCEW's newest year.
+  const year = ratio.numerator.startsWith("DOL_CHILDCARE:") ? price.period_start.slice(0, 4) : "2025";
+  return [{ ...base, value: ((Number(price.value) * 2400) / Number(weekly)).toFixed(2), unavailable_reason: null, wage_geo_name: name,
+    wage_year: ratio.numerator.startsWith("DOL_CHILDCARE:") ? "same_year" : "newest_published_year",
+    denominator: { metric_code: ratio.denominator, period_start: `${year}-01-01`, period_end: `${year}-12-31`, value: weekly, value_status: "valid" } }];
 }
 
 // Synthetic derived values. Rock County's survey count has no same-period

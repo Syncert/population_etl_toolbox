@@ -8,6 +8,7 @@ import {
   formatWeekly,
   imputationReasons,
   workFormula,
+  workGap,
   workText,
 } from "../../../apps/web/lib/childcare";
 
@@ -88,9 +89,18 @@ describe("hours of work for a childcare price", () => {
     expect(workFormula(row, 293, "center-based infant care", "Dane County")).toBe(
       "How the hours are worked out: Dane County's average wage in 2022 was $1,200 a week (Bureau of Labor Statistics, QCEW, all jobs located in the county), or $30.00 an hour over a 40-hour week. $293 a week for center-based infant care ÷ $30.00 an hour = 9.8 hours of work. Each price is divided the same way.",
     );
-    expect(workFormula({ ...row, wage_year: "newest_published_year" }, 258.75, "x", "Dane County")).toContain(
-      "in 2022, the newest year published was $1,200 a week",
+    expect(workFormula({ ...row, value: null }, 293, "x", "Dane County")).toBe("");
+  });
+
+  it("never divides by another year's wage, and says the wage is not published yet", () => {
+    const later = { ...row, wage_year: "newest_published_year", denominator: { value: "1300", period_start: "2025-01-01" } };
+    expect(workText(later)).toBe("");
+    expect(workFormula(later, 293, "x", "Dane County")).toBe("");
+    expect(workGap(later, 2022, "Dane County")).toBe("Hours of work: Dane County's wage for 2022 is not published yet.");
+    expect(workGap({ value: null, unavailable_reason: "denominator_missing" }, 2022, "Dane County")).toBe(
+      "Hours of work: no wage is loaded for Dane County yet.",
     );
+    expect(workGap(row, 2022, "Dane County")).toBe("");
     expect(workFormula({ ...row, value: null }, 293, "x", "Dane County")).toBe("");
   });
 });

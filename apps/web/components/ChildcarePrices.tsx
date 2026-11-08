@@ -28,6 +28,7 @@ import {
   footnoteReasons,
   formatWeekly,
   workFormula,
+  workGap,
   workText,
 } from "../lib/childcare";
 import type { ChildcareMinutes } from "../lib/childcare";
@@ -121,6 +122,7 @@ export default function ChildcarePrices({
     headline?.value !== null && headline?.value !== undefined
       ? workFormula(minutes.center_infant, headline.value, "center-based infant care", name)
       : "";
+  const gap = table ? workGap(minutes.center_infant, table.year, name) : "";
 
   return (
     <div className="place-childcare" data-testid="place-childcare">
@@ -199,6 +201,11 @@ export default function ChildcarePrices({
           {formula ? (
             <p className="subtle" data-testid="place-childcare-formula">
               {formula}
+            </p>
+          ) : null}
+          {gap ? (
+            <p className="subtle" data-testid="place-childcare-work-gap">
+              {gap}
             </p>
           ) : null}
           {reasons.length ? (
