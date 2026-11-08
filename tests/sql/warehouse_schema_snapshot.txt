@@ -2108,7 +2108,7 @@ v gold_bls.calendar_window_observation
     body             mv_bls_latest.metric_code
     body            FROM gold_bls.mv_bls_latest
     body           ORDER BY mv_bls_latest.metric_code, mv_bls_latest.series_id, mv_bls_latest.geo_id, mv_bls_latest.observation_date DESC
-    body         ), provider AS (
+    body         ), provider AS NOT MATERIALIZED (
     body          SELECT served.metric_code,
     body             served.geo_id,
     body             served.geo_level,
@@ -2163,9 +2163,33 @@ v gold_bls.calendar_window_observation
     body     derived.component_releases,
     body     derived.refreshed_at::date AS as_of_date
     body    FROM gold_bls.derived_calendar_rollup derived
-    body   WHERE NOT (derived.grain = 'year'::text AND (EXISTS ( SELECT 1
+    body   WHERE derived.grain = 'quarter'::text
+    body UNION ALL
+    body  SELECT derived.metric_code,
+    body     derived.geo_id,
+    body     derived.geo_level,
+    body     derived.subject_code,
+    body     derived.unit,
+    body     derived.grain,
+    body     derived.window_start AS period_start,
+    body     derived.window_end AS period_end,
+    body     derived.value,
+    body         CASE
+    body             WHEN derived.value IS NULL THEN 'incomplete_window'::text
+    body             ELSE 'valid'::text
+    body         END AS value_status,
+    body     'derived'::text AS derivation_kind,
+    body     derived.method,
+    body     derived.method_version,
+    body     derived.expected_periods,
+    body     derived.present_periods,
+    body     derived.refusal_reason,
+    body     derived.component_releases,
+    body     derived.refreshed_at::date AS as_of_date
+    body    FROM gold_bls.derived_calendar_rollup derived
+    body   WHERE derived.grain = 'year'::text AND NOT (EXISTS ( SELECT 1
     body            FROM provider
-    body           WHERE provider.metric_code = derived.metric_code AND NOT provider.geo_id IS DISTINCT FROM derived.geo_id AND provider.period_start = derived.window_start)));
+    body           WHERE provider.metric_code = derived.metric_code AND NOT provider.geo_id IS DISTINCT FROM derived.geo_id AND provider.period_start = derived.window_start));
 
 r gold_bls.derived_calendar_rollup
     column metric_code text NOT NULL

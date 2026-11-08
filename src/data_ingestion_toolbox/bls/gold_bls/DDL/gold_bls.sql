@@ -758,7 +758,11 @@ WITH served AS (
     FROM gold_bls.mv_bls_latest
     ORDER BY metric_code, series_id, geo_id, observation_date DESC
 ),
-provider AS (
+-- Referenced twice (the provider rows and the derived rows' exclusion), so
+-- PostgreSQL would materialise it whole -- every annual average of every
+-- served series, 535,572 rows on OFFICE_LAB -- before any metric filter.
+-- Inlined, a read of one metric reaches one series (place-page-reads).
+provider AS NOT MATERIALIZED (
     SELECT served.metric_code, served.geo_id, served.geo_level, served.units,
            annual.period_start, annual.period_end, annual.value,
            annual.value_status, annual.ingested_at
@@ -787,6 +791,7 @@ SELECT provider.metric_code,
        provider.ingested_at::DATE AS as_of_date
 FROM provider
 UNION ALL
+-- A derived quarter never competes with a published annual average.
 SELECT derived.metric_code,
        derived.geo_id,
        derived.geo_level,
@@ -806,13 +811,35 @@ SELECT derived.metric_code,
        derived.component_releases,
        derived.refreshed_at::DATE
 FROM gold_bls.derived_calendar_rollup AS derived
-WHERE NOT (
-    derived.grain = 'year'
-    AND EXISTS (
-        SELECT 1
-        FROM provider
-        WHERE provider.metric_code = derived.metric_code
-          AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
-          AND provider.period_start = derived.window_start
-    )
+WHERE derived.grain = 'quarter'
+UNION ALL
+-- A derived year is served only where BLS published no annual average. A
+-- plain NOT EXISTS (not one OR-ed with the grain) is an anti-join, so a whole
+-- read hashes it once and a one-metric read probes one series.
+SELECT derived.metric_code,
+       derived.geo_id,
+       derived.geo_level,
+       derived.subject_code,
+       derived.unit,
+       derived.grain,
+       derived.window_start,
+       derived.window_end,
+       derived.value,
+       CASE WHEN derived.value IS NULL THEN 'incomplete_window' ELSE 'valid' END,
+       'derived'::TEXT,
+       derived.method,
+       derived.method_version,
+       derived.expected_periods,
+       derived.present_periods,
+       derived.refusal_reason,
+       derived.component_releases,
+       derived.refreshed_at::DATE
+FROM gold_bls.derived_calendar_rollup AS derived
+WHERE derived.grain = 'year'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM provider
+    WHERE provider.metric_code = derived.metric_code
+      AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
+      AND provider.period_start = derived.window_start
 );
