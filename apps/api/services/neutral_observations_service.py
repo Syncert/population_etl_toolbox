@@ -315,10 +315,21 @@ def _metric_conditions(
                 "'key', so its serving rows cannot be identified"
             )
         name = f"{param_prefix}lineage_key"
-        return (
-            [f"{dispatch.lineage_key_column} = :{name}"],
-            {name: f"{dispatch.lineage_key_prefix}{key}"},
-        )
+        bound_key = f"{dispatch.lineage_key_prefix}{key}"
+        conditions = [f"{dispatch.lineage_key_column} = :{name}"]
+        params: dict[str, Any] = {name: bound_key}
+        # The composed key is an expression over the fact's own identity
+        # columns, which no index serves; binding each part as well lets the
+        # source's lookup index find one place's rows (place-page-reads). The
+        # composed condition stays, so the answer is the same rows either way.
+        columns = dispatch.lineage_key_columns
+        key_parts = str(bound_key).split(":")
+        if columns and len(key_parts) == len(columns):
+            for column, part in zip(columns, key_parts):
+                part_name = f"{param_prefix}lineage_key_{column}"
+                conditions.append(f"{column} = :{part_name}")
+                params[part_name] = part
+        return conditions, params
 
     conditions: list[str] = []
     params: dict[str, Any] = {}

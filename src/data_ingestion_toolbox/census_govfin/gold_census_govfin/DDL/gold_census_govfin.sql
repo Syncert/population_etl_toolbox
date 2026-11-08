@@ -59,10 +59,10 @@ WHERE slice.status = 'published'
 
 -- The newest published capture of each observation.
 CREATE OR REPLACE VIEW gold_census_govfin.observation_latest AS
-SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.fiscal_year, revision.quarter)
+SELECT DISTINCT ON (revision.metric_key, revision.dataset_id, revision.measure_id, revision.government_level, revision.geo_id, revision.fiscal_year, revision.quarter)
        revision.*
 FROM gold_census_govfin.observation_revision AS revision
-ORDER BY revision.metric_key, revision.geo_id, revision.fiscal_year, revision.quarter,
+ORDER BY revision.metric_key, revision.dataset_id, revision.measure_id, revision.government_level, revision.geo_id, revision.fiscal_year, revision.quarter,
          revision.retrieved_at DESC, revision.capture_id DESC;
 
 -- The governments a county area's figures sum, from each edition's newest

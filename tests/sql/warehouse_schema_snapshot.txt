@@ -1994,7 +1994,7 @@ v gold_bea.observation_latest
     column capture_id uuid
     column run_id uuid
     column derivation text
-    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body SELECT DISTINCT ON (metric_key, table_code, line_code, geo_id, year) metric_key,
     body     table_code,
     body     table_title,
     body     line_code,
@@ -2021,7 +2021,7 @@ v gold_bea.observation_latest
     body     run_id,
     body     derivation
     body    FROM gold_bea.observation_revision revision
-    body   ORDER BY metric_key, geo_id, year, release_date DESC, retrieved_at DESC, capture_id DESC;
+    body   ORDER BY metric_key, table_code, line_code, geo_id, year, release_date DESC, retrieved_at DESC, capture_id DESC;
 
 v gold_bea.observation_revision
     column metric_key text
@@ -2101,14 +2101,14 @@ v gold_bls.calendar_window_observation
     column component_releases text[]
     column as_of_date date
     body WITH served AS (
-    body          SELECT DISTINCT ON (mv_bls_latest.series_id, mv_bls_latest.geo_id) mv_bls_latest.series_id,
+    body          SELECT DISTINCT ON (mv_bls_latest.metric_code, mv_bls_latest.series_id, mv_bls_latest.geo_id) mv_bls_latest.series_id,
     body             mv_bls_latest.geo_id,
     body             mv_bls_latest.geo_level,
     body             mv_bls_latest.units,
     body             mv_bls_latest.metric_code
     body            FROM gold_bls.mv_bls_latest
-    body           ORDER BY mv_bls_latest.series_id, mv_bls_latest.geo_id, mv_bls_latest.observation_date DESC
-    body         ), provider AS (
+    body           ORDER BY mv_bls_latest.metric_code, mv_bls_latest.series_id, mv_bls_latest.geo_id, mv_bls_latest.observation_date DESC
+    body         ), provider AS NOT MATERIALIZED (
     body          SELECT served.metric_code,
     body             served.geo_id,
     body             served.geo_level,
@@ -2163,9 +2163,33 @@ v gold_bls.calendar_window_observation
     body     derived.component_releases,
     body     derived.refreshed_at::date AS as_of_date
     body    FROM gold_bls.derived_calendar_rollup derived
-    body   WHERE NOT (derived.grain = 'year'::text AND (EXISTS ( SELECT 1
+    body   WHERE derived.grain = 'quarter'::text
+    body UNION ALL
+    body  SELECT derived.metric_code,
+    body     derived.geo_id,
+    body     derived.geo_level,
+    body     derived.subject_code,
+    body     derived.unit,
+    body     derived.grain,
+    body     derived.window_start AS period_start,
+    body     derived.window_end AS period_end,
+    body     derived.value,
+    body         CASE
+    body             WHEN derived.value IS NULL THEN 'incomplete_window'::text
+    body             ELSE 'valid'::text
+    body         END AS value_status,
+    body     'derived'::text AS derivation_kind,
+    body     derived.method,
+    body     derived.method_version,
+    body     derived.expected_periods,
+    body     derived.present_periods,
+    body     derived.refusal_reason,
+    body     derived.component_releases,
+    body     derived.refreshed_at::date AS as_of_date
+    body    FROM gold_bls.derived_calendar_rollup derived
+    body   WHERE derived.grain = 'year'::text AND NOT (EXISTS ( SELECT 1
     body            FROM provider
-    body           WHERE provider.metric_code = derived.metric_code AND NOT provider.geo_id IS DISTINCT FROM derived.geo_id AND provider.period_start = derived.window_start)));
+    body           WHERE provider.metric_code = derived.metric_code AND NOT provider.geo_id IS DISTINCT FROM derived.geo_id AND provider.period_start = derived.window_start));
 
 r gold_bls.derived_calendar_rollup
     column metric_code text NOT NULL
@@ -2845,7 +2869,7 @@ v gold_bls_qcew.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body SELECT DISTINCT ON (metric_key, geo_id, period_start) metric_key,
+    body SELECT DISTINCT ON (metric_key, measure_id, industry_code, own_code, geo_id, period_start) metric_key,
     body     measure_id,
     body     measure_label,
     body     unit,
@@ -2875,7 +2899,7 @@ v gold_bls_qcew.observation_latest
     body     capture_id,
     body     run_id
     body    FROM gold_bls_qcew.observation_revision revision
-    body   ORDER BY metric_key, geo_id, period_start, retrieved_at DESC, capture_id DESC;
+    body   ORDER BY metric_key, measure_id, industry_code, own_code, geo_id, period_start, retrieved_at DESC, capture_id DESC;
 
 v gold_bls_qcew.observation_revision
     column metric_key text
@@ -4014,7 +4038,7 @@ v gold_census_bps.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body SELECT DISTINCT ON (metric_key, geo_id, period_start) metric_key,
+    body SELECT DISTINCT ON (metric_key, measure_id, structure_type, frequency, geo_id, period_start) metric_key,
     body     measure_id,
     body     measure_label,
     body     structure_type,
@@ -4041,7 +4065,7 @@ v gold_census_bps.observation_latest
     body     capture_id,
     body     run_id
     body    FROM gold_census_bps.observation_revision revision
-    body   ORDER BY metric_key, geo_id, period_start, retrieved_at DESC, capture_id DESC;
+    body   ORDER BY metric_key, measure_id, structure_type, frequency, geo_id, period_start, retrieved_at DESC, capture_id DESC;
 
 v gold_census_bps.observation_revision
     column metric_key text
@@ -4205,7 +4229,7 @@ v gold_census_cbp.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    body SELECT DISTINCT ON (metric_key, measure, naics_key, geo_id, year) metric_key,
     body     measure,
     body     measure_label,
     body     unit,
@@ -4232,7 +4256,7 @@ v gold_census_cbp.observation_latest
     body     capture_id,
     body     run_id
     body    FROM gold_census_cbp.observation_revision revision
-    body   ORDER BY metric_key, geo_id, year, retrieved_at DESC, capture_id DESC;
+    body   ORDER BY metric_key, measure, naics_key, geo_id, year, retrieved_at DESC, capture_id DESC;
 
 v gold_census_cbp.observation_revision
     column metric_key text
@@ -4429,7 +4453,7 @@ v gold_census_govfin.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body SELECT DISTINCT ON (metric_key, geo_id, fiscal_year, quarter) metric_key,
+    body SELECT DISTINCT ON (metric_key, dataset_id, measure_id, government_level, geo_id, fiscal_year, quarter) metric_key,
     body     dataset_id,
     body     measure_id,
     body     government_level,
@@ -4461,7 +4485,7 @@ v gold_census_govfin.observation_latest
     body     capture_id,
     body     run_id
     body    FROM gold_census_govfin.observation_revision revision
-    body   ORDER BY metric_key, geo_id, fiscal_year, quarter, retrieved_at DESC, capture_id DESC;
+    body   ORDER BY metric_key, dataset_id, measure_id, government_level, geo_id, fiscal_year, quarter, retrieved_at DESC, capture_id DESC;
 
 v gold_census_govfin.observation_revision
     column metric_key text

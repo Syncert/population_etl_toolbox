@@ -88,10 +88,10 @@ WHERE file.status = 'published'
 
 -- The newest published capture of each observation.
 CREATE OR REPLACE VIEW gold_census_cbp.observation_latest AS
-SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.year)
+SELECT DISTINCT ON (revision.metric_key, revision.measure, revision.naics_key, revision.geo_id, revision.year)
        revision.*
 FROM gold_census_cbp.observation_revision AS revision
-ORDER BY revision.metric_key, revision.geo_id, revision.year,
+ORDER BY revision.metric_key, revision.measure, revision.naics_key, revision.geo_id, revision.year,
          revision.retrieved_at DESC, revision.capture_id DESC;
 
 CREATE OR REPLACE VIEW gold_census_cbp.measure_export AS
