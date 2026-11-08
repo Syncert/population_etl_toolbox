@@ -382,11 +382,13 @@ BEGIN
     CREATE TEMP TABLE lean_group_candidate
         (LIKE gold_elections.lean_group_change INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    INSERT INTO pg_temp.lean_place_candidate (
-        window_start_year, window_end_year, measure, geo_id, state_fips, lean_margin, lean_band,
-        start_value, end_value, place_change, nation_change, net_change, rural_urban_group,
-        starting_level_group, industry_group, industry_label, refresh_id, tax_burden_group
-    )
+    -- Each county's and the nation's change over every window, stored and
+    -- analysed before it is joined: as a CTE joined to itself for the
+    -- nation's row, the planner guessed a dozen rows and nested a loop over
+    -- two CTE scans (about 300,000 x thousands), so a forced rebuild took
+    -- 33 to 90 minutes on OFFICE_LAB (2026-11-08 speed gate).
+    DROP TABLE IF EXISTS pg_temp.lean_change;
+    CREATE TEMP TABLE lean_change ON COMMIT DROP AS
     WITH election_year AS (
         SELECT DISTINCT year FROM pg_temp.lean_vote
     ),
@@ -415,15 +417,29 @@ BEGIN
         LEFT JOIN pg_temp.lean_pce AS end_price ON end_price.year = span.end_year
         WHERE NOT start_value.deflate
            OR (start_price.price_level IS NOT NULL AND end_price.price_level IS NOT NULL)
-    ),
-    changed AS (
-        SELECT valued.*,
-               CASE valued.change_kind
-                   WHEN 'growth' THEN 100.0 * (valued.end_value / valued.start_value - 1)
-                   ELSE valued.end_value - valued.start_value
-               END AS place_change
-        FROM valued
-        WHERE valued.change_kind = 'points' OR valued.start_value > 0
+    )
+    SELECT valued.*,
+           CASE valued.change_kind
+               WHEN 'growth' THEN 100.0 * (valued.end_value / valued.start_value - 1)
+               ELSE valued.end_value - valued.start_value
+           END AS place_change
+    FROM valued
+    WHERE valued.change_kind = 'points' OR valued.start_value > 0;
+    CREATE INDEX ON pg_temp.lean_change (start_year, end_year, measure, geo_id);
+    ANALYZE pg_temp.lean_change;
+
+    DROP TABLE IF EXISTS pg_temp.lean_nation_change;
+    CREATE TEMP TABLE lean_nation_change ON COMMIT DROP AS
+    SELECT start_year, end_year, measure, place_change
+    FROM pg_temp.lean_change
+    WHERE geo_id = 'us:1';
+    ANALYZE pg_temp.lean_nation_change;
+    ANALYZE pg_temp.lean_vote;
+
+    INSERT INTO pg_temp.lean_place_candidate (
+        window_start_year, window_end_year, measure, geo_id, state_fips, lean_margin, lean_band,
+        start_value, end_value, place_change, nation_change, net_change, rural_urban_group,
+        starting_level_group, industry_group, industry_label, refresh_id, tax_burden_group
     )
     SELECT changed.start_year, changed.end_year, changed.measure, changed.geo_id,
            SUBSTRING(changed.geo_id FROM '^state:([0-9]{2})\|') AS state_fips,
@@ -444,12 +460,11 @@ BEGIN
            peer.industry_label,
            p_refresh_id,
            burden.tax_burden_group
-    FROM changed
-    JOIN changed AS nation
+    FROM pg_temp.lean_change AS changed
+    JOIN pg_temp.lean_nation_change AS nation
       ON nation.start_year = changed.start_year
      AND nation.end_year = changed.end_year
      AND nation.measure = changed.measure
-     AND nation.geo_id = 'us:1'
     JOIN pg_temp.lean_vote AS lean ON lean.geo_id = changed.geo_id AND lean.year = changed.start_year
     LEFT JOIN pg_temp.lean_peer AS peer ON peer.geo_id = changed.geo_id
     LEFT JOIN pg_temp.lean_tax_burden AS burden
