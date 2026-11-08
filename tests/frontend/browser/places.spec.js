@@ -114,6 +114,30 @@ test("a county page's Voting chapter reads the margins beside the state's", asyn
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-125 — a chapter shows its values as its own reads settle: a
+// slow batch for another chapter leaves only that chapter reading (OFFICE_LAB
+// 2026-11-08: the Voting cards read "Reading…" for 55 s behind Census and
+// BEA batches of 5-10 s).
+test("a slow read for one chapter does not hold another chapter's cards", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installPlaceFixtures(page);
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/v1/observations/newest/batch?**", async (route) => {
+    const codes = new URL(route.request().url()).searchParams.get("metric_codes") || "";
+    if (codes.includes("B19013_001")) await held;
+    await route.fallback();
+  });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-president-margin-county")).toContainText(/[-−]6\b/);
+  await expect(page.getByTestId("chapter-voting-trend")).toHaveAttribute("data-scale", "level");
+  await expect(page.getByTestId("card-median-household-income-county")).toContainText("Reading…");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "false");
+  release();
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("card-median-household-income-county")).not.toContainText("Reading…");
+});
+
 // Covers: WEB-164 — a headline card draws its own place's history as a
 // sparkline, read in one history batch per chapter for that place only, with
 // a change line in the record page's verbs.

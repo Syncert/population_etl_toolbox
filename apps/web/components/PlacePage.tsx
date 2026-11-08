@@ -131,6 +131,8 @@ const CheckTheRecord = dynamic(() => import("./CheckTheRecord"));
 const CATALOG_PAGE_SIZE = 1000;
 /** How many observation requests one page keeps in flight at once. */
 const REQUEST_CONCURRENCY = 6;
+/** How often the answers settled so far are shown while a place page loads. */
+const PROGRESS_FLUSH_MS = 100;
 
 const LEVEL_WORDS: Record<PlaceLevel, string> = {
   NATIONAL: "Nation",
@@ -714,9 +716,34 @@ export default function PlacePage({
     tasks.unshift(...batchTasks);
 
     setObservationStatus({ state: "loading", message: `asking ${series} published series` });
+    // Each answer shows as soon as its read settles: a chapter whose reads
+    // are quick no longer waits on another chapter's slow batch (the Voting
+    // cards read "Reading…" for 55 s behind Census and BEA batches of 5-10 s,
+    // OFFICE_LAB 2026-11-08). Settled answers are published at most every
+    // 100 ms, so a page of 200 reads re-renders a few dozen times, not 200.
+    // Until the page settles, a key with no answer still reads as pending.
+    let flushQueued = false;
+    let done = false;
+    const publish = () => {
+      flushQueued = false;
+      if (signal.aborted || done) return;
+      setAnswers(new Map(nextAnswers));
+      setHistories(new Map(nextHistories));
+    };
+    const showing = tasks.map((task) => async () => {
+      try {
+        await task();
+      } finally {
+        if (!flushQueued && !signal.aborted) {
+          flushQueued = true;
+          setTimeout(publish, PROGRESS_FLUSH_MS);
+        }
+      }
+    });
     (async () => {
-      await inPool(tasks, REQUEST_CONCURRENCY);
+      await inPool(showing, REQUEST_CONCURRENCY);
       if (signal.aborted) return;
+      done = true;
       settled.current = true;
       setAnswers(nextAnswers);
       setHistories(nextHistories);
@@ -864,6 +891,7 @@ export default function PlacePage({
           state={state}
           answers={shownAnswers}
           histories={histories}
+          reading={reading}
           sourceFor={sourceFor}
           pairings={pairings}
         />
@@ -1027,6 +1055,7 @@ function Chapter({
   state,
   answers,
   histories,
+  reading,
   sourceFor,
   pairings,
 }: {
@@ -1039,6 +1068,8 @@ function Chapter({
   state: GeographySummary | null;
   answers: Map<string, LevelAnswer>;
   histories: Map<string, ObservationRow[]>;
+  /** The page's reads are still settling: an empty trend is being read, not unpublished. */
+  reading: boolean;
   sourceFor: (metric: MetricSummary | null) => ExplorerSource | null;
   pairings: DerivedRatioPairing[];
 }) {
@@ -1221,6 +1252,7 @@ function Chapter({
           chapterId={chapter.id}
           unit={primaryRow ? publishedUnit(primaryRow, trendMeasure.measure.unit) : unitText(trendMeasure.metric?.units) || trendMeasure.measure.unit || ""}
           notes={trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || ""))}
+          reading={reading}
           testId={`chapter-${chapter.id}-trend`}
         />
       ) : null}
@@ -1232,6 +1264,7 @@ function Chapter({
           chapterId={chapter.id}
           unit={unitText(measure.metric?.units) || measure.measure.unit || ""}
           notes={trendNotes(measure.metricCode, String(measure.metric?.units || ""))}
+          reading={reading}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
         />
       ))}
