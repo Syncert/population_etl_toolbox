@@ -28,6 +28,19 @@ describe("levelStrip", () => {
     expect(forbiddenWordsIn(strip.sentence)).toEqual([]);
   });
 
+  it("says which way a vote margin leans, so a Democratic county is not read as plain 'higher'", () => {
+    // A margin is the Republican minus the Democratic share (ADR-0014).
+    const strip = levelStrip("president-margin", card(
+      ["Dane County", "COUNTY", -53.48, null],
+      ["Wisconsin", "STATE", 0.86, null],
+    ));
+    expect(strip.domain[0]).toBeLessThan(-53.48);
+    expect(strip.sentence).toBe(
+      "Dane County was lower than Wisconsin. A higher margin is further Republican, a lower one further Democratic.",
+    );
+    expect(forbiddenWordsIn(strip.sentence)).toEqual([]);
+  });
+
   it("calls overlapping survey intervals not distinguishable", () => {
     const strip = levelStrip("median-age", card(
       ["Dane County", "COUNTY", 35.7, 0.3],

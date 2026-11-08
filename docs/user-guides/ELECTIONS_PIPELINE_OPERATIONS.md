@@ -77,7 +77,7 @@ on every county row, so a county's total there is the sum of its candidates.
 MEDSL publishes 2024 Senate returns only by precinct (994,635 rows, 34 states
 and DC, read on OFFICE_LAB 2026-11-08). Stream `county_senate_precinct` reads
 the file once (an unchanged file is an unchanged read) and sums it into
-counties on replay, under reading rules `medsl-precinct-reading-1`:
+counties on replay, under reading rules `medsl-precinct-reading-2`:
 
 - A candidate line's count in a precinct is its TOTAL row where the precinct
   prints one (New Jersey, Connecticut, Delaware, Rhode Island and New York
@@ -95,27 +95,51 @@ counties on replay, under reading rules `medsl-precinct-reading-1`:
   "Ridgefield Park" under "Ridgefield") is not counted as part of it, and a
   town total one vote off its precincts (Rockleigh, 63 beside 62) is still a
   subtotal.
+- A county whose every line has one row that equals the sum of all its other
+  precincts, within one vote, holds a county total printed as a precinct
+  (Indiana's Hendricks County): that row is quarantined `county_total_row`
+  and only the precincts are summed. It needs ten rows and a count of at
+  least 100 per line, so a small town's lone precinct is never taken for one.
+- A precinct named after another precinct with words before it ("PENN TWP 4
+  110004" beside "110004", in Indiana's St Joseph County) whose votes are the
+  same on every line is a renamed copy, quarantined `repeated_precinct`.
 - A candidate line printed with no party takes the one party its candidate
   carries elsewhere in the same state's contest (six New Jersey counties,
   Mercer among them, leave Kim's and Bashaw's party blank); a candidate with
   no party or with several keeps the blank.
 - A row with no county code, or a code that is not a county of its state
   (Missouri's Kansas City board, `36000`, which counts parts of four
-  counties), is quarantined; nothing is apportioned. The District of
-  Columbia's shadow senator is `not_a_senate_seat`.
+  counties), is quarantined; nothing is apportioned. The counties such a
+  board spans (Cass, Clay, Jackson and Platte; `SPANNING_UNITS`) are not
+  served while the file carries it, quarantined `county_split_by_unit`:
+  summed without Kansas City, Jackson County would read as if the city had
+  not voted. The District of Columbia's shadow senator is
+  `not_a_senate_seat`.
+- A contest whose precinct rows give a candidate a party the ballot does not
+  (`MISLABELLED_CONTESTS`) is not served, quarantined `party_label_conflict`
+  per county: the file labels Nebraska's regular-seat independent, Dan
+  Osborn, DEMOCRAT, where MEDSL's statewide file has him "BY PETITION", so
+  his votes would read as a Democrat's margin. Nebraska's special (Ricketts)
+  is served. No party is substituted for the source's.
+- In the statewide files, party text "GOP" is Republican (`medsl-reading-4`):
+  Washington's 2024 Senate line for Raul Garcia was read as Other, which made
+  Washington's precinct county sums look 100% off; they agree within 0.07%.
 
-**The state count is the check.** A state's county rows are served only when
-their sums of each major party's votes are within 1% (or 100 votes) of the
-same contest in MEDSL's statewide Senate file
-(`gold_elections.precinct_county_check`); otherwise, or before the statewide
-row exists, that state's 2024 county Senate rows are held back and
-`DQ-ELEC-009` names it with both counts. Missouri (Kansas City) is expected
-to be held back. So is New Jersey: checked against the state's official
-county list (12/05/2024), 19 of its 21 counties sum exactly (Atlantic is
-0.6% short), but the file has no early votes for Mercer County (Kim 80,007
-of 105,685, Bashaw 33,332 of 46,932) and no provisional rows for Union
-County (about 3% short), so the state is 1.4% short for Kim. Those votes are
-not in MEDSL's file, and nothing is estimated in their place.
+**The state count is a check, not a gate.** The county rows are served as
+MEDSL published them (Nick, 2026-11-08: "display the data as is and accept
+the discrepancy, stay true to source"). Each state's county sums of each
+major party's votes are compared with the same contest in MEDSL's statewide
+Senate file (`gold_elections.precinct_county_check`), and `DQ-ELEC-009`
+warns with both counts for a state that misses by more than 1% (or 100
+votes), or has no statewide row yet. New Jersey is expected there: checked
+against the state's official county list (12/05/2024), 19 of its 21 counties
+sum exactly (Atlantic is 0.6% short), but the file has no early votes for
+Mercer County (Kim 80,007 of 105,685, Bashaw 33,332 of 46,932) and no
+provisional rows for Union County (about 3% short), so the state is 1.4%
+short for Kim. Mercer and Union are served short, as published; nothing is
+estimated in their place. MEDSL takes error reports as issues on
+`github.com/MEDSL/2024-elections-official`, and a corrected file is read on
+the next scheduled run.
 
 Every run re-reads each stream whole. A Congress, a governor or an election
 year the warehouse never loaded is loaded by the next scheduled run; there is

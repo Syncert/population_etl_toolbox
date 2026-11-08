@@ -2701,11 +2701,12 @@ def elections_house_district_coverage(
 def elections_precinct_states_held_back(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-ELEC-009 — names each state whose precinct-summed county Senate rows are held back.
+    """DQ-ELEC-009 — names each state whose precinct-summed county Senate rows miss the state's count.
 
-    A state is held back when its county sums miss the statewide file's count
-    of either major party by more than 1% (or 100 votes), or when the
-    statewide file has no row for that contest yet.
+    The rows are served as MEDSL published them; a state is named when its
+    county sums miss the statewide file's count of either major party by more
+    than 1% (or 100 votes), or when the statewide file has no row for that
+    contest yet.
     """
     del scope
     total = _count(cursor, "SELECT COUNT(*) FROM gold_elections.precinct_county_check")

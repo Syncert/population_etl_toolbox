@@ -828,7 +828,10 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
     WarehouseSource(
         code="ELECTIONS",
         name="Election results and seat holders",
-        publisher="MIT Election Data and Science Lab; unitedstates/congress-legislators; Wikidata",
+        publisher=(
+            "MIT Election Data and Science Lab; Algara & Amlani (Harvard Dataverse); "
+            "unitedstates/congress-legislators; Wikidata; Census Bureau (county shares of House districts)"
+        ),
         topic="Elections and government",
         module="elections",
         dag="elections_ingest",
@@ -837,19 +840,23 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         grains={"state": "n", "county": "n", "other": "n"},
         years=[(1969, 2026)],
         years_note=(
-            "Seat terms from 1969; county presidential returns from 2000; state presidential, "
-            "Senate and House (district, not yet a shared geography) returns from 1976"
+            "Seat terms from 1969; county presidential returns from 1992 and county Senate returns "
+            "from 1990 (Algara & Amlani to 2020, MEDSL after); state presidential, Senate and "
+            "House (district) returns from 1976; the House districts covering each county from 2006"
         ),
         datasets=[
             "MEDSL County Presidential Election Returns (doi:10.7910/DVN/VOQCHQ)",
             "MEDSL U.S. President, Senate and House returns (Harvard Dataverse)",
+            "MEDSL county Senate 2022 (doi:10.7910/DVN/YB60EJ) and 2024 Senate precinct returns "
+            "(doi:10.7910/DVN/ZCM3BN)",
+            "Algara & Amlani county presidential and Senate returns (doi:10.7910/DVN/DGUMFI, CC0)",
             "unitedstates/congress-legislators (CC0)",
             "Wikidata governor terms (CC0)",
         ],
         measures=(
-            "Presidential two-party Republican share, two-party margin and total votes by county "
-            "and state; Senate and House contest results; governor, senator and representative "
-            "terms with party."
+            "Presidential and U.S. Senate two-party Republican share, two-party margin and total "
+            "votes by county and state; House contest results by district, with each county's "
+            "covering districts from 2006; governor, senator and representative terms with party."
         ),
         raw=[],
         control=["control.elections_run", "control.elections_file"],
