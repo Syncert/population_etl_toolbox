@@ -1232,7 +1232,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1260,7 +1260,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1288,7 +1288,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1316,7 +1316,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1344,7 +1344,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1372,7 +1372,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1400,7 +1400,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1428,7 +1428,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
@@ -1456,7 +1456,7 @@
       "limitations": [
         "Payments respond to a place's age and income; a high share describes who lives there, it does not cause it.",
         "Medical benefits count as income of the people whose care they pay for.",
-        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share and says so (different_period)."
+        "BEA publishes the county program detail about a year after the county totals; a year whose CAINC35 and CAINC1 releases differ has no share on /observations/derived and says so (different_period); the /public-money payments card pairs the two county files by year and names both releases."
       ],
       "citations": [
         "https://www.bea.gov/data/income-saving/personal-current-transfer-receipts",
