@@ -98,6 +98,10 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                  'Average retail prices of selected items', 'Fixed series coding',
                  'An average price is dollars for one item in one area: comparable across areas, but not an index, and estimated from a sample.',
                  'https://www.bls.gov/cpi/factsheets/average-prices.htm'),
+                ('CX', 'Consumer Expenditure Survey', 'Consumer units (households)', 'SPENDING',
+                 'Annual household spending by item', 'Fixed series coding',
+                 'A mean is dollars a year spent by one consumer unit, averaged over every unit in the group: it is spending, not a price, and a region''s figure is not its counties''.',
+                 'https://www.bls.gov/cex/'),
                 ('JT', 'Job Openings and Labor Turnover Survey', 'Nonfarm establishments', 'FLOWS',
                  'Labor market flows (openings, hires, quits, layoffs, separations)', 'Fixed series coding',
                  'JOLTS flow measures are not equivalent to stock employment levels.',
@@ -219,6 +223,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                     WHEN f.program = 'ce' AND LOWER(COALESCE(bs.title, '')) LIKE '%earn%' THEN 'EARNINGS'
                     WHEN f.program = 'cu' THEN 'PRICE_INDEX'
                     WHEN f.program = 'ap' THEN 'AVERAGE_PRICE'
+                    WHEN f.program = 'cx' THEN 'OTHER'
                     WHEN f.program = 'jt' AND LOWER(COALESCE(bs.title, '')) LIKE '%openings%' THEN 'OPENINGS'
                     WHEN f.program = 'jt' AND LOWER(COALESCE(bs.title, '')) LIKE '%hires%' THEN 'HIRES'
                     WHEN f.program = 'jt' AND LOWER(COALESCE(bs.title, '')) LIKE '%quits%' THEN 'QUITS'
@@ -248,6 +253,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                         THEN 'U.S. dollars ' || COALESCE(
                             SUBSTRING(bs.title FROM '\\m(per .+?) in '), 'per unit'
                         )
+                    WHEN f.program = 'cx' THEN 'U.S. dollars per consumer unit per year'
                     WHEN f.series_id IN ('CES0000000001', 'CES0500000001') THEN 'Thousands of Persons'
                     WHEN f.series_id = 'CES0500000002' THEN 'Hours'
                     WHEN f.series_id = 'CES0500000003' THEN 'Dollars per Hour'
@@ -260,6 +266,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                 CASE
                     WHEN f.program = 'cu' THEN 'INDEX'
                     WHEN f.program = 'ap' THEN 'CURRENCY'
+                    WHEN f.program = 'cx' THEN 'CURRENCY'
                     WHEN f.series_id IN ('LNS14000000', 'LNS11300000', 'LNS13327709') THEN 'RATE'
                     WHEN f.series_id = 'LNS12300000' THEN 'RATIO'
                     WHEN f.series_id IN ('CES0500000003', 'CES0500000008') THEN 'CURRENCY'
@@ -323,6 +330,8 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                                 END
                     WHEN f.program = 'ap'
                         THEN 'Average price in U.S. dollars for one item in one area, estimated from the CPI sample. Comparable across areas in dollars; not an index.'
+                    WHEN f.program = 'cx'
+                        THEN 'Consumer Expenditure Survey mean: average annual spending in U.S. dollars per consumer unit (household) in the group, from interview and diary samples. Published yearly for the nation, the four Census regions and household types; spending, not a price.'
                     WHEN f.series_id IN ('JTS000000000000000JOL', 'JTS000000000000000HIR', 'JTS000000000000000QUR', 'JTS000000000000000LDL', 'JTS000000000000000TSL', 'JTS000000000000000OSL')
                         THEN 'JOLTS labor-flow series. These represent openings or turnover flows rather than employment stock measures.'
                     ELSE 'Preserve survey-specific interpretation; avoid cross-survey equivalence by label similarity.'

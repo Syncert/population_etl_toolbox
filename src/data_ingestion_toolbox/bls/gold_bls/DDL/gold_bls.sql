@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_survey (
     program_code       TEXT NOT NULL UNIQUE,
     survey_name        TEXT NOT NULL,
     survey_universe    TEXT,
-    observation_basis  TEXT NOT NULL CHECK (observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS')),
+    observation_basis  TEXT NOT NULL CHECK (observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS', 'SPENDING')),
     primary_concept    TEXT,
     id_construction_type TEXT,
     comparison_warning TEXT,
@@ -45,6 +45,28 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     semantic_notes             TEXT,
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Household spending (grocery-spending, the Consumer Expenditure Survey) is
+-- an observation basis of its own: it is not a price. A warehouse created
+-- before it carries the CHECK without it; re-applying this file replaces
+-- that CHECK only while its definition does not yet name it. The survey
+-- table holds seven rows, so the check is instant.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'gold_bls.dim_bls_survey'::regclass
+          AND conname = 'dim_bls_survey_observation_basis_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%SPENDING%'
+    ) THEN
+        ALTER TABLE gold_bls.dim_bls_survey
+            DROP CONSTRAINT dim_bls_survey_observation_basis_check;
+        ALTER TABLE gold_bls.dim_bls_survey
+            ADD CONSTRAINT dim_bls_survey_observation_basis_check CHECK (
+                observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS', 'SPENDING')
+            );
+    END IF;
+END $$;
 
 -- Average prices (grocery-and-gasoline-prices) are a measure category of
 -- their own. A warehouse created before them carries the category CHECK

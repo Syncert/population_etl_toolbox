@@ -38,6 +38,25 @@ export function childcareMetricCode(care: CareType, age: AgeGroup): string {
   return `${CHILDCARE_SOURCE}:${care}_${age}`;
 }
 
+/** The eight prices' metric codes, center first, in the table's order. */
+export const CHILDCARE_CODES: readonly string[] = CARE_TYPES.flatMap((care) =>
+  AGE_GROUPS.map((age) => childcareMetricCode(care.key, age.key)),
+);
+
+/**
+ * Which of the prices to read, from the place page's one catalog read: only
+ * the codes the catalog holds, so a price not loaded is never asked for (and
+ * never answers 404). `null` while that read is pending; `undefined` when the
+ * page has no catalog read, and then every price is read.
+ */
+export function catalogedCodes(
+  catalogued: ReadonlyMap<string, unknown> | null | undefined,
+): readonly string[] | null {
+  if (catalogued === undefined) return CHILDCARE_CODES;
+  if (catalogued === null) return null;
+  return CHILDCARE_CODES.filter((code) => catalogued.has(code));
+}
+
 /** One cell of the table: the county's newest published row for one price. */
 export interface ChildcareCell {
   care: CareType;

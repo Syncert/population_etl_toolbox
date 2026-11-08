@@ -114,6 +114,30 @@ test("a county page's Voting chapter reads the margins beside the state's", asyn
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-125 — a chapter shows its values as its own reads settle: a
+// slow batch for another chapter leaves only that chapter reading (OFFICE_LAB
+// 2026-11-08: the Voting cards read "Reading…" for 55 s behind Census and
+// BEA batches of 5-10 s).
+test("a slow read for one chapter does not hold another chapter's cards", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installPlaceFixtures(page);
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/v1/observations/newest/batch?**", async (route) => {
+    const codes = new URL(route.request().url()).searchParams.get("metric_codes") || "";
+    if (codes.includes("B19013_001")) await held;
+    await route.fallback();
+  });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-president-margin-county")).toContainText(/[-−]6\b/);
+  await expect(page.getByTestId("chapter-voting-trend")).toHaveAttribute("data-scale", "level");
+  await expect(page.getByTestId("card-median-household-income-county")).toContainText("Reading…");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "false");
+  release();
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("card-median-household-income-county")).not.toContainText("Reading…");
+});
+
 // Covers: WEB-164 — a headline card draws its own place's history as a
 // sparkline, read in one history batch per chapter for that place only, with
 // a change line in the record page's verbs.
@@ -674,6 +698,25 @@ test("a county's childcare prices are its own, for one year, with a blank price 
   await ready(page, "/us/wisconsin");
   await expect(page.getByTestId("place-childcare-counties-only")).toContainText("publishes childcare prices for counties only");
   await expect(page.getByTestId("place-childcare-table")).toHaveCount(0);
+});
+
+// Covers: WEB-172 — grocery-spending: a county shows its Census region's
+// yearly household grocery spending, named as the region's and as spending,
+// not a price, with the nation's figures by household size.
+test("a county's grocery spending is its region's, named, with the nation's household sizes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const spending = page.getByTestId("place-cost-spending");
+  await expect(spending).toHaveAttribute("data-area", "region:2");
+  await expect(spending).toContainText("Household grocery spending (food at home)");
+  await expect(spending).toContainText("$5,846 a year");
+  await expect(spending).toContainText("Midwest Region figure, 2024");
+  await expect(spending).toContainText("It is spending, not a price");
+  await expect(page.getByTestId("place-cost-spending-sizes")).toContainText(
+    "Nationally, by household size (2024): one person $3,612, two people $6,120, three $7,310, four $8,905, five or more $10,214 a year.",
+  );
+  await noViolations(page);
+  await noHorizontalScroll(page);
 });
 
 // Covers: WEB-143 — CL-3: a county with no wage loaded says so, never zero;

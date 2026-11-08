@@ -26,7 +26,7 @@ export interface ContainingAreas {
   region: Area | null;
 }
 
-export type CostMeasure = "gas" | "food" | "parity" | HeatMeasure | "diesel" | PriceItem;
+export type CostMeasure = "gas" | "food" | "spending" | "parity" | HeatMeasure | "diesel" | PriceItem;
 
 /**
  * Home heating fuels (home-heating-fuel-prices), each EIA's residential price:
@@ -162,6 +162,9 @@ export function paddOf(state: Area | null): Area | null {
  * - Food at home: the BLS CPI for the division, else the region, else the
  *   nation, read as that area's own change over a year. Index levels are
  *   relative to each area's base, so they are never shown or compared.
+ * - Grocery spending: the BLS Consumer Expenditure Survey's mean yearly
+ *   spending on food at home per household, for the Census region, else the
+ *   nation. It is spending, not a price, and published no finer.
  * - Price parity: BEA's all-items parity for the metro area, else the state.
  *   The nation is 100 by definition and is stated, not read.
  */
@@ -171,12 +174,16 @@ export function readingsFor(areas: ContainingAreas): Record<CostMeasure, Reading
   const gas: Reading[] = [];
   const food: Reading[] = [];
   const parity: Reading[] = [];
+  const spending: Reading[] = [];
   if (areas.state) gas.push({ measure: "gas", metricCode: "EIA:EPMR", area: areas.state, source: "EIA" });
   if (areas.region) gas.push({ measure: "gas", metricCode: `BLS:APU0${region}0074714`, area: areas.region, source: "BLS" });
   if (areas.nation) gas.push({ measure: "gas", metricCode: "EIA:EPMR", area: areas.nation, source: "EIA" });
   if (areas.division && areas.region) food.push({ measure: "food", metricCode: `BLS:CUUR0${region}${division}0SAF11`, area: areas.division, source: "BLS" });
   if (areas.region) food.push({ measure: "food", metricCode: `BLS:CUUR0${region}00SAF11`, area: areas.region, source: "BLS" });
   if (areas.nation) food.push({ measure: "food", metricCode: "BLS:CUUR0000SAF11", area: areas.nation, source: "BLS" });
+  const regionSpending = REGION_SPENDING[region ?? ""];
+  if (areas.region && regionSpending) spending.push({ measure: "spending", metricCode: regionSpending, area: areas.region, source: "BLS" });
+  if (areas.nation) spending.push({ measure: "spending", metricCode: "BLS:CXUFOODHOMELB1101M", area: areas.nation, source: "BLS" });
   if (areas.metro) parity.push({ measure: "parity", metricCode: "BEA:MARPP:1", area: areas.metro, source: "BEA" });
   if (areas.state) parity.push({ measure: "parity", metricCode: "BEA:SARPP:1", area: areas.state, source: "BEA" });
   const padd = paddOf(areas.state);
@@ -200,7 +207,7 @@ export function readingsFor(areas: ContainingAreas): Record<CostMeasure, Reading
     if (areas.nation) readings.push({ measure: spec.item, metricCode: `BLS:APU0000${spec.code}`, area: areas.nation, source: "BLS" });
     prices[spec.item] = readings;
   }
-  return { gas, food, parity, diesel, ...heat, ...prices };
+  return { gas, food, spending, parity, diesel, ...heat, ...prices };
 }
 
 /** Therms in a thousand cubic feet: EIA's average heat content, 1,037 Btu a cubic foot. */
@@ -305,6 +312,48 @@ export function formatChange(percent: number): string {
   if (percent === 0) return "no change over the year";
   return `${percent > 0 ? "up" : "down"} ${Math.abs(percent).toFixed(1)}% over the year`;
 }
+
+/** "$7,017 a year": a household's mean yearly spending, in whole dollars as BLS publishes it. */
+export function formatSpending(value: number): string {
+  return `${formatDollars(value)} a year`;
+}
+
+/** "$7,017": whole dollars. */
+export function formatDollars(value: number): string {
+  return `$${formatNumber(Math.round(value), { maximumFractionDigits: 0 })}`;
+}
+
+/** "2024": the survey year an annual mean covers. */
+export function surveyYear(row: ObservationRow): string {
+  return String(row.period_start || "").slice(0, 4);
+}
+
+/**
+ * The nation's grocery spending by household size (Consumer Expenditure
+ * Survey, size of consumer unit), in BLS's order. BLS publishes these for
+ * the nation only.
+ */
+/**
+ * The Consumer Expenditure Survey's region table numbers Northeast 02 to West
+ * 05: Census region R is characteristic R + 1.
+ */
+const REGION_SPENDING: Readonly<Record<string, string>> = {
+  "1": "BLS:CXUFOODHOMELB1102M",
+  "2": "BLS:CXUFOODHOMELB1103M",
+  "3": "BLS:CXUFOODHOMELB1104M",
+  "4": "BLS:CXUFOODHOMELB1105M",
+};
+
+export const HOUSEHOLD_SIZES: readonly { metricCode: string; label: string }[] = [
+  { metricCode: "BLS:CXUFOODHOMELB0502M", label: "one person" },
+  { metricCode: "BLS:CXUFOODHOMELB0504M", label: "two people" },
+  { metricCode: "BLS:CXUFOODHOMELB0505M", label: "three" },
+  { metricCode: "BLS:CXUFOODHOMELB0506M", label: "four" },
+  { metricCode: "BLS:CXUFOODHOMELB0507M", label: "five or more" },
+];
+
+export const SPENDING_NOTE =
+  "What households spent on food to eat at home over the year, averaged over every household in the area (BLS Consumer Expenditure Survey). It is spending, not a price, and BLS publishes it no finer than the four Census regions.";
 
 export function formatParity(value: number): string {
   return `${value.toFixed(1)} (nation = 100)`;

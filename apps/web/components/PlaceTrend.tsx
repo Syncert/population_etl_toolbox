@@ -77,6 +77,7 @@ export default function PlaceTrend({
   forCard = measure && chapterId ? { label: measure.measure.label, anchor: cardAnchor(chapterId, measure.measure.id) } : null,
   titleTag: Title = "h3",
   notes = [],
+  reading = false,
   testId,
 }: {
   model: TrendModel;
@@ -103,9 +104,18 @@ export default function PlaceTrend({
   titleTag?: "h3" | "h4";
   /** What the chart says about its own measure: margins, overlapping periods. */
   notes?: string[];
+  /** The page is still reading: an empty chart is not yet an absence. */
+  reading?: boolean;
   testId: string;
 }) {
   const drawn = model.lines.filter((line) => line.points.length > 0);
+  if (drawn.length === 0 && reading) {
+    return (
+      <p className="subtle chart-empty" data-testid={`${testId}-reading`}>
+        Reading the published history of {title.replace(/ over time$/, "").toLowerCase()}…
+      </p>
+    );
+  }
   if (drawn.length === 0) {
     return (
       <p className="subtle chart-empty" data-testid={`${testId}-empty`}>

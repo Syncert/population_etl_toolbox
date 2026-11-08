@@ -505,7 +505,7 @@ def test_reference_dimension_task_callables_forward_declared_windows(
         (
             "bls_ingest",
             "dags.bls_ingest_dag",
-            ["la", "ln", "ce", "cu", "jt", "ap"],
+            ["la", "ln", "ce", "cu", "jt", "ap", "cx"],
             "_series_fingerprint",
         ),
         ("fred_ingest", "dags.fred_ingest_dag", ["macro"], "_series_fingerprint"),
@@ -648,7 +648,7 @@ def test_bls_history_captured_under_an_older_request_is_planned_again(
         "_series_fingerprint",
         lambda *args: ("current-request", 3),
     )
-    programs = ["la", "ln", "ce", "cu", "jt", "ap"]
+    programs = ["la", "ln", "ce", "cu", "jt", "ap", "cx"]
 
     def plan(completed: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
         database = RecordingDatabase(fetches=[completed, []])

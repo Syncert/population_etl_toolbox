@@ -30,9 +30,11 @@ test("a county page asks one catalog read and one batch per chapter's places", a
   const named = calls.filter((url) => url.pathname === "/api/v1/catalog/metrics");
   expect(named).toHaveLength(1);
   expect(named[0].searchParams.get("metric_codes").split(",").length).toBeGreaterThan(100);
-  // The chapters' candidates are no longer looked up one code at a time.
+  // The chapters' candidates are no longer looked up one code at a time;
+  // only the Cost of living section's own measures are (prices, CPI, grocery
+  // spending, parity).
   const perCode = calls.filter((url) => url.pathname.startsWith("/api/v1/catalog/metrics/"));
-  expect(perCode.every((url) => /EIA|BLS%3AAPU|BLS%3ACUUR|BEA%3AMARPP/.test(url.pathname))).toBe(true);
+  expect(perCode.every((url) => /EIA|BLS%3AAPU|BLS%3ACUUR|BLS%3ACXUFOODHOME|BEA%3AMARPP/.test(url.pathname))).toBe(true);
 
   const batches = calls.filter((url) => url.pathname === "/api/v1/observations/newest/batch");
   expect(batches.length).toBeGreaterThan(0);

@@ -1646,8 +1646,14 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
                         "data": [
                             {
                                 "year": str(start_year),
-                                "period": "M01",
-                                "periodName": "January",
+                                # The Consumer Expenditure Survey publishes
+                                # whole years only (grocery-spending).
+                                "period": "A01"
+                                if series_id.startswith("CX")
+                                else "M01",
+                                "periodName": "Annual"
+                                if series_id.startswith("CX")
+                                else "January",
                                 "value": "4.5",
                                 "footnotes": [{}],
                                 "latest": "true",
@@ -1685,12 +1691,13 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     }
 
-    # The price programs' series lists are BLS's own excerpts, so the
-    # orchestrated run selects the regional and metro series from them as
-    # production does (grocery-and-gasoline-prices).
+    # The price and spending programs' series lists are BLS's own excerpts,
+    # so the orchestrated run selects the regional and metro series from them
+    # as production does (grocery-and-gasoline-prices, grocery-spending).
     price_lists = {
         "/cu/cu.series": "cu.series.excerpt",
         "/ap/ap.series": "ap.series.excerpt",
+        "/cx/cx.series": "cx.series.excerpt",
     }
 
     def read_tsv(url: str) -> Any:

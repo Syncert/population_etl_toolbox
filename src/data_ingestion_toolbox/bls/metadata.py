@@ -58,7 +58,9 @@ BASE_URL = "https://download.bls.gov/pub/time.series/"
 programs = CONFIG.programs
 
 # HELPER, download.bls.gov will occasionally answer 403 forbidden to bot-looking clients despite the url working well in a browser.
-UA = "population_toolbox/1.0 (contact: your_email@example.com)"
+# download.bls.gov refuses anonymous clients; this names the project and
+# where to reach it, never a person.
+UA = "population_toolbox/1.0 (+https://github.com/Syncert/population_etl_toolbox)"
 
 
 def _safe_str(value) -> str:
@@ -82,6 +84,11 @@ def read_bls_tsv(url: str) -> pl.DataFrame:
         has_header=True,
         infer_schema=False,  # Published identifiers must remain exact strings.
     )
+
+
+#: Programs whose series list is far larger than what is requested, so only
+#: the configured series' rows are synced.
+CURATED_METADATA_PROGRAMS = frozenset({"cx"})
 
 
 def fetch_bls_metadata(program: str) -> Tuple[Dict[str, any], Dict[str, any]]:
@@ -171,6 +178,21 @@ def sync_bls_series_metadata(program: str) -> int:
             f"BLS returned no series metadata for configured program {program!r}"
         )
 
+    # The Consumer Expenditure list is about 32 MB of demographic tables of
+    # which a handful of series are requested: only those are kept, never
+    # the whole list (storage rule).
+    if program in CURATED_METADATA_PROGRAMS:
+        wanted = set(CONFIG.curated_by_program.get(program, []))
+        series_data = [
+            record
+            for record in series_data
+            if _safe_str(record.get("series_id", "")) in wanted
+        ]
+        if not series_data:
+            raise RuntimeError(
+                f"BLS series list for {program!r} holds none of the configured series"
+            )
+
     conn = _get_pg_connection()
     count = 0
 
@@ -190,7 +212,9 @@ def sync_bls_series_metadata(program: str) -> int:
                 measure = _safe_str(
                     record.get("measure_code")
                     or record.get("data_type_code")
-                    or (record.get("item_code") if program in {"cu", "ap"} else "")
+                    or (
+                        record.get("item_code") if program in {"cu", "ap", "cx"} else ""
+                    )
                     or ""
                 )
                 area_code = (
