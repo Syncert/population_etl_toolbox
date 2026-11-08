@@ -16,11 +16,14 @@ if TYPE_CHECKING:
 
 _PACKAGE = Path(__file__).resolve().parent
 
-#: Silver first, then the views that read it, then the publisher.
+#: Silver first, then the views that read it, then the publisher, then the
+#: API's read grants on them (a warehouse bootstrapped before this source
+#: never re-applies the bootstrap grants).
 DDL_FILES = [
     _PACKAGE / "DDL" / "silver_dol_childcare.sql",
     _PACKAGE / "gold_dol_childcare" / "DDL" / "gold_dol_childcare.sql",
     _PACKAGE / "gold_dol_childcare" / "DDL" / "publisher.sql",
+    _PACKAGE / "gold_dol_childcare" / "DDL" / "grants.sql",
 ]
 
 REQUIRED_RELATIONS = (
