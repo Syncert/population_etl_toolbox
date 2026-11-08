@@ -20,7 +20,10 @@ from data_ingestion_toolbox.elections.lean_groups import (
     lean_band,
     refresh_lean_groups,
 )
-from data_ingestion_toolbox.elections.registry import COUNTY_PRESIDENT
+from data_ingestion_toolbox.elections.registry import (
+    COUNTY_PRESIDENT,
+    COUNTY_PRESIDENT_HISTORY,
+)
 from data_ingestion_toolbox.quality.sources import elections_lean_group_arithmetic
 from data_ingestion_toolbox.elections.schema import (
     REQUIRED_PROCEDURES,
@@ -395,6 +398,7 @@ def source_warehouse(
     census_sae.run_to_gold(factory, SAIPE)
     usda_ers.run_all(factory)
     el.run_to_gold(factory, COUNTY_PRESIDENT)
+    el.run_to_gold(factory, COUNTY_PRESIDENT_HISTORY)
     return factory
 
 
@@ -489,6 +493,9 @@ def test_inputs_are_read_from_each_source_by_their_published_keys(
                 "SELECT margin FROM lean_vote WHERE geo_id = 'state:55|county:025' AND year = 2016"
             )
             assert db.fetchone() == (Decimal("-50.67"),)
+            db.execute("SELECT DISTINCT year FROM lean_vote ORDER BY year")
+            # Algara & Amlani's 1992 and 1996 county votes start windows too.
+            assert db.fetchall() == [(1992,), (1996,), (2016,), (2020,)]
             db.execute(
                 "SELECT COUNT(*) FROM lean_peer WHERE rural_urban_group IS NOT NULL"
             )

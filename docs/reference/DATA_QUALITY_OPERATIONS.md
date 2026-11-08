@@ -366,15 +366,28 @@ executor under an id the inventory does not declare fails, a rule claiming
 `enforced` alongside an executor fails, and the set of unimplemented rules is
 pinned so it can shrink and cannot grow unnoticed.
 
-**One BLOCK rule is waiting on a prerequisite, not on an executor.**
-`DQ-SHARED-004` wants the bootstrap manifest's schema components compared
-against what a warehouse has applied. `control.schema_migration_state` does
-not hold that: it holds one row per source's gold DDL — a content hash
-written when that DDL is applied — and nothing records a manifest asset at
-all, so there is no applied set to compare the manifest's assets against. A
-comparison written today would report every asset missing. Recording them is
-a deployment decision: the manifest is applied by numbered initdb mounts and
-by the documented reset, neither of which reports back.
+**`DQ-SHARED-004` reads a ledger with two writers.** It compares the
+bootstrap manifest against the manifest-asset rows of
+`control.schema_migration_state`, and reports `missing` and `drifted` apart.
+A manifest step reaches a warehouse two ways, and both record it at the
+sha256 of the bytes applied:
+
+- `scripts/apply_warehouse_manifest.py` (`--only-flagged` on a populated
+  warehouse) applies and records each asset in one transaction;
+- a source's `ensure_*` task (`utility.gold_schema`) applies its own silver,
+  gold and publisher DDL. When one of those files is a manifest asset it
+  records that asset too, in the same transaction, and a run that finds its
+  component already current brings any lagging asset row level. Rows already
+  current are not rewritten. Conversely, when every file of a component is
+  already recorded current by the applier, the task records its component
+  row and skips re-applying.
+
+Before 2026-11-08 the task path recorded only its component row, so DDL the
+elections and FBI tasks had applied read as `drifted` (`silver-fbi`,
+`silver-elections`, `gold-elections`, `publisher-elections`). A `drifted`
+asset that no source task owns (a migration, `contract-views`,
+`glossary-schema`, `gold-elections-governor-fiscal`) is a step the warehouse
+really lacks: apply it with `--only-flagged` while ingest is idle.
 
 **One BLOCK uniqueness rule is only half enforceable, and says so.**
 `DQ-PEP-001` declares PEP facts unique at the capture grain *and* at the

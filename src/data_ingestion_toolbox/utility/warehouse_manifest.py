@@ -197,6 +197,79 @@ def read_recorded_assets(cursor: Any) -> dict[str, str]:
     return {name: digest for name, digest in cursor.fetchall() if name in ids}
 
 
+#: Records an asset only when the ledger holds it at another hash, so a task
+#: that re-confirms an unchanged step rewrites no row (refresh-churn rule).
+_LEDGER_UPSERT_IF_CHANGED = (
+    _LEDGER_UPSERT
+    + """
+ WHERE control.schema_migration_state.ddl_hash IS DISTINCT FROM EXCLUDED.ddl_hash
+"""
+)
+
+
+def assets_for_files(files: Iterable[Path]) -> dict[Path, ManifestAsset]:
+    """The manifest asset each file is, for the files that are one.
+
+    A source's `ensure_*` task applies some of the same files the manifest
+    names (its silver, gold and publisher DDL). Matching is by resolved path,
+    so a task running from a mounted checkout and the manifest read from the
+    same checkout agree. A file the manifest does not name is left out, and
+    an unreadable manifest yields nothing rather than failing the task that
+    asked: the ledger is evidence about the DDL, not a precondition for it.
+    """
+    try:
+        by_path = {asset.path.resolve(): asset for asset in manifest_assets()}
+    except (ManifestError, OSError, KeyError) as exc:
+        logging.getLogger(__name__).warning(
+            "warehouse manifest unreadable, task-applied DDL not recorded: %s", exc
+        )
+        return {}
+    found: dict[Path, ManifestAsset] = {}
+    for file in files:
+        asset = by_path.get(Path(file).resolve())
+        if asset is not None:
+            found[Path(file)] = asset
+    return found
+
+
+def record_task_applied_assets(
+    cursor: Any, assets: Iterable[ManifestAsset]
+) -> tuple[str, ...]:
+    """Record manifest assets a source task applied, at the bytes it applied.
+
+    The second way a manifest step reaches a warehouse. Before this, a task
+    that applied `gold_elections.sql` recorded only its own component row, so
+    the ledger kept the hash of the last manifest apply and `DQ-SHARED-004`
+    reported the step drifted although the warehouse carried exactly the
+    checkout's file (2026-11-08). Called inside the task's transaction, after
+    the DDL, so the row commits or rolls back with what it claims. Returns the
+    ids whose row changed.
+    """
+    changed: list[str] = []
+    for asset in assets:
+        cursor.execute(_LEDGER_UPSERT_IF_CHANGED, (asset.id, asset.content_hash()))
+        if cursor.rowcount:
+            changed.append(asset.id)
+    return tuple(changed)
+
+
+def assets_recorded_current(cursor: Any, assets: Sequence[ManifestAsset]) -> bool:
+    """Whether the ledger holds every one of `assets` at its file's hash.
+
+    What lets a source task skip DDL the manifest applier already applied at
+    a deploy: the same bytes, recorded in the same transaction as the DDL.
+    """
+    if not assets:
+        return False
+    cursor.execute(
+        "SELECT component_name, ddl_hash FROM control.schema_migration_state"
+        " WHERE component_name = ANY(%s)",
+        ([asset.id for asset in assets],),
+    )
+    recorded = dict(cursor.fetchall())
+    return all(recorded.get(asset.id) == asset.content_hash() for asset in assets)
+
+
 def recorded_assets(database_connection: Any) -> dict[str, str]:
     """`read_recorded_assets` for a caller that holds a connection."""
     with database_connection.cursor() as cursor:
