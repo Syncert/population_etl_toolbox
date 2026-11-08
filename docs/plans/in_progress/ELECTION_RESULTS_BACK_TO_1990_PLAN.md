@@ -306,6 +306,6 @@ Left:
   Built 2026-11-08 as stream `county_senate_precinct`, served per state only
   where county sums match the statewide count (`DQ-ELEC-009`); see the ops
   guide.
-- Lean-group windows from 1992 (they still start in 2000).
+- ~~Lean-group windows from 1992 (they still start in 2000).~~ Built: windows start in 1992.
 - API and web: the Senate office switch on the paired maps; the seat
   timeline's vote per term.
