@@ -93,6 +93,27 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
 });
 
+// Covers: WEB-125 — a county page shows how it voted beside its state, says
+// how a margin is counted and why the nation has no figure, and draws the
+// margins on one level scale.
+test("a county page's Voting chapter reads the margins beside the state's", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const voting = page.getByTestId("chapter-voting");
+  await expect(voting).toBeVisible();
+  await expect(page.getByTestId("chapter-rail").getByRole("link", { name: "Voting" })).toBeVisible();
+  const card = page.getByTestId("card-president-margin");
+  await expect(card).toHaveAttribute("data-period", "2024-11-07");
+  await expect(card).toContainText("below zero, the Democrat led");
+  await expect(page.getByTestId("card-president-margin-county")).toContainText(/[-−]6\b/);
+  await expect(page.getByTestId("card-president-margin-state")).toContainText(/[-−]15\b/);
+  await expect(page.getByTestId("card-president-margin-national")).toContainText("The nation's popular vote is not loaded");
+  await expect(page.getByTestId("chapter-voting-trend")).toHaveAttribute("data-scale", "level");
+  await expect(voting).toContainText("never as a cause");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
 // Covers: WEB-164 — a headline card draws its own place's history as a
 // sparkline, read in one history batch per chapter for that place only, with
 // a change line in the record page's verbs.
