@@ -84,8 +84,12 @@ ADR-0009 requires (`docs/semantics/derived_ratios.json`):
 `transfer_share_<program>_state` divides `SAINC35` by `SAINC50:10`, and
 `<level>_share_of_income` divides `SAINC50` lines 60, 70, 120 and 180 by
 `SAINC50:10`. While the county program file and the county income file come
-from different releases, a county share says `different_period` rather than
-dividing one vintage by another.
+from different releases, a county share on `/observations/derived` says
+`different_period` rather than dividing one vintage by another. The
+"Payments from government and others" card on `/public-money` instead pairs
+the county files by year (Nick's call, 2026-11-08): the newest year both
+files publish, which is the last year of `CAINC35`, divided by that year's
+personal income from the newer `CAINC1`. The card names both release dates.
 
 `gold_bea.disposable_income_real` serves `SAINC51:53` per state and for the
 nation in current dollars and in 2017 dollars two ways: by the national PCE
