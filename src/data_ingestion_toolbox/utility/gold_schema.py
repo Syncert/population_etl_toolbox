@@ -12,6 +12,12 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
+from .warehouse_manifest import (
+    assets_for_files,
+    assets_recorded_current,
+    record_task_applied_assets,
+)
+
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -271,17 +277,49 @@ def ensure_gold_schema_from_files(
     ordered_files = sorted(ddl_files)
     current_hash = _compute_ddl_hash(ordered_files)
 
+    # The files that are also bootstrap-manifest assets. Applying one here
+    # is applying that manifest step, so the ledger row DQ-SHARED-004 reads
+    # is written here too; without it the step read as drifted from the
+    # first DDL change a task applied (DQ-SHARED-004 fail, 2026-11-08).
+    manifest_files = assets_for_files(ordered_files)
+    ledger_assets = list(manifest_files.values())
+
     with hook.get_conn() as conn, conn.cursor() as cur:
         _ensure_schema_state_table(cur)
         recorded_hash = _get_recorded_hash(cur, component_name)
         bootstrapped = _is_bootstrapped(cur, required_relations, required_procedures)
 
         if bootstrapped and recorded_hash == current_hash:
+            # The component row proves these exact bytes were applied, so a
+            # manifest row still at an older hash is brought level. Rows
+            # already current are not rewritten.
+            changed = record_task_applied_assets(cur, ledger_assets)
             logger.info(
-                "Gold schema component %s already bootstrapped with matching hash; skipping",
+                "Gold schema component %s already bootstrapped with matching hash; "
+                "skipping%s",
                 component_name,
+                f" (manifest ledger brought level: {', '.join(changed)})"
+                if changed
+                else "",
             )
             conn.commit()
+            return
+
+        if (
+            bootstrapped
+            and len(ledger_assets) == len(ordered_files)
+            and assets_recorded_current(cur, ledger_assets)
+        ):
+            # Every file is a manifest step the applier already ran at these
+            # bytes (`apply_warehouse_manifest --only-flagged`); applying them
+            # again would only repeat that work.
+            _record_hash(cur, component_name, current_hash)
+            conn.commit()
+            logger.info(
+                "Gold schema component %s already applied by the warehouse "
+                "manifest at these bytes; recorded and skipping",
+                component_name,
+            )
             return
 
         for ddl_file in ordered_files:
@@ -292,6 +330,7 @@ def ensure_gold_schema_from_files(
             logger.info("Applied gold DDL (%s): %s", component_name, ddl_file)
 
         _record_hash(cur, component_name, current_hash)
+        record_task_applied_assets(cur, ledger_assets)
         conn.commit()
 
     logger.info(

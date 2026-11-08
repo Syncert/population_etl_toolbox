@@ -338,6 +338,61 @@ def test_a_line_registered_after_its_file_was_read_is_loaded_from_that_capture(
     assert process_pending_events(factory) == 1
     assert _rows(factory, catalog) == [(1,)]
 
+    # The published capture now accounts for the new line's rows, so
+    # DQ-BEA-002 still reconciles (it failed on OFFICE_LAB, 2026-11-07).
+    assert _outcome(factory) == ("pass", 0)
+
     # Once loaded, the same bytes replay nothing again.
     _third, facts, _p = bea.run_to_gold(factory, "CAINC4")
     assert facts == 0
+
+
+def _outcome(factory: Callable[[], connection]) -> tuple[str, int | None]:
+    reader = factory()
+    try:
+        with reader.cursor() as cursor:
+            result = bea_table_reconciliation(cursor, {})[0]
+            return result.result, result.observed_count
+    finally:
+        reader.close()
+
+
+def test_a_count_left_behind_by_an_earlier_backfill_is_corrected_from_the_file(
+    bea_warehouse,
+) -> None:
+    """Covers: ETL-058 — an unchanged run re-derives a published capture's stale in-scope count.
+
+    OFFICE_LAB, 2026-11-08: CAINC4's published capture kept 9,471 in-scope
+    rows while 12,628 were replayed under it, because the line-46 backfill
+    predates the backfill raising the count. The next unchanged run re-parses
+    the capture and records the registry's count; a matching count is left
+    unwritten.
+    """
+    factory = bea_warehouse
+    first, _facts, _p = bea.run_to_gold(factory, "CAINC4")
+    scope = """
+        SELECT in_scope_row_count, updated_at FROM control.bea_table_capture
+        WHERE run_id = %s
+    """
+    ((true_scope, _u),) = _rows(factory, scope, (str(first),))
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "UPDATE control.bea_table_capture SET in_scope_row_count = %s "
+                "WHERE run_id = %s",
+                (true_scope - 7, str(first)),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    assert _outcome(factory) == ("fail", 1)
+
+    _second, facts, _p = bea.run_to_gold(factory, "CAINC4")
+    assert facts == 0
+    ((corrected, corrected_at),) = _rows(factory, scope, (str(first),))
+    assert corrected == true_scope
+    assert _outcome(factory) == ("pass", 0)
+
+    bea.run_to_gold(factory, "CAINC4")
+    assert _rows(factory, scope, (str(first),)) == [(true_scope, corrected_at)]
