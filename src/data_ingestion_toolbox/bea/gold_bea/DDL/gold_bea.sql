@@ -49,10 +49,10 @@ WHERE capture.status = 'published'
 -- The newest release of each observation; a recapture of the same release
 -- is resolved by retrieval time.
 CREATE OR REPLACE VIEW gold_bea.observation_latest AS
-SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.year)
+SELECT DISTINCT ON (revision.metric_key, revision.table_code, revision.line_code, revision.geo_id, revision.year)
        revision.*
 FROM gold_bea.observation_revision AS revision
-ORDER BY revision.metric_key, revision.geo_id, revision.year,
+ORDER BY revision.metric_key, revision.table_code, revision.line_code, revision.geo_id, revision.year,
          revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC;
 
 CREATE OR REPLACE VIEW gold_bea.measure_export AS

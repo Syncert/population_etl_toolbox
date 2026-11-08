@@ -151,6 +151,37 @@ def test_a_relations_metrics_are_one_statement_of_single_reads(catalog) -> None:
     assert by_pair[("NOT:THERE", COUNTY)] == [404, "metric_code not found", None]
 
 
+def test_a_composed_key_binds_each_part_to_its_indexed_column(catalog) -> None:
+    """Covers: API-180 — a composed lineage key also binds its parts.
+
+    BEA's `metric_key` is `table_code || ':' || line_code`, an expression no
+    index serves: bound alone, every read of one county scanned the whole
+    fact table (place-page-reads). The parts reach `(table_code, line_code,
+    geo_id, year)`; the composed condition stays, so the rows are the same.
+    """
+    db = _Session({})
+    neutral.newest_values_batch(db, [EARNINGS], [COUNTY])
+    bea = OBSERVATION_DISPATCH["BEA"].latest_relation
+    [(sql, params)] = [(sql, p) for sql, p in db.statements if bea in sql]
+    assert "metric_key = :m0_lineage_key" in sql
+    assert "table_code = :m0_lineage_key_table_code" in sql
+    assert "line_code = :m0_lineage_key_line_code" in sql
+    assert params["m0_lineage_key"] == "CAINC5N:100"
+    assert params["m0_lineage_key_table_code"] == "CAINC5N"
+    assert params["m0_lineage_key_line_code"] == "100"
+
+
+def test_a_key_that_does_not_split_binds_the_composed_column_only() -> None:
+    """Covers: API-180 — a key with more parts than columns is never guessed."""
+    dispatch = OBSERVATION_DISPATCH["BEA"]
+    metric = _metric("BEA:CAINC5N:100:extra", "BEA")
+    conditions, params = neutral._metric_conditions(
+        dispatch, metric["metric_code"], metric
+    )
+    assert conditions == ["metric_key = :lineage_key"]
+    assert params == {"lineage_key": "CAINC5N:100:extra"}
+
+
 def test_a_metric_the_single_read_refuses_is_refused_per_item(catalog) -> None:
     """Covers: API-180 — the reduction's own refusal, and an absent relation."""
     dispatch = OBSERVATION_DISPATCH["FBI_UCR"]

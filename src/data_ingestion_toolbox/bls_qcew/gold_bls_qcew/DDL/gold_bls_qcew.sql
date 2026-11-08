@@ -48,10 +48,10 @@ WHERE slice.status = 'published'
 
 -- The newest published capture of each observation.
 CREATE OR REPLACE VIEW gold_bls_qcew.observation_latest AS
-SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.period_start)
+SELECT DISTINCT ON (revision.metric_key, revision.measure_id, revision.industry_code, revision.own_code, revision.geo_id, revision.period_start)
        revision.*
 FROM gold_bls_qcew.observation_revision AS revision
-ORDER BY revision.metric_key, revision.geo_id, revision.period_start,
+ORDER BY revision.metric_key, revision.measure_id, revision.industry_code, revision.own_code, revision.geo_id, revision.period_start,
          revision.retrieved_at DESC, revision.capture_id DESC;
 
 CREATE OR REPLACE VIEW gold_bls_qcew.measure_export AS

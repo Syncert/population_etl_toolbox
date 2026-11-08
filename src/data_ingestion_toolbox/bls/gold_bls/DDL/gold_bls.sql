@@ -750,10 +750,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_bls_derived_calendar_rollup
 -- A derived window missing a month is served with no value and its reason.
 CREATE OR REPLACE VIEW gold_bls.calendar_window_observation AS
 WITH served AS (
-    SELECT DISTINCT ON (series_id, geo_id)
+    -- `metric_code` leads so a read of one metric's grains reaches the
+    -- (metric_code, geo_id) index instead of ranking every served series
+    -- (place-page-reads); `uq_mv_bls_latest` keeps one metric per series.
+    SELECT DISTINCT ON (metric_code, series_id, geo_id)
            series_id, geo_id, geo_level, units, metric_code
     FROM gold_bls.mv_bls_latest
-    ORDER BY series_id, geo_id, observation_date DESC
+    ORDER BY metric_code, series_id, geo_id, observation_date DESC
 ),
 provider AS (
     SELECT served.metric_code, served.geo_id, served.geo_level, served.units,

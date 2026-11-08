@@ -277,6 +277,14 @@ class ObservationDispatch:
     metric_code_column: str | None = None
     lineage_key_column: str | None = None
     lineage_key_prefix: str = ""
+    #: The relation columns ``lineage_key_column`` is composed from, in order,
+    #: joined by ``:`` (BEA's ``metric_key`` is ``table_code || ':' ||
+    #: line_code``). Declared, a read binds each part to its own column as
+    #: well as the whole key to the composed column: the key alone is an
+    #: expression no index can serve, so every read of one place scanned the
+    #: source's whole fact table (place-page-reads). A key that does not split
+    #: into exactly these parts binds the composed column only.
+    lineage_key_columns: tuple[str, ...] = ()
     identity_columns: tuple[str, ...] = ()
     # -- projection onto the neutral envelope ------------------------------
     release_expression: str = ""
@@ -967,6 +975,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<table>:<line>`, the same text
             # the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("table_code", "line_code"),
             # BEA's own release date, read from the file's footer.
             release_expression="release_key",
             release_order_expression="release_date",
@@ -1017,6 +1026,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<measure>:<industry>:<ownership>`,
             # the same text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id", "industry_code", "own_code"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1060,6 +1070,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<measure>:<structure>:<frequency>`,
             # the same text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id", "structure_type", "frequency"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1102,6 +1113,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<dataset>:<measure>:<government
             # level>`, the same text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("dataset_id", "measure_id", "government_level"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1144,6 +1156,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<dataset>:<measure>`, the same
             # text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("dataset_id", "measure_id"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1365,6 +1378,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<measure>:<sector>`, the same
             # text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("measure", "naics_key"),
             # The files name no release; the identity is the read.
             release_expression="release_key",
             release_order_expression="retrieved_at",
