@@ -39,6 +39,7 @@ REQUIRED_RELATIONS = (
     "gold_elections.candidate_total",
     "gold_elections.contest_tally",
     "gold_elections.contest_result_store",
+    "gold_elections.precinct_county_check",
     "gold_elections.contest_result",
     "gold_elections.district_plan_definition",
     "gold_elections.house_plan_year",
@@ -63,6 +64,7 @@ REQUIRED_PROCEDURES = (
     "gold_elections.build_lean_groups(bigint)",
     "gold_elections.lean_input_fingerprint()",
     "gold_elections.refresh_lean_groups(boolean)",
+    "gold_elections.refresh_precinct_county_check()",
     "gold_elections.sync_contest_result()",
     "gold_elections.reconcile_contest_result()",
 )

@@ -31,6 +31,15 @@ The fixtures under ``tests/fixtures/elections``:
   list carries the real file ids.
 * ``county_senate.csv`` is MEDSL's county Senate 2022 file cut to Dane and
   Waukesha counties (CC0), whose ``totalvotes`` is the statewide total.
+* ``county_senate_precinct.csv`` is in the layout of MEDSL's 2024 Senate
+  precinct file (read on OFFICE_LAB 2026-11-08) with illustrative counts:
+  Dane wards published only as TOTAL, only by mode, and as both; a town's
+  subtotal beside its wards; total, undervote, suppressed (``*``), write-in
+  and partyless lines; a row with no county code and one from a board that
+  is not a county; Wyoming, which has no statewide 2024 row in
+  ``senate.csv`` and so is held back; and the District of Columbia's shadow
+  seat. ``senate.csv``'s 2024 Wisconsin row is the two counties' sums, so
+  Wisconsin agrees with its state count.
 * ``district_counties.json`` holds Census API answers for the House
   districts covering each county, with illustrative populations: in the
   118th Congress plan Waukesha is split between Wisconsin's first and fifth
@@ -150,6 +159,7 @@ _DATA_FILES = {
     "5028532": "county_president_history.Rdata",
     "5028534": "county_senate_history.Rdata",
     "7412054": "county_senate.csv",
+    "13731184": "county_senate_precinct.csv",
 }
 _LISTINGS = {
     "doi:10.7910/DVN/VOQCHQ": "listing-county_president.json",
@@ -158,6 +168,7 @@ _LISTINGS = {
     "doi:10.7910/DVN/IG0UN2": "listing-house.json",
     "doi:10.7910/DVN/DGUMFI": "listing-county_history.json",
     "doi:10.7910/DVN/YB60EJ": "listing-county_senate.json",
+    "doi:10.7910/DVN/ZCM3BN": "listing-county_senate_precinct.json",
 }
 
 

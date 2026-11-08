@@ -294,6 +294,11 @@ def check_body(request: FileRequest, raw_bytes: bytes) -> None:
     elif _payload_format(request.stream) == "rdata":
         if not _is_rdata(raw_bytes):
             raise ElectionsPayloadError(endpoint, code="not_an_rdata_file")
+    elif _payload_format(request.stream) == "precinct":
+        header = raw_bytes[:4096].split(b"\n", 1)[0].decode("utf-8", "replace").lower()
+        names = {name.strip().strip('"') for name in re.split(r"[,\t]", header)}
+        if not {"year", "precinct", "votes", "county_fips"} <= names:
+            raise ElectionsPayloadError(endpoint, code="not_a_results_file")
     else:
         header = raw_bytes[:4096].split(b"\n", 1)[0].decode("utf-8", "replace").lower()
         if "year" not in header or "candidatevotes" not in header:

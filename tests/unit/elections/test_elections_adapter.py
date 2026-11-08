@@ -71,7 +71,7 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
     assert module.ElectionsConfig().dataverse_api_token == ""
     assert module.ElectionsConfig().census_api_key == ""
     assert "census_api_key" not in repr(module.ElectionsConfig(census_api_key="k"))
-    assert len(STREAMS) == 10 and len(STATE_FIPS) == 51
+    assert len(STREAMS) == 11 and len(STATE_FIPS) == 51
 
 
 @pytest.mark.parametrize(
@@ -731,3 +731,115 @@ def test_every_house_election_year_names_a_registered_plan_no_newer_than_its_con
     }
     for year, (key, _excluded) in HOUSE_PLAN_YEARS.items():
         assert district_plan(key).congress <= congress_elected(year)
+
+
+def test_precinct_senate_2024_is_summed_into_counties_once() -> None:
+    """Covers: ETL-111 — each precinct line is its TOTAL or its modes; subtotals and non-votes are set aside."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+    from data_ingestion_toolbox.elections.silver_elections.parse import (
+        parse_precinct_results,
+    )
+
+    results, quarantined, read = parse_precinct_results(
+        COUNTY_SENATE_PRECINCT, fixture_bytes("county_senate_precinct.csv")
+    )
+    assert read == 33
+    by_line = {
+        (r.county_fips, r.candidate, r.party_text): r.candidate_votes for r in results
+    }
+    # Ward 1 TOTAL 500, ward 2 modes 300, ward 3 TOTAL 80 (not 80 + 50 + 30),
+    # Middleton's two wards 120 + 60 without the town's own 180.
+    # The absentee line MEDSL printed with no party takes Baldwin's one
+    # party in the state's contest.
+    assert by_line[("55025", "TAMMY BALDWIN", "DEMOCRAT")] == (
+        500 + 300 + 100 + 80 + 120 + 60
+    )
+    assert ("55025", "TAMMY BALDWIN", None) not in by_line
+    assert (
+        by_line[("55025", "ERIC HOVDE", "REPUBLICAN")] == 200 + 200 + 40 + 90 + 45 + 4
+    )
+    assert by_line[("55133", "ERIC HOVDE", "REPUBLICAN")] == 700 + 300
+    assert ("55025", "TOTAL VOTES CAST", None) not in by_line
+    assert all(
+        r.mode == "TOTAL" and r.total_votes is None and r.geo_level == "county"
+        for r in results
+    )
+    assert {r.county_fips for r in results} == {"55025", "55133", "56021"}
+    assert [(q.record_index, q.error_code) for q in quarantined] == [
+        (4, "not_a_vote"),
+        (20, "subtotal_row"),
+        (22, "suppressed_count"),
+        (29, "no_county_code"),
+        (30, "not_a_county"),
+        (33, "not_a_senate_seat"),
+    ]
+
+
+def test_a_town_total_is_told_from_a_town_sharing_its_name() -> None:
+    """Covers: ETL-111 — "Englewood" is the sum of its own precincts, not of Englewood Cliffs'; a blank party takes the candidate's one party."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+    from data_ingestion_toolbox.elections.silver_elections.parse import (
+        parse_precinct_results,
+    )
+
+    header = (
+        "precinct,office,party_detailed,party_simplified,mode,votes,county_name,"
+        "county_fips,jurisdiction_name,jurisdiction_fips,candidate,district,"
+        "dataverse,year,stage,state,special,writein,state_po\n"
+    )
+
+    def row(precinct: str, party: str, votes: int, candidate: str = "ANDY KIM") -> str:
+        return (
+            f"{precinct},US SENATE,{party},{party},TOTAL,{votes},BERGEN,34003,BERGEN,"
+            f"34003,{candidate},STATEWIDE,SENATE,2024,GEN,NEW JERSEY,FALSE,FALSE,NJ\n"
+        )
+
+    body = header + "".join(
+        [
+            row("Englewood 1", "DEMOCRAT", 100),
+            row("Englewood 2", "DEMOCRAT", 50),
+            row("Englewood Provisional", "DEMOCRAT", 5),
+            row("Englewood", "DEMOCRAT", 155),
+            row("Englewood Cliffs 1", "DEMOCRAT", 40),
+            # Rockleigh's town total is one vote off its precinct.
+            row("Englewood Cliffs", "DEMOCRAT", 41),
+            # Mercer's rows carry no party.
+            row("Hamilton 1", "", 70),
+            row("Hamilton 1", "", 30, candidate="CURTIS BASHAW"),
+            row("Linden Ward 1 District 1", "DEMOCRAT", 20),
+            row("Linden Ward 1 District 2", "DEMOCRAT", 10),
+            row("Linden Ward 1", "DEMOCRAT", 30),
+            row("Linden", "DEMOCRAT", 30),
+        ]
+    )
+    results, quarantined, _ = parse_precinct_results(
+        COUNTY_SENATE_PRECINCT, body.encode()
+    )
+    by_line = {(r.candidate, r.party_text): r.candidate_votes for r in results}
+    assert by_line == {
+        ("ANDY KIM", "DEMOCRAT"): 100 + 50 + 5 + 40 + 70 + 20 + 10,
+        ("CURTIS BASHAW", None): 30,
+    }
+    assert [(q.record_index, q.error_code) for q in quarantined] == [
+        (4, "subtotal_row"),
+        (6, "subtotal_row"),
+        (11, "subtotal_row"),
+        (12, "subtotal_row"),
+    ]
+
+
+def test_precinct_file_is_checked_by_its_own_header() -> None:
+    """Covers: ETL-111 — the precinct file has ``votes``, not ``candidatevotes``; anything else is refused."""
+    from data_ingestion_toolbox.elections.client import FileRequest
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+
+    request = FileRequest(COUNTY_SENATE_PRECINCT, "data", "", {}, "results", "")
+    check_body(request, fixture_bytes("county_senate_precinct.csv"))
+    with pytest.raises(ElectionsPayloadError) as refused:
+        check_body(request, fixture_bytes("county_senate.csv"))
+    assert refused.value.code == "not_a_results_file"
+    listing = fixture_bytes("listing-county_senate_precinct.json")
+    assert select_data_file(result_dataset(COUNTY_SENATE_PRECINCT), listing) == (
+        13731184,
+        "SENATE_precinct_general.csv",
+    )

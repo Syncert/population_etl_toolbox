@@ -2698,6 +2698,47 @@ def elections_house_district_coverage(
     ]
 
 
+def elections_precinct_states_held_back(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ELEC-009 — names each state whose precinct-summed county Senate rows are held back.
+
+    A state is held back when its county sums miss the statewide file's count
+    of either major party by more than 1% (or 100 votes), or when the
+    statewide file has no row for that contest yet.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_elections.precinct_county_check")
+    if total == 0:
+        return [RuleOutcome("gold_elections.precinct_county_check", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT checked.state_code || CASE WHEN checked.special THEN ' special' ELSE '' END AS item,
+               checked.election_year::TEXT AS year,
+               CASE WHEN checked.state_republican_votes IS NULL
+                    THEN 'no statewide count to check against'
+                    ELSE 'county sums R ' || checked.county_republican_votes
+                         || ' / D ' || checked.county_democratic_votes
+                         || ' against the state''s R ' || checked.state_republican_votes
+                         || ' / D ' || COALESCE(checked.state_democratic_votes, 0)
+               END AS detail
+          FROM gold_elections.precinct_county_check AS checked
+         WHERE NOT checked.agrees
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "gold_elections.precinct_county_check",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def elections_lean_group_arithmetic(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -4910,6 +4951,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ELEC-006": elections_governor_fiscal_arithmetic,
     "DQ-ELEC-007": elections_county_history_agreement,
     "DQ-ELEC-008": elections_house_district_coverage,
+    "DQ-ELEC-009": elections_precinct_states_held_back,
     "DQ-FCC-002": bdc_read_reconciliation,
     "DQ-FCC-004": bdc_tier_order_and_geography,
     "DQ-AQS-002": aqs_file_reconciliation,

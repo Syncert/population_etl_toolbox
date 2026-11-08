@@ -3907,6 +3907,16 @@ _ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published district read",
     ),
     _obj(
+        "gold_elections.precinct_county_check",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, state_code",
+        lineage="gold_elections.contest_result_store, gold_elections.current_read",
+        scope_method="each state's county sums from the precinct read against the statewide file's count",
+        cadence="per publication",
+        empty_behavior="empty only before the first published precinct read",
+    ),
+    _obj(
         "gold_elections.county_house_district",
         "gold",
         "ELECTIONS",
@@ -7463,6 +7473,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_elections.house_plan_year",
             "gold_elections.district_county_share",
             "gold_elections.county_house_district",
+            "gold_elections.precinct_county_check",
             "gold_elections.observation_revision",
             "gold_elections.observation_latest",
             "gold_elections.office_definition",
@@ -7570,6 +7581,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_elections.district_county_share",
             "gold_elections.district_county_share",
             "gold_elections.county_house_district",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-009",
+        "WARN",
+        "reconciliation",
+        "County Senate rows summed from MEDSL's precinct file are served only "
+        "for a state whose county sums agree with the statewide count; each "
+        "state held back is named with both counts, never filled in.",
+        (
+            "gold_elections.precinct_county_check",
+            "gold_elections.contest_result",
         ),
     ),
     # -- Census state and local government finance -------------------------
