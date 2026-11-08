@@ -918,6 +918,31 @@ def parse_precinct_results(
                     else None,
                 )
             )
+    # Six New Jersey counties leave a candidate's party blank where the
+    # rest of the state names it. A blank-party line takes the one party
+    # its candidate carries elsewhere in the same state's contest, so Kim
+    # is a Democrat in Mercer as he is in Bergen; a candidate with no party
+    # or with several keeps the blank.
+    parties: dict[tuple[Any, ...], set[str]] = {}
+    for line, _place, _precinct in precinct_lines:
+        if line[6] is not None:
+            key = (*line[:4], line[5], line[7])
+            parties.setdefault(key, set()).add(line[6])
+    relabelled: dict[tuple[Any, ...], list[Any]] = {}
+    for (line, place, precinct), held in precinct_lines.items():
+        if line[6] is None:
+            named = parties.get((*line[:4], line[5], line[7]), set())
+            if len(named) == 1:
+                line = (*line[:6], next(iter(named)), line[7])
+        into = relabelled.get((line, place, precinct))
+        if into is None:
+            relabelled[(line, place, precinct)] = list(held)
+        else:
+            into[0] = min(into[0], held[0])
+            into[1] += held[1]
+            into[2] += held[2]
+            into[3] = into[3] or held[3]
+    precinct_lines = relabelled
     # A line's precinct count is its TOTAL row where it has one (New
     # Jersey, Connecticut, Delaware, Rhode Island and New York print both),
     # else its modes' sum.
@@ -938,27 +963,55 @@ def parse_precinct_results(
     # for the town ("Alpine" beside "Alpine 1" and "Alpine Provisional"). A
     # precinct whose every line equals the sum of the precincts named after
     # it is such a subtotal and is set aside, so no vote is counted twice.
+    # Another town whose name begins with this one ("Englewood Cliffs"
+    # under "Englewood") is not part of it, and a town total one vote off
+    # its precincts (Rockleigh, 63 beside 62) is still its total.
     subtotals: set[tuple[Any, ...]] = set()
     for area, precincts in by_area.items():
         names = sorted(precincts)
         for position, name in enumerate(names):
             prefix = name + " "
-            children = []
+            descendants = []
             for later in names[bisect.bisect_left(names, prefix, lo=position + 1) :]:
                 if not later.startswith(prefix):
                     break
-                children.append(later)
-            if not children:
+                descendants.append(later)
+            if not descendants:
                 continue
             own = precincts[name]
             if not any(own.values()):
                 continue
-            lines = set(own).union(*(precincts[child] for child in children))
-            if all(
-                own.get(line, 0)
-                == sum(precincts[child].get(line, 0) for child in children)
-                for line in lines
-            ):
+            # Two readings of "the precincts under this name": every precinct
+            # directly under it, counting a nested name ("Linden Ward 1"
+            # under "Linden") by its own count; or only the precincts that
+            # name nothing beneath them, leaving out a nested name and
+            # everything under it ("Englewood Cliffs" under "Englewood").
+            nested = {
+                other
+                for other in descendants
+                if any(later.startswith(other + " ") for later in descendants)
+            }
+            top = [
+                child
+                for child in descendants
+                if not any(child.startswith(town + " ") for town in nested)
+            ]
+            leaves = [child for child in top if child not in nested]
+
+            def adds_up(children: list[str], own: dict[Any, int] = own) -> bool:
+                if not children:
+                    return False
+                lines = set(own).union(*(precincts[child] for child in children))
+                return all(
+                    abs(
+                        own.get(line, 0)
+                        - sum(precincts[child].get(line, 0) for child in children)
+                    )
+                    <= 1
+                    for line in lines
+                )
+
+            if adds_up(top) or adds_up(leaves):
                 subtotals.add((area, name))
     for area, name in sorted(subtotals, key=lambda key: first_row[key]):
         quarantined.append(
