@@ -23,7 +23,7 @@
 #
 # ASSUMPTIONS:
 # - data_ingestion_toolbox.bls.config.CONFIG has postgres_conn_id, programs, curated_by_program
-# - data_ingestion_toolbox.bls.metadata provides sync_bls_series_metadata(), sync_bls_datasets_table()
+# - data_ingestion_toolbox.bls.metadata provides sync_or_keep_bls_series_metadata(), sync_bls_datasets_table()
 # - data_ingestion_toolbox.bls.ingest provides ingest_slice()
 # - BLS_API_KEY environment variable is set
 
@@ -50,7 +50,7 @@ from data_ingestion_toolbox import bls as bls_package
 from data_ingestion_toolbox.bls.config import CONFIG, LAUS_COUNTY_PARENT_FIPS
 from data_ingestion_toolbox.bls.price_series import PRICE_ITEMS, read_price_series
 from data_ingestion_toolbox.bls.metadata import (
-    sync_bls_series_metadata,
+    sync_or_keep_bls_series_metadata,
     sync_bls_datasets_table,
 )
 from data_ingestion_toolbox.bls.ingest import (
@@ -625,7 +625,8 @@ def bls_ingest():
         """Sync series metadata for all configured programs."""
         synced_programs = []
         for program in CONFIG.programs:
-            count = sync_bls_series_metadata(program)
+            # A list download.bls.gov refuses for now is kept as stored.
+            count = sync_or_keep_bls_series_metadata(program)
             if count <= 0:
                 raise RuntimeError(
                     f"BLS metadata synchronization returned no series for {program!r}"
