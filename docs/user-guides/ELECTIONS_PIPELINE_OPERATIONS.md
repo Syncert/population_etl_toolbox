@@ -28,6 +28,7 @@ it is sent and never captured.
 | `county_president_history` | Algara & Amlani, `doi:10.7910/DVN/DGUMFI` (CC0 1.0, no guestbook) | `dataverse_shareable_presidential_county_returns_1868_20NN.Rdata`, data frame `pres_elections_release` |
 | `county_senate_history` | the same dataset | `dataverse_shareable_us_senate_county_returns_1908_20NN.Rdata`, data frame `senate_elections_release` |
 | `county_senate` | MEDSL `doi:10.7910/DVN/YB60EJ` | `senate_20NN` (the 2022 county file) |
+| `county_senate_precinct` | MEDSL `doi:10.7910/DVN/ZCM3BN` (no guestbook) | `SENATE_precinct_general.csv` (2024 by precinct, 166 MB, summed into counties) |
 | `house_county_share` | Census Bureau API (public domain) | per registered plan, each state's district list, then each district's `county (or part)` pieces with their census population |
 
 For each MEDSL stream the run first captures the dataset's file list, then
@@ -70,6 +71,39 @@ combined)" for what is left, so a county's rows still add to its total.
 
 MEDSL's county Senate 2022 file repeats the statewide total in `totalvotes`
 on every county row, so a county's total there is the sum of its candidates.
+
+### County Senate 2024 from MEDSL's precinct file
+
+MEDSL publishes 2024 Senate returns only by precinct (994,635 rows, 34 states
+and DC, read on OFFICE_LAB 2026-11-08). Stream `county_senate_precinct` reads
+the file once (an unchanged file is an unchanged read) and sums it into
+counties on replay, under reading rules `medsl-precinct-reading-1`:
+
+- A candidate line's count in a precinct is its TOTAL row where the precinct
+  prints one (New Jersey, Connecticut, Delaware, Rhode Island and New York
+  print both a TOTAL and the modes), else the sum of its modes.
+- Total lines ("TOTAL VOTES CAST", Maine's "TOTAL BALLOTS CAST", New
+  Jersey's "CONTEST TOTAL") are not votes; a county's total is its
+  candidates' sum. Undervote, overvote, blank, void and invalid lines are
+  quarantined `not_a_vote`.
+- A suppressed count (`*`: about 19,300 small-precinct rows in California,
+  Nevada and New Mexico) is quarantined `suppressed_count`, never zero.
+- A precinct whose every line equals the sum of the precincts named after it
+  (New Jersey prints each town's total, "Alpine", beside "Alpine 1") is a
+  subtotal, quarantined `subtotal_row`, so no vote is counted twice.
+- A row with no county code, or a code that is not a county of its state
+  (Missouri's Kansas City board, `36000`, which counts parts of four
+  counties), is quarantined; nothing is apportioned. The District of
+  Columbia's shadow senator is `not_a_senate_seat`.
+
+**The state count is the check.** A state's county rows are served only when
+their sums of each major party's votes are within 1% (or 100 votes) of the
+same contest in MEDSL's statewide Senate file
+(`gold_elections.precinct_county_check`); otherwise, or before the statewide
+row exists, that state's 2024 county Senate rows are held back and
+`DQ-ELEC-009` names it with both counts. On the full file New Jersey
+(subtotals and modes MEDSL could not reconcile) and Missouri (Kansas City)
+are expected to be held back; the OFFICE_LAB speed gate lists the rest.
 
 Every run re-reads each stream whole. A Congress, a governor or an election
 year the warehouse never loaded is loaded by the next scheduled run; there is

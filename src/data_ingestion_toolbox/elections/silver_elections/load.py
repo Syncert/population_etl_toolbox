@@ -21,6 +21,7 @@ from ..config import SOURCE_CODE
 from ..registry import (
     GOVERNORS,
     HISTORY_STREAMS,
+    PRECINCT_STREAMS,
     HOUSE_COUNTY_SHARE,
     LEGISLATORS,
     result_dataset,
@@ -35,6 +36,7 @@ from .parse import (
     parse_governors,
     parse_history,
     parse_legislators,
+    parse_precinct_results,
     parse_results,
 )
 
@@ -261,6 +263,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                             )
                         )
                         continue
+                    records_total += read
+                    result_rows.extend(
+                        _result_row(run_id, capture_id, item) for item in results
+                    )
+                elif stream in PRECINCT_STREAMS:
+                    results, rejected, read = parse_precinct_results(stream, payload)
                     records_total += read
                     result_rows.extend(
                         _result_row(run_id, capture_id, item) for item in results

@@ -532,7 +532,7 @@ r control.elections_run
     constraint elections_run_run_checksum_check CHECK (((run_checksum IS NULL) OR (run_checksum ~ '^[0-9a-f]{64}$'::text)))
     constraint elections_run_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint elections_run_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
-    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text, 'county_president_history'::text, 'county_senate_history'::text, 'county_senate'::text, 'house_county_share'::text])))
+    constraint elections_run_stream_check CHECK ((stream = ANY (ARRAY['legislators'::text, 'governors'::text, 'county_president'::text, 'state_president'::text, 'senate'::text, 'house'::text, 'county_president_history'::text, 'county_senate_history'::text, 'county_senate'::text, 'house_county_share'::text, 'county_senate_precinct'::text])))
     index elections_run_pkey CREATE UNIQUE INDEX elections_run_pkey ON control.elections_run USING btree (run_id)
 
 r control.epa_aqs_file
@@ -5520,7 +5520,10 @@ v gold_elections.contest_result
     body     read.published_at,
     body     store.capture_id
     body    FROM gold_elections.contest_result_store store
-    body      JOIN gold_elections.current_read read ON read.run_id = store.run_id;
+    body      JOIN gold_elections.current_read read ON read.run_id = store.run_id
+    body   WHERE read.stream <> 'county_senate_precinct'::text OR (EXISTS ( SELECT 1
+    body            FROM gold_elections.precinct_county_check checked
+    body           WHERE checked.run_id = store.run_id AND checked.office = store.office AND checked.election_year = store.election_year AND checked.stage = store.stage AND checked.special = store.special AND checked.state_code = store.state_code AND checked.agrees));
 
 r gold_elections.contest_result_store
     column office text
@@ -6477,6 +6480,60 @@ v gold_elections.party_definition
     body     party_label,
     body     display_order
     body    FROM ( VALUES ('REP'::text,'Republican'::text,1), ('DEM'::text,'Democratic'::text,2), ('IND'::text,'Independent'::text,3), ('OTH'::text,'Other'::text,4)) party(party_code, party_label, display_order);
+
+v gold_elections.precinct_county_check
+    column run_id uuid
+    column office text
+    column election_year smallint
+    column stage text
+    column special boolean
+    column state_code text
+    column county_republican_votes bigint
+    column county_democratic_votes bigint
+    column county_count integer
+    column state_republican_votes bigint
+    column state_democratic_votes bigint
+    column agrees boolean
+    body WITH county_sum AS (
+    body          SELECT store.run_id,
+    body             store.office,
+    body             store.election_year,
+    body             store.stage,
+    body             store.special,
+    body             store.state_code,
+    body             sum(COALESCE(store.republican_votes, 0::bigint))::bigint AS county_republican_votes,
+    body             sum(COALESCE(store.democratic_votes, 0::bigint))::bigint AS county_democratic_votes,
+    body             count(*)::integer AS county_count
+    body            FROM gold_elections.contest_result_store store
+    body              JOIN gold_elections.current_read read ON read.run_id = store.run_id
+    body           WHERE read.stream = 'county_senate_precinct'::text AND store.geo_level = 'county'::text
+    body           GROUP BY store.run_id, store.office, store.election_year, store.stage, store.special, store.state_code
+    body         ), state_count AS (
+    body          SELECT store.office,
+    body             store.election_year,
+    body             store.stage,
+    body             store.special,
+    body             store.state_code,
+    body             store.republican_votes,
+    body             store.democratic_votes
+    body            FROM gold_elections.contest_result_store store
+    body              JOIN gold_elections.current_read read ON read.run_id = store.run_id
+    body           WHERE read.stream = 'senate'::text AND store.geo_level = 'state'::text
+    body         )
+    body  SELECT county_sum.run_id,
+    body     county_sum.office,
+    body     county_sum.election_year,
+    body     county_sum.stage,
+    body     county_sum.special,
+    body     county_sum.state_code,
+    body     county_sum.county_republican_votes,
+    body     county_sum.county_democratic_votes,
+    body     county_sum.county_count,
+    body     state_count.republican_votes AS state_republican_votes,
+    body     state_count.democratic_votes AS state_democratic_votes,
+    body     COALESCE(abs(county_sum.county_republican_votes - COALESCE(state_count.republican_votes, 0::bigint))::numeric <= GREATEST(100::numeric, 0.01 * COALESCE(state_count.republican_votes, 0::bigint)::numeric) AND abs(county_sum.county_democratic_votes - COALESCE(state_count.democratic_votes, 0::bigint))::numeric <= GREATEST(100::numeric, 0.01 * COALESCE(state_count.democratic_votes, 0::bigint)::numeric) AND state_count.state_code IS NOT NULL, false) AS agrees
+    body    FROM county_sum
+    body      LEFT JOIN state_count ON state_count.office = county_sum.office AND state_count.election_year = county_sum.election_year AND state_count.stage = county_sum.stage AND state_count.special = county_sum.special AND state_count.state_code = county_sum.state_code;
 
 v gold_elections.seat_term
     column office text

@@ -71,7 +71,7 @@ def test_configuration_imports_without_io_and_holds_no_credential() -> None:
     assert module.ElectionsConfig().dataverse_api_token == ""
     assert module.ElectionsConfig().census_api_key == ""
     assert "census_api_key" not in repr(module.ElectionsConfig(census_api_key="k"))
-    assert len(STREAMS) == 10 and len(STATE_FIPS) == 51
+    assert len(STREAMS) == 11 and len(STATE_FIPS) == 51
 
 
 @pytest.mark.parametrize(
@@ -731,3 +731,60 @@ def test_every_house_election_year_names_a_registered_plan_no_newer_than_its_con
     }
     for year, (key, _excluded) in HOUSE_PLAN_YEARS.items():
         assert district_plan(key).congress <= congress_elected(year)
+
+
+def test_precinct_senate_2024_is_summed_into_counties_once() -> None:
+    """Covers: ETL-111 — each precinct line is its TOTAL or its modes; subtotals and non-votes are set aside."""
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+    from data_ingestion_toolbox.elections.silver_elections.parse import (
+        parse_precinct_results,
+    )
+
+    results, quarantined, read = parse_precinct_results(
+        COUNTY_SENATE_PRECINCT, fixture_bytes("county_senate_precinct.csv")
+    )
+    assert read == 33
+    by_line = {
+        (r.county_fips, r.candidate, r.party_text): r.candidate_votes for r in results
+    }
+    # Ward 1 TOTAL 500, ward 2 modes 300, ward 3 TOTAL 80 (not 80 + 50 + 30),
+    # Middleton's two wards 120 + 60 without the town's own 180.
+    assert by_line[("55025", "TAMMY BALDWIN", "DEMOCRAT")] == 500 + 300 + 80 + 120 + 60
+    # The absentee line MEDSL printed with no party stays its own line; gold
+    # counts it with the candidate's other lines.
+    assert by_line[("55025", "TAMMY BALDWIN", None)] == 100
+    assert (
+        by_line[("55025", "ERIC HOVDE", "REPUBLICAN")] == 200 + 200 + 40 + 90 + 45 + 4
+    )
+    assert by_line[("55133", "ERIC HOVDE", "REPUBLICAN")] == 700 + 300
+    assert ("55025", "TOTAL VOTES CAST", None) not in by_line
+    assert all(
+        r.mode == "TOTAL" and r.total_votes is None and r.geo_level == "county"
+        for r in results
+    )
+    assert {r.county_fips for r in results} == {"55025", "55133", "56021"}
+    assert [(q.record_index, q.error_code) for q in quarantined] == [
+        (4, "not_a_vote"),
+        (20, "subtotal_row"),
+        (22, "suppressed_count"),
+        (29, "no_county_code"),
+        (30, "not_a_county"),
+        (33, "not_a_senate_seat"),
+    ]
+
+
+def test_precinct_file_is_checked_by_its_own_header() -> None:
+    """Covers: ETL-111 — the precinct file has ``votes``, not ``candidatevotes``; anything else is refused."""
+    from data_ingestion_toolbox.elections.client import FileRequest
+    from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
+
+    request = FileRequest(COUNTY_SENATE_PRECINCT, "data", "", {}, "results", "")
+    check_body(request, fixture_bytes("county_senate_precinct.csv"))
+    with pytest.raises(ElectionsPayloadError) as refused:
+        check_body(request, fixture_bytes("county_senate.csv"))
+    assert refused.value.code == "not_a_results_file"
+    listing = fixture_bytes("listing-county_senate_precinct.json")
+    assert select_data_file(result_dataset(COUNTY_SENATE_PRECINCT), listing) == (
+        13731184,
+        "SENATE_precinct_general.csv",
+    )

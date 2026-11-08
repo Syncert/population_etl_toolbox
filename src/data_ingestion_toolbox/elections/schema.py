@@ -39,6 +39,7 @@ REQUIRED_RELATIONS = (
     "gold_elections.candidate_total",
     "gold_elections.contest_tally",
     "gold_elections.contest_result_store",
+    "gold_elections.precinct_county_check",
     "gold_elections.contest_result",
     "gold_elections.district_plan_definition",
     "gold_elections.house_plan_year",

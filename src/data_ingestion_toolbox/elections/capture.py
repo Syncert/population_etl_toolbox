@@ -46,6 +46,8 @@ from .registry import (
     LEGISLATORS,
     MEDSL_READING_VERSION,
     MEDSL_STREAMS,
+    PRECINCT_READING_VERSION,
+    PRECINCT_STREAMS,
     STATE_FIPS,
     STREAMS,
     DistrictPlan,
@@ -201,6 +203,8 @@ def capture_stream(
         # A MEDSL read is also its reading rules: a changed rule is a new read.
         if stream in MEDSL_STREAMS:
             checksums.insert(0, MEDSL_READING_VERSION)
+        elif stream in PRECINCT_STREAMS:
+            checksums.insert(0, PRECINCT_READING_VERSION)
         run_checksum = hashlib.sha256("|".join(checksums).encode()).hexdigest()
         previous = _execute(
             connection_factory,

@@ -302,7 +302,10 @@ Left:
 
 - R-1b: House per county through the covering districts (Census
   congressional district to county relationship files), its own PR.
-- County Senate 2024 from MEDSL's precinct file (aggregate to county).
+- ~~County Senate 2024 from MEDSL's precinct file (aggregate to county).~~
+  Built 2026-11-08 as stream `county_senate_precinct`, served per state only
+  where county sums match the statewide count (`DQ-ELEC-009`); see the ops
+  guide.
 - Lean-group windows from 1992 (they still start in 2000).
 - API and web: the Senate office switch on the paired maps; the seat
   timeline's vote per term.

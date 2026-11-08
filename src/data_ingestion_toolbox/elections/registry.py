@@ -60,6 +60,7 @@ HOUSE = "house"
 COUNTY_PRESIDENT_HISTORY = "county_president_history"
 COUNTY_SENATE_HISTORY = "county_senate_history"
 COUNTY_SENATE = "county_senate"
+COUNTY_SENATE_PRECINCT = "county_senate_precinct"
 HOUSE_COUNTY_SHARE = "house_county_share"
 
 RESULT_STREAMS = (
@@ -70,6 +71,7 @@ RESULT_STREAMS = (
     COUNTY_PRESIDENT_HISTORY,
     COUNTY_SENATE_HISTORY,
     COUNTY_SENATE,
+    COUNTY_SENATE_PRECINCT,
 )
 #: Streams read at county grain.
 COUNTY_STREAMS = (
@@ -77,7 +79,18 @@ COUNTY_STREAMS = (
     COUNTY_PRESIDENT_HISTORY,
     COUNTY_SENATE_HISTORY,
     COUNTY_SENATE,
+    COUNTY_SENATE_PRECINCT,
 )
+#: Streams MEDSL publishes by precinct only, summed into counties on replay.
+PRECINCT_STREAMS = (COUNTY_SENATE_PRECINCT,)
+#: The precinct files' reading rules, in each read's checksum like
+#: ``MEDSL_READING_VERSION``.
+#: 1 (2026-11-08): a candidate's TOTAL row in a precinct is their count
+#: there, else the sum of their modes; total and ballot lines are not votes;
+#: a suppressed count ("*") is quarantined, never zero; a blank party is the
+#: party the same candidate carries elsewhere in the contest; the District
+#: of Columbia's shadow senator is not a Senate seat.
+PRECINCT_READING_VERSION = "medsl-precinct-reading-1"
 #: Streams whose ``totalvotes`` is not the area's own total. MEDSL's county
 #: Senate 2022 file repeats the statewide total on every county row (read on
 #: OFFICE_LAB 2026-11-07: 2,652,477 on each Wisconsin county), so a county's
@@ -168,7 +181,8 @@ class ResultDataset:
         "As stated on the Dataverse dataset page (MEDSL); confirm before first load"
     )
     provider: str = "MEDSL"
-    #: ``delimited`` (MEDSL's CSV or tab files) or ``rdata`` (an R data frame).
+    #: ``delimited`` (MEDSL's CSV or tab files), ``precinct`` (MEDSL's
+    #: precinct CSV, summed by county) or ``rdata`` (an R data frame).
     payload_format: str = "delimited"
     #: The data frame an ``rdata`` file is read from (it may hold others).
     rdata_object: str | None = None
@@ -259,10 +273,23 @@ RESULT_DATASETS: tuple[ResultDataset, ...] = (
         "us_senate",
         "county",
         # One dataset per election; the 2022 file is senate_2022.csv. MEDSL
-        # publishes 2024 only by precinct (doi:10.7910/DVN/ZCM3BN), not read yet.
+        # publishes 2024 only by precinct: COUNTY_SENATE_PRECINCT below.
         re.compile(r"^senate_20\d\d\.(csv|tab)$"),
         2022,
         "https://doi.org/10.7910/DVN/YB60EJ",
+    ),
+    ResultDataset(
+        COUNTY_SENATE_PRECINCT,
+        "10.7910/DVN/ZCM3BN",
+        "U.S. Senate precinct-level returns 2024, summed by county",
+        "us_senate",
+        "county",
+        # One file, read on OFFICE_LAB 2026-11-08: 994,635 rows, 34 states
+        # and DC, no guestbook, no totalvotes column.
+        re.compile(r"^SENATE_precinct_general\.(csv|tab)$"),
+        2024,
+        "https://doi.org/10.7910/DVN/ZCM3BN",
+        payload_format="precinct",
     ),
 )
 

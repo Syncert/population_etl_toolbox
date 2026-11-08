@@ -25,10 +25,16 @@ Pure: bytes in, typed rows and quarantine records out.
   is read as its successor and its population added into that county's
   piece; Census's delegate district ``98`` (the District of Columbia) is
   read as district 0, the number MEDSL gives a single seat.
+* A precinct row (MEDSL's 2024 Senate file) is one candidate, ballot line
+  and mode in one precinct. Each line's precinct count is its TOTAL row
+  where it has one, else the sum of its modes; the lines are then summed
+  into the county, one row per candidate and line with no total of its own.
+  A suppressed count (``*``) is quarantined, never zero.
 """
 
 from __future__ import annotations
 
+import bisect
 import csv
 import hashlib
 import io
@@ -47,6 +53,7 @@ from ..registry import (
     COUNTY_PRESIDENT_HISTORY,
     COUNTY_SENATE,
     COUNTY_SENATE_HISTORY,
+    COUNTY_SENATE_PRECINCT,
     COUNTY_STREAMS,
     COUNTY_SUCCESSOR,
     FIPS_STATE,
@@ -72,6 +79,7 @@ _RESULT_OFFICES = {
     COUNTY_PRESIDENT_HISTORY: "president",
     COUNTY_SENATE_HISTORY: "us_senate",
     COUNTY_SENATE: "us_senate",
+    COUNTY_SENATE_PRECINCT: "us_senate",
 }
 
 
@@ -767,6 +775,247 @@ def _area_mode(result: CandidateResult) -> tuple[Any, ...]:
         result.district,
         result.mode,
     )
+
+
+# ---------------------------------------------------------------------------
+# MEDSL precinct returns, summed by county.
+# ---------------------------------------------------------------------------
+
+#: Lines of MEDSL's 2024 Senate precinct file that are a count of ballots or
+#: of the contest, not of a candidate (read on OFFICE_LAB 2026-11-08: Maine's
+#: "TOTAL BALLOTS CAST" counts undervotes too; New Jersey's "CONTEST TOTAL").
+#: A county's total is the sum of its candidates' votes instead.
+PRECINCT_TOTAL_LINES = TOTAL_LINE_CANDIDATES | {"TOTAL BALLOTS CAST", "CONTEST TOTAL"}
+#: Ballot lines that are no one's votes, beyond ``NOT_A_VOTE_CANDIDATES``.
+PRECINCT_NOT_A_VOTE = NOT_A_VOTE_CANDIDATES | {
+    "UNDERVOTES-VOIDS",
+    "INVALID",
+    "INVALID VOTES",
+}
+#: The count MEDSL prints where a state suppressed a small precinct's count
+#: (California, Nevada, New Mexico 2024).
+SUPPRESSED_COUNT = "*"
+
+
+def parse_precinct_results(
+    stream: str, raw_bytes: bytes
+) -> tuple[list[CandidateResult], list[Quarantine], int]:
+    """(county results, quarantine, records read) from one MEDSL precinct file.
+
+    One pass, holding one running sum per precinct line and per county line,
+    so the 166 MB file is never held as a list of rows.
+    """
+    office = _RESULT_OFFICES[stream]
+    text = raw_bytes.decode("utf-8-sig")
+    first_line = text.split("\n", 1)[0]
+    delimiter = "\t" if first_line.count("\t") > first_line.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    reader.fieldnames = [name.strip().lower() for name in reader.fieldnames or []]
+    quarantined: list[Quarantine] = []
+    # The contest each (state, special) names: one office per pair.
+    contest_office: dict[tuple[str, bool], str] = {}
+    # (county line key) -> [first record index, TOTAL votes, mode votes,
+    # whether a TOTAL row was seen], per precinct.
+    precinct_lines: dict[tuple[Any, ...], list[Any]] = {}
+    read = 0
+    for index, row in enumerate(reader, start=1):
+        read = index
+        state: str | None = None
+        county_fips: str | None = None
+        try:
+            year = _whole(row.get("year"), "year")
+            state = _text(row, "state_po") or ""
+            if not re.fullmatch(r"[A-Z]{2}", state):
+                raise _RowError(
+                    "unreadable_state", f"state_po {state!r} is not a USPS code"
+                )
+            office_text = (_text(row, "office") or "").upper()
+            if office_text.startswith("SHADOW"):
+                raise _RowError(
+                    "not_a_senate_seat",
+                    f"{office_text!r} is the District of Columbia's shadow seat",
+                )
+            special = _flag(row.get("special"))
+            named = contest_office.setdefault((state, special), office_text)
+            if named != office_text:
+                raise _RowError(
+                    "second_contest",
+                    f"{office_text!r} beside {named!r} in one state and special flag",
+                )
+            raw_fips = _text(row, "county_fips")
+            if raw_fips is None:
+                raise _RowError(
+                    "no_county_code", f"{row.get('county_name')!r} has no county code"
+                )
+            county_fips = str(_whole(raw_fips, "county_fips")).zfill(5)
+            if len(county_fips) != 5 or county_fips[:2] != STATE_FIPS.get(state):
+                # Missouri's Kansas City board ("36000") counts parts of four
+                # counties without saying which: not apportioned.
+                raise _RowError(
+                    "not_a_county",
+                    f"county_fips {raw_fips!r} is not a county of {state}",
+                )
+            if state == "AK" and county_fips in ALASKA_DISTRICT_CODES:
+                raise _RowError(
+                    "not_a_county",
+                    f"Alaska code {county_fips} is a state House district, not a borough",
+                )
+            county_fips = COUNTY_SUCCESSOR.get(county_fips, county_fips)
+            party_text = _text(row, "party_detailed", "party_simplified")
+            candidate = _text(row, "candidate") or "(no candidate named)"
+            if candidate.upper() in PRECINCT_TOTAL_LINES:
+                # New Jersey labels its "CONTEST TOTAL" line NONPARTISAN.
+                continue
+            if (
+                candidate.upper() in PRECINCT_NOT_A_VOTE
+                and party_code(party_text) != "REP"
+                and party_code(party_text) != "DEM"
+            ):
+                raise _RowError(
+                    "not_a_vote", f"{candidate!r} is a ballot count, not a candidate"
+                )
+            raw_votes = (row.get("votes") or "").strip()
+            if raw_votes == SUPPRESSED_COUNT:
+                raise _RowError(
+                    "suppressed_count", "the state suppressed this precinct's count"
+                )
+            votes = _whole(raw_votes, "votes")
+            stage = (_text(row, "stage") or "GEN").upper()
+            writein = _flag(row.get("writein"))
+            mode = (_text(row, "mode") or "TOTAL").upper()
+            line = (
+                year,
+                stage,
+                special,
+                state,
+                county_fips,
+                candidate,
+                party_text,
+                writein,
+            )
+            precinct = (
+                line,
+                _text(row, "jurisdiction_fips") or "",
+                _text(row, "precinct") or "",
+            )
+            held = precinct_lines.get(precinct)
+            if held is None:
+                held = precinct_lines[precinct] = [index, 0, 0, False]
+            if mode == "TOTAL":
+                held[1] += votes
+                held[3] = True
+            else:
+                held[2] += votes
+        except _RowError as error:
+            quarantined.append(
+                Quarantine(
+                    index,
+                    error.code,
+                    str(error)[:200],
+                    state if state and re.fullmatch(r"[A-Z]{2}", state) else None,
+                    county_fips
+                    if county_fips and re.fullmatch(r"[0-9]{5}", county_fips)
+                    else None,
+                )
+            )
+    # A line's precinct count is its TOTAL row where it has one (New
+    # Jersey, Connecticut, Delaware, Rhode Island and New York print both),
+    # else its modes' sum.
+    by_area: dict[tuple[Any, ...], dict[str, dict[tuple[Any, ...], int]]] = {}
+    first_row: dict[tuple[Any, ...], int] = {}
+    for (line, place, precinct), (
+        first,
+        total,
+        by_mode,
+        has_total,
+    ) in precinct_lines.items():
+        area = (*line[:5], place)
+        by_area.setdefault(area, {}).setdefault(precinct, {})[line] = (
+            total if has_total else by_mode
+        )
+        first_row[(area, precinct)] = min(first_row.get((area, precinct), first), first)
+    # New Jersey's file also prints each town's total as a "precinct" named
+    # for the town ("Alpine" beside "Alpine 1" and "Alpine Provisional"). A
+    # precinct whose every line equals the sum of the precincts named after
+    # it is such a subtotal and is set aside, so no vote is counted twice.
+    subtotals: set[tuple[Any, ...]] = set()
+    for area, precincts in by_area.items():
+        names = sorted(precincts)
+        for position, name in enumerate(names):
+            prefix = name + " "
+            children = []
+            for later in names[bisect.bisect_left(names, prefix, lo=position + 1) :]:
+                if not later.startswith(prefix):
+                    break
+                children.append(later)
+            if not children:
+                continue
+            own = precincts[name]
+            if not any(own.values()):
+                continue
+            lines = set(own).union(*(precincts[child] for child in children))
+            if all(
+                own.get(line, 0)
+                == sum(precincts[child].get(line, 0) for child in children)
+                for line in lines
+            ):
+                subtotals.add((area, name))
+    for area, name in sorted(subtotals, key=lambda key: first_row[key]):
+        quarantined.append(
+            Quarantine(
+                first_row[(area, name)],
+                "subtotal_row",
+                f"precinct {name!r} is the sum of the precincts named after it",
+                area[3],
+                area[4],
+            )
+        )
+    # Then the precincts are added into the county.
+    counties: dict[tuple[Any, ...], list[int]] = {}
+    for (line, place, precinct), (
+        first,
+        total,
+        by_mode,
+        has_total,
+    ) in precinct_lines.items():
+        if ((*line[:5], place), precinct) in subtotals:
+            continue
+        held_county = counties.get(line)
+        count = total if has_total else by_mode
+        if held_county is None:
+            counties[line] = [first, count]
+        else:
+            held_county[0] = min(held_county[0], first)
+            held_county[1] += count
+    results: list[CandidateResult] = []
+    for line, (first, votes) in sorted(counties.items(), key=lambda item: item[1][0]):
+        year, stage, special, state, county_fips, candidate, party_text, writein = line
+        key = _sha(stream, *line)
+        results.append(
+            CandidateResult(
+                record_index=first,
+                result_key=key,
+                office=office,
+                election_year=year,
+                stage=stage,
+                special=special,
+                state_code=state,
+                state_fips=STATE_FIPS.get(state),
+                county_fips=county_fips,
+                district=None,
+                candidate=candidate,
+                party_text=party_text,
+                party_code=party_code(party_text),
+                writein=writein,
+                mode="TOTAL",
+                candidate_votes=votes,
+                total_votes=None,
+                geo_level="county",
+                source_record_id=_sha("elections", stream, key),
+            )
+        )
+    quarantined.sort(key=lambda entry: (entry.record_index, entry.error_code))
+    return results, quarantined, read
 
 
 # ---------------------------------------------------------------------------

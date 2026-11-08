@@ -19,6 +19,7 @@ from data_ingestion_toolbox.elections.registry import (
     COUNTY_PRESIDENT_HISTORY,
     COUNTY_SENATE,
     COUNTY_SENATE_HISTORY,
+    COUNTY_SENATE_PRECINCT,
     GOVERNORS,
     HOUSE,
     HOUSE_COUNTY_SHARE,
@@ -38,6 +39,7 @@ from data_ingestion_toolbox.glossary.harvest import (
 from data_ingestion_toolbox.quality.sources import (
     elections_county_history_agreement,
     elections_house_district_coverage,
+    elections_precinct_states_held_back,
     elections_run_reconciliation,
     elections_seat_overlap,
     elections_totals_and_geography,
@@ -213,7 +215,7 @@ def test_results_count_each_candidate_once_and_derive_the_margin(
     # Waukesha observation rather than one that reads as a Democratic sweep.
     assert ("president_two_party_margin", el.WAUKESHA, 2020) not in observations
 
-    for stream, expected in ((STATE_PRESIDENT, 5), (SENATE, 6), (HOUSE, 3)):
+    for stream, expected in ((STATE_PRESIDENT, 5), (SENATE, 8), (HOUSE, 3)):
         _run, status, rows, published = el.run_to_gold(factory, stream)
         assert (status, rows, published) == ("captured", expected, 1), stream
     assert _rows(
@@ -444,9 +446,11 @@ def test_a_refused_file_and_the_rules(elections_warehouse) -> None:
     assert _outcome(factory, elections_seat_overlap).result == "pass"
     # The fixture's county file holds two of Wisconsin's seventy-two counties,
     # so their sum cannot match the state's; Minnesota's two 2018 Senate races
-    # are each one county (Hennepin) against the state.
+    # are each one county (Hennepin) against the state. The precinct file's
+    # Laramie County is not a seeded place.
     totals = _outcome(factory, elections_totals_and_geography)
-    assert totals.result == "warn" and totals.observed_count == 4
+    assert totals.result == "warn" and totals.observed_count == 5
+    assert "56021|2024|unmapped county" in totals.evidence
 
     _write(
         factory,
@@ -646,3 +650,66 @@ def test_house_districts_cover_each_county_with_its_share_from_2006(
         "SELECT COUNT(*) FROM control.elections_file WHERE run_id = %s",
         (str(run_id),),
     ) == [(0,)]
+
+
+def test_precinct_senate_2024_is_served_only_where_it_matches_the_state(
+    elections_warehouse,
+) -> None:
+    """Covers: ETL-111 — counties summed from precincts are served for a state whose sums match its own count."""
+    factory = elections_warehouse
+    assert _outcome(factory, elections_precinct_states_held_back).result == (
+        "not_applicable"
+    )
+    el.run_to_gold(factory, COUNTY_SENATE_PRECINCT)
+    # Before the statewide file is in, nothing can be checked: nothing is served.
+    outcome = _outcome(factory, elections_precinct_states_held_back)
+    assert (outcome.result, outcome.observed_count) == ("warn", 2)
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(*) FROM gold_elections.contest_result
+         WHERE stream = 'county_senate_precinct'
+        """,
+    ) == [(0,)]
+    el.run_to_gold(factory, SENATE)
+    checked = _rows(
+        factory,
+        """
+        SELECT state_code, county_count, county_republican_votes, county_democratic_votes,
+               state_republican_votes, state_democratic_votes, agrees
+          FROM gold_elections.precinct_county_check ORDER BY state_code
+        """,
+    )
+    assert checked == [
+        ("WI", 2, 1579, 1660, 1579, 1660, True),
+        ("WY", 1, 600, 250, None, None, False),
+    ]
+    served = _rows(
+        factory,
+        """
+        SELECT geo_id, republican_votes, democratic_votes, total_votes, leading_party_code
+          FROM gold_elections.contest_result
+         WHERE stream = 'county_senate_precinct' AND geo_id IS NOT NULL
+         ORDER BY geo_id
+        """,
+    )
+    # Dane: Baldwin's partyless absentee line counts with her other lines.
+    assert served == [
+        (el.DANE, 579, 1160, 579 + 1160 + 10 + 2, "DEM"),
+        (el.WAUKESHA, 1000, 500, 1500, "REP"),
+    ]
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(*) FROM gold_elections.observation_latest
+         WHERE metric_key = 'senate_two_party_margin' AND year = 2024
+           AND geo_id IN (%s, %s)
+        """,
+        (el.DANE, el.WAUKESHA),
+    ) == [(2,)]
+    outcome = _outcome(factory, elections_precinct_states_held_back)
+    assert (outcome.result, outcome.observed_count) == ("warn", 1)
+    assert "no statewide count" in str(outcome.evidence)
+    # The precinct file is read once: an unchanged read replays nothing.
+    _run, status, rows, published = el.run_to_gold(factory, COUNTY_SENATE_PRECINCT)
+    assert (status, rows, published) == ("unchanged", 0, 0)
