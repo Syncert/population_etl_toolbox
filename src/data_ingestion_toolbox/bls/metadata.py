@@ -57,10 +57,14 @@ BASE_URL = "https://download.bls.gov/pub/time.series/"
 # List of programs from config
 programs = CONFIG.programs
 
-# HELPER, download.bls.gov will occasionally answer 403 forbidden to bot-looking clients despite the url working well in a browser.
 # download.bls.gov refuses anonymous clients; this names the project and
-# where to reach it, never a person.
+# where to reach it, never a person. Its edge also refuses some reads for a
+# while (403) however the client names itself; `sync_or_keep_bls_series_metadata`
+# then keeps the series list already stored rather than fail the run.
 UA = "population_toolbox/1.0 (+https://github.com/Syncert/population_etl_toolbox)"
+
+#: Answers that mean "not now" from download.bls.gov, not "no such list".
+_REFUSED_FOR_NOW = frozenset({403, 429, 500, 502, 503, 504})
 
 
 def _safe_str(value) -> str:
@@ -289,6 +293,63 @@ def sync_bls_series_metadata(program: str) -> int:
         _sync_laus_area_metadata(dataset_data)
 
     return count
+
+
+def _stored_series_count(program: str) -> int:
+    """How many of the program's series lists rows are already stored."""
+    conn = _get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            if program in CURATED_METADATA_PROGRAMS:
+                cur.execute(
+                    "SELECT COUNT(*) FROM raw_bls.bls_series"
+                    " WHERE program = %s AND series_id = ANY(%s)",
+                    (program, list(CONFIG.curated_by_program.get(program, []))),
+                )
+            else:
+                cur.execute(
+                    "SELECT COUNT(*) FROM raw_bls.bls_series WHERE program = %s",
+                    (program,),
+                )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
+def _refused_for_now(error: Exception) -> bool:
+    if isinstance(error, requests.HTTPError):
+        status = getattr(error.response, "status_code", None)
+        return status in _REFUSED_FOR_NOW
+    return isinstance(error, (requests.ConnectionError, requests.Timeout))
+
+
+def sync_or_keep_bls_series_metadata(program: str) -> int:
+    """
+    Sync a program's series list, or keep the one already stored.
+
+    download.bls.gov's edge refuses some reads for a while (403, 429, 5xx, a
+    dropped connection) and answers them again later. A program whose list
+    was stored by an earlier run keeps that list and the run goes on with
+    it; a program never synced has nothing to fall back on and fails, so a
+    new program is never planned without its series (LOADER RULE).
+    """
+    try:
+        return sync_bls_series_metadata(program)
+    except Exception as error:
+        if not _refused_for_now(error):
+            raise
+        stored = _stored_series_count(program)
+        if stored <= 0:
+            raise RuntimeError(
+                f"download.bls.gov refused the {program!r} series list ({error}) "
+                "and none is stored yet; retry the run later"
+            ) from error
+        print(
+            f"download.bls.gov refused the {program!r} series list ({error}); "
+            f"keeping the {stored} series already stored"
+        )
+        return stored
 
 
 def _sync_laus_area_metadata(dataset_data: Dict):
