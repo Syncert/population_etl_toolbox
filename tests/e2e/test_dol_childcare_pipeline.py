@@ -1,8 +1,8 @@
-"""Deterministic NDCP county childcare prices from a captured workbook to the API.
+"""Deterministic NDCP county childcare prices from a captured API read to the API.
 
-The fixture workbook holds the Women's Bureau's own rows with every column of
-``NDCP2022.xlsx`` and is played through the adapter's own capture path by a
-scripted client; nothing here reaches the network. The node proves what a
+The fixture records are the Women's Bureau's own rows as DOL's data portal
+API names them, played through the adapter's own capture path by a scripted
+client that pages them as the API does; nothing here reaches the network. The node proves what a
 childcare price must not lose on the way to a consumer: its county, its
 study year, its type of care and age group, and whether it was imputed.
 """
@@ -35,7 +35,7 @@ def test_county_childcare_prices_reach_the_neutral_api_with_imputation_flags(
     ndcp_warehouse,
 ) -> None:
     """Covers: DB-073 — Dane County's center-based infant price for 2021 (imputed) and
-    2022 reach `/api/v1/observations` with the workbook's values, and a blank cell
+    2022 reach `/api/v1/observations` with DOL's API's values, and a blank cell
     arrives as a missing value, never zero.
     """
     factory = ndcp_warehouse
@@ -58,7 +58,9 @@ def test_county_childcare_prices_reach_the_neutral_api_with_imputation_flags(
         }
         assert {year: by_year[year]["value"] for year in (2021, 2022)} == {
             2021: "299.75",
-            2022: "293",
+            # DOL's API writes whole-dollar prices with their decimal
+            # (`195.0`, dol_api_probe.out); the value is kept as published.
+            2022: "293.0",
         }
         assert by_year[2022]["geo_level"] == "COUNTY"
         assert by_year[2021]["dimensions"]["imputed"] == "true"
