@@ -20,7 +20,7 @@ verify:
 
 **Built (2026-11-08), on the BLS Consumer Expenditure Survey.** Program
 `cx` is read through the existing BLS loader: ten curated food-at-home
-series (`CXUFOODHOME...M`), annual (`A01`), 1984 onward: the nation
+series (`CXUFOODHOME...M`), annual (`A01`), loaded 1990 to 2025 (BLS publishes from 1984): the nation
 (`LB1101`), the four Census regions (`LB1102` Northeast to `LB1105` West)
 and five household sizes at the nation (`LB0502`, `LB0504` to `LB0507`).
 Their series records come from BLS API v2's catalog (one keyed request,

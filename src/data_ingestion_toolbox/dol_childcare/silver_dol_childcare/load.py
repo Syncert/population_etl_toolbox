@@ -1,4 +1,4 @@
-"""Replay one captured NDCP workbook into silver, reconcile it, and publish it.
+"""Replay one captured NDCP release into silver, reconcile it, and publish it.
 
 Everything here reads the committed capture, never the network. One
 transaction per workbook: the parsed prices, the quarantine, the geography
@@ -25,7 +25,7 @@ from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..config import SOURCE_CODE
 from ..registry import get_release
-from .parse import parse_workbook
+from .parse import parse_capture
 
 PAGE_SIZE = 10000
 
@@ -102,7 +102,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 )
                 return int(cursor.fetchone()[0])
             release = get_release(str(release_key))
-            parsed = parse_workbook(
+            parsed = parse_capture(
                 load_captured_payload(connection_factory, UUID(capture_id)),
                 release=release,
             )

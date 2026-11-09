@@ -1144,17 +1144,23 @@ def stub_irs_soi(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_dol_childcare(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed NDCP fixture workbook for every registered release."""
+    """Answer DOL's API from the reviewed NDCP fixture records, as the API pages them."""
     from data_ingestion_toolbox.dol_childcare import capture as ndcp_capture
-    from data_ingestion_toolbox.dol_childcare.client import NdcpResponse
+    from data_ingestion_toolbox.dol_childcare.client import (
+        NdcpResponse,
+        fetch_release,
+    )
+    from data_ingestion_toolbox.dol_childcare.config import ChildcareConfig
+    from tests.support.dol_childcare import FixtureClient
 
     def fetch(release: Any, **_kwargs: Any) -> NdcpResponse:
-        path = FIXTURE_ROOT / "dol_childcare" / "NDCP2022.xlsx"
-        return NdcpResponse(
-            release.path,
-            path.read_bytes(),
-            {"content-type": ndcp_capture.XLSX_MEDIA_TYPE},
-            200,
+        return fetch_release(
+            release,
+            config=ChildcareConfig(
+                min_spacing_seconds=0, max_attempts=1, api_key="fixture-dol-key"
+            ),
+            client=FixtureClient(),
+            sleep=lambda _seconds: None,
         )
 
     monkeypatch.setattr(ndcp_capture, "fetch_release", fetch)

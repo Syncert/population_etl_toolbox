@@ -19,6 +19,7 @@ from data_ingestion_toolbox.dol_childcare.registry import (
     MEASURES,
     RELEASES,
     UNIT,
+    WORKBOOK_RELEASE,
     get_release,
     measure_for,
 )
@@ -43,9 +44,11 @@ RELEASE = RELEASES[0]
 
 
 def test_one_release_is_registered_and_it_restates_the_earlier_one() -> None:
-    """Covers: ETL-123 — NDCP2022 holds 2008-2022, so the 2008-2018 file is not loaded twice."""
+    """Covers: ETL-123 — NDCP2022 holds 2008-2022, so the 2008-2018 file is not loaded twice; it is read from DOL's API."""
     assert [release.key for release in RELEASES] == ["ndcp2022"]
-    assert RELEASE.path == "/NDCP2022.xlsx"
+    assert RELEASE.path == "/get/WB/ndcp/json"
+    assert RELEASE.kind == "api"
+    assert WORKBOOK_RELEASE.path == "/NDCP2022.xlsx"
     assert list(RELEASE.years) == list(range(2008, 2023))
     assert get_release("ndcp2022") is RELEASE
     with pytest.raises(ValueError, match="no NDCP release"):

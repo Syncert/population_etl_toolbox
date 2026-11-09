@@ -1,4 +1,4 @@
-"""NDCP county childcare prices from a captured workbook to gold, offline.
+"""NDCP county childcare prices from a captured API read to gold, offline.
 
 Covers: DB-073
 """
@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 from psycopg2.extensions import connection
 
-from data_ingestion_toolbox.dol_childcare.capture import XLSX_MEDIA_TYPE
+from data_ingestion_toolbox.dol_childcare.capture import JSON_MEDIA_TYPE
 from data_ingestion_toolbox.dol_childcare.registry import MEASURES
 from tests.support import dol_childcare as ndcp
 
@@ -39,7 +39,7 @@ def _price(factory, geo_id: str, metric_key: str, year: int) -> tuple:
     return row
 
 
-def test_the_fixture_workbook_reaches_gold_for_two_counties_and_two_years(
+def test_the_fixture_records_reach_gold_for_two_counties_and_two_years(
     ndcp_warehouse,
 ) -> None:
     """Covers: DB-073 — Dane and Rock 2021-2022 and Los Angeles 2022 are served, imputed
@@ -99,7 +99,7 @@ def test_the_fixture_workbook_reaches_gold_for_two_counties_and_two_years(
         WHERE file.run_id = %s
         """,
         (str(run_id),),
-    ) == [(XLSX_MEDIA_TYPE,)]
+    ) == [(JSON_MEDIA_TYPE,)]
 
     publisher = ndcp.rows(
         factory,
@@ -113,7 +113,7 @@ def test_the_fixture_workbook_reaches_gold_for_two_counties_and_two_years(
     assert {row[2] for row in publisher} == {"2022"}
 
 
-def test_a_rerun_over_the_unchanged_workbook_writes_no_row(ndcp_warehouse) -> None:
+def test_a_rerun_over_the_unchanged_records_writes_no_row(ndcp_warehouse) -> None:
     """Covers: DB-073 — CHURN RULE: the second read is unchanged and replays nothing."""
     factory = ndcp_warehouse
     ndcp.run_to_gold(factory)
@@ -131,35 +131,28 @@ def test_a_rerun_over_the_unchanged_workbook_writes_no_row(ndcp_warehouse) -> No
     ) == [(0,)]
 
 
-def test_a_changed_workbook_stores_only_the_prices_that_changed(ndcp_warehouse) -> None:
+def test_changed_records_store_only_the_prices_that_changed(ndcp_warehouse) -> None:
     """Covers: DB-073 — a restated price is a second row; every repeat is counted, not stored."""
     factory = ndcp_warehouse
     ndcp.run_to_gold(factory)
-    header = ndcp.header()
-    workbook = ndcp.build_workbook(
-        [
-            header,
-            ndcp.row(header, MCINFANT=301),
-            ndcp.row(header, COUNTY_FIPS_CODE=55105, COUNTY_NAME="Rock County"),
-        ]
-    )
+    records = [
+        ndcp.api_record(MCINFANT=301),
+        ndcp.api_record(COUNTY_FIPS_CODE=55105, COUNTY_NAME="Rock County"),
+    ]
     run_id, status, facts, published = ndcp.run_to_gold(
-        factory, client=ndcp.FixtureClient(workbook)
+        factory, client=ndcp.FixtureClient(records)
     )
     assert (status, published) == ("captured", 1)
-    # Dane's 2022 prices in the new workbook are all 987.5 except infant 301:
+    # Dane's 2022 prices in the new records are all 987.5 except infant 301:
     # every one differs from the fixture's, as do Rock's.
     assert facts == 2 * len(MEASURES)
     run_id, status, facts, _published = ndcp.run_to_gold(
         factory,
         client=ndcp.FixtureClient(
-            ndcp.build_workbook(
-                [
-                    header,
-                    ndcp.row(header, MCINFANT=302),
-                    ndcp.row(header, COUNTY_FIPS_CODE=55105, COUNTY_NAME="Rock County"),
-                ]
-            )
+            [
+                ndcp.api_record(MCINFANT=302),
+                ndcp.api_record(COUNTY_FIPS_CODE=55105, COUNTY_NAME="Rock County"),
+            ]
         ),
     )
     assert facts == 1
@@ -180,15 +173,15 @@ def test_a_changed_workbook_stores_only_the_prices_that_changed(ndcp_warehouse) 
     ) == [(Decimal(293),), (Decimal(301),), (Decimal(302),)]
 
 
-def test_a_workbook_with_a_changed_layout_is_quarantined_and_serves_nothing(
+def test_records_with_a_changed_layout_are_quarantined_and_serve_nothing(
     ndcp_warehouse,
 ) -> None:
-    """Covers: DB-073 — a refused sheet leaves the read quarantined, with no price."""
+    """Covers: DB-073 — records without a registered field leave the read quarantined, with no price."""
     factory = ndcp_warehouse
-    header = [column for column in ndcp.header() if column != "MCSA"]
+    record = ndcp.api_record()
+    del record["mcsa"]
     run_id, status, facts, published = ndcp.run_to_gold(
-        factory,
-        client=ndcp.FixtureClient(ndcp.build_workbook([header, ndcp.row(header)])),
+        factory, client=ndcp.FixtureClient([record])
     )
     assert (status, facts, published) == ("captured", 0, 0)
     assert ndcp.rows(

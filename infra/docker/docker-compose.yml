@@ -309,6 +309,8 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER:-airflow}:${AIRFLOW_METADATA_DB_PASSWORD:-airflow}@${AIRFLOW_METADATA_DB_HOST:-service_postgres}:${AIRFLOW_METADATA_DB_PORT:-5432}/${AIRFLOW_METADATA_DB_NAME:-airflow}
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       BLS_API_KEY: ${BLS_API_KEY:-}
+      # DOL data portal key for the childcare prices (dol_childcare_ingest).
+      DOL_API_KEY: ${DOL_API_KEY:-}
       EIA_API_KEY: ${EIA_API_KEY:-}
       ELECTIONS_GUESTBOOK_NAME: ${ELECTIONS_GUESTBOOK_NAME:-}
       ELECTIONS_GUESTBOOK_EMAIL: ${ELECTIONS_GUESTBOOK_EMAIL:-}

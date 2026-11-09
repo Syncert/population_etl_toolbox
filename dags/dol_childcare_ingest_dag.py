@@ -1,12 +1,14 @@
 """Capture-first DOL Women's Bureau county childcare prices pipeline (county-childcare-prices).
 
-Each run reads every registered NDCP release's workbook. A release never
+Each run reads every registered NDCP release from DOL's data portal API
+(www.dol.gov refuses the warehouse's client), with the key the deployment
+holds as ``DOL_API_KEY``. A release never
 published is loaded whole on the first scheduled run (LOADER RULE: every
 study year the workbook holds, with nobody asking); a later read whose
 bytes repeat the last published capture is recorded ``unchanged`` and
 replays nothing, and a changed workbook stores only the prices that changed
 (CHURN RULE). One mapped task per release, through the one-slot
-``dol_childcare_files`` pool: one host, one 92 MB workbook at a time.
+``dol_childcare_files`` pool: one host, one release's pages at a time.
 """
 
 from __future__ import annotations

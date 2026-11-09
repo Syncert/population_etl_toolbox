@@ -23,6 +23,14 @@ Read from the Women's Bureau's pages and the workbook itself on 2026-11-08
 
 The 75th-percentile prices and the 370 county characteristics (ACS
 estimates the warehouse already loads from the Census Bureau) are not read.
+
+www.dol.gov refuses the warehouse's client, so the registered release is
+read from DOL's data portal API (``WB/ndcp``), which serves the same
+database: one record per county and study year, its fields the workbook's
+column names in lower case (``county_fips_code`` as five-digit text,
+``mcinfant``, ``imcbto5``), study years 2008 to 2022 (OFFICE_LAB probe,
+2026-11-09, ``/mnt/project-files/dol_api_probe.out``). Only the registered
+fields are asked for, a study year at a time.
 """
 
 from __future__ import annotations
@@ -48,9 +56,15 @@ class ChildcareMeasure:
     label: str
 
 
+WORKBOOK = "workbook"
+API = "api"
+
+
 @dataclass(frozen=True)
 class NdcpRelease:
     release: str
+    #: The workbook's path under ``DOL_BASE_URL``, or the dataset's under
+    #: ``DOL_API_URL`` (``/get/WB/ndcp/json``).
     path: str
     first_year: int
     last_year: int
@@ -59,6 +73,8 @@ class NdcpRelease:
     fips_column: str = "COUNTY_FIPS_CODE"
     year_column: str = "STUDYYEAR"
     county_name_column: str = "COUNTY_NAME"
+    #: ``workbook`` (the file) or ``api`` (DOL's data portal API).
+    kind: str = WORKBOOK
 
     @property
     def key(self) -> str:
@@ -116,11 +132,23 @@ UNIT = "dollars per week"
 RELEASES: tuple[NdcpRelease, ...] = (
     NdcpRelease(
         release="ndcp2022",
-        path="/NDCP2022.xlsx",
+        path="/get/WB/ndcp/json",
         first_year=2008,
         last_year=2022,
         sheet="County_LevelNDCP_v8_update2008_",
+        kind=API,
     ),
+)
+
+#: The same release as the Women's Bureau's workbook, which www.dol.gov
+#: refuses to the warehouse's client; kept so a workbook still parses the
+#: same way, not registered.
+WORKBOOK_RELEASE = NdcpRelease(
+    release="ndcp2022",
+    path="/NDCP2022.xlsx",
+    first_year=2008,
+    last_year=2022,
+    sheet="County_LevelNDCP_v8_update2008_",
 )
 
 
