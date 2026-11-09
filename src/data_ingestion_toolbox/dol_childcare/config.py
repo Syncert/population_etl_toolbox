@@ -2,19 +2,28 @@
 
 The U.S. Department of Labor Women's Bureau publishes the National Database
 of Childcare Prices (NDCP) as an Excel workbook under
-``https://www.dol.gov/sites/dolgov/files/WB/``. It needs no credential, so
-there is none to hold. The pages state no licence; it is a federal work and
-is cited as the Women's Bureau asks.
+``https://www.dol.gov/sites/dolgov/files/WB/`` and through DOL's data portal
+API (``https://apiprod.dol.gov/v4/get/WB/ndcp/json``, data.gov's listing).
+www.dol.gov's edge refuses the warehouse's honest client (403, 2026-11-08),
+so the database is read from the API with a free registered key, held only
+in the deployment's environment as ``DOL_API_KEY`` (Nick, 2026-11-09). The
+pages state no licence; it is a federal work and is cited as the Women's
+Bureau asks.
 
-Importing this module reads nothing: no network, database or secret.
+Importing this module reads the key from the environment only; no network
+or database.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, field_validator
+import os
+
+from pydantic import BaseModel, Field, field_validator
 
 SOURCE_CODE = "DOL_CHILDCARE"
 DOL_BASE_URL = "https://www.dol.gov/sites/dolgov/files/WB"
+#: DOL's data portal API; a dataset is ``/get/<agency>/<endpoint>/<format>``.
+DOL_API_URL = "https://apiprod.dol.gov/v4"
 
 #: The citation the Women's Bureau's own pages use for the database.
 NDCP_CREDIT = (
@@ -24,11 +33,18 @@ NDCP_CREDIT = (
 
 
 class ChildcareConfig(BaseModel):
-    """NDCP ingestion configuration; there is no credential."""
+    """NDCP ingestion configuration; the API key comes from the environment."""
 
     postgres_conn_id: str = "public_data"
     #: The workbook is about 92 MB.
     timeout_seconds: float = 600.0
+    #: DOL's API key: sent as the ``X-API-KEY`` query parameter it asks for,
+    #: never stored, logged or named in an error.
+    api_key: str = Field(
+        default_factory=lambda: os.environ.get("DOL_API_KEY", ""), repr=False
+    )
+    #: Rows per API request: the API answers at most 10,000 rows or 5 MB.
+    api_page_size: int = 5000
     min_spacing_seconds: float = 2.0
     max_attempts: int = 4
     user_agent: str = (
@@ -42,7 +58,7 @@ class ChildcareConfig(BaseModel):
             raise ValueError("must not be empty")
         return value
 
-    @field_validator("max_attempts")
+    @field_validator("max_attempts", "api_page_size")
     @classmethod
     def _positive(cls, value: int) -> int:
         if value < 1:

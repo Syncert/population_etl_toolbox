@@ -1,7 +1,10 @@
-"""Parse one captured NDCP workbook into childcare prices.
+"""Parse one captured NDCP release into childcare prices.
 
-Pure: bytes in, typed prices and quarantine records out. Columns are read
-by name from the sheet's first row, and only the registered ones: the eight
+Pure: bytes in, typed prices and quarantine records out. A capture from
+DOL's API is a JSON document of pages, each record one county and study
+year whose fields are the workbook's columns in lower case; a workbook's
+columns are read by name from the sheet's first row. Either way only the
+registered columns are read: the eight
 median weekly prices and the imputation codes of their age bands. A county
 and study year is one row; each row gives one price per registered measure.
 
@@ -11,12 +14,17 @@ and study year is one row; each row gives one price per registered measure.
   see which of the Women's Bureau's five imputations were applied.
 * A row whose county code, study year, price or code cannot be read, or
   that repeats a county and year, is set aside whole with its reason; a
-  sheet without the registered columns is refused whole (row 0).
+  sheet without the registered columns, or API records without the
+  registered fields, are refused whole (row 0).
+* An API record's row index is its position among every page's records, in
+  the order the pages were asked for.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -153,92 +161,165 @@ def _refused(code: str, summary: str) -> ParsedWorkbook:
     return ParsedWorkbook((), (ChildcareQuarantine(0, code, summary[:200]),), 0)
 
 
-def parse_workbook(raw_bytes: bytes, *, release: NdcpRelease) -> ParsedWorkbook:
+def _parse_rows(
+    rows: Iterable[tuple[int, Mapping[str, Cell]]], release: NdcpRelease
+) -> ParsedWorkbook:
+    """The registered prices of rows whose cells are keyed by column name."""
     prices: list[ChildcarePrice] = []
     quarantined: list[ChildcareQuarantine] = []
     seen: set[tuple[str, int]] = set()
     row_count = 0
-    header: dict[str, int] | None = None
+    for number, cells in rows:
+        if not any(cell.value.strip() for cell in cells.values()):
+            continue
+        row_count += 1
+        try:
+            fips = _fips(cells.get(release.fips_column))
+            year = _integer(cells.get(release.year_column), "study year")
+            if year not in release.years:
+                raise _RowError(
+                    "unregistered_year",
+                    f"study year {year} is outside {release.key}'s "
+                    f"{release.first_year}-{release.last_year}",
+                )
+            if (fips, year) in seen:
+                raise _RowError(
+                    "duplicate_row",
+                    f"county {fips} study year {year} appears twice",
+                )
+            read = []
+            for measure in MEASURES:
+                stored, value = _price(cells.get(measure.column), measure.column)
+                codes = [
+                    code
+                    for column in measure.imputation_columns
+                    if (code := _code(cells.get(column), column)) is not None
+                ]
+                read.append((measure, stored, value, _combined(codes)))
+        except _RowError as error:
+            quarantined.append(
+                ChildcareQuarantine(number, error.code, str(error)[:200])
+            )
+            continue
+        seen.add((fips, year))
+        name_cell = cells.get(release.county_name_column)
+        county_name = name_cell.value.strip() if name_cell is not None else ""
+        geo_id = f"state:{fips[:2]}|county:{fips[2:]}"
+        for measure, stored, value, code in read:
+            prices.append(
+                ChildcarePrice(
+                    source_row_index=number,
+                    metric_key=measure.metric_key,
+                    care_type=measure.care_type,
+                    age_group=measure.age_group,
+                    study_year=year,
+                    fips_code=fips,
+                    county_name=county_name,
+                    geo_id=geo_id,
+                    value_source=stored,
+                    value=value,
+                    value_status="valid" if value is not None else "missing",
+                    missing_reason=None if value is not None else "provider_missing",
+                    imputed=code is not None and "1" in code,
+                    imputation_code=code,
+                    source_record_id=_record_id(release, fips, year, measure),
+                )
+            )
+    return ParsedWorkbook(tuple(prices), tuple(quarantined), row_count)
+
+
+def parse_workbook(raw_bytes: bytes, *, release: NdcpRelease) -> ParsedWorkbook:
+    rows: list[tuple[int, dict[str, Cell]]] = []
+    header: dict[int, str] | None = None
     try:
         for number, cells in read_sheet(raw_bytes, release.sheet):
             if header is None:
                 header = {
-                    cell.value.strip(): column
+                    column: cell.value.strip()
                     for column, cell in cells.items()
                     if cell.kind == "text"
                 }
-                missing = sorted(required_columns(release) - set(header))
+                missing = sorted(required_columns(release) - set(header.values()))
                 if missing:
                     return _refused(
                         "unexpected_header", f"missing columns: {', '.join(missing)}"
                     )
                 continue
-            if not any(cell.value.strip() for cell in cells.values()):
-                continue
-            row_count += 1
-            try:
-                fips = _fips(cells.get(header[release.fips_column]))
-                year = _integer(cells.get(header[release.year_column]), "study year")
-                if year not in release.years:
-                    raise _RowError(
-                        "unregistered_year",
-                        f"study year {year} is outside {release.key}'s "
-                        f"{release.first_year}-{release.last_year}",
-                    )
-                if (fips, year) in seen:
-                    raise _RowError(
-                        "duplicate_row",
-                        f"county {fips} study year {year} appears twice",
-                    )
-                read = []
-                for measure in MEASURES:
-                    stored, value = _price(
-                        cells.get(header[measure.column]), measure.column
-                    )
-                    codes = [
-                        code
-                        for column in measure.imputation_columns
-                        if (code := _code(cells.get(header[column]), column))
-                        is not None
-                    ]
-                    read.append((measure, stored, value, _combined(codes)))
-            except _RowError as error:
-                quarantined.append(
-                    ChildcareQuarantine(number, error.code, str(error)[:200])
+            rows.append(
+                (
+                    number,
+                    {
+                        header[column]: cell
+                        for column, cell in cells.items()
+                        if column in header
+                    },
                 )
-                continue
-            seen.add((fips, year))
-            name_column = header.get(release.county_name_column)
-            county_name = (
-                cells[name_column].value.strip()
-                if name_column is not None and name_column in cells
-                else ""
             )
-            geo_id = f"state:{fips[:2]}|county:{fips[2:]}"
-            for measure, stored, value, code in read:
-                prices.append(
-                    ChildcarePrice(
-                        source_row_index=number,
-                        metric_key=measure.metric_key,
-                        care_type=measure.care_type,
-                        age_group=measure.age_group,
-                        study_year=year,
-                        fips_code=fips,
-                        county_name=county_name,
-                        geo_id=geo_id,
-                        value_source=stored,
-                        value=value,
-                        value_status="valid" if value is not None else "missing",
-                        missing_reason=None
-                        if value is not None
-                        else "provider_missing",
-                        imputed=code is not None and "1" in code,
-                        imputation_code=code,
-                        source_record_id=_record_id(release, fips, year, measure),
-                    )
-                )
     except WorkbookError as error:
         return _refused(error.code, f"workbook refused: {error.code}")
     if header is None:
         return _refused("unexpected_header", "the sheet has no rows")
-    return ParsedWorkbook(tuple(prices), tuple(quarantined), row_count)
+    return _parse_rows(rows, release)
+
+
+def _api_cell(value: object) -> Cell | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return Cell("text", str(value))
+    if isinstance(value, (int, Decimal)):
+        return Cell("number", str(value))
+    return Cell("text", str(value))
+
+
+def _api_records(document: object) -> Iterator[Mapping[str, object]]:
+    if not isinstance(document, dict) or not isinstance(document.get("pages"), list):
+        raise _RowError("unexpected_payload", "the capture holds no pages")
+    for page in document["pages"]:
+        body = page.get("body") if isinstance(page, dict) else None
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            raise _RowError("unexpected_payload", "a page holds no data list")
+        for record in data:
+            if not isinstance(record, dict):
+                raise _RowError("unexpected_payload", "a record is not an object")
+            yield record
+
+
+def parse_api_payload(raw_bytes: bytes, *, release: NdcpRelease) -> ParsedWorkbook:
+    """The prices of a captured API document (``client._fetch_api``)."""
+    try:
+        document = json.loads(raw_bytes, parse_float=Decimal)
+        records = list(_api_records(document))
+    except ValueError as error:
+        code = error.code if isinstance(error, _RowError) else "unexpected_payload"
+        return _refused(code, f"API capture refused: {code}")
+    # Fields are named in lower case; the registry names the workbook's columns.
+    names = {column.lower(): column for column in required_columns(release)}
+    names[release.county_name_column.lower()] = release.county_name_column
+    if not records:
+        return _refused("unexpected_payload", "the API returned no records")
+    present = set().union(*(record.keys() for record in records))
+    missing = sorted(
+        column
+        for field, column in names.items()
+        if field not in present and column != release.county_name_column
+    )
+    if missing:
+        return _refused("unexpected_header", f"missing fields: {', '.join(missing)}")
+    rows = []
+    for number, record in enumerate(records, start=1):
+        cells: dict[str, Cell] = {}
+        for field, column in names.items():
+            cell = _api_cell(record.get(field))
+            if cell is not None:
+                cells[column] = cell
+        rows.append((number, cells))
+    return _parse_rows(rows, release)
+
+
+def parse_capture(raw_bytes: bytes, *, release: NdcpRelease) -> ParsedWorkbook:
+    """A captured workbook or API document, told apart by its bytes."""
+    if raw_bytes.startswith(b"PK\x03\x04"):
+        return parse_workbook(raw_bytes, release=release)
+    return parse_api_payload(raw_bytes, release=release)

@@ -9,20 +9,40 @@ only; nothing is summed or averaged to a state or the nation.
 
 ## What the schedule reads
 
-`src/data_ingestion_toolbox/dol_childcare/registry.py` registers each
-release the Women's Bureau publishes as one workbook on `dol.gov`
-(`https://www.dol.gov/sites/dolgov/files/WB/<file>`). One is registered:
+`src/data_ingestion_toolbox/dol_childcare/registry.py` registers the
+release. The Women's Bureau publishes it as a workbook on `dol.gov`
+(`https://www.dol.gov/sites/dolgov/files/WB/NDCP2022.xlsx`, about 92 MB,
+48,308 rows, 370 columns) and through DOL's data portal API
+(`https://apiprod.dol.gov/v4/get/WB/ndcp/json`, data.gov's listing). The
+`www.dol.gov` edge refuses the warehouse's honest client (403, 2026-11-08),
+so the release is read from the API:
 
-| Release | File | Study years | Sheet |
-| --- | --- | --- | --- |
-| `ndcp2022` | `NDCP2022.xlsx` (about 92 MB, 48,308 rows, 370 columns) | 2008-2022 | `County_LevelNDCP_v8_update2008_` |
+| Release | Source | Study years |
+| --- | --- | --- |
+| `ndcp2022` | DOL API `WB/ndcp`: the workbook's columns, named in lower case | 2008-2022 |
 
 The earlier `nationaldatabaseofchildcareprices.xlsx` (2008-2018) is not
 registered: `NDCP2022` restates every one of its years, and two copies would
-be waste. The download needs no key. The client sends an honest
-`User-Agent`, retries 429 and 5xx answers with backoff, and refuses a body
-that is not a workbook (an HTML page answered in its place) before anything
-is captured.
+be waste.
+
+**The key.** The API needs a free key (register at
+`https://dataportal.dol.gov/registration`, keys at
+`https://dataportal.dol.gov/api-keys`). It lives only in
+`infra/docker/stack.env` as `DOL_API_KEY`; Compose passes it to Airflow, so
+adding or changing it needs `make deploy-up` in an idle window. The client
+sends it as the `X-API-KEY` query parameter the API asks for. It is never
+stored in the capture, named in an error, or logged (`log_redaction` masks
+`X-API-KEY=` and the variable's value).
+
+**The reads.** Each run asks for the registered fields only, one study year
+at a time (`filter_object` on `studyyear`), in county code order
+(`sort_by=county_fips_code`), 5,000 rows a page; the API answers at most
+10,000 rows or 5 MB a request. About fifteen requests a run. Every page is
+kept exactly as the API sent it, in one JSON capture. The client sends an
+honest `User-Agent`, retries 429 and 5xx answers with backoff, and refuses
+a body that is not a JSON `data` list, a page near the 5 MB limit (it may
+have been cut), or a body that repeats the key, before anything is
+captured.
 
 The schedule is monthly (9th, 16:00 UTC): the Women's Bureau publishes a
 release every year or two. Each run, through the one-slot

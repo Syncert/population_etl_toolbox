@@ -1,8 +1,10 @@
-"""Capture-first orchestration for the NDCP workbook.
+"""Capture-first orchestration for the NDCP release.
 
 One ingestion run per read of a registered release: one request and one
-committed capture, before anything parses it. The Women's Bureau replaces
-the file in place, so every read downloads it; a read whose bytes repeat
+committed capture, before anything parses it. A release read from DOL's API
+is captured as one JSON document holding every page as the API sent it; a
+workbook as its bytes. The Women's Bureau replaces the database in place,
+so every read fetches it; a read whose bytes repeat
 the release's last published capture is recorded ``unchanged`` and replays
 nothing (``utility.unchanged``). The payload store keeps one copy of the
 bytes either way.
@@ -24,12 +26,27 @@ from data_ingestion_toolbox.capture import (
 from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_release
-from .config import DOL_BASE_URL, SOURCE_CODE, ChildcareConfig
-from .registry import NdcpRelease
+from .config import DOL_API_URL, DOL_BASE_URL, SOURCE_CODE, ChildcareConfig
+from .registry import API, NdcpRelease
 
 PARSER_CONTRACT_VERSION = "dol_ndcp_xlsx:v1"
+API_PARSER_CONTRACT_VERSION = "dol_ndcp_api:v1"
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+JSON_MEDIA_TYPE = "application/json"
+
+
+def parser_contract(release: NdcpRelease) -> str:
+    return (
+        API_PARSER_CONTRACT_VERSION if release.kind == API else PARSER_CONTRACT_VERSION
+    )
+
+
+def release_endpoint(release: NdcpRelease) -> str:
+    """The release's address, never with the key."""
+    base = DOL_API_URL if release.kind == API else DOL_BASE_URL
+    return f"{base}{release.path}"
+
 
 #: The release's newest published capture. The revision table stores only
 #: prices that changed (CHURN RULE), so it cannot list every geography a
@@ -63,7 +80,8 @@ def capture_release(
     )
     parameters = {"release": release.key}
     run_id = capture_control.start_run(watermark=dict(parameters))
-    endpoint = f"{DOL_BASE_URL}{release.path}"
+    endpoint = release_endpoint(release)
+    contract = parser_contract(release)
     request = capture_control.start_request(
         run_id=run_id,
         endpoint=endpoint,
@@ -91,9 +109,9 @@ def capture_release(
                 retrieved_at=datetime.now(UTC),
                 http_status=response.http_status,
                 response_headers=dict(response.response_headers),
-                media_type=XLSX_MEDIA_TYPE,
+                media_type=JSON_MEDIA_TYPE if release.kind == API else XLSX_MEDIA_TYPE,
                 payload=response.raw_bytes,
-                payload_schema_version=PARSER_CONTRACT_VERSION,
+                payload_schema_version=contract,
                 source_revision=release.key,
             ),
         )
@@ -105,7 +123,7 @@ def capture_release(
                 LATEST_PUBLISHED_SQL,
                 (release.key,),
                 payload_checksum=receipt.payload_checksum,
-                parser_contract=PARSER_CONTRACT_VERSION,
+                parser_contract=contract,
             )
             else "captured"
         )

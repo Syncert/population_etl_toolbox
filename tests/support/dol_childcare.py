@@ -1,4 +1,10 @@
-"""Seeding and small NDCP-shaped workbooks for the childcare tests.
+"""Seeding, small NDCP-shaped workbooks and API answers for the childcare tests.
+
+``tests/fixtures/dol_childcare/ndcp_api_records.json`` holds the same six
+county-year rows as DOL's API names them (the workbook's columns in lower
+case, the county code as five-digit text, the wholly blank row left out),
+copied from the fixture workbook's registered columns; ``FixtureClient``
+answers the API's study-year filter and pages from it.
 
 ``tests/fixtures/dol_childcare/NDCP2022.xlsx`` holds the Women's Bureau's own
 rows for Dane and Rock counties (2021, 2022) and Los Angeles County (2022),
@@ -12,6 +18,7 @@ workbook, its relationships and one sheet with inline strings and numbers.
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -25,7 +32,11 @@ from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.dol_childcare.capture import capture_release
 from data_ingestion_toolbox.dol_childcare.config import SOURCE_CODE, ChildcareConfig
-from data_ingestion_toolbox.dol_childcare.registry import MEASURES, RELEASES
+from data_ingestion_toolbox.dol_childcare.registry import (
+    MEASURES,
+    RELEASES,
+    WORKBOOK_RELEASE,
+)
 from data_ingestion_toolbox.dol_childcare.silver_dol_childcare.load import (
     publish_run,
     replay_run,
@@ -94,7 +105,7 @@ def build_workbook(rows: list[list[object]], *, sheet: str = RELEASE.sheet) -> b
 
 
 def header() -> list[str]:
-    return ["COUNTY_NAME", *sorted(required_columns(RELEASE))]
+    return ["COUNTY_NAME", *sorted(required_columns(WORKBOOK_RELEASE))]
 
 
 def row(columns: list[str], **values: object) -> list[object]:
@@ -116,6 +127,23 @@ def row(columns: list[str], **values: object) -> list[object]:
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = REPOSITORY_ROOT / "tests/fixtures/dol_childcare/NDCP2022.xlsx"
+API_FIXTURE = REPOSITORY_ROOT / "tests/fixtures/dol_childcare/ndcp_api_records.json"
+
+
+def fixture_records() -> list[dict[str, object]]:
+    return json.loads(API_FIXTURE.read_text())
+
+
+def api_record(**values: object) -> dict[str, object]:
+    """One county-year as the API names it, defaults as ``row``'s."""
+    columns = header()
+    return {
+        column.lower(): value
+        for column, value in zip(columns, row(columns, **values), strict=True)
+    } | {
+        "county_fips_code": str(values.get("COUNTY_FIPS_CODE", 55025)).zfill(5),
+    }
+
 
 DANE = "state:55|county:025"
 ROCK = "state:55|county:105"
@@ -157,21 +185,41 @@ SILVER_TABLES: tuple[str, ...] = (
 
 
 class FixtureClient:
-    """Answers the workbook with the fixture, or with the bytes given."""
+    """Answers DOL's API from the fixture records, or the records given.
 
-    def __init__(self, payload: bytes | None = None, *, status: int = 200) -> None:
-        self.payload = FIXTURE.read_bytes() if payload is None else payload
+    It filters by the asked study year and pages by ``limit`` and ``offset``
+    in county code order, as the API does; every other field is answered.
+    """
+
+    def __init__(
+        self, records: list[dict[str, object]] | None = None, *, status: int = 200
+    ) -> None:
+        self.records = fixture_records() if records is None else records
         self.status = status
         self.urls: list[str] = []
+        self.params: list[dict[str, object]] = []
 
-    def get(self, url: str, *, headers: dict[str, str]) -> httpx.Response:
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, object] | None = None,
+    ) -> httpx.Response:
         self.urls.append(url)
+        params = dict(params or {})
+        self.params.append(params)
+        wanted = json.loads(str(params["filter_object"]))
+        year_records = sorted(
+            (r for r in self.records if r.get(wanted["field"]) == wanted["value"]),
+            key=lambda r: str(r.get(str(params["sort_by"]))),
+        )
+        offset = int(params["offset"])
+        page = year_records[offset : offset + int(params["limit"])]
         return httpx.Response(
             self.status,
-            content=self.payload,
-            headers={
-                "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            },
+            content=json.dumps({"data": page}).encode(),
+            headers={"content-type": "application/json"},
             request=httpx.Request("GET", url),
         )
 
@@ -188,7 +236,9 @@ def run_to_gold(
     run_id, status = capture_release(
         connection_factory,
         RELEASE,
-        config=ChildcareConfig(min_spacing_seconds=0, max_attempts=1),
+        config=ChildcareConfig(
+            min_spacing_seconds=0, max_attempts=1, api_key="fixture-dol-key"
+        ),
         client=client or FixtureClient(),
     )
     facts = replay_run(connection_factory, run_id=run_id)

@@ -40,6 +40,8 @@ SECRET_PARAMETER_NAMES = (
     "api_key",
     "apikey",
     "api-key",
+    # DOL's data portal API names its key so (dol_childcare).
+    "x-api-key",
     "registrationkey",
     "token",
     "access_token",
@@ -65,6 +67,7 @@ SECRET_PARAMETER_NAMES = (
 SECRET_ENVIRONMENT_VARIABLES = (
     "CENSUS_API_KEY",
     "BLS_API_KEY",
+    "DOL_API_KEY",
     "EIA_API_KEY",
     "FRED_API_KEY",
     "FBI_CDE_API_KEY",
