@@ -1713,6 +1713,37 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(bls_metadata, "read_bls_tsv", read_tsv)
 
+    # The spending program's few series are read from the BLS API catalog,
+    # shaped as BLS answers it (bls_api_catalog_probe, 2026-11-09), with the
+    # titles of BLS's own series list excerpt.
+    spending_list = pl.read_csv(
+        PRICE_FIXTURES / "cx.series.excerpt", separator="	", infer_schema_length=0
+    )
+    spending_titles = {
+        str(row["series_id"]).strip(): str(row["series_title"]).strip()
+        for row in spending_list.rename(
+            {column: column.strip() for column in spending_list.columns}
+        ).to_dicts()
+    }
+
+    def api_catalog(series_ids: list[str]) -> dict[str, dict[str, str]]:
+        return {
+            series_id: {
+                "series_title": spending_titles[series_id],
+                "series_id": series_id,
+                "seasonality": "Not Seasonally Adjusted",
+                "survey_name": "Consumer Expenditure Surveys",
+                "survey_abbreviation": "CX",
+                "measure_data_type": "Expenditures",
+                "type_of_cases": "Food",
+                "item": "Food at home",
+            }
+            for series_id in series_ids
+            if series_id in spending_titles
+        }
+
+    monkeypatch.setattr(bls_metadata, "fetch_bls_api_catalog", api_catalog)
+
 
 def stub_fred(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed FRED fixtures instead of the live API.

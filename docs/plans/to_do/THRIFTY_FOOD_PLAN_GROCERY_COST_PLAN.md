@@ -23,7 +23,9 @@ verify:
 series (`CXUFOODHOME...M`), annual (`A01`), 1984 onward: the nation
 (`LB1101`), the four Census regions (`LB1102` Northeast to `LB1105` West)
 and five household sizes at the nation (`LB0502`, `LB0504` to `LB0507`).
-Only those ten rows of the 32 MB `cx.series` list are synced (storage
+Their series records come from BLS API v2's catalog (one keyed request,
+2026-11-09, after download.bls.gov refused the container's reads); the
+32 MB `cx.series` list is the fallback, of which only those ten rows are synced (storage
 rule), and the BLS metadata client now names the project's repository as
 its contact. Gold carries the survey as observation basis `SPENDING`, so it
 is never read as a price. A county or state page shows its region's
