@@ -66,6 +66,12 @@ UA = "population_toolbox/1.0 (+https://github.com/Syncert/population_etl_toolbox
 #: Answers that mean "not now" from download.bls.gov, not "no such list".
 _REFUSED_FOR_NOW = frozenset({403, 429, 500, 502, 503, 504})
 
+#: BLS API v2, which answers a registered key's ``catalog=true`` request with
+#: each series' own catalog entry (title, survey, item). A curated program's
+#: series are known, so their entries are read here instead of downloading
+#: the program's whole list from download.bls.gov.
+API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+
 
 def _safe_str(value) -> str:
     """Safely convert a value to string and strip whitespace."""
@@ -93,6 +99,86 @@ def read_bls_tsv(url: str) -> pl.DataFrame:
 #: Programs whose series list is far larger than what is requested, so only
 #: the configured series' rows are synced.
 CURATED_METADATA_PROGRAMS = frozenset({"cx"})
+
+
+def fetch_bls_api_catalog(series_ids: List[str]) -> Dict[str, Dict]:
+    """
+    Each series' catalog entry from BLS API v2, by series id.
+
+    One keyed request asks for the newest value only (``latest``) with the
+    catalog, so it costs one of the key's daily requests. A series the API
+    answers without a catalog is left out; the caller decides what that
+    means. The key travels in the request body and is never printed.
+    """
+    if not series_ids:
+        return {}
+    if not CONFIG.has_api_key:
+        raise RuntimeError("BLS_API_KEY is required to read the BLS API catalog")
+    response = requests.post(
+        API_URL,
+        json={
+            "seriesid": list(series_ids),
+            "catalog": True,
+            "latest": True,
+            "registrationkey": CONFIG.bls_api_key,
+        },
+        headers={"User-Agent": UA, "Accept": "application/json"},
+        timeout=60,
+    )
+    response.raise_for_status()
+    body = response.json()
+    if body.get("status") != "REQUEST_SUCCEEDED":
+        raise RuntimeError(
+            f"BLS API catalog request was not served: {body.get('status')}"
+        )
+    wanted = set(series_ids)
+    catalogs: Dict[str, Dict] = {}
+    for series in (body.get("Results") or {}).get("series") or []:
+        series_id = _safe_str(series.get("seriesID", ""))
+        catalog = series.get("catalog")
+        if series_id in wanted and isinstance(catalog, dict) and catalog:
+            catalogs[series_id] = catalog
+    return catalogs
+
+
+def _api_catalog_records(program: str) -> Optional[List[Dict]]:
+    """
+    A curated program's series records from the BLS API catalog.
+
+    ``None`` when the API cannot give every configured series a catalog
+    entry (no key, a refusal, a series without one): the caller then reads
+    the program's list from download.bls.gov as before. Each record is the
+    API's own catalog entry, stored as published in ``raw_metadata``; the
+    item code is the one the series id carries (``CXU<item>LB...``).
+    """
+    wanted = list(CONFIG.curated_by_program.get(program, []))
+    try:
+        catalogs = fetch_bls_api_catalog(wanted)
+    except Exception as error:  # noqa: BLE001 - any failure falls back
+        print(
+            f"BLS API catalog for {program!r} not read ({type(error).__name__}); "
+            "reading the series list from download.bls.gov"
+        )
+        return None
+    missing = [series_id for series_id in wanted if series_id not in catalogs]
+    if not wanted or missing:
+        print(
+            f"BLS API catalog for {program!r} lacks {len(missing)} series; "
+            "reading the series list from download.bls.gov"
+        )
+        return None
+    return [dict(catalogs[series_id]) for series_id in wanted]
+
+
+def _series_item_code(program: str, record: Dict) -> str:
+    """The item a price or spending series measures."""
+    item = _safe_str(record.get("item_code", ""))
+    if item or program != "cx":
+        return item
+    series_id = _safe_str(record.get("series_id", ""))
+    if series_id.startswith("CXU") and "LB" in series_id:
+        return series_id[3 : series_id.rindex("LB")]
+    return ""
 
 
 def fetch_bls_metadata(program: str) -> Tuple[Dict[str, any], Dict[str, any]]:
@@ -175,7 +261,15 @@ def sync_bls_series_metadata(program: str) -> int:
     """
     print(f"Syncing series metadata for program: {program}")
 
-    series_data, dataset_data = fetch_bls_metadata(program)
+    # A curated program's few series are read from the BLS API catalog, so
+    # its whole list is not downloaded; download.bls.gov stays the fallback.
+    api_records = (
+        _api_catalog_records(program) if program in CURATED_METADATA_PROGRAMS else None
+    )
+    if api_records is not None:
+        series_data, dataset_data = api_records, {}
+    else:
+        series_data, dataset_data = fetch_bls_metadata(program)
 
     if not series_data:
         raise RuntimeError(
@@ -217,7 +311,9 @@ def sync_bls_series_metadata(program: str) -> int:
                     record.get("measure_code")
                     or record.get("data_type_code")
                     or (
-                        record.get("item_code") if program in {"cu", "ap", "cx"} else ""
+                        _series_item_code(program, record)
+                        if program in {"cu", "ap", "cx"}
+                        else ""
                     )
                     or ""
                 )
