@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import math
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -71,29 +73,69 @@ def page_request_key(fields: str, page_size: int, year: int, offset: int) -> str
     return hashlib.sha256(f"{fields}|{page_size}|{year}|{offset}".encode()).hexdigest()
 
 
+LOGGER = logging.getLogger(__name__)
+
+#: The headers a refusal is logged with: the capture allowlist and the rate
+#: headers API gateways send. DOL's AWS API Gateway sent no rate header on a
+#: 200 (2026-11-10); a refusal's own are logged in case it does.
+REFUSAL_LOG_HEADERS = frozenset(
+    {
+        "content-type",
+        "retry-after",
+        "ratelimit",
+        "ratelimit-limit",
+        "ratelimit-policy",
+        "ratelimit-remaining",
+        "ratelimit-reset",
+        "x-ratelimit-limit",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-amzn-errortype",
+        "x-amzn-requestid",
+        "x-amz-apigw-id",
+        "x-cache",
+    }
+)
+
+#: DOL's answers while it throttles a key: the 429 and the 502s that come
+#: with it (2026-11-09, 2026-11-10).
+REFUSAL_STATUSES = frozenset({429, 502, 503, 504})
+
+
+def refusal_headers(response: httpx.Response) -> dict[str, str]:
+    """A refused answer's rate headers, by name from a fixed list."""
+    return {
+        name.lower(): value
+        for name, value in response.headers.items()
+        if name.lower() in REFUSAL_LOG_HEADERS
+    }
+
+
 def retry_wait(
     response: httpx.Response | None, attempt: int, config: ChildcareConfig
 ) -> float:
     """How long to wait before the next attempt.
 
-    A 429 waits as long as its ``Retry-After`` asks, in seconds, at most
-    ``max_retry_after_seconds``; without one, or after a 5xx or a dropped
-    connection, ``retry_backoff_seconds`` doubled for each attempt so far.
+    A refusal (``REFUSAL_STATUSES``) waits as long as a 429's
+    ``Retry-After`` asks, in seconds, or else ``refusal_wait_seconds``
+    doubled for each attempt so far; a dropped connection or another 5xx
+    waits ``retry_backoff_seconds`` doubled likewise. No wait is longer than
+    ``max_refusal_wait_seconds``.
     """
-    backoff = min(
-        config.retry_backoff_seconds * 2 ** (attempt - 1),
-        config.max_retry_after_seconds,
-    )
-    if response is None or response.status_code != 429:
-        return backoff
+    cap = config.max_refusal_wait_seconds
+    if response is None or response.status_code not in REFUSAL_STATUSES:
+        return min(config.retry_backoff_seconds * 2 ** (attempt - 1), cap)
+    window = min(config.refusal_wait_seconds * 2 ** (attempt - 1), cap)
+    if response.status_code != 429:
+        return window
     stated = response.headers.get("Retry-After", "").strip()
     try:
         seconds = float(stated)
     except ValueError:
-        return backoff
-    if seconds != seconds or seconds < 0:
-        return backoff
-    return min(max(seconds, config.min_spacing_seconds), config.max_retry_after_seconds)
+        return window
+    if math.isnan(seconds) or seconds < 0:
+        return window
+    return min(max(seconds, config.min_spacing_seconds), cap)
 
 
 def check_workbook(raw_bytes: bytes, endpoint: str) -> None:
@@ -152,7 +194,18 @@ def _send(
         if attempt < config.max_attempts:
             if on_retry is not None and final_error is not None:
                 on_retry(final_error)
-            sleep(retry_wait(response, attempt, config))
+            wait = retry_wait(response, attempt, config)
+            if response is not None:
+                LOGGER.warning(
+                    "DOL NDCP %s answered HTTP %s on attempt %d; headers %s; "
+                    "waiting %.0f s",
+                    path,
+                    response.status_code,
+                    attempt,
+                    refusal_headers(response),
+                    wait,
+                )
+            sleep(wait)
     raise ChildcareFetchError(
         path, code="retry_exhausted", status=final_status
     ) from final_error
