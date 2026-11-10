@@ -236,32 +236,37 @@ class _Sequence:
         return self.fixture.get(url, headers=headers, params=params)
 
 
-def test_a_429_waits_as_long_as_its_retry_after_asks_and_a_502_backs_off() -> None:
+def test_a_refusal_waits_out_its_window_and_a_dropped_link_backs_off() -> None:
     """Covers: ETL-123 — DOL's 429 and 502 answers are waited out, never hammered."""
     waits: list[float] = []
-    client = _Sequence([(429, {"Retry-After": "45"}), (502, {}), (502, {}), (429, {})])
+    client = _Sequence([(429, {"Retry-After": "45"}), (502, {}), (429, {})])
     config = _config(
-        max_attempts=6,
+        max_attempts=4,
         retry_backoff_seconds=15,
-        max_retry_after_seconds=600,
-        min_spacing_seconds=10,
+        refusal_wait_seconds=300,
+        max_refusal_wait_seconds=900,
+        min_spacing_seconds=25,
     )
     response = fetch_release(RELEASE, config=config, client=client, sleep=waits.append)
-    # The first page: Retry-After 45, then the backoff of the attempt it is
-    # (15 doubled once per attempt so far) for the 502s and for a 429 that
-    # names no wait; then a pause of 10 before each new page.
-    assert waits[:4] == [45, 30, 60, 120]
-    assert set(waits[4:]) == {10}
-    assert len(waits[4:]) == 14
+    # The first page: Retry-After 45, then the refusal window of the attempt
+    # it is (300 doubled once per attempt so far, at most 900) for the 502
+    # and for a 429 that names no wait; then a pause of 25 before each new
+    # page.
+    assert waits[:3] == [45, 600, 900]
+    assert set(waits[3:]) == {25}
+    assert len(waits[3:]) == 14
     assert parse_capture(response.raw_bytes, release=RELEASE).prices
 
 
 def test_the_wait_after_a_refusal_is_bounded() -> None:
-    """Covers: ETL-123 — a Retry-After is honoured up to the cap; a date or nonsense falls back to backoff."""
+    """Covers: ETL-123 — a Retry-After is honoured up to the cap; a date or nonsense falls back to the refusal window."""
     from data_ingestion_toolbox.dol_childcare.client import retry_wait
 
     config = _config(
-        retry_backoff_seconds=15, max_retry_after_seconds=600, min_spacing_seconds=10
+        retry_backoff_seconds=15,
+        refusal_wait_seconds=300,
+        max_refusal_wait_seconds=900,
+        min_spacing_seconds=25,
     )
     request = httpx.Request("GET", "https://apiprod.dol.gov/v4/get/WB/ndcp/json")
 
@@ -270,12 +275,16 @@ def test_the_wait_after_a_refusal_is_bounded() -> None:
         return httpx.Response(status, headers=headers, request=request)
 
     assert retry_wait(answer(429, "120"), 1, config) == 120
-    assert retry_wait(answer(429, "3600"), 1, config) == 600
-    assert retry_wait(answer(429, "1"), 1, config) == 10
-    assert retry_wait(answer(429, "Wed, 21 Oct 2026 07:28:00 GMT"), 2, config) == 30
-    assert retry_wait(answer(429, "nan"), 1, config) == 15
-    assert retry_wait(answer(502), 3, config) == 60
-    assert retry_wait(None, 10, config) == 600
+    assert retry_wait(answer(429, "3600"), 1, config) == 900
+    assert retry_wait(answer(429, "1"), 1, config) == 25
+    assert retry_wait(answer(429, "Wed, 21 Oct 2026 07:28:00 GMT"), 2, config) == 600
+    assert retry_wait(answer(429, "nan"), 1, config) == 300
+    assert retry_wait(answer(429), 3, config) == 900
+    assert retry_wait(answer(502), 1, config) == 300
+    assert retry_wait(answer(504), 2, config) == 600
+    assert retry_wait(answer(500), 3, config) == 60
+    assert retry_wait(None, 1, config) == 15
+    assert retry_wait(None, 10, config) == 900
 
 
 class _Pages:
@@ -331,8 +340,14 @@ def test_a_changed_page_size_or_field_list_asks_afresh() -> None:
     assert key != page_request_key("a,b", 500, 2022, 0)
     assert key != page_request_key("a,b,c", 1000, 2022, 0)
     assert key != page_request_key("a,b", 1000, 2022, 1000)
-    assert ChildcareConfig().api_page_size == 1000
-    assert ChildcareConfig().min_spacing_seconds == 10
+    defaults = ChildcareConfig()
+    assert defaults.api_page_size == 5000
+    assert defaults.min_spacing_seconds == 25
+    assert defaults.max_attempts == 4
+    assert (defaults.refusal_wait_seconds, defaults.max_refusal_wait_seconds) == (
+        300,
+        900,
+    )
 
 
 class _Cursor:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -71,29 +72,36 @@ def page_request_key(fields: str, page_size: int, year: int, offset: int) -> str
     return hashlib.sha256(f"{fields}|{page_size}|{year}|{offset}".encode()).hexdigest()
 
 
+#: DOL's answers while it throttles a key: the 429 and the 502s that come
+#: with it (2026-11-09, 2026-11-10).
+REFUSAL_STATUSES = frozenset({429, 502, 503, 504})
+
+
 def retry_wait(
     response: httpx.Response | None, attempt: int, config: ChildcareConfig
 ) -> float:
     """How long to wait before the next attempt.
 
-    A 429 waits as long as its ``Retry-After`` asks, in seconds, at most
-    ``max_retry_after_seconds``; without one, or after a 5xx or a dropped
-    connection, ``retry_backoff_seconds`` doubled for each attempt so far.
+    A refusal (``REFUSAL_STATUSES``) waits as long as a 429's
+    ``Retry-After`` asks, in seconds, or else ``refusal_wait_seconds``
+    doubled for each attempt so far; a dropped connection or another 5xx
+    waits ``retry_backoff_seconds`` doubled likewise. No wait is longer than
+    ``max_refusal_wait_seconds``.
     """
-    backoff = min(
-        config.retry_backoff_seconds * 2 ** (attempt - 1),
-        config.max_retry_after_seconds,
-    )
-    if response is None or response.status_code != 429:
-        return backoff
+    cap = config.max_refusal_wait_seconds
+    if response is None or response.status_code not in REFUSAL_STATUSES:
+        return min(config.retry_backoff_seconds * 2 ** (attempt - 1), cap)
+    window = min(config.refusal_wait_seconds * 2 ** (attempt - 1), cap)
+    if response.status_code != 429:
+        return window
     stated = response.headers.get("Retry-After", "").strip()
     try:
         seconds = float(stated)
     except ValueError:
-        return backoff
-    if seconds != seconds or seconds < 0:
-        return backoff
-    return min(max(seconds, config.min_spacing_seconds), config.max_retry_after_seconds)
+        return window
+    if math.isnan(seconds) or seconds < 0:
+        return window
+    return min(max(seconds, config.min_spacing_seconds), cap)
 
 
 def check_workbook(raw_bytes: bytes, endpoint: str) -> None:

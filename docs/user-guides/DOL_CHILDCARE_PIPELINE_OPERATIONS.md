@@ -36,12 +36,15 @@ stored in the capture, named in an error, or logged (`log_redaction` masks
 
 **The reads.** Each run asks for the registered fields only, one study year
 at a time (`filter_object` on `studyyear`), in county code order
-(`sort_by=county_fips_code`), 1,000 rows a page, ten seconds apart: about
-60 requests and ten minutes a run. The API answers at most 10,000 rows or
-5 MB a request, but 5,000-row pages drew 429 and 502 answers after about
-ten requests (2026-11-09). DOL's API guide states no per-key rate. A 429
-waits as long as its `Retry-After` asks (at most ten minutes); a 5xx or a
-dropped connection waits 15 seconds doubled for each attempt, six attempts
+(`sort_by=county_fips_code`), up to 5,000 rows a page, so one page per
+year (about 3,150 counties, roughly 2.2 MB): 15 requests, 25 seconds apart,
+about six minutes a run. DOL's API guide states no per-key rate, but in
+practice the API refuses after about 13 requests (2026-11-09 and
+2026-11-10), with 429 and 502 answers for several minutes, whatever the
+page size; 25 seconds apart is 12 every five minutes. A refusal (429, 502,
+503 or 504) waits as long as a 429's `Retry-After` asks, or else five
+minutes, doubled each time, at most fifteen; another 5xx or a dropped
+connection waits 15 seconds, doubled each time. Four attempts
 a page. Each page answered is kept in `control.dol_childcare_page` as it
 arrives, so a read whose retries run out stops, and the task's next attempt
 resumes at the page it stopped on instead of asking again; the kept pages

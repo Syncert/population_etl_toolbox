@@ -43,20 +43,26 @@ class ChildcareConfig(BaseModel):
     api_key: str = Field(
         default_factory=lambda: os.environ.get("DOL_API_KEY", ""), repr=False
     )
-    #: Rows per API request. The API answers at most 10,000 rows or 5 MB,
-    #: but 5,000-row pages drew 429 and 502 answers after about ten
-    #: requests (2026-11-09, ``dol_childcare_load.out``): smaller pages ask
-    #: less of it each time.
-    api_page_size: int = 1000
-    #: The pause between two requests. DOL's API guide states no per-key
-    #: rate; a page every ten seconds is about 60 requests over ten minutes.
-    min_spacing_seconds: float = 10.0
-    #: Attempts per request. A 429 waits as long as its ``Retry-After`` asks
-    #: (at most ``max_retry_after_seconds``); a 5xx or a dropped connection
-    #: waits ``retry_backoff_seconds``, doubled each time.
-    max_attempts: int = 6
+    #: Rows per API request: one page per study year (about 3,150
+    #: counties, roughly 2.2 MB of the 31 fields asked), under the API's
+    #: 10,000-row and 5 MB limit. DOL refuses by number of requests, not
+    #: their size: about 13 requests, then 429 and 502 answers for several
+    #: minutes (2026-11-09 and 2026-11-10), so the fewest pages is best.
+    api_page_size: int = 5000
+    #: The pause between two requests: 12 every five minutes, under the
+    #: roughly 13 DOL answered before refusing. DOL's API guide states no
+    #: per-key rate.
+    min_spacing_seconds: float = 25.0
+    #: Attempts per request. A refusal -- a 429, or the 502, 503 or 504
+    #: that came with DOL's throttling -- waits as long as its
+    #: ``Retry-After`` asks, or else ``refusal_wait_seconds`` doubled each
+    #: time, at most ``max_refusal_wait_seconds``: asking again sooner only
+    #: meets another refusal. A dropped connection or another 5xx waits
+    #: ``retry_backoff_seconds``, doubled each time.
+    max_attempts: int = 4
     retry_backoff_seconds: float = 15.0
-    max_retry_after_seconds: float = 600.0
+    refusal_wait_seconds: float = 300.0
+    max_refusal_wait_seconds: float = 900.0
     user_agent: str = (
         "population-etl-toolbox DOL childcare prices ingestion (public-data warehouse)"
     )
@@ -83,7 +89,10 @@ class ChildcareConfig(BaseModel):
         return value
 
     @field_validator(
-        "min_spacing_seconds", "retry_backoff_seconds", "max_retry_after_seconds"
+        "min_spacing_seconds",
+        "retry_backoff_seconds",
+        "refusal_wait_seconds",
+        "max_refusal_wait_seconds",
     )
     @classmethod
     def _spacing(cls, value: float) -> float:
