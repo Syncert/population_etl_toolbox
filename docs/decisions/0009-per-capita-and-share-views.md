@@ -126,6 +126,33 @@ replaced by:
 Rules 1, 6 and 7 apply unchanged: each time cost is a reviewed entry,
 labelled in every response, computed in the API over served rows.
 
+## Amendment, 2026-11-10: county prices, and sums made from parts
+
+Approved by Nick on 2026-11-10 with the starting-a-family-collection plan
+("Yes show hours of work"). Three changes, each a registry field the
+parser checks:
+
+- **A HUD Fair Market Rent is a county time cost.** Like the Women's
+  Bureau's childcare prices (2026-11-08), `HUD_FMR_IL:fmr_3br` is divided
+  by the county's own QCEW wage (`wage_geo_levels: ["COUNTY"]`). HUD sets the rent
+  for the county's HUD area and repeats it for each county in it, so the row
+  names the area as well as the county. The year rule above is unchanged.
+  The rent's year is HUD's fiscal year, whose `period_start` is October 1
+  of the year before, and it is matched to the wage of that calendar year,
+  or the newest wage year, as the row says.
+- **`complete_inputs_only`.** A pairing over sums the source made from parts
+  (NCES's county and state sums of schools, each with
+  `dimensions.completeness`) divides only rows that are `complete` on both
+  sides. A partial sum is served without a value as `partial_input`, never
+  divided.
+- **`match_release: false`.** Rule 2's "same release" assumes one file
+  carries both sides. NCES publishes each school-year component
+  (membership, staff) as its own file, so the two sides of a school year
+  are never one release. Such a pairing matches the same geography and
+  period across releases and names both releases on the row. It is still
+  one program, one period and one geography, and it is never used to pair
+  two periods.
+
 ## Alternatives considered
 
 - **Per-capita over PEP population for every count.** Rejected: it mixes

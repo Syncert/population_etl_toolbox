@@ -2409,6 +2409,99 @@
         "https://www.dol.gov/agencies/wb/topics/featured-childcare",
         "https://www.bls.gov/cew/about-data/"
       ]
+    },
+    {
+      "ratio_id": "households_with_children_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of households with one or more people under 18",
+      "numerator": "CENSUS_ACS:{dataset}:B11005_002",
+      "denominator": "CENSUS_ACS:{dataset}:B11005_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "households (survey)",
+      "universe": "households (survey)",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10",
+      "rationale": "B11005_002 counts a subset of the households B11005_001 counts, in the same ACS table, release and period; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4). Named in the starting-a-family-collection plan, which Nick approved on 2026-11-10.",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Counts households with any person under 18, including grandchildren and other relatives, not only the householder's own children.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B11005",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
+    },
+    {
+      "ratio_id": "students_per_teacher",
+      "kind": "ratio",
+      "scale": 1,
+      "unit": "students per full-time-equivalent teacher",
+      "label": "Public school students per full-time-equivalent teacher",
+      "numerator": "NCES_CCD:student_membership",
+      "denominator": "NCES_CCD:teacher_fte",
+      "complete_inputs_only": true,
+      "match_release": false,
+      "denominator_label": "full-time-equivalent teachers in the same public schools",
+      "universe": "public schools NCES places in the county or state",
+      "numerator_is_subset": false,
+      "status": "approved",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10",
+      "rationale": "Both are NCES Common Core of Data sums over the same placed schools for the same school year (ADR-0009 rule 2). Students are not a part of teachers, so it is a ratio. Divided only where every placed school reported both, because a partial sum over a partial sum describes neither the place nor its schools. Named in the starting-a-family-collection plan, which Nick approved on 2026-11-10.",
+      "limitations": [
+        "A ratio of two sums over the place's public schools, not the size of any class: teachers include those who teach no regular class, and the count is full-time-equivalent.",
+        "Served only where both sums are complete; a place with any school not reporting either figure has no value (partial_input).",
+        "Public schools only; private schools are not counted. Labelled with the school year's fall: 2024 is 2024-25.",
+        "NCES publishes membership and staff as separate files for each school year, so the two sides of a year are different releases; each row names both."
+      ],
+      "citations": [
+        "https://nces.ed.gov/ccd/"
+      ]
+    },
+    {
+      "ratio_id": "minutes_of_work_rent_3br",
+      "kind": "time_cost",
+      "scale": 60,
+      "unit": "minutes of work",
+      "label": "Minutes of work to pay one month's Fair Market Rent for a three-bedroom home",
+      "numerator": "HUD_FMR_IL:fmr_3br",
+      "denominator": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "hours_per_week": 40,
+      "wage_geo_levels": [
+        "COUNTY"
+      ],
+      "denominator_label": "the average weekly wage of all jobs located in the county (QCEW, all industries, all ownerships), over a 40-hour week",
+      "universe": "an hour of the average job located in the county",
+      "status": "approved",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10",
+      "rationale": "Nick approved hours of work for the three-bedroom Fair Market Rent on 2026-11-10 (\"Yes show hours of work\"), with the dollar rent shown first and the calculation stated beside it, as for childcare. HUD sets the rent for the county's HUD area and repeats it for each county in it; the wage is the county's own QCEW average weekly wage.",
+      "limitations": [
+        "The rent is the HUD area's (a metro area, a HUD metro subdivision or a nonmetropolitan county); the wage is the county's own, so where the area spans several counties each reads the same rent over its own wage, and both are named.",
+        "The QCEW average weekly wage is total wages over jobs located in the county, by employer, including part-time jobs; 40 hours is an assumed week, not a measured one.",
+        "The rent's year is HUD's fiscal year, which starts on October 1 of the year before, matched to the wage of that calendar year; for a rent newer than QCEW's newest year the newest wage is used and the row says which year."
+      ],
+      "citations": [
+        "https://www.huduser.gov/portal/datasets/fmr.html",
+        "https://www.bls.gov/cew/about-data/"
+      ]
     }
   ]
 }

@@ -760,3 +760,101 @@ def test_a_county_childcare_price_is_hours_of_the_countys_own_wage() -> None:
     [row] = time_cost_rows(pairing, [price], [_wage("1250", 2022)], DANE)
     assert row.value == "562.56" and row.wage_year == "same_year"
     assert row.geo_id == DANE and row.denominator.value == "1250"
+
+
+# ---------------------------------------------------------------------------
+# Starting a family (starting-a-family-collection)
+# ---------------------------------------------------------------------------
+
+
+def _nces(
+    metric_code: str,
+    value: str | None,
+    completeness: str,
+    release: str,
+    geo_id: str = DANE,
+    period: str = "2024-07-01",
+) -> NeutralObservation:
+    return NeutralObservation(
+        source_code="NCES_CCD",
+        metric_code=metric_code,
+        geo_id=geo_id,
+        geo_level="COUNTY",
+        geo_name="Dane County",
+        period_start=period,
+        period_end="2025-06-30",
+        release=release,
+        value=value,
+        value_status="valid" if value is not None else "missing",
+        dimensions={"completeness": completeness},
+    )
+
+
+def test_students_per_teacher_divides_two_whole_sums_across_their_files() -> None:
+    """Covers: API-173 — NCES membership and staff are separate files of one school year."""
+    pairing = pairing_for("students_per_teacher")
+    assert pairing.kind == "ratio" and pairing.scale == 1
+    assert pairing.complete_inputs_only and not pairing.match_release
+    students = "NCES_CCD:student_membership"
+    teachers = "NCES_CCD:teacher_fte"
+    numerators = [
+        _nces(students, "75000", "complete", "CCD membership read 1"),
+        _nces(students, "60000", "partial", "CCD membership read 1", geo_id="B"),
+        _nces(students, "50000", "complete", "CCD membership read 1", geo_id="C"),
+        _nces(students, "40000", "complete", "CCD membership read 1", geo_id="D"),
+    ]
+    denominators = [
+        _nces(teachers, "5000", "complete", "CCD staff read 2"),
+        _nces(teachers, "4000", "complete", "CCD staff read 2", geo_id="B"),
+        _nces(teachers, "4000", "partial", "CCD staff read 2", geo_id="C"),
+        # Another school year is still never matched.
+        _nces(teachers, "4000", "complete", "CCD staff read 2", "D", "2023-07-01"),
+    ]
+    whole, partial_students, partial_teachers, other_year = pair_rows(
+        pairing, numerators, denominators
+    )
+    assert whole.value == "15.00" and whole.unavailable_reason is None
+    assert whole.numerator.release == "CCD membership read 1"
+    assert whole.denominator.release == "CCD staff read 2"
+    assert partial_students.value is None
+    assert partial_students.unavailable_reason == "partial_input"
+    assert partial_teachers.unavailable_reason == "partial_input"
+    assert other_year.value is None
+    assert other_year.unavailable_reason == "different_period"
+
+
+def test_a_release_matched_pairing_still_ignores_completeness() -> None:
+    """Covers: API-173 — only a pairing marked complete_inputs_only reads completeness."""
+    share = pairing_for("households_with_children_share:acs5")
+    assert share.kind == "share" and share.match_release
+    assert not share.complete_inputs_only
+    [row] = pair_rows(
+        share,
+        [_acs("CENSUS_ACS:acs5:B11005_002", "60000", "900")],
+        [_acs("CENSUS_ACS:acs5:B11005_001", "240000", "1200")],
+    )
+    assert row.value == "25.00"
+
+
+def test_a_three_bedroom_fair_market_rent_is_hours_of_the_countys_own_wage() -> None:
+    """Covers: API-173 — $2,000 a month at a $1,250 week of 40 hours is 3,840 minutes."""
+    pairing = pairing_for("minutes_of_work_rent_3br")
+    assert pairing.kind == "time_cost" and pairing.numerator == "HUD_FMR_IL:fmr_3br"
+    assert pairing.wage_geo_levels == ("COUNTY",) and pairing.area is None
+    rent = NeutralObservation(
+        source_code="HUD_FMR_IL",
+        metric_code="HUD_FMR_IL:fmr_3br",
+        geo_id=DANE,
+        geo_level="COUNTY",
+        geo_name="Dane County",
+        # FY2027 starts on 2026-10-01; QCEW's newest year here is 2025.
+        period_start="2026-10-01",
+        period_end="2027-09-30",
+        release="FY2027",
+        value="2000",
+        value_status="valid",
+    )
+    [row] = time_cost_rows(pairing, [rent], [_wage("1250", 2025)], DANE)
+    assert row.value == "3840.00"
+    assert row.wage_year == "newest_published_year"
+    assert row.denominator.period_start == "2025-01-01"

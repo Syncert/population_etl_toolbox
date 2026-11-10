@@ -23,6 +23,7 @@ import {
   CHILDCARE_SOURCE,
   NOT_A_COUNTY,
   catalogedCodes,
+  childcareMetricCode,
   childcareRatioId,
   childcareTable,
   footnoteReasons,
@@ -31,7 +32,7 @@ import {
   workGap,
   workText,
 } from "../lib/childcare";
-import type { ChildcareMinutes } from "../lib/childcare";
+import type { ChildcareMinutes, InfantCareRead } from "../lib/childcare";
 
 type Newest = Record<string, ObservationRow | null>;
 type State = { status: "reading" } | { status: "unloaded" } | { status: "failed" } | { status: "read"; newest: Newest };
@@ -42,12 +43,15 @@ export default function ChildcarePrices({
   place,
   sources,
   catalogued,
+  onInfant,
 }: {
   level: PlaceLevel;
   place: GeographySummary;
   sources: readonly ExplorerSource[];
   /** The place page's catalog read: `null` while pending (see `catalogedCodes`). */
   catalogued?: ReadonlyMap<string, unknown> | null;
+  /** Hands the center infant price and its hours on, for "Starting a family". */
+  onInfant?: (geoId: string, read: InfantCareRead) => void;
 }) {
   const [state, setState] = useState<State>({ status: "reading" });
   const [minutes, setMinutes] = useState<Record<string, ChildcareMinutes | null>>({});
@@ -112,6 +116,18 @@ export default function ChildcarePrices({
     }
     return () => controller.abort();
   }, [county, state, place.geo_id]);
+
+  // The center infant price and its hours, once each read ends.
+  const infantRow = state.status === "read" ? (state.newest[childcareMetricCode("center", "infant")] ?? null) : undefined;
+  const infantError = state.status === "failed" ? "Could not be read just now" : state.status === "unloaded" ? "unloaded" : undefined;
+  const infantCell = state.status === "read" ? childcareTable(state.newest).cells.find((cell) => cell.care === "center" && cell.age === "infant") : undefined;
+  const infantMinutes = minutes.center_infant;
+  const infantDone = !infantRow || infantCell?.value === null || infantCell?.value === undefined || "center_infant" in minutes;
+  useEffect(() => {
+    if (!county || !onInfant) return;
+    if (infantError) onInfant(place.geo_id, { row: null, error: infantError, minutes: null });
+    else if (infantRow !== undefined) onInfant(place.geo_id, { row: infantRow, minutes: infantDone ? (infantMinutes ?? null) : undefined });
+  }, [county, onInfant, place.geo_id, infantRow, infantError, infantMinutes, infantDone]);
 
   if (!county) {
     return (

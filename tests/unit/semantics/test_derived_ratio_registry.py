@@ -288,7 +288,43 @@ def test_a_county_childcare_price_is_divided_by_that_countys_own_wage() -> None:
     # A county's price is divided by that county's wage, never a state's.
     for broken in (
         {"wage_geo_levels": ["COUNTY", "STATE"]},
-        {"numerator": "HUD_FMR_IL:fmr_2br"},
+        {"numerator": "CENSUS_ACS:acs5:B25064_001"},
     ):
         with pytest.raises(RatioRegistryError):
             _parse({**cost, **broken})
+
+
+def test_the_starting_a_family_pairings_keep_their_rules() -> None:
+    """Covers: ETL-104 — the ADR-0009 amendment of 2026-11-10."""
+    shipped = load_registry()
+    for dataset in ("acs5", "acs1"):
+        share = shipped[f"households_with_children_share:{dataset}"]
+        assert share.kind == "share" and share.numerator_is_subset
+        assert share.numerator == f"CENSUS_ACS:{dataset}:B11005_002"
+        assert share.denominator == f"CENSUS_ACS:{dataset}:B11005_001"
+    ratio = shipped["students_per_teacher"]
+    assert (ratio.kind, ratio.scale) == ("ratio", 1)
+    assert ratio.complete_inputs_only and not ratio.match_release
+    rent = shipped["minutes_of_work_rent_3br"]
+    assert rent.kind == "time_cost" and rent.wage_geo_levels == ("COUNTY",)
+    assert rent.numerator == "HUD_FMR_IL:fmr_3br"
+    assert {ratio.status, rent.status, share.status} == {"approved"}
+    # A HUD rent is a county price: over the county's own wage only.
+    cost = _entry(
+        ratio_id="minutes_of_work_rent_3br",
+        kind="time_cost",
+        scale=60,
+        unit="minutes of work",
+        numerator="HUD_FMR_IL:fmr_3br",
+        denominator="BLS_QCEW:annual_avg_weekly_wage:10:0",
+        datasets=None,
+        hours_per_week=40,
+        wage_geo_levels=["COUNTY"],
+        numerator_is_subset=None,
+    )
+    assert list(_parse(cost)) == ["minutes_of_work_rent_3br"]
+    with pytest.raises(RatioRegistryError):
+        _parse({**cost, "wage_geo_levels": ["COUNTY", "STATE"]})
+    # Every other pairing matches releases and reads no completeness.
+    others = [p for rid, p in shipped.items() if rid != "students_per_teacher"]
+    assert all(p.match_release and not p.complete_inputs_only for p in others)

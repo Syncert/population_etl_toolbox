@@ -37,7 +37,19 @@ placeholder in the numerator expands to each listed BLS area code, as
 A county childcare price (Nick, 2026-11-08) is the other time cost: the
 Women's Bureau's weekly price is published for the county itself, so it
 names no ``{area}`` and its wage is that county's own (``wage_geo_levels``
-is ``COUNTY`` only).
+is ``COUNTY`` only). A HUD Fair Market Rent (Nick, 2026-11-10) is the same
+shape: HUD sets the rent for the county's HUD area and repeats it for each
+county in it, and the wage is the county's own.
+
+An entry with ``complete_inputs_only`` divides only rows that say they are
+whole: a sum the source made from parts (NCES's county sums of schools)
+carries ``dimensions.completeness``, and a ``partial`` sum on either side is
+not divided (``partial_input``), because a partial count over a partial
+count describes neither the place nor its schools. An entry with
+``match_release: false`` pairs rows of the same geography and period from
+different releases: NCES publishes each school-year component (membership,
+staff) as its own file, so the two sides of one school year never share a
+release. Both releases are named on every row.
 
 Only an ``approved`` pairing is served. ``DERIVED_RATIOS_SERVE_DRAFTS=1``
 lets a local stack serve drafts too, each marked with its status, so the
@@ -65,8 +77,8 @@ AREA_PLACEHOLDER = "{area}"
 TIME_COST_WAGE_LEVELS = frozenset({"COUNTY", "STATE", "NATIONAL"})
 #: The price programs a time cost divides: BLS's region and nation prices,
 #: each over its listed areas, and the Women's Bureau's county childcare
-#: prices, over the county's own wage.
-TIME_COST_PRICES = {"BLS": "areas", "DOL_CHILDCARE": "county"}
+#: prices and HUD's Fair Market Rents, each over the county's own wage.
+TIME_COST_PRICES = {"BLS": "areas", "DOL_CHILDCARE": "county", "HUD_FMR_IL": "county"}
 
 REGISTRY_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "semantics" / "derived_ratios.json"
@@ -115,6 +127,11 @@ class RatioPairing:
     hours_per_week: int | None = None
     wage_geo_levels: tuple[str, ...] = ()
     area: str | None = None
+    #: Divide only inputs whose ``dimensions.completeness`` is ``complete``.
+    complete_inputs_only: bool = False
+    #: False pairs the same geography and period across releases (NCES's
+    #: per-component files); each side's release is named on the row.
+    match_release: bool = True
 
     @property
     def derived(self) -> bool:
@@ -249,7 +266,8 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
         ):
             raise RatioRegistryError(
                 f"{rid}: a time_cost divides a BLS price over its listed areas, "
-                "or a county childcare price over the county's own wage, by a "
+                "or a county childcare price or HUD rent over the county's own "
+                "wage, by a "
                 "QCEW weekly wage over hours_per_week, in minutes (scale 60), "
                 "at the wage levels QCEW publishes; only a time_cost names "
                 "hours_per_week (ADR-0009 amendment, 2026-11-06)"
@@ -302,6 +320,8 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 hours_per_week=entry.get("hours_per_week"),
                 wage_geo_levels=tuple(entry.get("wage_geo_levels", ())),
                 area=variant if time_cost else None,
+                complete_inputs_only=bool(entry.get("complete_inputs_only")),
+                match_release=entry.get("match_release", True) is not False,
             )
     rated = {p.numerator for p in pairings.values() if p.kind == "provider_rate"}
     for pairing in pairings.values():

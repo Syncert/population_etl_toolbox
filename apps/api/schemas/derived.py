@@ -44,6 +44,7 @@ UnavailableReason = Literal[
     "only_multi_county_agencies",
     "coverage_below_floor",
     "agencies_not_loaded",
+    "partial_input",
 ]
 
 
@@ -67,6 +68,11 @@ class DerivedRatioPairing(BaseModel):
     hours_per_week: Optional[int] = None
     wage_geo_levels: list[str] = []
     area: Optional[str] = None
+    #: Only inputs whose ``dimensions.completeness`` is ``complete`` are
+    #: divided; a partial sum is ``partial_input``.
+    complete_inputs_only: bool = False
+    #: False when the two sides of a period come from different releases.
+    match_release: bool = True
     dataset: Optional[str] = None
     denominator_label: str
     universe: str

@@ -172,6 +172,17 @@ export interface ChildcareMinutes {
   denominator?: { value?: string | null; period_start?: string | null } | null;
 }
 
+/**
+ * What the county card read for center-based infant care, handed to
+ * "Starting a family" so the same price and hours are not asked twice.
+ * `row` undefined while reading; `minutes` undefined until its read ends.
+ */
+export interface InfantCareRead {
+  row?: ObservationRow | null;
+  error?: string;
+  minutes?: ChildcareMinutes | null;
+}
+
 const dollars = (value: number, cents = false): string =>
   `$${formatNumber(value, { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 })}`;
 
