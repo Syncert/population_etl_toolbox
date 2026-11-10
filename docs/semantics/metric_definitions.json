@@ -1041,6 +1041,296 @@
       "last_reviewed_date": "2026-11-05"
     },
     {
+      "metric_id": "CENSUS_ACS:B19125_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19125_001",
+        "CENSUS_ACS:acs1:B19125_001"
+      ],
+      "name": "Median family income",
+      "definition": "The middle yearly income of families.",
+      "unit": "dollars",
+      "universe": "families",
+      "kind": "median",
+      "caveat": "Family income in the past 12 months, in the survey year's inflation-adjusted dollars, with a margin of error.",
+      "intended_use": "Describe what families with and without children at home earn in a place, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A family is a householder and the people related to them who live with them; own children are the householder's own sons and daughters under 18, so a family raising grandchildren counts as without."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19125",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19125_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19125_002",
+        "CENSUS_ACS:acs1:B19125_002"
+      ],
+      "name": "Median family income, families with children under 18",
+      "definition": "The middle yearly income of families with the householder's own children under 18 at home.",
+      "unit": "dollars",
+      "universe": "families with own children of the householder under 18",
+      "kind": "median",
+      "caveat": "Family income in the past 12 months, in the survey year's inflation-adjusted dollars, with a margin of error.",
+      "intended_use": "Describe what families with and without children at home earn in a place, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A family is a householder and the people related to them who live with them; own children are the householder's own sons and daughters under 18, so a family raising grandchildren counts as without."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19125",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B19125_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B19125_003",
+        "CENSUS_ACS:acs1:B19125_003"
+      ],
+      "name": "Median family income, families without children under 18",
+      "definition": "The middle yearly income of families with none of the householder's own children under 18 at home.",
+      "unit": "dollars",
+      "universe": "families with no own children of the householder under 18",
+      "kind": "median",
+      "caveat": "Family income in the past 12 months, in the survey year's inflation-adjusted dollars, with a margin of error.",
+      "intended_use": "Describe what families with and without children at home earn in a place, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A family is a householder and the people related to them who live with them; own children are the householder's own sons and daughters under 18, so a family raising grandchildren counts as without."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B19125",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B13002_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B13002_001",
+        "CENSUS_ACS:acs1:B13002_001"
+      ],
+      "name": "Women 15 to 50",
+      "definition": "Women aged 15 to 50, the universe of the survey's births question.",
+      "unit": "people",
+      "universe": "women 15 to 50 years",
+      "kind": "count",
+      "caveat": "Survey count with a margin of error.",
+      "intended_use": "The denominator of the share of women 15 to 50 who had a birth in the past year.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts women who report a birth in the 12 months before the interview, not births registered in the place; it is not the vital-statistics birth rate."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B13002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B13002_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B13002_002",
+        "CENSUS_ACS:acs1:B13002_002"
+      ],
+      "name": "Women 15 to 50 who had a birth in the past year",
+      "definition": "Women aged 15 to 50 who report giving birth in the 12 months before the survey.",
+      "unit": "people",
+      "universe": "women 15 to 50 years",
+      "kind": "count",
+      "caveat": "Survey count with a margin of error.",
+      "intended_use": "Read beside the women 15 to 50, as births per 1,000 women.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts women who report a birth in the 12 months before the interview, not births registered in the place; it is not the vital-statistics birth rate."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B13002",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23008_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23008_001",
+        "CENSUS_ACS:acs1:B23008_001"
+      ],
+      "name": "Own children under 18 in families",
+      "definition": "Children under 18 who are the own children of a family's householder or of a subfamily's parent.",
+      "unit": "people",
+      "universe": "own children under 18 in families and subfamilies",
+      "kind": "count",
+      "caveat": "Own children in families and subfamilies, counted by the employment status of the parents they live with.",
+      "intended_use": "Describe how many young children in a place live with parents who are all in the labor force, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "In the labor force means working or looking for work, so a parent who is unemployed counts as in the labor force."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23008",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23008_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23008_002",
+        "CENSUS_ACS:acs1:B23008_002"
+      ],
+      "name": "Own children under 6 in families",
+      "definition": "Own children under 6 in families and subfamilies.",
+      "unit": "people",
+      "universe": "own children under 6 in families and subfamilies",
+      "kind": "count",
+      "caveat": "Own children in families and subfamilies, counted by the employment status of the parents they live with.",
+      "intended_use": "Describe how many young children in a place live with parents who are all in the labor force, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "In the labor force means working or looking for work, so a parent who is unemployed counts as in the labor force."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23008",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23008_004",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23008_004",
+        "CENSUS_ACS:acs1:B23008_004"
+      ],
+      "name": "Children under 6 living with two parents both in the labor force",
+      "definition": "Own children under 6 living with two parents who are both working or looking for work.",
+      "unit": "people",
+      "universe": "own children under 6 in families and subfamilies",
+      "kind": "count",
+      "caveat": "Own children in families and subfamilies, counted by the employment status of the parents they live with.",
+      "intended_use": "Describe how many young children in a place live with parents who are all in the labor force, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "In the labor force means working or looking for work, so a parent who is unemployed counts as in the labor force."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23008",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23008_010",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23008_010",
+        "CENSUS_ACS:acs1:B23008_010"
+      ],
+      "name": "Children under 6 living with their father alone, who is in the labor force",
+      "definition": "Own children under 6 living with one parent, their father, who is working or looking for work.",
+      "unit": "people",
+      "universe": "own children under 6 in families and subfamilies",
+      "kind": "count",
+      "caveat": "Own children in families and subfamilies, counted by the employment status of the parents they live with.",
+      "intended_use": "Describe how many young children in a place live with parents who are all in the labor force, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "In the labor force means working or looking for work, so a parent who is unemployed counts as in the labor force."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23008",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B23008_013",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B23008_013",
+        "CENSUS_ACS:acs1:B23008_013"
+      ],
+      "name": "Children under 6 living with their mother alone, who is in the labor force",
+      "definition": "Own children under 6 living with one parent, their mother, who is working or looking for work.",
+      "unit": "people",
+      "universe": "own children under 6 in families and subfamilies",
+      "kind": "count",
+      "caveat": "Own children in families and subfamilies, counted by the employment status of the parents they live with.",
+      "intended_use": "Describe how many young children in a place live with parents who are all in the labor force, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "In the labor force means working or looking for work, so a parent who is unemployed counts as in the labor force."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23008",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
       "metric_id": "CENSUS_ACS:B27010_017",
       "metric_codes": [
         "CENSUS_ACS:acs5:B27010_017",

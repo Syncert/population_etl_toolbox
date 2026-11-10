@@ -29,8 +29,38 @@ def test_property_tax_is_curated_at_every_grain_and_declared_as_added() -> None:
     assert "B25103" in CONFIG.tract_tables
     # The rate's denominator is held wherever the tax is.
     assert "B25077" in CONFIG.tract_tables
-    assert CONFIG.added_tables[-1] == "B25103"
+    assert CONFIG.added_tables[0] == "B25103"
     assert set(CONFIG.added_tables) <= set(CONFIG.curated_tables)
+
+
+FAMILY_TABLES = ["B13002", "B23008", "B19125"]
+
+
+def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> None:
+    """Covers: ETL-114 — births, parents' work and family income for areas, counties, places and metros only."""
+    assert CONFIG.added_tables[-3:] == FAMILY_TABLES
+    for table in FAMILY_TABLES:
+        assert table in CONFIG.curated_tables
+        assert table not in CONFIG.tract_tables
+    # A tract slice's list gains nothing, so its earlier forms are only B25103's.
+    assert earlier_lists(CONFIG.tract_tables, CONFIG.added_tables) == [
+        ([t for t in CONFIG.tract_tables if t != "B25103"], ["B25103"])
+    ]
+
+
+def test_a_county_slice_asks_only_for_the_tables_it_lacks() -> None:
+    """Covers: ETL-114 — held with or without B25103, a slice asks only for what it lacks."""
+    tables = list(CONFIG.curated_tables)
+    with_tax = [t for t in tables if t not in FAMILY_TABLES]
+    request = added_tables_request(
+        _digest(with_tax), "success", tables, CONFIG.added_tables, _digest
+    )
+    assert request is not None and request.tables == FAMILY_TABLES
+    before_tax = [t for t in with_tax if t != "B25103"]
+    request = added_tables_request(
+        _digest(before_tax), "success", tables, CONFIG.added_tables, _digest
+    )
+    assert request is not None and request.tables == ["B25103", *FAMILY_TABLES]
 
 
 def test_an_added_table_must_be_curated_and_named_once() -> None:
