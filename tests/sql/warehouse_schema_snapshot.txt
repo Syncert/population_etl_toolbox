@@ -10796,19 +10796,26 @@ v gold_nces_ccd.observation_revision
     body             pair.version_rank,
     body             pair.capture_id,
     body             pair.published_at,
-    body             school.ncessch,
-    body             school.state_fips,
-    body             school.county_geo_id,
-    body             school.county_geo_sk,
-    body             school.county_status,
-    body             school.geocode_file,
-    body             sum(school.value) FILTER (WHERE school.measure = 'student_membership'::text AND school.value_status = 'valid'::text) AS membership,
-    body             sum(school.value) FILTER (WHERE school.measure = 'teacher_fte'::text AND school.value_status = 'valid'::text) AS teachers,
-    body             count(*) FILTER (WHERE school.measure = 'student_membership'::text AND school.value_status = 'valid'::text) AS membership_rows,
-    body             count(*) FILTER (WHERE school.measure = 'teacher_fte'::text AND school.value_status = 'valid'::text) AS teacher_rows
+    body             placement.ncessch,
+    body             placement.state_fips,
+    body             placement.county_geo_id,
+    body             placement.county_geo_sk,
+    body             placement.county_status,
+    body             placement.geocode_file,
+    body                 CASE
+    body                     WHEN membership.value_status = 'valid'::text THEN membership.value
+    body                     ELSE NULL::numeric
+    body                 END AS membership,
+    body                 CASE
+    body                     WHEN teacher.value_status = 'valid'::text THEN teacher.value
+    body                     ELSE NULL::numeric
+    body                 END AS teachers,
+    body             membership.value_status = 'valid'::text AND teacher.value_status = 'valid'::text AS reported_both
     body            FROM matched_pair pair
-    body              JOIN gold_nces_ccd.school_observation school ON school.run_id = pair.membership_run_id AND school.measure = 'student_membership'::text OR school.run_id = pair.staff_run_id AND school.measure = 'teacher_fte'::text
-    body           GROUP BY pair.run_id, pair.school_year, pair.file_stem, pair.release_version, pair.version_rank, pair.capture_id, pair.published_at, school.ncessch, school.state_fips, school.county_geo_id, school.county_geo_sk, school.county_status, school.geocode_file
+    body              JOIN gold_nces_ccd.school_placement placement ON placement.school_year = pair.school_year
+    body              LEFT JOIN silver_nces_ccd.school_count membership ON membership.run_id = pair.membership_run_id AND membership.ncessch = placement.ncessch AND membership.measure = 'student_membership'::text
+    body              LEFT JOIN silver_nces_ccd.school_count teacher ON teacher.run_id = pair.staff_run_id AND teacher.ncessch = placement.ncessch AND teacher.measure = 'teacher_fte'::text
+    body           WHERE membership.ncessch IS NOT NULL OR teacher.ncessch IS NOT NULL
     body         ), matched_value AS NOT MATERIALIZED (
     body          SELECT matched.run_id,
     body             matched.school_year,
@@ -10825,15 +10832,14 @@ v gold_nces_ccd.observation_revision
     body             matched.geocode_file,
     body             matched.membership,
     body             matched.teachers,
-    body             matched.membership_rows,
-    body             matched.teacher_rows,
+    body             matched.reported_both,
     body             measure.measure,
     body                 CASE
-    body                     WHEN matched.membership_rows > 0 AND matched.teacher_rows > 0 THEN measure.value
+    body                     WHEN matched.reported_both THEN measure.value
     body                     ELSE NULL::numeric
     body                 END AS value,
     body                 CASE
-    body                     WHEN matched.membership_rows > 0 AND matched.teacher_rows > 0 THEN 'valid'::text
+    body                     WHEN matched.reported_both THEN 'valid'::text
     body                     ELSE 'missing'::text
     body                 END AS value_status
     body            FROM matched_school matched
@@ -10854,8 +10860,7 @@ v gold_nces_ccd.observation_revision
     body             matched.geocode_file,
     body             matched.membership,
     body             matched.teachers,
-    body             matched.membership_rows,
-    body             matched.teacher_rows,
+    body             matched.reported_both,
     body             matched.measure,
     body             matched.value,
     body             matched.value_status,
@@ -10880,8 +10885,7 @@ v gold_nces_ccd.observation_revision
     body             matched.geocode_file,
     body             matched.membership,
     body             matched.teachers,
-    body             matched.membership_rows,
-    body             matched.teacher_rows,
+    body             matched.reported_both,
     body             matched.measure,
     body             matched.value,
     body             matched.value_status,
@@ -10889,7 +10893,7 @@ v gold_nces_ccd.observation_revision
     body             entity.geo_id,
     body             entity.geo_sk
     body            FROM matched_value matched
-    body              JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = ('state:'::text || matched.state_fips) AND entity.geo_type = 'state'::text
+    body              JOIN silver_ref.dim_geo_entity entity ON entity.state_fips = matched.state_fips AND entity.geo_id = ('state:'::text || matched.state_fips) AND entity.geo_type = 'state'::text
     body         ), grains AS (
     body          SELECT school.run_id,
     body             school.component,
@@ -14982,7 +14986,9 @@ r silver_nces_ccd.school_location
     constraint school_location_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ccd_file(run_id)
     constraint school_location_source_row_index_check CHECK ((source_row_index >= 1))
     constraint school_location_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    index nces_ccd_location_county_idx CREATE INDEX nces_ccd_location_county_idx ON silver_nces_ccd.school_location USING btree (geo_id, run_id)
     index nces_ccd_location_school_idx CREATE INDEX nces_ccd_location_school_idx ON silver_nces_ccd.school_location USING btree (ncessch)
+    index nces_ccd_location_state_idx CREATE INDEX nces_ccd_location_state_idx ON silver_nces_ccd.school_location USING btree (state_fips, run_id)
     index school_location_pkey CREATE UNIQUE INDEX school_location_pkey ON silver_nces_ccd.school_location USING btree (run_id, ncessch)
 
 r silver_noaa_normals.quarantine
