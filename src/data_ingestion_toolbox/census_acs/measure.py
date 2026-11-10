@@ -134,6 +134,7 @@ def project_missing(
     targets: Iterable[tuple[str, int, str]],
     reference: Mapping[tuple[str, str], int],
     loaded_share: Mapping[tuple[str, int, str], float] | None = None,
+    per_target: Mapping[tuple[str, int], int] | None = None,
 ) -> list[Projection]:
     """Project the bytes each target (dataset, year, grain) would add.
 
@@ -141,9 +142,13 @@ def project_missing(
     per variable scale every other year of that grain. ``loaded_share`` is the
     fraction of a target's variables already loaded (a place year on the five
     history tables), which is subtracted rather than counted twice.
+    ``per_target`` counts the variables each target year would add when that
+    is not its whole curated list (tables added to the list); a year that
+    publishes none of them projects nothing.
     """
     grains = list(grains)
     loaded_share = loaded_share or {}
+    counts = per_target if per_target is not None else variables
     projections = []
     for dataset, year, geo_level in targets:
         reference_year = reference.get((dataset, geo_level))
@@ -152,7 +157,7 @@ def project_missing(
         per_variable = bytes_per_variable(
             grains, variables, dataset, geo_level, reference_year
         )
-        count = variables.get((dataset, year))
+        count = counts.get((dataset, year))
         if per_variable is None or not count:
             continue
         remaining = 1.0 - loaded_share.get((dataset, year, geo_level), 0.0)
@@ -304,16 +309,26 @@ def main(argv: list[str] | None = None) -> int:
         default="acs5:place:2009-2024,acs1:place:2005-2024",
         help="dataset:grain:years to project on the full curated table list",
     )
+    parser.add_argument(
+        "--tables",
+        help=(
+            "comma-separated tables to project alone, as a table added to the "
+            "curated list is requested for years already held "
+            "(`table_additions.py`); every target year is counted in full"
+        ),
+    )
     args = parser.parse_args(argv)
 
     from data_ingestion_toolbox.census_acs.config import CONFIG
     from data_ingestion_toolbox.census_acs.year_scope import YearScope
 
+    added = [t.strip() for t in (args.tables or "").split(",") if t.strip()]
     conn = _connect(args.dsn)
     try:
         measurement = read_measurement(conn, args.disk_path)
         variables = read_curated_variables(conn, CONFIG.curated_tables)
         history = read_curated_variables(conn, CONFIG.place_history_tables)
+        requested = read_curated_variables(conn, added) if added else variables
     finally:
         conn.close()
 
@@ -337,9 +352,17 @@ def main(argv: list[str] | None = None) -> int:
     # The reference year itself is fully loaded; nothing to add for it.
     for dataset, geo_level in newest:
         loaded[(dataset, newest[(dataset, geo_level)], geo_level)] = 1.0
-    measurement.projections = project_missing(
-        measurement.grains, variables, targets, newest, loaded
-    )
+    if added:
+        # Added tables are new in every year, the reference year included:
+        # the bytes per variable measured on the whole list, times the added
+        # tables' variables in each target year.
+        measurement.projections = project_missing(
+            measurement.grains, variables, targets, newest, per_target=requested
+        )
+    else:
+        measurement.projections = project_missing(
+            measurement.grains, variables, targets, newest, loaded
+        )
 
     print(render(measurement))
     if args.json_path:

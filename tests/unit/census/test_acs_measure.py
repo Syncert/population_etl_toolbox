@@ -153,3 +153,52 @@ def test_the_command_measures_the_warehouse_and_projects_the_named_years(
     assert "| acs5 | 2023 | place | 2,000 | 125.0 |" in out
     assert warehouse.closed
     assert '"database_bytes": 644245094400' in report.read_text(encoding="utf-8")
+
+
+def test_tables_added_to_the_list_project_their_own_variables_in_every_year() -> None:
+    """Covers: ETL-085 -- an added table is new in the reference year too."""
+    grains = apportion_bytes({("acs5", 2024, "county"): 1}, 4000 * 10)
+    variables = {("acs5", 2024): 4000, ("acs5", 2009): 1300}
+    added = {("acs5", 2024): 49, ("acs5", 2009): 49, ("acs5", 2015): 0}
+    projections = project_missing(
+        grains,
+        variables,
+        targets=[
+            ("acs5", 2024, "county"),
+            ("acs5", 2009, "county"),
+            ("acs5", 2015, "county"),
+        ],
+        reference={("acs5", "county"): 2024},
+        per_target=added,
+    )
+    by_year = {item.year: item.projected_bytes for item in projections}
+    # Bytes per variable come from the whole 2024 list; a year publishing none
+    # of the added tables projects nothing.
+    assert by_year == {2024: 490, 2009: 490}
+
+
+def test_the_command_projects_only_the_named_tables(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Covers: ETL-085 -- `--tables` scales the added tables' variables, not the list."""
+    from data_ingestion_toolbox.census_acs import measure
+
+    class _Added(_Warehouse):
+        @staticmethod
+        def answer(sql, params):
+            if "FROM raw_census.acs_variables" in sql and params == (["B19125"],):
+                return [("acs5", 2024, 40), ("acs5", 2023, 40)]
+            return _Warehouse.answer(sql, params)
+
+    monkeypatch.setattr(measure, "_connect", lambda dsn: _Added())
+    monkeypatch.setattr(measure, "disk_usage", lambda path: (6000 * GIB, 4000 * GIB))
+    assert (
+        measure.main(
+            ["--dsn", "x", "--project", "acs5:place:2023-2024", "--tables", "B19125"]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    # 2024: 250 GiB over 4,000 variables, times 40 added, in both years.
+    assert "| acs5 | 2024 | place | 40 | 2.5 |" in out
+    assert "| acs5 | 2023 | place | 40 | 2.5 |" in out

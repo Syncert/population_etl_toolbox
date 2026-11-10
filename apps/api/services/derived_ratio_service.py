@@ -53,7 +53,7 @@ from apps.api.schemas.derived import (
     DerivedRatioObservation,
     DerivedRatioPairing,
 )
-from apps.api.schemas.observations import NeutralObservation
+from apps.api.schemas.observations import NeutralObservation, ObservationUncertainty
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     list_neutral_observations,
@@ -96,6 +96,7 @@ def pairing_summary(pairing: RatioPairing) -> DerivedRatioPairing:
         area=pairing.area,
         complete_inputs_only=pairing.complete_inputs_only,
         match_release=pairing.match_release,
+        numerator_addends=list(pairing.numerator_addends),
         dataset=pairing.dataset,
         denominator_label=pairing.denominator_label,
         universe=pairing.universe,
@@ -179,6 +180,7 @@ def derive_row(
     numerator: NeutralObservation,
     denominator: Optional[NeutralObservation],
     denominator_elsewhere: bool,
+    whole_numerator: bool = True,
 ) -> DerivedRatioObservation:
     """One derived row from a numerator row and its matched denominator row."""
     row: dict[str, Any] = {
@@ -213,6 +215,8 @@ def derive_row(
 
     # A sum the source made from parts says whether it is whole; a partial
     # sum on either side is never divided (registry `complete_inputs_only`).
+    if not whole_numerator:
+        return unavailable("partial_input")
     if pairing.complete_inputs_only and not all(
         (side.dimensions or {}).get("completeness") == "complete"
         for side in (numerator, denominator)
@@ -370,12 +374,67 @@ def _key(observation: NeutralObservation, match_release: bool = True) -> tuple:
     )
 
 
+def summed_numerators(
+    pairing: RatioPairing,
+    numerators: list[NeutralObservation],
+    addends: list[list[NeutralObservation]],
+) -> list[tuple[NeutralObservation, bool]]:
+    """Each numerator row with its table's other lines added, and whether all were there.
+
+    The sum is the Bureau's own arithmetic for a profile-table line (DP03
+    adds three B23008 lines); its margin is the square root of the summed
+    squared margins, the ACS handbook's formula for a sum. A row missing an
+    addend, or with an addend that published no number, is returned as it
+    came with ``False``: a partial sum is never divided.
+    """
+    by_key = [
+        {_key(row, pairing.match_release): row for row in rows} for rows in addends
+    ]
+    out: list[tuple[NeutralObservation, bool]] = []
+    for row in numerators:
+        parts = [row] + [
+            index.get(_key(row, pairing.match_release)) for index in by_key
+        ]
+        values = [None if part is None else _usable(part) for part in parts]
+        if any(value is None for value in values):
+            out.append((row, False))
+            continue
+        margins = [_number(_margin(part)) for part in parts]  # type: ignore[arg-type]
+        margin = (
+            None
+            if any(m is None for m in margins)
+            else _rounded(sum((m * m for m in margins), Decimal(0)).sqrt())  # type: ignore[operator]
+        )
+        out.append(
+            (
+                row.model_copy(
+                    update={
+                        "metric_code": " + ".join(
+                            [pairing.numerator, *pairing.numerator_addends]
+                        ),
+                        "metric_display_name": None,
+                        "value": _rounded(sum(values, Decimal(0))),  # type: ignore[arg-type]
+                        "uncertainty": ObservationUncertainty(margin_of_error=margin),
+                    }
+                ),
+                True,
+            )
+        )
+    return out
+
+
 def pair_rows(
     pairing: RatioPairing,
     numerators: list[NeutralObservation],
     denominators: list[NeutralObservation],
+    addends: Optional[list[list[NeutralObservation]]] = None,
 ) -> list[DerivedRatioObservation]:
     """Each numerator row beside the denominator with its geography, period and release."""
+    rows = (
+        summed_numerators(pairing, numerators, addends)
+        if pairing.numerator_addends
+        else [(row, True) for row in numerators]
+    )
     by_key: dict[tuple, NeutralObservation] = {}
     for row in denominators:
         # Across releases (``match_release: false``) the first row the read
@@ -388,8 +447,9 @@ def pair_rows(
             row,
             by_key.get(_key(row, pairing.match_release)),
             denominator_elsewhere=row.geo_id in published_geographies,
+            whole_numerator=whole,
         )
-        for row in numerators
+        for row, whole in rows
     ]
 
 
@@ -503,7 +563,18 @@ def list_derived_observations(
                 f"pairing '{pairing.ratio_id}' names the denominator "
                 f"{pairing.denominator}, which the catalog does not publish"
             )
-        items = pair_rows(pairing, page.items, denominators)
+        addends = []
+        for code in pairing.numerator_addends:
+            part = observations_for_geographies(
+                db, code, scope, release if pairing.match_release else None, geo_ids
+            )
+            if part is None:
+                raise NeutralQueryError(
+                    f"pairing '{pairing.ratio_id}' adds {code}, which the "
+                    "catalog does not publish"
+                )
+            addends.append(part)
+        items = pair_rows(pairing, page.items, denominators, addends)
 
     return DerivedRatioListResponse(
         ratio=pairing_summary(pairing),

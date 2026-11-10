@@ -73,6 +73,9 @@ class DerivedRatioPairing(BaseModel):
     complete_inputs_only: bool = False
     #: False when the two sides of a period come from different releases.
     match_release: bool = True
+    #: Further lines of the numerator's own ACS table added to it before
+    #: dividing (the Bureau's profile-table arithmetic); empty for most.
+    numerator_addends: list[str] = []
     dataset: Optional[str] = None
     denominator_label: str
     universe: str
