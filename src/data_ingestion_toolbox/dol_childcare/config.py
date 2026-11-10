@@ -43,10 +43,20 @@ class ChildcareConfig(BaseModel):
     api_key: str = Field(
         default_factory=lambda: os.environ.get("DOL_API_KEY", ""), repr=False
     )
-    #: Rows per API request: the API answers at most 10,000 rows or 5 MB.
-    api_page_size: int = 5000
-    min_spacing_seconds: float = 2.0
-    max_attempts: int = 4
+    #: Rows per API request. The API answers at most 10,000 rows or 5 MB,
+    #: but 5,000-row pages drew 429 and 502 answers after about ten
+    #: requests (2026-11-09, ``dol_childcare_load.out``): smaller pages ask
+    #: less of it each time.
+    api_page_size: int = 1000
+    #: The pause between two requests. DOL's API guide states no per-key
+    #: rate; a page every ten seconds is about 60 requests over ten minutes.
+    min_spacing_seconds: float = 10.0
+    #: Attempts per request. A 429 waits as long as its ``Retry-After`` asks
+    #: (at most ``max_retry_after_seconds``); a 5xx or a dropped connection
+    #: waits ``retry_backoff_seconds``, doubled each time.
+    max_attempts: int = 6
+    retry_backoff_seconds: float = 15.0
+    max_retry_after_seconds: float = 600.0
     user_agent: str = (
         "population-etl-toolbox DOL childcare prices ingestion (public-data warehouse)"
     )
@@ -72,9 +82,11 @@ class ChildcareConfig(BaseModel):
             raise ValueError("timeout_seconds must be positive")
         return value
 
-    @field_validator("min_spacing_seconds")
+    @field_validator(
+        "min_spacing_seconds", "retry_backoff_seconds", "max_retry_after_seconds"
+    )
     @classmethod
     def _spacing(cls, value: float) -> float:
         if value < 0:
-            raise ValueError("min_spacing_seconds must not be negative")
+            raise ValueError("must not be negative")
         return value

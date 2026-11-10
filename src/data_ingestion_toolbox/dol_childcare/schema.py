@@ -25,6 +25,7 @@ DDL_FILES = [
 
 REQUIRED_RELATIONS = (
     "control.dol_childcare_file",
+    "control.dol_childcare_page",
     "silver_dol_childcare.price_revision",
     "silver_dol_childcare.observation_quarantine",
     "silver_dol_childcare.fact_price",

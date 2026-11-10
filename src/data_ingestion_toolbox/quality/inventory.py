@@ -2940,6 +2940,16 @@ _NDCP_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first capture",
     ),
     _obj(
+        "control.dol_childcare_page",
+        "control",
+        "DOL_CHILDCARE",
+        grain="release, request_key (one API page of a read not yet captured)",
+        lineage="",
+        scope_method="the pages of a read stopped before its capture, kept to resume it",
+        cadence="per read; removed once the read's capture is committed",
+        empty_behavior="empty whenever no read is stopped part way",
+    ),
+    _obj(
         "silver_dol_childcare.price_revision",
         "silver",
         "DOL_CHILDCARE",

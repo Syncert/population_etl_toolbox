@@ -289,6 +289,7 @@ def reviewed_warehouse(
                 for table in SILVER_TABLES:
                     cursor.execute(f"DELETE FROM {table}")
                 cursor.execute("DELETE FROM control.dol_childcare_file")
+                cursor.execute("DELETE FROM control.dol_childcare_page")
                 delete_capture_graph(cursor, owned_runs)
                 for geo_id in sorted(set(TRACKED_GEO_IDS) - preexisting):
                     delete_geography(cursor, geo_id)

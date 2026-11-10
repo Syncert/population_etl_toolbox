@@ -200,3 +200,40 @@ def test_records_with_a_changed_layout_are_quarantined_and_serve_nothing(
     assert ndcp.rows(
         factory, "SELECT COUNT(*) FROM gold_dol_childcare.metric_publisher"
     ) == [(0,)]
+
+
+def test_a_stopped_read_keeps_its_pages_and_the_next_resumes_from_them(
+    ndcp_warehouse,
+) -> None:
+    """Covers: DB-073 — pages answered before a refusal are kept, the resumed read asks only for the rest, and none is left after the capture."""
+    import json
+
+    import httpx
+
+    from data_ingestion_toolbox.dol_childcare.client import ChildcareFetchError
+
+    factory = ndcp_warehouse
+
+    class _RefusesFrom2015(ndcp.FixtureClient):
+        def get(self, url, *, headers, params=None):
+            if json.loads(params["filter_object"])["value"] >= 2015:
+                return httpx.Response(429, request=httpx.Request("GET", url))
+            return super().get(url, headers=headers, params=params)
+
+    with pytest.raises(ChildcareFetchError, match="retry_exhausted"):
+        ndcp.run_to_gold(factory, client=_RefusesFrom2015())
+    assert ndcp.rows(
+        factory,
+        "SELECT MIN(study_year), MAX(study_year), COUNT(*) FROM control.dol_childcare_page",
+    ) == [(2008, 2014, 7)]
+
+    resumed = ndcp.FixtureClient()
+    _run_id, status, facts, published = ndcp.run_to_gold(factory, client=resumed)
+    assert (status, published) == ("captured", 1)
+    assert facts == 5 * len(MEASURES)
+    assert [json.loads(p["filter_object"])["value"] for p in resumed.params] == list(
+        range(2015, 2023)
+    )
+    assert ndcp.rows(factory, "SELECT COUNT(*) FROM control.dol_childcare_page") == [
+        (0,)
+    ]
