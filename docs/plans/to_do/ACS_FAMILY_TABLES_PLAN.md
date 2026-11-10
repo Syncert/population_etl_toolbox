@@ -65,30 +65,28 @@ planned.
 
 ## Size
 
-Estimated from the per-variable bytes measured on 2026-10-26 and recorded in
-`AcsConfig.backfill_bytes_per_variable`, with 49 estimate variables (B23008 27,
-B13002 19, B19125 3):
+Measured on OFFICE_LAB on 2026-11-10 (`census_acs.measure`, read-only, at
+c0a71f11; output in the project files as `acs_measure_20261110.txt`). The
+2024 5-year year holds 3,850 curated variables: counties 13.1 GiB (silver
+and gold), about 3.4 MiB per variable; places 131.4 GiB, about 34 MiB per
+variable. The three tables add 49 estimate variables (B23008 27, B13002 19,
+B19125 3):
 
-| Grain | Per variable-year | Years | Estimate |
+| Grain | Per variable-year | Years | Size |
 |---|---|---|---|
-| acs5 place | 38.5 MB | 2009–2024 (16) | about 30 GB |
-| acs1 place | 0.6 MB | 2005–2024 less 2020 (19) | about 0.6 GB |
-| counties, metros, states, nation | about a tenth of places | as above | about 4 GB |
-| **Total** | | | **about 35 GB**, some 1.3% of the warehouse |
+| acs5 place | 34 MiB | 2009–2024 (16) | about 26 GiB |
+| acs5 county | 3.4 MiB | 2009–2024 (16) | about 2.6 GiB |
+| acs1 place, county; metros, states, nation | well under the above | 2005 on | about 1–2 GiB |
+| **Total** | | | **about 30 GiB** |
 
-That is an estimate. The measurement is
-`python -m data_ingestion_toolbox.census_acs.measure`, which this PR gives a
-`--tables` option: it projects only the named tables' variables in every
-target year, the reference year included. Run in the Airflow scheduler
-container on OFFICE_LAB once the deploy has synced the variable metadata
-(the run's first task does it):
+The disk has 2,369 of 6,047 GiB free (39%), and keeps 39% free afterwards,
+well above the 20% reserve. The warehouse is 3,349 GiB, ACS silver 1,246 GiB.
 
-```
-docker compose -f infra/docker/docker-compose.airflow.yml exec airflow-scheduler python -m data_ingestion_toolbox.census_acs.measure --tables B13002,B23008,B19125 --project acs5:place:2009-2024,acs1:place:2005-2024
-```
-
-County projection needs a measured county reference year; the command
-projects nothing for a grain it has not measured rather than guess.
+`measure` gains a `--tables` option for later additions: it projects only
+the named tables' variables in every target year, the reference year
+included. It reads their variable count from `raw_census.acs_variables`, so
+it works only once the run's metadata sync has filed the tables; before
+that it projects nothing rather than guess.
 
 ## Metric definitions
 
@@ -129,15 +127,14 @@ published (5-year publishes every place, so in practice never).
 ## Deploy and live checks (OFFICE_LAB)
 
 1. Python-only change for slice 2a: `git merge --ff-only`; no restart.
-2. Before December 1: the measurement above; post the projected total.
-3. After the December 1 run: metadata labels, and that no tract slice ran:
+2. After the December 1 run: metadata labels, and that no tract slice ran:
 
 ```
 SELECT dataset, year, table_id, COUNT(*) FROM raw_census.acs_variables WHERE table_id IN ('B13002','B23008','B19125') GROUP BY 1,2,3 ORDER BY 1,2,3;
 SELECT geo_level, status, COUNT(*) FROM control.acs_ingestion_slices WHERE finished_at >= '2026-12-01' OR variables_hash LIKE 'added-tables-pending:%' GROUP BY 1, 2 ORDER BY 1, 2;
 ```
 
-4. `glossary_harvest` has run and the Dane County page shows the three rows.
+3. `glossary_harvest` has run and the Dane County page shows the three rows.
 
 ## Acceptance criteria
 
