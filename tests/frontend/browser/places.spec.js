@@ -27,7 +27,7 @@ test("the nation's page reads every chapter it publishes and lists the states", 
   await ready(page, "/us");
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("United States");
-  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows"]);
+  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows", "Starting a family"]);
   // LAUS publishes no national rate; the card says the nation's is another survey's.
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published nationally by LAUS");
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Current Population Survey");
@@ -513,7 +513,7 @@ test("what stands out lists the highest and lowest measures apart, with withheld
   // Covers: WEB-165 — each rank drawn as a position; caveats said once.
   await ready(page, "/us/wisconsin/dane-county");
   const section = page.getByTestId("place-standout");
-  await expect(section.getByTestId("place-standout-count")).toContainText("6 measures could be ranked among Wisconsin counties, each on its own");
+  await expect(section.getByTestId("place-standout-count")).toContainText("7 measures could be ranked among Wisconsin counties, each on its own");
   await expect(section.getByTestId("place-standout-highest").locator("li")).toHaveCount(3);
   await expect(section.getByTestId("place-standout-lowest").locator("li")).toHaveCount(3);
   const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
@@ -698,6 +698,39 @@ test("a county's childcare prices are its own, for one year, with a blank price 
   await ready(page, "/us/wisconsin");
   await expect(page.getByTestId("place-childcare-counties-only")).toContainText("publishes childcare prices for counties only");
   await expect(page.getByTestId("place-childcare-table")).toHaveCount(0);
+});
+
+// Covers: WEB-173 — starting-a-family-collection: a county page gathers
+// eight published measures in four groups, each with its own value, period,
+// levels and rank; the two prices show hours of the county's own wage with
+// the arithmetic stated; no line is called good or bad; a state page says
+// where a county-only figure is published instead of showing one.
+test("Starting a family gathers its lines, each standing alone, with hours of work for the prices", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const family = page.getByTestId("chapter-family");
+  await expect(family.getByRole("heading", { name: "Starting a family" })).toBeVisible();
+  await expect(page.getByTestId("chapter-rail").getByRole("link", { name: "Starting a family" })).toBeVisible();
+  await expect(page.getByTestId("family-infant-care-value")).toHaveText("$293 a week");
+  // $293 over Dane County's $1,200 week of 40 hours, the price's own year.
+  await expect(page.getByTestId("family-infant-care-hours")).toHaveText("9 hours 46 minutes of work at Dane County's average wage");
+  await expect(page.getByTestId("family-infant-care-rank")).toContainText("Higher than 40 of 70 Wisconsin counties with a published value");
+  await expect(page.getByTestId("family-rent-3br-value")).toHaveText("$2,000 a month");
+  await expect(page.getByTestId("family-rent-3br-hours")).toHaveText("66 hours 40 minutes of work at Dane County's average wage");
+  await expect(page.getByTestId("family-hours-formula")).toContainText(
+    "$2,000 a month ÷ (Dane County's average wage in 2025, the newest year QCEW has published, $1,200 a week ÷ 40 hours = $30.00 an hour) = 66.7 hours for a month's three-bedroom rent.",
+  );
+  await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,200 a week");
+  await expect(page.getByTestId("family-students-per-teacher")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("family-households-with-children-value")).toContainText("%");
+  for (const word of ["easier", "harder", "better", "worse", "score"]) await expect(family).not.toContainText(word);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("family-infant-care-gap")).toHaveText("Published by county; the Women's Bureau publishes no state or national figure");
+  await expect(page.getByTestId("family-infant-care-hours")).toHaveCount(0);
+  await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,100 a week");
 });
 
 // Covers: WEB-172 — grocery-spending: a county shows its Census region's

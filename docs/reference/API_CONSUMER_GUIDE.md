@@ -798,8 +798,10 @@ matched. Each row carries:
 - `value`, rounded to two decimals of `unit` (percent, per 1,000, per
   100,000), or `null` with `unavailable_reason`: `different_period` (the
   denominator is published for this geography, but not for this period and
-  release), `denominator_missing`, `denominator_zero` or `suppressed_input`.
-  A missing or withheld input is never read as zero.
+  release), `denominator_missing`, `denominator_zero`, `suppressed_input`,
+  or `partial_input` (a pairing marked `complete_inputs_only`, such as
+  NCES students per teacher, met a sum that `dimensions.completeness` calls
+  `partial`). A missing or withheld input is never read as zero.
 - `margin_of_error` and `margin_of_error_method`. For ACS inputs the margin
   is the Census Bureau's formula for a derived proportion (`proportion`), or
   for a ratio (`ratio`), or the ratio formula where the proportion formula's

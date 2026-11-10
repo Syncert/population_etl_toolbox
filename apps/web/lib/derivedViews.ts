@@ -23,7 +23,8 @@ export type UnavailableReason =
   | "no_reporting_agency"
   | "only_multi_county_agencies"
   | "coverage_below_floor"
-  | "agencies_not_loaded";
+  | "agencies_not_loaded"
+  | "partial_input";
 
 /** One pairing as `GET /api/v1/catalog/derived-ratios` lists it. */
 export interface DerivedRatioPairing {
@@ -196,6 +197,7 @@ const UNAVAILABLE_TEXT: Record<UnavailableReason, string> = {
   only_multi_county_agencies: "Only agencies that also serve other counties reported",
   coverage_below_floor: "Too few agencies reported to give a rate",
   agencies_not_loaded: "Reports from some agencies serving this county are not loaded yet",
+  partial_input: "Not every school reported, so the sum is partial and is not divided",
 };
 
 export function unavailableText(reason: string | null | undefined): string {
