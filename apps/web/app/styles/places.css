@@ -978,6 +978,9 @@
 .level-strip-axis small {
   position: absolute;
   transform: translateX(-50%);
+  /* A tick near the track's right end has little room left before the
+     edge; without this "30" breaks into "3" over "0" in a narrow card. */
+  white-space: nowrap;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
 }

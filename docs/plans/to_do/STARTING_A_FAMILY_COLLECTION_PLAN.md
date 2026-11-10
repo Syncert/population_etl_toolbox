@@ -181,3 +181,22 @@ machine-readable official source).
 ## Checkpoint
 
 2026-11-10: plan written; approved 17:17Z with the answers above; build started.
+
+2026-11-10 18:23Z: slice 1 merged in PR #346 (merge 34f03ae5) and deployed on
+the internal stack. Every row renders for Dane County, and every metric has
+its `dim_metric` row. The distinctive reads take 0.11–0.35 s cold. Students
+per teacher reads "Published without a value" there because Dane's NCES sums
+are partial, which is what the complete-inputs rule intends.
+
+On a first, cold load the county page made 129 reads, and 20 of them took more
+than 2 s. Each read was fast on its own; they waited in the browser's queue of
+about six connections per host. A second load had none over 2 s. The section
+reads only after the page settles, so its reads come last and do not hold back
+the chapters above it. If first-load waits need to come down, the next step is
+a browser performance trace (see the place-page speed notes), not another
+batch endpoint.
+
+A follow-up fixed a level-strip axis label that broke onto two lines in a
+narrow card ("30" read as "3" over "0").
+
+Slice 2, the three ACS tables, is in its own plan and PR.
