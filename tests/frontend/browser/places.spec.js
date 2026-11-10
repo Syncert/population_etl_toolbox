@@ -748,6 +748,26 @@ test("Starting a family gathers its lines, each standing alone, with hours of wo
   await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,100 a week");
 });
 
+// Covers: WEB-173 — a "More for families" pairing whose inputs the site has
+// not loaded yet (the API answers 404 or "the catalog does not publish") says
+// it is not loaded, never that it could not be read.
+test("a family pairing whose inputs are not loaded yet says so, not that it failed", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await page.route(/\/api\/v1\/observations\/derived\?.*ratio_id=(births_past_year_share|young_children_all_parents)/, (route) =>
+    route.request().url().includes("births_past_year_share")
+      ? route.fulfill({ status: 404, json: { detail: "ratio_id not found" } })
+      : route.fulfill({ status: 422, json: { detail: "pairing 'young_children_all_parents_in_labor_force_share:acs5' names CENSUS_ACS:acs5:B23008_004, which the catalog does not publish" } }),
+  );
+  await page.getByTestId("family-more").locator("summary").click();
+  for (const id of ["births-past-year", "young-children-parents-in-labor-force"]) {
+    const line = page.getByTestId(`family-${id}`);
+    await expect(line).toHaveAttribute("data-available", "false");
+    await expect(line).toContainText("Not loaded into this site yet.");
+    await expect(line).not.toContainText("Could not be read");
+  }
+});
+
 // Covers: WEB-172 — grocery-spending: a county shows its Census region's
 // yearly household grocery spending, named as the region's and as spending,
 // not a price, with the nation's figures by household size.

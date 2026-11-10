@@ -29,6 +29,7 @@ import {
   FAMILY_INTRO,
   FAMILY_MORE_TITLE,
   FAMILY_ROWS,
+  derivedNotLoaded,
   familyValueText,
   headlineLevel,
   hoursFormula,
@@ -318,8 +319,9 @@ function readFamilyRows(
               });
             }
           })
-          .catch(() => {
-            if (!signal.aborted) next.set(key(row.ratioId!, entry.geoId), { row: null, error: "Could not be read just now" });
+          .catch((error) => {
+            if (signal.aborted) return;
+            next.set(key(row.ratioId!, entry.geoId), { row: null, error: derivedNotLoaded(error) ? NOT_LOADED : "Could not be read just now" });
           })
           .finally(() => {
             if (signal.aborted) return;
@@ -368,6 +370,17 @@ function FamilyLine({
   }
   const code = row.metricCode || row.ratioId!;
   const byGeo = new Map(levels.map((entry) => [entry.geoId, answers.get(key(code, entry.geoId)) || { row: null, pending: true }]));
+  // A pairing whose inputs this site has not loaded yet, at every level it
+  // was asked for, is a row not loaded, not a failed read.
+  const asked = levels.filter((entry) => row.levels.includes(entry.level));
+  if (row.ratioId && asked.length && asked.every((entry) => byGeo.get(entry.geoId)?.error === NOT_LOADED)) {
+    return (
+      <li className="place-family-row" data-testid={testId} data-available="false">
+        <h4>{row.label}</h4>
+        <p className="subtle">{NOT_LOADED}</p>
+      </li>
+    );
+  }
   const card = threeLevelCard(levels, byGeo, (level) => row.levels.includes(level));
   const lead = headlineLevel(row, levels);
   const leadRow = lead ? card.rows.find((entry) => entry.place.geoId === lead.geoId) : null;

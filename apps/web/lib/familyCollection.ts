@@ -301,3 +301,17 @@ export function familyValueText(value: unknown, unit: string): string {
   if (/^(percent|%)$/i.test(trimmed)) return `${formatNumber(number, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
   return `${formatNumber(number, { maximumFractionDigits: 1 })} ${trimmed}`.trim();
 }
+
+/**
+ * Whether a failed derived read means the pairing's inputs are not in this
+ * site's catalog yet, rather than a read that went wrong: the API answers
+ * 404 for a pairing it does not hold and 422 "... which the catalog does not
+ * publish" for one whose numerator, addend or denominator is not loaded.
+ * Such a row says "Not loaded into this site yet", never "Could not be read".
+ */
+export function derivedNotLoaded(error: unknown): boolean {
+  const failure = error as { status?: unknown; detail?: unknown } | null;
+  if (!failure || typeof failure.status !== "number") return false;
+  if (failure.status === 404) return true;
+  return failure.status === 422 && /catalog does not publish/i.test(String(failure.detail || ""));
+}
