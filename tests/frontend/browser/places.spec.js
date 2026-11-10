@@ -722,6 +722,10 @@ test("Starting a family gathers its lines, each standing alone, with hours of wo
   );
   await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,200 a week");
   await expect(page.getByTestId("family-students-per-teacher")).toHaveAttribute("data-available", "true");
+  // A ratio over the schools that reported both says how many those are.
+  await expect(page.getByTestId("family-students-per-teacher-schools")).toHaveText(
+    "From the schools that reported both students and teachers: 112 of 118 in Dane County and all 2,031 in Wisconsin.",
+  );
   await expect(page.getByTestId("family-households-with-children-value")).toContainText("%");
   // acs-family-tables: "More for families" reads nothing until opened, then
   // shows the three ACS tables in the same row format.

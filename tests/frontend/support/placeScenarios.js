@@ -344,8 +344,13 @@ function derivedRows(ratio, geoId, history = false) {
   const fbi = ratio.numerator.startsWith("FBI_UCR:");
   const missing = !provider && geoId === "state:55|county:105";
   const value = fbi ? { "state:55": "297.4", "state:27": "281.0", "us:1": "363.8" }[geoId] || "300.0" : (10 + (scale[geoId] || 1) / 10).toFixed(2);
+  // NCES sums name their schools: in Dane County 6 of 118 did not report
+  // both students and teachers; in Wisconsin every school did.
+  const schools = ratio.numerator.startsWith("NCES_CCD:")
+    ? { schools_with_value: geoId === "state:55" ? "2031" : "112", schools_without_value: geoId === "state:55" ? "0" : "6" }
+    : {};
   const input = (code, amount) => ({ metric_code: code, metric_label: `${code.split(":").at(-1)} (UI fixture)`, release: fbi ? "fixture-2025" : "2023",
-    period_start: fbi ? "2024-01-01" : "2019-01-01", period_end: fbi ? "2024-12-31" : "2023-12-31", value: amount, value_status: "valid", margin_of_error: provider ? null : "40", margin_of_error_controlled: false });
+    period_start: fbi ? "2024-01-01" : "2019-01-01", period_end: fbi ? "2024-12-31" : "2023-12-31", value: amount, value_status: "valid", margin_of_error: provider ? null : "40", margin_of_error_controlled: false, ...schools });
   return [{
     ratio_id: ratio.ratio_id, derived: !provider, pairing_status: ratio.status, pairing_version: ratio.version,
     geo_id: geoId, geo_level: place.geo_level, geo_name: place.geo_name,

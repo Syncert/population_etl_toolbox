@@ -304,7 +304,11 @@ def test_the_starting_a_family_pairings_keep_their_rules() -> None:
         assert share.denominator == f"CENSUS_ACS:{dataset}:B11005_001"
     ratio = shipped["students_per_teacher"]
     assert (ratio.kind, ratio.scale) == ("ratio", 1)
-    assert ratio.complete_inputs_only and not ratio.match_release
+    # Version 2 (Nick, 2026-11-10): the sums over the schools that reported
+    # both, so the figure is shown with how many schools those are.
+    assert ratio.numerator == "NCES_CCD:student_membership_matched"
+    assert ratio.denominator == "NCES_CCD:teacher_fte_matched"
+    assert ratio.version == 2
     rent = shipped["minutes_of_work_rent_3br"]
     assert rent.kind == "time_cost" and rent.wage_geo_levels == ("COUNTY",)
     assert rent.numerator == "HUD_FMR_IL:fmr_3br"
@@ -325,9 +329,6 @@ def test_the_starting_a_family_pairings_keep_their_rules() -> None:
     assert list(_parse(cost)) == ["minutes_of_work_rent_3br"]
     with pytest.raises(RatioRegistryError):
         _parse({**cost, "wage_geo_levels": ["COUNTY", "STATE"]})
-    # Every other pairing matches releases and reads no completeness.
-    others = [p for rid, p in shipped.items() if rid != "students_per_teacher"]
-    assert all(p.match_release and not p.complete_inputs_only for p in others)
 
 
 def test_the_family_table_shares_add_only_lines_of_their_own_table() -> None:

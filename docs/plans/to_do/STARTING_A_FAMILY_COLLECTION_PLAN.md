@@ -71,7 +71,7 @@ counties".
 | Money coming in | Average weekly wage | QCEW `annual_avg_weekly_wage:10:0` | newest annual | yes | county figure, labelled | yes |
 | Money coming in | Children under 18 in poverty | SAIPE `SAEPOVRT0_17` | 2024 | yes | county figure, labelled | yes |
 | A child's surroundings | Children under 19 without health insurance | ACS share, existing `uninsured_under_19_share` | 2020–2024 survey | yes | yes | yes |
-| A child's surroundings | Students per teacher in public schools | NCES CCD `student_membership` / `teacher_fte`; **new** ratio pairing `students_per_teacher` | newest school year | yes, only where both sums are `complete` | county figure, labelled | yes |
+| A child's surroundings | Students per teacher in public schools | NCES CCD `student_membership_matched` / `teacher_fte_matched` (summed over the schools that reported both); **new** ratio pairing `students_per_teacher` | newest school year | yes, with how many of the place's schools reported both | county figure, labelled | yes |
 | A child's surroundings | Households with children under 18 | ACS `B11005_002` / `B11005_001`; **new** share pairing `households_with_children_share` | 2020–2024 survey | yes | yes | yes |
 
 "More for families" (a fold under the list, same row format, no extra
@@ -114,9 +114,10 @@ periods, the level strip and the rank only.
 1. `docs/semantics/derived_ratios.json`, three new reviewed pairings:
    - `households_with_children_share`, `share`, ACS `B11005_002` /
      `B11005_001`, same table (ADR-0009 rule 1).
-   - `students_per_teacher`, `ratio`, `NCES_CCD:student_membership` /
-     `NCES_CCD:teacher_fte`, same program; served only where both rows
-     are `completeness = complete` (a partial sum is not divided).
+   - `students_per_teacher`, `ratio`, `NCES_CCD:student_membership_matched` /
+     `NCES_CCD:teacher_fte_matched`: both summed in gold over only the
+     schools that reported both counts, served with how many of the
+     place's schools those are.
    - `minutes_of_work_rent_3br`, `time_cost`, `HUD_FMR_IL:fmr_3br` over the
      county's own QCEW wage. Needs `HUD_FMR_IL: "county"` in
      `TIME_COST_PRICES` and a one-paragraph ADR-0009 amendment: the price
@@ -181,3 +182,25 @@ machine-readable official source).
 ## Checkpoint
 
 2026-11-10: plan written; approved 17:17Z with the answers above; build started.
+
+2026-11-10 18:23Z: slice 1 merged in PR #346 (merge 34f03ae5) and deployed on
+the internal stack. Every row renders for Dane County, and every metric has
+its `dim_metric` row. The distinctive reads take 0.11–0.35 s cold. Students
+per teacher read "Published without a value" there because Dane's NCES sums
+were partial. Nick, 18:48Z: "even if not every school reported it should
+still display what was reported." The ratio now divides sums over the
+schools that reported both counts and says how many of the place's schools
+those are (`*_matched` measures in gold, ADR-0009 amendment).
+
+On a first, cold load the county page made 129 reads, and 20 of them took more
+than 2 s. Each read was fast on its own; they waited in the browser's queue of
+about six connections per host. A second load had none over 2 s. The section
+reads only after the page settles, so its reads come last and do not hold back
+the chapters above it. If first-load waits need to come down, the next step is
+a browser performance trace (see the place-page speed notes), not another
+batch endpoint.
+
+A follow-up fixed a level-strip axis label that broke onto two lines in a
+narrow card ("30" read as "3" over "0").
+
+Slice 2, the three ACS tables, is in its own plan and PR.

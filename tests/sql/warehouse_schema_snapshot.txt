@@ -10612,7 +10612,7 @@ v gold_nces_ccd.measure_definition
     body     measure_label,
     body     unit,
     body     ((((((('NCES Common Core of Data (public schools): NCES publishes schools, not counties or states; '::text || 'this warehouse''s figure is the sum over the public schools that NCES''s EDGE geocode file '::text) || 'places in the county (by its five-digit county code) or state (by the school''s physical '::text) || 'state, never the BIE or DoDEA operating code), counting only values NCES flags Reported. '::text) || 'schools_without_value says how many placed schools had none, so a partial sum is never '::text) || 'silent. '::text) || definition) || ' Source: U.S. Department of Education, National Center for Education Statistics, Common '::text) || 'Core of Data and EDGE school geocodes.'::text AS observation_basis
-    body    FROM ( VALUES ('operating_schools'::text,'directory'::text,'Operating public schools'::text,'schools'::text,'A school is counted when its directory status that year is Open, New, Added, Reopened or Changed Boundary/Agency.'::text), ('charter_schools'::text,'directory'::text,'Operating public charter schools'::text,'schools'::text,'An operating school whose directory charter flag is Yes.'::text), ('student_membership'::text,'membership'::text,'Students enrolled (membership)'::text,'students'::text,'Membership is the school''s reported enrollment count on or about October 1.'::text), ('teacher_fte'::text,'staff'::text,'Teachers (full-time equivalent)'::text,'full-time-equivalent teachers'::text,'Classroom teachers in full-time equivalents.'::text), ('frpl_eligible'::text,'lunch'::text,'Students eligible for free or reduced-price lunch'::text,'students'::text,'Free lunch is family income below 130 percent of poverty or direct certification; reduced-price is 130 to 185 percent. Since 2016-17 states may report this, direct certification, or both, and Community Eligibility Provision schools may report every student as free-eligible.'::text), ('free_lunch_eligible'::text,'lunch'::text,'Students eligible for free lunch'::text,'students'::text,'Family income below 130 percent of poverty or categorical eligibility; Community Eligibility Provision schools may report every student.'::text), ('reduced_price_lunch_eligible'::text,'lunch'::text,'Students eligible for reduced-price lunch'::text,'students'::text,'Family income from 130 to 185 percent of poverty.'::text), ('direct_certification'::text,'lunch'::text,'Students directly certified for free meals'::text,'students'::text,'Students categorically eligible and reported to USDA (FNS-742); a separate measure from free or reduced-price eligibility, never a substitute for it.'::text)) measure(measure, component, measure_label, unit, definition);
+    body    FROM ( VALUES ('operating_schools'::text,'directory'::text,'Operating public schools'::text,'schools'::text,'A school is counted when its directory status that year is Open, New, Added, Reopened or Changed Boundary/Agency.'::text), ('charter_schools'::text,'directory'::text,'Operating public charter schools'::text,'schools'::text,'An operating school whose directory charter flag is Yes.'::text), ('student_membership'::text,'membership'::text,'Students enrolled (membership)'::text,'students'::text,'Membership is the school''s reported enrollment count on or about October 1.'::text), ('teacher_fte'::text,'staff'::text,'Teachers (full-time equivalent)'::text,'full-time-equivalent teachers'::text,'Classroom teachers in full-time equivalents.'::text), ('student_membership_matched'::text,'matched'::text,'Students enrolled in schools that also reported teachers'::text,'students'::text,'Membership summed over only the schools that reported both a Reported membership and a Reported teacher count in the newest membership and staff files of the year, so that it can be divided by teacher_fte_matched over the same schools. schools_with_value counts those schools; schools_without_value counts placed schools in either file missing one of the two.'::text), ('teacher_fte_matched'::text,'matched'::text,'Teachers (full-time equivalent) in schools that also reported membership'::text,'full-time-equivalent teachers'::text,'Classroom teachers in full-time equivalents, summed over the same schools as student_membership_matched: those that reported both counts that year.'::text), ('frpl_eligible'::text,'lunch'::text,'Students eligible for free or reduced-price lunch'::text,'students'::text,'Free lunch is family income below 130 percent of poverty or direct certification; reduced-price is 130 to 185 percent. Since 2016-17 states may report this, direct certification, or both, and Community Eligibility Provision schools may report every student as free-eligible.'::text), ('free_lunch_eligible'::text,'lunch'::text,'Students eligible for free lunch'::text,'students'::text,'Family income below 130 percent of poverty or categorical eligibility; Community Eligibility Provision schools may report every student.'::text), ('reduced_price_lunch_eligible'::text,'lunch'::text,'Students eligible for reduced-price lunch'::text,'students'::text,'Family income from 130 to 185 percent of poverty.'::text), ('direct_certification'::text,'lunch'::text,'Students directly certified for free meals'::text,'students'::text,'Students categorically eligible and reported to USDA (FNS-742); a separate measure from free or reduced-price eligibility, never a substitute for it.'::text)) measure(measure, component, measure_label, unit, definition);
 
 v gold_nces_ccd.measure_export
     column source_object_key text
@@ -10757,7 +10757,140 @@ v gold_nces_ccd.observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body WITH grains AS (
+    body WITH newest_file AS (
+    body          SELECT DISTINCT ON (file.component, file.school_year) file.component,
+    body             file.school_year,
+    body             file.run_id,
+    body             file.file_stem,
+    body             file.release_version,
+    body             file.version_rank,
+    body             file.published_at,
+    body             file.capture_id
+    body            FROM control.nces_ccd_file file
+    body           WHERE file.status = 'published'::text AND (file.component = ANY (ARRAY['membership'::text, 'staff'::text]))
+    body           ORDER BY file.component, file.school_year, file.version_rank DESC, file.published_at DESC, file.run_id DESC
+    body         ), matched_pair AS (
+    body          SELECT membership.school_year,
+    body             membership.run_id AS membership_run_id,
+    body             staff.run_id AS staff_run_id,
+    body                 CASE
+    body                     WHEN membership.published_at >= staff.published_at THEN membership.run_id
+    body                     ELSE staff.run_id
+    body                 END AS run_id,
+    body                 CASE
+    body                     WHEN membership.published_at >= staff.published_at THEN membership.capture_id
+    body                     ELSE staff.capture_id
+    body                 END AS capture_id,
+    body             (membership.file_stem || ' + '::text) || staff.file_stem AS file_stem,
+    body             ((membership.release_version || ' membership, v'::text) || staff.release_version) || ' staff'::text AS release_version,
+    body             GREATEST(membership.version_rank, staff.version_rank) AS version_rank,
+    body             GREATEST(membership.published_at, staff.published_at) AS published_at
+    body            FROM newest_file membership
+    body              JOIN newest_file staff ON staff.school_year = membership.school_year AND staff.component = 'staff'::text
+    body           WHERE membership.component = 'membership'::text
+    body         ), matched_school AS NOT MATERIALIZED (
+    body          SELECT pair.run_id,
+    body             pair.school_year,
+    body             pair.file_stem,
+    body             pair.release_version,
+    body             pair.version_rank,
+    body             pair.capture_id,
+    body             pair.published_at,
+    body             school.ncessch,
+    body             school.state_fips,
+    body             school.county_geo_id,
+    body             school.county_geo_sk,
+    body             school.county_status,
+    body             school.geocode_file,
+    body             sum(school.value) FILTER (WHERE school.measure = 'student_membership'::text AND school.value_status = 'valid'::text) AS membership,
+    body             sum(school.value) FILTER (WHERE school.measure = 'teacher_fte'::text AND school.value_status = 'valid'::text) AS teachers,
+    body             count(*) FILTER (WHERE school.measure = 'student_membership'::text AND school.value_status = 'valid'::text) AS membership_rows,
+    body             count(*) FILTER (WHERE school.measure = 'teacher_fte'::text AND school.value_status = 'valid'::text) AS teacher_rows
+    body            FROM matched_pair pair
+    body              JOIN gold_nces_ccd.school_observation school ON school.run_id = pair.membership_run_id AND school.measure = 'student_membership'::text OR school.run_id = pair.staff_run_id AND school.measure = 'teacher_fte'::text
+    body           GROUP BY pair.run_id, pair.school_year, pair.file_stem, pair.release_version, pair.version_rank, pair.capture_id, pair.published_at, school.ncessch, school.state_fips, school.county_geo_id, school.county_geo_sk, school.county_status, school.geocode_file
+    body         ), matched_value AS NOT MATERIALIZED (
+    body          SELECT matched.run_id,
+    body             matched.school_year,
+    body             matched.file_stem,
+    body             matched.release_version,
+    body             matched.version_rank,
+    body             matched.capture_id,
+    body             matched.published_at,
+    body             matched.ncessch,
+    body             matched.state_fips,
+    body             matched.county_geo_id,
+    body             matched.county_geo_sk,
+    body             matched.county_status,
+    body             matched.geocode_file,
+    body             matched.membership,
+    body             matched.teachers,
+    body             matched.membership_rows,
+    body             matched.teacher_rows,
+    body             measure.measure,
+    body                 CASE
+    body                     WHEN matched.membership_rows > 0 AND matched.teacher_rows > 0 THEN measure.value
+    body                     ELSE NULL::numeric
+    body                 END AS value,
+    body                 CASE
+    body                     WHEN matched.membership_rows > 0 AND matched.teacher_rows > 0 THEN 'valid'::text
+    body                     ELSE 'missing'::text
+    body                 END AS value_status
+    body            FROM matched_school matched
+    body              CROSS JOIN LATERAL ( VALUES ('student_membership_matched'::text,matched.membership), ('teacher_fte_matched'::text,matched.teachers)) measure(measure, value)
+    body         ), matched_grains AS (
+    body          SELECT matched.run_id,
+    body             matched.school_year,
+    body             matched.file_stem,
+    body             matched.release_version,
+    body             matched.version_rank,
+    body             matched.capture_id,
+    body             matched.published_at,
+    body             matched.ncessch,
+    body             matched.state_fips,
+    body             matched.county_geo_id,
+    body             matched.county_geo_sk,
+    body             matched.county_status,
+    body             matched.geocode_file,
+    body             matched.membership,
+    body             matched.teachers,
+    body             matched.membership_rows,
+    body             matched.teacher_rows,
+    body             matched.measure,
+    body             matched.value,
+    body             matched.value_status,
+    body             'county'::text AS geo_type,
+    body             matched.county_geo_id AS geo_id,
+    body             matched.county_geo_sk AS geo_sk
+    body            FROM matched_value matched
+    body           WHERE matched.county_status = 'resolved'::text
+    body         UNION ALL
+    body          SELECT matched.run_id,
+    body             matched.school_year,
+    body             matched.file_stem,
+    body             matched.release_version,
+    body             matched.version_rank,
+    body             matched.capture_id,
+    body             matched.published_at,
+    body             matched.ncessch,
+    body             matched.state_fips,
+    body             matched.county_geo_id,
+    body             matched.county_geo_sk,
+    body             matched.county_status,
+    body             matched.geocode_file,
+    body             matched.membership,
+    body             matched.teachers,
+    body             matched.membership_rows,
+    body             matched.teacher_rows,
+    body             matched.measure,
+    body             matched.value,
+    body             matched.value_status,
+    body             'state'::text AS text,
+    body             entity.geo_id,
+    body             entity.geo_sk
+    body            FROM matched_value matched
+    body              JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = ('state:'::text || matched.state_fips) AND entity.geo_type = 'state'::text
+    body         ), grains AS (
     body          SELECT school.run_id,
     body             school.component,
     body             school.school_year,
@@ -10825,6 +10958,24 @@ v gold_nces_ccd.observation_revision
     body             min(grains.published_at) AS published_at
     body            FROM grains
     body           GROUP BY grains.run_id, grains.measure, grains.geo_type, grains.geo_id
+    body         UNION ALL
+    body          SELECT matched.run_id,
+    body             matched.measure,
+    body             matched.geo_type,
+    body             matched.geo_id,
+    body             min(matched.geo_sk) AS geo_sk,
+    body             sum(matched.value) FILTER (WHERE matched.value_status = 'valid'::text) AS value,
+    body             count(*) FILTER (WHERE matched.value_status = 'valid'::text) AS schools_with_value,
+    body             count(*) FILTER (WHERE matched.value_status <> 'valid'::text) AS schools_without_value,
+    body             min(matched.school_year) AS school_year,
+    body             min(matched.file_stem) AS file_stem,
+    body             min(matched.release_version) AS release_version,
+    body             min(matched.version_rank) AS version_rank,
+    body             min(matched.geocode_file) AS geocode_file,
+    body             min(matched.capture_id::text)::uuid AS capture_id,
+    body             min(matched.published_at) AS published_at
+    body            FROM matched_grains matched
+    body           GROUP BY matched.run_id, matched.measure, matched.geo_type, matched.geo_id
     body         )
     body  SELECT rolled.measure AS metric_key,
     body     definition.measure_label,

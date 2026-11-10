@@ -5327,9 +5327,9 @@
       "universe": "students in public schools placed here",
       "kind": "count",
       "caveat": "Summed from schools; a sum with schools that did not report is marked partial.",
-      "intended_use": "Show the size of a place's public school enrolment, and with full-time-equivalent teachers (NCES_CCD:teacher_fte), its students per teacher.",
+      "intended_use": "Show the size of a place's public school enrolment. Students per teacher divides the _matched sums instead, which cover the same schools.",
       "limitations": [
-        "Summed from schools; a sum with schools that did not report is marked partial (dimensions.completeness), and a partial sum is not divided.",
+        "Summed from schools; a sum with schools that did not report is marked partial (dimensions.completeness).",
         "Public schools only; private schools and home-schooled children are not counted.",
         "Labelled with the school year's fall: 2024 is the 2024-25 school year."
       ],
@@ -5382,9 +5382,9 @@
       "universe": "public schools placed here",
       "kind": "count",
       "caveat": "Summed from schools; a sum with schools that did not report is marked partial.",
-      "intended_use": "Divide public school students by teachers (students per teacher) where every placed school reported both.",
+      "intended_use": "Show the full-time-equivalent teachers in a place's public schools. Students per teacher divides the _matched sums instead, which cover the same schools.",
       "limitations": [
-        "Summed from schools; a sum with schools that did not report is marked partial (dimensions.completeness), and a partial sum is not divided.",
+        "Summed from schools; a sum with schools that did not report is marked partial (dimensions.completeness).",
         "Full-time equivalents, so two half-time teachers count as one."
       ],
       "citations": [
@@ -5416,6 +5416,58 @@
       ],
       "citations": [
         "https://data.census.gov/table/ACSDT5Y2023.B11005"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "NCES_CCD:student_membership_matched",
+      "metric_codes": [
+        "NCES_CCD:student_membership_matched"
+      ],
+      "name": "Students in public schools that reported both students and teachers",
+      "definition": "Students enrolled on or about October 1, summed over the public schools placed in the county or state that reported both a membership count and a teacher count in the school year's newest Common Core of Data files.",
+      "unit": "students",
+      "universe": "students in public schools placed here that reported teachers too",
+      "kind": "count",
+      "caveat": "Summed only over the schools that reported both students and teachers that year; schools_with_value says how many, schools_without_value how many of the place's schools did not.",
+      "intended_use": "The numerator of students per teacher.",
+      "limitations": [
+        "Covers only the schools that reported both figures, so it is smaller than the place's total where some did not; it is meant to be divided, not shown as the place's total.",
+        "Public schools only. Labelled with the school year's fall: 2024 is the 2024-25 school year."
+      ],
+      "citations": [
+        "https://nces.ed.gov/ccd/"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "NCES_CCD:teacher_fte_matched",
+      "metric_codes": [
+        "NCES_CCD:teacher_fte_matched"
+      ],
+      "name": "Full-time-equivalent teachers in public schools that reported both students and teachers",
+      "definition": "Full-time-equivalent classroom teachers, summed over the same public schools as the matched student count: those placed in the county or state that reported both figures that year.",
+      "unit": "teachers (full-time equivalent)",
+      "universe": "public schools placed here that reported students too",
+      "kind": "count",
+      "caveat": "Summed only over the schools that reported both students and teachers that year; schools_with_value says how many, schools_without_value how many of the place's schools did not.",
+      "intended_use": "The denominator of students per teacher.",
+      "limitations": [
+        "Covers only the schools that reported both figures, so it is smaller than the place's total where some did not; it is meant to be divided, not shown as the place's total.",
+        "Public schools only. Labelled with the school year's fall: 2024 is the 2024-25 school year."
+      ],
+      "citations": [
+        "https://nces.ed.gov/ccd/"
       ],
       "status": "draft",
       "owner": "starting-a-family-collection",

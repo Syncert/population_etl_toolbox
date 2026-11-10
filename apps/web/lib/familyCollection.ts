@@ -128,7 +128,7 @@ export const FAMILY_ROWS: readonly FamilyRow[] = [
     ratioId: "students_per_teacher",
     levels: ["COUNTY", "STATE"],
     gap: "Published for counties and states",
-    note: "Students over full-time-equivalent teachers in the public schools placed here; only where every school reported both.",
+    note: "Students over full-time-equivalent teachers in the public schools placed here that reported both figures.",
   },
   {
     id: "households-with-children",
@@ -245,6 +245,34 @@ export function hoursGap(row: FamilyMinutes | null | undefined, family: FamilyRo
     return `Hours of work: ${county}'s wage for ${/^\d{4}$/.test(year) ? year : "this year"} is not published.`;
   }
   return "";
+}
+
+/** One level's school coverage for a ratio of sums over schools. */
+export interface SchoolCoverage {
+  name: string;
+  withValue?: string | null;
+  withoutValue?: string | null;
+}
+
+/**
+ * How many of each place's schools a ratio over schools covers, when any
+ * did not report: "From the schools that reported both students and
+ * teachers: 112 of 118 in Dane County and all 2,190 in Wisconsin." "" when
+ * every school reported, so a whole figure carries no note.
+ */
+export function schoolsText(levels: readonly SchoolCoverage[]): string {
+  const counted = levels
+    .filter((level) => level.withValue && level.withoutValue)
+    .map((level) => ({ name: level.name, reported: Number(level.withValue), missing: Number(level.withoutValue) }))
+    .filter((level) => Number.isInteger(level.reported) && Number.isInteger(level.missing) && level.reported > 0);
+  if (!counted.some((level) => level.missing > 0)) return "";
+  const parts = counted.map((level) =>
+    level.missing
+      ? `${formatNumber(level.reported)} of ${formatNumber(level.reported + level.missing)} in ${level.name}`
+      : `all ${formatNumber(level.reported)} in ${level.name}`,
+  );
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  return `From the schools that reported both students and teachers: ${list}.`;
 }
 
 /**

@@ -770,11 +770,12 @@ def test_a_county_childcare_price_is_hours_of_the_countys_own_wage() -> None:
 def _nces(
     metric_code: str,
     value: str | None,
-    completeness: str,
-    release: str,
+    schools: tuple[int, int],
     geo_id: str = DANE,
     period: str = "2024-07-01",
+    release: str = "CCD 2024-2025 v1a membership, v1a staff read 1",
 ) -> NeutralObservation:
+    reported, missing = schools
     return NeutralObservation(
         source_code="NCES_CCD",
         metric_code=metric_code,
@@ -786,54 +787,60 @@ def _nces(
         release=release,
         value=value,
         value_status="valid" if value is not None else "missing",
-        dimensions={"completeness": completeness},
+        dimensions={
+            "schools_with_value": str(reported),
+            "schools_without_value": str(missing),
+            "completeness": "complete" if not missing else "partial",
+        },
     )
 
 
-def test_students_per_teacher_divides_two_whole_sums_across_their_files() -> None:
-    """Covers: API-173 — NCES membership and staff are separate files of one school year."""
+def test_students_per_teacher_divides_the_schools_that_reported_both() -> None:
+    """Covers: API-173 — the matched sums, served with how many schools they cover."""
     pairing = pairing_for("students_per_teacher")
     assert pairing.kind == "ratio" and pairing.scale == 1
-    assert pairing.complete_inputs_only and not pairing.match_release
-    students = "NCES_CCD:student_membership"
-    teachers = "NCES_CCD:teacher_fte"
+    students = "NCES_CCD:student_membership_matched"
+    teachers = "NCES_CCD:teacher_fte_matched"
     numerators = [
-        _nces(students, "75000", "complete", "CCD membership read 1"),
-        _nces(students, "60000", "partial", "CCD membership read 1", geo_id="B"),
-        _nces(students, "50000", "complete", "CCD membership read 1", geo_id="C"),
-        _nces(students, "40000", "complete", "CCD membership read 1", geo_id="D"),
+        _nces(students, "75000", (120, 0)),
+        # Some schools did not report both: the figure is of those that did.
+        _nces(students, "60000", (100, 12), geo_id="B"),
+        _nces(students, None, (0, 7), geo_id="C"),
+        _nces(students, "40000", (90, 0), geo_id="D"),
     ]
     denominators = [
-        _nces(teachers, "5000", "complete", "CCD staff read 2"),
-        _nces(teachers, "4000", "complete", "CCD staff read 2", geo_id="B"),
-        _nces(teachers, "4000", "partial", "CCD staff read 2", geo_id="C"),
+        _nces(teachers, "5000", (120, 0)),
+        _nces(teachers, "4000", (100, 12), geo_id="B"),
+        _nces(teachers, None, (0, 7), geo_id="C"),
         # Another school year is still never matched.
-        _nces(teachers, "4000", "complete", "CCD staff read 2", "D", "2023-07-01"),
+        _nces(teachers, "4000", (90, 0), "D", "2023-07-01"),
     ]
-    whole, partial_students, partial_teachers, other_year = pair_rows(
+    whole, partial, none_reported, other_year = pair_rows(
         pairing, numerators, denominators
     )
     assert whole.value == "15.00" and whole.unavailable_reason is None
-    assert whole.numerator.release == "CCD membership read 1"
-    assert whole.denominator.release == "CCD staff read 2"
-    assert partial_students.value is None
-    assert partial_students.unavailable_reason == "partial_input"
-    assert partial_teachers.unavailable_reason == "partial_input"
+    assert whole.numerator.schools_with_value == "120"
+    assert whole.numerator.schools_without_value == "0"
+    assert partial.value == "15.00" and partial.unavailable_reason is None
+    assert partial.numerator.schools_with_value == "100"
+    assert partial.denominator.schools_without_value == "12"
+    assert none_reported.value is None
+    assert none_reported.unavailable_reason == "suppressed_input"
     assert other_year.value is None
     assert other_year.unavailable_reason == "different_period"
 
 
-def test_a_release_matched_pairing_still_ignores_completeness() -> None:
-    """Covers: API-173 — only a pairing marked complete_inputs_only reads completeness."""
+def test_a_share_of_households_with_children_carries_no_school_counts() -> None:
+    """Covers: API-173 — only a sum made from schools names its schools."""
     share = pairing_for("households_with_children_share:acs5")
-    assert share.kind == "share" and share.match_release
-    assert not share.complete_inputs_only
+    assert share.kind == "share"
     [row] = pair_rows(
         share,
         [_acs("CENSUS_ACS:acs5:B11005_002", "60000", "900")],
         [_acs("CENSUS_ACS:acs5:B11005_001", "240000", "1200")],
     )
     assert row.value == "25.00"
+    assert row.numerator.schools_with_value is None
 
 
 def test_a_three_bedroom_fair_market_rent_is_hours_of_the_countys_own_wage() -> None:
