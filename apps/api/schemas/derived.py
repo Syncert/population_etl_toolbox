@@ -44,6 +44,7 @@ UnavailableReason = Literal[
     "only_multi_county_agencies",
     "coverage_below_floor",
     "agencies_not_loaded",
+    "partial_input",
 ]
 
 
@@ -67,6 +68,9 @@ class DerivedRatioPairing(BaseModel):
     hours_per_week: Optional[int] = None
     wage_geo_levels: list[str] = []
     area: Optional[str] = None
+    #: Further lines of the numerator's own ACS table added to it before
+    #: dividing (the Bureau's profile-table arithmetic); empty for most.
+    numerator_addends: list[str] = []
     dataset: Optional[str] = None
     denominator_label: str
     universe: str

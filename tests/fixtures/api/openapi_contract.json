@@ -4686,6 +4686,7 @@
         "label": "string",
         "limitations": "array<string>",
         "numerator": "string",
+        "numerator_addends": "array<string>",
         "numerator_is_subset": "boolean",
         "provider_rate": "string | null",
         "ratio_id": "string",

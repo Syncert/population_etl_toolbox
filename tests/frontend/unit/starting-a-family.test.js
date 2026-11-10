@@ -33,13 +33,21 @@ const minutes = (value, wage, year, wageYear = "same_year", price = "293", price
 });
 
 describe("the Starting a family rows", () => {
-  it("are eight, in the four groups, each a metric or a reviewed pairing", () => {
-    expect(FAMILY_ROWS).toHaveLength(8);
+  it("are eight, in the four groups, with four more in the fold, each a metric or a reviewed pairing", () => {
+    const main = FAMILY_ROWS.filter((row) => row.group !== "more");
+    expect(main).toHaveLength(8);
     expect(FAMILY_GROUPS.map((group) => group.key)).toEqual(["care", "home", "money", "surroundings"]);
     for (const row of FAMILY_ROWS) {
       expect(Boolean(row.metricCode) !== Boolean(row.ratioId)).toBe(true);
-      expect(FAMILY_GROUPS.some((group) => group.key === row.group)).toBe(true);
+      expect(row.group === "more" || FAMILY_GROUPS.some((group) => group.key === row.group)).toBe(true);
     }
+    // acs-family-tables: the three ACS tables, in "More for families".
+    expect(FAMILY_ROWS.filter((row) => row.group === "more").map((row) => row.metricCode || row.ratioId)).toEqual([
+      "CENSUS_ACS:acs5:B19125_002",
+      "CENSUS_ACS:acs5:B19125_003",
+      "births_past_year_share:acs5",
+      "young_children_all_parents_in_labor_force_share:acs5",
+    ]);
     // The page's catalog read names exactly the rows' metrics.
     expect([...FAMILY_CODES].sort()).toEqual([...FAMILY_ROW_CODES].sort());
     expect(FAMILY_CODES).toContain("DOL_CHILDCARE:center_infant");

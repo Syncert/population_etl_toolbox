@@ -167,6 +167,10 @@ class AcsConfig(BaseModel):
         "B11001",  # Household type (including living alone)
         "B11003",  # Families by presence/age of the householder's own children under 18
         "B11005",  # All households by presence of people under 18; preferred for household-with-children share
+        # Starting a family (acs-family-tables, Nick 2026-11-10); areas,
+        # counties, places and metros, never tracts (storage).
+        "B13002",  # Women 15 to 50 who had a birth in the past 12 months, by marital status and age
+        "B23008",  # Own children under 18 by age, living arrangement and parents' employment status
         "B12001",  # Marital status by sex for the population age 15+
         # Race, ethnicity, nativity, birthplace, and language
         "B02001",  # Race
@@ -190,6 +194,7 @@ class AcsConfig(BaseModel):
         "B19001",  # Household income distribution
         "B19013",  # Median household income
         "B19083",  # Gini inequality index
+        "B19125",  # Median family income by presence of own children under 18 (acs-family-tables)
         "B19301",  # Per-capita income in the vintage year's inflation-adjusted dollars
         "B20001",  # Earnings distribution by sex for people age 16+ with earnings
         "B20002",  # Median earnings by sex; separate from the B20001 distribution
@@ -256,7 +261,10 @@ class AcsConfig(BaseModel):
     # its whole list again (`table_additions.py`). Each must be in
     # `curated_tables`; keep an entry for as long as any warehouse may hold
     # slices finished before it.
-    added_tables: List[str] = ["B25103"]
+    # B13002, B23008 and B19125 (acs-family-tables, 2026-11-10) are curated
+    # only, not tract tables: tracts would be some 25 times the county volume
+    # with the census schemas already most of the warehouse.
+    added_tables: List[str] = ["B25103", "B13002", "B23008", "B19125"]
     # The 5-year years requested at tract grain, declared as for places:
     # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
     # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.

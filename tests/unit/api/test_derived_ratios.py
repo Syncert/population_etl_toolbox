@@ -865,3 +865,32 @@ def test_a_three_bedroom_fair_market_rent_is_hours_of_the_countys_own_wage() -> 
     assert row.value == "3840.00"
     assert row.wage_year == "newest_published_year"
     assert row.denominator.period_start == "2025-01-01"
+
+
+def test_a_summed_numerator_adds_its_tables_lines_before_dividing() -> None:
+    """Covers: API-173 — DP03's arithmetic: B23008_004 + _010 + _013 over _002."""
+    pairing = pairing_for("young_children_all_parents_in_labor_force_share:acs5")
+    assert pairing is not None
+    both = _acs("CENSUS_ACS:acs5:B23008_004", "18000", "900")
+    father = _acs("CENSUS_ACS:acs5:B23008_010", "1000", "300")
+    mother = _acs("CENSUS_ACS:acs5:B23008_013", "5000", "600")
+    under6 = _acs("CENSUS_ACS:acs5:B23008_002", "32000", "400")
+    [row] = pair_rows(pairing, [both], [under6], [[father], [mother]])
+    assert row.unavailable_reason is None
+    assert Decimal(row.value) == Decimal("75")
+    # The sum's margin is the root of the squared margins: sqrt(900²+300²+600²).
+    assert Decimal(row.numerator.value) == Decimal("24000")
+    assert Decimal(row.numerator.margin_of_error).quantize(Decimal("0.01")) == Decimal(
+        "1122.50"
+    )
+    assert row.numerator.metric_code == (
+        "CENSUS_ACS:acs5:B23008_004 + CENSUS_ACS:acs5:B23008_010 + "
+        "CENSUS_ACS:acs5:B23008_013"
+    )
+    assert row.margin_of_error is not None
+
+    # A line missing, or published with no number: a partial sum is not divided.
+    for parts in ([[father], []], [[father], [_acs(mother.metric_code, None, None)]]):
+        [row] = pair_rows(pairing, [both], [under6], parts)
+        assert row.unavailable_reason == "partial_input"
+        assert row.value is None

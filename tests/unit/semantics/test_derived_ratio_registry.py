@@ -329,3 +329,43 @@ def test_the_starting_a_family_pairings_keep_their_rules() -> None:
     assert list(_parse(cost)) == ["minutes_of_work_rent_3br"]
     with pytest.raises(RatioRegistryError):
         _parse({**cost, "wage_geo_levels": ["COUNTY", "STATE"]})
+
+
+def test_the_family_table_shares_add_only_lines_of_their_own_table() -> None:
+    """Covers: ETL-104 — the ADR-0009 amendment for summed numerators (acs-family-tables)."""
+    shipped = load_registry()
+    for dataset in ("acs5", "acs1"):
+        births = shipped[f"births_past_year_share:{dataset}"]
+        assert births.numerator == f"CENSUS_ACS:{dataset}:B13002_002"
+        assert births.denominator == f"CENSUS_ACS:{dataset}:B13002_001"
+        assert births.numerator_addends == ()
+        working = shipped[f"young_children_all_parents_in_labor_force_share:{dataset}"]
+        assert working.kind == "share" and working.status == "approved"
+        assert working.numerator == f"CENSUS_ACS:{dataset}:B23008_004"
+        assert working.numerator_addends == (
+            f"CENSUS_ACS:{dataset}:B23008_010",
+            f"CENSUS_ACS:{dataset}:B23008_013",
+        )
+        assert working.denominator == f"CENSUS_ACS:{dataset}:B23008_002"
+    summed = _entry(
+        numerator_addends=["CENSUS_ACS:{dataset}:B17001_031"],
+    )
+    assert _parse(summed)["poverty_share:acs5"].numerator_addends == (
+        "CENSUS_ACS:acs5:B17001_031",
+    )
+    # Another table, the numerator itself, twice, or outside a share: refused.
+    for addends, kind in (
+        (["CENSUS_ACS:{dataset}:B17020_002"], "share"),
+        (["CENSUS_ACS:{dataset}:B17001_002"], "share"),
+        (["CENSUS_ACS:{dataset}:B17001_031"] * 2, "share"),
+        (["CENSUS_ACS:{dataset}:B17001_031"], "ratio"),
+    ):
+        with pytest.raises(RatioRegistryError, match="numerator_addends|ratio"):
+            _parse(
+                _entry(
+                    kind=kind,
+                    numerator_addends=addends,
+                    numerator_is_subset=None if kind == "ratio" else True,
+                    scale=1 if kind == "ratio" else 100,
+                )
+            )

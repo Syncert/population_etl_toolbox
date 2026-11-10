@@ -156,7 +156,30 @@ parser checks:
   (`complete_inputs_only`, `partial_input`) and paired the two separate
   files across releases (`match_release`). Nick, 2026-11-10 18:48Z: "even if
   not every school reported it should still display what was reported."
-  Both registry fields and the reason are removed.
+  Both registry fields are removed; `partial_input` stays for a summed
+  numerator with a line missing (below).
+
+### Amendment, 2026-11-10: summed numerators (acs-family-tables)
+
+Approved with the three ACS family tables (Nick, 2026-11-10, "Add the 3
+tables"). A share may name `numerator_addends`: further lines of the
+numerator's own ACS table that are added to it before dividing, as the
+Bureau adds them in its profile tables. The first is
+`young_children_all_parents_in_labor_force_share`, which is DP03's own line
+for children under 6 with all parents in the labor force:
+B23008_004 + B23008_010 + B23008_013, divided by B23008_002. The parser
+checks that:
+
+- it is a share over ACS lines;
+- every addend comes from the numerator's table;
+- each addend is named once and is not the numerator itself.
+
+The sum's margin is the square root of the summed squared margins, which is
+the ACS handbook's formula for a sum. The share's margin then follows rule
+4. The served numerator names every line that was added. If any line is
+missing for the period, or has no number, the row is served as
+`partial_input` and is not divided. The page states the arithmetic under
+the row.
 
 ## Alternatives considered
 

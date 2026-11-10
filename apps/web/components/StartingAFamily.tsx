@@ -27,6 +27,7 @@ import type { DistinctiveResponse } from "../lib/distinctive";
 import {
   FAMILY_GROUPS,
   FAMILY_INTRO,
+  FAMILY_MORE_TITLE,
   FAMILY_ROWS,
   familyValueText,
   headlineLevel,
@@ -38,7 +39,11 @@ import {
 import type { FamilyMinutes, FamilyRow } from "../lib/familyCollection";
 import type { InfantCareRead } from "../lib/childcare";
 
+const MORE_ROWS = FAMILY_ROWS.filter((row) => row.group === "more");
 const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
+
+type SchoolCount = { withValue?: string | null; withoutValue?: string | null };
+const EMPTY_SCHOOLS: ReadonlyMap<string, SchoolCount> = new Map();
 
 const NOT_LOADED = "Not loaded into this site yet.";
 const key = (code: string, geoId: string) => `${code}|${geoId}`;
@@ -83,7 +88,7 @@ export default function StartingAFamily({
   const [read, setRead] = useState<Map<string, LevelAnswer>>(new Map());
   const [hours, setHours] = useState<Map<string, FamilyMinutes | null>>(new Map());
   // A ratio over schools: how many of each place's schools it covers.
-  const [schools, setSchools] = useState<Map<string, { withValue?: string | null; withoutValue?: string | null }>>(new Map());
+  const [schools, setSchools] = useState<Map<string, SchoolCount>>(new Map());
   const served = useMemo(() => new Set(pairings.filter((pairing) => pairing.served).map((pairing) => pairing.ratio_id)), [pairings]);
   const chainKey = levels.map((entry) => `${entry.level}:${entry.geoId}`).join(",");
   const sharesInfant = infant !== undefined;
@@ -95,85 +100,25 @@ export default function StartingAFamily({
   const loaded = (row: FamilyRow): boolean =>
     row.metricCode ? metricsByCode.has(row.metricCode) : Boolean(row.ratioId && served.has(row.ratioId));
 
-  // The values the page has not read, once it has settled.
+  // The values the page has not read, once it has settled; the fold's only
+  // once it is opened, so a closed fold reads nothing.
+  const [open, setOpen] = useState(false);
+  const [foldRead, setFoldRead] = useState<Map<string, LevelAnswer>>(new Map());
   useEffect(() => {
     if (!settled || !levels.length) return;
     const controller = new AbortController();
-    const signal = controller.signal;
-    const next = new Map<string, LevelAnswer>();
-    const missing: { code: string; geoId: string }[] = [];
-    for (const row of FAMILY_ROWS) {
-      if (!loaded(row)) continue;
-      for (const entry of levels.filter((item) => row.levels.includes(item.level))) {
-        if (fromCard(row, entry)) continue;
-        if (row.metricCode) {
-          const known = answers.get(key(row.metricCode, entry.geoId));
-          if (known && !known.pending && (known.row || known.error)) next.set(key(row.metricCode, entry.geoId), known);
-          else {
-            next.set(key(row.metricCode, entry.geoId), { row: null, pending: true });
-            missing.push({ code: row.metricCode, geoId: entry.geoId });
-          }
-        } else if (row.ratioId) {
-          next.set(key(row.ratioId, entry.geoId), { row: null, pending: true });
-        }
-      }
-    }
-    setRead(new Map(next));
-    const nextSchools = new Map<string, { withValue?: string | null; withoutValue?: string | null }>();
-    setSchools(new Map());
-    const sourceFor = (code: string) => sources.find((source) => source.sourceCode === metricsByCode.get(code)?.source_code) || null;
-    const tasks: Promise<void>[] = [];
-    if (missing.length) {
-      tasks.push(
-        getNewestValuesBatch(missing.map((pair) => pair.code), missing.map((pair) => pair.geoId), { signal })
-          .then((found) => {
-            for (const { code, geoId } of missing) {
-              const item = found.get(newestKey(code, geoId));
-              const rows = item?.status === 200 && item.observations
-                ? normalizeObservationRows(sourceFor(code), Array.isArray(item.observations.items) ? (item.observations.items as ObservationRow[]) : [])
-                : [];
-              next.set(key(code, geoId), item && item.status !== 200 ? { row: null, error: item.detail || `Could not be read (${item.status})` } : { row: rows.at(-1) ?? null });
-            }
-          })
-          .catch(() => {
-            if (signal.aborted) return;
-            for (const { code, geoId } of missing) next.set(key(code, geoId), { row: null, error: "Could not be read just now" });
-          }),
-      );
-    }
-    for (const row of FAMILY_ROWS) {
-      if (!row.ratioId || !loaded(row)) continue;
-      for (const entry of levels.filter((item) => row.levels.includes(item.level))) {
-        tasks.push(
-          getDerivedObservations({ ratio_id: row.ratioId, geo_id: entry.geoId, newest_per_geography: true, limit: 1 }, { signal })
-            .then((page) => {
-              const found = (page.items || []).find((item: DerivedRatioObservation) => item.geo_id === entry.geoId) || null;
-              next.set(key(row.ratioId!, entry.geoId), { row: found ? derivedMapRow(found, row.ratioId!) : null });
-              if (found?.numerator?.schools_with_value != null && !found.unavailable_reason) {
-                nextSchools.set(key(row.ratioId!, entry.geoId), {
-                  withValue: found.numerator.schools_with_value,
-                  withoutValue: found.numerator.schools_without_value,
-                });
-              }
-            })
-            .catch(() => {
-              if (!signal.aborted) next.set(key(row.ratioId!, entry.geoId), { row: null, error: "Could not be read just now" });
-            })
-            .finally(() => {
-              if (signal.aborted) return;
-              setRead(new Map(next));
-              setSchools(new Map(nextSchools));
-            }),
-        );
-      }
-    }
-    void Promise.all(tasks).then(() => {
-      if (!signal.aborted) setRead(new Map(next));
-    });
+    readFamilyRows(FAMILY_ROWS.filter((row) => row.group !== "more"), levels, answers, loaded, fromCard, sources, metricsByCode, controller.signal, setRead, setSchools);
     return () => controller.abort();
     // `loaded` reads only metricsByCode and served; `answers` is read once settled.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, chainKey, metricsByCode, served, sources, sharesInfant]);
+  useEffect(() => {
+    if (!open || !settled || !levels.length) return;
+    const controller = new AbortController();
+    readFamilyRows(MORE_ROWS, levels, answers, loaded, () => false, sources, metricsByCode, controller.signal, setFoldRead);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, settled, chainKey, metricsByCode, served, sources]);
 
   // Hours of work for each price row, at the county's own wage, once its
   // price is in: the price's own period, so the hours are of the price shown.
@@ -255,6 +200,33 @@ export default function StartingAFamily({
           </ul>
         </div>
       ))}
+      <details className="place-family-group place-family-more" data-testid="family-more" onToggle={(event) => {
+          // Once opened its rows stay read; closing it again reads nothing more.
+          if ((event.currentTarget as HTMLDetailsElement).open) setOpen(true);
+        }}>
+        <summary>
+          <h3>{FAMILY_MORE_TITLE}</h3>
+        </summary>
+        {open ? (
+          <ul className="place-family-rows">
+            {MORE_ROWS.map((row) => (
+              <FamilyLine
+                key={row.id}
+                row={row}
+                levels={levels}
+                pageLevel={pageLevel}
+                loaded={loaded(row)}
+                answers={foldRead}
+                minutes={undefined}
+                schools={EMPTY_SCHOOLS}
+                county={county}
+                distinctive={distinctive}
+                siblingsName={siblingsName}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </details>
       <footer className="place-chapter-footer" data-testid="chapter-family-footer">
         {formulas.length ? (
           <p data-testid="family-hours-formula">
@@ -270,6 +242,96 @@ export default function StartingAFamily({
       </footer>
     </section>
   );
+}
+
+/**
+ * Read the values of ``rows`` the page has not read: one newest-values batch
+ * for their metrics, one derived read per pairing and level. ``update`` is
+ * called with the growing answers; aborting ``signal`` drops the rest.
+ */
+function readFamilyRows(
+  rows: readonly FamilyRow[],
+  levels: LevelPlace[],
+  answers: ReadonlyMap<string, LevelAnswer>,
+  loaded: (row: FamilyRow) => boolean,
+  skip: (row: FamilyRow, entry: LevelPlace) => boolean,
+  sources: readonly ExplorerSource[],
+  metricsByCode: ReadonlyMap<string, MetricSummary>,
+  signal: AbortSignal,
+  setRead: (answers: Map<string, LevelAnswer>) => void,
+  setSchools?: (schools: Map<string, SchoolCount>) => void,
+): void {
+  const next = new Map<string, LevelAnswer>();
+  // A ratio over schools: how many of each place's schools it covers.
+  const schools = new Map<string, SchoolCount>();
+  setSchools?.(new Map());
+  const missing: { code: string; geoId: string }[] = [];
+  for (const row of rows) {
+    if (!loaded(row)) continue;
+    for (const entry of levels.filter((item) => row.levels.includes(item.level))) {
+      if (skip(row, entry)) continue;
+      if (row.metricCode) {
+        const known = answers.get(key(row.metricCode, entry.geoId));
+        if (known && !known.pending && (known.row || known.error)) next.set(key(row.metricCode, entry.geoId), known);
+        else {
+          next.set(key(row.metricCode, entry.geoId), { row: null, pending: true });
+          missing.push({ code: row.metricCode, geoId: entry.geoId });
+        }
+      } else if (row.ratioId) {
+        next.set(key(row.ratioId, entry.geoId), { row: null, pending: true });
+      }
+    }
+  }
+  setRead(new Map(next));
+  const sourceFor = (code: string) => sources.find((source) => source.sourceCode === metricsByCode.get(code)?.source_code) || null;
+  const tasks: Promise<void>[] = [];
+  if (missing.length) {
+    tasks.push(
+      getNewestValuesBatch(missing.map((pair) => pair.code), missing.map((pair) => pair.geoId), { signal })
+        .then((found) => {
+          for (const { code, geoId } of missing) {
+            const item = found.get(newestKey(code, geoId));
+            const items = item?.status === 200 && item.observations
+              ? normalizeObservationRows(sourceFor(code), Array.isArray(item.observations.items) ? (item.observations.items as ObservationRow[]) : [])
+              : [];
+            next.set(key(code, geoId), item && item.status !== 200 ? { row: null, error: item.detail || `Could not be read (${item.status})` } : { row: items.at(-1) ?? null });
+          }
+        })
+        .catch(() => {
+          if (signal.aborted) return;
+          for (const { code, geoId } of missing) next.set(key(code, geoId), { row: null, error: "Could not be read just now" });
+        }),
+    );
+  }
+  for (const row of rows) {
+    if (!row.ratioId || !loaded(row)) continue;
+    for (const entry of levels.filter((item) => row.levels.includes(item.level))) {
+      tasks.push(
+        getDerivedObservations({ ratio_id: row.ratioId, geo_id: entry.geoId, newest_per_geography: true, limit: 1 }, { signal })
+          .then((page) => {
+            const found = (page.items || []).find((item: DerivedRatioObservation) => item.geo_id === entry.geoId) || null;
+            next.set(key(row.ratioId!, entry.geoId), { row: found ? derivedMapRow(found, row.ratioId!) : null });
+            if (found?.numerator?.schools_with_value != null && !found.unavailable_reason) {
+              schools.set(key(row.ratioId!, entry.geoId), {
+                withValue: found.numerator.schools_with_value,
+                withoutValue: found.numerator.schools_without_value,
+              });
+            }
+          })
+          .catch(() => {
+            if (!signal.aborted) next.set(key(row.ratioId!, entry.geoId), { row: null, error: "Could not be read just now" });
+          })
+          .finally(() => {
+            if (signal.aborted) return;
+            setRead(new Map(next));
+            setSchools?.(new Map(schools));
+          }),
+      );
+    }
+  }
+  void Promise.all(tasks).then(() => {
+    if (!signal.aborted) setRead(new Map(next));
+  });
 }
 
 function FamilyLine({
@@ -293,7 +355,7 @@ function FamilyLine({
   county: LevelPlace | null;
   distinctive: DistinctiveResponse | null;
   siblingsName: string;
-  schools: ReadonlyMap<string, { withValue?: string | null; withoutValue?: string | null }>;
+  schools: ReadonlyMap<string, SchoolCount>;
 }) {
   const testId = `family-${row.id}`;
   if (!loaded) {
