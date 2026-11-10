@@ -126,41 +126,42 @@ matched_pair AS (
       ON staff.school_year = membership.school_year AND staff.component = 'staff'
     WHERE membership.component = 'membership'
 ),
--- Referenced by the county and the state grain: NOT MATERIALIZED so a read
--- of one place filters the schools first (the #339 rule).
+-- One row per placed school in either file. Read from the placement first,
+-- so a read of one county or state filters schools by the geocode file's
+-- indexed place columns, then each count by its primary key (run, school,
+-- measure): never a join of every school count against every placement.
+-- Referenced by the county and the state grain: NOT MATERIALIZED so the
+-- place filter reaches the placement (the #339 rule).
 matched_school AS NOT MATERIALIZED (
     SELECT pair.run_id, pair.school_year, pair.file_stem, pair.release_version, pair.version_rank,
            pair.capture_id, pair.published_at,
-           school.ncessch, school.state_fips, school.county_geo_id, school.county_geo_sk,
-           school.county_status, school.geocode_file,
-           SUM(school.value) FILTER (WHERE school.measure = 'student_membership' AND school.value_status = 'valid')
-               AS membership,
-           SUM(school.value) FILTER (WHERE school.measure = 'teacher_fte' AND school.value_status = 'valid')
-               AS teachers,
-           COUNT(*) FILTER (WHERE school.measure = 'student_membership' AND school.value_status = 'valid')
-               AS membership_rows,
-           COUNT(*) FILTER (WHERE school.measure = 'teacher_fte' AND school.value_status = 'valid')
-               AS teacher_rows
+           placement.ncessch, placement.state_fips, placement.county_geo_id, placement.county_geo_sk,
+           placement.county_status, placement.geocode_file,
+           CASE WHEN membership.value_status = 'valid' THEN membership.value END AS membership,
+           CASE WHEN teacher.value_status = 'valid' THEN teacher.value END AS teachers,
+           membership.value_status = 'valid' AND teacher.value_status = 'valid' AS reported_both
     FROM matched_pair AS pair
-    JOIN gold_nces_ccd.school_observation AS school
-      ON (school.run_id = pair.membership_run_id AND school.measure = 'student_membership')
-      OR (school.run_id = pair.staff_run_id AND school.measure = 'teacher_fte')
-    GROUP BY pair.run_id, pair.school_year, pair.file_stem, pair.release_version, pair.version_rank,
-             pair.capture_id, pair.published_at,
-             school.ncessch, school.state_fips, school.county_geo_id, school.county_geo_sk,
-             school.county_status, school.geocode_file
+    JOIN gold_nces_ccd.school_placement AS placement ON placement.school_year = pair.school_year
+    LEFT JOIN silver_nces_ccd.school_count AS membership
+      ON membership.run_id = pair.membership_run_id AND membership.ncessch = placement.ncessch
+     AND membership.measure = 'student_membership'
+    LEFT JOIN silver_nces_ccd.school_count AS teacher
+      ON teacher.run_id = pair.staff_run_id AND teacher.ncessch = placement.ncessch
+     AND teacher.measure = 'teacher_fte'
+    WHERE membership.ncessch IS NOT NULL OR teacher.ncessch IS NOT NULL
 ),
 matched_value AS NOT MATERIALIZED (
     SELECT matched.*, measure.measure,
-           CASE WHEN matched.membership_rows > 0 AND matched.teacher_rows > 0 THEN measure.value END AS value,
-           CASE WHEN matched.membership_rows > 0 AND matched.teacher_rows > 0 THEN 'valid' ELSE 'missing' END
-               AS value_status
+           CASE WHEN matched.reported_both THEN measure.value END AS value,
+           CASE WHEN matched.reported_both THEN 'valid' ELSE 'missing' END AS value_status
     FROM matched_school AS matched
     CROSS JOIN LATERAL (VALUES
         ('student_membership_matched', matched.membership),
         ('teacher_fte_matched', matched.teachers)
     ) AS measure(measure, value)
 ),
+-- The state is matched on its code as well as its id, so a state read
+-- reaches the placement's indexed state column.
 matched_grains AS (
     SELECT matched.*, 'county'::TEXT AS geo_type, matched.county_geo_id AS geo_id, matched.county_geo_sk AS geo_sk
     FROM matched_value AS matched
@@ -169,7 +170,8 @@ matched_grains AS (
     SELECT matched.*, 'state'::TEXT, entity.geo_id, entity.geo_sk
     FROM matched_value AS matched
     JOIN silver_ref.dim_geo_entity AS entity
-      ON entity.geo_id = 'state:' || matched.state_fips AND entity.geo_type = 'state'
+      ON entity.state_fips = matched.state_fips AND entity.geo_id = 'state:' || matched.state_fips
+     AND entity.geo_type = 'state'
 ),
 grains AS (
     SELECT school.*, 'county'::TEXT AS geo_type, school.county_geo_id AS geo_id, school.county_geo_sk AS geo_sk
