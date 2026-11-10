@@ -77,7 +77,7 @@ on every county row, so a county's total there is the sum of its candidates.
 MEDSL publishes 2024 Senate returns only by precinct (994,635 rows, 34 states
 and DC, read on OFFICE_LAB 2026-11-08). Stream `county_senate_precinct` reads
 the file once (an unchanged file is an unchanged read) and sums it into
-counties on replay, under reading rules `medsl-precinct-reading-2`:
+counties on replay, under reading rules `medsl-precinct-reading-3`:
 
 - A candidate line's count in a precinct is its TOTAL row where the precinct
   prints one (New Jersey, Connecticut, Delaware, Rhode Island and New York
@@ -115,12 +115,14 @@ counties on replay, under reading rules `medsl-precinct-reading-2`:
   summed without Kansas City, Jackson County would read as if the city had
   not voted. The District of Columbia's shadow senator is
   `not_a_senate_seat`.
-- A contest whose precinct rows give a candidate a party the ballot does not
-  (`MISLABELLED_CONTESTS`) is not served, quarantined `party_label_conflict`
-  per county: the file labels Nebraska's regular-seat independent, Dan
-  Osborn, DEMOCRAT, where MEDSL's statewide file has him "BY PETITION", so
-  his votes would read as a Democrat's margin. Nebraska's special (Ricketts)
-  is served. No party is substituted for the source's.
+- A party label is read as the precinct file prints it, even where it
+  conflicts with the ballot: the file labels Nebraska's regular-seat
+  independent, Dan Osborn, DEMOCRAT, where MEDSL's statewide file has him
+  "BY PETITION", so Nebraska's regular-race county margins read Fischer
+  against Osborn as Republican against Democrat (Nick, 2026-11-10: "pull
+  them even though they're misrepresented"; withheld under
+  `medsl-precinct-reading-2`). `DQ-ELEC-009` flags the state, since its
+  county Democratic sum has no statewide Democratic count to match.
 - In the statewide files, party text "GOP" is Republican (`medsl-reading-4`):
   Washington's 2024 Senate line for Raul Garcia was read as Other, which made
   Washington's precinct county sums look 100% off; they agree within 0.07%.

@@ -830,8 +830,8 @@ def test_a_town_total_is_told_from_a_town_sharing_its_name() -> None:
     ]
 
 
-def test_a_contest_whose_precinct_labels_conflict_is_not_served() -> None:
-    """Covers: ETL-111 — Nebraska's regular 2024 race labels independent Osborn DEMOCRAT: its counties are withheld, the special is served."""
+def test_a_party_label_is_read_as_the_precinct_file_prints_it() -> None:
+    """Covers: ETL-111 — Nebraska's regular 2024 race labels independent Osborn DEMOCRAT: served as published (Nick, 2026-11-10), beside the special."""
     from data_ingestion_toolbox.elections.registry import COUNTY_SENATE_PRECINCT
     from data_ingestion_toolbox.elections.silver_elections.parse import (
         parse_precinct_results,
@@ -858,12 +858,14 @@ def test_a_contest_whose_precinct_labels_conflict_is_not_served() -> None:
     results, quarantined, _ = parse_precinct_results(
         COUNTY_SENATE_PRECINCT, body.encode()
     )
-    assert [(r.special, r.candidate, r.candidate_votes) for r in results] == [
-        (True, "PETE RICKETTS", 520)
+    assert sorted(
+        (r.special, r.candidate, r.party_code, r.candidate_votes) for r in results
+    ) == [
+        (False, "DAN OSBORN", "DEM", 500),
+        (False, "DEB FISCHER", "REP", 450),
+        (True, "PETE RICKETTS", "REP", 520),
     ]
-    assert [(q.record_index, q.error_code, q.county_fips) for q in quarantined] == [
-        (1, "party_label_conflict", "31109")
-    ]
+    assert quarantined == []
 
 
 def test_a_county_a_spanning_board_covers_is_not_served() -> None:
