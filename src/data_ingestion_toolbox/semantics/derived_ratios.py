@@ -132,6 +132,10 @@ class RatioPairing:
     #: False pairs the same geography and period across releases (NCES's
     #: per-component files); each side's release is named on the row.
     match_release: bool = True
+    #: ``share`` only: further lines of the numerator's own ACS table added
+    #: to it before dividing, as the Bureau's profile tables do (DP03's
+    #: "all parents in the labor force" is B23008_004 + _010 + _013).
+    numerator_addends: tuple[str, ...] = ()
 
     @property
     def derived(self) -> bool:
@@ -158,6 +162,11 @@ def _program(code: str) -> tuple[str, ...]:
     """The program a metric code belongs to: its source, and the ACS dataset."""
     parts = code.split(":")
     return tuple(parts[:2]) if parts[0] == "CENSUS_ACS" else (parts[0],)
+
+
+def _table(code: str) -> str:
+    """The ACS table a variable code names: ``B23008`` of ``...:B23008_004``."""
+    return code.rsplit(":", 1)[-1].split("_", 1)[0]
 
 
 def _expand(entry: dict) -> list[tuple[str, str, str | None, str | None]]:
@@ -281,6 +290,19 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
             raise RatioRegistryError(f"{rid} is approved without a reviewer")
         if not entry.get("citations"):
             raise RatioRegistryError(f"{rid} cites nothing")
+        addends = list(entry.get("numerator_addends", ()))
+        if addends and (
+            kind != "share"
+            or not entry["numerator"].startswith("CENSUS_ACS:")
+            or len(set(addends)) != len(addends)
+            or entry["numerator"] in addends
+            or any(_table(a) != _table(entry["numerator"]) for a in addends)
+        ):
+            raise RatioRegistryError(
+                f"{rid}: numerator_addends are further lines of the "
+                "numerator's own ACS table, each named once, added to it in a "
+                "share (ADR-0009 amendment, 2026-11-10)"
+            )
         for ratio_id, numerator, denominator, variant in _expand(entry):
             if ratio_id in pairings:
                 raise RatioRegistryError(f"{ratio_id} has two entries")
@@ -322,6 +344,9 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 area=variant if time_cost else None,
                 complete_inputs_only=bool(entry.get("complete_inputs_only")),
                 match_release=entry.get("match_release", True) is not False,
+                numerator_addends=tuple(
+                    a.replace(DATASET_PLACEHOLDER, variant or "") for a in addends
+                ),
             )
     rated = {p.numerator for p in pairings.values() if p.kind == "provider_rate"}
     for pairing in pairings.values():

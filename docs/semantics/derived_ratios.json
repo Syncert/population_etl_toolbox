@@ -2502,6 +2502,76 @@
         "https://www.huduser.gov/portal/datasets/fmr.html",
         "https://www.bls.gov/cew/about-data/"
       ]
+    },
+    {
+      "ratio_id": "births_past_year_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of women 15 to 50 who had a birth in the past 12 months",
+      "numerator": "CENSUS_ACS:{dataset}:B13002_002",
+      "denominator": "CENSUS_ACS:{dataset}:B13002_001",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "women 15 to 50",
+      "universe": "women 15 to 50 years",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10",
+      "rationale": "B13002_002 counts a subset of the women B13002_001 counts, in the same ACS table, release and period; the share is the Bureau's derived proportion of the two (ADR-0009 rules 2-4). Named in the acs-family-tables plan, which Nick approved on 2026-11-10 (\"Add the 3 tables\").",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "Women who report a birth in the 12 months before their interview, not births registered in the place; it is not the vital-statistics birth rate.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B13002",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
+    },
+    {
+      "ratio_id": "young_children_all_parents_in_labor_force_share",
+      "kind": "share",
+      "scale": 100,
+      "unit": "percent",
+      "label": "Share of children under 6 whose parents are all in the labor force",
+      "numerator": "CENSUS_ACS:{dataset}:B23008_004",
+      "numerator_addends": [
+        "CENSUS_ACS:{dataset}:B23008_010",
+        "CENSUS_ACS:{dataset}:B23008_013"
+      ],
+      "denominator": "CENSUS_ACS:{dataset}:B23008_002",
+      "datasets": [
+        "acs5",
+        "acs1"
+      ],
+      "denominator_label": "own children under 6 in families and subfamilies",
+      "universe": "own children under 6 in families and subfamilies",
+      "numerator_is_subset": true,
+      "status": "approved",
+      "owner": "acs-family-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10",
+      "rationale": "The Bureau's own profile-table line (DP03, own children under 6, all parents in family in labor force): children under 6 living with two parents both in the labor force (B23008_004), with their father alone in the labor force (_010) or their mother alone in the labor force (_013), over all own children under 6 (_002), one table, release and period. The three lines are added as the Bureau adds them; their margin is the square root of the summed squared margins (ADR-0009 amendment, 2026-11-10). Named in the acs-family-tables plan, which Nick approved on 2026-11-10.",
+      "limitations": [
+        "Survey estimate: the margin of error is the Census Bureau's approximation for a derived proportion, at 90 percent confidence, and is wider than either input's relative error suggests for small places.",
+        "In the labor force means working or looking for work, so a parent who is unemployed counts.",
+        "Own children of the householder or of a subfamily's parent; a child living with grandparents and no parent is not in the universe.",
+        "Numerator and denominator come from the same ACS dataset, release and period; a 5-year share describes the five-year period, not its last year."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B23008",
+        "https://data.census.gov/table/ACSDP5Y2023.DP03",
+        "https://www.census.gov/programs-surveys/acs/library/handbooks/general.html"
+      ]
     }
   ]
 }

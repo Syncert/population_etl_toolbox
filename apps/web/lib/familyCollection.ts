@@ -11,7 +11,7 @@
 import type { PlaceLevel } from "./placeChapters";
 import { formatNumber } from "./format";
 
-export type FamilyGroup = "care" | "home" | "money" | "surroundings";
+export type FamilyGroup = "care" | "home" | "money" | "surroundings" | "more";
 
 export const FAMILY_GROUPS: readonly { key: FamilyGroup; title: string }[] = [
   { key: "care", title: "Paying for care" },
@@ -19,6 +19,9 @@ export const FAMILY_GROUPS: readonly { key: FamilyGroup; title: string }[] = [
   { key: "money", title: "Money coming in" },
   { key: "surroundings", title: "A child's surroundings" },
 ];
+
+/** The fold under the four groups: same row format, read only once opened. */
+export const FAMILY_MORE_TITLE = "More for families";
 
 export interface FamilyRow {
   id: string;
@@ -134,6 +137,40 @@ export const FAMILY_ROWS: readonly FamilyRow[] = [
     ratioId: "households_with_children_share:acs5",
     levels: ACS_LEVELS,
     note: "Share of households with one or more people under 18, from the survey.",
+  },
+  {
+    id: "income-families-with-children",
+    group: "more",
+    label: "Median income of families with children under 18",
+    metricCode: "CENSUS_ACS:acs5:B19125_002",
+    levels: ACS_LEVELS,
+    unit: "Dollars",
+    note: "Families with the householder's own children under 18 at home, yearly, from the survey (B19125).",
+  },
+  {
+    id: "income-families-without-children",
+    group: "more",
+    label: "Median income of families without children under 18",
+    metricCode: "CENSUS_ACS:acs5:B19125_003",
+    levels: ACS_LEVELS,
+    unit: "Dollars",
+    note: "Families with none of the householder's own children under 18 at home; a family raising grandchildren is counted here.",
+  },
+  {
+    id: "births-past-year",
+    group: "more",
+    label: "Women 15 to 50 who had a baby in the past year",
+    ratioId: "births_past_year_share:acs5",
+    levels: ACS_LEVELS,
+    note: "Share of women 15 to 50 who report a birth in the 12 months before the survey (B13002_002 ÷ B13002_001); not registered births.",
+  },
+  {
+    id: "young-children-parents-in-labor-force",
+    group: "more",
+    label: "Children under 6 whose parents are all in the labor force",
+    ratioId: "young_children_all_parents_in_labor_force_share:acs5",
+    levels: ACS_LEVELS,
+    note: "(Two parents both in the labor force + a father alone in it + a mother alone in it) ÷ all children under 6 living with a parent, as the Census Bureau adds them (B23008_004 + _010 + _013 ÷ _002). In the labor force means working or looking for work.",
   },
 ];
 

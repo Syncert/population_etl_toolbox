@@ -27,7 +27,7 @@ the open questions (17:17Z):
   level strip and the rank, and no judgement of direction.
 - **Hours of work for the 3-bedroom rent: yes.**
 - **Add the three ACS tables** (slice 2). They go in their own plan,
-  `ACS_FAMILY_TABLES_PLAN.md`, and PR.
+  [`ACS_FAMILY_TABLES_PLAN.md`](ACS_FAMILY_TABLES_PLAN.md), and PR.
 - The eight rows were not changed, so they stay as proposed.
 
 ## Why
@@ -152,7 +152,7 @@ periods, the level strip and the rank only.
 ## Slice 2: three ACS tables
 
 Approved 2026-11-10 and planned on its own in
-`ACS_FAMILY_TABLES_PLAN.md`: B23008, B19125 and
+[`ACS_FAMILY_TABLES_PLAN.md`](ACS_FAMILY_TABLES_PLAN.md): B23008, B19125 and
 B13002, added to the ACS DAG and shown in this chapter's "More for
 families" fold once loaded.
 

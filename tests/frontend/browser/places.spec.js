@@ -723,6 +723,17 @@ test("Starting a family gathers its lines, each standing alone, with hours of wo
   await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,200 a week");
   await expect(page.getByTestId("family-students-per-teacher")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("family-households-with-children-value")).toContainText("%");
+  // acs-family-tables: "More for families" reads nothing until opened, then
+  // shows the three ACS tables in the same row format.
+  const more = page.getByTestId("family-more");
+  await expect(more.getByRole("heading", { name: "More for families" })).toBeVisible();
+  await expect(page.getByTestId("family-births-past-year")).toHaveCount(0);
+  await more.locator("summary").click();
+  await expect(page.getByTestId("family-births-past-year-value")).toContainText("%");
+  await expect(page.getByTestId("family-young-children-parents-in-labor-force-value")).toContainText("%");
+  await expect(page.getByTestId("family-young-children-parents-in-labor-force")).toContainText("B23008_004 + _010 + _013 ÷ _002");
+  await expect(page.getByTestId("family-income-families-with-children")).toBeVisible();
+  await expect(page.getByTestId("family-income-families-without-children")).toBeVisible();
   for (const word of ["easier", "harder", "better", "worse", "score"]) await expect(family).not.toContainText(word);
   await noViolations(page);
   await noHorizontalScroll(page);

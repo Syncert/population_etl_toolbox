@@ -1,6 +1,7 @@
 ---
 id: acs-family-tables
-depends_on: []
+depends_on:
+  - starting-a-family-collection
 parallel_safe: true
 complexity: medium
 verify:
@@ -17,15 +18,15 @@ verify:
 ## Status
 
 Approved 2026-11-10 17:17Z. Nick, answering the Starting a family plan:
-"Add the 3 tables." This is slice 2 of the Starting a family collection
-(`STARTING_A_FAMILY_COLLECTION_PLAN.md`, PR #346).
+"Add the 3 tables." This is slice 2 of
+[the Starting a family collection](STARTING_A_FAMILY_COLLECTION_PLAN.md).
 
-- **Slice 2a, loader (this PR, first commit):** the three tables join the
+- **Slice 2a, loader:** the three tables join the
   ACS curated list for every grain except tracts, with metric definitions.
   They load on the next scheduled `acs_ingest` run (monthly, the 1st at
   06:00Z) after the deploy, with no manual run.
-- **Slice 2b, page (same PR, after the chapter PR #346 is on dev):** three
-  rows in the chapter's "More for families" fold. Until the load finishes
+- **Slice 2b, page:** four rows from the three tables in the chapter's
+  "More for families" fold, read only once the fold is opened. Until the load finishes
   each says "Not loaded into this site yet".
 
 ## The tables
@@ -100,29 +101,24 @@ catalog answers 404 and the rows say "Not loaded into this site yet".
 
 ## Page rows (slice 2b)
 
-In the "More for families" fold of Starting a family, same row format as
-the eight rows above it (value, year, level strip, gaps), no judgement words
-(Nick, 2026-11-10):
+These go in the "More for families" fold of Starting a family. They use the
+same row format as the eight rows above it (value, year, level strip, gaps),
+with no judgement words (Nick, 2026-11-10). A closed fold reads nothing.
 
-1. **Median family income, families with children under 18**, with the
-   families-without figure beside it as a second row of the same table.
-   Plain published medians.
-2. **Women 15 to 50 who had a birth in the past year, per 1,000**: a new
-   ADR-0009 share pairing `births_past_year_per_1000_women`, B13002_002 over
-   B13002_001, scale 1,000, same table and release, the Bureau's ratio
-   margin.
+1. **Median income of families with children under 18** (B19125_002) and,
+   as its own row, **without** (B19125_003). Plain published medians.
+2. **Women 15 to 50 who had a baby in the past year**: the share pairing
+   `births_past_year_share`, B13002_002 ÷ B13002_001, in percent. Both come
+   from the same table and release, with the Bureau's proportion margin.
 3. **Children under 6 whose parents are all in the labor force**: the
-   Bureau's own arithmetic in its profile table DP03 (B23008_004 + _010 +
-   _013 over _002). The registry pairs one numerator with one denominator,
-   so this needs a summed numerator of lines of the same table, with the
-   Bureau's margin formula for sums; the formula and the three counts are
-   stated under the row (Nick, 2026-11-08: derived figures show their
-   inputs). If that does not fit the page budget (county page 490.8 of
-   495 kB), the row shows the three published counts and the total instead,
-   and nothing is summed.
+   share pairing `young_children_all_parents_in_labor_force_share`,
+   B23008_004 + _010 + _013 ÷ _002. This is the Bureau's own DP03
+   arithmetic, and it is added to ADR-0009 as `numerator_addends`
+   (amendment of 2026-11-10). The note under the row states the formula
+   and that the labor force includes looking for work. If a line is
+   missing, the row is `partial_input` and is not divided.
 
-The county figure stands on city pages only where the city is not
-published (5-year publishes every place, so in practice never).
+Every ACS level is published, so a city shows its own figure.
 
 ## Deploy and live checks (OFFICE_LAB)
 
@@ -149,5 +145,8 @@ SELECT geo_level, status, COUNT(*) FROM control.acs_ingestion_slices WHERE finis
 
 ## Checkpoint
 
-2026-11-10: plan written; slice 2a built (config, measure `--tables`,
-definitions, tests). Slice 2b waits for PR #346.
+2026-11-10: plan written. Slice 2a built: the config, measure `--tables`,
+the definitions and the tests. The size was measured on OFFICE_LAB at about
+30 GiB. Slice 2b built on top of #346: two pairings, the summed-numerator
+amendment and the fold rows. The rows say "Not loaded into this site yet"
+until the December 1 run and `glossary_harvest` have both happened.

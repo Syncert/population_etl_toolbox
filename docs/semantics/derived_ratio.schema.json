@@ -49,6 +49,7 @@
           "wage_geo_levels": {"type": "array", "items": {"enum": ["COUNTY", "STATE", "NATIONAL"]}, "minItems": 1},
           "complete_inputs_only": {"type": "boolean"},
           "match_release": {"type": "boolean"},
+          "numerator_addends": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
           "denominator_label": {"type": "string", "minLength": 1},
           "universe": {"type": "string", "minLength": 1},
           "numerator_is_subset": {"type": "boolean"},

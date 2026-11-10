@@ -1168,7 +1168,7 @@
       "universe": "women 15 to 50 years",
       "kind": "count",
       "caveat": "Survey count with a margin of error.",
-      "intended_use": "Read beside the women 15 to 50, as births per 1,000 women.",
+      "intended_use": "Read beside the women 15 to 50, as the share of them who had a birth in the past year.",
       "limitations": [
         "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
         "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",

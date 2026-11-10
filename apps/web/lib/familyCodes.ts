@@ -8,4 +8,6 @@ export const FAMILY_CODES: readonly string[] = [
   "CENSUS_ACS:acs5:B25077_001",
   "BLS_QCEW:annual_avg_weekly_wage:10:0",
   "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRT0_17",
+  "CENSUS_ACS:acs5:B19125_002",
+  "CENSUS_ACS:acs5:B19125_003",
 ];
