@@ -12,12 +12,13 @@ changed layout is kept as evidence and quarantined.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
@@ -57,6 +58,44 @@ class NdcpResponse:
     http_status: int
 
 
+class PageStore(Protocol):
+    """Pages of an API read already answered, kept so a stopped read resumes."""
+
+    def get(self, request_key: str) -> bytes | None: ...
+
+    def put(self, request_key: str, *, year: int, offset: int, body: bytes) -> None: ...
+
+
+def page_request_key(fields: str, page_size: int, year: int, offset: int) -> str:
+    """Names one page's request; a change of fields or page size asks afresh."""
+    return hashlib.sha256(f"{fields}|{page_size}|{year}|{offset}".encode()).hexdigest()
+
+
+def retry_wait(
+    response: httpx.Response | None, attempt: int, config: ChildcareConfig
+) -> float:
+    """How long to wait before the next attempt.
+
+    A 429 waits as long as its ``Retry-After`` asks, in seconds, at most
+    ``max_retry_after_seconds``; without one, or after a 5xx or a dropped
+    connection, ``retry_backoff_seconds`` doubled for each attempt so far.
+    """
+    backoff = min(
+        config.retry_backoff_seconds * 2 ** (attempt - 1),
+        config.max_retry_after_seconds,
+    )
+    if response is None or response.status_code != 429:
+        return backoff
+    stated = response.headers.get("Retry-After", "").strip()
+    try:
+        seconds = float(stated)
+    except ValueError:
+        return backoff
+    if seconds != seconds or seconds < 0:
+        return backoff
+    return min(max(seconds, config.min_spacing_seconds), config.max_retry_after_seconds)
+
+
 def check_workbook(raw_bytes: bytes, endpoint: str) -> None:
     if not raw_bytes.startswith(_ZIP_MAGIC):
         raise ChildcarePayloadError(endpoint, code="not_a_workbook")
@@ -86,6 +125,7 @@ def _send(
     final_error: BaseException | None = None
     headers = {"User-Agent": config.user_agent}
     for attempt in range(1, config.max_attempts + 1):
+        response = None
         try:
             if params is None:
                 response = active.get(url, headers=headers)
@@ -95,6 +135,7 @@ def _send(
             # The exception's text can carry the query string, and with it
             # the key: only its type is kept.
             final_error = ChildcareFetchError(path, code=type(exc).__name__)
+            response = None
         else:
             final_status = response.status_code
             response.read()
@@ -111,7 +152,7 @@ def _send(
         if attempt < config.max_attempts:
             if on_retry is not None and final_error is not None:
                 on_retry(final_error)
-            sleep(min(config.min_spacing_seconds * 2 ** (attempt - 1) + 1.0, 120.0))
+            sleep(retry_wait(response, attempt, config))
     raise ChildcareFetchError(
         path, code="retry_exhausted", status=final_status
     ) from final_error
@@ -124,8 +165,13 @@ def fetch_release(
     client: Any | None = None,
     on_retry: Callable[[BaseException], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    pages: PageStore | None = None,
 ) -> NdcpResponse:
-    """Fetch one registered release, from the API or as its workbook."""
+    """Fetch one registered release, from the API or as its workbook.
+
+    ``pages`` keeps each API page as it is answered; a page it already holds
+    is not asked for again.
+    """
     config = config or ChildcareConfig()
     own_client = client is None
     active = client or httpx.Client(
@@ -133,7 +179,7 @@ def fetch_release(
     )
     try:
         if release.kind == API:
-            return _fetch_api(release, config, active, on_retry, sleep)
+            return _fetch_api(release, config, active, on_retry, sleep, pages)
         path = release.path
         response = _send(
             active,
@@ -169,13 +215,17 @@ def _fetch_api(
     active: Any,
     on_retry: Callable[[BaseException], None] | None,
     sleep: Callable[[float], None],
+    store: PageStore | None = None,
 ) -> NdcpResponse:
     """Every registered study year's records, a page at a time.
 
     One study year is asked for at a time, in county code order, so a page
     boundary never falls between two rows of one county and the bytes repeat
     when the database does. The pages are kept as the API answered them, in
-    the order asked, inside one JSON document.
+    the order asked, inside one JSON document. Requests are spaced
+    ``min_spacing_seconds`` apart. A page ``store`` already holds is read
+    from it, so a read stopped by a refusal that outlasted its retries
+    resumes at the page it stopped on.
     """
     path = release.path
     key = config.api_key.strip()
@@ -189,52 +239,95 @@ def _fetch_api(
     pages: list[bytes] = []
     headers: Mapping[str, str] = {}
     status = 200
+    asked_before = False
     for year in release.years:
         offset = 0
         while True:
-            asked = {
-                "fields": fields,
-                "filter_object": json.dumps(
-                    {"field": year_field, "operator": "eq", "value": year},
-                    separators=(",", ":"),
-                ),
-                "sort_by": fips_field,
-                "sort": "asc",
-                "limit": config.api_page_size,
-                "offset": offset,
-            }
-            response = _send(
-                active,
-                url,
-                path=path,
-                params={**asked, "X-API-KEY": key},
-                config=config,
-                on_retry=on_retry,
-                sleep=sleep,
-            )
-            raw = response.content
-            if key.encode() in raw:
-                raise ChildcarePayloadError(path, code="key_echoed")
-            if len(raw) >= _API_PAGE_BYTE_LIMIT:
-                raise ChildcarePayloadError(path, code="page_may_be_cut")
+            request_key = page_request_key(fields, config.api_page_size, year, offset)
+            kept = store.get(request_key) if store is not None else None
+            if kept is not None:
+                raw = kept
+            else:
+                if asked_before:
+                    sleep(config.min_spacing_seconds)
+                raw, headers, status = _ask_page(
+                    active,
+                    url,
+                    path,
+                    key,
+                    fields,
+                    fips_field,
+                    year_field,
+                    year,
+                    offset,
+                    config,
+                    on_retry,
+                    sleep,
+                )
+                asked_before = True
             try:
                 body = json.loads(raw, parse_float=Decimal)
             except ValueError as exc:
                 raise ChildcarePayloadError(path, code="not_json") from exc
             records = _records(body, path)
+            if kept is None and store is not None:
+                store.put(request_key, year=year, offset=offset, body=raw)
             pages.append(
                 b'{"year":%d,"offset":%d,"body":' % (year, offset) + raw.strip() + b"}"
             )
-            headers = allowlisted_response_headers(dict(response.headers))
-            status = response.status_code
             if len(records) < config.api_page_size:
                 break
             offset += config.api_page_size
-            sleep(config.min_spacing_seconds)
-        sleep(config.min_spacing_seconds)
     head = json.dumps(
         {"endpoint": url, "fields": fields, "page_size": config.api_page_size},
         separators=(",", ":"),
     ).encode()
     payload = head[:-1] + b',"pages":[' + b",".join(pages) + b"]}"
     return NdcpResponse(path, payload, headers, status)
+
+
+def _ask_page(
+    active: Any,
+    url: str,
+    path: str,
+    key: str,
+    fields: str,
+    fips_field: str,
+    year_field: str,
+    year: int,
+    offset: int,
+    config: ChildcareConfig,
+    on_retry: Callable[[BaseException], None] | None,
+    sleep: Callable[[float], None],
+) -> tuple[bytes, Mapping[str, str], int]:
+    """One page from the API, checked before it is kept."""
+    asked = {
+        "fields": fields,
+        "filter_object": json.dumps(
+            {"field": year_field, "operator": "eq", "value": year},
+            separators=(",", ":"),
+        ),
+        "sort_by": fips_field,
+        "sort": "asc",
+        "limit": config.api_page_size,
+        "offset": offset,
+    }
+    response = _send(
+        active,
+        url,
+        path=path,
+        params={**asked, "X-API-KEY": key},
+        config=config,
+        on_retry=on_retry,
+        sleep=sleep,
+    )
+    raw = response.content
+    if key.encode() in raw:
+        raise ChildcarePayloadError(path, code="key_echoed")
+    if len(raw) >= _API_PAGE_BYTE_LIMIT:
+        raise ChildcarePayloadError(path, code="page_may_be_cut")
+    return (
+        raw,
+        allowlisted_response_headers(dict(response.headers)),
+        response.status_code,
+    )

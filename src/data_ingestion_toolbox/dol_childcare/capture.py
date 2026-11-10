@@ -52,6 +52,71 @@ def release_endpoint(release: NdcpRelease) -> str:
 #: prices that changed (CHURN RULE), so it cannot list every geography a
 #: capture names: any geography added since forces a replay, which then
 #: stores nothing that repeats.
+#: A kept page older than this is asked for afresh.
+PAGE_KEEP_DAYS = 7
+
+
+class StoredPages:
+    """The release's answered API pages, kept in ``control.dol_childcare_page``.
+
+    Each page is committed as soon as it is answered, so a read stopped by a
+    refusal resumes where it stopped on the next attempt.
+    """
+
+    def __init__(self, connection_factory: Callable[[], Any], release: str) -> None:
+        self._factory = connection_factory
+        self._release = release
+
+    def _run(self, sql: str, parameters: tuple) -> list[tuple]:
+        connection = self._factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, parameters)
+                rows = list(cursor.fetchall()) if cursor.description else []
+            connection.commit()
+            return rows
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def forget_stale(self) -> None:
+        self._run(
+            """
+            DELETE FROM control.dol_childcare_page
+            WHERE release = %s AND retrieved_at < NOW() - make_interval(days => %s)
+            """,
+            (self._release, PAGE_KEEP_DAYS),
+        )
+
+    def get(self, request_key: str) -> bytes | None:
+        rows = self._run(
+            """
+            SELECT body FROM control.dol_childcare_page
+            WHERE release = %s AND request_key = %s
+              AND retrieved_at >= NOW() - make_interval(days => %s)
+            """,
+            (self._release, request_key, PAGE_KEEP_DAYS),
+        )
+        return bytes(rows[0][0]) if rows else None
+
+    def put(self, request_key: str, *, year: int, offset: int, body: bytes) -> None:
+        self._run(
+            """
+            INSERT INTO control.dol_childcare_page (
+                release, request_key, study_year, page_offset, body
+            ) VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (release, request_key) DO UPDATE
+               SET body = EXCLUDED.body, retrieved_at = NOW()
+            """,
+            (self._release, request_key, year, offset, body),
+        )
+
+
+_FORGET_PAGES_SQL = "DELETE FROM control.dol_childcare_page WHERE release = %s"
+
+
 LATEST_PUBLISHED_SQL = """
     SELECT response.payload_checksum, response.payload_schema_version, file.published_at
     FROM control.dol_childcare_file AS file
@@ -88,7 +153,12 @@ def capture_release(
         parameters=dict(parameters),
         max_attempts=runtime.max_attempts,
     )
+    pages = (
+        StoredPages(connection_factory, release.key) if release.kind == API else None
+    )
     try:
+        if pages is not None:
+            pages.forget_stale()
         response = fetch_release(
             release,
             config=runtime,
@@ -96,6 +166,7 @@ def capture_release(
             on_retry=lambda error: capture_control.record_request_retry(
                 request.request_id, error=error
             ),
+            pages=pages,
         )
         receipt = persist_capture(
             connection_factory,
@@ -138,6 +209,8 @@ def capture_release(
                     """,
                     (str(run_id), release.key, str(receipt.capture_id), status),
                 )
+                # The capture holds every page now; the kept ones are waste.
+                cursor.execute(_FORGET_PAGES_SQL, (release.key,))
             connection.commit()
         except BaseException:
             connection.rollback()

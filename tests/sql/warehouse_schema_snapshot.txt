@@ -485,6 +485,18 @@ r control.dol_childcare_file
     index dol_childcare_file_pkey CREATE UNIQUE INDEX dol_childcare_file_pkey ON control.dol_childcare_file USING btree (run_id)
     index dol_childcare_file_release_idx CREATE INDEX dol_childcare_file_release_idx ON control.dol_childcare_file USING btree (release, status)
 
+r control.dol_childcare_page
+    column release text NOT NULL
+    column request_key text NOT NULL
+    column study_year integer NOT NULL
+    column page_offset integer NOT NULL
+    column body bytea NOT NULL
+    column retrieved_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dol_childcare_page_page_offset_check CHECK ((page_offset >= 0))
+    constraint dol_childcare_page_pkey PRIMARY KEY (release, request_key)
+    constraint dol_childcare_page_request_key_check CHECK ((request_key ~ '^[0-9a-f]{64}$'::text))
+    index dol_childcare_page_pkey CREATE UNIQUE INDEX dol_childcare_page_pkey ON control.dol_childcare_page USING btree (release, request_key)
+
 r control.eia_page
     column run_id uuid NOT NULL
     column page_index integer NOT NULL

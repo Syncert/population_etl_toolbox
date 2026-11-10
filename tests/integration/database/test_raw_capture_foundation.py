@@ -144,6 +144,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "eia_read"),
         ("control", "eia_page"),
         ("control", "dol_childcare_file"),
+        ("control", "dol_childcare_page"),
         ("control", "data_quality_run"),
         ("control", "data_quality_result"),
     }

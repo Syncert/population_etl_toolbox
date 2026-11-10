@@ -31,6 +31,24 @@ CREATE TABLE IF NOT EXISTS control.dol_childcare_file (
 CREATE INDEX IF NOT EXISTS dol_childcare_file_capture_idx ON control.dol_childcare_file (capture_id);
 CREATE INDEX IF NOT EXISTS dol_childcare_file_release_idx ON control.dol_childcare_file (release, status);
 
+-- The pages of a release's API read answered so far, each as the API sent
+-- it. DOL's API refuses some requests for a while (429, 502); a read whose
+-- retries run out stops, and the next attempt resumes at the page it
+-- stopped on instead of asking for every page again. The rows are removed
+-- once the read's capture is committed, and a page older than seven days is
+-- asked for afresh (dol_childcare/capture.py).
+CREATE TABLE IF NOT EXISTS control.dol_childcare_page (
+    release TEXT NOT NULL,
+    -- The page's fields, page size, study year and offset, hashed: a change
+    -- of any of them asks again.
+    request_key TEXT NOT NULL CHECK (request_key ~ '^[0-9a-f]{64}$'),
+    study_year INTEGER NOT NULL,
+    page_offset INTEGER NOT NULL CHECK (page_offset >= 0),
+    body BYTEA NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (release, request_key)
+);
+
 -- Every parsed price of a captured workbook that differs from the newest
 -- stored price of its county, study year and measure: a rerun over the same
 -- figures stores nothing (CHURN RULE). The workbook's own text is kept

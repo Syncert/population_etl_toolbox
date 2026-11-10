@@ -707,7 +707,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
             "childcare for infants, toddlers, preschoolers and school-age children."
         ),
         raw=[],
-        control=["control.dol_childcare_file"],
+        control=["control.dol_childcare_file", "control.dol_childcare_page"],
         silver=[
             "silver_dol_childcare.price_revision",
             "silver_dol_childcare.fact_price",

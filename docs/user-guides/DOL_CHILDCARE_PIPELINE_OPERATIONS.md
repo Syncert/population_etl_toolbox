@@ -36,10 +36,18 @@ stored in the capture, named in an error, or logged (`log_redaction` masks
 
 **The reads.** Each run asks for the registered fields only, one study year
 at a time (`filter_object` on `studyyear`), in county code order
-(`sort_by=county_fips_code`), 5,000 rows a page; the API answers at most
-10,000 rows or 5 MB a request. About fifteen requests a run. Every page is
-kept exactly as the API sent it, in one JSON capture. The client sends an
-honest `User-Agent`, retries 429 and 5xx answers with backoff, and refuses
+(`sort_by=county_fips_code`), 1,000 rows a page, ten seconds apart: about
+60 requests and ten minutes a run. The API answers at most 10,000 rows or
+5 MB a request, but 5,000-row pages drew 429 and 502 answers after about
+ten requests (2026-11-09). DOL's API guide states no per-key rate. A 429
+waits as long as its `Retry-After` asks (at most ten minutes); a 5xx or a
+dropped connection waits 15 seconds doubled for each attempt, six attempts
+a page. Each page answered is kept in `control.dol_childcare_page` as it
+arrives, so a read whose retries run out stops, and the task's next attempt
+resumes at the page it stopped on instead of asking again; the kept pages
+are removed once the capture is committed, and a page older than seven days
+is asked for afresh. Every page is kept exactly as the API sent it, in one
+JSON capture. The client sends an honest `User-Agent` and refuses
 a body that is not a JSON `data` list, a page near the 5 MB limit (it may
 have been cut), or a body that repeats the key, before anything is
 captured.
