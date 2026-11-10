@@ -41,16 +41,6 @@ is ``COUNTY`` only). A HUD Fair Market Rent (Nick, 2026-11-10) is the same
 shape: HUD sets the rent for the county's HUD area and repeats it for each
 county in it, and the wage is the county's own.
 
-An entry with ``complete_inputs_only`` divides only rows that say they are
-whole: a sum the source made from parts (NCES's county sums of schools)
-carries ``dimensions.completeness``, and a ``partial`` sum on either side is
-not divided (``partial_input``), because a partial count over a partial
-count describes neither the place nor its schools. An entry with
-``match_release: false`` pairs rows of the same geography and period from
-different releases: NCES publishes each school-year component (membership,
-staff) as its own file, so the two sides of one school year never share a
-release. Both releases are named on every row.
-
 Only an ``approved`` pairing is served. ``DERIVED_RATIOS_SERVE_DRAFTS=1``
 lets a local stack serve drafts too, each marked with its status, so the
 owner can review them on the running site before approving them.
@@ -127,11 +117,6 @@ class RatioPairing:
     hours_per_week: int | None = None
     wage_geo_levels: tuple[str, ...] = ()
     area: str | None = None
-    #: Divide only inputs whose ``dimensions.completeness`` is ``complete``.
-    complete_inputs_only: bool = False
-    #: False pairs the same geography and period across releases (NCES's
-    #: per-component files); each side's release is named on the row.
-    match_release: bool = True
 
     @property
     def derived(self) -> bool:
@@ -320,8 +305,6 @@ def parse_registry(document: dict) -> dict[str, RatioPairing]:
                 hours_per_week=entry.get("hours_per_week"),
                 wage_geo_levels=tuple(entry.get("wage_geo_levels", ())),
                 area=variant if time_cost else None,
-                complete_inputs_only=bool(entry.get("complete_inputs_only")),
-                match_release=entry.get("match_release", True) is not False,
             )
     rated = {p.numerator for p in pairings.values() if p.kind == "provider_rate"}
     for pairing in pairings.values():

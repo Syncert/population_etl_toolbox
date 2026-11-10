@@ -4459,7 +4459,7 @@ _CCD_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold",
         "NCES_CCD",
         grain="measure",
-        scope_method="the eight published measures",
+        scope_method="the ten published measures",
         cadence="static",
         empty_behavior="never empty: the measures are registered",
     ),

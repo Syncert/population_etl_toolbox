@@ -44,7 +44,6 @@ UnavailableReason = Literal[
     "only_multi_county_agencies",
     "coverage_below_floor",
     "agencies_not_loaded",
-    "partial_input",
 ]
 
 
@@ -68,11 +67,6 @@ class DerivedRatioPairing(BaseModel):
     hours_per_week: Optional[int] = None
     wage_geo_levels: list[str] = []
     area: Optional[str] = None
-    #: Only inputs whose ``dimensions.completeness`` is ``complete`` are
-    #: divided; a partial sum is ``partial_input``.
-    complete_inputs_only: bool = False
-    #: False when the two sides of a period come from different releases.
-    match_release: bool = True
     dataset: Optional[str] = None
     denominator_label: str
     universe: str
@@ -105,6 +99,11 @@ class DerivedRatioInput(PlainLabelled):
     #: True when a null published margin was taken as zero because the
     #: Bureau controls this estimate at this geography level.
     margin_of_error_controlled: bool = False
+    #: A sum the source made from schools (NCES): how many of the place's
+    #: schools the sum covers and how many it does not, so a ratio over the
+    #: schools that reported says how many those are.
+    schools_with_value: Optional[str] = None
+    schools_without_value: Optional[str] = None
 
 
 class DerivedRatioCoverage(BaseModel):

@@ -4608,6 +4608,8 @@
         "period_end": "string | null",
         "period_start": "string | null",
         "release": "string | null",
+        "schools_with_value": "string | null",
+        "schools_without_value": "string | null",
         "value": "string | null",
         "value_status": "string | null"
       },
@@ -4674,7 +4676,6 @@
       "properties": {
         "area": "string | null",
         "citations": "array<string>",
-        "complete_inputs_only": "boolean",
         "dataset": "string | null",
         "denominator": "string | null",
         "denominator_label": "string",
@@ -4684,7 +4685,6 @@
         "kind": "string",
         "label": "string",
         "limitations": "array<string>",
-        "match_release": "boolean",
         "numerator": "string",
         "numerator_is_subset": "boolean",
         "provider_rate": "string | null",

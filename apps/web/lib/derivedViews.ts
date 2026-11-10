@@ -23,8 +23,7 @@ export type UnavailableReason =
   | "no_reporting_agency"
   | "only_multi_county_agencies"
   | "coverage_below_floor"
-  | "agencies_not_loaded"
-  | "partial_input";
+  | "agencies_not_loaded";
 
 /** One pairing as `GET /api/v1/catalog/derived-ratios` lists it. */
 export interface DerivedRatioPairing {
@@ -65,6 +64,9 @@ export interface DerivedRatioInput {
   value_status?: string | null;
   margin_of_error?: string | null;
   margin_of_error_controlled?: boolean;
+  /** NCES sums: how many of the place's schools the sum covers, and how many it does not. */
+  schools_with_value?: string | null;
+  schools_without_value?: string | null;
 }
 
 /** Whom a county agency rate covers (ADR-0012); every figure is the FBI's. */
@@ -197,7 +199,6 @@ const UNAVAILABLE_TEXT: Record<UnavailableReason, string> = {
   only_multi_county_agencies: "Only agencies that also serve other counties reported",
   coverage_below_floor: "Too few agencies reported to give a rate",
   agencies_not_loaded: "Reports from some agencies serving this county are not loaded yet",
-  partial_input: "Not every school reported, so the sum is partial and is not divided",
 };
 
 export function unavailableText(reason: string | null | undefined): string {

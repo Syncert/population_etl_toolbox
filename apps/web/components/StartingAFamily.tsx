@@ -33,6 +33,7 @@ import {
   hoursFormula,
   hoursGap,
   hoursText,
+  schoolsText,
 } from "../lib/familyCollection";
 import type { FamilyMinutes, FamilyRow } from "../lib/familyCollection";
 import type { InfantCareRead } from "../lib/childcare";
@@ -81,6 +82,8 @@ export default function StartingAFamily({
 }) {
   const [read, setRead] = useState<Map<string, LevelAnswer>>(new Map());
   const [hours, setHours] = useState<Map<string, FamilyMinutes | null>>(new Map());
+  // A ratio over schools: how many of each place's schools it covers.
+  const [schools, setSchools] = useState<Map<string, { withValue?: string | null; withoutValue?: string | null }>>(new Map());
   const served = useMemo(() => new Set(pairings.filter((pairing) => pairing.served).map((pairing) => pairing.ratio_id)), [pairings]);
   const chainKey = levels.map((entry) => `${entry.level}:${entry.geoId}`).join(",");
   const sharesInfant = infant !== undefined;
@@ -116,6 +119,8 @@ export default function StartingAFamily({
       }
     }
     setRead(new Map(next));
+    const nextSchools = new Map<string, { withValue?: string | null; withoutValue?: string | null }>();
+    setSchools(new Map());
     const sourceFor = (code: string) => sources.find((source) => source.sourceCode === metricsByCode.get(code)?.source_code) || null;
     const tasks: Promise<void>[] = [];
     if (missing.length) {
@@ -144,12 +149,20 @@ export default function StartingAFamily({
             .then((page) => {
               const found = (page.items || []).find((item: DerivedRatioObservation) => item.geo_id === entry.geoId) || null;
               next.set(key(row.ratioId!, entry.geoId), { row: found ? derivedMapRow(found, row.ratioId!) : null });
+              if (found?.numerator?.schools_with_value != null && !found.unavailable_reason) {
+                nextSchools.set(key(row.ratioId!, entry.geoId), {
+                  withValue: found.numerator.schools_with_value,
+                  withoutValue: found.numerator.schools_without_value,
+                });
+              }
             })
             .catch(() => {
               if (!signal.aborted) next.set(key(row.ratioId!, entry.geoId), { row: null, error: "Could not be read just now" });
             })
             .finally(() => {
-              if (!signal.aborted) setRead(new Map(next));
+              if (signal.aborted) return;
+              setRead(new Map(next));
+              setSchools(new Map(nextSchools));
             }),
         );
       }
@@ -233,6 +246,7 @@ export default function StartingAFamily({
                 loaded={loaded(row)}
                 answers={shown}
                 minutes={minutesFor(row)}
+                schools={schools}
                 county={county}
                 distinctive={distinctive}
                 siblingsName={siblingsName}
@@ -268,6 +282,7 @@ function FamilyLine({
   county,
   distinctive,
   siblingsName,
+  schools,
 }: {
   row: FamilyRow;
   levels: LevelPlace[];
@@ -278,6 +293,7 @@ function FamilyLine({
   county: LevelPlace | null;
   distinctive: DistinctiveResponse | null;
   siblingsName: string;
+  schools: ReadonlyMap<string, { withValue?: string | null; withoutValue?: string | null }>;
 }) {
   const testId = `family-${row.id}`;
   if (!loaded) {
@@ -300,6 +316,9 @@ function FamilyLine({
     ? distinctive?.ranked.find((measure) => measure.metric_code === row.metricCode && distinctive.geo_id === lead.geoId) || null
     : null;
   const hoursLine = row.hoursRatioId && county && lead?.geoId === county.geoId ? hoursText(minutes, row.hoursSameYearOnly) : "";
+  const coverage = row.ratioId
+    ? schoolsText(card.rows.filter((entry) => entry.row && !entry.message).map((entry) => ({ name: entry.place.name, ...schools.get(key(code, entry.place.geoId)) })))
+    : "";
   const gap = row.hoursRatioId && county && lead?.geoId === county.geoId && value ? hoursGap(minutes, row, county.name) : "";
   return (
     <li className="place-family-row" data-testid={testId} data-available="true" data-period={card.period}>
@@ -320,6 +339,7 @@ function FamilyLine({
       {hoursLine ? <p className="place-family-hours" data-testid={`${testId}-hours`}>{hoursLine} at {county!.name}&apos;s average wage</p> : null}
       {gap ? <p className="subtle" data-testid={`${testId}-hours-gap`}>{gap}</p> : null}
       <PlaceLevelStrip measureId={`family-${row.id}`} rows={card.rows} />
+      {coverage ? <p className="subtle" data-testid={`${testId}-schools`}>{coverage}</p> : null}
       {ranked ? <p className="subtle" data-testid={`${testId}-rank`}>{rankSentence(ranked, siblingsName)}</p> : null}
       {row.gap && levels.some((entry) => !row.levels.includes(entry.level)) && lead ? (
         <p className="subtle" data-testid={`${testId}-levels`}>{row.gap}.</p>

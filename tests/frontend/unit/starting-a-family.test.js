@@ -9,6 +9,7 @@ import {
   hoursFormula,
   hoursGap,
   hoursText,
+  schoolsText,
 } from "../../../apps/web/lib/familyCollection";
 
 // Covers: WEB-173 — starting-a-family-collection: eight published measures in
@@ -60,6 +61,19 @@ describe("the Starting a family rows", () => {
     expect(headlineLevel(homes, chain).name).toBe("Madison city");
     // A state page has no county: the row says where it is published instead.
     expect(headlineLevel(care, chain.slice(2))).toBeNull();
+  });
+});
+
+describe("a ratio over schools", () => {
+  it("says how many schools reported both, and nothing when all did", () => {
+    expect(
+      schoolsText([
+        { name: "Dane County", withValue: "112", withoutValue: "6" },
+        { name: "Wisconsin", withValue: "2031", withoutValue: "0" },
+      ]),
+    ).toBe("From the schools that reported both students and teachers: 112 of 118 in Dane County and all 2,031 in Wisconsin.");
+    expect(schoolsText([{ name: "Dane County", withValue: "118", withoutValue: "0" }])).toBe("");
+    expect(schoolsText([{ name: "Dane County" }])).toBe("");
   });
 });
 

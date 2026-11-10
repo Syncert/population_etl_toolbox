@@ -140,18 +140,23 @@ parser checks:
   The rent's year is HUD's fiscal year, whose `period_start` is October 1
   of the year before, and it is matched to the wage of that calendar year,
   or the newest wage year, as the row says.
-- **`complete_inputs_only`.** A pairing over sums the source made from parts
-  (NCES's county and state sums of schools, each with
-  `dimensions.completeness`) divides only rows that are `complete` on both
-  sides. A partial sum is served without a value as `partial_input`, never
-  divided.
-- **`match_release: false`.** Rule 2's "same release" assumes one file
-  carries both sides. NCES publishes each school-year component
-  (membership, staff) as its own file, so the two sides of a school year
-  are never one release. Such a pairing matches the same geography and
-  period across releases and names both releases on the row. It is still
-  one program, one period and one geography, and it is never used to pair
-  two periods.
+- **Students per teacher divides sums over one set of schools.** NCES's
+  county and state figures are sums of schools, and the membership and
+  staff sums each skip the schools that did not report that count, so the
+  two can cover different schools. The warehouse therefore also publishes
+  `student_membership_matched` and `teacher_fte_matched`: both summed over
+  only the schools that reported both counts in the year's newest
+  membership and staff files, under one release that names both files.
+  `students_per_teacher` divides those two. Each input carries
+  `schools_with_value` and `schools_without_value`, so the row says how many
+  of the place's schools the figure covers.
+
+  This replaces the first version of this amendment (same day), which
+  served no value unless every school reported both
+  (`complete_inputs_only`, `partial_input`) and paired the two separate
+  files across releases (`match_release`). Nick, 2026-11-10 18:48Z: "even if
+  not every school reported it should still display what was reported."
+  Both registry fields and the reason are removed.
 
 ## Alternatives considered
 
