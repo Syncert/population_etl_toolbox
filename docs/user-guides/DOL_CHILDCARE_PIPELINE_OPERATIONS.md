@@ -37,14 +37,17 @@ stored in the capture, named in an error, or logged (`log_redaction` masks
 **The reads.** Each run asks for the registered fields only, one study year
 at a time (`filter_object` on `studyyear`), in county code order
 (`sort_by=county_fips_code`), up to 5,000 rows a page, so one page per
-year (about 3,150 counties, roughly 2.2 MB): 15 requests, 25 seconds apart,
-about six minutes a run. DOL's API guide states no per-key rate, but in
-practice the API refuses after about 13 requests (2026-11-09 and
-2026-11-10), with 429 and 502 answers for several minutes, whatever the
-page size; 25 seconds apart is 12 every five minutes. A refusal (429, 502,
-503 or 504) waits as long as a 429's `Retry-After` asks, or else five
-minutes, doubled each time, at most fifteen; another 5xx or a dropped
-connection waits 15 seconds, doubled each time. Four attempts
+year (about 3,150 counties, roughly 2.2 MB): 15 requests, 50 seconds apart,
+about twelve minutes a run. DOL's API guide states no per-key rate, but its
+AWS API Gateway let 12 or 13 requests through, whatever the page size, then
+answered only 429s (and 502s) until 8 to 9 minutes after the last request
+it accepted (2026-11-09 and 2026-11-10); it sends no `Retry-After` or rate
+header. 50 seconds apart is 12 every ten minutes. A refusal (429, 502, 503
+or 504) waits as long as a 429's `Retry-After` asks, or else ten minutes,
+then fifteen; another 5xx or a dropped connection waits 15 seconds, doubled
+each time. Each refusal is logged with its status and its rate headers
+(`Retry-After`, `RateLimit-*`, `X-RateLimit-*`, the gateway's request and
+error ids), never the query string. Three attempts
 a page. Each page answered is kept in `control.dol_childcare_page` as it
 arrives, so a read whose retries run out stops, and the task's next attempt
 resumes at the page it stopped on instead of asking again; the kept pages

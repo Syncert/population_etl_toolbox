@@ -287,6 +287,40 @@ def test_the_wait_after_a_refusal_is_bounded() -> None:
     assert retry_wait(None, 10, config) == 900
 
 
+def test_a_refusal_is_logged_with_its_rate_headers_and_never_the_key(caplog) -> None:
+    """Covers: ETL-123 — a refusal's status and rate headers are logged; the key and other headers are not."""
+    client = _Sequence(
+        [
+            (
+                429,
+                {
+                    "x-amzn-ErrorType": "TooManyRequestsException",
+                    "X-RateLimit-Remaining": "0",
+                    "Set-Cookie": "session=secret",
+                },
+            )
+        ]
+    )
+    with caplog.at_level(
+        "WARNING", logger="data_ingestion_toolbox.dol_childcare.client"
+    ):
+        fetch_release(
+            RELEASE,
+            config=_config(max_attempts=2, refusal_wait_seconds=600),
+            client=client,
+            sleep=lambda _s: None,
+        )
+    (record,) = [r for r in caplog.records if "answered HTTP" in r.getMessage()]
+    message = record.getMessage()
+    assert "HTTP 429 on attempt 1" in message
+    assert "'x-amzn-errortype': 'TooManyRequestsException'" in message
+    assert "'x-ratelimit-remaining': '0'" in message
+    assert "waiting 600 s" in message
+    assert "session=secret" not in message
+    assert KEY not in message
+    assert "X-API-KEY" not in message
+
+
 class _Pages:
     def __init__(self) -> None:
         self.kept: dict[str, bytes] = {}
@@ -342,10 +376,10 @@ def test_a_changed_page_size_or_field_list_asks_afresh() -> None:
     assert key != page_request_key("a,b", 1000, 2022, 1000)
     defaults = ChildcareConfig()
     assert defaults.api_page_size == 5000
-    assert defaults.min_spacing_seconds == 25
-    assert defaults.max_attempts == 4
+    assert defaults.min_spacing_seconds == 50
+    assert defaults.max_attempts == 3
     assert (defaults.refusal_wait_seconds, defaults.max_refusal_wait_seconds) == (
-        300,
+        600,
         900,
     )
 

@@ -46,22 +46,24 @@ class ChildcareConfig(BaseModel):
     #: Rows per API request: one page per study year (about 3,150
     #: counties, roughly 2.2 MB of the 31 fields asked), under the API's
     #: 10,000-row and 5 MB limit. DOL refuses by number of requests, not
-    #: their size: about 13 requests, then 429 and 502 answers for several
-    #: minutes (2026-11-09 and 2026-11-10), so the fewest pages is best.
+    #: their size, so the fewest pages is best.
     api_page_size: int = 5000
-    #: The pause between two requests: 12 every five minutes, under the
-    #: roughly 13 DOL answered before refusing. DOL's API guide states no
-    #: per-key rate.
-    min_spacing_seconds: float = 25.0
+    #: The pause between two requests. DOL's API guide states no per-key
+    #: rate, but its gateway let 12 or 13 requests through about 14 seconds
+    #: apart, then refused until 8 to 9 minutes after the last one it
+    #: answered (2026-11-10): about 13 every ten minutes. A request every
+    #: 50 seconds is 12 every ten minutes; the 15 pages take about 12.
+    min_spacing_seconds: float = 50.0
     #: Attempts per request. A refusal -- a 429, or the 502, 503 or 504
     #: that came with DOL's throttling -- waits as long as its
-    #: ``Retry-After`` asks, or else ``refusal_wait_seconds`` doubled each
-    #: time, at most ``max_refusal_wait_seconds``: asking again sooner only
-    #: meets another refusal. A dropped connection or another 5xx waits
+    #: ``Retry-After`` asks (DOL sends none), or else
+    #: ``refusal_wait_seconds`` doubled each time, at most
+    #: ``max_refusal_wait_seconds``: asking again sooner only meets another
+    #: refusal. A dropped connection or another 5xx waits
     #: ``retry_backoff_seconds``, doubled each time.
-    max_attempts: int = 4
+    max_attempts: int = 3
     retry_backoff_seconds: float = 15.0
-    refusal_wait_seconds: float = 300.0
+    refusal_wait_seconds: float = 600.0
     max_refusal_wait_seconds: float = 900.0
     user_agent: str = (
         "population-etl-toolbox DOL childcare prices ingestion (public-data warehouse)"

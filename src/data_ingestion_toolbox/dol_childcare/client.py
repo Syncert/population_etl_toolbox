@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import time
 from collections.abc import Callable, Mapping
@@ -72,9 +73,42 @@ def page_request_key(fields: str, page_size: int, year: int, offset: int) -> str
     return hashlib.sha256(f"{fields}|{page_size}|{year}|{offset}".encode()).hexdigest()
 
 
+LOGGER = logging.getLogger(__name__)
+
+#: The headers a refusal is logged with: the capture allowlist and the rate
+#: headers API gateways send. DOL's AWS API Gateway sent no rate header on a
+#: 200 (2026-11-10); a refusal's own are logged in case it does.
+REFUSAL_LOG_HEADERS = frozenset(
+    {
+        "content-type",
+        "retry-after",
+        "ratelimit",
+        "ratelimit-limit",
+        "ratelimit-policy",
+        "ratelimit-remaining",
+        "ratelimit-reset",
+        "x-ratelimit-limit",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-amzn-errortype",
+        "x-amzn-requestid",
+        "x-amz-apigw-id",
+        "x-cache",
+    }
+)
+
 #: DOL's answers while it throttles a key: the 429 and the 502s that come
 #: with it (2026-11-09, 2026-11-10).
 REFUSAL_STATUSES = frozenset({429, 502, 503, 504})
+
+
+def refusal_headers(response: httpx.Response) -> dict[str, str]:
+    """A refused answer's rate headers, by name from a fixed list."""
+    return {
+        name.lower(): value
+        for name, value in response.headers.items()
+        if name.lower() in REFUSAL_LOG_HEADERS
+    }
 
 
 def retry_wait(
@@ -160,7 +194,18 @@ def _send(
         if attempt < config.max_attempts:
             if on_retry is not None and final_error is not None:
                 on_retry(final_error)
-            sleep(retry_wait(response, attempt, config))
+            wait = retry_wait(response, attempt, config)
+            if response is not None:
+                LOGGER.warning(
+                    "DOL NDCP %s answered HTTP %s on attempt %d; headers %s; "
+                    "waiting %.0f s",
+                    path,
+                    response.status_code,
+                    attempt,
+                    refusal_headers(response),
+                    wait,
+                )
+            sleep(wait)
     raise ChildcareFetchError(
         path, code="retry_exhausted", status=final_status
     ) from final_error
