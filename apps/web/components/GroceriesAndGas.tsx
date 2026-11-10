@@ -13,6 +13,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import ChildcarePrices from "./ChildcarePrices";
+import type { InfantCareRead } from "../lib/childcare";
 import { ApiError, apiErrorMessage, apiFetch, fetchCollectionPages, getMetric } from "../lib/api/client";
 import type { CollectionResponse, GeographySummary, Observation } from "../lib/api/types";
 import type { ExplorerSource } from "../lib/explorerSources";
@@ -242,6 +243,7 @@ export default function GroceriesAndGas({
   related,
   sources,
   catalogued,
+  onInfant,
 }: {
   level: PlaceLevel;
   place: GeographySummary;
@@ -249,6 +251,8 @@ export default function GroceriesAndGas({
   sources: readonly ExplorerSource[];
   /** The place page's one catalog read, `null` while pending. */
   catalogued?: ReadonlyMap<string, unknown> | null;
+  /** Passed to the childcare card, for "Starting a family". */
+  onInfant?: (geoId: string, read: InfantCareRead) => void;
 }) {
   const [answers, setAnswers] = useState<Partial<Record<CostMeasure, Answer>>>({});
   const [view, setView] = useState<View>("price");
@@ -479,7 +483,7 @@ export default function GroceriesAndGas({
           );
         })}
       </dl>
-      <ChildcarePrices level={level} place={place} sources={sources} catalogued={catalogued} />
+      <ChildcarePrices level={level} place={place} sources={sources} catalogued={catalogued} onInfant={onInfant} />
       <p className="subtle" data-testid="place-cost-rent">
         Rent is this place&apos;s own figure: see <a href="#housing">median gross rent in Housing</a>.
       </p>

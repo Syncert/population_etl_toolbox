@@ -4969,6 +4969,170 @@
       "version": 1,
       "effective_date": "2026-11-08",
       "last_reviewed_date": "2026-11-08"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B11005_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B11005_002",
+        "CENSUS_ACS:acs1:B11005_002"
+      ],
+      "name": "Households with one or more people under 18",
+      "definition": "Households in which at least one person is under 18, whether or not the child is the householder's own.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Show how many households in a place are raising or living with children, as a share of all households (B11005_001).",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "Counts households with any person under 18, including grandchildren and other relatives, not only the householder's own children.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B11005",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "HUD_FMR_IL:fmr_3br",
+      "metric_codes": [
+        "HUD_FMR_IL:fmr_3br"
+      ],
+      "name": "Fair Market Rent, three bedrooms",
+      "definition": "HUD's Fair Market Rent for a three-bedroom unit in the county's HUD area: the monthly gross rent, including utilities, HUD sets as the 40th percentile of rents paid by recent movers into standard-quality units.",
+      "unit": "dollars per month",
+      "universe": "standard-quality rental units in the county's HUD Fair Market Rent area",
+      "kind": "median",
+      "caveat": "The HUD area's value, repeated for each county in the area; a program reference value, not the ACS median rent.",
+      "intended_use": "Show what renting a home with room for a family costs, in dollars a month and in hours of the county's average wage.",
+      "limitations": [
+        "The HUD area's value, repeated for each county in the area; a program reference value, not the ACS median rent.",
+        "A 40th percentile of recent movers' rents, not a median of all rents; classed with medians because it describes a typical unit, not the area's size.",
+        "The year is HUD's fiscal year, which starts on October 1 of the year before; New England towns are not served as county values."
+      ],
+      "citations": [
+        "https://www.huduser.gov/portal/datasets/fmr.html"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "NCES_CCD:student_membership",
+      "metric_codes": [
+        "NCES_CCD:student_membership"
+      ],
+      "name": "Students enrolled in public schools",
+      "definition": "Students enrolled on or about October 1 in the public schools NCES's EDGE geocode file places in the county or state, summed from the Common Core of Data's school records.",
+      "unit": "students",
+      "universe": "students in public schools placed here",
+      "kind": "count",
+      "caveat": "Summed from schools; a sum with schools that did not report is marked partial.",
+      "intended_use": "Show the size of a place's public school enrolment, and with full-time-equivalent teachers (NCES_CCD:teacher_fte), its students per teacher.",
+      "limitations": [
+        "Summed from schools; a sum with schools that did not report is marked partial (dimensions.completeness), and a partial sum is not divided.",
+        "Public schools only; private schools and home-schooled children are not counted.",
+        "Labelled with the school year's fall: 2024 is the 2024-25 school year."
+      ],
+      "citations": [
+        "https://nces.ed.gov/ccd/",
+        "https://nces.ed.gov/programs/edge/Geographic/SchoolLocations"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "BLS_QCEW:annual_avg_weekly_wage:10:0",
+      "metric_codes": [
+        "BLS_QCEW:annual_avg_weekly_wage:10:0"
+      ],
+      "name": "Average weekly wage of jobs located here, annual",
+      "definition": "Total covered wages for the calendar year divided by the year's average covered jobs and by 52 weeks, for all industries and all ownerships.",
+      "unit": "dollars per week",
+      "universe": "covered jobs, by place of work",
+      "kind": "mean",
+      "caveat": "An average across all covered jobs, including part-time jobs, so a few high wages raise it; not a typical wage.",
+      "intended_use": "Describe what jobs located in a place pay over a year, and serve as the wage in hours-of-work figures.",
+      "limitations": [
+        "An average across all covered jobs, including part-time jobs, so a few high wages raise it; not a typical wage.",
+        "Counted by employer location, not where the worker lives."
+      ],
+      "citations": [
+        "https://www.bls.gov/cew/overview.htm",
+        "https://www.bls.gov/cew/about-data/"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "NCES_CCD:teacher_fte",
+      "metric_codes": [
+        "NCES_CCD:teacher_fte"
+      ],
+      "name": "Full-time-equivalent teachers in public schools",
+      "definition": "Full-time-equivalent classroom teachers reported by the public schools NCES's EDGE geocode file places in the county or state, summed from the Common Core of Data's school records.",
+      "unit": "teachers (full-time equivalent)",
+      "universe": "public schools placed here",
+      "kind": "count",
+      "caveat": "Summed from schools; a sum with schools that did not report is marked partial.",
+      "intended_use": "Divide public school students by teachers (students per teacher) where every placed school reported both.",
+      "limitations": [
+        "Summed from schools; a sum with schools that did not report is marked partial (dimensions.completeness), and a partial sum is not divided.",
+        "Full-time equivalents, so two half-time teachers count as one."
+      ],
+      "citations": [
+        "https://nces.ed.gov/ccd/"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B11005_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B11005_001",
+        "CENSUS_ACS:acs1:B11005_001"
+      ],
+      "name": "Households (households by presence of people under 18)",
+      "definition": "All households, the total of the table that counts households with and without people under 18.",
+      "unit": "households",
+      "universe": "households",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "The denominator of the share of households with people under 18.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B11005"
+      ],
+      "status": "draft",
+      "owner": "starting-a-family-collection",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-10",
+      "last_reviewed_date": "2026-11-10"
     }
   ]
 }

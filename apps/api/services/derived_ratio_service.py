@@ -94,6 +94,8 @@ def pairing_summary(pairing: RatioPairing) -> DerivedRatioPairing:
         hours_per_week=pairing.hours_per_week,
         wage_geo_levels=list(pairing.wage_geo_levels),
         area=pairing.area,
+        complete_inputs_only=pairing.complete_inputs_only,
+        match_release=pairing.match_release,
         dataset=pairing.dataset,
         denominator_label=pairing.denominator_label,
         universe=pairing.universe,
@@ -208,6 +210,14 @@ def derive_row(
         _margin(denominator) is None and level in pairing.controlled_denominator_levels
     )
     row["denominator"] = _input(denominator, controlled=controlled)
+
+    # A sum the source made from parts says whether it is whole; a partial
+    # sum on either side is never divided (registry `complete_inputs_only`).
+    if pairing.complete_inputs_only and not all(
+        (side.dimensions or {}).get("completeness") == "complete"
+        for side in (numerator, denominator)
+    ):
+        return unavailable("partial_input")
 
     x = _usable(numerator)
     y = _usable(denominator)
@@ -351,12 +361,12 @@ def time_cost_rows(
     return rows
 
 
-def _key(observation: NeutralObservation) -> tuple:
+def _key(observation: NeutralObservation, match_release: bool = True) -> tuple:
     return (
         observation.geo_id,
         observation.period_start,
         observation.period_end,
-        observation.release,
+        observation.release if match_release else None,
     )
 
 
@@ -366,13 +376,17 @@ def pair_rows(
     denominators: list[NeutralObservation],
 ) -> list[DerivedRatioObservation]:
     """Each numerator row beside the denominator with its geography, period and release."""
-    by_key = {_key(row): row for row in denominators}
+    by_key: dict[tuple, NeutralObservation] = {}
+    for row in denominators:
+        # Across releases (``match_release: false``) the first row the read
+        # returns for a period stands; the latest scope returns one per period.
+        by_key.setdefault(_key(row, pairing.match_release), row)
     published_geographies = {row.geo_id for row in denominators}
     return [
         derive_row(
             pairing,
             row,
-            by_key.get(_key(row)),
+            by_key.get(_key(row, pairing.match_release)),
             denominator_elsewhere=row.geo_id in published_geographies,
         )
         for row in numerators
@@ -475,8 +489,14 @@ def list_derived_observations(
         items = time_cost_rows(pairing, page.items, wages, str(wage_geo_id))
     else:
         geo_ids = sorted({row.geo_id for row in page.items if row.geo_id})
+        # A release pin names the numerator's release; across releases the
+        # denominator is read unpinned, as a time cost reads its wage.
         denominators = observations_for_geographies(
-            db, pairing.denominator, scope, release, geo_ids
+            db,
+            pairing.denominator,
+            scope,
+            release if pairing.match_release else None,
+            geo_ids,
         )
         if denominators is None:
             raise NeutralQueryError(

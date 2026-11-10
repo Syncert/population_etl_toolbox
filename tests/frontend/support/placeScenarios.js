@@ -139,6 +139,10 @@ const COST_METRICS = Object.fromEntries([
   // Childcare (county-childcare-prices): the Women's Bureau's county prices.
   ...["center", "home"].flatMap((care) => ["infant", "toddler", "preschool", "school_age"].map((age) =>
     costMetric(`DOL_CHILDCARE:${care}_${age}`, "dollars per week", ["COUNTY"]))),
+  // Starting a family (starting-a-family-collection): HUD's three-bedroom
+  // rent for counties, QCEW's annual wage for counties, states and the nation.
+  costMetric("HUD_FMR_IL:fmr_3br", "dollars per month", ["COUNTY"]),
+  costMetric("BLS_QCEW:annual_avg_weekly_wage:10:0", "dollars per week", ["COUNTY", "STATE", "NATIONAL"]),
   // Grocery spending (grocery-spending): the Consumer Expenditure Survey's
   // Midwest and national means, and the nation's household sizes.
   ...["LB1101", "LB1103", "LB0502", "LB0504", "LB0505", "LB0506", "LB0507"].map((table) =>
@@ -162,6 +166,8 @@ const COST_VALUES = {
   "EIA:NG_RES": { "state:55": "price:12.00" },
   "EIA:EPD2F": { "area:eia:R20": "season:3.50" },
   "EIA:EPD2D": { "us:1": "3.71" },
+  "HUD_FMR_IL:fmr_3br": { "state:55|county:025": "2000" },
+  "BLS_QCEW:annual_avg_weekly_wage:10:0": { "state:55|county:025": "1200", "state:55": "1100", "us:1": "1300" },
   "BLS:CXUFOODHOMELB1101M": { "us:1": "6224" },
   "BLS:CXUFOODHOMELB1103M": { "region:2": "5846" },
   "BLS:CXUFOODHOMELB0502M": { "us:1": "3612" },
@@ -197,7 +203,7 @@ function childcareRows(code, geo) {
 function costRows(code, geo) {
   if (code.startsWith("DOL_CHILDCARE:")) return childcareRows(code, geo);
   const value = COST_VALUES[code]?.[geo];
-  const area = [NATION, ...STATES, ...Object.values(AREAS)].find((item) => item.geo_id === geo);
+  const area = [NATION, ...STATES, ...COUNTIES, ...Object.values(AREAS)].find((item) => item.geo_id === geo);
   if (!value || !area) return [];
   const base = { metric_code: code, source_code: code.split(":")[0], geo_id: geo, geo_level: area.geo_level, geo_name: area.geo_name,
     value_status: "valid", unit: COST_METRICS[code].units, release: "fixture", as_of: "2026-09-01", dimensions: {}, uncertainty: null, coverage: null };
@@ -558,6 +564,8 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
         rank("CENSUS_ACS:acs5:B01002_001", "Median age", 35.7, 2),
         rank("BLS:LAU:UNEMP_RATE", "Unemployment rate", 2.4, 4),
         rank("CENSUS_PEP:RDEATH", "Rdeath", 7.1, 5, { metric_display_name: "Rdeath", units: "per_1000_population" }),
+        // Mid-table, so it is not one of the standouts at either end.
+        rank("DOL_CHILDCARE:center_infant", "Center infant care", 293, 40, { units: "dollars per week" }),
       ] : [];
       return route.fulfill({ json: { derived: true, geo_id: geoId, geo_level: geoId.includes("county") ? "COUNTY" : "STATE", parent_scope: "state:55", minimum_siblings: 10,
         method: "UI fixture", ranked, not_ranked: [{ metric_code: "CDC:places_county:OBESITY:AgeAdjPrv", reason: "not published at COUNTY (UI fixture)" }] } });

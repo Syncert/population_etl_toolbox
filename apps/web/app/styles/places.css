@@ -1320,3 +1320,50 @@
     background: CanvasText;
   }
 }
+
+/* Starting a family (starting-a-family-collection): one compact row per
+   measure, in four groups, each with its value, period and level strip. */
+.place-family-group {
+  margin: 14px 0 0;
+}
+
+.place-family-group h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.place-family-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place-family-row {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+
+.place-family-row h4 {
+  margin: 0 0 4px;
+  font-size: 0.86rem;
+}
+
+.place-family-value {
+  margin: 0;
+}
+
+.place-family-value strong {
+  font-size: 1.15rem;
+}
+
+.place-family-hours {
+  margin: 2px 0 0;
+  font-weight: 700;
+}

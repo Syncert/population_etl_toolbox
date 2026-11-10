@@ -16,11 +16,19 @@ verify:
 
 ## Status
 
-Proposed 2026-11-10, awaiting Nick's approval. Nick, 2026-11-10 12:35Z:
+Approved 2026-11-10 17:17Z. Nick, 2026-11-10 12:35Z:
 "would it be interesting to have a 'starting a family looks like ...'
 collection of metrics such as childcare, house price etc that indicate
-blockers or favorable situations to encourage child rearing". Nothing is
-built until the open questions below are answered.
+blockers or favorable situations to encourage child rearing". His answers to
+the open questions (17:17Z):
+
+- **No easier / harder words.** "Skip the words and go with the
+  information, because it's subjective." Each row shows its values, the
+  level strip and the rank, and no judgement of direction.
+- **Hours of work for the 3-bedroom rent: yes.**
+- **Add the three ACS tables** (slice 2). They go in their own plan,
+  `ACS_FAMILY_TABLES_PLAN.md`, and PR.
+- The eight rows were not changed, so they stay as proposed.
 
 ## Why
 
@@ -97,15 +105,9 @@ of the chapter: "Hours of work = weekly price ÷ (county average weekly wage
 ÷ 40)", with the county's wage, its year and its source filled in. Each row links to the card
 it came from in its home chapter.
 
-**Favourable or a blocker** (open question 1): the recommended reading is
-one plain word per row comparing the place with its state, "easier than the
-state" or "harder than the state", from a direction fixed per row (lower
-care cost, rent, poverty, uninsured share and class size are easier;
-higher wage is easier), shown only when the two values are the same period
-and, for survey values, the difference is beyond both margins. Otherwise
-"about the same as the state". Two rows have no direction and get no word:
-home value (a higher value is a cost to buyers and wealth to owners) and
-households with children (context, not a condition).
+**No favourable / blocker words** (Nick, 2026-11-10): whether a figure
+helps or hinders a family is the reader's call. The rows state values,
+periods, the level strip and the rank only.
 
 ## Data and API work (slice 1)
 
@@ -147,24 +149,18 @@ households with children (context, not a condition).
   pointing at the chapter, so the collection is findable from the field
   guide.
 
-## Slice 2 (optional, new ACS tables; needs Nick's go separately)
+## Slice 2: three ACS tables
 
-All free, all Census ACS through the existing `census_acs` DAG using the
-`added_tables` mechanism (only the new tables, on the next scheduled run).
-Cloud cannot reach census.gov, so the first run is on OFFICE_LAB.
+Approved 2026-11-10 and planned on its own in
+`ACS_FAMILY_TABLES_PLAN.md`: B23008, B19125 and
+B13002, added to the ACS DAG and shown in this chapter's "More for
+families" fold once loaded.
 
-| Table | Would add | Why it helps |
-|---|---|---|
-| B23008 | Children under 6 with all parents in the labor force | how many families need paid care |
-| B19125 | Median family income, families with own children under 18 | income of families with children, not all households |
-| B13002 | Women 15–50 with a birth in the past 12 months | a survey fertility rate beside PEP births |
-
-Not recommended: the Women's Bureau state-level NDCP estimates (only on
-www.dol.gov as xlsx, which refuses our client; the DOL API dataset is
-county only, to be confirmed by one OFFICE_LAB probe if wanted), CDC
-WONDER natality (county data needs an interactive agreement, not
-automatable), state paid-leave and child-tax-credit laws (no free
-machine-readable official source; would be hand-sourced).
+These were considered and not taken: the Women's Bureau state-level NDCP
+estimates (only on www.dol.gov as xlsx, which refuses our client), CDC
+WONDER natality (county data needs an interactive agreement, so it can't
+be automated), and state paid-leave or child-tax-credit laws (no free
+machine-readable official source).
 
 ## Acceptance criteria
 
@@ -182,16 +178,6 @@ machine-readable official source; would be hand-sourced).
 5. The place page sends no more than one extra batch and one derived read
    for the chapter; speed gate as for #339 (no API read over 2 s).
 
-## Open questions for Nick
-
-1. **Favourable / blocker cue:** a plain "easier / harder / about the same
-   as the state" word per row (recommended), or neutral marks only?
-2. **The eight rows:** keep as above, or swap any (for example rent burden,
-   commute or crime into the main list)?
-3. **3-bedroom rent in hours of work:** extend minutes-of-work to HUD Fair
-   Market Rents (needs the ADR-0009 amendment above)?
-4. **Slice 2:** add the three ACS tables now, later, or not at all?
-
 ## Checkpoint
 
-2026-11-10: plan written; no code.
+2026-11-10: plan written; approved 17:17Z with the answers above; build started.

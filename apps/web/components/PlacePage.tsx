@@ -102,6 +102,8 @@ import {
 } from "../lib/metroPages";
 import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 import { CHILDCARE_CODES } from "../lib/childcare";
+import type { InfantCareRead } from "../lib/childcare";
+import { FAMILY_CODES } from "../lib/familyCodes";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 /** The grains `/public-money` answers (taxes-and-public-money T-6). */
@@ -116,6 +118,7 @@ const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
+const StartingAFamily = dynamic(() => import("./StartingAFamily"));
 // Taxes and public money (taxes-and-public-money T-6): own chunks, so a place
 // page carries none of it until the Work and Money chapter renders.
 const PublicMoney = dynamic(() => import("./PublicMoney"));
@@ -221,6 +224,9 @@ export default function PlacePage({
   const [search, setSearch] = useState("");
   const [nearby, setNearby] = useState<NearbyGroups | null>(null);
   const [related, setRelated] = useState<RelatedResponse | null>(null);
+  // The county childcare card's center infant price, shared with "Starting a family".
+  const [infant, setInfant] = useState<{ geoId: string; read: InfantCareRead } | null>(null);
+  const shareInfant = useCallback((geoId: string, read: InfantCareRead) => setInfant({ geoId, read }), []);
   // Which place's relationships have settled (answered or failed). A city's
   // county comes from them, so a city page reads nothing until they settle:
   // reading first sent every chapter's batches for the city, its state and
@@ -381,7 +387,8 @@ export default function PlacePage({
     (async () => {
       // The childcare prices are named in the same read, so a price not
       // loaded is never asked for on its own (county-childcare-prices).
-      const codes = [...placeChapterMetricCodes(), ...CHILDCARE_CODES];
+      // So are the Starting a family rows' metrics (starting-a-family-collection).
+      const codes = [...new Set([...placeChapterMetricCodes(), ...CHILDCARE_CODES, ...FAMILY_CODES])];
       let found = new Map<string, MetricSummary>();
       let failures = 0;
       try {
@@ -818,6 +825,7 @@ export default function PlacePage({
     );
   }
 
+  const siblingsName = level === "COUNTY" && state ? `${stateName(state)} counties` : level === "PLACE" && state ? `${stateName(state)} cities and towns` : "states";
   const visible = shown.filter(
     (resolved) =>
       !settled.current ||
@@ -868,10 +876,7 @@ export default function PlacePage({
       </section>
 
       {distinctive && distinctive.ranked.length ? (
-        <WhatStandsOut
-          response={distinctive}
-          siblingsName={level === "COUNTY" && state ? `${stateName(state)} counties` : level === "PLACE" && state ? `${stateName(state)} cities and towns` : "states"}
-        />
+        <WhatStandsOut response={distinctive} siblingsName={siblingsName} />
       ) : null}
 
       {visible.length ? (
@@ -879,6 +884,7 @@ export default function PlacePage({
           <ol>
             {visible.map((resolved) => <li key={resolved.chapter.id}><a href={`#${resolved.chapter.id}`}>{resolved.chapter.title}</a></li>)}
             {settled.current ? <li><a href="#record">What the record shows</a></li> : null}
+            <li><a href="#family">Starting a family</a></li>
           </ol>
         </nav>
       ) : null}
@@ -920,6 +926,26 @@ export default function PlacePage({
           related={related}
           sources={sources}
           catalogued={catalogStatus.state === "loading" ? null : metricsByCode}
+          onInfant={shareInfant}
+        />
+      ) : null}
+
+      {resolution.state === "found" && levels.length && catalogStatus.state !== "loading" ? (
+        <StartingAFamily
+          levels={levels}
+          pageLevel={level}
+          answers={answers}
+          settled={settled.current && !reading}
+          sources={sources}
+          metricsByCode={metricsByCode}
+          pairings={pairings}
+          distinctive={distinctive}
+          siblingsName={siblingsName}
+          infant={
+            level === "COUNTY" && place && related?.geo_id === place.geo_id
+              ? (infant?.geoId === place.geo_id ? infant.read : {})
+              : undefined
+          }
         />
       ) : null}
 
