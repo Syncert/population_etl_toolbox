@@ -93,7 +93,10 @@ PRECINCT_STREAMS = (COUNTY_SENATE_PRECINCT,)
 #: 2 (2026-11-08): served as published, checked against the state; a county
 #: total or a renamed copy printed as a precinct is set aside; counties a
 #: spanning unit covers, and contests whose labels conflict, are withheld.
-PRECINCT_READING_VERSION = "medsl-precinct-reading-2"
+#: 3 (2026-11-10): a contest whose precinct labels conflict with the ballot
+#: is served as published (Nick: "pull them even though they're
+#: misrepresented"); Nebraska's regular race is flagged by DQ-ELEC-009.
+PRECINCT_READING_VERSION = "medsl-precinct-reading-3"
 #: Streams whose ``totalvotes`` is not the area's own total. MEDSL's county
 #: Senate 2022 file repeats the statewide total on every county row (read on
 #: OFFICE_LAB 2026-11-07: 2,652,477 on each Wisconsin county), so a county's

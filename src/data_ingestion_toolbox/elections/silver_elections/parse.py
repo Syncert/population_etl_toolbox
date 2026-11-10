@@ -803,16 +803,6 @@ SUPPRESSED_COUNT = "*"
 SPANNING_UNITS: dict[tuple[str, str], tuple[str, ...]] = {
     ("MO", "36000"): ("29037", "29047", "29095", "29165"),
 }
-#: Contests whose precinct rows give a candidate a party the statewide file
-#: and the ballot do not: (year, state, special) -> why. Their counties are
-#: not served, since a two-party margin read from them would be wrong, and no
-#: party is put in the source's place. Nebraska's 2024 regular Senate race:
-#: the precinct file labels Dan Osborn, an independent on the ballot by
-#: petition, DEMOCRAT; MEDSL's statewide file has him "BY PETITION" (read on
-#: OFFICE_LAB 2026-11-08).
-MISLABELLED_CONTESTS: dict[tuple[int, str, bool], str] = {
-    (2024, "NE", False): "the precinct file labels independent Dan Osborn DEMOCRAT",
-}
 
 
 def parse_precinct_results(
@@ -1136,7 +1126,6 @@ def parse_precinct_results(
     # spanning reporting unit covers.
     counties: dict[tuple[Any, ...], list[int]] = {}
     withheld: dict[tuple[Any, ...], int] = {}
-    mislabelled: dict[tuple[Any, ...], int] = {}
     for (line, place, precinct), (
         first,
         total,
@@ -1144,10 +1133,6 @@ def parse_precinct_results(
         has_total,
     ) in precinct_lines.items():
         if ((*line[:5], place), precinct) in subtotals:
-            continue
-        if (line[0], line[3], line[2]) in MISLABELLED_CONTESTS:
-            county_key = line[:5]
-            mislabelled[county_key] = min(mislabelled.get(county_key, first), first)
             continue
         if line[4] in spanned.get((line[0], line[3]), ()):
             county_key = line[:5]
@@ -1167,16 +1152,6 @@ def parse_precinct_results(
                 "county_split_by_unit",
                 f"county {county_key[4]} is partly counted in a reporting unit that "
                 "spans several counties, so its own rows are not the county's vote",
-                county_key[3],
-                county_key[4],
-            )
-        )
-    for county_key, first in sorted(mislabelled.items(), key=lambda item: item[1]):
-        quarantined.append(
-            Quarantine(
-                first,
-                "party_label_conflict",
-                MISLABELLED_CONTESTS[(county_key[0], county_key[3], county_key[2])],
                 county_key[3],
                 county_key[4],
             )
