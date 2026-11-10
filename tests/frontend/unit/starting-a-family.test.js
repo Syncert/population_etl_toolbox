@@ -5,6 +5,7 @@ import {
   FAMILY_GROUPS,
   FAMILY_ROW_CODES,
   FAMILY_ROWS,
+  derivedNotLoaded,
   headlineLevel,
   hoursFormula,
   hoursGap,
@@ -109,5 +110,16 @@ describe("hours of work", () => {
     expect(hoursGap({ unavailable_reason: "denominator_missing" }, rent, "Dane County")).toBe(
       "Hours of work: no wage is loaded for Dane County yet.",
     );
+  });
+});
+
+describe("a derived row whose inputs are not loaded yet", () => {
+  it("is not loaded, not a failed read", () => {
+    expect(derivedNotLoaded({ status: 404, detail: "ratio_id not found" })).toBe(true);
+    expect(derivedNotLoaded({ status: 422, detail: "pairing 'x' names CENSUS_ACS:acs5:B13002_002, which the catalog does not publish" })).toBe(true);
+    expect(derivedNotLoaded({ status: 422, detail: "pairing 'x' adds CENSUS_ACS:acs5:B23008_010, which the catalog does not publish" })).toBe(true);
+    expect(derivedNotLoaded({ status: 422, detail: "scope must be latest or as_released" })).toBe(false);
+    expect(derivedNotLoaded({ status: 503 })).toBe(false);
+    expect(derivedNotLoaded(new TypeError("Failed to fetch"))).toBe(false);
   });
 });
